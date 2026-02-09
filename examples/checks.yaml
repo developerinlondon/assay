@@ -1,0 +1,28 @@
+# Example: monitoring stack verification
+# Run: assay --config examples/checks.yaml
+
+timeout: 120s
+retries: 3
+backoff: 5s
+parallel: false
+
+checks:
+  - name: grafana-healthy
+    type: http
+    url: http://kube-prometheus-stack-grafana.monitoring:80/api/health
+    expect:
+      status: 200
+      json: ".database == \"ok\""
+
+  - name: prometheus-targets
+    type: prometheus
+    url: http://kube-prometheus-stack-prometheus.monitoring:9090
+    query: "count(up)"
+    expect:
+      min: 1
+
+  - name: loki-ingestion
+    type: script
+    file: examples/loki-test.lua
+    env:
+      LOKI_URL: http://loki-gateway.monitoring:80

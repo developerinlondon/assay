@@ -1,0 +1,8 @@
+# Integration test: Lua script check
+timeout: 30s
+retries: 1
+backoff: 2s
+checks:
+  - name: lua-script-test
+    type: script
+    file: tests/script-pass.lua

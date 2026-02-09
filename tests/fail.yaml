@@ -1,0 +1,10 @@
+# Integration test: should fail (wrong expected status)
+timeout: 30s
+retries: 0
+backoff: 1s
+checks:
+  - name: should-fail
+    type: http
+    url: https://httpbin.org/get
+    expect:
+      status: 404

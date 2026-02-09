@@ -1,0 +1,10 @@
+# Integration test: should pass (httpbin.org returns 200)
+timeout: 30s
+retries: 1
+backoff: 2s
+checks:
+  - name: httpbin-get
+    type: http
+    url: https://httpbin.org/get
+    expect:
+      status: 200
