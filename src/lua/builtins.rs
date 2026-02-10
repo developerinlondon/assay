@@ -68,7 +68,7 @@ fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     })?;
     http_table.set("get", get_fn)?;
 
-    let post_client = client;
+    let post_client = client.clone();
     let post_fn = lua.create_async_function(move |lua, args: mlua::MultiValue| {
         let client = post_client.clone();
         async move {
@@ -133,6 +133,138 @@ fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
         }
     })?;
     http_table.set("post", post_fn)?;
+
+    let put_client = client.clone();
+    let put_fn = lua.create_async_function(move |lua, args: mlua::MultiValue| {
+        let client = put_client.clone();
+        async move {
+            let mut args_iter = args.into_iter();
+            let url: String = match args_iter.next() {
+                Some(Value::String(s)) => s.to_str()?.to_string(),
+                _ => return Err(mlua::Error::runtime("http.put: first argument must be a URL string")),
+            };
+
+            let (body_str, auto_json) = match args_iter.next() {
+                Some(Value::String(s)) => (s.to_str()?.to_string(), false),
+                Some(Value::Table(t)) => {
+                    let json_val = lua_table_to_json(&t)?;
+                    let serialized = serde_json::to_string(&json_val)
+                        .map_err(|e| mlua::Error::runtime(format!("http.put: JSON encode failed: {e}")))?;
+                    (serialized, true)
+                }
+                Some(Value::Nil) | None => (String::new(), false),
+                _ => return Err(mlua::Error::runtime("http.put: second argument must be a string, table, or nil")),
+            };
+
+            let opts = match args_iter.next() {
+                Some(Value::Table(t)) => Some(t),
+                Some(Value::Nil) | None => None,
+                _ => return Err(mlua::Error::runtime("http.put: third argument must be a table or nil")),
+            };
+
+            let mut req = client.put(&url).body(body_str);
+            if auto_json {
+                req = req.header("Content-Type", "application/json");
+            }
+            if let Some(ref opts_table) = opts
+                && let Ok(headers_table) = opts_table.get::<Table>("headers")
+            {
+                for pair in headers_table.pairs::<String, String>() {
+                    let (k, v) = pair?;
+                    req = req.header(k, v);
+                }
+            }
+
+            let resp = req.send().await.map_err(|e| mlua::Error::runtime(format!("http.put failed: {e}")))?;
+            let status = resp.status().as_u16();
+            let resp_headers = resp.headers().clone();
+            let body = resp
+                .text()
+                .await
+                .map_err(|e| mlua::Error::runtime(format!("http.put: reading body failed: {e}")))?;
+
+            let result = lua.create_table()?;
+            result.set("status", status)?;
+            result.set("body", body)?;
+
+            let headers_out = lua.create_table()?;
+            for (name, value) in &resp_headers {
+                if let Ok(v) = value.to_str() {
+                    headers_out.set(name.as_str().to_string(), v.to_string())?;
+                }
+            }
+            result.set("headers", headers_out)?;
+
+            Ok(Value::Table(result))
+        }
+    })?;
+    http_table.set("put", put_fn)?;
+
+    let patch_client = client;
+    let patch_fn = lua.create_async_function(move |lua, args: mlua::MultiValue| {
+        let client = patch_client.clone();
+        async move {
+            let mut args_iter = args.into_iter();
+            let url: String = match args_iter.next() {
+                Some(Value::String(s)) => s.to_str()?.to_string(),
+                _ => return Err(mlua::Error::runtime("http.patch: first argument must be a URL string")),
+            };
+
+            let (body_str, auto_json) = match args_iter.next() {
+                Some(Value::String(s)) => (s.to_str()?.to_string(), false),
+                Some(Value::Table(t)) => {
+                    let json_val = lua_table_to_json(&t)?;
+                    let serialized = serde_json::to_string(&json_val)
+                        .map_err(|e| mlua::Error::runtime(format!("http.patch: JSON encode failed: {e}")))?;
+                    (serialized, true)
+                }
+                Some(Value::Nil) | None => (String::new(), false),
+                _ => return Err(mlua::Error::runtime("http.patch: second argument must be a string, table, or nil")),
+            };
+
+            let opts = match args_iter.next() {
+                Some(Value::Table(t)) => Some(t),
+                Some(Value::Nil) | None => None,
+                _ => return Err(mlua::Error::runtime("http.patch: third argument must be a table or nil")),
+            };
+
+            let mut req = client.patch(&url).body(body_str);
+            if auto_json {
+                req = req.header("Content-Type", "application/json");
+            }
+            if let Some(ref opts_table) = opts
+                && let Ok(headers_table) = opts_table.get::<Table>("headers")
+            {
+                for pair in headers_table.pairs::<String, String>() {
+                    let (k, v) = pair?;
+                    req = req.header(k, v);
+                }
+            }
+
+            let resp = req.send().await.map_err(|e| mlua::Error::runtime(format!("http.patch failed: {e}")))?;
+            let status = resp.status().as_u16();
+            let resp_headers = resp.headers().clone();
+            let body = resp
+                .text()
+                .await
+                .map_err(|e| mlua::Error::runtime(format!("http.patch: reading body failed: {e}")))?;
+
+            let result = lua.create_table()?;
+            result.set("status", status)?;
+            result.set("body", body)?;
+
+            let headers_out = lua.create_table()?;
+            for (name, value) in &resp_headers {
+                if let Ok(v) = value.to_str() {
+                    headers_out.set(name.as_str().to_string(), v.to_string())?;
+                }
+            }
+            result.set("headers", headers_out)?;
+
+            Ok(Value::Table(result))
+        }
+    })?;
+    http_table.set("patch", patch_fn)?;
 
     lua.globals().set("http", http_table)?;
     Ok(())
