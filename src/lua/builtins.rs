@@ -1,6 +1,8 @@
 use data_encoding::BASE64;
+use digest::Digest;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use mlua::{Lua, Table, Value};
+use rand::RngExt;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 use zeroize::Zeroizing;
@@ -16,6 +18,7 @@ pub fn register_all(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     register_fs(lua)?;
     register_base64(lua)?;
     register_crypto(lua)?;
+    register_regex(lua)?;
     Ok(())
 }
 
@@ -567,7 +570,133 @@ fn register_crypto(lua: &Lua) -> mlua::Result<()> {
     })?;
     crypto_table.set("jwt_sign", jwt_sign_fn)?;
 
+    let hash_fn = lua.create_function(|_, args: mlua::MultiValue| {
+        let mut args_iter = args.into_iter();
+
+        let input: String = match args_iter.next() {
+            Some(Value::String(s)) => s.to_str()?.to_string(),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.hash: first argument must be a string",
+                ));
+            }
+        };
+
+        let algorithm: String = match args_iter.next() {
+            Some(Value::String(s)) => s.to_str()?.to_lowercase(),
+            Some(Value::Nil) | None => "sha256".to_string(),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.hash: second argument must be an algorithm string or nil",
+                ));
+            }
+        };
+
+        let hex = match algorithm.as_str() {
+            "sha224" => format!("{:x}", sha2::Sha224::digest(input.as_bytes())),
+            "sha256" => format!("{:x}", sha2::Sha256::digest(input.as_bytes())),
+            "sha384" => format!("{:x}", sha2::Sha384::digest(input.as_bytes())),
+            "sha512" => format!("{:x}", sha2::Sha512::digest(input.as_bytes())),
+            "sha3-224" => format!("{:x}", sha3::Sha3_224::digest(input.as_bytes())),
+            "sha3-256" => format!("{:x}", sha3::Sha3_256::digest(input.as_bytes())),
+            "sha3-384" => format!("{:x}", sha3::Sha3_384::digest(input.as_bytes())),
+            "sha3-512" => format!("{:x}", sha3::Sha3_512::digest(input.as_bytes())),
+            other => {
+                return Err(mlua::Error::runtime(format!(
+                    "crypto.hash: unsupported algorithm: {other} (supported: sha224, sha256, sha384, sha512, sha3-224, sha3-256, sha3-384, sha3-512)"
+                )));
+            }
+        };
+
+        Ok(hex)
+    })?;
+    crypto_table.set("hash", hash_fn)?;
+
+    let random_fn = lua.create_function(|_, args: mlua::MultiValue| {
+        let mut args_iter = args.into_iter();
+
+        let length: usize = match args_iter.next() {
+            Some(Value::Integer(n)) if n > 0 => n as usize,
+            Some(Value::Integer(n)) => {
+                return Err(mlua::Error::runtime(format!(
+                    "crypto.random: length must be positive, got {n}"
+                )));
+            }
+            Some(Value::Nil) | None => 32,
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.random: first argument must be a positive integer or nil",
+                ));
+            }
+        };
+
+        let charset: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let mut rng = rand::rng();
+        let result: String = (0..length)
+            .map(|_| charset[rng.random_range(..charset.len())] as char)
+            .collect();
+
+        Ok(result)
+    })?;
+    crypto_table.set("random", random_fn)?;
+
     lua.globals().set("crypto", crypto_table)?;
+    Ok(())
+}
+
+fn register_regex(lua: &Lua) -> mlua::Result<()> {
+    let regex_table = lua.create_table()?;
+
+    let match_fn = lua.create_function(|_, (text, pattern): (String, String)| {
+        let re = regex_lite::Regex::new(&pattern)
+            .map_err(|e| mlua::Error::runtime(format!("regex.match: invalid pattern: {e}")))?;
+        Ok(re.is_match(&text))
+    })?;
+    regex_table.set("match", match_fn)?;
+
+    let find_fn = lua.create_function(|lua, (text, pattern): (String, String)| {
+        let re = regex_lite::Regex::new(&pattern)
+            .map_err(|e| mlua::Error::runtime(format!("regex.find: invalid pattern: {e}")))?;
+        match re.captures(&text) {
+            Some(caps) => {
+                let result = lua.create_table()?;
+                let full_match = caps.get(0).map(|m| m.as_str()).unwrap_or("");
+                result.set("match", full_match.to_string())?;
+                let groups = lua.create_table()?;
+                for i in 1..caps.len() {
+                    if let Some(m) = caps.get(i) {
+                        groups.set(i, m.as_str().to_string())?;
+                    }
+                }
+                result.set("groups", groups)?;
+                Ok(Value::Table(result))
+            }
+            None => Ok(Value::Nil),
+        }
+    })?;
+    regex_table.set("find", find_fn)?;
+
+    let find_all_fn = lua.create_function(|lua, (text, pattern): (String, String)| {
+        let re = regex_lite::Regex::new(&pattern)
+            .map_err(|e| mlua::Error::runtime(format!("regex.find_all: invalid pattern: {e}")))?;
+        let results = lua.create_table()?;
+        for (i, m) in re.find_iter(&text).enumerate() {
+            results.set(i + 1, m.as_str().to_string())?;
+        }
+        Ok(results)
+    })?;
+    regex_table.set("find_all", find_all_fn)?;
+
+    let replace_fn =
+        lua.create_function(|_, (text, pattern, replacement): (String, String, String)| {
+            let re = regex_lite::Regex::new(&pattern).map_err(|e| {
+                mlua::Error::runtime(format!("regex.replace: invalid pattern: {e}"))
+            })?;
+            Ok(re.replace_all(&text, replacement.as_str()).into_owned())
+        })?;
+    regex_table.set("replace", replace_fn)?;
+
+    lua.globals().set("regex", regex_table)?;
     Ok(())
 }
 
