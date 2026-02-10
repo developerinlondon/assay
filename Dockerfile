@@ -8,7 +8,6 @@ COPY src/ src/
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Runtime
-FROM scratch
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/assay /assay
-ENTRYPOINT ["/assay"]
+FROM alpine:3.21
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/assay /usr/local/bin/assay
+ENTRYPOINT ["assay"]
