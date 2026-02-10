@@ -1,13 +1,13 @@
 [package]
 name = "assay"
-version = "0.2.0"
+version = "0.0.1"
+categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
-description = "Lightweight verification runner. Rust runtime + Lua scripting."
-license = "MIT"
-repository = "https://github.com/developerinlondon/assay"
 homepage = "https://assay.sbs"
 keywords = ["verification", "testing", "lua", "kubernetes", "validation"]
-categories = ["command-line-utilities", "development-tools::testing"]
+license = "MIT"
+repository = "https://github.com/developerinlondon/assay"
+description = "Lightweight Lua runtime for Kubernetes. Verification, scripting, and web services."
 
 [dependencies]
 # Lua scripting engine
@@ -35,8 +35,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [profile.release]
-opt-level = "z"   # Optimize for size
-lto = true         # Link-time optimization
-codegen-units = 1  # Single codegen unit for better optimization
-strip = true       # Strip debug symbols
-panic = "abort"    # Abort on panic (smaller binary)
+opt-level = "z" # Optimize for size
+lto = true # Link-time optimization
+codegen-units = 1 # Single codegen unit for better optimization
+strip = true # Strip debug symbols
+panic = "abort" # Abort on panic (smaller binary)

@@ -88,8 +88,8 @@ body is a table.
 **Problem**: `load()` can execute arbitrary bytecode strings, bypassing textual sandboxing.
 
 **Fix**: Add `"load"` to `DANGEROUS_GLOBALS` list. Alternatively, use
-`Lua::new_with(StdLib::ALL_SAFE, LuaOptions::default())` instead of `Lua::new()` (mlua's
-`ALL_SAFE` already excludes `debug`, `io`, `os`, `package`). Then only additionally remove `load`,
+`Lua::new_with(StdLib::ALL_SAFE, LuaOptions::default())` instead of `Lua::new()` (mlua's `ALL_SAFE`
+already excludes `debug`, `io`, `os`, `package`). Then only additionally remove `load`,
 `string.dump`, `collectgarbage`, `print`.
 
 **Recommendation**: Switch to `Lua::new_with(StdLib::ALL_SAFE, ...)` as the base, then layer
@@ -124,8 +124,8 @@ string_lib.set("dump", mlua::Value::Nil)?;
 
 **Problem**: No memory limit on Lua VM. A buggy or malicious script can OOM the process.
 
-**Fix**: Add `lua.set_memory_limit(64 * 1024 * 1024)?;` (64MB) in `create_vm()`. mlua supports
-this natively for Lua 5.4 via custom allocator. Returns `Error::MemoryError` when exceeded.
+**Fix**: Add `lua.set_memory_limit(64 * 1024 * 1024)?;` (64MB) in `create_vm()`. mlua supports this
+natively for Lua 5.4 via custom allocator. Returns `Error::MemoryError` when exceeded.
 
 **Files changed**: `src/lua/mod.rs`
 
@@ -167,8 +167,8 @@ consumes the entire global timeout window. Combined with B1, this means all chec
 timed out.
 
 **Fix**: Configure `reqwest::Client` with `.timeout(Duration::from_secs(30))` at construction time
-in `runner.rs:14`. This applies to both YAML-mode checks and Lua builtins (same client). Also
-accept an optional `timeout` field in opts tables for Lua builtins to override per-request.
+in `runner.rs:14`. This applies to both YAML-mode checks and Lua builtins (same client). Also accept
+an optional `timeout` field in opts tables for Lua builtins to override per-request.
 
 **Files changed**: `src/runner.rs`, `src/lua/builtins.rs` (opts parsing)
 
@@ -179,13 +179,14 @@ accept an optional `timeout` field in opts tables for Lua builtins to override p
 **File**: `src/lua/builtins.rs`, `src/lua/mod.rs`
 
 **Problem**: Two env mechanisms with confusingly similar names:
+
 - `env.get("FOO")` reads process environment (`std::env::var`)
 - `ENV.FOO` reads check-config env map (injected via `inject_env`)
 
 Script authors will use the wrong one.
 
-**Fix**: Make `env.get()` check the injected `ENV` table first, fall back to process env. Remove
-the separate `ENV` global.
+**Fix**: Make `env.get()` check the injected `ENV` table first, fall back to process env. Remove the
+separate `ENV` global.
 
 **Files changed**: `src/lua/builtins.rs`, `src/lua/mod.rs`
 
@@ -198,8 +199,8 @@ the separate `ENV` global.
 **Problem**: No way to serialize Lua tables to JSON strings. Scripts must manually construct JSON
 via string concatenation (error-prone, no escaping).
 
-**Fix**: Add `json.encode(table) -> string` using the `lua_table_to_json()` helper (same one
-needed for B2). Register alongside `json.parse`.
+**Fix**: Add `json.encode(table) -> string` using the `lua_table_to_json()` helper (same one needed
+for B2). Register alongside `json.parse`.
 
 **Files changed**: `src/lua/builtins.rs`
 
@@ -249,29 +250,29 @@ pub fn print(self) -> ExitCode {
 
 ## Not Fixing (Assessed, Accepted)
 
-| Issue | Reason |
-| ----- | ------ |
-| `assert.matches` uses `lua.load()` | Oracle confirmed safe: `lua_string_literal` escapes properly, `string.find` never evaluates code |
-| `reqwest::Client` cloned in closures | `Client` is `Arc`-based, clone is cheap. Correct pattern for async closures |
-| `config.name.clone()` in check results | Strings are small, happens once per check. Not worth refactoring |
-| `prometheus.query` inconsistent types | Defer to post-v0.1 -- current behavior is usable with `type()` check |
-| `extract_string_arg` compiles Lua chunk per call | Minor perf, only fires for non-string assert messages (rare path) |
+| Issue                                            | Reason                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `assert.matches` uses `lua.load()`               | Oracle confirmed safe: `lua_string_literal` escapes properly, `string.find` never evaluates code |
+| `reqwest::Client` cloned in closures             | `Client` is `Arc`-based, clone is cheap. Correct pattern for async closures                      |
+| `config.name.clone()` in check results           | Strings are small, happens once per check. Not worth refactoring                                 |
+| `prometheus.query` inconsistent types            | Defer to post-v0.1 -- current behavior is usable with `type()` check                             |
+| `extract_string_arg` compiles Lua chunk per call | Minor perf, only fires for non-string assert messages (rare path)                                |
 
 ---
 
 ## Implementation Order
 
-| Step | Items | Files | Estimate |
-| ---- | ----- | ----- | -------- |
-| 1 | B1 (timeout) + D1 (per-request timeout) | `runner.rs` | ~10 min |
-| 2 | S1+S2+S3+S4+S5 (sandbox hardening) | `lua/mod.rs` | ~10 min |
-| 3 | B2 (table body) + D3 (json.encode) | `lua/builtins.rs` | ~10 min |
-| 4 | B3 (loki example) + D4 (time builtin) | `lua/builtins.rs`, `examples/loki-test.lua` | ~5 min |
-| 5 | D2 (env unification) | `lua/builtins.rs`, `lua/mod.rs` | ~5 min |
-| 6 | D5 (ExitCode) | `output.rs`, `main.rs` | ~5 min |
-| 7 | `cargo check && cargo clippy -- -D warnings && cargo test` | -- | ~5 min |
-| 8 | Re-run integration tests | -- | ~2 min |
-| **Total** | | | **~50 min** |
+| Step      | Items                                                      | Files                                       | Estimate    |
+| --------- | ---------------------------------------------------------- | ------------------------------------------- | ----------- |
+| 1         | B1 (timeout) + D1 (per-request timeout)                    | `runner.rs`                                 | ~10 min     |
+| 2         | S1+S2+S3+S4+S5 (sandbox hardening)                         | `lua/mod.rs`                                | ~10 min     |
+| 3         | B2 (table body) + D3 (json.encode)                         | `lua/builtins.rs`                           | ~10 min     |
+| 4         | B3 (loki example) + D4 (time builtin)                      | `lua/builtins.rs`, `examples/loki-test.lua` | ~5 min      |
+| 5         | D2 (env unification)                                       | `lua/builtins.rs`, `lua/mod.rs`             | ~5 min      |
+| 6         | D5 (ExitCode)                                              | `output.rs`, `main.rs`                      | ~5 min      |
+| 7         | `cargo check && cargo clippy -- -D warnings && cargo test` | --                                          | ~5 min      |
+| 8         | Re-run integration tests                                   | --                                          | ~2 min      |
+| **Total** |                                                            |                                             | **~50 min** |
 
 ---
 

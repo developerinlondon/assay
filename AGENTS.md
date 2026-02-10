@@ -27,18 +27,18 @@ scripting. Runs as an ArgoCD PostSync hook Job to verify deployments actually wo
 
 ## Stack
 
-| Layer    | Component                                                    |
-| -------- | ------------------------------------------------------------ |
-| Language | Rust (2024 edition)                                          |
-| Runtime  | Tokio (async)                                                |
-| Scripting| Lua 5.4 via mlua 0.11.6 (`lua54`, `vendored`, `async`, `serialize`) |
-| HTTP     | reqwest 0.13.x (`json`, `rustls`, `query`)                   |
-| CLI      | clap 4.x (derive)                                            |
-| Config   | serde_yml (YAML) + serde_json                                |
-| Logging  | tracing + tracing-subscriber (stderr, env-filter)            |
-| Errors   | anyhow                                                       |
-| CI/CD    | GitHub Actions -> ghcr.io                                    |
-| Container| Multi-stage Rust builder -> scratch                          |
+| Layer     | Component                                                           |
+| --------- | ------------------------------------------------------------------- |
+| Language  | Rust (2024 edition)                                                 |
+| Runtime   | Tokio (async)                                                       |
+| Scripting | Lua 5.4 via mlua 0.11.6 (`lua54`, `vendored`, `async`, `serialize`) |
+| HTTP      | reqwest 0.13.x (`json`, `rustls`, `query`)                          |
+| CLI       | clap 4.x (derive)                                                   |
+| Config    | serde_yml (YAML) + serde_json                                       |
+| Logging   | tracing + tracing-subscriber (stderr, env-filter)                   |
+| Errors    | anyhow                                                              |
+| CI/CD     | GitHub Actions -> ghcr.io                                           |
+| Container | Multi-stage Rust builder -> scratch                                 |
 
 ## Architecture
 
@@ -114,17 +114,18 @@ cargo build --release --target x86_64-unknown-linux-musl  # Static binary for Do
 3. **No Underscore Prefix**: Never use `_variable` to silence linters -- use or remove it.
 4. **No Suppression**: No `#[allow(...)]`, `as any`, `@ts-ignore` equivalents.
 5. **Real Error Messages**: Use `anyhow::Context` for all fallible operations. No empty catch.
-6. **Test After Change**: Run `cargo check && cargo clippy -- -D warnings && cargo test` after edits.
+6. **Test After Change**: Run `cargo check && cargo clippy -- -D warnings && cargo test` after
+   edits.
 7. **Latest Versions**: Check `cargo search <crate> --limit 1` before adding dependencies.
 
 ## Design Decisions (FINAL -- do not change)
 
-| Decision         | Choice  | Reason                                                                    |
-| ---------------- | ------- | ------------------------------------------------------------------------- |
-| Language runtime | Lua 5.4 | ArgoCD compatible, 30yr ecosystem, native int64, perf irrelevant for I/O  |
-| Not Luau         | Rejected| Benchmark used JIT (unfair), Lua 5.1 base, Roblox ecosystem, no int64    |
-| Not Rhai         | Rejected| 6x slower, no async, no coroutines                                       |
-| Not Wasmtime     | Rejected| Fastest but requires compile step, bad for script iteration               |
+| Decision         | Choice   | Reason                                                                   |
+| ---------------- | -------- | ------------------------------------------------------------------------ |
+| Language runtime | Lua 5.4  | ArgoCD compatible, 30yr ecosystem, native int64, perf irrelevant for I/O |
+| Not Luau         | Rejected | Benchmark used JIT (unfair), Lua 5.1 base, Roblox ecosystem, no int64    |
+| Not Rhai         | Rejected | 6x slower, no async, no coroutines                                       |
+| Not Wasmtime     | Rejected | Fastest but requires compile step, bad for script iteration              |
 
 ## Autonomous Operation
 
