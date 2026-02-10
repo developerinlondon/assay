@@ -3,7 +3,7 @@ name = "assay"
 version = "0.0.1"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
-homepage = "https://assay.sbs"
+homepage = "https://assay.rs"
 keywords = ["verification", "testing", "lua", "kubernetes", "validation"]
 license = "MIT"
 repository = "https://github.com/developerinlondon/assay"
@@ -33,6 +33,20 @@ anyhow = "1"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# JWT signing (RS256)
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+zeroize = "1.8.2"
+
+# Base64 encoding/decoding
+data-encoding = "2.10.0"
+
+# Embed stdlib .lua files in binary
+include_dir = "0.7.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
+wiremock = "0.6.5"
 
 [profile.release]
 opt-level = "z" # Optimize for size

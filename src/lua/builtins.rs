@@ -1,270 +1,140 @@
+use data_encoding::BASE64;
+use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use mlua::{Lua, Table, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
+use zeroize::Zeroizing;
 
 pub fn register_all(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
-    register_http(lua, client.clone())?;
+    register_http(lua, client)?;
     register_json(lua)?;
     register_assert(lua)?;
     register_log(lua)?;
     register_env(lua)?;
     register_sleep(lua)?;
     register_time(lua)?;
-    register_prometheus(lua, client)?;
+    register_fs(lua)?;
+    register_base64(lua)?;
+    register_crypto(lua)?;
     Ok(())
 }
 
 fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     let http_table = lua.create_table()?;
 
-    let get_client = client.clone();
-    let get_fn = lua.create_async_function(move |lua, args: mlua::MultiValue| {
-        let client = get_client.clone();
-        async move {
-            let mut args_iter = args.into_iter();
-            let url: String = match args_iter.next() {
-                Some(Value::String(s)) => s.to_str()?.to_string(),
-                _ => return Err(mlua::Error::runtime("http.get: first argument must be a URL string")),
-            };
+    for method in ["get", "post", "put", "patch", "delete"] {
+        let method_client = client.clone();
+        let method_name = method.to_string();
+        let has_body = method != "get" && method != "delete";
 
-            let opts = match args_iter.next() {
-                Some(Value::Table(t)) => Some(t),
-                Some(Value::Nil) | None => None,
-                _ => return Err(mlua::Error::runtime("http.get: second argument must be a table or nil")),
-            };
+        let func = lua.create_async_function(move |lua, args: mlua::MultiValue| {
+            let client = method_client.clone();
+            let method_name = method_name.clone();
+            async move {
+                let mut args_iter = args.into_iter();
+                let url: String = match args_iter.next() {
+                    Some(Value::String(s)) => s.to_str()?.to_string(),
+                    _ => {
+                        return Err(mlua::Error::runtime(format!(
+                            "http.{method_name}: first argument must be a URL string"
+                        )));
+                    }
+                };
 
-            let mut req = client.get(&url);
-            if let Some(ref opts_table) = opts
-                && let Ok(headers_table) = opts_table.get::<Table>("headers")
-            {
-                for pair in headers_table.pairs::<String, String>() {
-                    let (k, v) = pair?;
-                    req = req.header(k, v);
+                let (body_str, auto_json, opts) = if has_body {
+                    let (body, is_json) = match args_iter.next() {
+                        Some(Value::String(s)) => (s.to_str()?.to_string(), false),
+                        Some(Value::Table(t)) => {
+                            let json_val = lua_table_to_json(&t)?;
+                            let serialized = serde_json::to_string(&json_val).map_err(|e| {
+                                mlua::Error::runtime(format!(
+                                    "http.{method_name}: JSON encode failed: {e}"
+                                ))
+                            })?;
+                            (serialized, true)
+                        }
+                        Some(Value::Nil) | None => (String::new(), false),
+                        _ => {
+                            return Err(mlua::Error::runtime(format!(
+                                "http.{method_name}: second argument must be a string, table, or nil"
+                            )));
+                        }
+                    };
+                    let opts = match args_iter.next() {
+                        Some(Value::Table(t)) => Some(t),
+                        Some(Value::Nil) | None => None,
+                        _ => {
+                            return Err(mlua::Error::runtime(format!(
+                                "http.{method_name}: third argument must be a table or nil"
+                            )));
+                        }
+                    };
+                    (body, is_json, opts)
+                } else {
+                    let opts = match args_iter.next() {
+                        Some(Value::Table(t)) => Some(t),
+                        Some(Value::Nil) | None => None,
+                        _ => {
+                            return Err(mlua::Error::runtime(format!(
+                                "http.{method_name}: second argument must be a table or nil"
+                            )));
+                        }
+                    };
+                    (String::new(), false, opts)
+                };
+
+                let mut req = match method_name.as_str() {
+                    "get" => client.get(&url),
+                    "post" => client.post(&url),
+                    "put" => client.put(&url),
+                    "patch" => client.patch(&url),
+                    "delete" => client.delete(&url),
+                    _ => unreachable!(),
+                };
+
+                if has_body && !body_str.is_empty() {
+                    req = req.body(body_str);
                 }
-            }
-
-            let resp = req.send().await.map_err(|e| mlua::Error::runtime(format!("http.get failed: {e}")))?;
-            let status = resp.status().as_u16();
-            let resp_headers = resp.headers().clone();
-            let body = resp
-                .text()
-                .await
-                .map_err(|e| mlua::Error::runtime(format!("http.get: reading body failed: {e}")))?;
-
-            let result = lua.create_table()?;
-            result.set("status", status)?;
-            result.set("body", body)?;
-
-            let headers_out = lua.create_table()?;
-            for (name, value) in &resp_headers {
-                if let Ok(v) = value.to_str() {
-                    headers_out.set(name.as_str().to_string(), v.to_string())?;
+                if auto_json {
+                    req = req.header("Content-Type", "application/json");
                 }
-            }
-            result.set("headers", headers_out)?;
-
-            Ok(Value::Table(result))
-        }
-    })?;
-    http_table.set("get", get_fn)?;
-
-    let post_client = client.clone();
-    let post_fn = lua.create_async_function(move |lua, args: mlua::MultiValue| {
-        let client = post_client.clone();
-        async move {
-            let mut args_iter = args.into_iter();
-            let url: String = match args_iter.next() {
-                Some(Value::String(s)) => s.to_str()?.to_string(),
-                _ => return Err(mlua::Error::runtime("http.post: first argument must be a URL string")),
-            };
-
-            let (body_str, auto_json) = match args_iter.next() {
-                Some(Value::String(s)) => (s.to_str()?.to_string(), false),
-                Some(Value::Table(t)) => {
-                    let json_val = lua_table_to_json(&t)?;
-                    let serialized = serde_json::to_string(&json_val)
-                        .map_err(|e| mlua::Error::runtime(format!("http.post: JSON encode failed: {e}")))?;
-                    (serialized, true)
+                if let Some(ref opts_table) = opts
+                    && let Ok(headers_table) = opts_table.get::<Table>("headers")
+                {
+                    for pair in headers_table.pairs::<String, String>() {
+                        let (k, v) = pair?;
+                        req = req.header(k, v);
+                    }
                 }
-                Some(Value::Nil) | None => (String::new(), false),
-                _ => return Err(mlua::Error::runtime("http.post: second argument must be a string, table, or nil")),
-            };
 
-            let opts = match args_iter.next() {
-                Some(Value::Table(t)) => Some(t),
-                Some(Value::Nil) | None => None,
-                _ => return Err(mlua::Error::runtime("http.post: third argument must be a table or nil")),
-            };
+                let resp = req.send().await.map_err(|e| {
+                    mlua::Error::runtime(format!("http.{method_name} failed: {e}"))
+                })?;
+                let status = resp.status().as_u16();
+                let resp_headers = resp.headers().clone();
+                let body = resp.text().await.map_err(|e| {
+                    mlua::Error::runtime(format!(
+                        "http.{method_name}: reading body failed: {e}"
+                    ))
+                })?;
 
-            let mut req = client.post(&url).body(body_str);
-            if auto_json {
-                req = req.header("Content-Type", "application/json");
-            }
-            if let Some(ref opts_table) = opts
-                && let Ok(headers_table) = opts_table.get::<Table>("headers")
-            {
-                for pair in headers_table.pairs::<String, String>() {
-                    let (k, v) = pair?;
-                    req = req.header(k, v);
+                let result = lua.create_table()?;
+                result.set("status", status)?;
+                result.set("body", body)?;
+
+                let headers_out = lua.create_table()?;
+                for (name, value) in &resp_headers {
+                    if let Ok(v) = value.to_str() {
+                        headers_out.set(name.as_str().to_string(), v.to_string())?;
+                    }
                 }
+                result.set("headers", headers_out)?;
+
+                Ok(Value::Table(result))
             }
-
-            let resp = req.send().await.map_err(|e| mlua::Error::runtime(format!("http.post failed: {e}")))?;
-            let status = resp.status().as_u16();
-            let resp_headers = resp.headers().clone();
-            let body = resp
-                .text()
-                .await
-                .map_err(|e| mlua::Error::runtime(format!("http.post: reading body failed: {e}")))?;
-
-            let result = lua.create_table()?;
-            result.set("status", status)?;
-            result.set("body", body)?;
-
-            let headers_out = lua.create_table()?;
-            for (name, value) in &resp_headers {
-                if let Ok(v) = value.to_str() {
-                    headers_out.set(name.as_str().to_string(), v.to_string())?;
-                }
-            }
-            result.set("headers", headers_out)?;
-
-            Ok(Value::Table(result))
-        }
-    })?;
-    http_table.set("post", post_fn)?;
-
-    let put_client = client.clone();
-    let put_fn = lua.create_async_function(move |lua, args: mlua::MultiValue| {
-        let client = put_client.clone();
-        async move {
-            let mut args_iter = args.into_iter();
-            let url: String = match args_iter.next() {
-                Some(Value::String(s)) => s.to_str()?.to_string(),
-                _ => return Err(mlua::Error::runtime("http.put: first argument must be a URL string")),
-            };
-
-            let (body_str, auto_json) = match args_iter.next() {
-                Some(Value::String(s)) => (s.to_str()?.to_string(), false),
-                Some(Value::Table(t)) => {
-                    let json_val = lua_table_to_json(&t)?;
-                    let serialized = serde_json::to_string(&json_val)
-                        .map_err(|e| mlua::Error::runtime(format!("http.put: JSON encode failed: {e}")))?;
-                    (serialized, true)
-                }
-                Some(Value::Nil) | None => (String::new(), false),
-                _ => return Err(mlua::Error::runtime("http.put: second argument must be a string, table, or nil")),
-            };
-
-            let opts = match args_iter.next() {
-                Some(Value::Table(t)) => Some(t),
-                Some(Value::Nil) | None => None,
-                _ => return Err(mlua::Error::runtime("http.put: third argument must be a table or nil")),
-            };
-
-            let mut req = client.put(&url).body(body_str);
-            if auto_json {
-                req = req.header("Content-Type", "application/json");
-            }
-            if let Some(ref opts_table) = opts
-                && let Ok(headers_table) = opts_table.get::<Table>("headers")
-            {
-                for pair in headers_table.pairs::<String, String>() {
-                    let (k, v) = pair?;
-                    req = req.header(k, v);
-                }
-            }
-
-            let resp = req.send().await.map_err(|e| mlua::Error::runtime(format!("http.put failed: {e}")))?;
-            let status = resp.status().as_u16();
-            let resp_headers = resp.headers().clone();
-            let body = resp
-                .text()
-                .await
-                .map_err(|e| mlua::Error::runtime(format!("http.put: reading body failed: {e}")))?;
-
-            let result = lua.create_table()?;
-            result.set("status", status)?;
-            result.set("body", body)?;
-
-            let headers_out = lua.create_table()?;
-            for (name, value) in &resp_headers {
-                if let Ok(v) = value.to_str() {
-                    headers_out.set(name.as_str().to_string(), v.to_string())?;
-                }
-            }
-            result.set("headers", headers_out)?;
-
-            Ok(Value::Table(result))
-        }
-    })?;
-    http_table.set("put", put_fn)?;
-
-    let patch_client = client;
-    let patch_fn = lua.create_async_function(move |lua, args: mlua::MultiValue| {
-        let client = patch_client.clone();
-        async move {
-            let mut args_iter = args.into_iter();
-            let url: String = match args_iter.next() {
-                Some(Value::String(s)) => s.to_str()?.to_string(),
-                _ => return Err(mlua::Error::runtime("http.patch: first argument must be a URL string")),
-            };
-
-            let (body_str, auto_json) = match args_iter.next() {
-                Some(Value::String(s)) => (s.to_str()?.to_string(), false),
-                Some(Value::Table(t)) => {
-                    let json_val = lua_table_to_json(&t)?;
-                    let serialized = serde_json::to_string(&json_val)
-                        .map_err(|e| mlua::Error::runtime(format!("http.patch: JSON encode failed: {e}")))?;
-                    (serialized, true)
-                }
-                Some(Value::Nil) | None => (String::new(), false),
-                _ => return Err(mlua::Error::runtime("http.patch: second argument must be a string, table, or nil")),
-            };
-
-            let opts = match args_iter.next() {
-                Some(Value::Table(t)) => Some(t),
-                Some(Value::Nil) | None => None,
-                _ => return Err(mlua::Error::runtime("http.patch: third argument must be a table or nil")),
-            };
-
-            let mut req = client.patch(&url).body(body_str);
-            if auto_json {
-                req = req.header("Content-Type", "application/json");
-            }
-            if let Some(ref opts_table) = opts
-                && let Ok(headers_table) = opts_table.get::<Table>("headers")
-            {
-                for pair in headers_table.pairs::<String, String>() {
-                    let (k, v) = pair?;
-                    req = req.header(k, v);
-                }
-            }
-
-            let resp = req.send().await.map_err(|e| mlua::Error::runtime(format!("http.patch failed: {e}")))?;
-            let status = resp.status().as_u16();
-            let resp_headers = resp.headers().clone();
-            let body = resp
-                .text()
-                .await
-                .map_err(|e| mlua::Error::runtime(format!("http.patch: reading body failed: {e}")))?;
-
-            let result = lua.create_table()?;
-            result.set("status", status)?;
-            result.set("body", body)?;
-
-            let headers_out = lua.create_table()?;
-            for (name, value) in &resp_headers {
-                if let Ok(v) = value.to_str() {
-                    headers_out.set(name.as_str().to_string(), v.to_string())?;
-                }
-            }
-            result.set("headers", headers_out)?;
-
-            Ok(Value::Table(result))
-        }
-    })?;
-    http_table.set("patch", patch_fn)?;
+        })?;
+        http_table.set(method, func)?;
+    }
 
     lua.globals().set("http", http_table)?;
     Ok(())
@@ -344,9 +214,7 @@ fn lua_value_to_json(val: &Value) -> mlua::Result<serde_json::Value> {
     match val {
         Value::Nil => Ok(serde_json::Value::Null),
         Value::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
-        Value::Integer(i) => Ok(serde_json::Value::Number(
-            serde_json::Number::from(*i),
-        )),
+        Value::Integer(i) => Ok(serde_json::Value::Number(serde_json::Number::from(*i))),
         Value::Number(f) => serde_json::Number::from_f64(*f)
             .map(serde_json::Value::Number)
             .ok_or_else(|| mlua::Error::runtime(format!("cannot encode {f} as JSON number"))),
@@ -359,7 +227,7 @@ fn lua_value_to_json(val: &Value) -> mlua::Result<serde_json::Value> {
     }
 }
 
-fn json_value_to_lua(lua: &Lua, val: &serde_json::Value) -> mlua::Result<Value> {
+pub fn json_value_to_lua(lua: &Lua, val: &serde_json::Value) -> mlua::Result<Value> {
     match val {
         serde_json::Value::Null => Ok(Value::Nil),
         serde_json::Value::Bool(b) => Ok(Value::Boolean(*b)),
@@ -424,7 +292,9 @@ fn register_assert(lua: &Lua) -> mlua::Result<()> {
                 "assert.gt failed: {va} is not > {vb}{}",
                 msg.map(|m| format!(" - {m}")).unwrap_or_default()
             ))),
-            _ => Err(mlua::Error::runtime("assert.gt: both arguments must be numbers")),
+            _ => Err(mlua::Error::runtime(
+                "assert.gt: both arguments must be numbers",
+            )),
         }
     })?;
     assert_table.set("gt", gt_fn)?;
@@ -441,7 +311,9 @@ fn register_assert(lua: &Lua) -> mlua::Result<()> {
                 "assert.lt failed: {va} is not < {vb}{}",
                 msg.map(|m| format!(" - {m}")).unwrap_or_default()
             ))),
-            _ => Err(mlua::Error::runtime("assert.lt: both arguments must be numbers")),
+            _ => Err(mlua::Error::runtime(
+                "assert.lt: both arguments must be numbers",
+            )),
         }
     })?;
     assert_table.set("lt", lt_fn)?;
@@ -450,11 +322,19 @@ fn register_assert(lua: &Lua) -> mlua::Result<()> {
         let mut args_iter = args.into_iter();
         let haystack: String = match args_iter.next() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => return Err(mlua::Error::runtime("assert.contains: first argument must be a string")),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "assert.contains: first argument must be a string",
+                ));
+            }
         };
         let needle: String = match args_iter.next() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => return Err(mlua::Error::runtime("assert.contains: second argument must be a string")),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "assert.contains: second argument must be a string",
+                ));
+            }
         };
         let msg = extract_string_arg(lua, args_iter.next());
 
@@ -487,11 +367,19 @@ fn register_assert(lua: &Lua) -> mlua::Result<()> {
         let mut args_iter = args.into_iter();
         let text: String = match args_iter.next() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => return Err(mlua::Error::runtime("assert.matches: first argument must be a string")),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "assert.matches: first argument must be a string",
+                ));
+            }
         };
         let pattern: String = match args_iter.next() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => return Err(mlua::Error::runtime("assert.matches: second argument must be a pattern string")),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "assert.matches: second argument must be a pattern string",
+                ));
+            }
         };
         let msg = extract_string_arg(lua, args_iter.next());
 
@@ -591,81 +479,95 @@ fn register_time(lua: &Lua) -> mlua::Result<()> {
     Ok(())
 }
 
-fn register_prometheus(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
-    let prom_table = lua.create_table()?;
+fn register_fs(lua: &Lua) -> mlua::Result<()> {
+    let fs_table = lua.create_table()?;
 
-    let query_fn = lua.create_async_function(move |lua, (url, promql): (String, String)| {
-        let client = client.clone();
-        async move {
-            let query_url = format!("{}/api/v1/query", url.trim_end_matches('/'));
-            let resp = client
-                .get(&query_url)
-                .query(&[("query", &promql)])
-                .send()
-                .await
-                .map_err(|e| mlua::Error::runtime(format!("prometheus.query: request failed: {e}")))?;
-
-            let body = resp
-                .text()
-                .await
-                .map_err(|e| mlua::Error::runtime(format!("prometheus.query: reading body failed: {e}")))?;
-
-            let parsed: serde_json::Value = serde_json::from_str(&body)
-                .map_err(|e| mlua::Error::runtime(format!("prometheus.query: invalid JSON: {e}")))?;
-
-            let result_array = parsed
-                .get("data")
-                .and_then(|d| d.get("result"))
-                .and_then(|r| r.as_array());
-
-            match result_array {
-                Some(results) if results.len() == 1 => {
-                    let val_str = results[0]
-                        .get("value")
-                        .and_then(|v| v.as_array())
-                        .and_then(|arr| arr.get(1))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("0");
-
-                    match val_str.parse::<f64>() {
-                        Ok(num) => Ok(Value::Number(num)),
-                        Err(_) => Ok(Value::String(lua.create_string(val_str)?)),
-                    }
-                }
-                Some(results) => {
-                    let table = lua.create_table()?;
-                    for (i, result) in results.iter().enumerate() {
-                        let row = lua.create_table()?;
-
-                        if let Some(metric) = result.get("metric") {
-                            let metric_table = json_value_to_lua(&lua, metric)?;
-                            row.set("metric", metric_table)?;
-                        }
-
-                        let val_str = result
-                            .get("value")
-                            .and_then(|v| v.as_array())
-                            .and_then(|arr| arr.get(1))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("0");
-                        match val_str.parse::<f64>() {
-                            Ok(num) => row.set("value", num)?,
-                            Err(_) => row.set("value", val_str)?,
-                        }
-
-                        table.set(i + 1, row)?;
-                    }
-                    Ok(Value::Table(table))
-                }
-                None => Err(mlua::Error::runtime(format!(
-                    "prometheus.query: unexpected response format: {body}"
-                ))),
-            }
-        }
+    let read_fn = lua.create_function(|_, path: String| {
+        std::fs::read_to_string(&path)
+            .map_err(|e| mlua::Error::runtime(format!("fs.read: failed to read {path:?}: {e}")))
     })?;
-    prom_table.set("query", query_fn)?;
+    fs_table.set("read", read_fn)?;
 
-    lua.globals().set("prometheus", prom_table)?;
+    lua.globals().set("fs", fs_table)?;
+    Ok(())
+}
+
+fn register_base64(lua: &Lua) -> mlua::Result<()> {
+    let b64_table = lua.create_table()?;
+
+    let encode_fn = lua.create_function(|_, input: String| Ok(BASE64.encode(input.as_bytes())))?;
+    b64_table.set("encode", encode_fn)?;
+
+    let decode_fn = lua.create_function(|_, input: String| {
+        let bytes = BASE64
+            .decode(input.as_bytes())
+            .map_err(|e| mlua::Error::runtime(format!("base64.decode: {e}")))?;
+        String::from_utf8(bytes)
+            .map_err(|e| mlua::Error::runtime(format!("base64.decode: invalid UTF-8: {e}")))
+    })?;
+    b64_table.set("decode", decode_fn)?;
+
+    lua.globals().set("base64", b64_table)?;
+    Ok(())
+}
+
+fn register_crypto(lua: &Lua) -> mlua::Result<()> {
+    let crypto_table = lua.create_table()?;
+
+    let jwt_sign_fn = lua.create_function(|_, args: mlua::MultiValue| {
+        let mut args_iter = args.into_iter();
+
+        let claims_table = match args_iter.next() {
+            Some(Value::Table(t)) => t,
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.jwt_sign: first argument must be a claims table",
+                ));
+            }
+        };
+
+        let pem_key: String = match args_iter.next() {
+            Some(Value::String(s)) => s.to_str()?.to_string(),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.jwt_sign: second argument must be a PEM key string",
+                ));
+            }
+        };
+
+        let algorithm = match args_iter.next() {
+            Some(Value::String(s)) => match s.to_str()?.to_uppercase().as_str() {
+                "RS256" => Algorithm::RS256,
+                "RS384" => Algorithm::RS384,
+                "RS512" => Algorithm::RS512,
+                other => {
+                    return Err(mlua::Error::runtime(format!(
+                        "crypto.jwt_sign: unsupported algorithm: {other}"
+                    )));
+                }
+            },
+            Some(Value::Nil) | None => Algorithm::RS256,
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.jwt_sign: third argument must be an algorithm string or nil",
+                ));
+            }
+        };
+
+        let claims_json = lua_value_to_json(&Value::Table(claims_table))?;
+        let pem_bytes = Zeroizing::new(pem_key.into_bytes());
+        let key = EncodingKey::from_rsa_pem(&pem_bytes)
+            .map_err(|e| mlua::Error::runtime(format!("crypto.jwt_sign: invalid PEM key: {e}")))?;
+
+        let header = Header::new(algorithm);
+        let token = jsonwebtoken::encode(&header, &claims_json, &key)
+            .map_err(|e| mlua::Error::runtime(format!("crypto.jwt_sign: encoding failed: {e}")))?;
+
+        Ok(token)
+    })?;
+    crypto_table.set("jwt_sign", jwt_sign_fn)?;
+
+    lua.globals().set("crypto", crypto_table)?;
     Ok(())
 }
 
@@ -673,10 +575,7 @@ fn extract_string_arg(lua: &Lua, val: Option<Value>) -> Option<String> {
     match val {
         Some(Value::String(s)) => s.to_str().ok().map(|s| s.to_string()),
         Some(other) => {
-            let result: Option<String> = lua
-                .load("return tostring(...)")
-                .call(other)
-                .ok();
+            let result: Option<String> = lua.load("return tostring(...)").call(other).ok();
             result
         }
         None => None,
@@ -727,4 +626,85 @@ fn lua_string_literal(s: &str) -> String {
         .replace('\r', "\\r")
         .replace('\0', "\\0");
     format!("\"{escaped}\"")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_base64_roundtrip() {
+        let input = "hello world";
+        let encoded = BASE64.encode(input.as_bytes());
+        assert_eq!(encoded, "aGVsbG8gd29ybGQ=");
+        let decoded = BASE64.decode(encoded.as_bytes()).unwrap();
+        assert_eq!(String::from_utf8(decoded).unwrap(), input);
+    }
+
+    #[test]
+    fn test_base64_empty() {
+        let encoded = BASE64.encode(b"");
+        assert_eq!(encoded, "");
+        let decoded = BASE64.decode(b"").unwrap();
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn test_lua_value_to_json_nil() {
+        let result = lua_value_to_json(&Value::Nil).unwrap();
+        assert_eq!(result, serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_lua_value_to_json_bool() {
+        assert_eq!(
+            lua_value_to_json(&Value::Boolean(true)).unwrap(),
+            serde_json::Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_integer() {
+        assert_eq!(
+            lua_value_to_json(&Value::Integer(42)).unwrap(),
+            serde_json::json!(42)
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_number() {
+        assert_eq!(
+            lua_value_to_json(&Value::Number(1.5)).unwrap(),
+            serde_json::json!(1.5)
+        );
+    }
+
+    #[test]
+    fn test_lua_values_equal_nil() {
+        assert!(lua_values_equal(&Value::Nil, &Value::Nil));
+    }
+
+    #[test]
+    fn test_lua_values_equal_int_float() {
+        assert!(lua_values_equal(&Value::Integer(42), &Value::Number(42.0)));
+    }
+
+    #[test]
+    fn test_lua_values_not_equal() {
+        assert!(!lua_values_equal(&Value::Integer(1), &Value::Integer(2)));
+    }
+
+    #[test]
+    fn test_format_lua_value() {
+        assert_eq!(format_lua_value(&Value::Nil), "nil");
+        assert_eq!(format_lua_value(&Value::Boolean(true)), "true");
+        assert_eq!(format_lua_value(&Value::Integer(42)), "42");
+    }
+
+    #[test]
+    fn test_lua_string_literal_escaping() {
+        assert_eq!(lua_string_literal("hello"), "\"hello\"");
+        assert_eq!(lua_string_literal("line\nnew"), "\"line\\nnew\"");
+        assert_eq!(lua_string_literal("quote\"here"), "\"quote\\\"here\"");
+    }
 }

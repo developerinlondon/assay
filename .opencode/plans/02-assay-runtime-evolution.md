@@ -23,11 +23,11 @@ assay --sandbox script.lua  # Lua → restricted builtins (future: untrusted use
 The tool is evolving beyond "verification runner" into a general-purpose K8s Lua runtime. No
 production users exist yet — renaming cost is zero. Options:
 
-| Name         | Meaning                                  | Pros                                    | Cons                       |
-| ------------ | ---------------------------------------- | --------------------------------------- | -------------------------- |
-| **Assay**    | "to test/examine" (also "an attempt")    | Unique, has domain (assay.sbs), on GHCR | Name suggests testing only |
-| **Luma**     | "Lua" + "machine"; also means "light"    | Short, memorable, conveys lightweight   | New, no history            |
-| **Crucible** | Container where metals are tested/shaped | Perfect metaphor (test + create)        | Longer to type             |
+| Name         | Meaning                                  | Pros                                   | Cons                       |
+| ------------ | ---------------------------------------- | -------------------------------------- | -------------------------- |
+| **Assay**    | "to test/examine" (also "an attempt")    | Unique, has domain (assay.rs), on GHCR | Name suggests testing only |
+| **Luma**     | "Lua" + "machine"; also means "light"    | Short, memorable, conveys lightweight  | New, no history            |
+| **Crucible** | Container where metals are tested/shaped | Perfect metaphor (test + create)       | Longer to type             |
 
 Recommendation: TBD — owner decides.
 
@@ -172,48 +172,48 @@ job. Same binary, same builtins.
 Assay already has reqwest + tokio + hyper + tower + serde. Adding axum/websocket shares most of
 their weight.
 
-| Feature                              | Crate(s)                     | Binary Delta | New Deps | AI Agent Time |  Risk   |
-| ------------------------------------ | ---------------------------- | :----------: | :------: | :-----------: | :-----: |
-| **Step 1: Core Builtins (P0)**       |                              |              |          |               |         |
-| fs.read                              | (stdlib)                     |    +0 KB     |    0     |    30 min     |   LOW   |
-| crypto.jwt_sign                      | jsonwebtoken 10.3, zeroize   |   +200 KB    |    2     |     1 hr      |   LOW   |
-| http.delete                          | (existing reqwest)           |    +0 KB     |    0     |    15 min     | TRIVIAL |
-| base64.encode/decode                 | (transitive, already linked) |    +0 KB     |    0     |    20 min     | TRIVIAL |
-| Strip type:http/prom                 | remove code                  |    -50 KB    |    0     |    45 min     |   LOW   |
-| Lua stdlib system                    | include_dir                  |    +30 KB    |    1     |     1 hr      |   LOW   |
-| **Step 2: Foundation (P1)**          |                              |              |          |               |         |
-| crypto.hash                          | sha2, sha3                   |   +100 KB    |    2     |    30 min     |   LOW   |
-| crypto.random                        | (stdlib rand)                |    +50 KB    |    1     |    20 min     | TRIVIAL |
-| regex                                | regex-lite                   |    +94 KB    |    1     |    45 min     |   LOW   |
-| Lua stdlib helpers                   | (embedded .lua)              |    +10 KB    |    0     |     1 hr      |   LOW   |
-| **Step 3: General Purpose (P2)**     |                              |              |          |               |         |
-| fs.write                             | (stdlib)                     |    +0 KB     |    0     |    30 min     |   LOW   |
-| yaml.parse/encode                    | (existing serde_yml)         |    +0 KB     |    0     |    30 min     | TRIVIAL |
-| toml.parse/encode                    | toml                         |    +80 KB    |    1     |    20 min     | TRIVIAL |
-| async.spawn                          | (existing tokio)             |    +0 KB     |    0     |     2 hrs     | MEDIUM  |
-| **Step 4: Server Mode**              |                              |              |          |               |         |
-| http.serve (axum)                    | axum (minimal features)      |   +150 KB    |    3     |     4 hrs     | MEDIUM  |
-| Routing + middleware                 | (included in axum)           |    +0 KB     |    0     |     2 hrs     | MEDIUM  |
-| Static file serving                  | tower-http                   |    +50 KB    |    1     |     1 hr      |   LOW   |
-| **Step 5: Database**                 |                              |              |          |               |         |
-| db.connect/query (Postgres)          | sqlx (postgres)              |   +1.2 MB    |    8     |     4 hrs     | MEDIUM  |
-| db.connect/query (MySQL/MariaDB)     | sqlx (mysql)                 |   +0.8 MB    |    2     |     1 hr      |   LOW   |
-| db.connect/query (SQLite embedded)   | sqlx (sqlite)                |   +0.5 MB    |    2     |     1 hr      |   LOW   |
-| **Step 6: WebSocket + Templates**    |                              |              |          |               |         |
-| WebSocket                            | tokio-tungstenite            |   +200 KB    |    2     |     3 hrs     | MEDIUM  |
-| template.render                      | minijinja                    |   +300 KB    |    1     |     2 hrs     |   LOW   |
-| **Step 7: E2E + Polish**             |                              |              |          |               |         |
-| E2E dogfood tests                    | (assay itself)               |    +0 KB     |    0     |     3 hrs     |   LOW   |
-| Docs + README                        |                              |    +0 KB     |    0     |     2 hrs     |   LOW   |
-| **Step 8: Stable Release (v0.1.0)**  |                              |              |          |               |         |
-| Stable API audit + crates.io publish |                              |    +0 KB     |    0     |     3 hrs     |   LOW   |
-| **Totals**                           |                              | **+3.7 MB**  |  **27**  |  **~42 hrs**  |         |
+| Feature                              | Crate(s)                   | Binary Delta | New Deps | AI Agent Time |  Risk   |
+| ------------------------------------ | -------------------------- | :----------: | :------: | :-----------: | :-----: |
+| **Step 1: Core Builtins (P0)**       |                            |              |          |               |         |
+| fs.read                              | (stdlib)                   |    +0 KB     |    0     |    30 min     |   LOW   |
+| crypto.jwt_sign                      | jsonwebtoken 10.3, zeroize |   +200 KB    |    2     |     1 hr      |   LOW   |
+| http.delete                          | (existing reqwest)         |    +0 KB     |    0     |    15 min     | TRIVIAL |
+| base64.encode/decode                 | data-encoding              |    +10 KB    |    1     |    20 min     | TRIVIAL |
+| DRY http builtins (loop)             | refactor                   |    +0 KB     |    0     |    30 min     | TRIVIAL |
+| Lua stdlib system                    | include_dir                |    +30 KB    |    1     |     1 hr      |   LOW   |
+| **Step 2: Foundation (P1)**          |                            |              |          |               |         |
+| crypto.hash                          | sha2, sha3                 |   +100 KB    |    2     |    30 min     |   LOW   |
+| crypto.random                        | (stdlib rand)              |    +50 KB    |    1     |    20 min     | TRIVIAL |
+| regex                                | regex-lite                 |    +94 KB    |    1     |    45 min     |   LOW   |
+| Lua stdlib helpers                   | (embedded .lua)            |    +10 KB    |    0     |     1 hr      |   LOW   |
+| **Step 3: General Purpose (P2)**     |                            |              |          |               |         |
+| fs.write                             | (stdlib)                   |    +0 KB     |    0     |    30 min     |   LOW   |
+| yaml.parse/encode                    | (existing serde_yml)       |    +0 KB     |    0     |    30 min     | TRIVIAL |
+| toml.parse/encode                    | toml                       |    +80 KB    |    1     |    20 min     | TRIVIAL |
+| async.spawn                          | (existing tokio)           |    +0 KB     |    0     |     2 hrs     | MEDIUM  |
+| **Step 4: Server Mode**              |                            |              |          |               |         |
+| http.serve (axum)                    | axum (minimal features)    |   +150 KB    |    3     |     4 hrs     | MEDIUM  |
+| Routing + middleware                 | (included in axum)         |    +0 KB     |    0     |     2 hrs     | MEDIUM  |
+| Static file serving                  | tower-http                 |    +50 KB    |    1     |     1 hr      |   LOW   |
+| **Step 5: Database**                 |                            |              |          |               |         |
+| db.connect/query (Postgres)          | sqlx (postgres)            |   +1.2 MB    |    8     |     4 hrs     | MEDIUM  |
+| db.connect/query (MySQL/MariaDB)     | sqlx (mysql)               |   +0.8 MB    |    2     |     1 hr      |   LOW   |
+| db.connect/query (SQLite embedded)   | sqlx (sqlite)              |   +0.5 MB    |    2     |     1 hr      |   LOW   |
+| **Step 6: WebSocket + Templates**    |                            |              |          |               |         |
+| WebSocket                            | tokio-tungstenite          |   +200 KB    |    2     |     3 hrs     | MEDIUM  |
+| template.render                      | minijinja                  |   +300 KB    |    1     |     2 hrs     |   LOW   |
+| **Step 7: E2E + Polish**             |                            |              |          |               |         |
+| E2E dogfood tests                    | (assay itself)             |    +0 KB     |    0     |     3 hrs     |   LOW   |
+| Docs + README                        |                            |    +0 KB     |    0     |     2 hrs     |   LOW   |
+| **Step 8: Stable Release (v0.1.0)**  |                            |              |          |               |         |
+| Stable API audit + crates.io publish |                            |    +0 KB     |    0     |     3 hrs     |   LOW   |
+| **Totals**                           |                            | **+3.7 MB**  |  **27**  |  **~42 hrs**  |         |
 
 ### Binary Size Progression
 
 ```
 v0.0.1  ###########################  5.1 MB  (current baseline)
-Step 1  #############################  5.3 MB  (+jwt, +fs.read, -type:http)
+Step 1  #############################  5.3 MB  (+jwt, +fs.read, +base64, +stdlib)
 Step 2  ##############################  5.5 MB  (+crypto, +regex)
 Step 3  ##############################  5.6 MB  (+yaml, +toml, +async)
 Step 4  ###############################  5.8 MB  (+axum server)
@@ -537,30 +537,24 @@ All steps target **v0.1.0** — the first feature-complete release. Current stat
 
 ### Step 1 — Core Builtins (Plan 21 Unblock)
 
-**Goal**: Add builtins needed for Zitadel auth configuration. **AI agent time**: ~4.5 hours
+**Goal**: Add builtins needed for Zitadel auth configuration. **AI agent time**: ~3 hours
 
 Scope:
 
-- Add Rust builtins: `fs.read`, `crypto.jwt_sign`, `http.delete`, `base64.encode/decode`
-- Strip Rust check types: `type: http`, `type: prometheus`, `prometheus.query()` builtin
+- Add Rust builtins: `fs.read`, `crypto.jwt_sign` (RS256/384/512), `http.delete`,
+  `base64.encode/decode`
+- Keep native check types: `type: http`, `type: prometheus`, `type: script` (batteries-included DX
+  for common patterns; Lua scripts for complex cases)
 - Add Lua stdlib system (embedded .lua files via `include_dir!`)
-- Ship `stdlib/prometheus.lua` (replacement for removed Rust builtin)
-- Migrate 10 `type: http` YAML checks to Lua scripts in jeebon gitops
-- Add Rust unit + integration tests for new builtins
-- Dependencies: +jsonwebtoken 10.3, +zeroize 1.8, +include_dir
-- Target binary: ~5.3 MB
-
-Migration impact (type:http removal):
-
-| Job                 | Current                                         | Migration                  |
-| ------------------- | ----------------------------------------------- | -------------------------- |
-| traefik-verify      | 4x type:http (dex, argocd, kargo, oauth2-proxy) | 1 multi-check Lua script   |
-| redis-verify        | 1x type:http (redisinsight)                     | Add to existing Lua script |
-| postgres-verify     | 1x type:http (pgadmin)                          | Add to existing Lua script |
-| mariadb-verify      | 1x type:http (phpmyadmin)                       | Add to existing Lua script |
-| openbao-verify      | 1x type:http (vault UI)                         | Add to existing Lua script |
-| secret-store-verify | 1x type:http (openbao)                          | Add to existing Lua script |
-| prometheus-verify   | 1x type:http (prometheus)                       | Add to existing Lua script |
+- Ship `stdlib/prometheus.lua` (Lua-side Prometheus client for `type: script` checks)
+- DRY http builtins (collapsed 4x duplicated methods into generic loop)
+- Add Rust unit tests (base64, JSON conversion, value equality, string escaping)
+- Add Rust integration tests with wiremock (HTTP methods, JWT sign+verify, fs.read, base64, stdlib
+  require, env, assert, json, time/sleep)
+- Dependencies: +jsonwebtoken 10.3 (rust_crypto), +zeroize 1.8, +data-encoding 2.10, +include_dir
+  0.7
+- Dev dependencies: +wiremock 0.6, +tokio-test 0.4
+- Add `src/lib.rs` for integration test access to `lua` module
 
 ### Step 2 — Foundation
 
