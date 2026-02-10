@@ -27,5 +27,5 @@ jobs:
       - name: Tests
         run: cargo test
 
-      - name: Format check
-        run: cargo fmt --check
+      # Formatting is enforced by dprint locally (not rustfmt)
+      # dprint handles Rust, Markdown, YAML, JSON, TOML
