@@ -435,19 +435,26 @@ Binary delta between "light" (no server/db) and "full" is ~2.4 MB. Not worth spl
 
 Decision: One binary, one Docker image. All features compiled in. Modes control exposure.
 
-### D2: Lua 5.4 (Not LuaJIT)
+### D2: Lua 5.5 (Not LuaJIT)
+
+Lua 5.5.0 (released 22 Dec 2025) over 5.4 and LuaJIT. Key 5.5 improvements:
+
+- Declarations for global variables (catches accidental globals — reduces bugs)
+- Named vararg tables (cleaner function signatures)
+- More compact arrays (less memory)
+- Major GC done incrementally (smoother latency for long-running `http.serve()` scripts)
 
 Our scripts are I/O bound (HTTP calls, sleep between retries). CPU-bound Lua execution is <1% of
 total Job time. LuaJIT's 5-10x speedup on CPU ops gives near-zero benefit.
 
 LuaJIT disadvantages:
 
-- Lua 5.1 only (missing 5.4 features: native int64, goto, integer division)
+- Lua 5.1 only (missing 5.5 features: native int64, goto, global declarations, incremental major GC)
 - 4GB memory ceiling (32-bit pointers internally)
 - Maintenance concerns (Mike Pall stepped down)
 - MUSL static linking issues with LuaJIT's assembler
 
-Decision: Lua 5.4 default. mlua supports LuaJIT via cargo feature flag if ever needed.
+Decision: Lua 5.5 default. mlua supports LuaJIT via cargo feature flag if ever needed.
 
 ### D3: Sandbox Architecture
 
