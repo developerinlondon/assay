@@ -1,3 +1,6 @@
+-- Requires: Prometheus running in Kubernetes (kube-prometheus-stack)
+-- Override URL: PROMETHEUS_URL=http://localhost:9090 assay examples/prometheus-scrape.lua
+
 local prom = require("assay.prometheus")
 
 local prom_url = env.get("PROMETHEUS_URL") or "http://kube-prometheus-stack-prometheus.monitoring:9090"

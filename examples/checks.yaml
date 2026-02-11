@@ -1,4 +1,5 @@
 # Example: monitoring stack verification
+# Requires: Kubernetes cluster with Grafana, Prometheus, and Loki deployed
 # Run: assay examples/checks.yaml
 
 timeout: 120s

@@ -32,9 +32,9 @@ Container image size comparison (compressed pull):
 |                                                                  |
 | Assay Full       ## 6 MB                                         |
 | Python alpine    ########## 17 MB                                |
-| bitnami/kubectl  #################### 35 MB                     |
-| Python slim      ########################## 43 MB               |
-| Node.js alpine   ################################## 57 MB       |
+| bitnami/kubectl  #################### 35 MB                      |
+| Python slim      ########################## 43 MB                |
+| Node.js alpine   ################################## 57 MB        |
 | alpine/k8s       ######################################## 60 MB  |
 | Deno             ############################################ 75 |
 | Node.js slim     ############################################### |
@@ -54,16 +54,33 @@ Container image size comparison (compressed pull):
 
 ## Installation
 
-### Cargo
+### Pre-built Binary (fastest)
+
+Download from [GitHub Releases](https://github.com/developerinlondon/assay/releases/latest):
 
 ```bash
-cargo install assay
+# Linux (x86_64, static — runs on any distro, no dependencies)
+curl -L -o assay https://github.com/developerinlondon/assay/releases/latest/download/assay-linux-x86_64
+chmod +x assay
+sudo mv assay /usr/local/bin/
+
+# macOS (Apple Silicon)
+curl -L -o assay https://github.com/developerinlondon/assay/releases/latest/download/assay-darwin-aarch64
+chmod +x assay
+sudo mv assay /usr/local/bin/
 ```
 
 ### Docker
 
 ```bash
-docker pull ghcr.io/developerinlondon/assay:v0.1.0
+docker pull ghcr.io/developerinlondon/assay:latest
+docker run --rm ghcr.io/developerinlondon/assay:latest --version
+```
+
+### Cargo
+
+```bash
+cargo install assay
 ```
 
 ### From Source
@@ -510,15 +527,26 @@ dprint fmt
 
 ### Run Examples
 
+Self-contained scripts (no external services needed):
+
 ```bash
-# YAML check mode
+cargo run -- tests/e2e/check_json.lua
+cargo run -- tests/e2e/check_yaml.lua
+cargo run -- tests/e2e/check_toml.lua
+cargo run -- tests/e2e/check_base64.lua
+cargo run -- tests/e2e/check_crypto.lua
+cargo run -- tests/e2e/check_regex.lua
+cargo run -- tests/e2e/check_fs.lua
+cargo run -- tests/e2e/check_template.lua
+```
+
+Kubernetes examples (require services running in-cluster):
+
+```bash
 cargo run -- examples/checks.yaml
-
-# Lua script mode
 cargo run -- examples/grafana-health.lua
-
-# With verbose logging
-cargo run -- --verbose examples/checks.yaml
+cargo run -- examples/prometheus-scrape.lua
+cargo run -- examples/loki-test.lua
 ```
 
 ## Architecture

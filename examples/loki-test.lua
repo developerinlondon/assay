@@ -1,3 +1,6 @@
+-- Requires: Loki running in Kubernetes (loki-stack or grafana/loki)
+-- Override URL: LOKI_URL=http://localhost:3100 assay examples/loki-test.lua
+
 local loki = require("assay.loki")
 
 local loki_url = env.get("LOKI_URL") or "http://loki-gateway.monitoring:80"

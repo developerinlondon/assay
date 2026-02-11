@@ -1,3 +1,6 @@
+-- Requires: Grafana running in Kubernetes (kube-prometheus-stack)
+-- Override URL: GRAFANA_URL=http://localhost:3000 assay examples/grafana-health.lua
+
 local grafana = require("assay.grafana")
 local hc = require("assay.healthcheck")
 

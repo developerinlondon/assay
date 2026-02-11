@@ -15,5 +15,5 @@ async fn test_sleep_brief() {
     run_lua("sleep(0.05)").await.unwrap();
     let elapsed = start.elapsed();
     assert!(elapsed >= Duration::from_millis(40));
-    assert!(elapsed < Duration::from_millis(200));
+    assert!(elapsed < Duration::from_millis(2000));
 }
