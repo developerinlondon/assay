@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+#[allow(dead_code)]
 pub fn create_vm() -> mlua::Lua {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -8,6 +9,7 @@ pub fn create_vm() -> mlua::Lua {
     assay::lua::create_vm(client).unwrap()
 }
 
+#[allow(dead_code)]
 pub async fn run_lua(script: &str) -> Result<(), mlua::Error> {
     let vm = create_vm();
     let script = assay::lua::async_bridge::strip_shebang(script);

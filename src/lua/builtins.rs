@@ -1,5 +1,6 @@
 use data_encoding::BASE64;
 use digest::Digest;
+use futures_util::{SinkExt, StreamExt};
 use http_body_util::Full;
 use hyper::body::{Bytes, Incoming};
 use hyper::server::conn::http1;
@@ -15,6 +16,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
+use tokio_tungstenite::MaybeTlsStream;
 use tracing::{error, info, warn};
 use zeroize::Zeroizing;
 
@@ -34,6 +36,8 @@ pub fn register_all(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     register_regex(lua)?;
     register_async(lua)?;
     register_db(lua)?;
+    register_ws(lua)?;
+    register_template(lua)?;
     Ok(())
 }
 
@@ -1289,6 +1293,164 @@ fn format_lua_value(val: &Value) -> String {
         },
         _ => format!("<{}>", val.type_name()),
     }
+}
+
+type WsSink = Rc<
+    tokio::sync::Mutex<
+        futures_util::stream::SplitSink<
+            tokio_tungstenite::WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+            tokio_tungstenite::tungstenite::Message,
+        >,
+    >,
+>;
+type WsStream = Rc<
+    tokio::sync::Mutex<
+        futures_util::stream::SplitStream<
+            tokio_tungstenite::WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+        >,
+    >,
+>;
+
+struct WsConn {
+    sink: WsSink,
+    stream: WsStream,
+}
+impl UserData for WsConn {}
+
+fn extract_ws_conn(val: &Value, fn_name: &str) -> mlua::Result<(WsSink, WsStream)> {
+    let ud = match val {
+        Value::UserData(ud) => ud,
+        _ => {
+            return Err(mlua::Error::runtime(format!(
+                "{fn_name}: first argument must be a ws connection"
+            )));
+        }
+    };
+    let ws = ud.borrow::<WsConn>().map_err(|_| {
+        mlua::Error::runtime(format!(
+            "{fn_name}: first argument must be a ws connection"
+        ))
+    })?;
+    Ok((ws.sink.clone(), ws.stream.clone()))
+}
+
+fn register_ws(lua: &Lua) -> mlua::Result<()> {
+    let ws_table = lua.create_table()?;
+
+    let connect_fn = lua.create_async_function(|lua, url: String| async move {
+        let (stream, _response) = tokio_tungstenite::connect_async(&url)
+            .await
+            .map_err(|e| mlua::Error::runtime(format!("ws.connect: {e}")))?;
+        let (sink, read) = stream.split();
+        lua.create_any_userdata(WsConn {
+            sink: Rc::new(tokio::sync::Mutex::new(sink)),
+            stream: Rc::new(tokio::sync::Mutex::new(read)),
+        })
+    })?;
+    ws_table.set("connect", connect_fn)?;
+
+    let send_fn = lua.create_async_function(|_, (conn, msg): (Value, String)| async move {
+        let (sink, _stream) = extract_ws_conn(&conn, "ws.send")?;
+        sink.lock()
+            .await
+            .send(tokio_tungstenite::tungstenite::Message::Text(msg.into()))
+            .await
+            .map_err(|e| mlua::Error::runtime(format!("ws.send: {e}")))?;
+        Ok(())
+    })?;
+    ws_table.set("send", send_fn)?;
+
+    let recv_fn = lua.create_async_function(|_, conn: Value| async move {
+        let (_sink, stream) = extract_ws_conn(&conn, "ws.recv")?;
+        loop {
+            let msg = stream
+                .lock()
+                .await
+                .next()
+                .await
+                .ok_or_else(|| mlua::Error::runtime("ws.recv: connection closed"))?
+                .map_err(|e| mlua::Error::runtime(format!("ws.recv: {e}")))?;
+            match msg {
+                tokio_tungstenite::tungstenite::Message::Text(t) => {
+                    return Ok(t.to_string());
+                }
+                tokio_tungstenite::tungstenite::Message::Binary(b) => {
+                    return String::from_utf8(b.into()).map_err(|e| {
+                        mlua::Error::runtime(format!("ws.recv: invalid UTF-8: {e}"))
+                    });
+                }
+                tokio_tungstenite::tungstenite::Message::Close(_) => {
+                    return Err(mlua::Error::runtime("ws.recv: connection closed"));
+                }
+                _ => continue,
+            }
+        }
+    })?;
+    ws_table.set("recv", recv_fn)?;
+
+    let close_fn = lua.create_async_function(|_, conn: Value| async move {
+        let (sink, _stream) = extract_ws_conn(&conn, "ws.close")?;
+        sink.lock()
+            .await
+            .close()
+            .await
+            .map_err(|e| mlua::Error::runtime(format!("ws.close: {e}")))?;
+        Ok(())
+    })?;
+    ws_table.set("close", close_fn)?;
+
+    lua.globals().set("ws", ws_table)?;
+    Ok(())
+}
+
+fn register_template(lua: &Lua) -> mlua::Result<()> {
+    let tmpl_table = lua.create_table()?;
+
+    let render_string_fn = lua.create_function(|_, (template_str, vars): (String, Value)| {
+        let json_vars = match &vars {
+            Value::Table(_) => lua_value_to_json(&vars)?,
+            Value::Nil => serde_json::Value::Object(serde_json::Map::new()),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "template.render_string: second argument must be a table or nil",
+                ));
+            }
+        };
+        let mini_vars = minijinja::value::Value::from_serialize(&json_vars);
+        let env = minijinja::Environment::new();
+        let tmpl = env
+            .template_from_str(&template_str)
+            .map_err(|e| mlua::Error::runtime(format!("template.render_string: {e}")))?;
+        tmpl.render(mini_vars)
+            .map_err(|e| mlua::Error::runtime(format!("template.render_string: {e}")))
+    })?;
+    tmpl_table.set("render_string", render_string_fn)?;
+
+    let render_fn = lua.create_function(|_, (file_path, vars): (String, Value)| {
+        let content = std::fs::read_to_string(&file_path).map_err(|e| {
+            mlua::Error::runtime(format!("template.render: failed to read {file_path:?}: {e}"))
+        })?;
+        let json_vars = match &vars {
+            Value::Table(_) => lua_value_to_json(&vars)?,
+            Value::Nil => serde_json::Value::Object(serde_json::Map::new()),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "template.render: second argument must be a table or nil",
+                ));
+            }
+        };
+        let mini_vars = minijinja::value::Value::from_serialize(&json_vars);
+        let env = minijinja::Environment::new();
+        let tmpl = env
+            .template_from_str(&content)
+            .map_err(|e| mlua::Error::runtime(format!("template.render: {e}")))?;
+        tmpl.render(mini_vars)
+            .map_err(|e| mlua::Error::runtime(format!("template.render: {e}")))
+    })?;
+    tmpl_table.set("render", render_fn)?;
+
+    lua.globals().set("template", tmpl_table)?;
+    Ok(())
 }
 
 fn lua_string_literal(s: &str) -> String {

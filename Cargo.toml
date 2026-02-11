@@ -61,6 +61,13 @@ toml = "0.9.12"
 # SQL database (Postgres, MySQL, SQLite)
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "mysql", "sqlite", "any"] }
 
+# WebSocket client
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.28.0", features = ["connect", "rustls-tls-webpki-roots"] }
+
+# Template engine (Jinja2-compatible)
+minijinja = "2.15.1"
+
 # HTTP server
 axum = "0.8.8"
 http-body-util = "0.1"
