@@ -2,6 +2,14 @@
 
 All notable changes to Assay are documented here.
 
+## [0.3.1] - 2026-02-11
+
+- Publish crate as `assay-lua` on crates.io (binary still installs as `assay`)
+- Add release pipeline: pre-built binaries (Linux x86_64 static, macOS Apple Silicon), Docker,
+  crates.io
+- Add prerequisite docs to K8s-dependent examples
+- Fix flaky sleep timing test
+
 ## [0.3.0] - 2026-02-11
 
 First feature-complete release. Assay is now a general-purpose Lua runtime for Kubernetes — covering
