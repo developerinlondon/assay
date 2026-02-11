@@ -553,7 +553,7 @@ cargo run -- examples/loki-test.lua
 
 ```
 +------------------------------------------------------------------+
-| Assay v0.1.0 (~9 MB static MUSL binary, Alpine container)       |
+| Assay v0.3.0 (~9 MB static MUSL binary, Alpine container)       |
 |                                                                  |
 | CLI (auto-detected by file extension):                           |
 |   assay config.yaml           (.yaml -> check orchestration)     |

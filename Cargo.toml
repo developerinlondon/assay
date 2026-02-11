@@ -1,6 +1,6 @@
 [package]
 name = "assay"
-version = "0.1.0"
+version = "0.3.0"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"

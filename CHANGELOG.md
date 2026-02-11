@@ -2,7 +2,7 @@
 
 All notable changes to Assay are documented here.
 
-## [0.1.0] - 2026-02-10
+## [0.3.0] - 2026-02-11
 
 First feature-complete release. Assay is now a general-purpose Lua runtime for Kubernetes — covering
 verification, scripting, automation, and lightweight web services in a single ~9 MB binary.
