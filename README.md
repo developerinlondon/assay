@@ -3,7 +3,7 @@
 Lightweight Lua runtime for Kubernetes. Verification, scripting, and web services.
 
 [![CI](https://github.com/developerinlondon/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/developerinlondon/assay/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/assay.svg)](https://crates.io/crates/assay)
+[![Crates.io](https://img.shields.io/crates/v/assay-lua.svg)](https://crates.io/crates/assay-lua)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## What is Assay?
@@ -80,7 +80,7 @@ docker run --rm ghcr.io/developerinlondon/assay:latest --version
 ### Cargo
 
 ```bash
-cargo install assay
+cargo install assay-lua
 ```
 
 ### From Source
@@ -625,6 +625,6 @@ Contributions welcome! Please open an issue or PR on GitHub.
 ## Links
 
 - **Repository**: https://github.com/developerinlondon/assay
-- **Crates.io**: https://crates.io/crates/assay
+- **Crates.io**: https://crates.io/crates/assay-lua
 - **Docker**: https://github.com/developerinlondon/assay/pkgs/container/assay
 - **Issues**: https://github.com/developerinlondon/assay/issues

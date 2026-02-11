@@ -1,5 +1,5 @@
 [package]
-name = "assay"
+name = "assay-lua"
 version = "0.3.0"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
@@ -8,6 +8,10 @@ keywords = ["verification", "testing", "lua", "kubernetes", "validation"]
 license = "MIT"
 repository = "https://github.com/developerinlondon/assay"
 description = "Lightweight Lua runtime for Kubernetes. Verification, scripting, and web services."
+
+[[bin]]
+name = "assay"
+path = "src/main.rs"
 
 [dependencies]
 # Lua scripting engine
