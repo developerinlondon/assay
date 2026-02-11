@@ -50,7 +50,7 @@ scripting. Runs as an ArgoCD PostSync hook Job to verify deployments actually wo
 |  | Rust Core (tokio async runtime)                            |  |
 |  |                                                            |  |
 |  |  +-- Config parser (serde_yml) -- reads checks.yaml        |  |
-|  |  +-- CLI (clap) -- `assay --config checks.yaml`            |  |
+|  |  +-- CLI (clap) -- `assay checks.yaml` / `assay script.lua` |  |
 |  |  +-- Runner -- orchestrates checks, retries, timeouts      |  |
 |  |  +-- HTTP client (reqwest) -- async GET/POST               |  |
 |  |  +-- JSON engine (serde_json) -- parse + encode            |  |

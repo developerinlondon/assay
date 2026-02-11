@@ -10,6 +10,8 @@ use zeroize::Zeroizing;
 pub fn register_all(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     register_http(lua, client)?;
     register_json(lua)?;
+    register_yaml(lua)?;
+    register_toml(lua)?;
     register_assert(lua)?;
     register_log(lua)?;
     register_env(lua)?;
@@ -19,6 +21,7 @@ pub fn register_all(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     register_base64(lua)?;
     register_crypto(lua)?;
     register_regex(lua)?;
+    register_async(lua)?;
     Ok(())
 }
 
@@ -491,6 +494,20 @@ fn register_fs(lua: &Lua) -> mlua::Result<()> {
     })?;
     fs_table.set("read", read_fn)?;
 
+    let write_fn = lua.create_function(|_, (path, content): (String, String)| {
+        let p = std::path::Path::new(&path);
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                mlua::Error::runtime(format!(
+                    "fs.write: failed to create directories for {path:?}: {e}"
+                ))
+            })?;
+        }
+        std::fs::write(&path, &content)
+            .map_err(|e| mlua::Error::runtime(format!("fs.write: failed to write {path:?}: {e}")))
+    })?;
+    fs_table.set("write", write_fn)?;
+
     lua.globals().set("fs", fs_table)?;
     Ok(())
 }
@@ -644,6 +661,52 @@ fn register_crypto(lua: &Lua) -> mlua::Result<()> {
     Ok(())
 }
 
+fn register_yaml(lua: &Lua) -> mlua::Result<()> {
+    let yaml_table = lua.create_table()?;
+
+    let parse_fn = lua.create_function(|lua, s: String| {
+        let json_val: serde_json::Value = serde_yml::from_str(&s)
+            .map_err(|e| mlua::Error::runtime(format!("yaml.parse: {e}")))?;
+        json_value_to_lua(lua, &json_val)
+    })?;
+    yaml_table.set("parse", parse_fn)?;
+
+    let encode_fn = lua.create_function(|_, val: Value| {
+        let json_val = lua_value_to_json(&val)?;
+        serde_yml::to_string(&json_val)
+            .map_err(|e| mlua::Error::runtime(format!("yaml.encode: {e}")))
+    })?;
+    yaml_table.set("encode", encode_fn)?;
+
+    lua.globals().set("yaml", yaml_table)?;
+    Ok(())
+}
+
+fn register_toml(lua: &Lua) -> mlua::Result<()> {
+    let toml_table = lua.create_table()?;
+
+    let parse_fn = lua.create_function(|lua, s: String| {
+        let toml_val: toml::Value = toml::from_str(&s)
+            .map_err(|e| mlua::Error::runtime(format!("toml.parse: {e}")))?;
+        let json_val = serde_json::to_value(&toml_val)
+            .map_err(|e| mlua::Error::runtime(format!("toml.parse: conversion failed: {e}")))?;
+        json_value_to_lua(lua, &json_val)
+    })?;
+    toml_table.set("parse", parse_fn)?;
+
+    let encode_fn = lua.create_function(|_, val: Value| {
+        let json_val = lua_value_to_json(&val)?;
+        let toml_val: toml::Value = serde_json::from_value(json_val)
+            .map_err(|e| mlua::Error::runtime(format!("toml.encode: {e}")))?;
+        toml::to_string_pretty(&toml_val)
+            .map_err(|e| mlua::Error::runtime(format!("toml.encode: {e}")))
+    })?;
+    toml_table.set("encode", encode_fn)?;
+
+    lua.globals().set("toml", toml_table)?;
+    Ok(())
+}
+
 fn register_regex(lua: &Lua) -> mlua::Result<()> {
     let regex_table = lua.create_table()?;
 
@@ -698,6 +761,95 @@ fn register_regex(lua: &Lua) -> mlua::Result<()> {
     regex_table.set("replace", replace_fn)?;
 
     lua.globals().set("regex", regex_table)?;
+    Ok(())
+}
+
+fn register_async(lua: &Lua) -> mlua::Result<()> {
+    let async_table = lua.create_table()?;
+
+    let spawn_fn = lua.create_async_function(|lua, func: mlua::Function| async move {
+        let thread = lua.create_thread(func)?;
+        let async_thread = thread.into_async::<mlua::MultiValue>(())?;
+        let join_handle: tokio::task::JoinHandle<Result<Vec<Value>, String>> =
+            tokio::task::spawn_local(async move {
+                let values = async_thread.await.map_err(|e| e.to_string())?;
+                Ok(values.into_vec())
+            });
+
+        let handle = lua.create_table()?;
+        let cell = std::rc::Rc::new(std::cell::RefCell::new(Some(join_handle)));
+        let cell_clone = cell.clone();
+
+        let await_fn = lua.create_async_function(move |lua, ()| {
+            let cell = cell_clone.clone();
+            async move {
+                let join_handle = cell
+                    .borrow_mut()
+                    .take()
+                    .ok_or_else(|| mlua::Error::runtime("async handle already awaited"))?;
+                let result = join_handle.await.map_err(|e| {
+                    mlua::Error::runtime(format!("async.spawn: task panicked: {e}"))
+                })?;
+                match result {
+                    Ok(values) => {
+                        let tbl = lua.create_table()?;
+                        for (i, v) in values.into_iter().enumerate() {
+                            tbl.set(i + 1, v)?;
+                        }
+                        Ok(Value::Table(tbl))
+                    }
+                    Err(msg) => Err(mlua::Error::runtime(msg)),
+                }
+            }
+        })?;
+        handle.set("await", await_fn)?;
+
+        Ok(handle)
+    })?;
+    async_table.set("spawn", spawn_fn)?;
+
+    let spawn_interval_fn =
+        lua.create_async_function(|lua, (seconds, func): (f64, mlua::Function)| async move {
+            if seconds <= 0.0 {
+                return Err(mlua::Error::runtime(
+                    "async.spawn_interval: interval must be positive",
+                ));
+            }
+
+            let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let cancel_clone = cancel.clone();
+
+            tokio::task::spawn_local({
+                let cancel = cancel_clone.clone();
+                async move {
+                    let mut interval =
+                        tokio::time::interval(std::time::Duration::from_secs_f64(seconds));
+                    interval.tick().await;
+                    loop {
+                        interval.tick().await;
+                        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                            break;
+                        }
+                        if let Err(e) = func.call_async::<()>(()).await {
+                            error!("async.spawn_interval: callback error: {e}");
+                            break;
+                        }
+                    }
+                }
+            });
+
+            let handle = lua.create_table()?;
+            let cancel_fn = lua.create_function(move |_, ()| {
+                cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                Ok(())
+            })?;
+            handle.set("cancel", cancel_fn)?;
+
+            Ok(handle)
+        })?;
+    async_table.set("spawn_interval", spawn_interval_fn)?;
+
+    lua.globals().set("async", async_table)?;
     Ok(())
 }
 

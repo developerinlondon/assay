@@ -55,6 +55,9 @@ rand = "0.10.0"
 # Lightweight regex
 regex-lite = "0.1.9"
 
+# TOML parsing/encoding
+toml = "0.9.12"
+
 [dev-dependencies]
 tokio-test = "0.4"
 wiremock = "0.6.5"

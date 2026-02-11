@@ -584,19 +584,22 @@ Scope:
 - Dependencies: +sha2, +sha3, +rand, +regex-lite
 - Target binary: ~5.5 MB
 
-### Step 3 — General Purpose + Direct Lua Execution
+### Step 3 — General Purpose + Direct Lua Execution ✅
 
 **Goal**: Serde completeness + async + fs.write + `assay script.lua` support with shebang. **AI
 agent time**: ~4.5 hours
 
-Scope:
+Completed (commit TBD):
 
-- Add builtins: `fs.write`, `yaml.parse/encode`, `toml.parse/encode`, `async.spawn/spawn_interval`
-- Add direct .lua execution: `assay script.lua` (auto-detect by file extension, no subcommand)
-- Shebang support: `#!/usr/bin/assay` (Lua natively skips `#!` lines)
-- Begin migrating bootstrap Jobs from shell to Lua (postgres-bootstrap, redis-bootstrap as proof)
-- Dependencies: +toml
-- Target binary: ~5.6 MB
+- Added builtins: `fs.write`, `yaml.parse/encode`, `toml.parse/encode`, `async.spawn/spawn_interval`
+- Added direct .lua execution: `assay script.lua` (auto-detect by file extension, positional arg)
+- CLI changed from `assay --config file.yaml` to `assay <file>` (auto-detect .yaml/.yml/.lua)
+- Shebang support: `#!/usr/bin/assay` (Lua 5.5 natively skips `#!` lines — zero code needed)
+- async.spawn uses `tokio::task::spawn_local` + `LocalSet` (Lua values are !Send)
+- async.spawn returns handle with `.await()` method; spawn_interval returns handle with `.cancel()`
+- 33 new tests (fs.write: 4, yaml: 9, toml: 8, async: 9, plus 3 existing fs tests kept)
+- Dependencies: +toml 0.9.12 (serde_yml already existed)
+- Total: 449 tests, 0 failures, 0 clippy warnings
 
 ### Step 4 — HTTP Server Builtin
 
@@ -688,6 +691,7 @@ Scope:
 - Final audit: clippy, all tests green, dprint clean
 - GitHub release with changelog
 - Tag v0.1.0, push Docker image
+- CI: add macOS build matrix (`macos-14` Apple Silicon runner) for native macOS binary
 - Target binary: ~9 MB
 
 ### Timeline Summary

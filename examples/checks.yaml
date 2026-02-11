@@ -1,5 +1,5 @@
 # Example: monitoring stack verification
-# Run: assay --config examples/checks.yaml
+# Run: assay examples/checks.yaml
 
 timeout: 120s
 retries: 3
