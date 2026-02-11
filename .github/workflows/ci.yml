@@ -11,21 +11,32 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - name: Clippy (warnings = errors)
-        run: cargo clippy --tests -- -D warnings
+        run: cargo clippy --tests --target ${{ matrix.target }} -- -D warnings
 
       - name: Tests
-        run: cargo test
+        run: cargo test --target ${{ matrix.target }}
 
       # Formatting is enforced by dprint locally (not rustfmt)
       # dprint handles Rust, Markdown, YAML, JSON, TOML
