@@ -1,9 +1,17 @@
 use data_encoding::BASE64;
 use digest::Digest;
+use http_body_util::Full;
+use hyper::body::{Bytes, Incoming};
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use mlua::{Lua, Table, Value};
 use rand::RngExt;
+use std::collections::HashMap;
+use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 use zeroize::Zeroizing;
 
@@ -142,8 +150,178 @@ fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
         http_table.set(method, func)?;
     }
 
+    let serve_fn =
+        lua.create_async_function(|lua, args: mlua::MultiValue| async move {
+            let mut args_iter = args.into_iter();
+
+            let port: u16 = match args_iter.next() {
+                Some(Value::Integer(n)) => n as u16,
+                _ => {
+                    return Err::<(), _>(mlua::Error::runtime(
+                        "http.serve: first argument must be a port number",
+                    ));
+                }
+            };
+
+            let routes_table = match args_iter.next() {
+                Some(Value::Table(t)) => t,
+                _ => {
+                    return Err::<(), _>(mlua::Error::runtime(
+                        "http.serve: second argument must be a routes table",
+                    ));
+                }
+            };
+
+            let routes = Rc::new(parse_routes(&routes_table)?);
+
+            let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+                .await
+                .map_err(|e| mlua::Error::runtime(format!("http.serve: bind failed: {e}")))?;
+
+            loop {
+                let (stream, _addr) = listener.accept().await.map_err(|e| {
+                    mlua::Error::runtime(format!("http.serve: accept failed: {e}"))
+                })?;
+
+                let routes = routes.clone();
+                let lua_clone = lua.clone();
+
+                tokio::task::spawn_local(async move {
+                    let io = hyper_util::rt::TokioIo::new(stream);
+                    let routes = routes.clone();
+                    let lua = lua_clone.clone();
+
+                    let service = service_fn(move |req: Request<Incoming>| {
+                        let routes = routes.clone();
+                        let lua = lua.clone();
+                        async move { handle_request(&lua, &routes, req).await }
+                    });
+
+                    if let Err(e) = http1::Builder::new().serve_connection(io, service).await
+                        && !e.to_string().contains("connection closed")
+                    {
+                        error!("http.serve: connection error: {e}");
+                    }
+                });
+            }
+        })?;
+    http_table.set("serve", serve_fn)?;
+
     lua.globals().set("http", http_table)?;
     Ok(())
+}
+
+fn parse_routes(routes_table: &Table) -> mlua::Result<HashMap<(String, String), mlua::Function>> {
+    let mut routes = HashMap::new();
+    for method_pair in routes_table.pairs::<String, Table>() {
+        let (method, paths_table) = method_pair?;
+        let method_upper = method.to_uppercase();
+        for path_pair in paths_table.pairs::<String, mlua::Function>() {
+            let (path, func) = path_pair?;
+            routes.insert((method_upper.clone(), path), func);
+        }
+    }
+    Ok(routes)
+}
+
+async fn handle_request(
+    lua: &Lua,
+    routes: &HashMap<(String, String), mlua::Function>,
+    req: Request<Incoming>,
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
+    let method = req.method().to_string();
+    let path = req.uri().path().to_string();
+    let query = req.uri().query().unwrap_or("").to_string();
+    let headers: Vec<(String, String)> = req
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
+        .collect();
+
+    let body_bytes = match http_body_util::BodyExt::collect(req.into_body()).await {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => Bytes::new(),
+    };
+    let body_str = String::from_utf8_lossy(&body_bytes).to_string();
+
+    let key = (method.clone(), path.clone());
+    let handler = match routes.get(&key) {
+        Some(f) => f,
+        None => {
+            return Ok(Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .header("content-type", "text/plain")
+                .body(Full::new(Bytes::from("not found")))
+                .unwrap());
+        }
+    };
+
+    match build_lua_request_and_call(lua, handler, &method, &path, &query, &headers, &body_str) {
+        Ok(lua_resp) => lua_response_to_http(&lua_resp),
+        Err(e) => Ok(Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .header("content-type", "text/plain")
+            .body(Full::new(Bytes::from(format!("handler error: {e}"))))
+            .unwrap()),
+    }
+}
+
+fn build_lua_request_and_call(
+    lua: &Lua,
+    handler: &mlua::Function,
+    method: &str,
+    path: &str,
+    query: &str,
+    headers: &[(String, String)],
+    body: &str,
+) -> mlua::Result<Table> {
+    let req_table = lua.create_table()?;
+    req_table.set("method", method.to_string())?;
+    req_table.set("path", path.to_string())?;
+    req_table.set("query", query.to_string())?;
+    req_table.set("body", body.to_string())?;
+
+    let headers_table = lua.create_table()?;
+    for (k, v) in headers {
+        headers_table.set(k.as_str(), v.as_str())?;
+    }
+    req_table.set("headers", headers_table)?;
+
+    handler.call::<Table>(req_table)
+}
+
+fn lua_response_to_http(
+    resp_table: &Table,
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
+    let status = resp_table
+        .get::<Option<u16>>("status")
+        .unwrap_or(None)
+        .unwrap_or(200);
+
+    let mut builder =
+        Response::builder().status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
+
+    if let Ok(Some(headers_table)) = resp_table.get::<Option<Table>>("headers") {
+        for (k, v) in headers_table.pairs::<String, String>().flatten() {
+            builder = builder.header(k, v);
+        }
+    }
+
+    let body_bytes = if let Ok(Some(json_table)) = resp_table.get::<Option<Table>>("json") {
+        let json_val =
+            lua_value_to_json(&Value::Table(json_table)).unwrap_or(serde_json::Value::Null);
+        let serialized = serde_json::to_string(&json_val).unwrap_or_else(|_| "null".to_string());
+        builder = builder.header("content-type", "application/json");
+        Bytes::from(serialized)
+    } else if let Ok(Some(body_str)) = resp_table.get::<Option<String>>("body") {
+        builder = builder.header("content-type", "text/plain");
+        Bytes::from(body_str)
+    } else {
+        builder = builder.header("content-type", "text/plain");
+        Bytes::new()
+    };
+
+    Ok(builder.body(Full::new(body_bytes)).unwrap())
 }
 
 fn register_json(lua: &Lua) -> mlua::Result<()> {
