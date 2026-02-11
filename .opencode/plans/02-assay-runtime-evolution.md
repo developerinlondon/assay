@@ -62,10 +62,11 @@ Recommendation: TBD — owner decides.
 |   async.{spawn,spawn_interval}                                   |
 |                                                                  |
 | Lua Stdlib (embedded .lua files via include_dir!):               |
-|   require("assay.prometheus")  require("assay.vault")            |
-|   require("assay.openbao")    (alias for vault)                  |
-|   require("assay.k8s")        require("assay.healthcheck")       |
-|   require("assay.loki")       require("assay.grafana")           |
+|   Monitoring: prometheus, alertmanager, loki, grafana             |
+|   K8s/GitOps: k8s, argocd, kargo, flux, traefik                 |
+|   Security:   vault, openbao (alias), certmanager, eso, dex      |
+|   Infra:      crossplane, velero, temporal, harbor               |
+|   Utilities:  healthcheck                                        |
 |                                                                  |
 | Security:                                                        |
 |   .yaml checks: Sandboxed (safe builtins only, fresh VM)        |
@@ -362,7 +363,7 @@ test framework testing Go's standard library. But it cannot be the ONLY testing 
 | Layer       | Current | Target | When                                        |
 | ----------- | :-----: | :----: | ------------------------------------------- |
 | Unit        |   26    |  ~40   | v0.1.0 (11 lib + 15 main)                   |
-| Integration |  ~170   |  ~200  | v0.1.0 (grow with each builtin/stdlib)      |
+| Integration |  ~390   |  ~400  | v0.1.0 (grow with each builtin/stdlib)      |
 | E2E         |    0    |  ~20   | v0.1.0 (after enough features to self-test) |
 
 ## What Our K8s Jobs Currently Do
@@ -473,7 +474,9 @@ all builtins available. The sandbox is a flag, not a mode.
 ### D4: Hybrid Builtin Architecture
 
 - Core builtins in Rust: http, json, assert, crypto, fs, db, server (performance + safety critical)
-- Convenience layers as Lua stdlib: prometheus, vault/openbao, k8s, healthcheck, loki, grafana
+- 19 stdlib modules as embedded Lua: monitoring (prometheus, alertmanager, loki, grafana),
+  k8s/gitops (k8s, argocd, kargo, flux, traefik), security (vault/openbao, certmanager, eso, dex),
+  infra (crossplane, velero, temporal, harbor), utilities (healthcheck)
 - Lua stdlib embedded in binary via `include_dir!` (no external files)
 - Users can `require("assay.prometheus")` etc.
 
@@ -566,20 +569,18 @@ Scope:
 
 - Add builtins: `crypto.hash` (SHA2/SHA3), `crypto.random` (secure random strings), `regex`
   (match/find/replace via regex-lite)
-- Ship stdlib modules (embedded Lua, all using `require("assay.*")`):
-  - `assay.vault` — Vault/OpenBao HTTP client (KV v2, policies, auth, engines, tokens, transit, PKI,
-    health)
-  - `assay.openbao` — alias for vault (OpenBao is API-compatible)
-  - `assay.k8s` — Kubernetes API client (30+ resource types, CRD support, readiness checks, pod
-    status, rollout status, logs, events, secrets, configmaps)
-  - `assay.prometheus` — Prometheus HTTP API (query, query_range, alerts, targets, rules,
-    label_values, series, config_reload, targets_metadata)
-  - `assay.healthcheck` — HTTP health checking (status codes, JSON path validation, body matching,
-    latency thresholds, multi-check aggregation)
-  - `assay.loki` — Loki HTTP API client (push with auto-timestamps, query, query_range, labels,
-    label_values, series, tail, ready, metrics, selector builder)
-  - `assay.grafana` — Grafana HTTP API client (health, datasources, dashboards, search, annotations,
-    org, alert_rules, folders, API key + basic auth)
+- Ship 19 stdlib modules (embedded Lua, all using `require("assay.*")`):
+  - **Monitoring**: prometheus (query, alerts, targets, rules), alertmanager (alerts, silences,
+    receivers), loki (push, query, labels, series), grafana (health, dashboards, datasources)
+  - **K8s/GitOps**: k8s (30+ resource types, CRDs, readiness), argocd (apps, sync, health,
+    projects), kargo (stages, freight, promotions), flux (git repos, kustomizations, helm releases),
+    traefik (routers, services, middlewares, entrypoints)
+  - **Security**: vault/openbao (KV, policies, auth, transit, PKI), certmanager (certificates,
+    issuers, ACME), eso (external secrets, secret stores), dex (OIDC discovery, JWKS, health)
+  - **Infrastructure**: crossplane (providers, XRDs, compositions, managed resources), velero
+    (backups, restores, schedules, storage locations), temporal (workflows, task queues, schedules),
+    harbor (projects, repositories, artifacts, vulnerability scanning)
+  - **Utilities**: healthcheck (HTTP checks, JSON path, body matching, latency, multi-check)
 - Dependencies: +sha2, +sha3, +rand, +regex-lite
 - Target binary: ~5.5 MB
 
