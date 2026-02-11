@@ -20,12 +20,10 @@ async fn test_k8s_get_with_base_url() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/default/pods"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "kind": "PodList",
-                "items": [{"metadata": {"name": "test-pod"}}]
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "kind": "PodList",
+            "items": [{"metadata": {"name": "test-pod"}}]
+        })))
         .mount(&server)
         .await;
 
@@ -49,15 +47,13 @@ async fn test_k8s_get_secret() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/infra/secrets/db-creds"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "kind": "Secret",
-                "data": {
-                    "username": "YWRtaW4=",
-                    "password": "c2VjcmV0"
-                }
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "kind": "Secret",
+            "data": {
+                "username": "YWRtaW4=",
+                "password": "c2VjcmV0"
+            }
+        })))
         .mount(&server)
         .await;
 
@@ -127,11 +123,9 @@ async fn test_k8s_is_ready_deployment() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/apis/apps/v1/namespaces/infra/deployments/api"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "status": {"replicas": 3, "readyReplicas": 3}
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": {"replicas": 3, "readyReplicas": 3}
+        })))
         .mount(&server)
         .await;
 
@@ -154,11 +148,9 @@ async fn test_k8s_is_ready_deployment_not_ready() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/apis/apps/v1/namespaces/infra/deployments/api"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "status": {"replicas": 3, "readyReplicas": 1}
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": {"replicas": 3, "readyReplicas": 1}
+        })))
         .mount(&server)
         .await;
 
@@ -181,15 +173,13 @@ async fn test_k8s_is_ready_pod() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/infra/pods/worker-0"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "status": {
-                    "conditions": [
-                        {"type": "Ready", "status": "True"}
-                    ]
-                }
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": {
+                "conditions": [
+                    {"type": "Ready", "status": "True"}
+                ]
+            }
+        })))
         .mount(&server)
         .await;
 
@@ -212,15 +202,13 @@ async fn test_k8s_pod_status() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/infra/pods"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "items": [
-                    {"status": {"phase": "Running"}},
-                    {"status": {"phase": "Running"}},
-                    {"status": {"phase": "Pending"}},
-                ]
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {"status": {"phase": "Running"}},
+                {"status": {"phase": "Running"}},
+                {"status": {"phase": "Pending"}},
+            ]
+        })))
         .mount(&server)
         .await;
 
@@ -246,16 +234,14 @@ async fn test_k8s_service_endpoints() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/infra/endpoints/postgres"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "subsets": [{
-                    "addresses": [
-                        {"ip": "10.42.0.5"},
-                        {"ip": "10.42.0.6"}
-                    ]
-                }]
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "subsets": [{
+                "addresses": [
+                    {"ip": "10.42.0.5"},
+                    {"ip": "10.42.0.6"}
+                ]
+            }]
+        })))
         .mount(&server)
         .await;
 
@@ -280,9 +266,7 @@ async fn test_k8s_service_endpoints_empty() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/infra/endpoints/broken"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"subsets": []})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"subsets": []})))
         .mount(&server)
         .await;
 
@@ -306,7 +290,8 @@ async fn test_k8s_logs() {
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/infra/pods/api-7b9d4/log"))
         .respond_with(
-            ResponseTemplate::new(200).set_body_string("2026-02-10 INFO started\n2026-02-10 INFO ready\n"),
+            ResponseTemplate::new(200)
+                .set_body_string("2026-02-10 INFO started\n2026-02-10 INFO ready\n"),
         )
         .mount(&server)
         .await;
@@ -332,17 +317,15 @@ async fn test_k8s_rollout_status() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/apis/apps/v1/namespaces/infra/deployments/api"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "spec": {"replicas": 3},
-                "status": {
-                    "updatedReplicas": 3,
-                    "readyReplicas": 3,
-                    "availableReplicas": 3,
-                    "unavailableReplicas": 0,
-                }
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spec": {"replicas": 3},
+            "status": {
+                "updatedReplicas": 3,
+                "readyReplicas": 3,
+                "availableReplicas": 3,
+                "unavailableReplicas": 0,
+            }
+        })))
         .mount(&server)
         .await;
 
@@ -369,13 +352,11 @@ async fn test_k8s_register_crd() {
         .and(path(
             "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/traefik",
         ))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "kind": "Application",
-                "metadata": {"name": "traefik"},
-                "status": {"health": {"status": "Healthy"}, "sync": {"status": "Synced"}}
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "kind": "Application",
+            "metadata": {"name": "traefik"},
+            "status": {"health": {"status": "Healthy"}, "sync": {"status": "Synced"}}
+        })))
         .mount(&server)
         .await;
 
@@ -401,15 +382,13 @@ async fn test_k8s_list_generic() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/apis/apps/v1/namespaces/infra/deployments"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "kind": "DeploymentList",
-                "items": [
-                    {"metadata": {"name": "api"}},
-                    {"metadata": {"name": "worker"}},
-                ]
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "kind": "DeploymentList",
+            "items": [
+                {"metadata": {"name": "api"}},
+                {"metadata": {"name": "worker"}},
+            ]
+        })))
         .mount(&server)
         .await;
 
@@ -432,14 +411,14 @@ async fn test_k8s_list_generic() {
 async fn test_k8s_is_ready_generic_conditions() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/apis/networking.k8s.io/v1/namespaces/infra/ingresses/web"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "status": {
-                    "conditions": [{"type": "Ready", "status": "True"}]
-                }
-            })),
-        )
+        .and(path(
+            "/apis/networking.k8s.io/v1/namespaces/infra/ingresses/web",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": {
+                "conditions": [{"type": "Ready", "status": "True"}]
+            }
+        })))
         .mount(&server)
         .await;
 
@@ -461,7 +440,9 @@ async fn test_k8s_is_ready_generic_conditions() {
 async fn test_k8s_is_ready_phase_fallback() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/namespaces/infra/persistentvolumeclaims/data-vol"))
+        .and(path(
+            "/api/v1/namespaces/infra/persistentvolumeclaims/data-vol",
+        ))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_json(serde_json::json!({"status": {"phase": "Bound"}})),
@@ -514,21 +495,19 @@ async fn test_k8s_node_status() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/nodes"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "items": [{
-                    "metadata": {
-                        "name": "node-1",
-                        "labels": {"node-role.kubernetes.io/control-plane": ""}
-                    },
-                    "status": {
-                        "conditions": [{"type": "Ready", "status": "True"}],
-                        "capacity": {"cpu": "4", "memory": "8Gi"},
-                        "allocatable": {"cpu": "3800m", "memory": "7Gi"}
-                    }
-                }]
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [{
+                "metadata": {
+                    "name": "node-1",
+                    "labels": {"node-role.kubernetes.io/control-plane": ""}
+                },
+                "status": {
+                    "conditions": [{"type": "Ready", "status": "True"}],
+                    "capacity": {"cpu": "4", "memory": "8Gi"},
+                    "allocatable": {"cpu": "3800m", "memory": "7Gi"}
+                }
+            }]
+        })))
         .mount(&server)
         .await;
 
@@ -555,14 +534,12 @@ async fn test_k8s_events_for() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/infra/events"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "items": [
-                    {"reason": "Scheduled", "message": "Successfully assigned pod"},
-                    {"reason": "Pulled", "message": "Container image pulled"},
-                ]
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {"reason": "Scheduled", "message": "Successfully assigned pod"},
+                {"reason": "Pulled", "message": "Container image pulled"},
+            ]
+        })))
         .mount(&server)
         .await;
 
@@ -586,15 +563,13 @@ async fn test_k8s_get_configmap() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/infra/configmaps/gitops-config"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "kind": "ConfigMap",
-                "data": {
-                    "clusterDomain": "jeebon.xyz",
-                    "environment": "test"
-                }
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "kind": "ConfigMap",
+            "data": {
+                "clusterDomain": "jeebon.xyz",
+                "environment": "test"
+            }
+        })))
         .mount(&server)
         .await;
 

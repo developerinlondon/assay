@@ -5,7 +5,11 @@ use anyhow::{Context, Result};
 pub struct PrometheusCheck;
 
 impl PrometheusCheck {
-    pub async fn execute(&self, config: &CheckConfig, client: &reqwest::Client) -> Result<CheckResult> {
+    pub async fn execute(
+        &self,
+        config: &CheckConfig,
+        client: &reqwest::Client,
+    ) -> Result<CheckResult> {
         let base_url = config
             .url
             .as_deref()

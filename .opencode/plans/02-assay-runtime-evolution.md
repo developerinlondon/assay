@@ -62,8 +62,10 @@ Recommendation: TBD — owner decides.
 |   async.{spawn,spawn_interval}                                   |
 |                                                                  |
 | Lua Stdlib (embedded .lua files via include_dir!):               |
-|   require("assay.prometheus")  require("assay.openbao")          |
-|   require("assay.k8s")  require("assay.helpers")                 |
+|   require("assay.prometheus")  require("assay.vault")            |
+|   require("assay.openbao")    (alias for vault)                  |
+|   require("assay.k8s")        require("assay.healthcheck")       |
+|   require("assay.loki")       require("assay.grafana")           |
 |                                                                  |
 | Security:                                                        |
 |   .yaml checks: Sandboxed (safe builtins only, fresh VM)        |
@@ -355,13 +357,13 @@ test framework testing Go's standard library. But it cannot be the ONLY testing 
 | Lint       | clippy -D warnings | Zero warnings policy                        |
 | Format     | dprint             | Markdown, YAML, JSON, TOML                  |
 
-### Test Counts (Target)
+### Test Counts
 
-| Layer       | Estimated Tests | When                                         |
-| ----------- | :-------------: | -------------------------------------------- |
-| Unit        |       ~40       | v0.3.0+                                      |
-| Integration |       ~80       | v0.3.0+ (grow with each builtin)             |
-| E2E         |       ~20       | v0.5.0+ (after enough features to self-test) |
+| Layer       | Current | Target | When                                        |
+| ----------- | :-----: | :----: | ------------------------------------------- |
+| Unit        |   26    |  ~40   | v0.1.0 (11 lib + 15 main)                   |
+| Integration |  ~170   |  ~200  | v0.1.0 (grow with each builtin/stdlib)      |
+| E2E         |    0    |  ~20   | v0.1.0 (after enough features to self-test) |
 
 ## What Our K8s Jobs Currently Do
 
@@ -471,7 +473,7 @@ all builtins available. The sandbox is a flag, not a mode.
 ### D4: Hybrid Builtin Architecture
 
 - Core builtins in Rust: http, json, assert, crypto, fs, db, server (performance + safety critical)
-- Convenience layers as Lua stdlib: prometheus helpers, OpenBao client, K8s API helpers
+- Convenience layers as Lua stdlib: prometheus, vault/openbao, k8s, healthcheck, loki, grafana
 - Lua stdlib embedded in binary via `include_dir!` (no external files)
 - Users can `require("assay.prometheus")` etc.
 
@@ -558,14 +560,26 @@ Scope:
 
 ### Step 2 — Foundation
 
-**Goal**: Complete crypto, add regex, ship stdlib helpers. **AI agent time**: ~3 hours
+**Goal**: Complete crypto, add regex, ship comprehensive stdlib. **AI agent time**: ~3 hours
 
 Scope:
 
 - Add builtins: `crypto.hash` (SHA2/SHA3), `crypto.random` (secure random strings), `regex`
   (match/find/replace via regex-lite)
-- Ship stdlib: `assay/openbao.lua`, `assay/k8s.lua` helpers
-- Add assay.d.lua type definition file for IDE support
+- Ship stdlib modules (embedded Lua, all using `require("assay.*")`):
+  - `assay.vault` — Vault/OpenBao HTTP client (KV v2, policies, auth, engines, tokens, transit, PKI,
+    health)
+  - `assay.openbao` — alias for vault (OpenBao is API-compatible)
+  - `assay.k8s` — Kubernetes API client (30+ resource types, CRD support, readiness checks, pod
+    status, rollout status, logs, events, secrets, configmaps)
+  - `assay.prometheus` — Prometheus HTTP API (query, query_range, alerts, targets, rules,
+    label_values, series, config_reload, targets_metadata)
+  - `assay.healthcheck` — HTTP health checking (status codes, JSON path validation, body matching,
+    latency thresholds, multi-check aggregation)
+  - `assay.loki` — Loki HTTP API client (push with auto-timestamps, query, query_range, labels,
+    label_values, series, tail, ready, metrics, selector builder)
+  - `assay.grafana` — Grafana HTTP API client (health, datasources, dashboards, search, annotations,
+    org, alert_rules, folders, API key + basic auth)
 - Dependencies: +sha2, +sha3, +rand, +regex-lite
 - Target binary: ~5.5 MB
 

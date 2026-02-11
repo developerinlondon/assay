@@ -5,7 +5,11 @@ use anyhow::{Context, Result, bail};
 pub struct HttpCheck;
 
 impl HttpCheck {
-    pub async fn execute(&self, config: &CheckConfig, client: &reqwest::Client) -> Result<CheckResult> {
+    pub async fn execute(
+        &self,
+        config: &CheckConfig,
+        client: &reqwest::Client,
+    ) -> Result<CheckResult> {
         let url = config
             .url
             .as_deref()
@@ -98,26 +102,30 @@ fn evaluate_json_expression(body: &str, expr: &str) -> Result<bool> {
 
     let actual = navigate_json_path(&parsed, path)?;
 
-    let expected: serde_json::Value = if expected_str.starts_with('"') && expected_str.ends_with('"') {
-        serde_json::Value::String(expected_str[1..expected_str.len() - 1].to_string())
-    } else if expected_str == "true" {
-        serde_json::Value::Bool(true)
-    } else if expected_str == "false" {
-        serde_json::Value::Bool(false)
-    } else if expected_str == "null" {
-        serde_json::Value::Null
-    } else if let Ok(n) = expected_str.parse::<i64>() {
-        serde_json::Value::Number(n.into())
-    } else if let Ok(n) = expected_str.parse::<f64>() {
-        serde_json::json!(n)
-    } else {
-        serde_json::Value::String(expected_str.to_string())
-    };
+    let expected: serde_json::Value =
+        if expected_str.starts_with('"') && expected_str.ends_with('"') {
+            serde_json::Value::String(expected_str[1..expected_str.len() - 1].to_string())
+        } else if expected_str == "true" {
+            serde_json::Value::Bool(true)
+        } else if expected_str == "false" {
+            serde_json::Value::Bool(false)
+        } else if expected_str == "null" {
+            serde_json::Value::Null
+        } else if let Ok(n) = expected_str.parse::<i64>() {
+            serde_json::Value::Number(n.into())
+        } else if let Ok(n) = expected_str.parse::<f64>() {
+            serde_json::json!(n)
+        } else {
+            serde_json::Value::String(expected_str.to_string())
+        };
 
     Ok(actual == &expected)
 }
 
-fn navigate_json_path<'a>(value: &'a serde_json::Value, path: &str) -> Result<&'a serde_json::Value> {
+fn navigate_json_path<'a>(
+    value: &'a serde_json::Value,
+    path: &str,
+) -> Result<&'a serde_json::Value> {
     let path = path.trim_start_matches('.');
     let mut current = value;
     for segment in path.split('.') {

@@ -50,9 +50,9 @@ fn register_stdlib_loader(lua: &Lua) -> mlua::Result<()> {
 
         match STDLIB_DIR.get_file(&path) {
             Some(file) => {
-                let source = file.contents_utf8().ok_or_else(|| {
-                    mlua::Error::runtime(format!("stdlib {path}: invalid UTF-8"))
-                })?;
+                let source = file
+                    .contents_utf8()
+                    .ok_or_else(|| mlua::Error::runtime(format!("stdlib {path}: invalid UTF-8")))?;
                 let loader = lua
                     .load(source)
                     .set_name(format!("@assay/{path}"))

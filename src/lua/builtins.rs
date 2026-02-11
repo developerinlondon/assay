@@ -147,8 +147,8 @@ fn register_json(lua: &Lua) -> mlua::Result<()> {
     let json_table = lua.create_table()?;
 
     let parse_fn = lua.create_function(|lua, s: String| {
-        let value: serde_json::Value =
-            serde_json::from_str(&s).map_err(|e| mlua::Error::runtime(format!("json.parse: {e}")))?;
+        let value: serde_json::Value = serde_json::from_str(&s)
+            .map_err(|e| mlua::Error::runtime(format!("json.parse: {e}")))?;
         json_value_to_lua(lua, &value)
     })?;
     json_table.set("parse", parse_fn)?;
@@ -687,13 +687,14 @@ fn register_regex(lua: &Lua) -> mlua::Result<()> {
     })?;
     regex_table.set("find_all", find_all_fn)?;
 
-    let replace_fn =
-        lua.create_function(|_, (text, pattern, replacement): (String, String, String)| {
+    let replace_fn = lua.create_function(
+        |_, (text, pattern, replacement): (String, String, String)| {
             let re = regex_lite::Regex::new(&pattern).map_err(|e| {
                 mlua::Error::runtime(format!("regex.replace: invalid pattern: {e}"))
             })?;
             Ok(re.replace_all(&text, replacement.as_str()).into_owned())
-        })?;
+        },
+    )?;
     regex_table.set("replace", replace_fn)?;
 
     lua.globals().set("regex", regex_table)?;

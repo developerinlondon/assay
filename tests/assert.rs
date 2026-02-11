@@ -33,11 +33,7 @@ async fn test_assert_contains() {
     run_lua(r#"assert.contains("hello world", "world")"#)
         .await
         .unwrap();
-    assert!(
-        run_lua(r#"assert.contains("hello", "xyz")"#)
-            .await
-            .is_err()
-    );
+    assert!(run_lua(r#"assert.contains("hello", "xyz")"#).await.is_err());
 }
 
 #[tokio::test]

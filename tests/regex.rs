@@ -48,15 +48,13 @@ async fn test_find_all() {
 
 #[tokio::test]
 async fn test_replace() {
-    let result: String =
-        eval_lua(r#"return regex.replace("hello world", "world", "lua")"#).await;
+    let result: String = eval_lua(r#"return regex.replace("hello world", "world", "lua")"#).await;
     assert_eq!(result, "hello lua");
 }
 
 #[tokio::test]
 async fn test_replace_all() {
-    let result: String =
-        eval_lua(r#"return regex.replace("aaa bbb aaa", "aaa", "ccc")"#).await;
+    let result: String = eval_lua(r#"return regex.replace("aaa bbb aaa", "aaa", "ccc")"#).await;
     assert_eq!(result, "ccc bbb ccc");
 }
 

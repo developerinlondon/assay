@@ -6,7 +6,11 @@ use anyhow::{Context, Result};
 pub struct ScriptCheck;
 
 impl ScriptCheck {
-    pub async fn execute(&self, config: &CheckConfig, client: &reqwest::Client) -> Result<CheckResult> {
+    pub async fn execute(
+        &self,
+        config: &CheckConfig,
+        client: &reqwest::Client,
+    ) -> Result<CheckResult> {
         let file_path = config
             .file
             .as_deref()
