@@ -51,6 +51,54 @@ async fn test_jwt_sign_rs256() {
 }
 
 #[tokio::test]
+async fn test_jwt_sign_rs256_with_kid() {
+    let pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let exp = now + 3600;
+
+    let vm = create_vm();
+    vm.globals()
+        .set("test_pem", vm.create_string(&pem).unwrap())
+        .unwrap();
+    vm.globals().set("test_iat", now as i64).unwrap();
+    vm.globals().set("test_exp", exp as i64).unwrap();
+
+    let token: String = vm
+        .load(
+            r#"
+            return crypto.jwt_sign({
+                iss = "test-issuer",
+                sub = "test-subject",
+                aud = "test-audience",
+                iat = test_iat,
+                exp = test_exp,
+            }, test_pem, "RS256", { kid = "my-key-id-123" })
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert!(token.contains('.'));
+    let parts: Vec<&str> = token.split('.').collect();
+    assert_eq!(parts.len(), 3);
+
+    let decoding_key = jsonwebtoken::DecodingKey::from_rsa_pem(pub_pem.as_bytes()).unwrap();
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_audience(&["test-audience"]);
+    validation.set_required_spec_claims(&["iss", "sub", "aud", "iat", "exp"]);
+    let decoded: jsonwebtoken::TokenData<serde_json::Value> =
+        jsonwebtoken::decode(&token, &decoding_key, &validation).unwrap();
+    assert_eq!(decoded.claims["iss"], "test-issuer");
+    assert_eq!(decoded.header.kid, Some("my-key-id-123".to_string()));
+}
+
+#[tokio::test]
 async fn test_jwt_sign_invalid_key() {
     let result = run_lua(
         r#"

@@ -215,7 +215,7 @@ yaml, assert, log, env, sleep, time, base64).
 
 | Function                            | Description                                |
 | ----------------------------------- | ------------------------------------------ |
-| `crypto.jwt_sign(claims, key, alg)` | Sign JWT (HS256/384/512, RS256/384/512)    |
+| `crypto.jwt_sign(claims, key, alg, opts?)` | Sign JWT (RS256/384/512), opts: `{kid="..."}` |
 | `crypto.hash(str, alg)`             | Hash string (sha256, sha384, sha512, etc.) |
 | `crypto.random(len)`                | Secure random string (hex)                 |
 

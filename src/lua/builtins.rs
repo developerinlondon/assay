@@ -760,12 +760,28 @@ fn register_crypto(lua: &Lua) -> mlua::Result<()> {
             }
         };
 
+        // 4th optional argument: options table with header fields (kid, typ, etc.)
+        let opts = match args_iter.next() {
+            Some(Value::Table(t)) => Some(t),
+            Some(Value::Nil) | None => None,
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.jwt_sign: fourth argument must be an options table or nil",
+                ));
+            }
+        };
+
         let claims_json = lua_value_to_json(&Value::Table(claims_table))?;
         let pem_bytes = Zeroizing::new(pem_key.into_bytes());
         let key = EncodingKey::from_rsa_pem(&pem_bytes)
             .map_err(|e| mlua::Error::runtime(format!("crypto.jwt_sign: invalid PEM key: {e}")))?;
 
-        let header = Header::new(algorithm);
+        let mut header = Header::new(algorithm);
+        if let Some(ref opts_table) = opts {
+            if let Ok(kid) = opts_table.get::<String>("kid") {
+                header.kid = Some(kid);
+            }
+        }
         let token = jsonwebtoken::encode(&header, &claims_json, &key)
             .map_err(|e| mlua::Error::runtime(format!("crypto.jwt_sign: encoding failed: {e}")))?;
 
