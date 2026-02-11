@@ -1,0 +1,6 @@
+local data = yaml.parse("name: assay\ncount: 42\n")
+assert.eq(data.name, "assay")
+assert.eq(data.count, 42)
+local encoded = yaml.encode(data)
+local data2 = yaml.parse(encoded)
+assert.eq(data2.name, "assay")

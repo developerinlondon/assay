@@ -1,0 +1,6 @@
+local data = json.parse('{"name":"assay","version":1}')
+assert.eq(data.name, "assay")
+assert.eq(data.version, 1)
+local encoded = json.encode(data)
+local data2 = json.parse(encoded)
+assert.eq(data2.name, "assay")

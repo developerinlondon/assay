@@ -1,0 +1,28 @@
+timeout: 30s
+retries: 0
+backoff: 1s
+checks:
+  - name: json-roundtrip
+    type: script
+    file: tests/e2e/check_json.lua
+  - name: yaml-roundtrip
+    type: script
+    file: tests/e2e/check_yaml.lua
+  - name: toml-roundtrip
+    type: script
+    file: tests/e2e/check_toml.lua
+  - name: fs-readwrite
+    type: script
+    file: tests/e2e/check_fs.lua
+  - name: crypto-hash
+    type: script
+    file: tests/e2e/check_crypto.lua
+  - name: regex-ops
+    type: script
+    file: tests/e2e/check_regex.lua
+  - name: base64-roundtrip
+    type: script
+    file: tests/e2e/check_base64.lua
+  - name: template-render
+    type: script
+    file: tests/e2e/check_template.lua

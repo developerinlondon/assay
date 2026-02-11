@@ -1,0 +1,5 @@
+assert.eq(regex.match("hello world", "^hello"), true)
+local result = regex.find("2026-02-10", "^(\\d{4})-(\\d{2})-(\\d{2})$")
+assert.eq(result.groups[1], "2026")
+local replaced = regex.replace("foo bar", "foo", "baz")
+assert.eq(replaced, "baz bar")
