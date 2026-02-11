@@ -58,6 +58,9 @@ regex-lite = "0.1.9"
 # TOML parsing/encoding
 toml = "0.9.12"
 
+# SQL database (Postgres, MySQL, SQLite)
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "mysql", "sqlite", "any"] }
+
 # HTTP server
 axum = "0.8.8"
 http-body-util = "0.1"
