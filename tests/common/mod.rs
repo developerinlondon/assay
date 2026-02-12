@@ -10,8 +10,24 @@ pub fn create_vm() -> mlua::Lua {
 }
 
 #[allow(dead_code)]
+pub fn create_vm_with_lib_path(lib_path: &str) -> mlua::Lua {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap();
+    assay::lua::create_vm_with_lib_path(client, lib_path.to_string()).unwrap()
+}
+
+#[allow(dead_code)]
 pub async fn run_lua(script: &str) -> Result<(), mlua::Error> {
     let vm = create_vm();
+    let script = assay::lua::async_bridge::strip_shebang(script);
+    vm.load(script).exec_async().await
+}
+
+#[allow(dead_code)]
+pub async fn run_lua_with_lib_path(script: &str, lib_path: &str) -> Result<(), mlua::Error> {
+    let vm = create_vm_with_lib_path(lib_path);
     let script = assay::lua::async_bridge::strip_shebang(script);
     vm.load(script).exec_async().await
 }

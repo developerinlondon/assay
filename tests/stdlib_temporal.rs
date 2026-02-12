@@ -230,7 +230,9 @@ async fn test_temporal_workflows() {
 async fn test_temporal_workflow() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/namespaces/default/workflows/order-processing-001"))
+        .and(path(
+            "/api/v1/namespaces/default/workflows/order-processing-001",
+        ))
         .and(header("Content-Type", "application/json"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "workflowExecutionInfo": {
@@ -269,7 +271,9 @@ async fn test_temporal_workflow() {
 async fn test_temporal_workflow_with_run_id() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/namespaces/default/workflows/order-processing-001"))
+        .and(path(
+            "/api/v1/namespaces/default/workflows/order-processing-001",
+        ))
         .and(query_param("runId", "run-abc-123"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "workflowExecutionInfo": {
@@ -303,7 +307,9 @@ async fn test_temporal_workflow_with_run_id() {
 async fn test_temporal_workflow_history() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/namespaces/default/workflows/order-processing-001/history"))
+        .and(path(
+            "/api/v1/namespaces/default/workflows/order-processing-001/history",
+        ))
         .and(header("Content-Type", "application/json"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "history": {
@@ -351,7 +357,9 @@ async fn test_temporal_workflow_history() {
 async fn test_temporal_signal_workflow() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/v1/namespaces/default/workflows/order-processing-001/signal"))
+        .and(path(
+            "/api/v1/namespaces/default/workflows/order-processing-001/signal",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&server)
         .await;
@@ -372,7 +380,9 @@ async fn test_temporal_signal_workflow() {
 async fn test_temporal_terminate_workflow() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/v1/namespaces/default/workflows/order-processing-001/terminate"))
+        .and(path(
+            "/api/v1/namespaces/default/workflows/order-processing-001/terminate",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&server)
         .await;
@@ -489,7 +499,9 @@ async fn test_temporal_schedules() {
 async fn test_temporal_is_workflow_running_true() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/namespaces/default/workflows/order-processing-001"))
+        .and(path(
+            "/api/v1/namespaces/default/workflows/order-processing-001",
+        ))
         .and(header("Content-Type", "application/json"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "workflowExecutionInfo": {
@@ -519,7 +531,9 @@ async fn test_temporal_is_workflow_running_true() {
 async fn test_temporal_is_workflow_running_false() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/namespaces/default/workflows/order-processing-002"))
+        .and(path(
+            "/api/v1/namespaces/default/workflows/order-processing-002",
+        ))
         .and(header("Content-Type", "application/json"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "workflowExecutionInfo": {
@@ -711,7 +725,9 @@ async fn test_temporal_search() {
 async fn test_temporal_cancel_workflow() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/v1/namespaces/default/workflows/order-processing-001/cancel"))
+        .and(path(
+            "/api/v1/namespaces/default/workflows/order-processing-001/cancel",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&server)
         .await;

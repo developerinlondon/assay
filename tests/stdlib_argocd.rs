@@ -672,7 +672,9 @@ async fn test_argocd_error_on_failure() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/applications/missing"))
-        .respond_with(ResponseTemplate::new(404).set_body_string(r#"{"message":"application not found"}"#))
+        .respond_with(
+            ResponseTemplate::new(404).set_body_string(r#"{"message":"application not found"}"#),
+        )
         .mount(&server)
         .await;
 

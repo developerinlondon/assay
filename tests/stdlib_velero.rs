@@ -514,9 +514,7 @@ async fn test_velero_schedules_list() {
 async fn test_velero_schedule_status() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path(
-            "/apis/velero.io/v1/namespaces/velero/schedules/daily",
-        ))
+        .and(path("/apis/velero.io/v1/namespaces/velero/schedules/daily"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "apiVersion": "velero.io/v1",
             "kind": "Schedule",
@@ -548,9 +546,7 @@ async fn test_velero_schedule_status() {
 async fn test_velero_is_schedule_enabled_true() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path(
-            "/apis/velero.io/v1/namespaces/velero/schedules/daily",
-        ))
+        .and(path("/apis/velero.io/v1/namespaces/velero/schedules/daily"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "apiVersion": "velero.io/v1",
             "kind": "Schedule",
@@ -773,9 +769,7 @@ async fn test_velero_all_bsl_available() {
 async fn test_velero_custom_namespace() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path(
-            "/apis/velero.io/v1/namespaces/custom-ns/backups",
-        ))
+        .and(path("/apis/velero.io/v1/namespaces/custom-ns/backups"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "apiVersion": "velero.io/v1",
             "kind": "BackupList",
