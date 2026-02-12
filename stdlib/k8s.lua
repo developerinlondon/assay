@@ -121,8 +121,11 @@ end
 function M.patch(path, body, opts)
   opts = opts or {}
   local url = (opts.base_url or api_base()) .. path
-  local resp = http.patch(url, body, {
-    headers = auth_headers(opts.token),
+  local hdrs = auth_headers(opts.token)
+  hdrs["Content-Type"] = opts.content_type or "application/merge-patch+json"
+  local encoded = type(body) == "table" and json.encode(body) or body
+  local resp = http.patch(url, encoded, {
+    headers = hdrs,
   })
   if resp.status < 200 or resp.status >= 300 then
     error("k8s.patch: HTTP " .. resp.status .. " " .. path .. ": " .. resp.body)
