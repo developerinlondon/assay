@@ -71,10 +71,7 @@ async fn test_async_spawn_double_await_errors() {
     .await;
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    assert!(
-        err_msg.contains("already awaited"),
-        "got: {err_msg}"
-    );
+    assert!(err_msg.contains("already awaited"), "got: {err_msg}");
 }
 
 #[tokio::test]
@@ -126,14 +123,8 @@ async fn test_async_spawn_interval_cancel() {
 
 #[tokio::test]
 async fn test_async_spawn_interval_invalid_seconds() {
-    let result = run_lua_local(
-        r#"async.spawn_interval(0, function() end)"#,
-    )
-    .await;
+    let result = run_lua_local(r#"async.spawn_interval(0, function() end)"#).await;
     assert!(result.is_err());
-    let result2 = run_lua_local(
-        r#"async.spawn_interval(-1, function() end)"#,
-    )
-    .await;
+    let result2 = run_lua_local(r#"async.spawn_interval(-1, function() end)"#).await;
     assert!(result2.is_err());
 }

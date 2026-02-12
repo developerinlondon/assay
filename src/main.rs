@@ -43,11 +43,7 @@ async fn main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
-    let ext = cli
-        .file
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let ext = cli.file.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
         "yaml" | "yml" => run_yaml_checks(&cli.file).await,

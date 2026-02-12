@@ -7,6 +7,12 @@ use mlua::{Lua, LuaOptions, StdLib};
 
 static STDLIB_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/stdlib");
 
+/// Default filesystem path for external Lua libraries.
+const DEFAULT_LIB_PATH: &str = "/libs";
+
+/// Environment variable to override the external library search path.
+pub const LIB_PATH_ENV: &str = "ASSAY_LIB_PATH";
+
 const DANGEROUS_GLOBALS: &[&str] = &["load", "loadfile", "dofile", "collectgarbage", "print"];
 
 fn lua_err(e: mlua::Error) -> anyhow::Error {
@@ -14,11 +20,17 @@ fn lua_err(e: mlua::Error) -> anyhow::Error {
 }
 
 pub fn create_vm(client: reqwest::Client) -> Result<Lua> {
+    let lib_path = std::env::var(LIB_PATH_ENV).unwrap_or_else(|_| DEFAULT_LIB_PATH.to_string());
+    create_vm_with_lib_path(client, lib_path)
+}
+
+pub fn create_vm_with_lib_path(client: reqwest::Client, lib_path: String) -> Result<Lua> {
     let safe_libs = StdLib::ALL_SAFE ^ StdLib::IO ^ StdLib::OS;
     let lua = Lua::new_with(safe_libs, LuaOptions::default()).map_err(lua_err)?;
     lua.set_memory_limit(64 * 1024 * 1024).map_err(lua_err)?;
     sandbox(&lua).map_err(lua_err)?;
     register_stdlib_loader(&lua).map_err(lua_err)?;
+    register_fs_loader(&lua, lib_path).map_err(lua_err)?;
     builtins::register_all(&lua, client).map_err(lua_err)?;
     Ok(lua)
 }
@@ -67,6 +79,41 @@ fn register_stdlib_loader(lua: &Lua) -> mlua::Result<()> {
 
     let len = searchers.len()?;
     searchers.set(len + 1, stdlib_searcher)?;
+
+    Ok(())
+}
+
+fn register_fs_loader(lua: &Lua, lib_path: String) -> mlua::Result<()> {
+    let package: mlua::Table = lua.globals().get("package")?;
+    let searchers: mlua::Table = package.get("searchers")?;
+
+    let fs_searcher = lua.create_function(move |lua, module_name: String| {
+        let filename = if let Some(rest) = module_name.strip_prefix("assay.") {
+            format!("{rest}.lua")
+        } else {
+            return Ok(mlua::Value::String(
+                lua.create_string(format!("not an assay.* module: {module_name}"))?,
+            ));
+        };
+
+        let full_path = std::path::Path::new(&lib_path).join(&filename);
+
+        match std::fs::read_to_string(&full_path) {
+            Ok(source) => {
+                let loader = lua
+                    .load(source)
+                    .set_name(format!("@{}", full_path.display()))
+                    .into_function()?;
+                Ok(mlua::Value::Function(loader))
+            }
+            Err(_) => Ok(mlua::Value::String(
+                lua.create_string(format!("no file at {}", full_path.display()))?,
+            )),
+        }
+    })?;
+
+    let len = searchers.len()?;
+    searchers.set(len + 1, fs_searcher)?;
 
     Ok(())
 }

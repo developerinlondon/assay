@@ -158,61 +158,61 @@ fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
         http_table.set(method, func)?;
     }
 
-    let serve_fn =
-        lua.create_async_function(|lua, args: mlua::MultiValue| async move {
-            let mut args_iter = args.into_iter();
+    let serve_fn = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
+        let mut args_iter = args.into_iter();
 
-            let port: u16 = match args_iter.next() {
-                Some(Value::Integer(n)) => n as u16,
-                _ => {
-                    return Err::<(), _>(mlua::Error::runtime(
-                        "http.serve: first argument must be a port number",
-                    ));
-                }
-            };
-
-            let routes_table = match args_iter.next() {
-                Some(Value::Table(t)) => t,
-                _ => {
-                    return Err::<(), _>(mlua::Error::runtime(
-                        "http.serve: second argument must be a routes table",
-                    ));
-                }
-            };
-
-            let routes = Rc::new(parse_routes(&routes_table)?);
-
-            let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
-                .await
-                .map_err(|e| mlua::Error::runtime(format!("http.serve: bind failed: {e}")))?;
-
-            loop {
-                let (stream, _addr) = listener.accept().await.map_err(|e| {
-                    mlua::Error::runtime(format!("http.serve: accept failed: {e}"))
-                })?;
-
-                let routes = routes.clone();
-                let lua_clone = lua.clone();
-
-                tokio::task::spawn_local(async move {
-                    let io = hyper_util::rt::TokioIo::new(stream);
-                    let routes = routes.clone();
-                    let lua = lua_clone.clone();
-
-                    let service = service_fn(move |req: Request<Incoming>| {
-                        let routes = routes.clone();
-                        let lua = lua.clone();
-                        async move { handle_request(&lua, &routes, req).await }
-                    });
-
-                    if let Err(e) = http1::Builder::new().serve_connection(io, service).await
-                        && !e.to_string().contains("connection closed")
-                    {
-                        error!("http.serve: connection error: {e}");
-                    }
-                });
+        let port: u16 = match args_iter.next() {
+            Some(Value::Integer(n)) => n as u16,
+            _ => {
+                return Err::<(), _>(mlua::Error::runtime(
+                    "http.serve: first argument must be a port number",
+                ));
             }
-        })?;
+        };
+
+        let routes_table = match args_iter.next() {
+            Some(Value::Table(t)) => t,
+            _ => {
+                return Err::<(), _>(mlua::Error::runtime(
+                    "http.serve: second argument must be a routes table",
+                ));
+            }
+        };
+
+        let routes = Rc::new(parse_routes(&routes_table)?);
+
+        let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+            .await
+            .map_err(|e| mlua::Error::runtime(format!("http.serve: bind failed: {e}")))?;
+
+        loop {
+            let (stream, _addr) = listener
+                .accept()
+                .await
+                .map_err(|e| mlua::Error::runtime(format!("http.serve: accept failed: {e}")))?;
+
+            let routes = routes.clone();
+            let lua_clone = lua.clone();
+
+            tokio::task::spawn_local(async move {
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let routes = routes.clone();
+                let lua = lua_clone.clone();
+
+                let service = service_fn(move |req: Request<Incoming>| {
+                    let routes = routes.clone();
+                    let lua = lua.clone();
+                    async move { handle_request(&lua, &routes, req).await }
+                });
+
+                if let Err(e) = http1::Builder::new().serve_connection(io, service).await
+                    && !e.to_string().contains("connection closed")
+                {
+                    error!("http.serve: connection error: {e}");
+                }
+            });
+        }
+    })?;
     http_table.set("serve", serve_fn)?;
 
     lua.globals().set("http", http_table)?;
@@ -298,9 +298,7 @@ fn build_lua_request_and_call(
     handler.call::<Table>(req_table)
 }
 
-fn lua_response_to_http(
-    resp_table: &Table,
-) -> Result<Response<Full<Bytes>>, hyper::Error> {
+fn lua_response_to_http(resp_table: &Table) -> Result<Response<Full<Bytes>>, hyper::Error> {
     let status = resp_table
         .get::<Option<u16>>("status")
         .unwrap_or(None)
@@ -777,10 +775,10 @@ fn register_crypto(lua: &Lua) -> mlua::Result<()> {
             .map_err(|e| mlua::Error::runtime(format!("crypto.jwt_sign: invalid PEM key: {e}")))?;
 
         let mut header = Header::new(algorithm);
-        if let Some(ref opts_table) = opts {
-            if let Ok(kid) = opts_table.get::<String>("kid") {
-                header.kid = Some(kid);
-            }
+        if let Some(ref opts_table) = opts
+            && let Ok(kid) = opts_table.get::<String>("kid")
+        {
+            header.kid = Some(kid);
         }
         let token = jsonwebtoken::encode(&header, &claims_json, &key)
             .map_err(|e| mlua::Error::runtime(format!("crypto.jwt_sign: encoding failed: {e}")))?;
@@ -888,8 +886,8 @@ fn register_toml(lua: &Lua) -> mlua::Result<()> {
     let toml_table = lua.create_table()?;
 
     let parse_fn = lua.create_function(|lua, s: String| {
-        let toml_val: toml::Value = toml::from_str(&s)
-            .map_err(|e| mlua::Error::runtime(format!("toml.parse: {e}")))?;
+        let toml_val: toml::Value =
+            toml::from_str(&s).map_err(|e| mlua::Error::runtime(format!("toml.parse: {e}")))?;
         let json_val = serde_json::to_value(&toml_val)
             .map_err(|e| mlua::Error::runtime(format!("toml.parse: conversion failed: {e}")))?;
         json_value_to_lua(lua, &json_val)
@@ -1073,55 +1071,53 @@ fn register_db(lua: &Lua) -> mlua::Result<()> {
     })?;
     db_table.set("connect", connect_fn)?;
 
-    let query_fn =
-        lua.create_async_function(|lua, args: mlua::MultiValue| async move {
-            let mut args_iter = args.into_iter();
+    let query_fn = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
+        let mut args_iter = args.into_iter();
 
-            let pool = extract_db_pool(&args_iter.next(), "db.query")?;
-            let sql = extract_sql_string(&args_iter.next(), "db.query")?;
-            let params = extract_params(&args_iter.next())?;
+        let pool = extract_db_pool(&args_iter.next(), "db.query")?;
+        let sql = extract_sql_string(&args_iter.next(), "db.query")?;
+        let params = extract_params(&args_iter.next())?;
 
-            let mut query = sqlx::query(&sql);
-            for p in &params {
-                query = bind_param(query, p);
-            }
+        let mut query = sqlx::query(&sql);
+        for p in &params {
+            query = bind_param(query, p);
+        }
 
-            let rows: Vec<AnyRow> = query
-                .fetch_all(&*pool)
-                .await
-                .map_err(|e| mlua::Error::runtime(format!("db.query: {e}")))?;
+        let rows: Vec<AnyRow> = query
+            .fetch_all(&*pool)
+            .await
+            .map_err(|e| mlua::Error::runtime(format!("db.query: {e}")))?;
 
-            let result = lua.create_table()?;
-            for (i, row) in rows.iter().enumerate() {
-                let row_table = any_row_to_lua_table(&lua, row)?;
-                result.set(i + 1, row_table)?;
-            }
-            Ok(Value::Table(result))
-        })?;
+        let result = lua.create_table()?;
+        for (i, row) in rows.iter().enumerate() {
+            let row_table = any_row_to_lua_table(&lua, row)?;
+            result.set(i + 1, row_table)?;
+        }
+        Ok(Value::Table(result))
+    })?;
     db_table.set("query", query_fn)?;
 
-    let execute_fn =
-        lua.create_async_function(|lua, args: mlua::MultiValue| async move {
-            let mut args_iter = args.into_iter();
+    let execute_fn = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
+        let mut args_iter = args.into_iter();
 
-            let pool = extract_db_pool(&args_iter.next(), "db.execute")?;
-            let sql = extract_sql_string(&args_iter.next(), "db.execute")?;
-            let params = extract_params(&args_iter.next())?;
+        let pool = extract_db_pool(&args_iter.next(), "db.execute")?;
+        let sql = extract_sql_string(&args_iter.next(), "db.execute")?;
+        let params = extract_params(&args_iter.next())?;
 
-            let mut query = sqlx::query(&sql);
-            for p in &params {
-                query = bind_param(query, p);
-            }
+        let mut query = sqlx::query(&sql);
+        for p in &params {
+            query = bind_param(query, p);
+        }
 
-            let result = query
-                .execute(&*pool)
-                .await
-                .map_err(|e| mlua::Error::runtime(format!("db.execute: {e}")))?;
+        let result = query
+            .execute(&*pool)
+            .await
+            .map_err(|e| mlua::Error::runtime(format!("db.execute: {e}")))?;
 
-            let tbl = lua.create_table()?;
-            tbl.set("rows_affected", result.rows_affected() as i64)?;
-            Ok(Value::Table(tbl))
-        })?;
+        let tbl = lua.create_table()?;
+        tbl.set("rows_affected", result.rows_affected() as i64)?;
+        Ok(Value::Table(tbl))
+    })?;
     db_table.set("execute", execute_fn)?;
 
     let close_fn = lua.create_async_function(|_, args: mlua::MultiValue| async move {
@@ -1139,9 +1135,9 @@ fn register_db(lua: &Lua) -> mlua::Result<()> {
 fn extract_db_pool(val: &Option<Value>, fn_name: &str) -> mlua::Result<Arc<AnyPool>> {
     match val {
         Some(Value::UserData(ud)) => {
-            let db = ud
-                .borrow::<DbPool>()
-                .map_err(|_| mlua::Error::runtime(format!("{fn_name}: first argument must be a db connection")))?;
+            let db = ud.borrow::<DbPool>().map_err(|_| {
+                mlua::Error::runtime(format!("{fn_name}: first argument must be a db connection"))
+            })?;
             Ok(db.0.clone())
         }
         _ => Err(mlua::Error::runtime(format!(
@@ -1222,17 +1218,17 @@ fn any_row_to_lua_table(lua: &Lua, row: &AnyRow) -> mlua::Result<Table> {
     Ok(table)
 }
 
-fn any_column_to_lua_value<C: Column>(
-    lua: &Lua,
-    row: &AnyRow,
-    col: &C,
-) -> mlua::Result<Value> {
+fn any_column_to_lua_value<C: Column>(lua: &Lua, row: &AnyRow, col: &C) -> mlua::Result<Value> {
     let ordinal = col.ordinal();
     let type_info = col.type_info();
     let type_name = type_info.to_string();
     let type_name = type_name.to_uppercase();
 
-    if row.try_get_raw(ordinal).map(|v| v.is_null()).unwrap_or(true) {
+    if row
+        .try_get_raw(ordinal)
+        .map(|v| v.is_null())
+        .unwrap_or(true)
+    {
         return Ok(Value::Nil);
     }
 
@@ -1343,9 +1339,7 @@ fn extract_ws_conn(val: &Value, fn_name: &str) -> mlua::Result<(WsSink, WsStream
         }
     };
     let ws = ud.borrow::<WsConn>().map_err(|_| {
-        mlua::Error::runtime(format!(
-            "{fn_name}: first argument must be a ws connection"
-        ))
+        mlua::Error::runtime(format!("{fn_name}: first argument must be a ws connection"))
     })?;
     Ok((ws.sink.clone(), ws.stream.clone()))
 }
@@ -1391,9 +1385,8 @@ fn register_ws(lua: &Lua) -> mlua::Result<()> {
                     return Ok(t.to_string());
                 }
                 tokio_tungstenite::tungstenite::Message::Binary(b) => {
-                    return String::from_utf8(b.into()).map_err(|e| {
-                        mlua::Error::runtime(format!("ws.recv: invalid UTF-8: {e}"))
-                    });
+                    return String::from_utf8(b.into())
+                        .map_err(|e| mlua::Error::runtime(format!("ws.recv: invalid UTF-8: {e}")));
                 }
                 tokio_tungstenite::tungstenite::Message::Close(_) => {
                     return Err(mlua::Error::runtime("ws.recv: connection closed"));
@@ -1444,7 +1437,9 @@ fn register_template(lua: &Lua) -> mlua::Result<()> {
 
     let render_fn = lua.create_function(|_, (file_path, vars): (String, Value)| {
         let content = std::fs::read_to_string(&file_path).map_err(|e| {
-            mlua::Error::runtime(format!("template.render: failed to read {file_path:?}: {e}"))
+            mlua::Error::runtime(format!(
+                "template.render: failed to read {file_path:?}: {e}"
+            ))
         })?;
         let json_vars = match &vars {
             Value::Table(_) => lua_value_to_json(&vars)?,

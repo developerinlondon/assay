@@ -12,9 +12,7 @@ async fn start_echo_ws_server() -> u16 {
                 let ws_stream = tokio_tungstenite::accept_async(stream).await.unwrap();
                 let (mut write, mut read) = ws_stream.split();
                 while let Some(Ok(msg)) = read.next().await {
-                    if (msg.is_text() || msg.is_binary())
-                        && write.send(msg).await.is_err()
-                    {
+                    if (msg.is_text() || msg.is_binary()) && write.send(msg).await.is_err() {
                         break;
                     }
                 }

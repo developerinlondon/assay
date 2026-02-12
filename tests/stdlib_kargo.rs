@@ -586,9 +586,7 @@ async fn test_kargo_projects_list() {
 async fn test_kargo_project_get() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path(
-            "/apis/kargo.akuity.io/v1alpha1/projects/jeebon-test",
-        ))
+        .and(path("/apis/kargo.akuity.io/v1alpha1/projects/jeebon-test"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "apiVersion": "kargo.akuity.io/v1alpha1",
             "kind": "Project",
@@ -690,9 +688,7 @@ async fn test_kargo_pipeline_status() {
 async fn test_kargo_url_trailing_slash_stripped() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path(
-            "/apis/kargo.akuity.io/v1alpha1/projects/jeebon-test",
-        ))
+        .and(path("/apis/kargo.akuity.io/v1alpha1/projects/jeebon-test"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "apiVersion": "kargo.akuity.io/v1alpha1",
             "kind": "Project",

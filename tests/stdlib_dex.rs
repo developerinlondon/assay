@@ -24,9 +24,7 @@ async fn mount_discovery(server: &MockServer) {
     let issuer = server.uri();
     Mock::given(method("GET"))
         .and(path("/.well-known/openid-configuration"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(oidc_discovery_json(&issuer)),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(oidc_discovery_json(&issuer)))
         .mount(server)
         .await;
 }

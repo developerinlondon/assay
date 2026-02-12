@@ -249,7 +249,9 @@ async fn test_configurations_list() {
 async fn test_is_configuration_healthy() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/apis/pkg.crossplane.io/v1/configurations/platform-ref-aws"))
+        .and(path(
+            "/apis/pkg.crossplane.io/v1/configurations/platform-ref-aws",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "metadata": {"name": "platform-ref-aws"},
             "status": {

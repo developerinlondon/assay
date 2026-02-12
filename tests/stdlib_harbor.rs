@@ -288,7 +288,9 @@ async fn test_harbor_repositories() {
 async fn test_harbor_artifacts() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts"))
+        .and(path(
+            "/api/v2.0/projects/library/repositories/nginx/artifacts",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
             {
                 "id": 1,
@@ -338,7 +340,9 @@ async fn test_harbor_artifacts() {
 async fn test_harbor_artifact() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/latest"))
+        .and(path(
+            "/api/v2.0/projects/library/repositories/nginx/artifacts/latest",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": 1,
             "digest": "sha256:aaaaaaaabbbbbbbbccccccccdddddddd",
@@ -418,7 +422,9 @@ async fn test_harbor_artifact_tags() {
 async fn test_harbor_image_exists_true() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/1.25.0"))
+        .and(path(
+            "/api/v2.0/projects/library/repositories/nginx/artifacts/1.25.0",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": 1,
             "digest": "sha256:aaaaaaaabbbbbbbbccccccccdddddddd",
@@ -466,7 +472,9 @@ async fn test_harbor_image_exists_false() {
 async fn test_harbor_scan_artifact() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/latest/scan"))
+        .and(path(
+            "/api/v2.0/projects/library/repositories/nginx/artifacts/latest/scan",
+        ))
         .respond_with(ResponseTemplate::new(202))
         .mount(&server)
         .await;
@@ -536,7 +544,10 @@ async fn test_harbor_basic_auth() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v2.0/projects"))
-        .and(wiremock::matchers::header("Authorization", "Basic YWRtaW46SGFyYm9yMTIzNDU="))
+        .and(wiremock::matchers::header(
+            "Authorization",
+            "Basic YWRtaW46SGFyYm9yMTIzNDU=",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
             {"project_id": 1, "name": "library"}
         ])))
@@ -561,7 +572,10 @@ async fn test_harbor_robot_token_auth() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v2.0/projects"))
-        .and(wiremock::matchers::header("Authorization", "Bearer robot$mytoken123"))
+        .and(wiremock::matchers::header(
+            "Authorization",
+            "Bearer robot$mytoken123",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
             {"project_id": 1, "name": "library"}
         ])))
