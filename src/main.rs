@@ -8,8 +8,28 @@ use clap::Parser;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
+
+const K8S_SA_CA_PATH: &str = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
+
+pub fn build_http_client() -> reqwest::Client {
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
+
+    if let Ok(pem) = std::fs::read(K8S_SA_CA_PATH) {
+        match reqwest::Certificate::from_pem(&pem) {
+            Ok(cert) => {
+                info!("loaded Kubernetes CA certificate");
+                builder = builder.add_root_certificate(cert);
+            }
+            Err(e) => {
+                warn!("failed to parse Kubernetes CA certificate: {e}");
+            }
+        }
+    }
+
+    builder.build().expect("building HTTP client")
+}
 
 /// Assay — lightweight Lua runtime for Kubernetes.
 ///
@@ -90,10 +110,7 @@ async fn run_lua_script(path: &std::path::Path) -> ExitCode {
         }
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .expect("building HTTP client");
+    let client = build_http_client();
 
     let vm = match lua::create_vm(client) {
         Ok(vm) => vm,
