@@ -1,8 +1,9 @@
+use crate::build_http_client;
 use crate::checks;
 use crate::config::Config;
 use crate::output::{CheckResult, RunResult};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
@@ -13,10 +14,7 @@ pub async fn run(config: &Config) -> RunResult {
     }
 
     let start = Instant::now();
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .expect("building HTTP client");
+    let client = build_http_client();
     let results = Arc::new(Mutex::new(Vec::with_capacity(config.checks.len())));
 
     let run_future = run_all_checks(config, &client, Arc::clone(&results));
