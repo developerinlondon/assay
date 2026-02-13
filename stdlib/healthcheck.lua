@@ -183,4 +183,29 @@ function M.multi(checks)
   }
 end
 
+function M.wait(url, opts)
+  opts = opts or {}
+  local timeout = opts.timeout or 60
+  local interval = opts.interval or 2
+  local expect_status = opts.expect_status or 200
+  local max_attempts = math.ceil(timeout / interval)
+
+  for i = 1, max_attempts do
+    local ok, resp = pcall(http.get, url, { headers = opts.headers or {} })
+    if ok and resp.status == expect_status then
+      log.info("Healthy: " .. url .. " (attempt " .. tostring(i) .. ")")
+      return {
+        ok = true,
+        status = resp.status,
+        attempts = i,
+      }
+    end
+    if i < max_attempts then
+      sleep(interval)
+    end
+  end
+
+  error("healthcheck.wait: " .. url .. " not healthy after " .. tostring(timeout) .. "s")
+end
+
 return M

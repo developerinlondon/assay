@@ -1072,3 +1072,173 @@ async fn test_vault_pki_create_role() {
     );
     run_lua(&script).await.unwrap();
 }
+
+#[tokio::test]
+async fn test_vault_wait_success() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/sys/health"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"initialized": true})))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local vault = require("assay.vault")
+        local result = vault.wait("{}", {{ timeout = 5, interval = 0.1 }})
+        assert.eq(result, true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_vault_wait_timeout() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/sys/health"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local vault = require("assay.vault")
+        vault.wait("{}", {{ timeout = 1, interval = 0.5 }})
+        "#,
+        server.uri()
+    );
+    let result = run_lua(&script).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_vault_ensure_credentials_existing() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/secrets/data/db/postgres"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"data": {"username": "admin", "password": "existing_secret"}}
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local vault = require("assay.vault")
+        local c = vault.client("{}", "test-token")
+        local generator_called = false
+        local function generator()
+            generator_called = true
+            return {{ password = "new_secret" }}
+        end
+        local data = vault.ensure_credentials(c, "db/postgres", "password", generator)
+        assert.eq(data.username, "admin")
+        assert.eq(data.password, "existing_secret")
+        assert.eq(generator_called, false)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_vault_ensure_credentials_new() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/secrets/data/db/new"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/secrets/data/db/new"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local vault = require("assay.vault")
+        local c = vault.client("{}", "test-token")
+        local generator_called = false
+        local function generator()
+            generator_called = true
+            return {{ password = "generated_secret" }}
+        end
+        local data = vault.ensure_credentials(c, "db/new", "password", generator)
+        assert.eq(data.password, "generated_secret")
+        assert.eq(generator_called, true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_vault_assert_secret_success() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/secrets/data/db/postgres"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"data": {"username": "admin", "password": "secret123"}}
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local vault = require("assay.vault")
+        local c = vault.client("{}", "test-token")
+        local data = vault.assert_secret(c, "db/postgres", {{"username", "password"}})
+        assert.eq(data.username, "admin")
+        assert.eq(data.password, "secret123")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_vault_assert_secret_missing() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/secrets/data/db/missing"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local vault = require("assay.vault")
+        local c = vault.client("{}", "test-token")
+        vault.assert_secret(c, "db/missing", {{"username"}})
+        "#,
+        server.uri()
+    );
+    let result = run_lua(&script).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_vault_assert_secret_missing_key() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/secrets/data/db/partial"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"data": {"username": "admin"}}
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local vault = require("assay.vault")
+        local c = vault.client("{}", "test-token")
+        vault.assert_secret(c, "db/partial", {{"username", "missing_key"}})
+        "#,
+        server.uri()
+    );
+    let result = run_lua(&script).await;
+    assert!(result.is_err());
+}

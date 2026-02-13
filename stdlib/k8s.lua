@@ -1,5 +1,19 @@
 local M = {}
 
+local _http = nil
+local function get_http()
+  if not _http then
+    local ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    local ok, client = pcall(http.client, { ca_cert_file = ca_path })
+    if ok then
+      _http = client
+    else
+      _http = http.client({})
+    end
+  end
+  return _http
+end
+
 local function api_base()
   local host = env.get("KUBERNETES_SERVICE_HOST")
   local port = env.get("KUBERNETES_SERVICE_PORT") or "443"
@@ -85,7 +99,7 @@ end
 function M.get(path, opts)
   opts = opts or {}
   local url = (opts.base_url or api_base()) .. path
-  local resp = http.get(url, {
+  local resp = get_http():get(url, {
     headers = auth_headers(opts.token),
   })
   if resp.status ~= 200 then
@@ -97,7 +111,7 @@ end
 function M.post(path, body, opts)
   opts = opts or {}
   local url = (opts.base_url or api_base()) .. path
-  local resp = http.post(url, body, {
+  local resp = get_http():post(url, body, {
     headers = auth_headers(opts.token),
   })
   if resp.status < 200 or resp.status >= 300 then
@@ -109,7 +123,7 @@ end
 function M.put(path, body, opts)
   opts = opts or {}
   local url = (opts.base_url or api_base()) .. path
-  local resp = http.put(url, body, {
+  local resp = get_http():put(url, body, {
     headers = auth_headers(opts.token),
   })
   if resp.status < 200 or resp.status >= 300 then
@@ -124,7 +138,7 @@ function M.patch(path, body, opts)
   local hdrs = auth_headers(opts.token)
   hdrs["Content-Type"] = opts.content_type or "application/merge-patch+json"
   local encoded = type(body) == "table" and json.encode(body) or body
-  local resp = http.patch(url, encoded, {
+  local resp = get_http():patch(url, encoded, {
     headers = hdrs,
   })
   if resp.status < 200 or resp.status >= 300 then
@@ -136,7 +150,7 @@ end
 function M.delete(path, opts)
   opts = opts or {}
   local url = (opts.base_url or api_base()) .. path
-  local resp = http.delete(url, {
+  local resp = get_http():delete(url, {
     headers = auth_headers(opts.token),
   })
   if resp.status < 200 or resp.status >= 300 then
@@ -181,7 +195,7 @@ function M.exists(namespace, kind, name, opts)
   opts = opts or {}
   local api_path = M._resource_path(namespace, kind, name)
   local url = (opts.base_url or api_base()) .. api_path
-  local resp = http.get(url, {
+  local resp = get_http():get(url, {
     headers = auth_headers(opts.token),
   })
   return resp.status == 200
@@ -312,7 +326,7 @@ function M.logs(namespace, pod_name, opts)
     path = path .. "?" .. table.concat(params, "&")
   end
   local url = (opts.base_url or api_base()) .. path
-  local resp = http.get(url, {
+  local resp = get_http():get(url, {
     headers = auth_headers(opts.token),
   })
   if resp.status ~= 200 then
