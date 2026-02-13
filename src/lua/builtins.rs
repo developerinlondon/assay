@@ -20,6 +20,9 @@ use tokio_tungstenite::MaybeTlsStream;
 use tracing::{error, info, warn};
 use zeroize::Zeroizing;
 
+struct HttpClient(reqwest::Client);
+impl UserData for HttpClient {}
+
 pub fn register_all(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     register_http(lua, client)?;
     register_json(lua)?;
@@ -41,122 +44,240 @@ pub fn register_all(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     Ok(())
 }
 
+async fn execute_http_request(
+    lua: &Lua,
+    client: &reqwest::Client,
+    method_name: &str,
+    args: mlua::MultiValue,
+) -> mlua::Result<Value> {
+    let has_body = method_name != "get" && method_name != "delete";
+
+    let mut args_iter = args.into_iter();
+    let url: String = match args_iter.next() {
+        Some(Value::String(s)) => s.to_str()?.to_string(),
+        _ => {
+            return Err(mlua::Error::runtime(format!(
+                "http.{method_name}: first argument must be a URL string"
+            )));
+        }
+    };
+
+    let (body_str, auto_json, opts) = if has_body {
+        let (body, is_json) = match args_iter.next() {
+            Some(Value::String(s)) => (s.to_str()?.to_string(), false),
+            Some(Value::Table(t)) => {
+                let json_val = lua_table_to_json(&t)?;
+                let serialized = serde_json::to_string(&json_val).map_err(|e| {
+                    mlua::Error::runtime(format!(
+                        "http.{method_name}: JSON encode failed: {e}"
+                    ))
+                })?;
+                (serialized, true)
+            }
+            Some(Value::Nil) | None => (String::new(), false),
+            _ => {
+                return Err(mlua::Error::runtime(format!(
+                    "http.{method_name}: second argument must be a string, table, or nil"
+                )));
+            }
+        };
+        let opts = match args_iter.next() {
+            Some(Value::Table(t)) => Some(t),
+            Some(Value::Nil) | None => None,
+            _ => {
+                return Err(mlua::Error::runtime(format!(
+                    "http.{method_name}: third argument must be a table or nil"
+                )));
+            }
+        };
+        (body, is_json, opts)
+    } else {
+        let opts = match args_iter.next() {
+            Some(Value::Table(t)) => Some(t),
+            Some(Value::Nil) | None => None,
+            _ => {
+                return Err(mlua::Error::runtime(format!(
+                    "http.{method_name}: second argument must be a table or nil"
+                )));
+            }
+        };
+        (String::new(), false, opts)
+    };
+
+    let mut req = match method_name {
+        "get" => client.get(&url),
+        "post" => client.post(&url),
+        "put" => client.put(&url),
+        "patch" => client.patch(&url),
+        "delete" => client.delete(&url),
+        _ => {
+            return Err(mlua::Error::runtime(format!(
+                "http: unsupported method: {method_name}"
+            )));
+        }
+    };
+
+    if has_body && !body_str.is_empty() {
+        req = req.body(body_str);
+    }
+    if auto_json {
+        req = req.header("Content-Type", "application/json");
+    }
+    if let Some(ref opts_table) = opts
+        && let Ok(headers_table) = opts_table.get::<Table>("headers")
+    {
+        for pair in headers_table.pairs::<String, String>() {
+            let (k, v) = pair?;
+            req = req.header(k, v);
+        }
+    }
+
+    let resp = req.send().await.map_err(|e| {
+        mlua::Error::runtime(format!("http.{method_name} failed: {e}"))
+    })?;
+    let status = resp.status().as_u16();
+    let resp_headers = resp.headers().clone();
+    let body = resp.text().await.map_err(|e| {
+        mlua::Error::runtime(format!(
+            "http.{method_name}: reading body failed: {e}"
+        ))
+    })?;
+
+    let result = lua.create_table()?;
+    result.set("status", status)?;
+    result.set("body", body)?;
+
+    let headers_out = lua.create_table()?;
+    for (name, value) in &resp_headers {
+        if let Ok(v) = value.to_str() {
+            headers_out.set(name.as_str().to_string(), v.to_string())?;
+        }
+    }
+    result.set("headers", headers_out)?;
+
+    Ok(Value::Table(result))
+}
+
 fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     let http_table = lua.create_table()?;
 
     for method in ["get", "post", "put", "patch", "delete"] {
         let method_client = client.clone();
         let method_name = method.to_string();
-        let has_body = method != "get" && method != "delete";
 
         let func = lua.create_async_function(move |lua, args: mlua::MultiValue| {
             let client = method_client.clone();
             let method_name = method_name.clone();
             async move {
-                let mut args_iter = args.into_iter();
-                let url: String = match args_iter.next() {
-                    Some(Value::String(s)) => s.to_str()?.to_string(),
-                    _ => {
-                        return Err(mlua::Error::runtime(format!(
-                            "http.{method_name}: first argument must be a URL string"
-                        )));
-                    }
-                };
-
-                let (body_str, auto_json, opts) = if has_body {
-                    let (body, is_json) = match args_iter.next() {
-                        Some(Value::String(s)) => (s.to_str()?.to_string(), false),
-                        Some(Value::Table(t)) => {
-                            let json_val = lua_table_to_json(&t)?;
-                            let serialized = serde_json::to_string(&json_val).map_err(|e| {
-                                mlua::Error::runtime(format!(
-                                    "http.{method_name}: JSON encode failed: {e}"
-                                ))
-                            })?;
-                            (serialized, true)
-                        }
-                        Some(Value::Nil) | None => (String::new(), false),
-                        _ => {
-                            return Err(mlua::Error::runtime(format!(
-                                "http.{method_name}: second argument must be a string, table, or nil"
-                            )));
-                        }
-                    };
-                    let opts = match args_iter.next() {
-                        Some(Value::Table(t)) => Some(t),
-                        Some(Value::Nil) | None => None,
-                        _ => {
-                            return Err(mlua::Error::runtime(format!(
-                                "http.{method_name}: third argument must be a table or nil"
-                            )));
-                        }
-                    };
-                    (body, is_json, opts)
-                } else {
-                    let opts = match args_iter.next() {
-                        Some(Value::Table(t)) => Some(t),
-                        Some(Value::Nil) | None => None,
-                        _ => {
-                            return Err(mlua::Error::runtime(format!(
-                                "http.{method_name}: second argument must be a table or nil"
-                            )));
-                        }
-                    };
-                    (String::new(), false, opts)
-                };
-
-                let mut req = match method_name.as_str() {
-                    "get" => client.get(&url),
-                    "post" => client.post(&url),
-                    "put" => client.put(&url),
-                    "patch" => client.patch(&url),
-                    "delete" => client.delete(&url),
-                    _ => unreachable!(),
-                };
-
-                if has_body && !body_str.is_empty() {
-                    req = req.body(body_str);
-                }
-                if auto_json {
-                    req = req.header("Content-Type", "application/json");
-                }
-                if let Some(ref opts_table) = opts
-                    && let Ok(headers_table) = opts_table.get::<Table>("headers")
-                {
-                    for pair in headers_table.pairs::<String, String>() {
-                        let (k, v) = pair?;
-                        req = req.header(k, v);
-                    }
-                }
-
-                let resp = req.send().await.map_err(|e| {
-                    mlua::Error::runtime(format!("http.{method_name} failed: {e}"))
-                })?;
-                let status = resp.status().as_u16();
-                let resp_headers = resp.headers().clone();
-                let body = resp.text().await.map_err(|e| {
-                    mlua::Error::runtime(format!(
-                        "http.{method_name}: reading body failed: {e}"
-                    ))
-                })?;
-
-                let result = lua.create_table()?;
-                result.set("status", status)?;
-                result.set("body", body)?;
-
-                let headers_out = lua.create_table()?;
-                for (name, value) in &resp_headers {
-                    if let Ok(v) = value.to_str() {
-                        headers_out.set(name.as_str().to_string(), v.to_string())?;
-                    }
-                }
-                result.set("headers", headers_out)?;
-
-                Ok(Value::Table(result))
+                execute_http_request(&lua, &client, &method_name, args).await
             }
         })?;
         http_table.set(method, func)?;
     }
+
+    let client_fn = lua.create_async_function(|lua, opts: Option<Table>| async move {
+        let mut builder = reqwest::Client::builder();
+
+        let timeout_secs: f64 = opts
+            .as_ref()
+            .and_then(|t| t.get::<f64>("timeout").ok())
+            .unwrap_or(30.0);
+        builder = builder.timeout(std::time::Duration::from_secs_f64(timeout_secs));
+
+        if let Some(ref opts_table) = opts {
+            if let Ok(ca_path) = opts_table.get::<String>("ca_cert_file") {
+                let pem = std::fs::read(&ca_path).map_err(|e| {
+                    mlua::Error::runtime(format!(
+                        "http.client: failed to read CA cert file {ca_path:?}: {e}"
+                    ))
+                })?;
+                let cert = reqwest::Certificate::from_pem(&pem).map_err(|e| {
+                    mlua::Error::runtime(format!(
+                        "http.client: invalid PEM in {ca_path:?}: {e}"
+                    ))
+                })?;
+                builder = builder.add_root_certificate(cert);
+            }
+            if let Ok(ca_pem) = opts_table.get::<String>("ca_cert") {
+                let cert = reqwest::Certificate::from_pem(ca_pem.as_bytes()).map_err(|e| {
+                    mlua::Error::runtime(format!("http.client: invalid CA cert PEM: {e}"))
+                })?;
+                builder = builder.add_root_certificate(cert);
+            }
+        }
+
+        let client = builder.build().map_err(|e| {
+            mlua::Error::runtime(format!("http.client: failed to build client: {e}"))
+        })?;
+
+        let ud = lua.create_any_userdata(HttpClient(client))?;
+
+        let wrapper: Table = lua
+            .load(
+                r#"
+                local ud = ...
+                local obj = { _ud = ud }
+                setmetatable(obj, {
+                    __index = {
+                        get = function(self, url, opts)
+                            return http._client_request(self._ud, "get", url, opts)
+                        end,
+                        post = function(self, url, body, opts)
+                            return http._client_request(self._ud, "post", url, body, opts)
+                        end,
+                        put = function(self, url, body, opts)
+                            return http._client_request(self._ud, "put", url, body, opts)
+                        end,
+                        patch = function(self, url, body, opts)
+                            return http._client_request(self._ud, "patch", url, body, opts)
+                        end,
+                        delete = function(self, url, opts)
+                            return http._client_request(self._ud, "delete", url, opts)
+                        end,
+                    }
+                })
+                return obj
+            "#,
+            )
+            .call(ud)?;
+
+        Ok(Value::Table(wrapper))
+    })?;
+    http_table.set("client", client_fn)?;
+
+    let client_request_fn =
+        lua.create_async_function(|lua, args: mlua::MultiValue| async move {
+            let mut args_iter = args.into_iter();
+
+            let client = match args_iter.next() {
+                Some(Value::UserData(ud)) => {
+                    let hc = ud.borrow::<HttpClient>().map_err(|_| {
+                        mlua::Error::runtime(
+                            "http._client_request: first arg must be an http client",
+                        )
+                    })?;
+                    hc.0.clone()
+                }
+                _ => {
+                    return Err(mlua::Error::runtime(
+                        "http._client_request: first arg must be an http client",
+                    ));
+                }
+            };
+
+            let method_name: String = match args_iter.next() {
+                Some(Value::String(s)) => s.to_str()?.to_string(),
+                _ => {
+                    return Err(mlua::Error::runtime(
+                        "http._client_request: second arg must be method name",
+                    ));
+                }
+            };
+
+            let remaining: mlua::MultiValue = args_iter.collect();
+            execute_http_request(&lua, &client, &method_name, remaining).await
+        })?;
+    http_table.set("_client_request", client_request_fn)?;
 
     let serve_fn = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
         let mut args_iter = args.into_iter();

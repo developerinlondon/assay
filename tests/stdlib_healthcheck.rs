@@ -356,3 +356,44 @@ async fn test_multi_some_fail() {
     );
     run_lua(&script).await.unwrap();
 }
+
+#[tokio::test]
+async fn test_healthcheck_wait_success() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local hc = require("assay.healthcheck")
+        local result = hc.wait("{}/health", {{ timeout = 5, interval = 0.1 }})
+        assert.eq(result.ok, true)
+        assert.eq(result.attempts, 1)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_healthcheck_wait_timeout() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local hc = require("assay.healthcheck")
+        hc.wait("{}/health", {{ timeout = 1, interval = 0.5 }})
+        "#,
+        server.uri()
+    );
+    let result = run_lua(&script).await;
+    assert!(result.is_err());
+}

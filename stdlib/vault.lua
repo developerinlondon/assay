@@ -256,4 +256,75 @@ function M.client(url, token)
   return c
 end
 
+function M.wait(url, opts)
+  opts = opts or {}
+  local timeout = opts.timeout or 60
+  local interval = opts.interval or 2
+  local health_path = opts.health_path or "/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200"
+  local max_attempts = math.ceil(timeout / interval)
+
+  for i = 1, max_attempts do
+    local ok, resp = pcall(http.get, url .. health_path)
+    if ok and resp.status == 200 then
+      log.info("Vault healthy after " .. tostring(i * interval) .. "s")
+      return true
+    end
+    if i == max_attempts then
+      error("vault.wait: not reachable at " .. url .. " after " .. tostring(timeout) .. "s")
+    end
+    log.info("Waiting for Vault... (" .. tostring(i) .. "/" .. tostring(max_attempts) .. ")")
+    sleep(interval)
+  end
+end
+
+function M.authenticated_client(url, opts)
+  opts = opts or {}
+  local k8s = require("assay.k8s")
+
+  -- Wait for vault to be healthy first
+  M.wait(url, { timeout = opts.timeout or 60, interval = opts.interval or 2 })
+
+  -- Get token from K8s secret
+  local secret_ns = opts.secret_namespace or opts.secret_ns or "secrets"
+  local secret_name = opts.secret_name or "openbao-root-token"
+  local secret_key = opts.secret_key or "root-token"
+
+  local secret_data = k8s.get_secret(secret_ns, secret_name)
+  local token = secret_data[secret_key]
+  assert.not_nil(token, "vault.authenticated_client: key '" .. secret_key .. "' not found in secret " .. secret_ns .. "/" .. secret_name)
+
+  -- Trim whitespace
+  token = token:match("^%s*(.-)%s*$")
+
+  return M.client(url, token)
+end
+
+function M.ensure_credentials(client, path, check_key, generator)
+  -- Check if credentials already exist
+  local existing = client:kv_get("secrets", path)
+  if existing and existing.data and existing.data[check_key] then
+    log.info("Credentials already exist at secrets/" .. path)
+    return existing.data
+  end
+
+  -- Generate new credentials
+  local creds = generator()
+  client:kv_put("secrets", path, creds)
+  log.info("Generated and stored credentials at secrets/" .. path)
+  return creds
+end
+
+function M.assert_secret(client, path, expected_keys)
+  local data = client:kv_get("secrets", path)
+  assert.not_nil(data, "vault.assert_secret: secret not found at secrets/" .. path)
+  assert.not_nil(data.data, "vault.assert_secret: no data at secrets/" .. path)
+
+  for _, key in ipairs(expected_keys) do
+    assert.not_nil(data.data[key], "vault.assert_secret: key '" .. key .. "' missing at secrets/" .. path)
+  end
+
+  log.info("Secret verified at secrets/" .. path .. " (" .. tostring(#expected_keys) .. " keys)")
+  return data.data
+end
+
 return M
