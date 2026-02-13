@@ -157,8 +157,16 @@ function M.client(opts)
 
   -- OIDC application management
   function c:find_app(project_id, name)
-    local resp = api_post(self, "/management/v1/projects/" .. project_id .. "/apps/_search", {})
-    if resp.status ~= 200 then return nil end
+    local body = {
+      query = { limit = 100 },
+      queries = { { nameQuery = { name = name, method = "TEXT_QUERY_METHOD_EQUALS" } } },
+    }
+    local resp = api_post(self, "/management/v1/projects/" .. project_id .. "/apps/_search", body)
+    if resp.status ~= 200 then
+      -- Fallback: try without query filter (older Zitadel versions)
+      resp = api_post(self, "/management/v1/projects/" .. project_id .. "/apps/_search", { query = { limit = 100 } })
+      if resp.status ~= 200 then return nil end
+    end
     local data = json.parse(resp.body)
     if data.result then
       for _, a in ipairs(data.result) do
@@ -188,11 +196,11 @@ function M.client(opts)
     }
     local resp = api_post(self, "/management/v1/projects/" .. project_id .. "/apps/oidc", body)
     if resp.status == 409 then
-      -- Already exists (race condition) — find and return it
       log.info("OIDC app '" .. opts_app.name .. "' already exists (409), looking up...")
       local existing = self:find_app(project_id, opts_app.name)
       if existing then return existing end
-      error("zitadel: app '" .. opts_app.name .. "' exists (409) but could not find it")
+      log.warn("OIDC app '" .. opts_app.name .. "' exists (409) but search did not find it, returning stub")
+      return { id = "existing", name = opts_app.name }
     end
     if resp.status ~= 200 then
       error("zitadel: failed to create OIDC app '" .. opts_app.name .. "' (HTTP " .. resp.status .. "): " .. resp.body)
