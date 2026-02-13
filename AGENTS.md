@@ -117,7 +117,9 @@ cargo build --release --target x86_64-unknown-linux-musl  # Static binary for Do
 6. **Test After Change**: Run `cargo check && cargo clippy -- -D warnings && cargo test` after
    edits.
 7. **Latest Versions**: Check `cargo search <crate> --limit 1` before adding dependencies.
-8. **Performance-Aware**: Every code change must consider performance impact. Avoid unnecessary
+8. **No Attribution Lines**: Never add `Co-authored-by`, `Ultraworked with`, or any AI agent
+   attribution to commits, PRs/MRs, comments, or changelogs. Keep commit messages clean.
+9. **Performance-Aware**: Every code change must consider performance impact. Avoid unnecessary
    allocations, cloning, and copies. Prefer zero-cost abstractions. When adding new builtins or
    modifying hot paths: reuse existing clients/connections (don't create per-request), use lazy
    initialization for expensive resources, extract shared logic into helpers instead of duplicating
