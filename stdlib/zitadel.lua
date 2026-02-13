@@ -187,6 +187,13 @@ function M.client(opts)
       clockSkew = opts_app.clockSkew or "0s",
     }
     local resp = api_post(self, "/management/v1/projects/" .. project_id .. "/apps/oidc", body)
+    if resp.status == 409 then
+      -- Already exists (race condition) — find and return it
+      log.info("OIDC app '" .. opts_app.name .. "' already exists (409), looking up...")
+      local existing = self:find_app(project_id, opts_app.name)
+      if existing then return existing end
+      error("zitadel: app '" .. opts_app.name .. "' exists (409) but could not find it")
+    end
     if resp.status ~= 200 then
       error("zitadel: failed to create OIDC app '" .. opts_app.name .. "' (HTTP " .. resp.status .. "): " .. resp.body)
     end
