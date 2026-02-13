@@ -2,6 +2,27 @@
 
 All notable changes to Assay are documented here.
 
+## [0.4.3] - 2026-02-13
+
+### Added
+
+- **crypto.hmac**: HMAC builtin supporting all 8 hash algorithms (SHA-224/256/384/512,
+  SHA3-224/256/384/512). Binary-safe key/data via `mlua::String`. Supports `raw` output mode for
+  key chaining (required by AWS Sig V4). Manual RFC 2104 implementation using existing sha2/sha3
+  crates — zero new dependencies.
+- **S3 stdlib module** (`assay.s3`): Pure Lua S3 client with AWS Signature V4 request signing. Works
+  with any S3-compatible endpoint (AWS, iDrive e2, Cloudflare R2, MinIO). Operations: create/delete
+  bucket, list buckets, put/get/delete/list/head/copy objects, bucket_exists. Path-style URLs
+  default. Epoch-to-UTC date math (no os.date dependency). Simple XML response parsing via Lua
+  patterns.
+- 15 new tests (7 HMAC + 8 S3 stdlib)
+
+### Changed
+
+- **Modular builtins**: Split monolithic `builtins.rs` (1788 lines) into `src/lua/builtins/`
+  directory with 10 focused modules: http, json, serialization, assert, crypto, db, ws, template,
+  core, mod. Zero behavior change — pure refactoring for maintainability.
+
 ## [0.3.1] - 2026-02-11
 
 - Publish crate as `assay-lua` on crates.io (binary still installs as `assay`)
