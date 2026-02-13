@@ -10,7 +10,7 @@ Lightweight Lua runtime for Kubernetes. Verification, scripting, and web service
 
 Assay is a single ~9 MB binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes
 Jobs. It provides a full-featured Lua runtime with built-in HTTP client/server, database access,
-WebSocket, JWT signing, templates, and 19 embedded Kubernetes-native libraries.
+WebSocket, JWT signing, templates, and 20+ embedded Kubernetes-native libraries.
 
 One binary, auto-detected behavior:
 
@@ -217,6 +217,7 @@ yaml, assert, log, env, sleep, time, base64).
 | ----------------------------------- | ------------------------------------------ |
 | `crypto.jwt_sign(claims, key, alg, opts?)` | Sign JWT (RS256/384/512), opts: `{kid="..."}` |
 | `crypto.hash(str, alg)`             | Hash string (sha256, sha384, sha512, etc.) |
+| `crypto.hmac(key, data, alg?, raw?)` | HMAC (sha256 default, raw=true for binary) |
 | `crypto.random(len)`                | Secure random string (hex)                 |
 
 ### Regular Expressions
@@ -297,7 +298,7 @@ Supported URLs:
 
 ## Stdlib Modules
 
-Assay embeds 19 Lua modules for Kubernetes-native operations. Use `require("assay.<module>")`:
+Assay embeds 22 Lua modules for Kubernetes-native operations. Use `require("assay.<module>")`:
 
 | Module               | Description                                                 |
 | -------------------- | ----------------------------------------------------------- |
@@ -320,6 +321,7 @@ Assay embeds 19 Lua modules for Kubernetes-native operations. Use `require("assa
 | `assay.temporal`     | Workflows, task queues, schedules                           |
 | `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning   |
 | `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check |
+| `assay.s3`           | S3-compatible storage (AWS, iDrive e2, R2, MinIO) — Sig V4  |
 
 Example:
 
