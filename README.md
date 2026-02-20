@@ -298,7 +298,7 @@ Supported URLs:
 
 ## Stdlib Modules
 
-Assay embeds 22 Lua modules for Kubernetes-native operations. Use `require("assay.<module>")`:
+Assay embeds 23 Lua modules for Kubernetes-native operations. Use `require("assay.<module>")`:
 
 | Module               | Description                                                 |
 | -------------------- | ----------------------------------------------------------- |
@@ -322,6 +322,7 @@ Assay embeds 22 Lua modules for Kubernetes-native operations. Use `require("assa
 | `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning   |
 | `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check |
 | `assay.s3`           | S3-compatible storage (AWS, iDrive e2, R2, MinIO) — Sig V4  |
+| `assay.unleash`      | Feature flags: projects, environments, features, strategies, API tokens |
 
 Example:
 
