@@ -1,13 +1,24 @@
-use super::json::{lua_table_to_json, lua_value_to_json};
+use super::json::lua_table_to_json;
+#[cfg(feature = "server")]
+use super::json::lua_value_to_json;
+#[cfg(feature = "server")]
 use http_body_util::Full;
+#[cfg(feature = "server")]
 use hyper::body::{Bytes, Incoming};
+#[cfg(feature = "server")]
 use hyper::server::conn::http1;
+#[cfg(feature = "server")]
 use hyper::service::service_fn;
+#[cfg(feature = "server")]
 use hyper::{Request, Response, StatusCode};
 use mlua::{Lua, Table, UserData, Value};
+#[cfg(feature = "server")]
 use std::collections::HashMap;
+#[cfg(feature = "server")]
 use std::rc::Rc;
+#[cfg(feature = "server")]
 use tokio::net::TcpListener;
+#[cfg(feature = "server")]
 use tracing::error;
 
 struct HttpClient(reqwest::Client);
@@ -134,6 +145,7 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
         })?;
     http_table.set("_client_request", client_request_fn)?;
 
+    #[cfg(feature = "server")]
     let serve_fn = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
         let mut args_iter = args.into_iter();
 
@@ -189,6 +201,7 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
             });
         }
     })?;
+    #[cfg(feature = "server")]
     http_table.set("serve", serve_fn)?;
 
     lua.globals().set("http", http_table)?;
@@ -309,6 +322,7 @@ async fn execute_http_request(
     Ok(Value::Table(result))
 }
 
+#[cfg(feature = "server")]
 fn parse_routes(routes_table: &Table) -> mlua::Result<HashMap<(String, String), mlua::Function>> {
     let mut routes = HashMap::new();
     for method_pair in routes_table.pairs::<String, Table>() {
@@ -322,6 +336,7 @@ fn parse_routes(routes_table: &Table) -> mlua::Result<HashMap<(String, String), 
     Ok(routes)
 }
 
+#[cfg(feature = "server")]
 async fn handle_request(
     lua: &Lua,
     routes: &HashMap<(String, String), mlua::Function>,
@@ -364,6 +379,7 @@ async fn handle_request(
     }
 }
 
+#[cfg(feature = "server")]
 fn build_lua_request_and_call(
     lua: &Lua,
     handler: &mlua::Function,
@@ -388,6 +404,7 @@ fn build_lua_request_and_call(
     handler.call::<Table>(req_table)
 }
 
+#[cfg(feature = "server")]
 fn lua_response_to_http(resp_table: &Table) -> Result<Response<Full<Bytes>>, hyper::Error> {
     let status = resp_table
         .get::<Option<u16>>("status")
