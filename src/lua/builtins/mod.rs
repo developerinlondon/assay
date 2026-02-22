@@ -1,6 +1,7 @@
 mod assert;
 mod core;
 mod crypto;
+#[cfg(feature = "db")]
 mod db;
 mod http;
 mod json;
@@ -23,6 +24,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     crypto::register_crypto(lua)?;
     core::register_regex(lua)?;
     core::register_async(lua)?;
+    #[cfg(feature = "db")]
     db::register_db(lua)?;
     ws::register_ws(lua)?;
     template::register_template(lua)?;
