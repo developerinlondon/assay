@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.4.4"
+version = "0.4.5"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -12,10 +12,17 @@ description = "Lightweight Lua runtime for Kubernetes. Verification, scripting, 
 [[bin]]
 name = "assay"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [lib]
 name = "assay"
 path = "src/lib.rs"
+
+[features]
+default = ["db", "server", "cli"]
+db = ["dep:sqlx"]
+server = ["dep:http-body-util", "dep:hyper", "dep:hyper-util"]
+cli = ["dep:clap", "dep:tracing-subscriber"]
 
 [dependencies]
 # Lua scripting engine
@@ -32,15 +39,15 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 serde_yml = "0.0.12"
 
-# CLI
-clap = { version = "4.5.57", features = ["derive"] }
+# CLI (optional — only needed for the assay binary)
+clap = { version = "4.5.57", features = ["derive"], optional = true }
 
 # Error handling
 anyhow = "1"
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"], optional = true }
 
 # JWT signing (RS256)
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
@@ -66,8 +73,8 @@ regex-lite = "0.1.9"
 # TOML parsing/encoding
 toml = "0.9.12"
 
-# SQL database (Postgres, MySQL, SQLite)
-sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "mysql", "sqlite", "any"] }
+# SQL database (optional — Postgres, MySQL, SQLite)
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "mysql", "sqlite", "any"], optional = true }
 
 # WebSocket client
 futures-util = "0.3"
@@ -76,11 +83,11 @@ tokio-tungstenite = { version = "0.28.0", features = ["connect", "rustls-tls-web
 # Template engine (Jinja2-compatible)
 minijinja = "2.15.1"
 
-# HTTP server
+# HTTP server (optional — only needed for http.serve() Lua builtin)
 axum = "0.8.8"
-http-body-util = "0.1"
-hyper = { version = "1", features = ["http1", "server"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = { version = "0.1", optional = true }
+hyper = { version = "1", features = ["http1", "server"], optional = true }
+hyper-util = { version = "0.1", features = ["tokio"], optional = true }
 tower-http = { version = "0.6.8", features = ["cors", "trace"] }
 
 [dev-dependencies]
