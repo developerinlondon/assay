@@ -97,13 +97,13 @@ fn exec_eval_runs_lua_code() {
 }
 
 #[test]
-fn modules_stub_prints_not_implemented() {
+fn modules_lists_available_modules() {
     let output = assay_bin().arg("modules").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "modules stub should exit 0");
+    assert!(output.status.success(), "modules should exit 0");
     assert!(
-        stdout.contains("not yet implemented"),
-        "modules stub should print not yet implemented: {stdout}"
+        stdout.contains("MODULE"),
+        "modules output should have MODULE header: {stdout}"
     );
 }
 

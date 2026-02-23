@@ -1,0 +1,49 @@
+TASK 9: BACKWARD COMPATIBILITY VERIFICATION & INTEGRATION TESTS
+================================================================
+
+OBJECTIVE:
+Verify that backward compatibility for `assay <file>` (no subcommand) works correctly,
+add dedicated backward-compat integration tests, save evidence, and commit.
+
+VERIFICATION RESULTS:
+✓ cargo run -- tests/e2e/check_json.lua exits 0 (backward compat works)
+✓ cargo run -- run tests/e2e/check_json.lua exits 0 (run subcommand works)
+✓ cargo run -- tests/e2e/check_yaml.lua exits 0 (backward compat works)
+✓ cargo run -- tests/e2e/check_toml.lua exits 0 (backward compat works)
+✓ cargo run -- nonexistent.txt exits 1 with error (unsupported extension)
+
+TESTS ADDED TO tests/cli_subcommands.rs:
+1. backward_compat_lua_file - Verify assay <lua_file> works
+2. backward_compat_yaml_file - Verify assay <yaml_file> works
+3. backward_compat_toml_file - Verify assay <toml_file> works
+4. unsupported_extension_fails - Verify unsupported extensions are rejected
+5. run_subcommand_lua_file - Verify assay run <lua_file> works
+6. run_subcommand_yaml_file - Verify assay run <yaml_file> works
+7. exec_eval_runs_lua_code - Fixed: verify exec -e actually executes code
+
+TEST RESULTS:
+All 13 CLI tests pass:
+- 6 backward compatibility tests (3 file types × 2 modes)
+- 1 unsupported extension test
+- 6 other CLI tests (help, version, stubs, etc.)
+
+EVIDENCE FILES SAVED:
+- task-9-lua-compat.txt - Direct backward compat test output
+- task-9-unsupported-ext.txt - Unsupported extension error output
+- task-9-backward-compat-tests.txt - Backward compat test suite results
+- task-9-run-subcommand-tests.txt - Run subcommand test results
+- task-9-unsupported-ext-test.txt - Unsupported extension test results
+- task-9-all-cli-tests.txt - Complete CLI test suite results
+
+COMMIT:
+feat(cli): add backward-compat and exec integration tests
+- All 13 CLI tests pass
+- Backward compatibility verified for .lua, .yaml, .toml files
+- Run subcommand works correctly
+- Unsupported extensions properly rejected
+
+BACKWARD COMPATIBILITY CONFIRMED:
+The CLI correctly handles both modes:
+1. Backward compat (no subcommand): assay <file> → auto-detects by extension
+2. Explicit run: assay run <file> → same behavior
+3. Error handling: assay <unsupported> → exit 1 with clear error message

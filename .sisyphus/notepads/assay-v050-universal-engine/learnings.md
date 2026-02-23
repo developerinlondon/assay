@@ -38,3 +38,35 @@
 
 Rules: triple-dash `--- @`, header at TOP before `local M = {}`, @quickref only for
 `function c:method()` (not local helpers).
+
+## 2026-02-23 Discovery Module
+
+### Implementation Notes
+
+`include_dir!` crate's `Dir::files()` iterates all embedded files — used for stdlib discovery
+`STDLIB_DIR` static must be duplicated (not shared) between `lua/mod.rs` and `discovery.rs` since
+`include_dir!` is a macro invocation tied to a specific static FTS5Index `add_document` field name
+mapping: "name" maps to name column, anything unknown falls to functions column catch-all. Passing
+"module_name" as field name goes to functions column in FTS5 but works correctly in BM25Index
+`#[cfg(feature = "db")]` / `#[cfg(not(feature = "db"))]` blocks: clippy flags `return` in cfg-gated
+blocks as needless when only one branch compiles. Use expression-style (no `return`) for both
+branches `Box<dyn SearchEngine>` — trait methods are callable without importing the trait (vtable
+dispatch), so `use SearchEngine` import is unused in tests 17 Rust builtins + 23 stdlib .lua files =
+40 total modules discovered
+
+## 2026-02-23 Context Subcommand Wiring
+
+### Tokio Runtime Nesting Gotcha
+
+FTS5Index creates its own `tokio::Runtime` internally (`Runtime::new()` + `block_on()`). Calling
+discovery/search from within `#[tokio::main]` causes panic: "Cannot start a runtime from within a
+runtime". Fix: spawn a `std::thread` to run discovery outside the tokio runtime context. This
+pattern will apply to any sync function that calls `search_modules()` or `build_index()` from async
+context.
+
+### Crate Access Pattern
+
+- Binary crate (`src/main.rs`) uses `mod checks; mod config; mod lua;` for binary-only modules
+- Library crate name is `assay` (from `[lib] name = "assay"` in Cargo.toml)
+- Library modules accessed via `use assay::context::...` and `use assay::discovery::...`
+- SearchResult fields: `id: String, score: f64`
