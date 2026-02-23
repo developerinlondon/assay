@@ -1,0 +1,66 @@
+# Task 5: Filesystem Module Loader Implementation
+
+## Summary
+Extended the Lua VM module loader in `/root/code/assay/src/lua/mod.rs` to load modules from filesystem paths with the following priority order:
+1. `./modules/<name>.lua` (per-project, highest priority)
+2. `~/.assay/modules/<name>.lua` (global user, or `$ASSAY_MODULES_PATH/<name>.lua` if set)
+3. Built-in embedded stdlib (lowest priority)
+
+## Changes Made
+
+### 1. src/lua/mod.rs
+- Replaced `DEFAULT_LIB_PATH` and `LIB_PATH_ENV` constants with `MODULES_PATH_ENV` for the new environment variable
+- Refactored `create_vm()` to call new `create_vm_with_paths()` function
+- Added `create_vm_with_paths()` function that accepts optional global modules path
+- Kept `create_vm_with_lib_path()` for backward compatibility (marked with `#[allow(dead_code)]`)
+- Rewrote `register_fs_loader()` to implement the three-tier priority system:
+  - First checks `./modules/<name>.lua`
+  - Then checks `~/.assay/modules/<name>.lua` (or `$ASSAY_MODULES_PATH/<name>.lua`)
+  - Falls through to built-in modules via `register_stdlib_loader()`
+
+### 2. tests/fs_require.rs
+- Updated `test_fs_require_embedded_takes_priority()` to `test_fs_require_filesystem_takes_priority()`
+- Changed test to verify that filesystem modules take priority over built-in modules
+- Test now creates a custom `vault.lua` in the filesystem and verifies it's loaded instead of the built-in
+
+## Implementation Details
+
+### Module Resolution Logic
+```
+For require("assay.mymodule"):
+1. Check ./modules/mymodule.lua
+   - If found, load and return
+2. Check ~/.assay/modules/mymodule.lua (or $ASSAY_MODULES_PATH/mymodule.lua)
+   - If found, load and return
+3. Fall through to built-in modules
+   - register_stdlib_loader handles this
+```
+
+### Environment Variable
+- `ASSAY_MODULES_PATH`: Overrides the default `~/.assay/modules/` path for global modules
+- If not set, defaults to `~/.assay/modules/`
+- If `HOME` env var is not available, global path is skipped
+
+### Backward Compatibility
+- `create_vm_with_lib_path()` function preserved for backward compatibility
+- Built-in modules still work unchanged
+- Existing code using `create_vm()` continues to work
+
+## Test Results
+All tests pass:
+- `cargo test`: 15 passed (library tests) + 8 passed (fs_require tests) + all other tests
+- `cargo clippy -- -D warnings`: No warnings
+- No regressions in existing functionality
+
+## Files Modified
+1. src/lua/mod.rs (154 lines)
+2. tests/fs_require.rs (155 lines)
+
+## Verification
+✓ All 8 fs_require tests pass
+✓ All library tests pass (15 tests)
+✓ All integration tests pass
+✓ No clippy warnings
+✓ Backward compatibility maintained
+✓ Environment variable support working
+✓ Three-tier priority system implemented correctly
