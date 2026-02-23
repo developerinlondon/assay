@@ -86,9 +86,15 @@ async fn main() -> ExitCode {
             println!("context: not yet implemented");
             ExitCode::SUCCESS
         }
-        Some(Commands::Exec { .. }) => {
-            println!("exec: not yet implemented");
-            ExitCode::SUCCESS
+        Some(Commands::Exec { eval, file }) => {
+            if let Some(code) = eval {
+                run_lua_inline(&code).await
+            } else if let Some(path) = file {
+                run_lua_script(&path).await
+            } else {
+                eprintln!("error: exec requires either -e <code> or a file path");
+                ExitCode::from(1)
+            }
         }
         Some(Commands::Modules) => {
             println!("modules: not yet implemented");
@@ -173,6 +179,40 @@ async fn run_lua_script(path: &std::path::Path) -> ExitCode {
         .run_until(async {
             vm.load(script)
                 .set_name(format!("@{}", path.display()))
+                .exec_async()
+                .await
+        })
+        .await;
+
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            error!("{}", format_lua_error(&e));
+            ExitCode::from(1)
+        }
+    }
+}
+
+async fn run_lua_inline(code: &str) -> ExitCode {
+    info!("starting assay (inline eval mode)");
+
+    let client = build_http_client();
+
+    let vm = match lua::create_vm(client) {
+        Ok(vm) => vm,
+        Err(e) => {
+            eprintln!("error: creating Lua VM: {e:#}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let script = lua::async_bridge::strip_shebang(code);
+
+    let local = tokio::task::LocalSet::new();
+    let result = local
+        .run_until(async {
+            vm.load(script)
+                .set_name("@<eval>")
                 .exec_async()
                 .await
         })
