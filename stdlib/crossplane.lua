@@ -1,3 +1,31 @@
+--- @module assay.crossplane
+--- @description Crossplane infrastructure management. Providers, XRDs, compositions, managed resources.
+--- @keywords crossplane, providers, xrds, compositions, managed, kubernetes, infrastructure
+--- @quickref c:providers() -> {items} | List providers
+--- @quickref c:provider(name) -> provider|nil | Get provider by name
+--- @quickref c:is_provider_healthy(name) -> bool | Check if provider is healthy
+--- @quickref c:is_provider_installed(name) -> bool | Check if provider is installed
+--- @quickref c:provider_status(name) -> {installed, healthy, current_revision} | Get provider status
+--- @quickref c:provider_revisions() -> {items} | List provider revisions
+--- @quickref c:provider_revision(name) -> revision|nil | Get provider revision
+--- @quickref c:configurations() -> {items} | List configurations
+--- @quickref c:configuration(name) -> config|nil | Get configuration by name
+--- @quickref c:is_configuration_healthy(name) -> bool | Check if configuration is healthy
+--- @quickref c:is_configuration_installed(name) -> bool | Check if configuration is installed
+--- @quickref c:functions() -> {items} | List functions
+--- @quickref c:xfunction(name) -> function|nil | Get function by name
+--- @quickref c:is_function_healthy(name) -> bool | Check if function is healthy
+--- @quickref c:xrds() -> {items} | List composite resource definitions
+--- @quickref c:xrd(name) -> xrd|nil | Get XRD by name
+--- @quickref c:is_xrd_established(name) -> bool | Check if XRD is established
+--- @quickref c:compositions() -> {items} | List compositions
+--- @quickref c:composition(name) -> composition|nil | Get composition by name
+--- @quickref c:managed_resource(api_group, version, kind, name) -> resource|nil | Get managed resource
+--- @quickref c:is_managed_ready(api_group, version, kind, name) -> bool | Check if managed resource is ready
+--- @quickref c:managed_resources(api_group, version, kind) -> {items} | List managed resources
+--- @quickref c:all_providers_healthy() -> {healthy, unhealthy, total} | Check all providers health
+--- @quickref c:all_xrds_established() -> {established, not_established, total} | Check all XRDs status
+
 local M = {}
 
 function M.client(url, token)

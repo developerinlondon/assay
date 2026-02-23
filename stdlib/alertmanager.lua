@@ -1,3 +1,19 @@
+--- @module assay.alertmanager
+--- @description Alertmanager alert and silence management. Query, create, and delete alerts and silences.
+--- @keywords alertmanager, alerts, silences, receivers, monitoring
+--- @quickref M.alerts(url, opts?) -> [alert] | List active alerts with filters
+--- @quickref M.post_alerts(url, alerts) -> true | Post new alerts
+--- @quickref M.alert_groups(url, opts?) -> [group] | List alert groups
+--- @quickref M.silences(url, opts?) -> [silence] | List silences
+--- @quickref M.silence(url, id) -> silence | Get silence by ID
+--- @quickref M.create_silence(url, silence) -> {silenceID} | Create a silence
+--- @quickref M.delete_silence(url, id) -> true | Delete silence by ID
+--- @quickref M.status(url) -> {cluster, config} | Get Alertmanager status
+--- @quickref M.receivers(url) -> [receiver] | List receivers
+--- @quickref M.is_firing(url, alertname) -> bool | Check if alert is firing
+--- @quickref M.silence_alert(url, alertname, duration_hours, opts?) -> silenceID | Silence an alert by name
+--- @quickref M.active_count(url) -> number | Count active non-silenced alerts
+
 local M = {}
 
 function M.alerts(url, opts)

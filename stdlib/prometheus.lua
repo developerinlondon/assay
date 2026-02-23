@@ -1,3 +1,16 @@
+--- @module assay.prometheus
+--- @description Prometheus monitoring queries. PromQL instant/range queries, alerts, targets, rules, series.
+--- @keywords prometheus, promql, metrics, alerts, targets, rules, monitoring
+--- @quickref M.query(url, promql) -> number|[{metric, value}] | Instant PromQL query
+--- @quickref M.query_range(url, promql, start, end, step) -> [result] | Range PromQL query
+--- @quickref M.alerts(url) -> [alert] | List active alerts
+--- @quickref M.targets(url) -> {activeTargets, droppedTargets} | List scrape targets
+--- @quickref M.rules(url, opts?) -> [group] | List alerting/recording rules
+--- @quickref M.label_values(url, label_name) -> [string] | List values for a label
+--- @quickref M.series(url, match_selectors) -> [series] | Query series metadata
+--- @quickref M.config_reload(url) -> bool | Trigger configuration reload
+--- @quickref M.targets_metadata(url, opts?) -> [metadata] | Get targets metadata
+
 local M = {}
 
 function M.query(url, promql)
