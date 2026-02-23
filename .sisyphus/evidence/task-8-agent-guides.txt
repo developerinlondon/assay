@@ -1,0 +1,19 @@
+=== Task 8: Agent Integration Guides ===
+
+mcp-serve refs:
+8
+
+assay context refs:
+29
+
+=== Agent sections found ===
+5
+
+=== Today sections (assay context) ===
+6
+
+=== Coming Soon sections (mcp-serve) ===
+5
+
+=== Quick Reference table rows ===
+6
