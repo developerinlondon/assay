@@ -1,3 +1,51 @@
+--- @module assay.vault
+--- @description HashiCorp Vault secrets management. KV, policies, auth, transit, PKI, token management.
+--- @keywords vault, secrets, kv, policies, auth, transit, pki, tokens
+--- @quickref c:read(path) -> data|nil | Read secret at path
+--- @quickref c:write(path, payload) -> data|nil | Write secret to path
+--- @quickref c:delete(path) -> nil | Delete secret at path
+--- @quickref c:list(path) -> [string] | List keys at path
+--- @quickref c:kv_get(mount, key) -> {data}|nil | Read KV v2 secret
+--- @quickref c:kv_put(mount, key, data) -> result | Write KV v2 secret
+--- @quickref c:kv_delete(mount, key) -> nil | Delete KV v2 secret
+--- @quickref c:kv_list(mount, prefix?) -> [string] | List KV v2 keys
+--- @quickref c:kv_metadata(mount, key) -> metadata|nil | Get KV v2 metadata
+--- @quickref c:health() -> {initialized, sealed, version} | Get Vault health
+--- @quickref c:seal_status() -> {sealed, initialized} | Get seal status
+--- @quickref c:is_sealed() -> bool | Check if Vault is sealed
+--- @quickref c:is_initialized() -> bool | Check if Vault is initialized
+--- @quickref c:policy_get(name) -> policy|nil | Get ACL policy
+--- @quickref c:policy_put(name, rules) -> nil | Create or update ACL policy
+--- @quickref c:policy_delete(name) -> nil | Delete ACL policy
+--- @quickref c:policy_list() -> [string] | List ACL policies
+--- @quickref c:auth_enable(path, type, opts?) -> nil | Enable auth method
+--- @quickref c:auth_disable(path) -> nil | Disable auth method
+--- @quickref c:auth_list() -> {path: config} | List auth methods
+--- @quickref c:auth_config(path, config) -> nil | Configure auth method
+--- @quickref c:auth_create_role(path, role_name, config) -> nil | Create auth role
+--- @quickref c:auth_read_role(path, role_name) -> role|nil | Read auth role
+--- @quickref c:auth_list_roles(path) -> [string] | List auth roles
+--- @quickref c:engine_enable(path, type, opts?) -> nil | Enable secrets engine
+--- @quickref c:engine_disable(path) -> nil | Disable secrets engine
+--- @quickref c:engine_list() -> {path: config} | List secrets engines
+--- @quickref c:engine_tune(path, config) -> nil | Tune secrets engine
+--- @quickref c:token_create(opts?) -> {client_token, ...} | Create token
+--- @quickref c:token_lookup(token) -> token_info|nil | Lookup token
+--- @quickref c:token_lookup_self() -> token_info|nil | Lookup current token
+--- @quickref c:token_revoke(token) -> nil | Revoke token
+--- @quickref c:token_revoke_self() -> nil | Revoke current token
+--- @quickref c:transit_encrypt(key_name, plaintext) -> ciphertext|nil | Encrypt with transit
+--- @quickref c:transit_decrypt(key_name, ciphertext) -> plaintext|nil | Decrypt with transit
+--- @quickref c:transit_create_key(key_name, opts?) -> nil | Create transit key
+--- @quickref c:transit_list_keys() -> [string] | List transit keys
+--- @quickref c:pki_issue(mount, role_name, opts?) -> cert|nil | Issue PKI certificate
+--- @quickref c:pki_ca_cert(mount?) -> string | Get CA certificate PEM
+--- @quickref c:pki_create_role(mount, role_name, opts?) -> nil | Create PKI role
+--- @quickref M.wait(url, opts?) -> true | Wait for Vault to become healthy
+--- @quickref M.authenticated_client(url, opts?) -> client | Create client with K8s secret auth
+--- @quickref M.ensure_credentials(client, path, check_key, generator) -> creds | Ensure credentials exist
+--- @quickref M.assert_secret(client, path, expected_keys) -> data | Assert secret exists with keys
+
 local M = {}
 
 function M.client(url, token)

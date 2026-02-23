@@ -1,3 +1,27 @@
+--- @module assay.certmanager
+--- @description cert-manager certificate lifecycle. Certificates, issuers, ACME orders and challenges.
+--- @keywords certmanager, certificates, issuers, acme, tls, kubernetes
+--- @quickref c:certificates(namespace) -> {items} | List certificates in namespace
+--- @quickref c:certificate(namespace, name) -> cert|nil | Get certificate by name
+--- @quickref c:certificate_status(namespace, name) -> {ready, not_after, renewal_time} | Get certificate status
+--- @quickref c:is_certificate_ready(namespace, name) -> bool | Check if certificate is ready
+--- @quickref c:wait_certificate_ready(namespace, name, timeout_secs?) -> true | Wait for certificate readiness
+--- @quickref c:issuers(namespace) -> {items} | List issuers in namespace
+--- @quickref c:issuer(namespace, name) -> issuer|nil | Get issuer by name
+--- @quickref c:is_issuer_ready(namespace, name) -> bool | Check if issuer is ready
+--- @quickref c:cluster_issuers() -> {items} | List cluster issuers
+--- @quickref c:cluster_issuer(name) -> issuer|nil | Get cluster issuer by name
+--- @quickref c:is_cluster_issuer_ready(name) -> bool | Check if cluster issuer is ready
+--- @quickref c:certificate_requests(namespace) -> {items} | List certificate requests
+--- @quickref c:certificate_request(namespace, name) -> request|nil | Get certificate request
+--- @quickref c:is_request_approved(namespace, name) -> bool | Check if request is approved
+--- @quickref c:orders(namespace) -> {items} | List ACME orders
+--- @quickref c:order(namespace, name) -> order|nil | Get ACME order
+--- @quickref c:challenges(namespace) -> {items} | List ACME challenges
+--- @quickref c:challenge(namespace, name) -> challenge|nil | Get ACME challenge
+--- @quickref c:all_certificates_ready(namespace) -> {ready, not_ready, total} | Check all certificates readiness
+--- @quickref c:all_issuers_ready(namespace) -> {ready, not_ready, total} | Check all issuers readiness
+
 local M = {}
 
 function M.client(url, token)

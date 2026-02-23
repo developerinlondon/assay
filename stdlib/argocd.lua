@@ -1,3 +1,28 @@
+--- @module assay.argocd
+--- @description ArgoCD GitOps application management. Apps, sync, health, projects, repositories, clusters.
+--- @keywords argocd, gitops, applications, sync, health, projects, repositories, clusters
+--- @quickref c:applications(opts?) -> [app] | List applications with optional project/selector filter
+--- @quickref c:application(name) -> app | Get application by name
+--- @quickref c:app_health(name) -> {status, sync, message} | Get app health and sync status
+--- @quickref c:sync(name, opts?) -> result | Trigger application sync
+--- @quickref c:refresh(name, opts?) -> app | Refresh application state
+--- @quickref c:rollback(name, id) -> result | Rollback application to history ID
+--- @quickref c:app_resources(name) -> resource_tree | Get application resource tree
+--- @quickref c:app_manifests(name, opts?) -> manifests | Get application manifests
+--- @quickref c:delete_app(name, opts?) -> nil | Delete application
+--- @quickref c:projects() -> [project] | List projects
+--- @quickref c:project(name) -> project | Get project by name
+--- @quickref c:repositories() -> [repo] | List repositories
+--- @quickref c:repository(repo_url) -> repo | Get repository by URL
+--- @quickref c:clusters() -> [cluster] | List clusters
+--- @quickref c:cluster(server_url) -> cluster | Get cluster by server URL
+--- @quickref c:settings() -> settings | Get ArgoCD settings
+--- @quickref c:version() -> version | Get ArgoCD version
+--- @quickref c:is_healthy(name) -> bool | Check if app is healthy
+--- @quickref c:is_synced(name) -> bool | Check if app is synced
+--- @quickref c:wait_healthy(name, timeout_secs) -> true | Wait for app to become healthy
+--- @quickref c:wait_synced(name, timeout_secs) -> true | Wait for app to become synced
+
 local M = {}
 
 function M.client(url, opts)
