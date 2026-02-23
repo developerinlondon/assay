@@ -81,3 +81,41 @@ FTS5Index or any async runtime. Only `search_modules()` triggers the tokio nesti
 arg with plain `{}` format. Fix: inline the literal into the format string directly.
 `discover_modules()` returns 40 modules (23 stdlib + 17 Rust builtins). Dedup by name with
 `HashSet::insert` preserving priority order (Project > Global > BuiltIn).
+
+## 2026-02-23 SKILL.md Creation
+
+### Key Findings
+
+- `assay modules` outputs 40 total: 23 stdlib (all `builtin` source) + 17 Rust builtins
+- `assay context "<keyword>"` outputs prompt-ready Markdown with module descriptions and quickrefs
+- The `assay exec -e '<lua>'` subcommand is the inline eval command (not `assay eval`)
+- CLI subcommands: `context`, `exec`, `modules`, `run`, `help` (plus positional FILE for
+  auto-detect)
+- `assay --help` shows the full subcommand list with descriptions
+- SKILL.md ended up at 417 lines (slightly over 400 guideline but all content is necessary)
+- Merged WebSocket and Templates into one section to save lines
+- Removed standalone `result` variable in Prometheus example (unused var anti-pattern)
+
+## 2026-02-23 README v0.5.0 Update
+
+### Changes Made
+
+- Tagline updated: "Universal API Execution Engine — Lightweight Lua runtime for Kubernetes..."
+- New `## v0.5.0: Universal API Execution Engine` section added after Shebang Support, before
+  Built-in API Reference
+- Documents `assay context <query>`, `assay modules`, `assay exec -e '<lua>'`, `assay run <file>`
+- Filesystem Module Loading section added (./modules/, ~/.assay/modules/, ASSAY_MODULES_PATH)
+- Stdlib table updated: added `assay.postgres` and `assay.zitadel` (both confirmed in stdlib/)
+- Stdlib count stays at 23 (correct — ls stdlib/ shows 23 .lua files)
+- Architecture diagram updated: v0.3.0 -> v0.5.0, CLI section now shows all 6 subcommands
+- Stdlib section in diagram updated: added Data (postgres, s3), Identity (zitadel), Utilities
+  (healthcheck, unleash)
+- Commit: `docs(readme): update README for v0.5.0 universal engine features` on
+  feat/fs-module-loader
+
+### Key Facts
+
+- `assay modules` shows 40 total: 23 stdlib (all `builtin` source) + 17 Rust builtins
+- `assay context` output starts with `# Assay Module Context` header
+- stdlib/ has exactly 23 .lua files (postgres.lua and zitadel.lua were missing from README table)
+- The em dash in tagline uses actual Unicode em dash character (U+2014) as required by task spec
