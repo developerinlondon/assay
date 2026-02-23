@@ -1,3 +1,20 @@
+--- @module assay.dex
+--- @description Dex OIDC identity provider. Discovery, JWKS, health, and configuration validation.
+--- @keywords dex, oidc, identity, discovery, jwks, authentication
+--- @quickref M.discovery(url) -> {issuer, endpoints...} | Get OIDC discovery configuration
+--- @quickref M.jwks(url) -> {keys} | Get JSON Web Key Set
+--- @quickref M.issuer(url) -> string | Get issuer URL from discovery
+--- @quickref M.health(url) -> bool | Check Dex health
+--- @quickref M.ready(url) -> bool | Check Dex readiness
+--- @quickref M.has_endpoint(url, endpoint_name) -> bool | Check if endpoint exists in discovery
+--- @quickref M.supported_scopes(url) -> [string] | List supported OIDC scopes
+--- @quickref M.supported_response_types(url) -> [string] | List supported response types
+--- @quickref M.supported_grant_types(url) -> [string] | List supported grant types
+--- @quickref M.supports_scope(url, scope) -> bool | Check if scope is supported
+--- @quickref M.supports_grant_type(url, grant_type) -> bool | Check if grant type is supported
+--- @quickref M.validate_config(url) -> {ok, errors} | Validate OIDC configuration
+--- @quickref M.admin_version(url) -> version|nil | Get Dex admin API version
+
 local M = {}
 
 function M.discovery(url)

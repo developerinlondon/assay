@@ -1,3 +1,30 @@
+--- @module assay.flux
+--- @description Flux CD GitOps toolkit. GitRepositories, Kustomizations, HelmReleases, notifications.
+--- @keywords flux, gitops, kustomizations, helmreleases, gitrepositories, kubernetes
+--- @quickref c:git_repositories(namespace) -> {items} | List GitRepositories
+--- @quickref c:git_repository(namespace, name) -> repo|nil | Get GitRepository by name
+--- @quickref c:is_git_repo_ready(namespace, name) -> bool | Check if GitRepository is ready
+--- @quickref c:helm_repositories(namespace) -> {items} | List HelmRepositories
+--- @quickref c:helm_repository(namespace, name) -> repo|nil | Get HelmRepository by name
+--- @quickref c:is_helm_repo_ready(namespace, name) -> bool | Check if HelmRepository is ready
+--- @quickref c:helm_charts(namespace) -> {items} | List HelmCharts
+--- @quickref c:oci_repositories(namespace) -> {items} | List OCIRepositories
+--- @quickref c:kustomizations(namespace) -> {items} | List Kustomizations
+--- @quickref c:kustomization(namespace, name) -> ks|nil | Get Kustomization by name
+--- @quickref c:is_kustomization_ready(namespace, name) -> bool | Check if Kustomization is ready
+--- @quickref c:kustomization_status(namespace, name) -> {ready, revision}|nil | Get Kustomization status
+--- @quickref c:helm_releases(namespace) -> {items} | List HelmReleases
+--- @quickref c:helm_release(namespace, name) -> hr|nil | Get HelmRelease by name
+--- @quickref c:is_helm_release_ready(namespace, name) -> bool | Check if HelmRelease is ready
+--- @quickref c:helm_release_status(namespace, name) -> {ready, revision}|nil | Get HelmRelease status
+--- @quickref c:alerts(namespace) -> {items} | List notification alerts
+--- @quickref c:providers_list(namespace) -> {items} | List notification providers
+--- @quickref c:receivers(namespace) -> {items} | List notification receivers
+--- @quickref c:image_policies(namespace) -> {items} | List image policies
+--- @quickref c:all_sources_ready(namespace) -> {ready, not_ready, total} | Check all sources readiness
+--- @quickref c:all_kustomizations_ready(namespace) -> {ready, not_ready, total} | Check all Kustomizations
+--- @quickref c:all_helm_releases_ready(namespace) -> {ready, not_ready, total} | Check all HelmReleases
+
 local M = {}
 
 -- Flux CD CRD API paths

@@ -1,3 +1,24 @@
+--- @module assay.harbor
+--- @description Harbor container registry. Projects, repositories, artifacts, vulnerability scanning.
+--- @keywords harbor, registry, artifacts, vulnerabilities, scanning, containers
+--- @quickref c:health() -> {status, components} | Check Harbor health
+--- @quickref c:system_info() -> {harbor_version, ...} | Get system information
+--- @quickref c:statistics() -> {private_project_count, ...} | Get registry statistics
+--- @quickref c:projects(opts?) -> [project] | List projects
+--- @quickref c:project(name_or_id) -> project | Get project by name or ID
+--- @quickref c:repositories(project_name, opts?) -> [repo] | List repositories in project
+--- @quickref c:repository(project_name, repo_name) -> repo | Get repository
+--- @quickref c:artifacts(project_name, repo_name, opts?) -> [artifact] | List artifacts
+--- @quickref c:artifact(project_name, repo_name, reference) -> artifact | Get artifact by reference
+--- @quickref c:artifact_tags(project_name, repo_name, reference) -> [tag] | List artifact tags
+--- @quickref c:scan_artifact(project_name, repo_name, reference) -> true | Trigger vulnerability scan
+--- @quickref c:artifact_vulnerabilities(project, repo, ref) -> {total, critical, ...}|nil | Get vulnerabilities
+--- @quickref c:replication_policies() -> [policy] | List replication policies
+--- @quickref c:replication_executions(opts?) -> [execution] | List replication executions
+--- @quickref c:is_healthy() -> bool | Check if all components are healthy
+--- @quickref c:image_exists(project_name, repo_name, tag) -> bool | Check if image tag exists
+--- @quickref c:latest_artifact(project_name, repo_name) -> artifact|nil | Get latest artifact
+
 local M = {}
 
 function M.client(url, opts)
