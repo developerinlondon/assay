@@ -1,0 +1,12 @@
+=== MCP count ===
+10
+=== Nav links ===
+9
+=== Script tags ===
+0
+0
+=== Line count ===
+190 site/index.html
+=== Sections ===
+5
+h2 sections found
