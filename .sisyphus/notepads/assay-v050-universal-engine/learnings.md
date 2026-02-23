@@ -70,3 +70,14 @@ context.
 - Library crate name is `assay` (from `[lib] name = "assay"` in Cargo.toml)
 - Library modules accessed via `use assay::context::...` and `use assay::discovery::...`
 - SearchResult fields: `id: String, score: f64`
+
+## 2026-02-23 Modules Subcommand
+
+### Implementation Notes
+
+`run_modules()` is sync (no `std::thread::spawn` needed) because `discover_modules()` doesn't use
+FTS5Index or any async runtime. Only `search_modules()` triggers the tokio nesting issue. Clippy
+`print_literal` lint: `println!("{:<30} {:<10} {}", "A", "B", "C")` triggers it for the last literal
+arg with plain `{}` format. Fix: inline the literal into the format string directly.
+`discover_modules()` returns 40 modules (23 stdlib + 17 Rust builtins). Dedup by name with
+`HashSet::insert` preserving priority order (Project > Global > BuiltIn).
