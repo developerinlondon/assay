@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/cli_subcommands.rs (target/debug/deps/cli_subcommands-5189f752064fe7be)
+
+running 3 tests
+test backward_compat_lua_file ... ok
+test backward_compat_yaml_file ... ok
+test backward_compat_toml_file ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.05s
+
