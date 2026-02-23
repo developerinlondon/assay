@@ -93,10 +93,7 @@ async fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         }
-        Some(Commands::Modules) => {
-            println!("modules: not yet implemented");
-            ExitCode::SUCCESS
-        }
+        Some(Commands::Modules) => run_modules(),
         Some(Commands::Run { file }) => dispatch_file(&file).await,
         None => {
             if let Some(ref file) = cli.file {
@@ -237,6 +234,37 @@ fn format_lua_error(err: &mlua::Error) -> String {
         }
         other => format!("{other}"),
     }
+}
+
+fn run_modules() -> ExitCode {
+    use assay::discovery::{discover_modules, ModuleSource};
+
+    let modules = discover_modules();
+
+    // Deduplicate by name (Project > Global > BuiltIn priority already in order)
+    let mut seen = std::collections::HashSet::new();
+    let mut unique: Vec<_> = modules
+        .into_iter()
+        .filter(|m| seen.insert(m.module_name.clone()))
+        .collect();
+
+    // Sort alphabetically for consistent output
+    unique.sort_by(|a, b| a.module_name.cmp(&b.module_name));
+
+    // Print header
+    println!("{:<30} {:<10} DESCRIPTION", "MODULE", "SOURCE");
+    println!("{}", "-".repeat(80));
+
+    for m in &unique {
+        let source_label = match m.source {
+            ModuleSource::BuiltIn => "builtin",
+            ModuleSource::Project => "project",
+            ModuleSource::Global => "global",
+        };
+        println!("{:<30} {:<10} {}", m.module_name, source_label, m.metadata.description);
+    }
+
+    ExitCode::SUCCESS
 }
 
 fn run_context(query: &str, limit: usize) -> ExitCode {
