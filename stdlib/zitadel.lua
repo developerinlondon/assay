@@ -1,3 +1,23 @@
+--- @module assay.zitadel
+--- @description Zitadel OIDC identity management. Projects, OIDC apps, IdPs, users, login policies.
+--- @keywords zitadel, oidc, identity, projects, applications, idp, users, authentication
+--- @quickref c:ensure_primary_domain(domain) -> bool | Set organization primary domain
+--- @quickref c:find_project(name) -> project|nil | Find project by name
+--- @quickref c:create_project(name, opts?) -> project | Create a new project
+--- @quickref c:ensure_project(name, opts?) -> project | Ensure project exists
+--- @quickref c:find_app(project_id, name) -> app|nil | Find OIDC app by name
+--- @quickref c:create_oidc_app(project_id, opts) -> app | Create OIDC application
+--- @quickref c:ensure_oidc_app(project_id, opts) -> app | Ensure OIDC app exists
+--- @quickref c:find_idp(name) -> idp|nil | Find identity provider by name
+--- @quickref c:ensure_google_idp(opts) -> idp_id|nil | Ensure Google IdP exists
+--- @quickref c:ensure_oidc_idp(opts) -> idp_id|nil | Ensure generic OIDC IdP exists
+--- @quickref c:add_idp_to_login_policy(idp_id) -> bool | Add IdP to login policy
+--- @quickref c:search_users(query) -> [user] | Search users
+--- @quickref c:update_user_email(user_id, email) -> bool | Update user email
+--- @quickref c:get_login_policy() -> policy|nil | Get login policy
+--- @quickref c:update_login_policy(policy) -> bool | Update login policy
+--- @quickref c:disable_password_login() -> bool | Disable password-based login
+
 local M = {}
 
 function M.client(opts)

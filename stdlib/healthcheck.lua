@@ -1,3 +1,14 @@
+--- @module assay.healthcheck
+--- @description HTTP health checking utilities. Status codes, JSON path, body matching, latency, multi-check.
+--- @keywords healthcheck, http, health, status, latency, monitoring
+--- @quickref M.http(url, opts?) -> {ok, status, latency_ms} | HTTP health check with status assertion
+--- @quickref M.json_path(url, path_expr, expected, opts?) -> {ok, actual, expected} | Check JSON path value
+--- @quickref M.status_code(url, expected, opts?) -> {ok, status} | Check HTTP status code
+--- @quickref M.body_contains(url, pattern, opts?) -> {ok, found} | Check if body contains pattern
+--- @quickref M.endpoint(url, opts?) -> {ok, status, latency_ms} | Check endpoint status and latency
+--- @quickref M.multi(checks) -> {ok, results, passed, failed, total} | Run multiple checks
+--- @quickref M.wait(url, opts?) -> {ok, status, attempts} | Wait for endpoint to become healthy
+
 local M = {}
 
 local function split_path(path_expr)

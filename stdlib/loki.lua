@@ -1,3 +1,17 @@
+--- @module assay.loki
+--- @description Loki log aggregation. Push logs, query with LogQL, labels, series, tail.
+--- @keywords loki, logs, logql, labels, series, monitoring
+--- @quickref M.selector(labels) -> string | Build LogQL stream selector from labels table
+--- @quickref c:push(stream_labels, entries) -> true | Push log entries to Loki
+--- @quickref c:query(logql, opts?) -> [result] | Instant LogQL query
+--- @quickref c:query_range(logql, opts?) -> [result] | Range LogQL query
+--- @quickref c:labels(opts?) -> [string] | List label names
+--- @quickref c:label_values(label_name, opts?) -> [string] | List values for a label
+--- @quickref c:series(match_selectors, opts?) -> [series] | Query series metadata
+--- @quickref c:tail(logql, opts?) -> data | Tail log stream
+--- @quickref c:ready() -> bool | Check Loki readiness
+--- @quickref c:metrics() -> string | Get Loki metrics in Prometheus format
+
 local M = {}
 
 function M.selector(labels)

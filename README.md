@@ -1,6 +1,7 @@
 # Assay
 
-Lightweight Lua runtime for Kubernetes. Verification, scripting, and web services.
+Universal API Execution Engine — Lightweight Lua runtime for Kubernetes. Verification, scripting,
+and web services.
 
 [![CI](https://github.com/developerinlondon/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/developerinlondon/assay/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/assay-lua.svg)](https://crates.io/crates/assay-lua)
@@ -173,6 +174,82 @@ chmod +x hello.lua
 ./hello.lua
 ```
 
+## v0.5.0: Universal API Execution Engine
+
+Assay v0.5.0 adds intelligent module discovery and LLM-friendly context injection.
+
+### New Subcommands
+
+#### `assay context <query>` — Find modules by keyword
+
+Searches all available modules and returns prompt-ready Markdown with method signatures:
+
+```bash
+assay context "grafana"
+```
+
+Output:
+
+```
+# Assay Module Context
+
+## Matching Modules
+
+### assay.grafana
+Grafana monitoring and dashboards. Health, datasources, annotations, alerts, folders.
+Methods:
+  c:health() -> {database, version, commit} | Check Grafana health
+  c:datasources() -> [{id, name, type, url}] | List all datasources
+  c:dashboard(uid) -> {dashboard, meta} | Get dashboard by UID
+  ...
+```
+
+Paste the output directly into an LLM prompt to get accurate, hallucination-free Lua code.
+
+#### `assay modules` — List all available modules
+
+```bash
+assay modules
+```
+
+Lists all 40+ built-in modules with source and description:
+
+```
+MODULE                         SOURCE     DESCRIPTION
+--------------------------------------------------------------------------------
+assay.grafana                  builtin    Grafana monitoring and dashboards...
+assay.k8s                      builtin    Kubernetes API client. 30+ resource types...
+http                           builtin    HTTP client and server: get, post, put, patch, delete, serve
+...
+```
+
+#### `assay exec -e '<lua>'` — Run Lua inline
+
+```bash
+assay exec -e 'log.info("hello from assay")'
+assay exec -e 'assert.eq(1 + 1, 2)'
+```
+
+#### `assay run <file>` — Explicit run (same as passing file directly)
+
+```bash
+assay run script.lua
+assay run checks.yaml
+```
+
+### Filesystem Module Loading
+
+Place custom `.lua` modules in `./modules/` (project-local) or `~/.assay/modules/` (global):
+
+```
+./modules/
+  myapi.lua      # require("assay.myapi") in scripts
+~/.assay/modules/
+  company.lua    # require("assay.company") in scripts
+```
+
+Set `ASSAY_MODULES_PATH` to override the global directory.
+
 ## Built-in API Reference
 
 All builtins are available to `.lua` scripts. YAML check mode uses a sandboxed subset (http, json,
@@ -213,12 +290,12 @@ yaml, assert, log, env, sleep, time, base64).
 
 ### Cryptography
 
-| Function                            | Description                                |
-| ----------------------------------- | ------------------------------------------ |
+| Function                                   | Description                                   |
+| ------------------------------------------ | --------------------------------------------- |
 | `crypto.jwt_sign(claims, key, alg, opts?)` | Sign JWT (RS256/384/512), opts: `{kid="..."}` |
-| `crypto.hash(str, alg)`             | Hash string (sha256, sha384, sha512, etc.) |
-| `crypto.hmac(key, data, alg?, raw?)` | HMAC (sha256 default, raw=true for binary) |
-| `crypto.random(len)`                | Secure random string (hex)                 |
+| `crypto.hash(str, alg)`                    | Hash string (sha256, sha384, sha512, etc.)    |
+| `crypto.hmac(key, data, alg?, raw?)`       | HMAC (sha256 default, raw=true for binary)    |
+| `crypto.random(len)`                       | Secure random string (hex)                    |
 
 ### Regular Expressions
 
@@ -298,31 +375,34 @@ Supported URLs:
 
 ## Stdlib Modules
 
-Assay embeds 23 Lua modules for Kubernetes-native operations. Use `require("assay.<module>")`:
+Assay embeds 23 Lua modules for Kubernetes-native operations. Use `require("assay.<module>")` — or
+run `assay modules` to see all 40+ available modules including Rust builtins:
 
-| Module               | Description                                                 |
-| -------------------- | ----------------------------------------------------------- |
-| `assay.prometheus`   | Query metrics, alerts, targets, rules, label values, series |
-| `assay.alertmanager` | Manage alerts, silences, receivers, config                  |
-| `assay.loki`         | Push logs, query, labels, series                            |
-| `assay.grafana`      | Health checks, dashboards, datasources                      |
-| `assay.k8s`          | 30+ resource types, CRDs, readiness checks                  |
-| `assay.argocd`       | Apps, sync, health, projects, repositories                  |
-| `assay.kargo`        | Stages, freight, promotions, verification                   |
-| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases               |
-| `assay.traefik`      | Routers, services, middlewares, entrypoints                 |
-| `assay.vault`        | KV secrets, policies, auth, transit, PKI                    |
-| `assay.openbao`      | Alias for vault (OpenBao API-compatible)                    |
-| `assay.certmanager`  | Certificates, issuers, ACME challenges                      |
-| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores          |
-| `assay.dex`          | OIDC discovery, JWKS, health                                |
-| `assay.crossplane`   | Providers, XRDs, compositions, managed resources            |
-| `assay.velero`       | Backups, restores, schedules, storage locations             |
-| `assay.temporal`     | Workflows, task queues, schedules                           |
-| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning   |
-| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check |
-| `assay.s3`           | S3-compatible storage (AWS, iDrive e2, R2, MinIO) — Sig V4  |
-| `assay.unleash`      | Feature flags: projects, environments, features, strategies, API tokens |
+| Module               | Description                                                                   |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `assay.prometheus`   | Query metrics, alerts, targets, rules, label values, series                   |
+| `assay.alertmanager` | Manage alerts, silences, receivers, config                                    |
+| `assay.loki`         | Push logs, query, labels, series                                              |
+| `assay.grafana`      | Health checks, dashboards, datasources                                        |
+| `assay.k8s`          | 30+ resource types, CRDs, readiness checks                                    |
+| `assay.argocd`       | Apps, sync, health, projects, repositories                                    |
+| `assay.kargo`        | Stages, freight, promotions, verification                                     |
+| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases                                 |
+| `assay.traefik`      | Routers, services, middlewares, entrypoints                                   |
+| `assay.vault`        | KV secrets, policies, auth, transit, PKI                                      |
+| `assay.openbao`      | Alias for vault (OpenBao API-compatible)                                      |
+| `assay.certmanager`  | Certificates, issuers, ACME challenges                                        |
+| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores                            |
+| `assay.dex`          | OIDC discovery, JWKS, health                                                  |
+| `assay.crossplane`   | Providers, XRDs, compositions, managed resources                              |
+| `assay.velero`       | Backups, restores, schedules, storage locations                               |
+| `assay.temporal`     | Workflows, task queues, schedules                                             |
+| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                     |
+| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                   |
+| `assay.s3`           | S3-compatible storage (AWS, iDrive e2, R2, MinIO) — Sig V4                    |
+| `assay.unleash`      | Feature flags: projects, environments, features, strategies, API tokens       |
+| `assay.postgres`     | PostgreSQL helpers. User/database management, grants, Vault integration       |
+| `assay.zitadel`      | Zitadel OIDC identity management. Projects, apps, IdPs, users, login policies |
 
 Example:
 
@@ -556,11 +636,15 @@ cargo run -- examples/loki-test.lua
 
 ```
 +------------------------------------------------------------------+
-| Assay v0.3.0 (~9 MB static MUSL binary, Alpine container)       |
+| Assay v0.5.0 (~9 MB static MUSL binary, Alpine container)       |
 |                                                                  |
-| CLI (auto-detected by file extension):                           |
-|   assay config.yaml           (.yaml -> check orchestration)     |
-|   assay script.lua            (.lua  -> run script)              |
+| CLI subcommands:                                                 |
+|   assay <file.yaml>           (.yaml -> check orchestration)     |
+|   assay <file.lua>            (.lua  -> run script)              |
+|   assay run <file>            (explicit run, any extension)      |
+|   assay exec -e '<lua>'       (inline Lua evaluation)           |
+|   assay modules               (list all 40+ modules)            |
+|   assay context <query>       (LLM-ready module context)        |
 |                                                                  |
 | Shebang support:                                                 |
 |   #!/usr/bin/assay            (works like #!/usr/bin/python3)    |
@@ -587,12 +671,14 @@ cargo run -- examples/loki-test.lua
 |   log.{info,warn,error}  env.get  sleep  time                    |
 |   async.{spawn,spawn_interval}                                   |
 |                                                                  |
-| Lua Stdlib (embedded .lua files via include_dir!):               |
+| Lua Stdlib (23 embedded .lua files via include_dir!):            |
 |   Monitoring: prometheus, alertmanager, loki, grafana             |
 |   K8s/GitOps: k8s, argocd, kargo, flux, traefik                 |
 |   Security:   vault, openbao, certmanager, eso, dex              |
 |   Infra:      crossplane, velero, temporal, harbor               |
-|   Utilities:  healthcheck                                        |
+|   Data:       postgres, s3                                       |
+|   Identity:   zitadel                                            |
+|   Utilities:  healthcheck, unleash                               |
 +------------------------------------------------------------------+
 ```
 

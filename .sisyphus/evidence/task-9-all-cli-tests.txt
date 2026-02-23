@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running tests/cli_subcommands.rs (target/debug/deps/cli_subcommands-5189f752064fe7be)
+
+running 13 tests
+test modules_stub_prints_not_implemented ... ok
+test exec_help_shows_eval_and_file ... ok
+test help_shows_all_subcommands ... ok
+test unsupported_extension_fails ... ok
+test context_stub_prints_not_implemented ... ok
+test context_help_shows_query_and_limit ... ok
+test version_flag_works ... ok
+test backward_compat_yaml_file ... ok
+test backward_compat_lua_file ... ok
+test run_subcommand_lua_file ... ok
+test backward_compat_toml_file ... ok
+test exec_eval_runs_lua_code ... ok
+test run_subcommand_yaml_file ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+

@@ -1,3 +1,17 @@
+--- @module assay.grafana
+--- @description Grafana monitoring and dashboards. Health, datasources, annotations, alerts, folders.
+--- @keywords grafana, monitoring, dashboards, datasources, annotations, alerts, health
+--- @quickref c:health() -> {database, version, commit} | Check Grafana health
+--- @quickref c:datasources() -> [{id, name, type, url}] | List all datasources
+--- @quickref c:datasource(id_or_uid) -> {id, name, type} | Get datasource by ID or UID
+--- @quickref c:search(opts?) -> [{id, title, type}] | Search dashboards/folders
+--- @quickref c:dashboard(uid) -> {dashboard, meta} | Get dashboard by UID
+--- @quickref c:annotations(opts?) -> [{id, text, time}] | List annotations
+--- @quickref c:create_annotation(annotation) -> {id} | Create annotation
+--- @quickref c:org() -> {id, name} | Get current organization
+--- @quickref c:alert_rules() -> [{uid, title}] | List alert rules
+--- @quickref c:folders() -> [{id, uid, title}] | List folders
+
 local M = {}
 
 function M.client(url, opts)

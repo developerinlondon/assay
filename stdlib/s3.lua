@@ -1,3 +1,17 @@
+--- @module assay.s3
+--- @description S3-compatible object storage. Buckets, objects, copy, list with AWS Signature V4 auth.
+--- @keywords s3, storage, buckets, objects, aws, minio, r2, sigv4
+--- @quickref c:create_bucket(bucket) -> true | Create a new bucket
+--- @quickref c:delete_bucket(bucket) -> true | Delete a bucket
+--- @quickref c:list_buckets() -> [{name, creation_date}] | List all buckets
+--- @quickref c:put_object(bucket, key, body, opts?) -> true | Upload an object
+--- @quickref c:get_object(bucket, key) -> string|nil | Download object content
+--- @quickref c:delete_object(bucket, key) -> true | Delete an object
+--- @quickref c:list_objects(bucket, opts?) -> {objects, is_truncated} | List objects in bucket
+--- @quickref c:head_object(bucket, key) -> {status, headers}|nil | Get object metadata
+--- @quickref c:copy_object(src_bucket, src_key, dst_bucket, dst_key) -> true | Copy object between buckets
+--- @quickref c:bucket_exists(bucket) -> bool | Check if bucket exists
+
 local M = {}
 
 local EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

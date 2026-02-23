@@ -1,0 +1,5 @@
+    Blocking waiting for file lock on build directory
+   Compiling assay-lua v0.4.5 (/root/code/assay)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.46s
+     Running `target/debug/assay tests/e2e/check_json.lua`
+[2m2026-02-23T05:24:42.841954Z[0m [32m INFO[0m starting assay (script mode) [3mscript[0m[2m=[0mtests/e2e/check_json.lua

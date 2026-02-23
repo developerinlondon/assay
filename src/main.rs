@@ -4,7 +4,7 @@ mod lua;
 mod output;
 mod runner;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
@@ -20,18 +20,49 @@ pub fn build_http_client() -> reqwest::Client {
 
 /// Assay — lightweight Lua scripting runtime for deployment verification.
 ///
-/// Auto-detects behavior by file extension:
-///   assay checks.yaml    YAML check orchestration (retry, backoff, structured output)
-///   assay script.lua     Direct Lua script execution (all builtins available)
+/// Run with a subcommand, or pass a file directly for auto-detection:
+///   assay run script.lua     Explicit run
+///   assay script.lua         Auto-detect by extension (backward compat)
+///   assay checks.yaml        YAML check orchestration
 #[derive(Parser, Debug)]
-#[command(name = "assay", version, about)]
+#[command(name = "assay", version, about, args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Path to a .yaml config or .lua script.
-    file: PathBuf,
+    file: Option<PathBuf>,
 
     /// Enable verbose logging (sets RUST_LOG=debug).
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     verbose: bool,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Search for modules matching a query
+    Context {
+        /// Search query string
+        query: String,
+        /// Maximum results to show
+        #[arg(short, long, default_value = "5")]
+        limit: usize,
+    },
+    /// Execute a Lua script inline or from file
+    Exec {
+        /// Evaluate Lua code directly
+        #[arg(short = 'e', long = "eval")]
+        eval: Option<String>,
+        /// Lua script file to execute
+        file: Option<PathBuf>,
+    },
+    /// List all available modules
+    Modules,
+    /// Run a file (yaml or lua)
+    Run {
+        /// Path to .yaml or .lua file
+        file: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -50,11 +81,39 @@ async fn main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
-    let ext = cli.file.extension().and_then(|e| e.to_str()).unwrap_or("");
+    match cli.command {
+        Some(Commands::Context { query, limit }) => run_context(&query, limit),
+        Some(Commands::Exec { eval, file }) => {
+            if let Some(code) = eval {
+                run_lua_inline(&code).await
+            } else if let Some(path) = file {
+                run_lua_script(&path).await
+            } else {
+                eprintln!("error: exec requires either -e <code> or a file path");
+                ExitCode::from(1)
+            }
+        }
+        Some(Commands::Modules) => run_modules(),
+        Some(Commands::Run { file }) => dispatch_file(&file).await,
+        None => {
+            if let Some(ref file) = cli.file {
+                dispatch_file(file).await
+            } else {
+                use clap::CommandFactory;
+                Cli::command().print_help().ok();
+                println!();
+                ExitCode::from(1)
+            }
+        }
+    }
+}
+
+async fn dispatch_file(file: &std::path::Path) -> ExitCode {
+    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
-        "yaml" | "yml" => run_yaml_checks(&cli.file).await,
-        "lua" => run_lua_script(&cli.file).await,
+        "yaml" | "yml" => run_yaml_checks(file).await,
+        "lua" => run_lua_script(file).await,
         other => {
             eprintln!(
                 "error: unsupported file extension {other:?} (expected .yaml, .yml, or .lua)"
@@ -128,6 +187,40 @@ async fn run_lua_script(path: &std::path::Path) -> ExitCode {
     }
 }
 
+async fn run_lua_inline(code: &str) -> ExitCode {
+    info!("starting assay (inline eval mode)");
+
+    let client = build_http_client();
+
+    let vm = match lua::create_vm(client) {
+        Ok(vm) => vm,
+        Err(e) => {
+            eprintln!("error: creating Lua VM: {e:#}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let script = lua::async_bridge::strip_shebang(code);
+
+    let local = tokio::task::LocalSet::new();
+    let result = local
+        .run_until(async {
+            vm.load(script)
+                .set_name("@<eval>")
+                .exec_async()
+                .await
+        })
+        .await;
+
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            error!("{}", format_lua_error(&e));
+            ExitCode::from(1)
+        }
+    }
+}
+
 fn format_lua_error(err: &mlua::Error) -> String {
     match err {
         mlua::Error::RuntimeError(msg) => msg.clone(),
@@ -140,5 +233,87 @@ fn format_lua_error(err: &mlua::Error) -> String {
             }
         }
         other => format!("{other}"),
+    }
+}
+
+fn run_modules() -> ExitCode {
+    use assay::discovery::{discover_modules, ModuleSource};
+
+    let modules = discover_modules();
+
+    // Deduplicate by name (Project > Global > BuiltIn priority already in order)
+    let mut seen = std::collections::HashSet::new();
+    let mut unique: Vec<_> = modules
+        .into_iter()
+        .filter(|m| seen.insert(m.module_name.clone()))
+        .collect();
+
+    // Sort alphabetically for consistent output
+    unique.sort_by(|a, b| a.module_name.cmp(&b.module_name));
+
+    // Print header
+    println!("{:<30} {:<10} DESCRIPTION", "MODULE", "SOURCE");
+    println!("{}", "-".repeat(80));
+
+    for m in &unique {
+        let source_label = match m.source {
+            ModuleSource::BuiltIn => "builtin",
+            ModuleSource::Project => "project",
+            ModuleSource::Global => "global",
+        };
+        println!("{:<30} {:<10} {}", m.module_name, source_label, m.metadata.description);
+    }
+
+    ExitCode::SUCCESS
+}
+
+fn run_context(query: &str, limit: usize) -> ExitCode {
+    use assay::context::{format_context, ModuleContextEntry, QuickRefEntry};
+    use assay::discovery::{discover_modules, search_modules};
+
+    // Run on a dedicated thread to avoid tokio runtime nesting.
+    // FTS5Index creates its own tokio::Runtime for SQLite operations,
+    // which panics if called from within the #[tokio::main] context.
+    let query = query.to_string();
+    let handle = std::thread::spawn(move || {
+        let results = search_modules(&query, limit);
+        let all_modules = discover_modules();
+
+        let entries: Vec<ModuleContextEntry> = results
+            .iter()
+            .filter_map(|result| {
+                all_modules
+                    .iter()
+                    .find(|m| m.module_name == result.id)
+                    .map(|m| ModuleContextEntry {
+                        module_name: m.module_name.clone(),
+                        description: m.metadata.description.clone(),
+                        env_vars: m.metadata.env_vars.clone(),
+                        quickrefs: m
+                            .metadata
+                            .quickrefs
+                            .iter()
+                            .map(|qr| QuickRefEntry {
+                                signature: qr.signature.clone(),
+                                return_hint: qr.return_hint.clone(),
+                                description: qr.description.clone(),
+                            })
+                            .collect(),
+                    })
+            })
+            .collect();
+
+        format_context(&entries)
+    });
+
+    match handle.join() {
+        Ok(output) => {
+            print!("{output}");
+            ExitCode::SUCCESS
+        }
+        Err(_) => {
+            eprintln!("error: context search failed");
+            ExitCode::from(1)
+        }
     }
 }
