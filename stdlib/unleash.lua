@@ -1,6 +1,6 @@
 --- @module assay.unleash
 --- @description Unleash feature flag management. Projects, features, environments, strategies, API tokens.
---- @keywords unleash, feature-flags, toggles, projects, environments, strategies
+--- @keywords unleash, feature-flags, toggles, projects, environments, strategies, feature, toggle, strategy, environment, token, api-token, archive, flag, gradual-rollout
 --- @quickref c:health() -> {health} | Check Unleash health
 --- @quickref c:projects() -> [project] | List projects
 --- @quickref c:project(id) -> project|nil | Get project by ID
