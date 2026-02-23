@@ -82,10 +82,7 @@ async fn main() -> ExitCode {
         .init();
 
     match cli.command {
-        Some(Commands::Context { .. }) => {
-            println!("context: not yet implemented");
-            ExitCode::SUCCESS
-        }
+        Some(Commands::Context { query, limit }) => run_context(&query, limit),
         Some(Commands::Exec { eval, file }) => {
             if let Some(code) = eval {
                 run_lua_inline(&code).await
@@ -239,5 +236,56 @@ fn format_lua_error(err: &mlua::Error) -> String {
             }
         }
         other => format!("{other}"),
+    }
+}
+
+fn run_context(query: &str, limit: usize) -> ExitCode {
+    use assay::context::{format_context, ModuleContextEntry, QuickRefEntry};
+    use assay::discovery::{discover_modules, search_modules};
+
+    // Run on a dedicated thread to avoid tokio runtime nesting.
+    // FTS5Index creates its own tokio::Runtime for SQLite operations,
+    // which panics if called from within the #[tokio::main] context.
+    let query = query.to_string();
+    let handle = std::thread::spawn(move || {
+        let results = search_modules(&query, limit);
+        let all_modules = discover_modules();
+
+        let entries: Vec<ModuleContextEntry> = results
+            .iter()
+            .filter_map(|result| {
+                all_modules
+                    .iter()
+                    .find(|m| m.module_name == result.id)
+                    .map(|m| ModuleContextEntry {
+                        module_name: m.module_name.clone(),
+                        description: m.metadata.description.clone(),
+                        env_vars: m.metadata.env_vars.clone(),
+                        quickrefs: m
+                            .metadata
+                            .quickrefs
+                            .iter()
+                            .map(|qr| QuickRefEntry {
+                                signature: qr.signature.clone(),
+                                return_hint: qr.return_hint.clone(),
+                                description: qr.description.clone(),
+                            })
+                            .collect(),
+                    })
+            })
+            .collect();
+
+        format_context(&entries)
+    });
+
+    match handle.join() {
+        Ok(output) => {
+            print!("{output}");
+            ExitCode::SUCCESS
+        }
+        Err(_) => {
+            eprintln!("error: context search failed");
+            ExitCode::from(1)
+        }
     }
 }
