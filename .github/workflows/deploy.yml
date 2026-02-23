@@ -1,0 +1,46 @@
+# Cloudflare Pages Deploy Workflow
+#
+# PREREQUISITES (must be set up manually before this workflow runs):
+# 1. Cloudflare account with the assay.rs domain added as a Zone
+# 2. Cloudflare Pages project created: wrangler pages project create assay-docs
+# 3. GitHub repository secrets configured:
+#    - CLOUDFLARE_API_TOKEN: API token with Cloudflare Pages edit permission
+#    - CLOUDFLARE_ACCOUNT_ID: Your Cloudflare account ID
+# 4. Custom domain linked in Cloudflare Pages dashboard:
+#    - Go to Pages > assay-docs > Custom domains > Add assay.rs
+#
+# Deploy command: wrangler pages deploy site/ --project-name=assay-docs
+# Manual deploy: wrangler pages deploy site/ --project-name=assay-docs (requires wrangler login)
+
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "site/**"
+      - "wrangler.toml"
+
+concurrency:
+  group: cloudflare-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy site to Cloudflare Pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site/ --project-name=assay-docs
