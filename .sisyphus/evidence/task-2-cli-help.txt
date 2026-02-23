@@ -1,0 +1,118 @@
+=== QA Evidence: Task 2 - CLI Subcommand Restructure ===
+Date: Mon Feb 23 05:11:56 UTC 2026
+
+--- cargo run -- --help ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running `target/debug/assay --help`
+Assay — lightweight Lua scripting runtime for deployment verification.
+
+Run with a subcommand, or pass a file directly for auto-detection: assay run script.lua     Explicit run assay script.lua         Auto-detect by extension (backward compat) assay checks.yaml        YAML check orchestration
+
+Usage: assay [OPTIONS] [FILE]
+       assay <COMMAND>
+
+Commands:
+  context  Search for modules matching a query
+  exec     Execute a Lua script inline or from file
+  modules  List all available modules
+  run      Run a file (yaml or lua)
+  help     Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [FILE]
+          Path to a .yaml config or .lua script
+
+Options:
+  -v, --verbose
+          Enable verbose logging (sets RUST_LOG=debug)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+--- cargo run -- context --help ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running `target/debug/assay context --help`
+Search for modules matching a query
+
+Usage: assay context [OPTIONS] <QUERY>
+
+Arguments:
+  <QUERY>  Search query string
+
+Options:
+  -l, --limit <LIMIT>  Maximum results to show [default: 5]
+  -v, --verbose        Enable verbose logging (sets RUST_LOG=debug)
+  -h, --help           Print help
+
+--- cargo run -- exec --help ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running `target/debug/assay exec --help`
+Execute a Lua script inline or from file
+
+Usage: assay exec [OPTIONS] [FILE]
+
+Arguments:
+  [FILE]  Lua script file to execute
+
+Options:
+  -e, --eval <EVAL>  Evaluate Lua code directly
+  -v, --verbose      Enable verbose logging (sets RUST_LOG=debug)
+  -h, --help         Print help
+
+--- cargo run -- tests/e2e/check_json.lua (backward compat) ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running `target/debug/assay tests/e2e/check_json.lua`
+[2m2026-02-23T05:11:57.798073Z[0m [32m INFO[0m starting assay (script mode) [3mscript[0m[2m=[0mtests/e2e/check_json.lua
+EXIT: 0
+
+--- cargo run -- run tests/e2e/check_json.lua ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running `target/debug/assay run tests/e2e/check_json.lua`
+[2m2026-02-23T05:11:58.112663Z[0m [32m INFO[0m starting assay (script mode) [3mscript[0m[2m=[0mtests/e2e/check_json.lua
+EXIT: 0
+
+--- Stub: context ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running `target/debug/assay context test-query`
+context: not yet implemented
+
+--- Stub: exec ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running `target/debug/assay exec -e 'print("hi")'`
+exec: not yet implemented
+
+--- Stub: modules ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running `target/debug/assay modules`
+modules: not yet implemented
+
+--- cargo clippy -- -D warnings ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.22s
+
+--- cargo test --test cli_subcommands ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/cli_subcommands.rs (target/debug/deps/cli_subcommands-5189f752064fe7be)
+
+running 9 tests
+test exec_stub_prints_not_implemented ... ok
+test version_flag_works ... ok
+test context_stub_prints_not_implemented ... ok
+test context_help_shows_query_and_limit ... ok
+test modules_stub_prints_not_implemented ... ok
+test exec_help_shows_eval_and_file ... ok
+test help_shows_all_subcommands ... ok
+test backward_compat_lua_file ... ok
+test run_subcommand_lua_file ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+--- cargo test (full suite summary) ---
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
