@@ -1,3 +1,24 @@
+--- @module assay.traefik
+--- @description Traefik reverse proxy API. Routers, services, middlewares, entrypoints, TLS status.
+--- @keywords traefik, proxy, routers, services, middlewares, entrypoints, loadbalancer
+--- @quickref M.overview(url) -> overview | Get Traefik dashboard overview
+--- @quickref M.version(url) -> version | Get Traefik version
+--- @quickref M.entrypoints(url) -> [entrypoint] | List entrypoints
+--- @quickref M.entrypoint(url, name) -> entrypoint | Get entrypoint by name
+--- @quickref M.http_routers(url) -> [router] | List HTTP routers
+--- @quickref M.http_router(url, name) -> router | Get HTTP router by name
+--- @quickref M.http_services(url) -> [service] | List HTTP services
+--- @quickref M.http_service(url, name) -> service | Get HTTP service by name
+--- @quickref M.http_middlewares(url) -> [middleware] | List HTTP middlewares
+--- @quickref M.http_middleware(url, name) -> middleware | Get HTTP middleware by name
+--- @quickref M.tcp_routers(url) -> [router] | List TCP routers
+--- @quickref M.tcp_services(url) -> [service] | List TCP services
+--- @quickref M.rawdata(url) -> data | Get raw configuration data
+--- @quickref M.is_router_enabled(url, name) -> bool | Check if router is enabled
+--- @quickref M.router_has_tls(url, name) -> bool | Check if router has TLS
+--- @quickref M.service_server_count(url, name) -> number | Count load balancer servers
+--- @quickref M.healthy_routers(url) -> enabled, errored | Count healthy vs errored routers
+
 local M = {}
 
 local function api_get(url, path_str)

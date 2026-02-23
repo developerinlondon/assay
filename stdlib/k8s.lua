@@ -1,3 +1,34 @@
+--- @module assay.k8s
+--- @description Kubernetes API client. 30+ resource types, CRDs, readiness checks, pod logs, rollouts.
+--- @keywords kubernetes, k8s, pods, deployments, services, secrets, configmaps, namespaces
+--- @env KUBERNETES_SERVICE_HOST, KUBERNETES_SERVICE_PORT
+--- @quickref M.register_crd(kind, api_group, version, plural, cluster_scoped?) -> nil | Register custom resource
+--- @quickref M.get(path, opts?) -> resource | GET any K8s API path
+--- @quickref M.post(path, body, opts?) -> resource | POST to any K8s API path
+--- @quickref M.put(path, body, opts?) -> resource | PUT to any K8s API path
+--- @quickref M.patch(path, body, opts?) -> resource | PATCH any K8s API path
+--- @quickref M.delete(path, opts?) -> nil | DELETE any K8s API path
+--- @quickref M.get_resource(namespace, kind, name, opts?) -> resource | Get resource by kind and name
+--- @quickref M.list(namespace, kind, opts?) -> {items} | List resources by kind
+--- @quickref M.create(namespace, kind, body, opts?) -> resource | Create resource
+--- @quickref M.update(namespace, kind, name, body, opts?) -> resource | Update resource
+--- @quickref M.patch_resource(namespace, kind, name, body, opts?) -> resource | Patch resource
+--- @quickref M.delete_resource(namespace, kind, name, opts?) -> nil | Delete resource
+--- @quickref M.exists(namespace, kind, name, opts?) -> bool | Check if resource exists
+--- @quickref M.get_secret(namespace, name, opts?) -> {key=value} | Get decoded secret data
+--- @quickref M.get_configmap(namespace, name, opts?) -> {key=value} | Get ConfigMap data
+--- @quickref M.list_pods(namespace, opts?) -> {items} | List pods in namespace
+--- @quickref M.list_events(namespace, opts?) -> {items} | List events in namespace
+--- @quickref M.pod_status(namespace, opts?) -> {running, pending, failed, total} | Get pod status counts
+--- @quickref M.is_ready(namespace, kind, name, opts?) -> bool | Check if resource is ready
+--- @quickref M.wait_ready(namespace, kind, name, timeout_secs?, opts?) -> true | Wait for readiness
+--- @quickref M.service_endpoints(namespace, name, opts?) -> [ip] | Get service endpoint IPs
+--- @quickref M.logs(namespace, pod_name, opts?) -> string | Get pod logs
+--- @quickref M.rollout_status(namespace, name, opts?) -> {desired, ready, complete} | Get deployment rollout
+--- @quickref M.node_status(opts?) -> [{name, ready, roles, capacity}] | Get node statuses
+--- @quickref M.namespace_exists(name, opts?) -> bool | Check if namespace exists
+--- @quickref M.events_for(namespace, kind, name, opts?) -> {items} | Get events for resource
+
 local M = {}
 
 local _http = nil

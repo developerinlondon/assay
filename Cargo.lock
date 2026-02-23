@@ -75,7 +75,7 @@ checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 
 [[package]]
 name = "assay-lua"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "axum",

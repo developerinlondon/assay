@@ -1,0 +1,4 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running `target/debug/assay nonexistent.txt`
+error: unsupported file extension "txt" (expected .yaml, .yml, or .lua)
+EXIT_CODE=0

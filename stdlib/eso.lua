@@ -1,3 +1,23 @@
+--- @module assay.eso
+--- @description External Secrets Operator. ExternalSecrets, SecretStores, ClusterSecretStores sync status.
+--- @keywords eso, external-secrets, secretstores, kubernetes, secrets
+--- @quickref c:external_secrets(namespace) -> {items} | List ExternalSecrets in namespace
+--- @quickref c:external_secret(namespace, name) -> es|nil | Get ExternalSecret by name
+--- @quickref c:external_secret_status(namespace, name) -> {ready, status, sync_hash} | Get sync status
+--- @quickref c:is_secret_synced(namespace, name) -> bool | Check if ExternalSecret is synced
+--- @quickref c:wait_secret_synced(namespace, name, timeout_secs?) -> true | Wait for sync
+--- @quickref c:secret_stores(namespace) -> {items} | List SecretStores in namespace
+--- @quickref c:secret_store(namespace, name) -> store|nil | Get SecretStore by name
+--- @quickref c:secret_store_status(namespace, name) -> {ready, conditions} | Get store status
+--- @quickref c:is_store_ready(namespace, name) -> bool | Check if SecretStore is ready
+--- @quickref c:cluster_secret_stores() -> {items} | List ClusterSecretStores
+--- @quickref c:cluster_secret_store(name) -> store|nil | Get ClusterSecretStore by name
+--- @quickref c:is_cluster_store_ready(name) -> bool | Check if ClusterSecretStore is ready
+--- @quickref c:cluster_external_secrets() -> {items} | List ClusterExternalSecrets
+--- @quickref c:cluster_external_secret(name) -> es|nil | Get ClusterExternalSecret by name
+--- @quickref c:all_secrets_synced(namespace) -> {synced, failed, total} | Check all secrets sync status
+--- @quickref c:all_stores_ready(namespace) -> {ready, not_ready, total} | Check all stores readiness
+
 local M = {}
 
 local API_BASE = "/apis/external-secrets.io/v1beta1"
