@@ -4,7 +4,7 @@ mod lua;
 mod output;
 mod runner;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
@@ -20,18 +20,49 @@ pub fn build_http_client() -> reqwest::Client {
 
 /// Assay — lightweight Lua scripting runtime for deployment verification.
 ///
-/// Auto-detects behavior by file extension:
-///   assay checks.yaml    YAML check orchestration (retry, backoff, structured output)
-///   assay script.lua     Direct Lua script execution (all builtins available)
+/// Run with a subcommand, or pass a file directly for auto-detection:
+///   assay run script.lua     Explicit run
+///   assay script.lua         Auto-detect by extension (backward compat)
+///   assay checks.yaml        YAML check orchestration
 #[derive(Parser, Debug)]
-#[command(name = "assay", version, about)]
+#[command(name = "assay", version, about, args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Path to a .yaml config or .lua script.
-    file: PathBuf,
+    file: Option<PathBuf>,
 
     /// Enable verbose logging (sets RUST_LOG=debug).
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     verbose: bool,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Search for modules matching a query
+    Context {
+        /// Search query string
+        query: String,
+        /// Maximum results to show
+        #[arg(short, long, default_value = "5")]
+        limit: usize,
+    },
+    /// Execute a Lua script inline or from file
+    Exec {
+        /// Evaluate Lua code directly
+        #[arg(short = 'e', long = "eval")]
+        eval: Option<String>,
+        /// Lua script file to execute
+        file: Option<PathBuf>,
+    },
+    /// List all available modules
+    Modules,
+    /// Run a file (yaml or lua)
+    Run {
+        /// Path to .yaml or .lua file
+        file: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -50,11 +81,39 @@ async fn main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
-    let ext = cli.file.extension().and_then(|e| e.to_str()).unwrap_or("");
+    match cli.command {
+        Some(Commands::Context { .. }) => {
+            println!("context: not yet implemented");
+            ExitCode::SUCCESS
+        }
+        Some(Commands::Exec { .. }) => {
+            println!("exec: not yet implemented");
+            ExitCode::SUCCESS
+        }
+        Some(Commands::Modules) => {
+            println!("modules: not yet implemented");
+            ExitCode::SUCCESS
+        }
+        Some(Commands::Run { file }) => dispatch_file(&file).await,
+        None => {
+            if let Some(ref file) = cli.file {
+                dispatch_file(file).await
+            } else {
+                use clap::CommandFactory;
+                Cli::command().print_help().ok();
+                println!();
+                ExitCode::from(1)
+            }
+        }
+    }
+}
+
+async fn dispatch_file(file: &std::path::Path) -> ExitCode {
+    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
-        "yaml" | "yml" => run_yaml_checks(&cli.file).await,
-        "lua" => run_lua_script(&cli.file).await,
+        "yaml" | "yml" => run_yaml_checks(file).await,
+        "lua" => run_lua_script(file).await,
         other => {
             eprintln!(
                 "error: unsupported file extension {other:?} (expected .yaml, .yml, or .lua)"
