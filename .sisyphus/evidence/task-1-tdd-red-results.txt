@@ -1,0 +1,133 @@
+   Compiling assay-lua v0.5.0 (/root/code/assay)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.86s
+     Running tests/discovery.rs (target/debug/deps/discovery-010484c22db3096e)
+
+running 28 tests
+test test_discover_modules_no_duplicates_by_name ... ok
+test test_builtin_has_correct_source ... ok
+test test_discover_modules_returns_builtins ... ok
+test test_discover_modules_returns_stdlib ... ok
+test test_search_keyword_docker_finds_harbor ... FAILED
+test test_build_index_returns_engine ... ok
+test test_search_keyword_cicd_finds_argocd ... FAILED
+test test_search_keyword_deploy_finds_k8s ... FAILED
+test test_search_keyword_letsencrypt_finds_certmanager ... FAILED
+test test_search_keyword_password_finds_vault ... FAILED
+test test_search_keyword_metric_finds_prometheus ... FAILED
+test test_search_keyword_observability_finds_monitoring ... FAILED
+test test_search_keyword_request_finds_http ... FAILED
+test test_search_keyword_endpoint_finds_http ... FAILED
+test test_search_keyword_encryption_finds_vault ... FAILED
+test test_search_keyword_failover_finds_velero ... FAILED
+test test_stdlib_has_correct_source ... ok
+test test_search_keyword_ssl_finds_certmanager ... FAILED
+test test_search_keyword_webhook_finds_http ... FAILED
+test test_search_keyword_rotation_finds_vault ... FAILED
+test test_search_keyword_terraform_finds_crossplane ... FAILED
+test test_search_regression_prometheus_is_first ... ok
+test test_search_modules_finds_grafana ... ok
+test test_search_regression_kubernetes_finds_k8s ... ok
+test test_search_regression_grafana_is_first ... ok
+test test_search_modules_limit_respected ... ok
+test test_search_modules_finds_http ... ok
+test test_search_regression_vault_in_results ... ok
+
+failures:
+
+---- test_search_keyword_docker_finds_harbor stdout ----
+
+thread 'test_search_keyword_docker_finds_harbor' (2424956) panicked at tests/discovery.rs:248:5:
+search for 'docker' should find assay.harbor, got: []
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- test_search_keyword_cicd_finds_argocd stdout ----
+
+thread 'test_search_keyword_cicd_finds_argocd' (2424954) panicked at tests/discovery.rs:158:5:
+search for 'cicd' should find assay.argocd or assay.flux, got: []
+
+---- test_search_keyword_deploy_finds_k8s stdout ----
+
+thread 'test_search_keyword_deploy_finds_k8s' (2424955) panicked at tests/discovery.rs:228:5:
+search for 'deploy' should find assay.k8s, got: []
+
+---- test_search_keyword_letsencrypt_finds_certmanager stdout ----
+
+thread 'test_search_keyword_letsencrypt_finds_certmanager' (2424960) panicked at tests/discovery.rs:138:5:
+search for 'letsencrypt' should find assay.certmanager, got: []
+
+---- test_search_keyword_password_finds_vault stdout ----
+
+thread 'test_search_keyword_password_finds_vault' (2424973) panicked at tests/discovery.rs:148:5:
+search for 'password' should find assay.vault, got: ["assay.zitadel"]
+
+---- test_search_keyword_metric_finds_prometheus stdout ----
+
+thread 'test_search_keyword_metric_finds_prometheus' (2424961) panicked at tests/discovery.rs:168:5:
+search for 'metric' should find assay.prometheus, got: []
+
+---- test_search_keyword_observability_finds_monitoring stdout ----
+
+thread 'test_search_keyword_observability_finds_monitoring' (2424962) panicked at tests/discovery.rs:208:5:
+search for 'observability' should find assay.prometheus or assay.grafana, got: []
+
+---- test_search_keyword_request_finds_http stdout ----
+
+thread 'test_search_keyword_request_finds_http' (2424975) panicked at tests/discovery.rs:118:5:
+search for 'request' should find http builtin, got: ["assay.certmanager"]
+
+---- test_search_keyword_endpoint_finds_http stdout ----
+
+thread 'test_search_keyword_endpoint_finds_http' (2424958) panicked at tests/discovery.rs:128:5:
+search for 'endpoint' should find http builtin, got: ["assay.healthcheck", "assay.dex"]
+
+---- test_search_keyword_encryption_finds_vault stdout ----
+
+thread 'test_search_keyword_encryption_finds_vault' (2424957) panicked at tests/discovery.rs:198:5:
+search for 'encryption' should find assay.vault, got: []
+
+---- test_search_keyword_failover_finds_velero stdout ----
+
+thread 'test_search_keyword_failover_finds_velero' (2424959) panicked at tests/discovery.rs:238:5:
+search for 'failover' should find assay.velero, got: []
+
+---- test_search_keyword_ssl_finds_certmanager stdout ----
+
+thread 'test_search_keyword_ssl_finds_certmanager' (2425122) panicked at tests/discovery.rs:218:5:
+search for 'ssl' should find assay.certmanager, got: []
+
+---- test_search_keyword_webhook_finds_http stdout ----
+
+thread 'test_search_keyword_webhook_finds_http' (2425124) panicked at tests/discovery.rs:108:5:
+search for 'webhook' should find http builtin, got: []
+
+---- test_search_keyword_rotation_finds_vault stdout ----
+
+thread 'test_search_keyword_rotation_finds_vault' (2425121) panicked at tests/discovery.rs:188:5:
+search for 'rotation' should find assay.vault or assay.certmanager, got: []
+
+---- test_search_keyword_terraform_finds_crossplane stdout ----
+
+thread 'test_search_keyword_terraform_finds_crossplane' (2425123) panicked at tests/discovery.rs:178:5:
+search for 'terraform' should find assay.crossplane, got: []
+
+
+failures:
+    test_search_keyword_cicd_finds_argocd
+    test_search_keyword_deploy_finds_k8s
+    test_search_keyword_docker_finds_harbor
+    test_search_keyword_encryption_finds_vault
+    test_search_keyword_endpoint_finds_http
+    test_search_keyword_failover_finds_velero
+    test_search_keyword_letsencrypt_finds_certmanager
+    test_search_keyword_metric_finds_prometheus
+    test_search_keyword_observability_finds_monitoring
+    test_search_keyword_password_finds_vault
+    test_search_keyword_request_finds_http
+    test_search_keyword_rotation_finds_vault
+    test_search_keyword_ssl_finds_certmanager
+    test_search_keyword_terraform_finds_crossplane
+    test_search_keyword_webhook_finds_http
+
+test result: FAILED. 13 passed; 15 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+error: test failed, to rerun pass `--test discovery`
