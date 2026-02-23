@@ -1,0 +1,21 @@
+=== MCP Comparison Verification ===
+
+table rows:
+43
+coming soon:
+12
+
+=== Coverage qualifiers ===
+Full:
+28
+Partial:
+4
+Out of Scope:
+5
+
+=== File size ===
+11566 site/mcp-comparison.html
+
+=== Placeholder removed ===
+0
+0 (placeholder removed)
