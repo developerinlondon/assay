@@ -69,16 +69,16 @@ fn run_subcommand_lua_file() {
 }
 
 #[test]
-fn context_stub_prints_not_implemented() {
+fn context_outputs_markdown() {
     let output = assay_bin()
         .args(["context", "test-query"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "context stub should exit 0");
+    assert!(output.status.success(), "context should exit 0");
     assert!(
-        stdout.contains("not yet implemented"),
-        "context stub should print not yet implemented: {stdout}"
+        stdout.contains("# Assay Module Context"),
+        "context should output markdown header: {stdout}"
     );
 }
 
