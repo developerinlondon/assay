@@ -1,3 +1,16 @@
+--- @module assay.postgres
+--- @description PostgreSQL database helpers. User/database management, grants, Vault integration.
+--- @keywords postgres, postgresql, database, users, grants, sql
+--- @quickref c:query(sql, params?) -> [row] | Execute SQL query, return rows
+--- @quickref c:execute(sql, params?) -> number | Execute SQL statement, return affected count
+--- @quickref c:close() -> nil | Close database connection
+--- @quickref c:user_exists(username) -> bool | Check if PostgreSQL user exists
+--- @quickref c:ensure_user(username, password, opts?) -> bool | Create user if not exists
+--- @quickref c:database_exists(dbname) -> bool | Check if database exists
+--- @quickref c:ensure_database(dbname, owner?) -> bool | Create database if not exists
+--- @quickref c:grant(database_name, username, privileges?) -> nil | Grant privileges on database
+--- @quickref M.client_from_vault(vault_client, vault_path, host, port?) -> client | Create from Vault creds
+
 local M = {}
 
 function M.client(host, port, username, password, database)

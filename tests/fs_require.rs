@@ -32,18 +32,18 @@ async fn test_fs_require_loads_external_module() {
 }
 
 #[tokio::test]
-async fn test_fs_require_embedded_takes_priority() {
+async fn test_fs_require_filesystem_takes_priority() {
     let dir = setup_lib_dir("fs_require_priority");
     std::fs::write(
         dir.join("vault.lua"),
-        "error('should not load filesystem vault')\n",
+        "local M = {}\nfunction M.custom() return \"filesystem vault\" end\nreturn M\n",
     )
     .unwrap();
 
     let script = r#"
         local vault = require("assay.vault")
         assert.not_nil(vault)
-        assert.not_nil(vault.client)
+        assert.eq(vault.custom(), "filesystem vault")
     "#;
     let result = run_lua_with_lib_path(script, dir.to_str().unwrap()).await;
     cleanup(&dir);

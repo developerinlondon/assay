@@ -1,3 +1,24 @@
+--- @module assay.kargo
+--- @description Kargo continuous promotion. Stages, freight, promotions, warehouses, pipeline status.
+--- @keywords kargo, promotions, stages, freight, warehouses, gitops, kubernetes
+--- @quickref c:stages(namespace) -> [stage] | List stages in namespace
+--- @quickref c:stage(namespace, name) -> stage | Get stage by name
+--- @quickref c:stage_status(namespace, name) -> {phase, freight, health} | Get stage status
+--- @quickref c:is_stage_healthy(namespace, name) -> bool | Check if stage is healthy
+--- @quickref c:wait_stage_healthy(namespace, name, timeout_secs?) -> true | Wait for stage health
+--- @quickref c:freight_list(namespace, opts?) -> [freight] | List freight in namespace
+--- @quickref c:freight(namespace, name) -> freight | Get freight by name
+--- @quickref c:freight_status(namespace, name) -> status | Get freight status
+--- @quickref c:promotions(namespace, opts?) -> [promotion] | List promotions
+--- @quickref c:promotion(namespace, name) -> promotion | Get promotion by name
+--- @quickref c:promotion_status(namespace, name) -> {phase, message, freight_id} | Get promotion status
+--- @quickref c:promote(namespace, stage, freight) -> promotion | Create a promotion
+--- @quickref c:warehouses(namespace) -> [warehouse] | List warehouses
+--- @quickref c:warehouse(namespace, name) -> warehouse | Get warehouse by name
+--- @quickref c:projects() -> [project] | List Kargo projects
+--- @quickref c:project(name) -> project | Get project by name
+--- @quickref c:pipeline_status(namespace) -> [{name, phase, freight, healthy}] | Get pipeline overview
+
 local M = {}
 
 local API_BASE = "/apis/kargo.akuity.io/v1alpha1"

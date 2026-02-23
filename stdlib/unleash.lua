@@ -1,3 +1,32 @@
+--- @module assay.unleash
+--- @description Unleash feature flag management. Projects, features, environments, strategies, API tokens.
+--- @keywords unleash, feature-flags, toggles, projects, environments, strategies
+--- @quickref c:health() -> {health} | Check Unleash health
+--- @quickref c:projects() -> [project] | List projects
+--- @quickref c:project(id) -> project|nil | Get project by ID
+--- @quickref c:create_project(project) -> project | Create a project
+--- @quickref c:update_project(id, project) -> project | Update a project
+--- @quickref c:delete_project(id) -> nil | Delete a project
+--- @quickref c:environments() -> [environment] | List environments
+--- @quickref c:enable_environment(project_id, env_name) -> nil | Enable environment on project
+--- @quickref c:disable_environment(project_id, env_name) -> nil | Disable environment on project
+--- @quickref c:features(project_id) -> [feature] | List features in project
+--- @quickref c:feature(project_id, name) -> feature|nil | Get feature by name
+--- @quickref c:create_feature(project_id, feature) -> feature | Create a feature
+--- @quickref c:update_feature(project_id, name, feature) -> feature | Update a feature
+--- @quickref c:archive_feature(project_id, name) -> nil | Archive a feature
+--- @quickref c:toggle_on(project_id, name, env) -> nil | Enable feature in environment
+--- @quickref c:toggle_off(project_id, name, env) -> nil | Disable feature in environment
+--- @quickref c:strategies(project_id, feature_name, env) -> [strategy] | List feature strategies
+--- @quickref c:add_strategy(project_id, feature_name, env, strategy) -> strategy | Add strategy to feature
+--- @quickref c:tokens() -> [token] | List API tokens
+--- @quickref c:create_token(token_config) -> token | Create API token
+--- @quickref c:delete_token(secret) -> nil | Delete API token
+--- @quickref M.wait(url, opts?) -> true | Wait for Unleash to become healthy
+--- @quickref M.ensure_project(client, project_id, opts?) -> project | Ensure project exists
+--- @quickref M.ensure_environment(client, project_id, env_name) -> true | Ensure environment enabled
+--- @quickref M.ensure_token(client, opts) -> token | Ensure API token exists
+
 local M = {}
 
 function M.client(url, opts)

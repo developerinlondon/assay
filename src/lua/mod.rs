@@ -7,11 +7,8 @@ use mlua::{Lua, LuaOptions, StdLib};
 
 static STDLIB_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/stdlib");
 
-/// Default filesystem path for external Lua libraries.
-const DEFAULT_LIB_PATH: &str = "/libs";
-
-/// Environment variable to override the external library search path.
-pub const LIB_PATH_ENV: &str = "ASSAY_LIB_PATH";
+/// Environment variable to override the global module search path.
+pub const MODULES_PATH_ENV: &str = "ASSAY_MODULES_PATH";
 
 const DANGEROUS_GLOBALS: &[&str] = &["load", "loadfile", "dofile", "collectgarbage", "print"];
 
@@ -20,17 +17,21 @@ fn lua_err(e: mlua::Error) -> anyhow::Error {
 }
 
 pub fn create_vm(client: reqwest::Client) -> Result<Lua> {
-    let lib_path = std::env::var(LIB_PATH_ENV).unwrap_or_else(|_| DEFAULT_LIB_PATH.to_string());
-    create_vm_with_lib_path(client, lib_path)
+    create_vm_with_paths(client, None)
 }
 
+#[allow(dead_code)]
 pub fn create_vm_with_lib_path(client: reqwest::Client, lib_path: String) -> Result<Lua> {
+    create_vm_with_paths(client, Some(lib_path))
+}
+
+pub fn create_vm_with_paths(client: reqwest::Client, global_modules_path: Option<String>) -> Result<Lua> {
     let safe_libs = StdLib::ALL_SAFE ^ StdLib::IO ^ StdLib::OS;
     let lua = Lua::new_with(safe_libs, LuaOptions::default()).map_err(lua_err)?;
     lua.set_memory_limit(64 * 1024 * 1024).map_err(lua_err)?;
     sandbox(&lua).map_err(lua_err)?;
+    register_fs_loader(&lua, global_modules_path).map_err(lua_err)?;
     register_stdlib_loader(&lua).map_err(lua_err)?;
-    register_fs_loader(&lua, lib_path).map_err(lua_err)?;
     builtins::register_all(&lua, client).map_err(lua_err)?;
     Ok(lua)
 }
@@ -83,7 +84,7 @@ fn register_stdlib_loader(lua: &Lua) -> mlua::Result<()> {
     Ok(())
 }
 
-fn register_fs_loader(lua: &Lua, lib_path: String) -> mlua::Result<()> {
+fn register_fs_loader(lua: &Lua, global_modules_path: Option<String>) -> mlua::Result<()> {
     let package: mlua::Table = lua.globals().get("package")?;
     let searchers: mlua::Table = package.get("searchers")?;
 
@@ -96,20 +97,42 @@ fn register_fs_loader(lua: &Lua, lib_path: String) -> mlua::Result<()> {
             ));
         };
 
-        let full_path = std::path::Path::new(&lib_path).join(&filename);
+        // Priority 1: ./modules/<name>.lua (per-project)
+        let project_path = std::path::Path::new("./modules").join(&filename);
+        if let Ok(source) = std::fs::read_to_string(&project_path) {
+            let loader = lua
+                .load(source)
+                .set_name(format!("@{}", project_path.display()))
+                .into_function()?;
+            return Ok(mlua::Value::Function(loader));
+        }
 
-        match std::fs::read_to_string(&full_path) {
-            Ok(source) => {
+        // Priority 2: ~/.assay/modules/<name>.lua (global user) or $ASSAY_MODULES_PATH
+        let global_path = if let Some(ref custom_path) = global_modules_path {
+            std::path::PathBuf::from(custom_path)
+        } else if let Ok(modules_env) = std::env::var(MODULES_PATH_ENV) {
+            std::path::PathBuf::from(modules_env)
+        } else if let Ok(home) = std::env::var("HOME") {
+            std::path::Path::new(&home).join(".assay/modules")
+        } else {
+            // No home directory available, skip global path
+            std::path::PathBuf::new()
+        };
+
+        if !global_path.as_os_str().is_empty() {
+            let global_file_path = global_path.join(&filename);
+            if let Ok(source) = std::fs::read_to_string(&global_file_path) {
                 let loader = lua
                     .load(source)
-                    .set_name(format!("@{}", full_path.display()))
+                    .set_name(format!("@{}", global_file_path.display()))
                     .into_function()?;
-                Ok(mlua::Value::Function(loader))
+                return Ok(mlua::Value::Function(loader));
             }
-            Err(_) => Ok(mlua::Value::String(
-                lua.create_string(format!("no file at {}", full_path.display()))?,
-            )),
         }
+
+        // Priority 3: Built-in modules are handled by register_stdlib_loader
+        // Return nil to fall through to the next searcher
+        Ok(mlua::Value::Nil)
     })?;
 
     let len = searchers.len()?;

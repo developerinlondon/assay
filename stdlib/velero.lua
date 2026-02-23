@@ -1,3 +1,30 @@
+--- @module assay.velero
+--- @description Velero backup and restore. Backups, restores, schedules, storage locations.
+--- @keywords velero, backups, restores, schedules, disaster-recovery, kubernetes
+--- @quickref c:backups() -> [backup] | List backups
+--- @quickref c:backup(name) -> backup|nil | Get backup by name
+--- @quickref c:backup_status(name) -> {phase, errors, items_backed_up} | Get backup status
+--- @quickref c:is_backup_completed(name) -> bool | Check if backup completed
+--- @quickref c:is_backup_failed(name) -> bool | Check if backup failed
+--- @quickref c:latest_backup(schedule_name) -> backup|nil | Get latest backup for schedule
+--- @quickref c:restores() -> [restore] | List restores
+--- @quickref c:restore(name) -> restore|nil | Get restore by name
+--- @quickref c:restore_status(name) -> {phase, errors, warnings} | Get restore status
+--- @quickref c:is_restore_completed(name) -> bool | Check if restore completed
+--- @quickref c:schedules() -> [schedule] | List schedules
+--- @quickref c:schedule(name) -> schedule|nil | Get schedule by name
+--- @quickref c:schedule_status(name) -> {phase, last_backup} | Get schedule status
+--- @quickref c:is_schedule_enabled(name) -> bool | Check if schedule is enabled
+--- @quickref c:backup_storage_locations() -> [bsl] | List backup storage locations
+--- @quickref c:backup_storage_location(name) -> bsl|nil | Get backup storage location
+--- @quickref c:is_bsl_available(name) -> bool | Check if storage location is available
+--- @quickref c:volume_snapshot_locations() -> [vsl] | List volume snapshot locations
+--- @quickref c:volume_snapshot_location(name) -> vsl|nil | Get volume snapshot location
+--- @quickref c:backup_repositories() -> [repo] | List backup repositories
+--- @quickref c:backup_repository(name) -> repo|nil | Get backup repository
+--- @quickref c:all_schedules_enabled() -> {enabled, disabled, total} | Check all schedules status
+--- @quickref c:all_bsl_available() -> {available, unavailable, total} | Check all storage locations
+
 local M = {}
 
 local API_BASE = "/apis/velero.io/v1"

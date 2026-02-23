@@ -1,3 +1,23 @@
+--- @module assay.temporal
+--- @description Temporal workflow orchestration. Workflows, task queues, schedules, signals.
+--- @keywords temporal, workflows, task-queues, schedules, orchestration
+--- @quickref c:health() -> bool | Check Temporal health
+--- @quickref c:system_info() -> info | Get system information
+--- @quickref c:namespaces() -> {namespaces} | List namespaces
+--- @quickref c:namespace(name) -> namespace | Get namespace by name
+--- @quickref c:workflows(opts?) -> {executions} | List workflow executions
+--- @quickref c:workflow(workflow_id, run_id?, opts?) -> workflow | Get workflow execution
+--- @quickref c:workflow_history(workflow_id, run_id?, opts?) -> {events} | Get workflow history
+--- @quickref c:signal_workflow(workflow_id, signal_name, input?, opts?) -> result | Signal a workflow
+--- @quickref c:terminate_workflow(workflow_id, reason?, opts?) -> result | Terminate a workflow
+--- @quickref c:cancel_workflow(workflow_id, opts?) -> result | Cancel a workflow
+--- @quickref c:task_queue(name, opts?) -> queue | Get task queue info
+--- @quickref c:schedules(opts?) -> {schedules} | List schedules
+--- @quickref c:schedule(schedule_id, opts?) -> schedule | Get schedule by ID
+--- @quickref c:search(query, opts?) -> {executions} | Search workflows by query
+--- @quickref c:is_workflow_running(workflow_id, opts?) -> bool | Check if workflow is running
+--- @quickref c:wait_workflow_complete(workflow_id, timeout_secs, opts?) -> workflow | Wait for completion
+
 local M = {}
 
 function M.client(url, opts)
