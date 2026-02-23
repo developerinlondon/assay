@@ -117,3 +117,60 @@ fn version_flag_works() {
         "version should contain 'assay': {stdout}"
     );
 }
+
+
+#[test]
+fn backward_compat_yaml_file() {
+    let output = assay_bin()
+        .arg("tests/e2e/check_yaml.lua")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "backward compat yaml should exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn backward_compat_toml_file() {
+    let output = assay_bin()
+        .arg("tests/e2e/check_toml.lua")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "backward compat toml should exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn unsupported_extension_fails() {
+    let output = assay_bin()
+        .arg("nonexistent.txt")
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "unsupported extension should exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unsupported file extension"),
+        "error message should mention unsupported extension: {stderr}"
+    );
+}
+
+#[test]
+fn run_subcommand_yaml_file() {
+    let output = assay_bin()
+        .args(["run", "tests/e2e/check_yaml.lua"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "run subcommand yaml should exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
