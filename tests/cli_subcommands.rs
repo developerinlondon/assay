@@ -83,16 +83,16 @@ fn context_stub_prints_not_implemented() {
 }
 
 #[test]
-fn exec_stub_prints_not_implemented() {
+fn exec_eval_runs_lua_code() {
     let output = assay_bin()
-        .args(["exec", "-e", "print('hello')"])
+        .args(["exec", "-e", "log.info('hello')"])
         .output()
         .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "exec stub should exit 0");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "exec -e should exit 0");
     assert!(
-        stdout.contains("not yet implemented"),
-        "exec stub should print not yet implemented: {stdout}"
+        stderr.contains("hello"),
+        "exec -e should execute the code: {stderr}"
     );
 }
 
