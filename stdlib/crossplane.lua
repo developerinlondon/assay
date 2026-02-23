@@ -1,6 +1,6 @@
 --- @module assay.crossplane
 --- @description Crossplane infrastructure management. Providers, XRDs, compositions, managed resources.
---- @keywords crossplane, providers, xrds, compositions, managed, kubernetes, infrastructure
+--- @keywords crossplane, providers, xrds, compositions, managed, kubernetes, infrastructure, configuration, function, composition, managed-resource, health, readiness, established, terraform
 --- @quickref c:providers() -> {items} | List providers
 --- @quickref c:provider(name) -> provider|nil | Get provider by name
 --- @quickref c:is_provider_healthy(name) -> bool | Check if provider is healthy

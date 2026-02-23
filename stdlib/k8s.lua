@@ -1,6 +1,6 @@
 --- @module assay.k8s
 --- @description Kubernetes API client. 30+ resource types, CRDs, readiness checks, pod logs, rollouts.
---- @keywords kubernetes, k8s, pods, deployments, services, secrets, configmaps, namespaces
+--- @keywords kubernetes, k8s, pods, deployments, services, secrets, configmaps, namespaces, crd, custom-resources, rbac, events, logs, rollout, nodes, readiness, wait, deploy, deployment
 --- @env KUBERNETES_SERVICE_HOST, KUBERNETES_SERVICE_PORT
 --- @quickref M.register_crd(kind, api_group, version, plural, cluster_scoped?) -> nil | Register custom resource
 --- @quickref M.get(path, opts?) -> resource | GET any K8s API path

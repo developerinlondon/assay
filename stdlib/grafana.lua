@@ -1,6 +1,6 @@
 --- @module assay.grafana
 --- @description Grafana monitoring and dashboards. Health, datasources, annotations, alerts, folders.
---- @keywords grafana, monitoring, dashboards, datasources, annotations, alerts, health
+--- @keywords grafana, monitoring, dashboards, datasources, annotations, alerts, health, organization, folders, search, annotation
 --- @quickref c:health() -> {database, version, commit} | Check Grafana health
 --- @quickref c:datasources() -> [{id, name, type, url}] | List all datasources
 --- @quickref c:datasource(id_or_uid) -> {id, name, type} | Get datasource by ID or UID
