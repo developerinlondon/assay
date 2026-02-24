@@ -1,6 +1,6 @@
 --- @module assay.loki
 --- @description Loki log aggregation. Push logs, query with LogQL, labels, series, tail.
---- @keywords loki, logs, logql, labels, series, monitoring
+--- @keywords loki, logs, logql, labels, series, monitoring, push, tail, stream, instant, range, query
 --- @quickref M.selector(labels) -> string | Build LogQL stream selector from labels table
 --- @quickref c:push(stream_labels, entries) -> true | Push log entries to Loki
 --- @quickref c:query(logql, opts?) -> [result] | Instant LogQL query

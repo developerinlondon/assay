@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — Lightweight Lua Runtime for Kubernetes</title>
+  <meta name="description" content="Assay is a single ~9 MB binary that replaces 50-250 MB Python/Node/kubectl containers and dozens of MCP servers in Kubernetes Jobs.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index.html" class="logo">Assay</a>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="mcp-comparison.html">MCP Comparison</a></li>
+        <li><a href="agent-guides.html">Agent Guides</a></li>
+        <li><a href="modules.html">Modules</a></li>
+        <li><a href="https://github.com/developerinlondon/assay" target="_blank">GitHub</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section style="text-align: center; padding: 3rem 0 2rem;">
+      <h1 style="font-size: 2.8rem; line-height: 1.2; margin-bottom: 1.5rem;">One Binary. 40+ Modules. Zero MCP Servers.</h1>
+      <p style="font-size: 1.25rem; max-width: 700px; margin: 0 auto 2rem; color: var(--text-light);">
+        Assay is a ~9 MB static binary that replaces 50–250 MB Python/Node/kubectl containers
+        and dozens of MCP servers in Kubernetes Jobs.
+      </p>
+      <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+        <a href="mcp-comparison.html" style="display: inline-block; background-color: var(--accent); color: #fff; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; text-decoration: none; transition: background-color 0.2s;">View MCP Comparison &rarr;</a>
+        <a href="#install" style="display: inline-block; background-color: transparent; color: var(--accent); border: 2px solid var(--accent); padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; text-decoration: none; transition: background-color 0.2s, color 0.2s;">Install Now &darr;</a>
+      </div>
+    </section>
+
+    <!-- Key Stats -->
+    <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; padding: 2rem 0;">
+      <div style="text-align: center; padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background-color: var(--code-bg);">
+        <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">9 MB</div>
+        <div style="color: var(--text-light); margin-top: 0.25rem;">Binary size<br>(vs 50–250 MB containers)</div>
+      </div>
+      <div style="text-align: center; padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background-color: var(--code-bg);">
+        <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">40+</div>
+        <div style="color: var(--text-light); margin-top: 0.25rem;">Built-in modules</div>
+      </div>
+      <div style="text-align: center; padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background-color: var(--code-bg);">
+        <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">15 ms</div>
+        <div style="color: var(--text-light); margin-top: 0.25rem;">Context query latency</div>
+      </div>
+      <div style="text-align: center; padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background-color: var(--code-bg);">
+        <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">5 ms</div>
+        <div style="color: var(--text-light); margin-top: 0.25rem;">Cold start time</div>
+      </div>
+    </section>
+
+    <!-- What is Assay? -->
+    <h2>What is Assay?</h2>
+    <p>
+      Assay is a universal API execution engine &mdash; a lightweight Lua runtime purpose-built for
+      Kubernetes. It runs in two modes, auto-detected by file extension:
+    </p>
+
+    <h3>Lua Script Mode</h3>
+    <p>Run any Lua script with all builtins available &mdash; HTTP, JSON, crypto, database, and 23 embedded stdlib modules:</p>
+    <pre><code>-- Lua mode: query Prometheus directly
+local prom = require("assay.prometheus")
+local result = prom.query("http://prom:9090", "up")
+assert.gt(#result, 0, "No targets up")
+log.info("Targets up: " .. #result)</code></pre>
+
+    <h3>YAML Check Mode</h3>
+    <p>Structured verification with retry, backoff, parallel execution, and JSON output:</p>
+    <pre><code># YAML mode: orchestrated checks
+assay checks.yaml  # retry, backoff, parallel, structured JSON output</code></pre>
+    <pre><code># checks.yaml
+timeout: 120s
+retries: 3
+backoff: 5s
+checks:
+  - name: grafana-healthy
+    type: http
+    url: http://grafana:80/api/health
+    expect:
+      status: 200
+      json: ".database == \"ok\""</code></pre>
+
+    <!-- Container Size Comparison -->
+    <h2>Container Image Size</h2>
+    <p>
+      Assay ships as a <code>FROM scratch</code> container &mdash; no shell, no package manager,
+      just the static binary. Compare compressed pull sizes:
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Runtime</th>
+          <th>Compressed</th>
+          <th>vs Assay</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="font-weight: 600; color: var(--accent);">
+          <td>Assay</td>
+          <td>6 MB</td>
+          <td>1x</td>
+        </tr>
+        <tr>
+          <td>Python alpine</td>
+          <td>17 MB</td>
+          <td>3x</td>
+        </tr>
+        <tr>
+          <td>bitnami/kubectl</td>
+          <td>35 MB</td>
+          <td>6x</td>
+        </tr>
+        <tr>
+          <td>Python slim</td>
+          <td>43 MB</td>
+          <td>9x</td>
+        </tr>
+        <tr>
+          <td>Node.js alpine</td>
+          <td>57 MB</td>
+          <td>12x</td>
+        </tr>
+        <tr>
+          <td>alpine/k8s</td>
+          <td>60 MB</td>
+          <td>10x</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- MCP Replacement -->
+    <h2>Replace Your MCP Servers</h2>
+    <p>
+      Assay replaces 42 popular MCP servers. Instead of running 10 separate <code>npx -y</code> processes
+      consuming 500 MB of npm dependencies, use one 9 MB binary with 40+ modules built in.
+    </p>
+    <p>
+      Every MCP server you remove is one fewer process to manage, one fewer <code>node_modules</code>
+      to update, and one fewer attack surface in your cluster.
+    </p>
+    <p>
+      <a href="mcp-comparison.html">View full MCP comparison &rarr;</a>
+    </p>
+
+    <!-- Install -->
+    <h2 id="install">Install</h2>
+
+    <h3>Pre-built Binary (fastest)</h3>
+    <pre><code># Linux (x86_64, static — runs on any distro)
+curl -L -o assay https://github.com/developerinlondon/assay/releases/latest/download/assay-linux-x86_64
+chmod +x assay && sudo mv assay /usr/local/bin/
+
+# macOS (Apple Silicon)
+curl -L -o assay https://github.com/developerinlondon/assay/releases/latest/download/assay-darwin-aarch64
+chmod +x assay && sudo mv assay /usr/local/bin/</code></pre>
+
+    <h3>Docker</h3>
+    <pre><code>docker pull ghcr.io/developerinlondon/assay:latest</code></pre>
+
+    <h3>Cargo</h3>
+    <pre><code>cargo install assay-lua</code></pre>
+
+    <!-- Quick Example -->
+    <h2>Quick Example</h2>
+    <p>A complete health check script &mdash; JWT auth, HTTP request, assertion &mdash; in 10 lines:</p>
+    <pre><code>#!/usr/bin/assay
+local token = crypto.jwt_sign({
+  iss = "assay", sub = "health-check",
+  exp = time() + 300
+}, env.get("JWT_SECRET"), "HS256")
+
+local resp = http.get("https://api.example.com/health", {
+  headers = { Authorization = "Bearer " .. token }
+})
+assert.eq(resp.status, 200, "API health check failed")
+log.info("API healthy: " .. resp.body)</code></pre>
+  </main>
+
+  <footer>
+    <p>Assay is MIT licensed &mdash; <a href="https://github.com/developerinlondon/assay">GitHub</a> · <a href="https://crates.io/crates/assay-lua">crates.io</a> · <a href="https://github.com/developerinlondon/assay/pkgs/container/assay">Docker</a></p>
+    <p class="text-muted">&copy; 2025 Assay Contributors</p>
+  </footer>
+</body>
+</html>

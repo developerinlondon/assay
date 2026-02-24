@@ -1,6 +1,6 @@
 --- @module assay.vault
 --- @description HashiCorp Vault secrets management. KV, policies, auth, transit, PKI, token management.
---- @keywords vault, secrets, kv, policies, auth, transit, pki, tokens
+--- @keywords vault, secrets, kv, policies, auth, transit, pki, tokens, encryption, decryption, certificate, seal, initialization, authentication, secret-engine, password, rotation
 --- @quickref c:read(path) -> data|nil | Read secret at path
 --- @quickref c:write(path, payload) -> data|nil | Write secret to path
 --- @quickref c:delete(path) -> nil | Delete secret at path

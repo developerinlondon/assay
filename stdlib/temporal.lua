@@ -1,6 +1,6 @@
 --- @module assay.temporal
 --- @description Temporal workflow orchestration. Workflows, task queues, schedules, signals.
---- @keywords temporal, workflows, task-queues, schedules, orchestration
+--- @keywords temporal, workflows, task-queues, schedules, orchestration, workflow, task-queue, schedule, signal, history, search, namespace, execution
 --- @quickref c:health() -> bool | Check Temporal health
 --- @quickref c:system_info() -> info | Get system information
 --- @quickref c:namespaces() -> {namespaces} | List namespaces

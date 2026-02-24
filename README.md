@@ -237,6 +237,11 @@ assay run script.lua
 assay run checks.yaml
 ```
 
+## v0.5.1: MCP Comparison & Website
+
+Keyword-enriched search across all 40 modules. Static website at assay.rs with MCP comparison (42
+servers), AI agent integration guides, and llms.txt for LLM context traversal.
+
 ### Filesystem Module Loading
 
 Place custom `.lua` modules in `./modules/` (project-local) or `~/.assay/modules/` (global):
@@ -717,3 +722,9 @@ Contributions welcome! Please open an issue or PR on GitHub.
 - **Crates.io**: https://crates.io/crates/assay-lua
 - **Docker**: https://github.com/developerinlondon/assay/pkgs/container/assay
 - **Issues**: https://github.com/developerinlondon/assay/issues
+- **Website**: https://assay.rs
+- **MCP Comparison**: https://assay.rs/mcp-comparison.html — Assay vs 42 MCP servers
+- **Agent Guides**: https://assay.rs/agent-guides.html — Claude Code, Cursor, Windsurf, Cline,
+  OpenCode
+- **Module Reference**: https://assay.rs/modules.html — All 40+ modules with method signatures
+- **LLM Context**: https://assay.rs/llms.txt — Jeremy Howard spec for LLM agent traversal

@@ -1,0 +1,10 @@
+=== Task 9: Module Reference Page ===
+stdlib refs (assay.):
+49
+table rows (<tr>):
+53
+
+=== assay context mentions ===
+2
+=== assay modules mentions ===
+2
