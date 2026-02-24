@@ -1,6 +1,6 @@
 --- @module assay.alertmanager
 --- @description Alertmanager alert and silence management. Query, create, and delete alerts and silences.
---- @keywords alertmanager, alerts, silences, receivers, monitoring
+--- @keywords alertmanager, alerts, silences, receivers, monitoring, silence, inhibit, grouping, notification, receiver
 --- @quickref M.alerts(url, opts?) -> [alert] | List active alerts with filters
 --- @quickref M.post_alerts(url, alerts) -> true | Post new alerts
 --- @quickref M.alert_groups(url, opts?) -> [group] | List alert groups

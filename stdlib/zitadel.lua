@@ -1,6 +1,6 @@
 --- @module assay.zitadel
 --- @description Zitadel OIDC identity management. Projects, OIDC apps, IdPs, users, login policies.
---- @keywords zitadel, oidc, identity, projects, applications, idp, users, authentication
+--- @keywords zitadel, oidc, identity, projects, applications, idp, users, authentication, domain, app, login-policy, user, password, google, machine-key, jwt, saml
 --- @quickref c:ensure_primary_domain(domain) -> bool | Set organization primary domain
 --- @quickref c:find_project(name) -> project|nil | Find project by name
 --- @quickref c:create_project(name, opts?) -> project | Create a new project

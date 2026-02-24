@@ -1,0 +1,1070 @@
+# Assay
+
+> Assay is a ~9 MB static binary that runs Lua scripts in Kubernetes. It replaces 50-250 MB
+> Python/Node/kubectl containers. One binary handles HTTP, database, crypto, WebSocket, and 23
+> Kubernetes-native service integrations. No `require()` for builtins — they are global.
+> Stdlib modules use `require("assay.<name>")` then `M.client(url, opts)` → `c:method()`.
+> Run `assay context <query>` to get LLM-ready method signatures for any module.
+> HTTP responses are `{status, body, headers}` tables. Errors raised via `error()` — use `pcall()`.
+>
+> Client pattern: `local mod = require("assay.<name>")` → `local c = mod.client(url, opts)` → `c:method()`.
+> Auth varies: `{token="..."}`, `{api_key="..."}`, `{username="...", password="..."}`.
+> Error format: `"<module>: <METHOD> <path> HTTP <status>: <body>"`.
+> 404 returns nil for most client methods.
+
+## Getting Started
+
+- [README](https://github.com/developerinlondon/assay/blob/main/README.md): Installation, quick start, examples
+- [SKILL.md](https://github.com/developerinlondon/assay/blob/main/SKILL.md): LLM agent integration guide
+- [GitHub](https://github.com/developerinlondon/assay): Source code and issues
+
+## http
+
+HTTP client and server. No `require()` needed. All responses return `{status, body, headers}`.
+Options table supports `{headers = {["X-Key"] = "value"}}`.
+
+- `http.get(url, opts?)` → `{status, body, headers}` — GET request
+- `http.post(url, body, opts?)` → `{status, body, headers}` — POST request (auto-JSON if table body)
+- `http.put(url, body, opts?)` → `{status, body, headers}` — PUT request
+- `http.patch(url, body, opts?)` → `{status, body, headers}` — PATCH request
+- `http.delete(url, opts?)` → `{status, body, headers}` — DELETE request
+- `http.serve(port, routes)` → blocks — Start HTTP server
+  - Routes: `{GET = {["/path"] = function(req) return {status=200, body="ok"} end}}`
+  - Handlers receive `{method, path, body, headers, query}`, return `{status, body, json?, headers?}`
+
+## json
+
+JSON serialization. No `require()` needed.
+
+- `json.parse(str)` → table — Parse JSON string to Lua table
+- `json.encode(table)` → string — Encode Lua table to JSON string
+
+## yaml
+
+YAML serialization. No `require()` needed.
+
+- `yaml.parse(str)` → table — Parse YAML string to Lua table
+- `yaml.encode(table)` → string — Encode Lua table to YAML string
+
+## toml
+
+TOML serialization. No `require()` needed.
+
+- `toml.parse(str)` → table — Parse TOML string to Lua table
+- `toml.encode(table)` → string — Encode Lua table to TOML string
+
+## fs
+
+Filesystem operations. No `require()` needed.
+
+- `fs.read(path)` → string — Read entire file to string
+- `fs.write(path, str)` → nil — Write string to file
+
+## crypto
+
+Cryptography utilities. No `require()` needed.
+
+- `crypto.jwt_sign(claims, key, alg, opts?)` → string — Sign JWT token
+  - `claims`: table with `{iss, sub, exp, ...}` — standard JWT claims
+  - `key`: string — signing key (secret or PEM private key)
+  - `alg`: `"HS256"` | `"HS384"` | `"HS512"` | `"RS256"` | `"RS384"` | `"RS512"`
+  - `opts`: `{kid = "key-id"}` — optional key ID header
+- `crypto.hash(str, alg)` → string — Hash string (hex output)
+  - `alg`: `"sha256"` | `"sha384"` | `"sha512"` | `"md5"`
+- `crypto.hmac(key, data, alg?, raw?)` → string — HMAC signature
+  - `alg`: `"sha256"` (default) | `"sha384"` | `"sha512"`
+  - `raw`: `true` for binary output, `false` (default) for hex
+- `crypto.random(len)` → string — Secure random hex string of `len` bytes
+
+## base64
+
+Base64 encoding. No `require()` needed.
+
+- `base64.encode(str)` → string — Base64 encode
+- `base64.decode(str)` → string — Base64 decode
+
+## regex
+
+Regular expressions (Rust regex syntax). No `require()` needed.
+
+- `regex.match(pattern, str)` → bool — Test if pattern matches string
+- `regex.find(pattern, str)` → string|nil — Find first match
+- `regex.find_all(pattern, str)` → [string] — Find all matches
+- `regex.replace(pattern, str, replacement)` → string — Replace all matches
+
+## db
+
+SQL database access. No `require()` needed.
+Supports Postgres, MySQL, SQLite via connection URL.
+
+- `db.connect(url)` → conn — Connect to database
+  - URLs: `postgres://user:pass@host:5432/db`, `mysql://user:pass@host:3306/db`, `sqlite:///path.db`
+- `db.query(conn, sql, params?)` → [row] — Execute query, return rows as tables
+  - Parameterized: `db.query(conn, "SELECT * FROM users WHERE id = $1", {42})`
+- `db.execute(conn, sql, params?)` → number — Execute statement, return affected row count
+- `db.close(conn)` → nil — Close database connection
+
+## ws
+
+WebSocket client. No `require()` needed.
+
+- `ws.connect(url)` → conn — Connect to WebSocket server
+- `ws.send(conn, msg)` → nil — Send message
+- `ws.recv(conn)` → string — Receive message (blocking)
+- `ws.close(conn)` → nil — Close connection
+
+## template
+
+Jinja2-compatible template rendering. No `require()` needed.
+
+- `template.render(path, vars)` → string — Render template file with variables
+- `template.render_string(tmpl, vars)` → string — Render template string with variables
+  - Supports: `{{ var }}`, `{% for %}`, `{% if %}`, `{% include %}`, filters
+
+## async
+
+Async task management. No `require()` needed.
+
+- `async.spawn(fn)` → handle — Spawn async task, returns handle
+- `async.spawn_interval(fn, ms)` → handle — Spawn recurring task every `ms` milliseconds
+- `handle:await()` → result — Wait for task completion, returns result
+- `handle:cancel()` → nil — Cancel recurring task
+
+## assert
+
+Assertion utilities. No `require()` needed. All raise `error()` on failure.
+
+- `assert.eq(a, b, msg?)` — Assert `a == b`
+- `assert.gt(a, b, msg?)` — Assert `a > b`
+- `assert.lt(a, b, msg?)` — Assert `a < b`
+- `assert.contains(str, sub, msg?)` — Assert string contains substring
+- `assert.not_nil(val, msg?)` — Assert value is not nil
+- `assert.matches(str, pattern, msg?)` — Assert string matches regex pattern
+
+## log
+
+Structured logging. No `require()` needed.
+
+- `log.info(msg)` — Log info message
+- `log.warn(msg)` — Log warning message
+- `log.error(msg)` — Log error message
+
+## env
+
+Environment variable access. No `require()` needed.
+
+- `env.get(key)` → string|nil — Get environment variable value
+
+## sleep
+
+Sleep utility. No `require()` needed.
+
+- `sleep(secs)` → nil — Sleep for N seconds (supports fractional: `sleep(0.5)`)
+
+## time
+
+Timestamp utility. No `require()` needed.
+
+- `time()` → number — Unix timestamp in seconds (with fractional milliseconds)
+
+## assay.prometheus
+
+Prometheus monitoring queries. PromQL instant/range queries, alerts, targets, rules, series.
+Module-level functions (no client needed): `M.function(url, ...)`.
+
+- `M.query(url, promql)` → number|[{metric, value}] — Instant PromQL query. Single result returns number, multiple returns array.
+- `M.query_range(url, promql, start_time, end_time, step)` → [result] — Range PromQL query over time window
+- `M.alerts(url)` → [alert] — List active alerts
+- `M.targets(url)` → `{activeTargets, droppedTargets}` — List scrape targets with health status
+- `M.rules(url, opts?)` → [group] — List alerting/recording rules. `opts.type` filters by `"alert"` or `"record"`.
+- `M.label_values(url, label_name)` → [string] — List all values for a label name
+- `M.series(url, match_selectors)` → [series] — Query series metadata. `match_selectors` is array of selectors.
+- `M.config_reload(url)` → bool — Trigger Prometheus configuration reload via `/-/reload`
+- `M.targets_metadata(url, opts?)` → [metadata] — Get targets metadata. `opts`: `{match_target, metric, limit}`
+
+Example:
+```lua
+local prom = require("assay.prometheus")
+local count = prom.query("http://prometheus:9090", "count(up)")
+assert.gt(count, 0, "No targets up")
+```
+
+## assay.alertmanager
+
+Alertmanager alert and silence management. Query, create, and delete alerts and silences.
+Module-level functions (no client needed): `M.function(url, ...)`.
+
+- `M.alerts(url, opts?)` → [alert] — List alerts. `opts`: `{active, silenced, inhibited, unprocessed, filter, receiver}`
+- `M.post_alerts(url, alerts)` → true — Post new alerts (array of alert objects)
+- `M.alert_groups(url, opts?)` → [group] — List alert groups. `opts`: `{active, silenced, inhibited, filter, receiver}`
+- `M.silences(url, opts?)` → [silence] — List silences. `opts`: `{filter}`
+- `M.silence(url, id)` → silence — Get silence by ID
+- `M.create_silence(url, silence)` → `{silenceID}` — Create a silence
+- `M.delete_silence(url, id)` → true — Delete silence by ID
+- `M.status(url)` → `{cluster, config}` — Get Alertmanager status and cluster info
+- `M.receivers(url)` → [receiver] — List notification receivers
+- `M.is_firing(url, alertname)` → bool — Check if a specific alert is currently firing
+- `M.silence_alert(url, alertname, duration_hours, opts?)` → silenceID — Silence an alert by name for N hours. `opts`: `{created_by, comment}`
+- `M.active_count(url)` → number — Count active non-silenced, non-inhibited alerts
+
+Example:
+```lua
+local am = require("assay.alertmanager")
+local firing = am.is_firing("http://alertmanager:9093", "HighCPU")
+if firing then
+  am.silence_alert("http://alertmanager:9093", "HighCPU", 2, {comment = "Investigating"})
+end
+```
+
+## assay.loki
+
+Loki log aggregation. Push logs, query with LogQL, labels, series, tail.
+Client: `loki.client(url)`. Module helper: `M.selector(labels)`.
+
+- `M.selector(labels)` → string — Build LogQL stream selector from labels table. `M.selector({app="nginx"})` → `{app="nginx"}`
+- `c:push(stream_labels, entries)` → true — Push log entries. `entries`: array of strings or `{timestamp, line}` pairs
+- `c:query(logql, opts?)` → [result] — Instant LogQL query. `opts`: `{limit, time, direction}`
+- `c:query_range(logql, opts?)` → [result] — Range LogQL query. `opts`: `{start, end_time, limit, step, direction}`
+- `c:labels(opts?)` → [string] — List label names. `opts`: `{start, end_time}`
+- `c:label_values(label_name, opts?)` → [string] — List values for a label. `opts`: `{start, end_time}`
+- `c:series(match_selectors, opts?)` → [series] — Query series metadata. `opts`: `{start, end_time}`
+- `c:tail(logql, opts?)` → data — Tail log stream. `opts`: `{limit, start}`
+- `c:ready()` → bool — Check Loki readiness
+- `c:metrics()` → string — Get Loki metrics in Prometheus exposition format
+
+Example:
+```lua
+local loki = require("assay.loki")
+local c = loki.client("http://loki:3100")
+c:push({app="myservice", env="prod"}, {"Request processed", "Job complete"})
+local logs = c:query('{app="myservice"}', {limit = 10})
+```
+
+## assay.grafana
+
+Grafana monitoring and dashboards. Health, datasources, annotations, alerts, folders.
+Client: `grafana.client(url, {api_key="..."})` or `{username="...", password="..."}`.
+
+- `c:health()` → `{database, version, commit}` — Check Grafana server health
+- `c:datasources()` → `[{id, name, type, url}]` — List all datasources
+- `c:datasource(id_or_uid)` → `{id, name, type, ...}` — Get datasource by numeric ID or string UID
+- `c:search(opts?)` → `[{id, title, type}]` — Search dashboards/folders. `opts`: `{query, type, tag, limit}`
+- `c:dashboard(uid)` → `{dashboard, meta}` — Get dashboard by UID
+- `c:annotations(opts?)` → `[{id, text, time}]` — List annotations. `opts`: `{from, to, dashboard_id, limit, tags}`
+- `c:create_annotation(annotation)` → `{id}` — Create annotation. `annotation`: `{text, dashboardId?, tags?}`
+- `c:org()` → `{id, name}` — Get current organization
+- `c:alert_rules()` → `[{uid, title}]` — List provisioned alert rules
+- `c:folders()` → `[{id, uid, title}]` — List all folders
+
+Example:
+```lua
+local grafana = require("assay.grafana")
+local c = grafana.client("http://grafana:3000", {api_key = "glsa_..."})
+local h = c:health()
+assert.eq(h.database, "ok")
+```
+
+## assay.k8s
+
+Kubernetes API client. 30+ resource types, CRDs, readiness checks, pod logs, rollouts.
+Module-level functions: auto-discovers cluster API via `KUBERNETES_SERVICE_HOST` env var.
+Auth: uses service account token from `/var/run/secrets/kubernetes.io/serviceaccount/token`.
+All functions accept optional `opts` with `{base_url, token}` overrides.
+
+Supported kinds: pod, service, secret, configmap, endpoints, serviceaccount, persistentvolumeclaim (pvc),
+limitrange, resourcequota, event, namespace, node, persistentvolume (pv), deployment, statefulset,
+daemonset, replicaset, job, cronjob, ingress, ingressclass, networkpolicy, storageclass, role,
+rolebinding, clusterrole, clusterrolebinding, hpa, poddisruptionbudget (pdb).
+
+- `M.register_crd(kind, api_group, version, plural, cluster_scoped?)` → nil — Register custom resource for use with get/list/create
+- `M.get(path, opts?)` → resource — Raw GET any K8s API path
+- `M.post(path, body, opts?)` → resource — Raw POST to any K8s API path
+- `M.put(path, body, opts?)` → resource — Raw PUT to any K8s API path
+- `M.patch(path, body, opts?)` → resource — Raw PATCH any K8s API path. `opts.content_type` defaults to merge-patch.
+- `M.delete(path, opts?)` → nil — Raw DELETE any K8s API path
+- `M.get_resource(namespace, kind, name, opts?)` → resource — Get resource by kind and name
+- `M.list(namespace, kind, opts?)` → `{items}` — List resources. `opts`: `{label_selector, field_selector, limit}`
+- `M.create(namespace, kind, body, opts?)` → resource — Create resource
+- `M.update(namespace, kind, name, body, opts?)` → resource — Replace resource
+- `M.patch_resource(namespace, kind, name, body, opts?)` → resource — Patch resource
+- `M.delete_resource(namespace, kind, name, opts?)` → nil — Delete resource
+- `M.exists(namespace, kind, name, opts?)` → bool — Check if resource exists
+- `M.get_secret(namespace, name, opts?)` → `{key=value}` — Get decoded secret data (base64-decoded)
+- `M.get_configmap(namespace, name, opts?)` → `{key=value}` — Get ConfigMap data
+- `M.list_pods(namespace, opts?)` → `{items}` — List pods in namespace
+- `M.list_events(namespace, opts?)` → `{items}` — List events in namespace
+- `M.pod_status(namespace, opts?)` → `{running, pending, succeeded, failed, unknown, total}` — Get pod status counts
+- `M.is_ready(namespace, kind, name, opts?)` → bool — Check if resource is ready (deployment, statefulset, daemonset, job, node)
+- `M.wait_ready(namespace, kind, name, timeout_secs?, opts?)` → true — Wait for readiness, errors on timeout. Default 60s.
+- `M.service_endpoints(namespace, name, opts?)` → [ip] — Get service endpoint IP addresses
+- `M.logs(namespace, pod_name, opts?)` → string — Get pod logs. `opts`: `{tail, container, previous, since}`
+- `M.rollout_status(namespace, name, opts?)` → `{desired, updated, ready, available, unavailable, complete}` — Get deployment rollout status
+- `M.node_status(opts?)` → `[{name, ready, roles, capacity, allocatable}]` — Get all node statuses
+- `M.namespace_exists(name, opts?)` → bool — Check if namespace exists
+- `M.events_for(namespace, kind, name, opts?)` → `{items}` — Get events for a specific resource
+
+Example:
+```lua
+local k8s = require("assay.k8s")
+k8s.wait_ready("default", "deployment", "my-app", 120)
+local secret = k8s.get_secret("default", "my-secret")
+log.info("DB password: " .. secret["password"])
+```
+
+## assay.argocd
+
+ArgoCD GitOps application management. Apps, sync, health, projects, repositories, clusters.
+Client: `argocd.client(url, {token="..."})` or `{username="...", password="..."}`.
+
+- `c:applications(opts?)` → [app] — List applications. `opts`: `{project, selector}`
+- `c:application(name)` → app — Get application by name
+- `c:app_health(name)` → `{status, sync, message}` — Get app health and sync status
+- `c:sync(name, opts?)` → result — Trigger sync. `opts`: `{revision, prune, dry_run, strategy}`
+- `c:refresh(name, opts?)` → app — Refresh app state. `opts.type`: `"normal"` (default) or `"hard"`
+- `c:rollback(name, id)` → result — Rollback to history ID
+- `c:app_resources(name)` → resource_tree — Get application resource tree
+- `c:app_manifests(name, opts?)` → manifests — Get manifests. `opts`: `{revision}`
+- `c:delete_app(name, opts?)` → nil — Delete app. `opts`: `{cascade, propagation_policy}`
+- `c:projects()` → [project] — List projects
+- `c:project(name)` → project — Get project by name
+- `c:repositories()` → [repo] — List repositories
+- `c:repository(repo_url)` → repo — Get repository by URL
+- `c:clusters()` → [cluster] — List clusters
+- `c:cluster(server_url)` → cluster — Get cluster by server URL
+- `c:settings()` → settings — Get ArgoCD settings
+- `c:version()` → version — Get ArgoCD version info
+- `c:is_healthy(name)` → bool — Check if app health status is "Healthy"
+- `c:is_synced(name)` → bool — Check if app sync status is "Synced"
+- `c:wait_healthy(name, timeout_secs)` → true — Wait for app to become healthy, errors on timeout
+- `c:wait_synced(name, timeout_secs)` → true — Wait for app to become synced, errors on timeout
+
+Example:
+```lua
+local argocd = require("assay.argocd")
+local c = argocd.client("https://argocd.example.com", {token = env.get("ARGOCD_TOKEN")})
+c:sync("my-app", {prune = true})
+c:wait_healthy("my-app", 120)
+```
+
+## assay.kargo
+
+Kargo continuous promotion. Stages, freight, promotions, warehouses, pipeline status.
+Client: `kargo.client(url, token)`.
+
+- `c:stages(namespace)` → [stage] — List stages in namespace
+- `c:stage(namespace, name)` → stage — Get stage by name
+- `c:stage_status(namespace, name)` → `{phase, current_freight_id, health, conditions}` — Get stage status
+- `c:is_stage_healthy(namespace, name)` → bool — Check if stage is healthy (phase "Steady" or condition "Healthy")
+- `c:wait_stage_healthy(namespace, name, timeout_secs?)` → true — Wait for stage health. Default 60s.
+- `c:freight_list(namespace, opts?)` → [freight] — List freight. `opts`: `{stage, warehouse}` for label filters
+- `c:freight(namespace, name)` → freight — Get freight by name
+- `c:freight_status(namespace, name)` → status — Get freight status
+- `c:promotions(namespace, opts?)` → [promotion] — List promotions. `opts`: `{stage}` filter
+- `c:promotion(namespace, name)` → promotion — Get promotion by name
+- `c:promotion_status(namespace, name)` → `{phase, message, freight_id}` — Get promotion status
+- `c:promote(namespace, stage, freight)` → promotion — Create a promotion to promote freight to stage
+- `c:warehouses(namespace)` → [warehouse] — List warehouses
+- `c:warehouse(namespace, name)` → warehouse — Get warehouse by name
+- `c:projects()` → [project] — List Kargo projects
+- `c:project(name)` → project — Get project by name
+- `c:pipeline_status(namespace)` → `[{name, phase, freight, healthy}]` — Get pipeline overview of all stages
+
+Example:
+```lua
+local kargo = require("assay.kargo")
+local c = kargo.client("https://kargo.example.com", env.get("KARGO_TOKEN"))
+c:promote("my-project", "staging", "freight-abc123")
+c:wait_stage_healthy("my-project", "staging", 300)
+```
+
+## assay.flux
+
+Flux CD GitOps toolkit. GitRepositories, Kustomizations, HelmReleases, notifications, image automation.
+Client: `flux.client(url, token)`.
+
+- `c:git_repositories(namespace)` → `{items}` — List GitRepositories
+- `c:git_repository(namespace, name)` → repo|nil — Get GitRepository by name (nil if 404)
+- `c:is_git_repo_ready(namespace, name)` → bool — Check if GitRepository has Ready=True condition
+- `c:helm_repositories(namespace)` → `{items}` — List HelmRepositories
+- `c:helm_repository(namespace, name)` → repo|nil — Get HelmRepository by name
+- `c:is_helm_repo_ready(namespace, name)` → bool — Check if HelmRepository is ready
+- `c:helm_charts(namespace)` → `{items}` — List HelmCharts
+- `c:oci_repositories(namespace)` → `{items}` — List OCIRepositories
+- `c:kustomizations(namespace)` → `{items}` — List Kustomizations
+- `c:kustomization(namespace, name)` → ks|nil — Get Kustomization by name
+- `c:is_kustomization_ready(namespace, name)` → bool — Check if Kustomization is ready
+- `c:kustomization_status(namespace, name)` → `{ready, revision, last_applied_revision, conditions}`|nil — Get status
+- `c:helm_releases(namespace)` → `{items}` — List HelmReleases
+- `c:helm_release(namespace, name)` → hr|nil — Get HelmRelease by name
+- `c:is_helm_release_ready(namespace, name)` → bool — Check if HelmRelease is ready
+- `c:helm_release_status(namespace, name)` → `{ready, revision, last_applied_revision, conditions}`|nil — Get status
+- `c:alerts(namespace)` → `{items}` — List notification alerts
+- `c:providers_list(namespace)` → `{items}` — List notification providers
+- `c:receivers(namespace)` → `{items}` — List notification receivers
+- `c:image_policies(namespace)` → `{items}` — List image automation policies
+- `c:all_sources_ready(namespace)` → `{ready, not_ready, total, not_ready_names}` — Check all Git+Helm sources
+- `c:all_kustomizations_ready(namespace)` → `{ready, not_ready, total, not_ready_names}` — Check all Kustomizations
+- `c:all_helm_releases_ready(namespace)` → `{ready, not_ready, total, not_ready_names}` — Check all HelmReleases
+
+Example:
+```lua
+local flux = require("assay.flux")
+local c = flux.client("https://k8s-api:6443", env.get("K8S_TOKEN"))
+local status = c:all_kustomizations_ready("flux-system")
+assert.eq(status.not_ready, 0, "Some Kustomizations not ready: " .. table.concat(status.not_ready_names, ", "))
+```
+
+## assay.traefik
+
+Traefik reverse proxy API. Routers, services, middlewares, entrypoints, TLS status.
+Module-level functions (no client needed): `M.function(url, ...)`.
+
+- `M.overview(url)` → overview — Get Traefik dashboard overview
+- `M.version(url)` → version — Get Traefik version
+- `M.entrypoints(url)` → [entrypoint] — List all entrypoints
+- `M.entrypoint(url, name)` → entrypoint — Get entrypoint by name
+- `M.http_routers(url)` → [router] — List HTTP routers
+- `M.http_router(url, name)` → router — Get HTTP router by name
+- `M.http_services(url)` → [service] — List HTTP services
+- `M.http_service(url, name)` → service — Get HTTP service by name
+- `M.http_middlewares(url)` → [middleware] — List HTTP middlewares
+- `M.http_middleware(url, name)` → middleware — Get HTTP middleware by name
+- `M.tcp_routers(url)` → [router] — List TCP routers
+- `M.tcp_services(url)` → [service] — List TCP services
+- `M.rawdata(url)` → data — Get raw Traefik configuration data
+- `M.is_router_enabled(url, name)` → bool — Check if router status is "enabled"
+- `M.router_has_tls(url, name)` → bool — Check if router has TLS configured
+- `M.service_server_count(url, name)` → number — Count load balancer servers for service
+- `M.healthy_routers(url)` → enabled, errored — Count enabled vs errored HTTP routers (two return values)
+
+Example:
+```lua
+local traefik = require("assay.traefik")
+local enabled, errored = traefik.healthy_routers("http://traefik:8080")
+assert.eq(errored, 0, "Some routers have errors")
+```
+
+## assay.vault
+
+HashiCorp Vault secrets management. KV v2, policies, auth methods, transit encryption, PKI certificates, tokens.
+Client: `vault.client(url, token)`. Module helpers: `M.wait()`, `M.authenticated_client()`, `M.ensure_credentials()`, `M.assert_secret()`.
+
+### Client Methods
+
+- `c:read(path)` → data|nil — Read secret at path (raw Vault API path without `/v1/`)
+- `c:write(path, payload)` → data|nil — Write secret to path
+- `c:delete(path)` → nil — Delete secret at path
+- `c:list(path)` → [string] — List keys at path
+
+### KV v2 Secrets
+
+- `c:kv_get(mount, key)` → `{data}`|nil — Read KV v2 secret. `mount` = engine mount (e.g. `"secrets"`)
+- `c:kv_put(mount, key, data)` → result — Write KV v2 secret. `data` is a table.
+- `c:kv_delete(mount, key)` → nil — Delete KV v2 secret
+- `c:kv_list(mount, prefix?)` → [string] — List KV v2 keys under prefix
+- `c:kv_metadata(mount, key)` → metadata|nil — Get KV v2 secret metadata
+
+### Health & Status
+
+- `c:health()` → `{initialized, sealed, version, ...}` — Get Vault health (works even when sealed)
+- `c:seal_status()` → `{sealed, initialized, ...}` — Get seal status
+- `c:is_sealed()` → bool — Check if Vault is sealed
+- `c:is_initialized()` → bool — Check if Vault is initialized
+
+### ACL Policies
+
+- `c:policy_get(name)` → policy|nil — Get ACL policy
+- `c:policy_put(name, rules)` → nil — Create or update ACL policy
+- `c:policy_delete(name)` → nil — Delete ACL policy
+- `c:policy_list()` → [string] — List ACL policies
+
+### Auth Methods
+
+- `c:auth_enable(path, type, opts?)` → nil — Enable auth method. `opts`: `{description, config}`
+- `c:auth_disable(path)` → nil — Disable auth method
+- `c:auth_list()` → `{path: config}` — List enabled auth methods
+- `c:auth_config(path, config)` → nil — Configure auth method
+- `c:auth_create_role(path, role_name, config)` → nil — Create auth role
+- `c:auth_read_role(path, role_name)` → role|nil — Read auth role
+- `c:auth_list_roles(path)` → [string] — List auth roles
+
+### Secrets Engines
+
+- `c:engine_enable(path, type, opts?)` → nil — Enable secrets engine. `opts`: `{description, config, options}`
+- `c:engine_disable(path)` → nil — Disable secrets engine
+- `c:engine_list()` → `{path: config}` — List enabled secrets engines
+- `c:engine_tune(path, config)` → nil — Tune secrets engine configuration
+
+### Token Management
+
+- `c:token_create(opts?)` → `{client_token, ...}` — Create new token. `opts`: `{policies, ttl, ...}`
+- `c:token_lookup(token)` → token_info|nil — Lookup token details
+- `c:token_lookup_self()` → token_info|nil — Lookup current token
+- `c:token_revoke(token)` → nil — Revoke a token
+- `c:token_revoke_self()` → nil — Revoke current token
+
+### Transit Encryption
+
+- `c:transit_encrypt(key_name, plaintext)` → ciphertext|nil — Encrypt with transit engine (auto base64 encodes)
+- `c:transit_decrypt(key_name, ciphertext)` → plaintext|nil — Decrypt with transit engine (auto base64 decodes)
+- `c:transit_create_key(key_name, opts?)` → nil — Create transit encryption key
+- `c:transit_list_keys()` → [string] — List transit keys
+
+### PKI Certificates
+
+- `c:pki_issue(mount, role_name, opts?)` → cert|nil — Issue certificate. `opts`: `{common_name, ttl, ...}`
+- `c:pki_ca_cert(mount?)` → string — Get CA certificate PEM. `mount` defaults to `"pki"`.
+- `c:pki_create_role(mount, role_name, opts?)` → nil — Create PKI role
+
+### Module Helpers
+
+- `M.wait(url, opts?)` → true — Wait for Vault to become healthy. `opts`: `{timeout, interval, health_path}`
+- `M.authenticated_client(url, opts?)` → client — Create client using K8s secret for token. `opts`: `{secret_namespace, secret_name, secret_key, timeout}`
+- `M.ensure_credentials(client, path, check_key, generator)` → creds — Check if creds exist at KV path, generate if missing
+- `M.assert_secret(client, path, expected_keys)` → data — Assert secret exists with all expected keys
+
+Example:
+```lua
+local vault = require("assay.vault")
+local c = vault.authenticated_client("http://vault:8200")
+c:kv_put("secrets", "myapp/db", {username = "admin", password = crypto.random(32)})
+local creds = c:kv_get("secrets", "myapp/db")
+```
+
+## assay.openbao
+
+OpenBao secrets management (Vault API-compatible). Alias for `assay.vault`.
+`require("assay.openbao")` returns the same module as `require("assay.vault")`.
+All methods are identical — see assay.vault documentation above.
+
+## assay.certmanager
+
+cert-manager certificate lifecycle. Certificates, issuers, ACME orders and challenges.
+Client: `certmanager.client(url, token)`.
+
+### Certificates
+
+- `c:certificates(namespace)` → `{items}` — List certificates in namespace
+- `c:certificate(namespace, name)` → cert|nil — Get certificate by name
+- `c:certificate_status(namespace, name)` → `{ready, not_after, not_before, renewal_time, revision, conditions}` — Get status
+- `c:is_certificate_ready(namespace, name)` → bool — Check if certificate has Ready=True condition
+- `c:wait_certificate_ready(namespace, name, timeout_secs?)` → true — Wait for readiness. Default 300s.
+
+### Issuers
+
+- `c:issuers(namespace)` → `{items}` — List issuers in namespace
+- `c:issuer(namespace, name)` → issuer|nil — Get issuer by name
+- `c:is_issuer_ready(namespace, name)` → bool — Check if issuer is ready
+
+### ClusterIssuers
+
+- `c:cluster_issuers()` → `{items}` — List cluster-scoped issuers
+- `c:cluster_issuer(name)` → issuer|nil — Get cluster issuer by name
+- `c:is_cluster_issuer_ready(name)` → bool — Check if cluster issuer is ready
+
+### Certificate Requests
+
+- `c:certificate_requests(namespace)` → `{items}` — List certificate requests
+- `c:certificate_request(namespace, name)` → request|nil — Get certificate request
+- `c:is_request_approved(namespace, name)` → bool — Check if request is approved
+
+### ACME Orders & Challenges
+
+- `c:orders(namespace)` → `{items}` — List ACME orders
+- `c:order(namespace, name)` → order|nil — Get ACME order
+- `c:challenges(namespace)` → `{items}` — List ACME challenges
+- `c:challenge(namespace, name)` → challenge|nil — Get ACME challenge
+
+### Utilities
+
+- `c:all_certificates_ready(namespace)` → `{ready, not_ready, total, not_ready_names}` — Check all certificates
+- `c:all_issuers_ready(namespace)` → `{ready, not_ready, total, not_ready_names}` — Check all issuers
+
+Example:
+```lua
+local cm = require("assay.certmanager")
+local c = cm.client("https://k8s-api:6443", env.get("K8S_TOKEN"))
+c:wait_certificate_ready("default", "my-tls-cert", 600)
+local status = c:all_certificates_ready("default")
+assert.eq(status.not_ready, 0)
+```
+
+## assay.eso
+
+External Secrets Operator. ExternalSecrets, SecretStores, ClusterSecretStores sync status.
+Client: `eso.client(url, token)`.
+
+### ExternalSecrets
+
+- `c:external_secrets(namespace)` → `{items}` — List ExternalSecrets
+- `c:external_secret(namespace, name)` → es|nil — Get ExternalSecret by name
+- `c:external_secret_status(namespace, name)` → `{ready, status, sync_hash, conditions}` — Get sync status
+- `c:is_secret_synced(namespace, name)` → bool — Check if ExternalSecret is synced (Ready=True)
+- `c:wait_secret_synced(namespace, name, timeout_secs?)` → true — Wait for sync. Default 60s.
+
+### SecretStores
+
+- `c:secret_stores(namespace)` → `{items}` — List SecretStores in namespace
+- `c:secret_store(namespace, name)` → store|nil — Get SecretStore by name
+- `c:secret_store_status(namespace, name)` → `{ready, conditions}` — Get store status
+- `c:is_store_ready(namespace, name)` → bool — Check if SecretStore is ready
+
+### ClusterSecretStores
+
+- `c:cluster_secret_stores()` → `{items}` — List cluster-scoped SecretStores
+- `c:cluster_secret_store(name)` → store|nil — Get ClusterSecretStore by name
+- `c:is_cluster_store_ready(name)` → bool — Check if ClusterSecretStore is ready
+
+### ClusterExternalSecrets
+
+- `c:cluster_external_secrets()` → `{items}` — List ClusterExternalSecrets
+- `c:cluster_external_secret(name)` → es|nil — Get ClusterExternalSecret by name
+
+### Utilities
+
+- `c:all_secrets_synced(namespace)` → `{synced, failed, total, failed_names}` — Check all ExternalSecrets
+- `c:all_stores_ready(namespace)` → `{ready, not_ready, total, not_ready_names}` — Check all SecretStores
+
+Example:
+```lua
+local eso = require("assay.eso")
+local c = eso.client("https://k8s-api:6443", env.get("K8S_TOKEN"))
+c:wait_secret_synced("default", "my-external-secret", 120)
+local status = c:all_secrets_synced("default")
+assert.eq(status.failed, 0)
+```
+
+## assay.dex
+
+Dex OIDC identity provider. Discovery, JWKS, health, and configuration validation.
+Module-level functions (no client needed): `M.function(url, ...)`.
+
+- `M.discovery(url)` → `{issuer, authorization_endpoint, token_endpoint, jwks_uri, ...}` — Get OIDC discovery configuration
+- `M.jwks(url)` → `{keys}` — Get JSON Web Key Set (fetches jwks_uri from discovery)
+- `M.issuer(url)` → string — Get issuer URL from discovery
+- `M.health(url)` → bool — Check Dex health via `/healthz`
+- `M.ready(url)` → bool — Check Dex readiness (alias for health)
+- `M.has_endpoint(url, endpoint_name)` → bool — Check if endpoint exists in discovery doc
+- `M.supported_scopes(url)` → [string] — List supported OIDC scopes
+- `M.supported_response_types(url)` → [string] — List supported response types
+- `M.supported_grant_types(url)` → [string] — List supported grant types
+- `M.supports_scope(url, scope)` → bool — Check if a specific scope is supported
+- `M.supports_grant_type(url, grant_type)` → bool — Check if a specific grant type is supported
+- `M.validate_config(url)` → `{ok, errors}` — Validate OIDC configuration completeness (checks issuer, endpoints, jwks_uri)
+- `M.admin_version(url)` → version|nil — Get Dex admin API version (nil if unavailable)
+
+Example:
+```lua
+local dex = require("assay.dex")
+assert.eq(dex.health("http://dex:5556"), true, "Dex not healthy")
+local validation = dex.validate_config("http://dex:5556")
+assert.eq(validation.ok, true, "OIDC config invalid: " .. table.concat(validation.errors, ", "))
+```
+
+## assay.zitadel
+
+Zitadel OIDC identity management. Projects, OIDC apps, IdPs, users, login policies.
+Client: `zitadel.client({url="...", domain="...", machine_key=...})` or `{..., machine_key_file="..."}` or `{..., token="..."}`.
+Authenticates via JWT machine key exchange.
+
+### Domain & Organization
+
+- `c:ensure_primary_domain(domain)` → bool — Set organization primary domain
+
+### Projects
+
+- `c:find_project(name)` → project|nil — Find project by exact name
+- `c:create_project(name, opts?)` → project — Create project. `opts`: `{projectRoleAssertion}`
+- `c:ensure_project(name, opts?)` → project — Create project if not exists, return existing if found
+
+### OIDC Applications
+
+- `c:find_app(project_id, name)` → app|nil — Find OIDC app by name within project
+- `c:create_oidc_app(project_id, opts)` → app — Create OIDC app. `opts`: `{name, subdomain, callbackPath, redirectUris, grantTypes, ...}`
+- `c:ensure_oidc_app(project_id, opts)` → app — Create OIDC app if not exists
+
+### Identity Providers
+
+- `c:find_idp(name)` → idp|nil — Find identity provider by name
+- `c:ensure_google_idp(opts)` → idp_id|nil — Ensure Google IdP. `opts`: `{clientId, clientSecret, scopes, providerOptions}`
+- `c:ensure_oidc_idp(opts)` → idp_id|nil — Ensure generic OIDC IdP. `opts`: `{name, clientId, clientSecret, issuer, scopes, ...}`
+- `c:add_idp_to_login_policy(idp_id)` → bool — Add IdP to organization login policy
+
+### User Management
+
+- `c:search_users(query)` → [user] — Search users by query table
+- `c:update_user_email(user_id, email)` → bool — Update user email (auto-verified)
+
+### Login Policy
+
+- `c:get_login_policy()` → policy|nil — Get current login policy
+- `c:update_login_policy(policy)` → bool — Update login policy
+- `c:disable_password_login()` → bool — Disable password-based login, enable external IdP
+
+Example:
+```lua
+local zitadel = require("assay.zitadel")
+local c = zitadel.client({
+  url = "https://zitadel.example.com",
+  domain = "example.com",
+  machine_key_file = "/secrets/zitadel-key.json",
+})
+local proj = c:ensure_project("my-platform")
+local app = c:ensure_oidc_app(proj.id, {
+  name = "grafana", subdomain = "grafana", callbackPath = "/login/generic_oauth",
+})
+```
+
+## assay.crossplane
+
+Crossplane infrastructure management. Providers, XRDs, compositions, managed resources.
+Client: `crossplane.client(url, token)`.
+
+### Providers
+
+- `c:providers()` → `{items}` — List all providers
+- `c:provider(name)` → provider|nil — Get provider by name
+- `c:is_provider_healthy(name)` → bool — Check if provider has Healthy=True condition
+- `c:is_provider_installed(name)` → bool — Check if provider has Installed=True condition
+- `c:provider_status(name)` → `{installed, healthy, current_revision, conditions}` — Get full provider status
+- `c:provider_revisions()` → `{items}` — List provider revisions
+- `c:provider_revision(name)` → revision|nil — Get provider revision by name
+
+### Configurations
+
+- `c:configurations()` → `{items}` — List configurations
+- `c:configuration(name)` → config|nil — Get configuration by name
+- `c:is_configuration_healthy(name)` → bool — Check if configuration is healthy
+- `c:is_configuration_installed(name)` → bool — Check if configuration is installed
+
+### Functions
+
+- `c:functions()` → `{items}` — List composition functions
+- `c:xfunction(name)` → function|nil — Get function by name
+- `c:is_function_healthy(name)` → bool — Check if function is healthy
+
+### Composite Resource Definitions (XRDs)
+
+- `c:xrds()` → `{items}` — List all XRDs
+- `c:xrd(name)` → xrd|nil — Get XRD by name
+- `c:is_xrd_established(name)` → bool — Check if XRD has Established=True condition
+
+### Compositions
+
+- `c:compositions()` → `{items}` — List all compositions
+- `c:composition(name)` → composition|nil — Get composition by name
+
+### Managed Resources
+
+- `c:managed_resource(api_group, version, kind, name)` → resource|nil — Get managed resource
+- `c:is_managed_ready(api_group, version, kind, name)` → bool — Check if managed resource has Ready=True
+- `c:managed_resources(api_group, version, kind)` → `{items}` — List managed resources
+
+### Utilities
+
+- `c:all_providers_healthy()` → `{healthy, unhealthy, total, unhealthy_names}` — Check all providers health
+- `c:all_xrds_established()` → `{established, not_established, total}` — Check all XRDs status
+
+Example:
+```lua
+local crossplane = require("assay.crossplane")
+local c = crossplane.client("https://k8s-api:6443", env.get("K8S_TOKEN"))
+local status = c:all_providers_healthy()
+assert.eq(status.unhealthy, 0, "Unhealthy providers: " .. table.concat(status.unhealthy_names, ", "))
+```
+
+## assay.velero
+
+Velero backup and restore. Backups, restores, schedules, storage locations.
+Client: `velero.client(url, token, namespace?)`. Default namespace: `"velero"`.
+
+### Backups
+
+- `c:backups()` → [backup] — List all backups
+- `c:backup(name)` → backup|nil — Get backup by name
+- `c:backup_status(name)` → `{phase, started, completed, expiration, errors, warnings, items_backed_up, items_total}` — Get status
+- `c:is_backup_completed(name)` → bool — Check if backup phase is "Completed"
+- `c:is_backup_failed(name)` → bool — Check if backup phase is "Failed" or "PartiallyFailed"
+- `c:latest_backup(schedule_name)` → backup|nil — Get most recent backup for a schedule
+
+### Restores
+
+- `c:restores()` → [restore] — List all restores
+- `c:restore(name)` → restore|nil — Get restore by name
+- `c:restore_status(name)` → `{phase, started, completed, errors, warnings}` — Get restore status
+- `c:is_restore_completed(name)` → bool — Check if restore phase is "Completed"
+
+### Schedules
+
+- `c:schedules()` → [schedule] — List all schedules
+- `c:schedule(name)` → schedule|nil — Get schedule by name
+- `c:schedule_status(name)` → `{phase, last_backup, validation_errors}` — Get schedule status
+- `c:is_schedule_enabled(name)` → bool — Check if schedule phase is "Enabled"
+
+### Storage Locations
+
+- `c:backup_storage_locations()` → [bsl] — List backup storage locations
+- `c:backup_storage_location(name)` → bsl|nil — Get backup storage location
+- `c:is_bsl_available(name)` → bool — Check if storage location phase is "Available"
+- `c:volume_snapshot_locations()` → [vsl] — List volume snapshot locations
+- `c:volume_snapshot_location(name)` → vsl|nil — Get volume snapshot location
+
+### Backup Repositories
+
+- `c:backup_repositories()` → [repo] — List backup repositories
+- `c:backup_repository(name)` → repo|nil — Get backup repository
+
+### Utilities
+
+- `c:all_schedules_enabled()` → `{enabled, disabled, total, disabled_names}` — Check all schedules
+- `c:all_bsl_available()` → `{available, unavailable, total, unavailable_names}` — Check all storage locations
+
+Example:
+```lua
+local velero = require("assay.velero")
+local c = velero.client("https://k8s-api:6443", env.get("K8S_TOKEN"), "velero")
+local latest = c:latest_backup("daily-backup")
+if latest then
+  assert.eq(c:is_backup_completed(latest.metadata.name), true)
+end
+```
+
+## assay.temporal
+
+Temporal workflow orchestration. Workflows, task queues, schedules, signals.
+Client: `temporal.client(url, {namespace="default", api_key="..."})`.
+
+- `c:health()` → bool — Check Temporal health via `/health`
+- `c:system_info()` → info — Get Temporal system information
+- `c:namespaces()` → `{namespaces}` — List all namespaces
+- `c:namespace(name)` → namespace — Get namespace by name
+- `c:workflows(opts?)` → `{executions}` — List workflow executions. `opts`: `{namespace, query, page_size}`
+- `c:workflow(workflow_id, run_id?, opts?)` → workflow — Get workflow execution details
+- `c:workflow_history(workflow_id, run_id?, opts?)` → `{events}` — Get workflow event history. `opts`: `{namespace, maximum_page_size}`
+- `c:signal_workflow(workflow_id, signal_name, input?, opts?)` → result — Signal a running workflow. `opts`: `{namespace, run_id}`
+- `c:terminate_workflow(workflow_id, reason?, opts?)` → result — Terminate a workflow. `opts`: `{namespace, run_id}`
+- `c:cancel_workflow(workflow_id, opts?)` → result — Request workflow cancellation. `opts`: `{namespace, run_id}`
+- `c:task_queue(name, opts?)` → queue — Get task queue info. `opts`: `{namespace, task_queue_type}`
+- `c:schedules(opts?)` → `{schedules}` — List schedules. `opts`: `{namespace, maximum_page_size}`
+- `c:schedule(schedule_id, opts?)` → schedule — Get schedule by ID. `opts`: `{namespace}`
+- `c:search(query, opts?)` → `{executions}` — Search workflows by visibility query. `opts`: `{namespace, page_size}`
+- `c:is_workflow_running(workflow_id, opts?)` → bool — Check if workflow status is RUNNING
+- `c:wait_workflow_complete(workflow_id, timeout_secs, opts?)` → workflow — Wait for workflow completion, errors on timeout
+
+Example:
+```lua
+local temporal = require("assay.temporal")
+local c = temporal.client("http://temporal:7233", {namespace = "my-namespace"})
+local running = c:is_workflow_running("my-workflow-id")
+if running then
+  c:signal_workflow("my-workflow-id", "approve", {approved = true})
+end
+```
+
+## assay.harbor
+
+Harbor container registry. Projects, repositories, artifacts, vulnerability scanning.
+Client: `harbor.client(url, {api_key="..."})` or `{username="...", password="..."}`.
+
+### System
+
+- `c:health()` → `{status, components}` — Check Harbor health
+- `c:system_info()` → `{harbor_version, ...}` — Get system information
+- `c:statistics()` → `{private_project_count, ...}` — Get registry statistics
+- `c:is_healthy()` → bool — Check if all components report "healthy"
+
+### Projects
+
+- `c:projects(opts?)` → [project] — List projects. `opts`: `{name, public, page, page_size}`
+- `c:project(name_or_id)` → project — Get project by name or numeric ID
+
+### Repositories & Artifacts
+
+- `c:repositories(project_name, opts?)` → [repo] — List repos. `opts`: `{page, page_size, q}`
+- `c:repository(project_name, repo_name)` → repo — Get repository
+- `c:artifacts(project_name, repo_name, opts?)` → [artifact] — List artifacts. `opts`: `{page, page_size, with_tag, with_scan_overview}`
+- `c:artifact(project_name, repo_name, reference)` → artifact — Get artifact by tag or digest
+- `c:artifact_tags(project_name, repo_name, reference)` → [tag] — List artifact tags
+- `c:image_exists(project_name, repo_name, tag)` → bool — Check if image tag exists
+- `c:latest_artifact(project_name, repo_name)` → artifact|nil — Get most recent artifact
+
+### Vulnerability Scanning
+
+- `c:scan_artifact(project_name, repo_name, reference)` → true — Trigger vulnerability scan (async)
+- `c:artifact_vulnerabilities(project_name, repo_name, reference)` → `{total, fixable, critical, high, medium, low, negligible}`|nil — Get vulnerability summary
+
+### Replication
+
+- `c:replication_policies()` → [policy] — List replication policies
+- `c:replication_executions(opts?)` → [execution] — List replication executions. `opts`: `{policy_id}`
+
+Example:
+```lua
+local harbor = require("assay.harbor")
+local c = harbor.client("https://harbor.example.com", {username = "admin", password = env.get("HARBOR_PASS")})
+assert.eq(c:is_healthy(), true, "Harbor unhealthy")
+c:scan_artifact("myproject", "myapp", "latest")
+sleep(30)
+local vulns = c:artifact_vulnerabilities("myproject", "myapp", "latest")
+assert.eq(vulns.critical, 0, "Critical vulnerabilities found!")
+```
+
+## assay.healthcheck
+
+HTTP health checking utilities. Status codes, JSON path, body matching, latency, multi-check.
+Module-level functions (no client needed): `M.function(url, ...)`.
+
+- `M.http(url, opts?)` → `{ok, status, latency_ms, error?}` — HTTP health check. `opts`: `{expected_status, method, body, headers}`. Default expects 200.
+- `M.json_path(url, path_expr, expected, opts?)` → `{ok, actual, expected, error?}` — Check JSON response field. Dot-notation path: `"data.status"`.
+- `M.status_code(url, expected, opts?)` → `{ok, status, error?}` — Check specific HTTP status code
+- `M.body_contains(url, pattern, opts?)` → `{ok, found, error?}` — Check if response body contains literal pattern
+- `M.endpoint(url, opts?)` → `{ok, status, latency_ms, error?}` — Check status and latency. `opts`: `{max_latency_ms, expected_status, headers}`
+- `M.multi(checks)` → `{ok, results, passed, failed, total}` — Run multiple checks. `checks`: `[{name, check=function}]`
+- `M.wait(url, opts?)` → `{ok, status, attempts}` — Wait for endpoint to become healthy. `opts`: `{timeout, interval, expect_status, headers}`. Default 60s timeout.
+
+Example:
+```lua
+local hc = require("assay.healthcheck")
+local result = hc.multi({
+  {name = "api", check = function() return hc.http("http://api:8080/health") end},
+  {name = "db-field", check = function() return hc.json_path("http://api:8080/health", "database", "ok") end},
+  {name = "latency", check = function() return hc.endpoint("http://api:8080/health", {max_latency_ms = 500}) end},
+})
+assert.eq(result.ok, true, result.failed .. " health checks failed")
+```
+
+## assay.s3
+
+S3-compatible object storage with AWS Signature V4 authentication.
+Client: `s3.client({endpoint="...", region="...", access_key="...", secret_key="...", path_style=true})`.
+Works with AWS S3, Cloudflare R2, iDrive e2, MinIO, and any S3-compatible provider.
+
+### Buckets
+
+- `c:create_bucket(bucket)` → true — Create a new bucket
+- `c:delete_bucket(bucket)` → true — Delete a bucket
+- `c:list_buckets()` → `[{name, creation_date}]` — List all buckets
+- `c:bucket_exists(bucket)` → bool — Check if bucket exists
+
+### Objects
+
+- `c:put_object(bucket, key, body, opts?)` → true — Upload object. `opts`: `{content_type}`
+- `c:get_object(bucket, key)` → string|nil — Download object content (nil if 404)
+- `c:delete_object(bucket, key)` → true — Delete an object
+- `c:list_objects(bucket, opts?)` → `{objects, is_truncated, next_continuation_token, key_count}` — List objects. `opts`: `{prefix, max_keys, continuation_token}`. Each object: `{key, size, last_modified}`
+- `c:head_object(bucket, key)` → `{status, headers}`|nil — Get object metadata (nil if 404)
+- `c:copy_object(src_bucket, src_key, dst_bucket, dst_key)` → true — Copy object between buckets
+
+Example:
+```lua
+local s3 = require("assay.s3")
+local c = s3.client({
+  endpoint = "https://s3.us-east-1.amazonaws.com",
+  region = "us-east-1",
+  access_key = env.get("AWS_ACCESS_KEY_ID"),
+  secret_key = env.get("AWS_SECRET_ACCESS_KEY"),
+})
+c:put_object("my-bucket", "data/report.json", json.encode({status = "complete"}))
+local content = c:get_object("my-bucket", "data/report.json")
+```
+
+## assay.postgres
+
+PostgreSQL database helpers. User/database management, grants, Vault integration.
+Client: `postgres.client(host, port, username, password, database?)`. Database defaults to `"postgres"`.
+Module helper: `M.client_from_vault(vault_client, vault_path, host, port?)`.
+
+- `c:query(sql, params?)` → [row] — Execute SQL query, return rows
+- `c:execute(sql, params?)` → number — Execute SQL statement, return affected count
+- `c:close()` → nil — Close database connection
+- `c:user_exists(username)` → bool — Check if PostgreSQL role exists
+- `c:ensure_user(username, password, opts?)` → bool — Create user if not exists. `opts`: `{createdb, superuser}`. Returns true if created.
+- `c:database_exists(dbname)` → bool — Check if database exists
+- `c:ensure_database(dbname, owner?)` → bool — Create database if not exists. Returns true if created.
+- `c:grant(database_name, username, privileges?)` → nil — Grant privileges. Default: `"ALL PRIVILEGES"`.
+- `M.client_from_vault(vault_client, vault_path, host, port?)` → client — Create client using credentials from Vault KV. Port defaults to 5432.
+
+Example:
+```lua
+local postgres = require("assay.postgres")
+local vault = require("assay.vault")
+local vc = vault.authenticated_client("http://vault:8200")
+local pg = postgres.client_from_vault(vc, "myapp/postgres", "postgres.default.svc", 5432)
+pg:ensure_user("myapp", crypto.random(16), {createdb = true})
+pg:ensure_database("myapp_db", "myapp")
+pg:grant("myapp_db", "myapp")
+pg:close()
+```
+
+## assay.unleash
+
+Unleash feature flag management. Projects, features, environments, strategies, API tokens.
+Client: `unleash.client(url, {token="..."})`.
+Module helpers: `M.wait()`, `M.ensure_project()`, `M.ensure_environment()`, `M.ensure_token()`.
+
+### Health
+
+- `c:health()` → `{health}` — Check Unleash health
+
+### Projects
+
+- `c:projects()` → [project] — List projects
+- `c:project(id)` → project|nil — Get project by ID
+- `c:create_project(project)` → project — Create project. `project`: `{id, name, description?}`
+- `c:update_project(id, project)` → project — Update project
+- `c:delete_project(id)` → nil — Delete project
+
+### Environments
+
+- `c:environments()` → [environment] — List all environments
+- `c:enable_environment(project_id, env_name)` → nil — Enable environment on project
+- `c:disable_environment(project_id, env_name)` → nil — Disable environment on project
+
+### Features
+
+- `c:features(project_id)` → [feature] — List features in project
+- `c:feature(project_id, name)` → feature|nil — Get feature by name
+- `c:create_feature(project_id, feature)` → feature — Create feature. `feature`: `{name, type?, description?}`
+- `c:update_feature(project_id, name, feature)` → feature — Update feature
+- `c:archive_feature(project_id, name)` → nil — Archive (soft-delete) a feature
+- `c:toggle_on(project_id, name, env)` → nil — Enable feature in environment
+- `c:toggle_off(project_id, name, env)` → nil — Disable feature in environment
+
+### Strategies
+
+- `c:strategies(project_id, feature_name, env)` → [strategy] — List strategies for feature in environment
+- `c:add_strategy(project_id, feature_name, env, strategy)` → strategy — Add strategy. `strategy`: `{name, parameters?}`
+
+### API Tokens
+
+- `c:tokens()` → [token] — List API tokens
+- `c:create_token(token_config)` → token — Create token. `token_config`: `{username, type, environment?, projects?}`
+- `c:delete_token(secret)` → nil — Delete API token by secret
+
+### Module Helpers
+
+- `M.wait(url, opts?)` → true — Wait for Unleash healthy. `opts`: `{timeout, interval}`. Default 60s.
+- `M.ensure_project(client, project_id, opts?)` → project — Ensure project exists. `opts`: `{name, description}`
+- `M.ensure_environment(client, project_id, env_name)` → true — Ensure environment enabled on project
+- `M.ensure_token(client, opts)` → token — Ensure API token exists. `opts`: `{username, type, environment?, projects?}`
+
+Example:
+```lua
+local unleash = require("assay.unleash")
+unleash.wait("http://unleash:4242")
+local c = unleash.client("http://unleash:4242", {token = env.get("UNLEASH_ADMIN_TOKEN")})
+unleash.ensure_project(c, "my-project", {name = "My Project"})
+unleash.ensure_environment(c, "my-project", "production")
+c:create_feature("my-project", {name = "dark-mode", type = "release"})
+c:toggle_on("my-project", "dark-mode", "production")
+```
+
+## Optional
+
+- [Crates.io](https://crates.io/crates/assay-lua): Use Assay as a Rust crate in your own projects
+- [Docker](https://github.com/developerinlondon/assay/pkgs/container/assay): ghcr.io/developerinlondon/assay:latest (~6MB compressed)
+- [MCP Comparison](https://assay.rs/mcp-comparison.html): How Assay replaces 42 popular MCP servers
+- [Agent Guides](https://assay.rs/agent-guides.html): Integration guides for Claude Code, Cursor, Windsurf, Cline, OpenCode
+- [Changelog](https://github.com/developerinlondon/assay/releases): Release history
+- [YAML Check Mode](https://github.com/developerinlondon/assay/blob/main/README.md#yaml-check-mode): Structured checks with retry/backoff/parallel
+- [Custom Modules](https://github.com/developerinlondon/assay/blob/main/README.md#filesystem-module-loading): Place .lua files in ./modules/ or ~/.assay/modules/
