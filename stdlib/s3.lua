@@ -1,6 +1,6 @@
 --- @module assay.s3
 --- @description S3-compatible object storage. Buckets, objects, copy, list with AWS Signature V4 auth.
---- @keywords s3, storage, buckets, objects, aws, minio, r2, sigv4
+--- @keywords s3, storage, buckets, objects, aws, minio, r2, sigv4, bucket, object, copy, metadata, signature-v4, compatible, cloudflare-r2
 --- @quickref c:create_bucket(bucket) -> true | Create a new bucket
 --- @quickref c:delete_bucket(bucket) -> true | Delete a bucket
 --- @quickref c:list_buckets() -> [{name, creation_date}] | List all buckets

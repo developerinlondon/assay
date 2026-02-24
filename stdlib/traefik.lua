@@ -1,6 +1,6 @@
 --- @module assay.traefik
 --- @description Traefik reverse proxy API. Routers, services, middlewares, entrypoints, TLS status.
---- @keywords traefik, proxy, routers, services, middlewares, entrypoints, loadbalancer
+--- @keywords traefik, proxy, routers, services, middlewares, entrypoints, loadbalancer, http, tcp, tls, configuration, dashboard, ingress
 --- @quickref M.overview(url) -> overview | Get Traefik dashboard overview
 --- @quickref M.version(url) -> version | Get Traefik version
 --- @quickref M.entrypoints(url) -> [entrypoint] | List entrypoints

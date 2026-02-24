@@ -415,3 +415,92 @@ fails, run `assay modules` to see the exact module names.
 
 **Debugging**: Add `log.info(json.encode(some_table))` to inspect table contents. The `json.encode`
 builtin handles nested tables.
+
+## MCP Replacement
+
+Assay replaces MCP (Model Context Protocol) servers with embedded Lua modules. Instead of running
+separate Docker containers for each MCP server, you write one Lua script with
+`require("assay.<module>")`.
+
+| MCP Server                                | Stars | Assay Module                     | Coverage |
+| ----------------------------------------- | ----- | -------------------------------- | -------- |
+| modelcontextprotocol/servers (filesystem) | 79K   | `fs.read/write` builtin          | ✅ Full  |
+| modelcontextprotocol/servers (fetch)      | 79K   | `http.*` builtins                | ✅ Full  |
+| punkpeye/mcp-postgres                     | 3K+   | `assay.postgres`                 | ✅ Full  |
+| wong2/mcp-grafana                         | 2K+   | `assay.grafana`                  | ✅ Full  |
+| prometheus-community/mcp-prometheus       | 500+  | `assay.prometheus`               | ✅ Full  |
+| [42 MCP servers total]                    | —     | See assay.rs/mcp-comparison.html | —        |
+
+Key insight: MCP servers require persistent processes, auth config, and container overhead. Assay
+modules are embedded Lua — zero process overhead, same binary, same auth pattern.
+
+Run `assay context "grafana"` to get prompt-ready method signatures for any module.
+
+## AI Agent Integration
+
+Assay integrates with all major AI coding agents via `assay context <query>` (today) or
+`assay mcp-serve` (v0.6.0).
+
+### Claude Code
+
+Add to `.mcp.json` (Coming Soon — v0.6.0):
+
+```json
+{
+  "mcpServers": {
+    "assay": {
+      "command": "assay",
+      "args": ["mcp-serve"]
+    }
+  }
+}
+```
+
+Today — add to your AGENTS.md or .cursorrules:
+
+```
+Run `assay context <query>` to get accurate Lua method signatures before writing assay scripts.
+Example: `assay context "grafana"` returns all grafana client methods with types.
+```
+
+### Cursor
+
+Add to `.cursor/mcp.json` (Coming Soon — v0.6.0):
+
+```json
+{
+  "mcpServers": {
+    "assay": { "command": "assay", "args": ["mcp-serve"] }
+  }
+}
+```
+
+### Windsurf
+
+Add to `~/.codeium/windsurf/mcp_config.json` (Coming Soon — v0.6.0):
+
+```json
+{
+  "mcpServers": {
+    "assay": { "command": "assay", "args": ["mcp-serve"] }
+  }
+}
+```
+
+### Cline / OpenCode
+
+Same pattern — `assay mcp-serve` exposes all modules as MCP tools (v0.6.0).
+
+Today: use `assay context <query>` from terminal and paste output into agent context.
+
+## MCP-Serve Vision (v0.6.0)
+
+`assay mcp-serve` will expose all 40+ modules as MCP tools over stdio/SSE transport:
+
+- Each stdlib module becomes an MCP tool (e.g., `grafana_health`, `k8s_pods`)
+- Each builtin becomes an MCP tool (e.g., `http_get`, `crypto_jwt_sign`)
+- Agents call tools directly — no Lua scripting required for simple queries
+- Lua scripting still available for complex multi-step workflows
+
+Until v0.6.0: use `assay context <query>` + paste into agent context window. See
+https://assay.rs/agent-guides.html for complete integration examples.

@@ -36,40 +36,93 @@ pub struct DiscoveredModule {
     pub lua_source: String,
 }
 
-/// Hardcoded Rust builtins with their descriptions.
-const BUILTINS: &[(&str, &str)] = &[
+/// Hardcoded Rust builtins with their descriptions and search keywords.
+const BUILTINS: &[(&str, &str, &[&str])] = &[
     (
         "http",
         "HTTP client and server: get, post, put, patch, delete, serve",
+        &["http", "client", "server", "request", "response", "headers", "endpoint", "api", "webhook", "rest"],
     ),
-    ("json", "JSON serialization: parse and encode"),
-    ("yaml", "YAML serialization: parse and encode"),
-    ("toml", "TOML serialization: parse and encode"),
-    ("fs", "Filesystem: read and write files"),
-    ("crypto", "Cryptography: jwt_sign, hash, hmac, random"),
-    ("base64", "Base64 encoding and decoding"),
+    (
+        "json",
+        "JSON serialization: parse and encode",
+        &["json", "serialization", "deserialize", "stringify", "parse", "encode", "format"],
+    ),
+    (
+        "yaml",
+        "YAML serialization: parse and encode",
+        &["yaml", "serialization", "deserialize", "parse", "encode", "format"],
+    ),
+    (
+        "toml",
+        "TOML serialization: parse and encode",
+        &["toml", "serialization", "deserialize", "parse", "encode", "configuration"],
+    ),
+    (
+        "fs",
+        "Filesystem: read and write files",
+        &["fs", "filesystem", "file", "read", "write", "io", "path"],
+    ),
+    (
+        "crypto",
+        "Cryptography: jwt_sign, hash, hmac, random",
+        &["crypto", "jwt", "signature", "hash", "hmac", "encryption", "random", "security", "password", "signing", "rsa", "sha256"],
+    ),
+    (
+        "base64",
+        "Base64 encoding and decoding",
+        &["base64", "encoding", "decode", "encode", "binary"],
+    ),
     (
         "regex",
         "Regular expressions: match, find, find_all, replace",
+        &["regex", "pattern", "match", "find", "replace", "regular-expression", "regexp"],
     ),
     (
         "db",
         "Database: connect, query, execute, close (Postgres, MySQL, SQLite)",
+        &["db", "database", "sql", "postgres", "mysql", "sqlite", "connection", "query", "execute"],
     ),
-    ("ws", "WebSocket: connect, send, recv, close"),
+    (
+        "ws",
+        "WebSocket: connect, send, recv, close",
+        &["ws", "websocket", "connection", "message", "streaming", "realtime", "socket"],
+    ),
     (
         "template",
         "Jinja2-compatible templates: render file or string",
+        &["template", "jinja2", "rendering", "string-template", "mustache", "render"],
     ),
-    ("async", "Async tasks: spawn, spawn_interval, await, cancel"),
+    (
+        "async",
+        "Async tasks: spawn, spawn_interval, await, cancel",
+        &["async", "asynchronous", "task", "coroutine", "concurrent", "spawn", "interval"],
+    ),
     (
         "assert",
         "Assertions: eq, gt, lt, contains, not_nil, matches",
+        &["assert", "assertion", "test", "validation", "comparison", "check", "verify"],
     ),
-    ("log", "Logging: info, warn, error"),
-    ("env", "Environment variables: get"),
-    ("sleep", "Sleep for N seconds"),
-    ("time", "Unix timestamp in seconds"),
+    (
+        "log",
+        "Logging: info, warn, error",
+        &["log", "logging", "output", "debug", "error", "warning", "info", "trace"],
+    ),
+    (
+        "env",
+        "Environment variables: get",
+        &["env", "environment", "variable", "configuration", "config"],
+    ),
+    (
+        "sleep",
+        "Sleep for N seconds",
+        &["sleep", "delay", "pause", "wait", "time"],
+    ),
+    (
+        "time",
+        "Unix timestamp in seconds",
+        &["time", "timestamp", "unix", "epoch", "clock", "datetime"],
+    ),
 ];
 
 /// Discover all modules: embedded stdlib + `./modules/` + `~/.assay/modules/` (or `$ASSAY_MODULES_PATH`).
@@ -232,7 +285,7 @@ fn discover_embedded_stdlib(modules: &mut Vec<DiscoveredModule>) {
 
 /// Add hardcoded Rust builtins (not Lua files) to the module list.
 fn discover_rust_builtins(modules: &mut Vec<DiscoveredModule>) {
-    for &(name, description) in BUILTINS {
+    for &(name, description, kw) in BUILTINS {
         modules.push(DiscoveredModule {
             module_name: name.to_string(),
             source: ModuleSource::BuiltIn,
@@ -240,7 +293,7 @@ fn discover_rust_builtins(modules: &mut Vec<DiscoveredModule>) {
             metadata: ModuleMetadata {
                 module_name: name.to_string(),
                 description: description.to_string(),
-                keywords: vec![name.to_string()],
+                keywords: kw.iter().map(|k| k.to_string()).collect(),
                 ..Default::default()
             },
         });

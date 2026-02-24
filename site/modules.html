@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — Module Reference</title>
+  <meta name="description" content="Complete reference for all 40+ Assay modules — 17 Rust builtins and 23 embedded Lua stdlib modules, zero dependencies.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index.html" class="logo">Assay</a>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="mcp-comparison.html">MCP Comparison</a></li>
+        <li><a href="agent-guides.html">Agent Guides</a></li>
+        <li><a href="modules.html">Modules</a></li>
+        <li><a href="https://github.com/developerinlondon/assay" target="_blank">GitHub</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Module Reference</h1>
+    <p style="font-size: 1.15rem; color: var(--text-light); margin-bottom: 1.5rem;">
+      40+ built-in modules, zero dependencies. Use <code>assay context &lt;query&gt;</code> for LLM-ready docs on any module.
+    </p>
+
+    <pre><code>assay modules                    # list all modules
+assay context "grafana health"   # get detailed docs for LLM</code></pre>
+
+    <!-- ============================================================ -->
+    <!-- RUST BUILTINS (17 modules)                                   -->
+    <!-- ============================================================ -->
+
+    <h2>Rust Builtins</h2>
+    <p>Available globally in all <code>.lua</code> scripts &mdash; no <code>require</code> needed.</p>
+
+    <!-- HTTP & Networking -->
+    <h3>HTTP &amp; Networking</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Key Functions</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>http</code></td>
+          <td><code>http.get/post/put/patch/delete/serve</code></td>
+          <td>HTTP client and server</td>
+        </tr>
+        <tr>
+          <td><code>ws</code></td>
+          <td><code>ws.connect/send/recv/close</code></td>
+          <td>WebSocket client</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Serialization -->
+    <h3>Serialization</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Key Functions</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>json</code></td>
+          <td><code>json.parse/encode</code></td>
+          <td>JSON parse and encode</td>
+        </tr>
+        <tr>
+          <td><code>yaml</code></td>
+          <td><code>yaml.parse/encode</code></td>
+          <td>YAML parse and encode</td>
+        </tr>
+        <tr>
+          <td><code>toml</code></td>
+          <td><code>toml.parse/encode</code></td>
+          <td>TOML parse and encode</td>
+        </tr>
+        <tr>
+          <td><code>base64</code></td>
+          <td><code>base64.encode/decode</code></td>
+          <td>Base64 encoding</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- System -->
+    <h3>System</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Key Functions</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>fs</code></td>
+          <td><code>fs.read/write</code></td>
+          <td>Filesystem operations</td>
+        </tr>
+        <tr>
+          <td><code>env</code></td>
+          <td><code>env.get</code></td>
+          <td>Environment variables</td>
+        </tr>
+        <tr>
+          <td><code>sleep</code></td>
+          <td><code>sleep(n)</code></td>
+          <td>Pause execution</td>
+        </tr>
+        <tr>
+          <td><code>time</code></td>
+          <td><code>time()</code></td>
+          <td>Unix timestamp</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Cryptography -->
+    <h3>Cryptography</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Key Functions</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>crypto</code></td>
+          <td><code>crypto.jwt_sign/hash/hmac/random</code></td>
+          <td>JWT, hashing, HMAC</td>
+        </tr>
+        <tr>
+          <td><code>regex</code></td>
+          <td><code>regex.match/find/replace</code></td>
+          <td>Regular expressions</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Database -->
+    <h3>Database</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Key Functions</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>db</code></td>
+          <td><code>db.connect/query/execute/close</code></td>
+          <td>SQL &mdash; Postgres, MySQL, SQLite</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Templates & Async -->
+    <h3>Templates &amp; Async</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Key Functions</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>template</code></td>
+          <td><code>template.render/render_string</code></td>
+          <td>Jinja2-compatible templates</td>
+        </tr>
+        <tr>
+          <td><code>async</code></td>
+          <td><code>async.spawn/spawn_interval</code></td>
+          <td>Async task execution</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Testing & Logging -->
+    <h3>Testing &amp; Logging</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Key Functions</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>assert</code></td>
+          <td><code>assert.eq/gt/lt/contains/not_nil/matches</code></td>
+          <td>Assertions</td>
+        </tr>
+        <tr>
+          <td><code>log</code></td>
+          <td><code>log.info/warn/error</code></td>
+          <td>Structured logging</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ============================================================ -->
+    <!-- STDLIB MODULES (23 modules)                                  -->
+    <!-- ============================================================ -->
+
+    <h2>Stdlib Modules</h2>
+    <p>
+      23 embedded Lua modules loaded via <code>require("assay.&lt;name&gt;")</code>.
+      All follow the client pattern: <code>M.client(url, opts)</code> &rarr; client object &rarr; <code>c:method()</code>.
+    </p>
+
+    <!-- Monitoring & Observability -->
+    <h3>Monitoring &amp; Observability</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>require()</th>
+          <th>Description</th>
+          <th>Client Pattern</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>assay.prometheus</code></td>
+          <td><code>require("assay.prometheus")</code></td>
+          <td>PromQL queries, alerts, targets</td>
+          <td><code>prom.query(url, expr)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.alertmanager</code></td>
+          <td><code>require("assay.alertmanager")</code></td>
+          <td>Alert management, silences</td>
+          <td><code>am.client(url)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.loki</code></td>
+          <td><code>require("assay.loki")</code></td>
+          <td>Log push, query, labels</td>
+          <td><code>loki.client(url)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.grafana</code></td>
+          <td><code>require("assay.grafana")</code></td>
+          <td>Health, dashboards, datasources</td>
+          <td><code>gf.client(url, opts)</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Kubernetes & GitOps -->
+    <h3>Kubernetes &amp; GitOps</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>require()</th>
+          <th>Description</th>
+          <th>Client Pattern</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>assay.k8s</code></td>
+          <td><code>require("assay.k8s")</code></td>
+          <td>30+ K8s resource types, CRDs</td>
+          <td><code>k8s.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.argocd</code></td>
+          <td><code>require("assay.argocd")</code></td>
+          <td>Apps, sync, health, projects</td>
+          <td><code>argo.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.kargo</code></td>
+          <td><code>require("assay.kargo")</code></td>
+          <td>Stages, freight, promotions</td>
+          <td><code>kargo.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.flux</code></td>
+          <td><code>require("assay.flux")</code></td>
+          <td>GitRepositories, Kustomizations</td>
+          <td><code>flux.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.traefik</code></td>
+          <td><code>require("assay.traefik")</code></td>
+          <td>Routers, services, middlewares</td>
+          <td><code>traefik.client(url)</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Security & Identity -->
+    <h3>Security &amp; Identity</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>require()</th>
+          <th>Description</th>
+          <th>Client Pattern</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>assay.vault</code></td>
+          <td><code>require("assay.vault")</code></td>
+          <td>KV secrets, transit, PKI</td>
+          <td><code>vault.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.openbao</code></td>
+          <td><code>require("assay.openbao")</code></td>
+          <td>OpenBao (Vault API-compatible)</td>
+          <td><code>bao.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.certmanager</code></td>
+          <td><code>require("assay.certmanager")</code></td>
+          <td>Certificates, issuers, ACME</td>
+          <td><code>cm.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.eso</code></td>
+          <td><code>require("assay.eso")</code></td>
+          <td>ExternalSecrets, SecretStores</td>
+          <td><code>eso.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.dex</code></td>
+          <td><code>require("assay.dex")</code></td>
+          <td>OIDC discovery, JWKS, health</td>
+          <td><code>dex.client(url)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.zitadel</code></td>
+          <td><code>require("assay.zitadel")</code></td>
+          <td>OIDC identity, JWT machine auth</td>
+          <td><code>zitadel.client(url, opts)</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Infrastructure -->
+    <h3>Infrastructure</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>require()</th>
+          <th>Description</th>
+          <th>Client Pattern</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>assay.crossplane</code></td>
+          <td><code>require("assay.crossplane")</code></td>
+          <td>Providers, XRDs, compositions</td>
+          <td><code>xp.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.velero</code></td>
+          <td><code>require("assay.velero")</code></td>
+          <td>Backups, restores, schedules</td>
+          <td><code>velero.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.temporal</code></td>
+          <td><code>require("assay.temporal")</code></td>
+          <td>Workflows, task queues</td>
+          <td><code>temporal.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.harbor</code></td>
+          <td><code>require("assay.harbor")</code></td>
+          <td>Projects, repos, vulnerability scanning</td>
+          <td><code>harbor.client(url, opts)</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Data & Storage -->
+    <h3>Data &amp; Storage</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>require()</th>
+          <th>Description</th>
+          <th>Client Pattern</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>assay.postgres</code></td>
+          <td><code>require("assay.postgres")</code></td>
+          <td>PostgreSQL user/db management</td>
+          <td><code>pg.client(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.s3</code></td>
+          <td><code>require("assay.s3")</code></td>
+          <td>S3-compatible storage, Sig V4</td>
+          <td><code>s3.client(url, opts)</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Utilities -->
+    <h3>Utilities</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>require()</th>
+          <th>Description</th>
+          <th>Client Pattern</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>assay.healthcheck</code></td>
+          <td><code>require("assay.healthcheck")</code></td>
+          <td>HTTP checks, JSON path, latency</td>
+          <td><code>hc.check(url, opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.unleash</code></td>
+          <td><code>require("assay.unleash")</code></td>
+          <td>Feature flags, environments</td>
+          <td><code>unleash.client(url, opts)</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ============================================================ -->
+    <!-- CUSTOM MODULES                                               -->
+    <!-- ============================================================ -->
+
+    <h2>Custom Modules</h2>
+    <p>
+      Place <code>.lua</code> files in <code>./modules/</code> (project-local) or <code>~/.assay/modules/</code> (global).
+      Or set <code>ASSAY_MODULES_PATH</code> to override the global directory.
+      They are auto-discovered and appear in <code>assay modules</code> output.
+    </p>
+    <pre><code>./modules/
+  myapi.lua        # require("assay.myapi")
+~/.assay/modules/
+  company.lua      # require("assay.company")</code></pre>
+
+    <!-- ============================================================ -->
+    <!-- LLM LINKS                                                    -->
+    <!-- ============================================================ -->
+
+    <p class="mt-2">
+      For LLM agents: <a href="llms.txt">llms.txt</a> &middot; <a href="llms-full.txt">llms-full.txt</a>
+    </p>
+  </main>
+
+  <footer>
+    <p>Assay is MIT licensed &mdash; <a href="https://github.com/developerinlondon/assay">GitHub</a> &middot; <a href="https://crates.io/crates/assay-lua">crates.io</a> &middot; <a href="https://github.com/developerinlondon/assay/pkgs/container/assay">Docker</a></p>
+    <p class="text-muted">&copy; 2025 Assay Contributors</p>
+  </footer>
+</body>
+</html>

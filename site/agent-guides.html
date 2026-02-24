@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — AI Agent Integration Guides</title>
+  <meta name="description" content="Integration guides for Claude Code, Cursor, Windsurf, Cline, and OpenCode — use Assay's 40+ modules in your AI coding agent.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index.html" class="logo">Assay</a>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="mcp-comparison.html">MCP Comparison</a></li>
+        <li><a href="agent-guides.html">Agent Guides</a></li>
+        <li><a href="modules.html">Modules</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>AI Agent Integration Guides</h1>
+    <p style="font-size: 1.15rem; color: var(--text-light); margin-bottom: 2rem;">
+      Use Assay's 40+ modules in Claude Code, Cursor, Windsurf, Cline, and OpenCode.
+    </p>
+
+    <h2>Two Integration Approaches</h2>
+
+    <p>There are two ways to bring Assay's Kubernetes-native modules into your AI coding agent:</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Approach</th>
+          <th>How It Works</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Today: <code>assay context</code></strong></td>
+          <td>Run <code>assay context "&lt;query&gt;"</code> to get prompt-ready module docs. Paste output into your agent's context window or reference <a href="https://github.com/developerinlondon/assay/blob/main/SKILL.md">SKILL.md</a> in your project.</td>
+          <td>Available now</td>
+        </tr>
+        <tr>
+          <td><strong>Coming in v0.6.0: <code>assay mcp-serve</code></strong></td>
+          <td>Assay becomes a native MCP server. Your agent queries modules, generates scripts, and executes checks — all through the MCP protocol. One config line per agent.</td>
+          <td>Coming Soon</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- CLAUDE CODE                                     -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="claude-code">Claude Code</h2>
+    <p>Config path: <code>.mcp.json</code> in project root</p>
+
+    <h3>Today: <code>assay context</code> Integration</h3>
+    <p>
+      Download <a href="https://github.com/developerinlondon/assay/blob/main/SKILL.md">SKILL.md</a>
+      into your project and reference it from <code>AGENTS.md</code>. Claude Code reads
+      <code>AGENTS.md</code> automatically, giving it full knowledge of Assay's modules and patterns.
+    </p>
+    <pre><code># Get module docs for Claude Code
+assay context "grafana"          # paste into Claude Code prompt
+assay context "kubernetes auth"  # get k8s module docs
+assay context "jwt signing"      # get crypto module docs
+assay context "vault secrets"    # get vault module docs</code></pre>
+
+    <h3>Coming Soon (v0.6.0): MCP Server</h3>
+    <pre><code>// .mcp.json (project root)
+{
+  "mcpServers": {
+    "assay": {
+      "command": "assay",
+      "args": ["mcp-serve"]
+    }
+  }
+}</code></pre>
+    <p class="text-muted">
+      Once <code>assay mcp-serve</code> ships, Claude Code will query Assay's modules natively —
+      no copy-pasting context, no SKILL.md needed.
+    </p>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- CURSOR                                          -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="cursor">Cursor</h2>
+    <p>Config path: <code>.cursor/mcp.json</code> in project root</p>
+
+    <h3>Today: <code>assay context</code> Integration</h3>
+    <p>
+      Use <code>assay context</code> from your terminal and paste the output into Cursor's chat.
+      Cursor reads the same MCP config format as Claude Code.
+    </p>
+    <pre><code># Get module docs for Cursor
+assay context "prometheus"       # monitoring module docs
+assay context "argocd sync"      # GitOps module docs
+assay context "s3 storage"       # S3 module docs</code></pre>
+
+    <h3>Coming Soon (v0.6.0): MCP Server</h3>
+    <pre><code>// .cursor/mcp.json (project root)
+{
+  "mcpServers": {
+    "assay": {
+      "command": "assay",
+      "args": ["mcp-serve"]
+    }
+  }
+}</code></pre>
+    <p class="text-muted">
+      Cursor and Claude Code share identical MCP config format. The same <code>assay mcp-serve</code>
+      command works for both — just different file paths.
+    </p>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- WINDSURF                                        -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="windsurf">Windsurf</h2>
+    <p>Config path: <code>~/.codeium/windsurf/mcp_config.json</code> (global only)</p>
+
+    <h3>Today: <code>assay context</code> Integration</h3>
+    <p>
+      Run <code>assay context</code> from Windsurf's integrated terminal and paste output into the
+      AI chat panel. Windsurf supports terminal access for running CLI commands.
+    </p>
+    <pre><code># Get module docs for Windsurf
+assay context "traefik"          # ingress/routing module docs
+assay context "certmanager"      # TLS certificate docs
+assay context "harbor registry"  # container registry docs</code></pre>
+
+    <h3>Coming Soon (v0.6.0): MCP Server</h3>
+    <pre><code>// ~/.codeium/windsurf/mcp_config.json (global config)
+{
+  "mcpServers": {
+    "assay": {
+      "serverUrl": "http://localhost:9999",
+      "command": "assay",
+      "args": ["mcp-serve", "--port", "9999"]
+    }
+  }
+}</code></pre>
+    <p class="text-muted">
+      Windsurf uses <code>serverUrl</code> (HTTP transport) instead of <code>url</code> — different
+      from other agents. It also uses a global config only (no per-project config).
+    </p>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- CLINE                                           -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="cline">Cline</h2>
+    <p>Config path: VS Code settings (extension-managed)</p>
+
+    <h3>Today: <code>assay context</code> Integration</h3>
+    <p>
+      Use <code>assay context</code> from VS Code's integrated terminal. Cline can read terminal
+      output when you paste it into the chat, or you can pipe it to a file and reference it.
+    </p>
+    <pre><code># Get module docs for Cline
+assay context "loki logging"     # log aggregation docs
+assay context "temporal workflow" # workflow orchestration docs
+assay context "unleash flags"    # feature flag docs</code></pre>
+
+    <h3>Coming Soon (v0.6.0): MCP Server</h3>
+    <pre><code>// VS Code settings.json (Cline extension)
+{
+  "cline.mcpServers": {
+    "assay": {
+      "command": "assay",
+      "args": ["mcp-serve"],
+      "autoApprove": ["assay_context", "assay_modules"]
+    }
+  }
+}</code></pre>
+    <p class="text-muted">
+      Cline has an <code>autoApprove</code> field for trusted tool calls. Add Assay's tools to
+      skip manual approval for <code>assay context</code> and <code>assay modules</code> queries.
+    </p>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- OPENCODE                                        -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="opencode">OpenCode</h2>
+    <p>Config path: <code>opencode.json</code> in project root</p>
+
+    <h3>Today: <code>assay context</code> Integration</h3>
+    <p>
+      Install the Assay skill directly into your OpenCode project. The skill gives your agent
+      full knowledge of all 40+ modules, client patterns, and built-in functions.
+    </p>
+    <pre><code># Install Assay skill for OpenCode
+npx skills add developerinlondon/agent-skills
+
+# Then use assay context from agent prompts
+assay context "crossplane"       # infrastructure-as-code docs
+assay context "velero backup"    # disaster recovery docs
+assay context "zitadel identity" # OIDC identity management docs</code></pre>
+
+    <h3>Coming Soon (v0.6.0): MCP Server</h3>
+    <pre><code>// opencode.json (project root)
+{
+  "mcp": {
+    "assay": {
+      "command": "assay",
+      "args": ["mcp-serve"]
+    }
+  }
+}</code></pre>
+    <p class="text-muted">
+      OpenCode uses the <code>mcp</code> key (not <code>mcpServers</code>) — a unique format.
+      This is the agent running your session right now!
+    </p>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- QUICK REFERENCE TABLE                           -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="quick-reference">Quick Reference</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Agent</th>
+          <th>Config File</th>
+          <th>Format</th>
+          <th>MCP Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="#claude-code">Claude Code</a></td>
+          <td><code>.mcp.json</code></td>
+          <td>JSON <code>mcpServers</code></td>
+          <td>Coming in v0.6.0</td>
+        </tr>
+        <tr>
+          <td><a href="#cursor">Cursor</a></td>
+          <td><code>.cursor/mcp.json</code></td>
+          <td>JSON <code>mcpServers</code></td>
+          <td>Coming in v0.6.0</td>
+        </tr>
+        <tr>
+          <td><a href="#windsurf">Windsurf</a></td>
+          <td><code>~/.codeium/windsurf/mcp_config.json</code></td>
+          <td>JSON <code>serverUrl</code></td>
+          <td>Coming in v0.6.0</td>
+        </tr>
+        <tr>
+          <td><a href="#cline">Cline</a></td>
+          <td>VS Code extension settings</td>
+          <td>JSON <code>autoApprove</code></td>
+          <td>Coming in v0.6.0</td>
+        </tr>
+        <tr>
+          <td><a href="#opencode">OpenCode</a></td>
+          <td><code>opencode.json</code></td>
+          <td>JSON <code>mcp</code> key</td>
+          <td>Coming in v0.6.0</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="common-workflow">Common Workflow (All Agents)</h2>
+    <p>Regardless of which agent you use, the workflow today is the same:</p>
+    <pre><code># 1. Find the right module
+assay context "what you need"
+
+# 2. Read the output — it shows method signatures and return types
+# 3. Write your Lua script using the client pattern:
+
+local mod = require("assay.&lt;module&gt;")
+local c = mod.client("http://service:port", { token = "..." })
+local result = c:some_method()
+assert.not_nil(result)
+
+# 4. Run it
+assay script.lua</code></pre>
+
+    <p>
+      All 23 stdlib modules follow the same pattern: <code>require</code>, <code>client()</code>,
+      <code>c:method()</code>. Learn one, know them all. Run <code>assay modules</code> to see the
+      full list of 40+ available modules.
+    </p>
+  </main>
+
+  <footer>
+    <p>Assay — <a href="https://github.com/developerinlondon/assay">GitHub</a> · <a href="https://crates.io/crates/assay-lua">crates.io</a></p>
+  </footer>
+</body>
+</html>

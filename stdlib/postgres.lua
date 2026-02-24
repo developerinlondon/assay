@@ -1,6 +1,6 @@
 --- @module assay.postgres
 --- @description PostgreSQL database helpers. User/database management, grants, Vault integration.
---- @keywords postgres, postgresql, database, users, grants, sql
+--- @keywords postgres, postgresql, database, users, grants, sql, user, grant, privilege, vault, connection, schema, role
 --- @quickref c:query(sql, params?) -> [row] | Execute SQL query, return rows
 --- @quickref c:execute(sql, params?) -> number | Execute SQL statement, return affected count
 --- @quickref c:close() -> nil | Close database connection
