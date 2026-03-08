@@ -4,10 +4,10 @@ version = "0.5.1"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
-keywords = ["verification", "testing", "lua", "kubernetes", "validation"]
+keywords = ["lua", "scripting", "automation", "runtime", "kubernetes"]
 license = "MIT"
 repository = "https://github.com/developerinlondon/assay"
-description = "Lightweight Lua runtime for Kubernetes. Verification, scripting, and web services."
+description = "General-purpose enhanced Lua runtime. Batteries-included scripting, automation, and web services."
 
 [[bin]]
 name = "assay"
