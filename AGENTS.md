@@ -16,8 +16,16 @@ Key skills that apply to this project:
 
 ## What is Assay
 
-Lightweight Lua runtime for Kubernetes. Single ~9 MB static binary that replaces 50–250 MB
-Python/Node/kubectl containers in K8s Jobs.
+General-purpose enhanced Lua runtime. Single ~9 MB static binary with batteries
+included: HTTP client/server, JSON/YAML/TOML, crypto, database, WebSocket,
+filesystem, shell execution, process management, async, and 23 embedded stdlib
+modules for infrastructure services (Kubernetes, Prometheus, Vault, ArgoCD, etc.).
+
+Use cases:
+- **Standalone scripting** — system automation, CI/CD tasks, file processing
+- **Embedded runtime** — other Rust services embed assay as a library (`pub mod lua`)
+- **Kubernetes Jobs** — replaces 50–250 MB Python/Node/kubectl containers (~6 MB image)
+- **Infrastructure automation** — GitOps hooks, health checks, service configuration
 
 - **Repo**: [github.com/developerinlondon/assay](https://github.com/developerinlondon/assay)
 - **Image**: `ghcr.io/developerinlondon/assay:latest` (~6 MB compressed)
@@ -31,7 +39,7 @@ assay script.lua     # Lua mode — run script with all builtins
 assay checks.yaml    # YAML mode — structured checks with retry/backoff/parallel
 ```
 
-## Using Assay in Kubernetes
+### Example: Kubernetes Job
 
 ```yaml
 apiVersion: batch/v1
@@ -73,7 +81,7 @@ Available in all `.lua` scripts — no `require` needed:
 |----------|-----------|
 | HTTP | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)` |
 | JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str)`, `yaml.encode(tbl)`, `toml.parse(str)`, `toml.encode(tbl)` |
-| Filesystem | `fs.read(path)`, `fs.write(path, str)` |
+| Filesystem | `fs.read(path)`, `fs.write(path, str)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)` |
 | Crypto | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)` |
 | Base64 | `base64.encode(str)`, `base64.decode(str)` |
 | Regex | `regex.match(pat, str)`, `regex.find(pat, str)`, `regex.find_all(pat, str)`, `regex.replace(pat, str, repl)` |
@@ -84,6 +92,8 @@ Available in all `.lua` scripts — no `require` needed:
 | Assert | `assert.eq(a, b, msg?)`, `assert.gt(a, b, msg?)`, `assert.lt(a, b, msg?)`, `assert.contains(str, sub, msg?)`, `assert.not_nil(val, msg?)`, `assert.matches(str, pat, msg?)` |
 | Logging | `log.info(msg)`, `log.warn(msg)`, `log.error(msg)` |
 | Utilities | `env.get(key)`, `sleep(secs)`, `time()` |
+| Shell | `shell.exec(cmd, opts?)` — execute commands with timeout, working dir, env |
+| Process | `process.list()`, `process.is_running(name)`, `process.kill(pid, signal?)` |
 
 HTTP responses: `{status, body, headers}`. Options: `{headers = {["X-Key"] = "val"}}`.
 
