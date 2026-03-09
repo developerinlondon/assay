@@ -5,7 +5,9 @@ mod crypto;
 mod db;
 mod http;
 mod json;
+mod process;
 mod serialization;
+mod shell;
 mod template;
 mod ws;
 
@@ -28,5 +30,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     db::register_db(lua)?;
     ws::register_ws(lua)?;
     template::register_template(lua)?;
+    shell::register_shell(lua)?;
+    process::register_process(lua)?;
     Ok(())
 }

@@ -99,6 +99,80 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     })?;
     fs_table.set("write", write_fn)?;
 
+    let remove_fn = lua.create_function(|_, path: String| {
+        let p = std::path::Path::new(&path);
+        if p.is_dir() {
+            std::fs::remove_dir_all(&path).map_err(|e| {
+                mlua::Error::runtime(format!("fs.remove: failed to remove directory {path:?}: {e}"))
+            })
+        } else {
+            std::fs::remove_file(&path).map_err(|e| {
+                mlua::Error::runtime(format!("fs.remove: failed to remove {path:?}: {e}"))
+            })
+        }
+    })?;
+    fs_table.set("remove", remove_fn)?;
+
+    let list_fn = lua.create_function(|lua, path: String| {
+        let entries = lua.create_table()?;
+        for (i, entry) in (1..).zip(std::fs::read_dir(&path).map_err(|e| {
+            mlua::Error::runtime(format!("fs.list: failed to list {path:?}: {e}"))
+        })?) {
+            let entry = entry.map_err(|e| {
+                mlua::Error::runtime(format!("fs.list: error reading entry in {path:?}: {e}"))
+            })?;
+            let info = lua.create_table()?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            info.set("name", name)?;
+            let file_type = entry.file_type().map_err(|e| {
+                mlua::Error::runtime(format!("fs.list: failed to get file type: {e}"))
+            })?;
+            if file_type.is_dir() {
+                info.set("type", "directory")?;
+            } else if file_type.is_symlink() {
+                info.set("type", "symlink")?;
+            } else {
+                info.set("type", "file")?;
+            }
+            entries.set(i, info)?;
+        }
+        Ok(entries)
+    })?;
+    fs_table.set("list", list_fn)?;
+
+    let stat_fn = lua.create_function(|lua, path: String| {
+        let metadata = std::fs::metadata(&path).map_err(|e| {
+            mlua::Error::runtime(format!("fs.stat: failed to stat {path:?}: {e}"))
+        })?;
+        let info = lua.create_table()?;
+        info.set("size", metadata.len())?;
+        info.set("is_file", metadata.is_file())?;
+        info.set("is_dir", metadata.is_dir())?;
+        info.set("is_symlink", metadata.is_symlink())?;
+        if let Ok(modified) = metadata.modified()
+            && let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH)
+        {
+            info.set("modified", duration.as_secs_f64())?;
+        }
+        if let Ok(created) = metadata.created()
+            && let Ok(duration) = created.duration_since(std::time::UNIX_EPOCH)
+        {
+            info.set("created", duration.as_secs_f64())?;
+        }
+        Ok(info)
+    })?;
+    fs_table.set("stat", stat_fn)?;
+
+    let mkdir_fn = lua.create_function(|_, path: String| {
+        std::fs::create_dir_all(&path).map_err(|e| {
+            mlua::Error::runtime(format!("fs.mkdir: failed to create {path:?}: {e}"))
+        })
+    })?;
+    fs_table.set("mkdir", mkdir_fn)?;
+
+    let exists_fn = lua.create_function(|_, path: String| Ok(std::path::Path::new(&path).exists()))?;
+    fs_table.set("exists", exists_fn)?;
+
     lua.globals().set("fs", fs_table)?;
     Ok(())
 }
