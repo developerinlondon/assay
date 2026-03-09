@@ -1,9 +1,11 @@
 mod assert;
 mod core;
 mod crypto;
+mod disk;
 #[cfg(feature = "db")]
 mod db;
 mod http;
+mod os_info;
 mod json;
 mod process;
 mod serialization;
@@ -32,5 +34,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     template::register_template(lua)?;
     shell::register_shell(lua)?;
     process::register_process(lua)?;
+    disk::register_disk(lua)?;
+    os_info::register_os(lua)?;
     Ok(())
 }

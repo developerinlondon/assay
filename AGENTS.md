@@ -81,7 +81,7 @@ Available in all `.lua` scripts — no `require` needed:
 |----------|-----------|
 | HTTP | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)` |
 | JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str)`, `yaml.encode(tbl)`, `toml.parse(str)`, `toml.encode(tbl)` |
-| Filesystem | `fs.read(path)`, `fs.write(path, str)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)` |
+| Filesystem | `fs.read(path)`, `fs.write(path, str)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)`, `fs.copy(src, dst)`, `fs.rename(src, dst)`, `fs.glob(pattern)`, `fs.tempdir()`, `fs.chmod(path, mode)`, `fs.readdir(path, opts?)` |
 | Crypto | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)` |
 | Base64 | `base64.encode(str)`, `base64.decode(str)` |
 | Regex | `regex.match(pat, str)`, `regex.find(pat, str)`, `regex.find_all(pat, str)`, `regex.replace(pat, str, repl)` |
@@ -91,9 +91,11 @@ Available in all `.lua` scripts — no `require` needed:
 | Async | `async.spawn(fn)`, `async.spawn_interval(fn, ms)`, `handle:await()`, `handle:cancel()` |
 | Assert | `assert.eq(a, b, msg?)`, `assert.gt(a, b, msg?)`, `assert.lt(a, b, msg?)`, `assert.contains(str, sub, msg?)`, `assert.not_nil(val, msg?)`, `assert.matches(str, pat, msg?)` |
 | Logging | `log.info(msg)`, `log.warn(msg)`, `log.error(msg)` |
-| Utilities | `env.get(key)`, `sleep(secs)`, `time()` |
+| Utilities | `env.get(key)`, `env.set(key, value)`, `env.list()`, `sleep(secs)`, `time()` |
 | Shell | `shell.exec(cmd, opts?)` — execute commands with timeout, working dir, env |
-| Process | `process.list()`, `process.is_running(name)`, `process.kill(pid, signal?)` |
+| Process | `process.list()`, `process.is_running(name)`, `process.kill(pid, signal?)`, `process.wait_idle(names, timeout, interval)` |
+| Disk | `disk.usage(path)` — returns `{total, used, available, percent}`, `disk.sweep(dir, age_secs)`, `disk.dir_size(path)` |
+| OS | `os.hostname()`, `os.arch()`, `os.platform()` |
 
 HTTP responses: `{status, body, headers}`. Options: `{headers = {["X-Key"] = "val"}}`.
 
@@ -295,7 +297,9 @@ assay/
 │           ├── crypto.rs     # crypto.{jwt_sign,hash,hmac,random}
 │           ├── db.rs         # db.{connect,query,execute,close}
 │           ├── ws.rs         # ws.{connect,send,recv,close}
-│           └── template.rs   # template.{render,render_string}
+│           ├── template.rs   # template.{render,render_string}
+│           ├── disk.rs       # disk.{usage} + Lua helpers: disk.sweep, disk.dir_size
+│           └── os_info.rs    # os.{hostname,arch,platform}
 ├── stdlib/                   # Embedded Lua modules (auto-discovered)
 │   ├── vault.lua             # Comprehensive reference (330 lines)
 │   ├── grafana.lua           # Simple reference (110 lines)

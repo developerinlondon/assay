@@ -99,3 +99,22 @@ async fn test_process_kill_spawned() {
     "#;
     run_lua(script).await.unwrap();
 }
+
+#[tokio::test]
+async fn test_process_wait_idle_not_running() {
+    // A process that doesn't exist should return true immediately
+    let script = r#"
+        local result = process.wait_idle("definitely_nonexistent_process_xyz123", 2, 0.1)
+        assert.eq(result, true)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_process_wait_idle_table_of_names() {
+    let script = r#"
+        local result = process.wait_idle({"nonexistent_a", "nonexistent_b"}, 2, 0.1)
+        assert.eq(result, true)
+    "#;
+    run_lua(script).await.unwrap();
+}

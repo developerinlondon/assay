@@ -1,5 +1,6 @@
 use data_encoding::BASE64;
 use mlua::{Lua, Value};
+use std::os::unix::fs::PermissionsExt;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
@@ -50,6 +51,33 @@ pub fn register_env(lua: &Lua) -> mlua::Result<()> {
         "#,
     )
     .exec()?;
+
+    // env.set(key, val) — set env var (nil val = unset)
+    let set_fn = lua.create_function(|_, (key, val): (String, Option<String>)| {
+        match val {
+            Some(v) => unsafe { std::env::set_var(&key, &v) },
+            None => unsafe { std::env::remove_var(&key) },
+        }
+        Ok(())
+    })?;
+    lua.globals()
+        .get::<mlua::Table>("env")?
+        .set("set", set_fn)?;
+
+    // env.list() — returns table of {key, value} for all env vars
+    let list_fn = lua.create_function(|lua, ()| {
+        let results = lua.create_table()?;
+        for (i, (key, val)) in (1..).zip(std::env::vars()) {
+            let entry = lua.create_table()?;
+            entry.set("key", key)?;
+            entry.set("value", val)?;
+            results.set(i, entry)?;
+        }
+        Ok(results)
+    })?;
+    lua.globals()
+        .get::<mlua::Table>("env")?
+        .set("list", list_fn)?;
 
     Ok(())
 }
@@ -184,6 +212,132 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
 
     let exists_fn = lua.create_function(|_, path: String| Ok(std::path::Path::new(&path).exists()))?;
     fs_table.set("exists", exists_fn)?;
+
+    // fs.copy(src, dst) — copy file, returns bytes copied
+    let copy_fn = lua.create_function(|_, (src, dst): (String, String)| {
+        let bytes = std::fs::copy(&src, &dst).map_err(|e| {
+            mlua::Error::runtime(format!("fs.copy: failed to copy {src:?} to {dst:?}: {e}"))
+        })?;
+        Ok(bytes)
+    })?;
+    fs_table.set("copy", copy_fn)?;
+
+    // fs.rename(src, dst) — atomic rename
+    let rename_fn = lua.create_function(|_, (src, dst): (String, String)| {
+        std::fs::rename(&src, &dst).map_err(|e| {
+            mlua::Error::runtime(format!("fs.rename: failed to rename {src:?} to {dst:?}: {e}"))
+        })
+    })?;
+    fs_table.set("rename", rename_fn)?;
+
+    // fs.glob(pattern) — glob pattern matching, returns array of path strings
+    let glob_fn = lua.create_function(|lua, pattern: String| {
+        let paths = glob::glob(&pattern).map_err(|e| {
+            mlua::Error::runtime(format!("fs.glob: invalid pattern {pattern:?}: {e}"))
+        })?;
+        let results = lua.create_table()?;
+        for (i, entry) in (1..).zip(paths) {
+            let path = entry.map_err(|e| {
+                mlua::Error::runtime(format!("fs.glob: error reading entry: {e}"))
+            })?;
+            results.set(i, path.to_string_lossy().to_string())?;
+        }
+        Ok(results)
+    })?;
+    fs_table.set("glob", glob_fn)?;
+
+    // fs.tempdir() — create a temporary directory, returns path string
+    let tempdir_fn = lua.create_function(|_, ()| {
+        let base = std::env::temp_dir();
+        let suffix: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        let dir = base.join(format!("assay-{suffix:x}"));
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            mlua::Error::runtime(format!("fs.tempdir: failed to create {dir:?}: {e}"))
+        })?;
+        Ok(dir.to_string_lossy().to_string())
+    })?;
+    fs_table.set("tempdir", tempdir_fn)?;
+
+    // fs.chmod(path, mode) — set file permissions (octal integer, e.g. 493 = 0o755)
+    let chmod_fn = lua.create_function(|_, (path, mode): (String, u32)| {
+        let perms = std::fs::Permissions::from_mode(mode);
+        std::fs::set_permissions(&path, perms).map_err(|e| {
+            mlua::Error::runtime(format!("fs.chmod: failed to chmod {path:?}: {e}"))
+        })
+    })?;
+    fs_table.set("chmod", chmod_fn)?;
+
+    // fs.readdir(path, opts?) — recursive directory listing
+    // opts: { depth = N } — max recursion depth (nil = unlimited)
+    let readdir_fn = lua.create_function(|lua, args: mlua::MultiValue| {
+        let mut args_iter = args.into_iter();
+        let path: String = args_iter
+            .next()
+            .ok_or_else(|| mlua::Error::runtime("fs.readdir: path required"))
+            .and_then(|v| lua.unpack(v))?;
+
+        let max_depth: Option<usize> = if let Some(Value::Table(opts)) = args_iter.next() {
+            opts.get::<Option<usize>>("depth")?
+        } else {
+            None
+        };
+
+        let results = lua.create_table()?;
+        let mut i = 1u64;
+        let base = std::path::PathBuf::from(&path);
+
+        fn walk(
+            base: &std::path::Path,
+            dir: &std::path::Path,
+            results: &mlua::Table,
+            lua: &Lua,
+            i: &mut u64,
+            depth: usize,
+            max_depth: Option<usize>,
+        ) -> mlua::Result<()> {
+            let entries = std::fs::read_dir(dir).map_err(|e| {
+                mlua::Error::runtime(format!("fs.readdir: failed to read {dir:?}: {e}"))
+            })?;
+            for entry in entries {
+                let entry = entry.map_err(|e| {
+                    mlua::Error::runtime(format!("fs.readdir: error reading entry: {e}"))
+                })?;
+                let file_type = entry.file_type().map_err(|e| {
+                    mlua::Error::runtime(format!("fs.readdir: failed to get file type: {e}"))
+                })?;
+                let rel_path = entry
+                    .path()
+                    .strip_prefix(base)
+                    .unwrap_or(&entry.path())
+                    .to_string_lossy()
+                    .to_string();
+                let info = lua.create_table()?;
+                info.set("path", rel_path)?;
+                if file_type.is_dir() {
+                    info.set("type", "directory")?;
+                } else if file_type.is_symlink() {
+                    info.set("type", "symlink")?;
+                } else {
+                    info.set("type", "file")?;
+                }
+                results.set(*i, info)?;
+                *i += 1;
+                if file_type.is_dir()
+                    && (max_depth.is_none() || depth < max_depth.unwrap())
+                {
+                    walk(base, &entry.path(), results, lua, i, depth + 1, max_depth)?;
+                }
+            }
+            Ok(())
+        }
+
+        walk(&base, &base, &results, lua, &mut i, 1, max_depth)?;
+        Ok(results)
+    })?;
+    fs_table.set("readdir", readdir_fn)?;
 
     lua.globals().set("fs", fs_table)?;
     Ok(())
