@@ -33,10 +33,8 @@ async fn test_process_list_has_pid_and_name() {
 
 #[tokio::test]
 async fn test_process_is_running_known() {
-    // The test runner process should be detectable - but process names from /proc/comm
-    // are truncated. Let's check for "init" or "systemd" which are always running on Linux.
+    // Check that is_running returns false for a definitely-nonexistent process
     let script = r#"
-        -- At minimum, PID 1 exists. Let's just check that is_running returns a boolean.
         local result = process.is_running("definitely_not_a_real_process_name_xyz")
         assert.eq(result, false)
     "#;
@@ -52,13 +50,19 @@ async fn test_process_kill_nonexistent() {
 
 #[tokio::test]
 async fn test_process_kill_signal_zero() {
-    // Signal 0 can be used to check if process exists without killing it
-    // Our own PID should succeed with signal 0
+    // Signal 0 checks if process exists without killing it.
+    // Use our own spawned process instead of PID 1 (which requires root on CI).
     let script = r#"
-        -- Use shell to get our parent PID (the test runner)
-        local result = shell.exec("echo $$")
-        -- Signal 0 to PID 1 (init) should succeed since we're root in this env
-        process.kill(1, 0)
+        local result = shell.exec("sleep 300 </dev/null >/dev/null 2>&1 & echo $!")
+        assert.eq(result.status, 0)
+        local pid = tonumber(result.stdout:match("(%d+)"))
+        assert.not_nil(pid)
+
+        -- Signal 0 should succeed for our own child process
+        process.kill(pid, 0)
+
+        -- Clean up
+        process.kill(pid, 9)
     "#;
     run_lua(script).await.unwrap();
 }
