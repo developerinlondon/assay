@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.5.2"
+version = "0.5.3"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -72,6 +72,9 @@ regex-lite = "0.1.9"
 
 # Process signals (kill)
 libc = "0.2"
+
+# Glob pattern matching
+glob = "0.3.3"
 
 # TOML parsing/encoding
 toml = "0.9.12"
