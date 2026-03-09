@@ -177,5 +177,37 @@ pub fn register_process(lua: &Lua) -> mlua::Result<()> {
     process_table.set("kill", kill_fn)?;
 
     lua.globals().set("process", process_table)?;
+
+    // Tier 3: Lua composable helper
+    lua.load(
+        r#"
+        -- process.wait_idle(names, timeout, interval)
+        -- Wait until none of the named processes are running.
+        -- names: string or table of strings
+        -- timeout: max seconds to wait (default 30)
+        -- interval: poll interval in seconds (default 1)
+        -- Returns true if all idle, false if timed out.
+        function process.wait_idle(names, timeout, interval)
+            timeout = timeout or 30
+            interval = interval or 1
+            if type(names) == "string" then names = {names} end
+            local deadline = time() + timeout
+            while time() < deadline do
+                local any_running = false
+                for _, name in ipairs(names) do
+                    if process.is_running(name) then
+                        any_running = true
+                        break
+                    end
+                end
+                if not any_running then return true end
+                sleep(interval)
+            end
+            return false
+        end
+        "#,
+    )
+    .exec()?;
+
     Ok(())
 }

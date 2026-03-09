@@ -220,3 +220,209 @@ async fn test_fs_remove_nonexistent() {
     let result = run_lua(r#"fs.remove("/nonexistent/file.txt")"#).await;
     assert!(result.is_err());
 }
+
+#[tokio::test]
+async fn test_fs_copy() {
+    let script = r#"
+        local dir = fs.tempdir()
+        fs.write(dir .. "/source.txt", "copy me")
+        local bytes = fs.copy(dir .. "/source.txt", dir .. "/dest.txt")
+        assert.eq(bytes, 7)
+        local content = fs.read(dir .. "/dest.txt")
+        assert.eq(content, "copy me")
+        -- Source should still exist
+        assert.eq(fs.exists(dir .. "/source.txt"), true)
+        fs.remove(dir)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fs_copy_nonexistent() {
+    let result = run_lua(r#"fs.copy("/nonexistent/src", "/tmp/dst")"#).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_fs_rename() {
+    let script = r#"
+        local dir = fs.tempdir()
+        fs.write(dir .. "/before.txt", "rename me")
+        fs.rename(dir .. "/before.txt", dir .. "/after.txt")
+        assert.eq(fs.exists(dir .. "/before.txt"), false)
+        assert.eq(fs.exists(dir .. "/after.txt"), true)
+        local content = fs.read(dir .. "/after.txt")
+        assert.eq(content, "rename me")
+        fs.remove(dir)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fs_rename_nonexistent() {
+    let result = run_lua(r#"fs.rename("/nonexistent/src", "/tmp/dst")"#).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_fs_glob() {
+    let script = r#"
+        local dir = fs.tempdir()
+        fs.write(dir .. "/a.txt", "a")
+        fs.write(dir .. "/b.txt", "b")
+        fs.write(dir .. "/c.log", "c")
+
+        local matches = fs.glob(dir .. "/*.txt")
+        local count = 0
+        for _ in ipairs(matches) do count = count + 1 end
+        assert.eq(count, 2, "should match 2 .txt files")
+
+        local all = fs.glob(dir .. "/*")
+        local all_count = 0
+        for _ in ipairs(all) do all_count = all_count + 1 end
+        assert.eq(all_count, 3, "should match all 3 files")
+
+        fs.remove(dir)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fs_glob_recursive() {
+    let script = r#"
+        local dir = fs.tempdir()
+        fs.mkdir(dir .. "/sub")
+        fs.write(dir .. "/top.txt", "top")
+        fs.write(dir .. "/sub/nested.txt", "nested")
+
+        local matches = fs.glob(dir .. "/**/*.txt")
+        local count = 0
+        for _ in ipairs(matches) do count = count + 1 end
+        assert.eq(count, 2, "should match 2 .txt files recursively")
+
+        fs.remove(dir)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fs_glob_no_match() {
+    let script = r#"
+        local matches = fs.glob("/tmp/assay-nonexistent-pattern-*.xyz")
+        local count = 0
+        for _ in ipairs(matches) do count = count + 1 end
+        assert.eq(count, 0)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fs_glob_invalid_pattern() {
+    let result = run_lua(r#"fs.glob("[invalid")"#).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_fs_tempdir() {
+    let script = r#"
+        local dir = fs.tempdir()
+        assert.not_nil(dir)
+        assert.gt(#dir, 0, "tempdir path should not be empty")
+        assert.eq(fs.exists(dir), true)
+
+        -- Should be able to write into it
+        fs.write(dir .. "/test.txt", "hello")
+        assert.eq(fs.read(dir .. "/test.txt"), "hello")
+
+        fs.remove(dir)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fs_chmod() {
+    let script = r#"
+        local dir = fs.tempdir()
+        local path = dir .. "/chmod_test.txt"
+        fs.write(path, "test")
+
+        -- Set to 0o644 = 420 decimal
+        fs.chmod(path, 420)
+        local stat = fs.stat(path)
+        assert.eq(stat.is_file, true)
+
+        -- Set to 0o755 = 493 decimal
+        fs.chmod(path, 493)
+
+        fs.remove(dir)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fs_chmod_nonexistent() {
+    let result = run_lua(r#"fs.chmod("/nonexistent/file", 420)"#).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_fs_readdir() {
+    let script = r#"
+        local dir = fs.tempdir()
+        fs.write(dir .. "/a.txt", "a")
+        fs.mkdir(dir .. "/sub")
+        fs.write(dir .. "/sub/b.txt", "b")
+
+        local entries = fs.readdir(dir)
+        local count = 0
+        local has_file = false
+        local has_dir = false
+        local has_nested = false
+        for _, e in ipairs(entries) do
+            count = count + 1
+            if e.path == "a.txt" and e.type == "file" then has_file = true end
+            if e.path == "sub" and e.type == "directory" then has_dir = true end
+            if e.path == "sub/b.txt" and e.type == "file" then has_nested = true end
+        end
+        assert.eq(count, 3, "should have 3 entries (a.txt, sub, sub/b.txt)")
+        assert.eq(has_file, true, "should have a.txt")
+        assert.eq(has_dir, true, "should have sub directory")
+        assert.eq(has_nested, true, "should have sub/b.txt")
+
+        fs.remove(dir)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fs_readdir_with_depth() {
+    let script = r#"
+        local dir = fs.tempdir()
+        fs.write(dir .. "/top.txt", "top")
+        fs.mkdir(dir .. "/a")
+        fs.write(dir .. "/a/mid.txt", "mid")
+        fs.mkdir(dir .. "/a/b")
+        fs.write(dir .. "/a/b/deep.txt", "deep")
+
+        -- depth=1 should only list top level
+        local entries = fs.readdir(dir, {depth = 1})
+        local count = 0
+        local has_deep = false
+        for _, e in ipairs(entries) do
+            count = count + 1
+            if e.path == "a/b/deep.txt" then has_deep = true end
+        end
+        -- Should have: top.txt, a, a/mid.txt (a is listed, mid.txt at depth 1 inside a)
+        -- but NOT a/b/deep.txt (that's depth 2)
+        assert.eq(has_deep, false, "should not include deep entries at depth=1")
+
+        fs.remove(dir)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fs_readdir_nonexistent() {
+    let result = run_lua(r#"fs.readdir("/nonexistent/path")"#).await;
+    assert!(result.is_err());
+}
