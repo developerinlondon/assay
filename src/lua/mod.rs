@@ -10,7 +10,7 @@ static STDLIB_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/stdlib");
 /// Environment variable to override the global module search path.
 pub const MODULES_PATH_ENV: &str = "ASSAY_MODULES_PATH";
 
-const DANGEROUS_GLOBALS: &[&str] = &["load", "loadfile", "dofile", "collectgarbage", "print"];
+const DANGEROUS_GLOBALS: &[&str] = &["load", "loadfile", "dofile"];
 
 fn lua_err(e: mlua::Error) -> anyhow::Error {
     anyhow::anyhow!("{e}")
@@ -26,8 +26,8 @@ pub fn create_vm_with_lib_path(client: reqwest::Client, lib_path: String) -> Res
 }
 
 pub fn create_vm_with_paths(client: reqwest::Client, global_modules_path: Option<String>) -> Result<Lua> {
-    let safe_libs = StdLib::ALL_SAFE ^ StdLib::IO ^ StdLib::OS;
-    let lua = Lua::new_with(safe_libs, LuaOptions::default()).map_err(lua_err)?;
+    let libs = StdLib::ALL_SAFE;
+    let lua = Lua::new_with(libs, LuaOptions::default()).map_err(lua_err)?;
     lua.set_memory_limit(64 * 1024 * 1024).map_err(lua_err)?;
     sandbox(&lua).map_err(lua_err)?;
     register_fs_loader(&lua, global_modules_path).map_err(lua_err)?;

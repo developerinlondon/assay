@@ -7,14 +7,15 @@ async fn test_http_serve_get_body() {
     run_lua_local(
         r#"
         local server = async.spawn(function()
-            http.serve(18080, {
+            http.serve(0, {
                 GET = {
                     ["/health"] = function(req) return { status = 200, body = "ok" } end,
                 }
             })
         end)
         sleep(0.1)
-        local resp = http.get("http://127.0.0.1:18080/health")
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/health")
         assert.eq(resp.status, 200)
         assert.eq(resp.body, "ok")
     "#,
@@ -28,7 +29,7 @@ async fn test_http_serve_post_body() {
     run_lua_local(
         r#"
         local server = async.spawn(function()
-            http.serve(18081, {
+            http.serve(0, {
                 POST = {
                     ["/submit"] = function(req)
                         return { status = 201, body = req.body }
@@ -37,7 +38,8 @@ async fn test_http_serve_post_body() {
             })
         end)
         sleep(0.1)
-        local resp = http.post("http://127.0.0.1:18081/submit", "hello world")
+        local port = _SERVER_PORT
+        local resp = http.post("http://127.0.0.1:" .. port .. "/submit", "hello world")
         assert.eq(resp.status, 201)
         assert.eq(resp.body, "hello world")
     "#,
@@ -51,7 +53,7 @@ async fn test_http_serve_json_response() {
     run_lua_local(
         r#"
         local server = async.spawn(function()
-            http.serve(18082, {
+            http.serve(0, {
                 GET = {
                     ["/data"] = function(req)
                         return { status = 200, json = { items = {1, 2, 3} } }
@@ -60,7 +62,8 @@ async fn test_http_serve_json_response() {
             })
         end)
         sleep(0.1)
-        local resp = http.get("http://127.0.0.1:18082/data")
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/data")
         assert.eq(resp.status, 200)
         assert.contains(resp.headers["content-type"], "application/json")
         local data = json.parse(resp.body)
@@ -78,7 +81,7 @@ async fn test_http_serve_custom_headers() {
     run_lua_local(
         r#"
         local server = async.spawn(function()
-            http.serve(18083, {
+            http.serve(0, {
                 GET = {
                     ["/custom"] = function(req)
                         return {
@@ -91,7 +94,8 @@ async fn test_http_serve_custom_headers() {
             })
         end)
         sleep(0.1)
-        local resp = http.get("http://127.0.0.1:18083/custom")
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/custom")
         assert.eq(resp.status, 200)
         assert.eq(resp.headers["x-custom"], "test-value")
     "#,
@@ -105,14 +109,15 @@ async fn test_http_serve_404_unregistered() {
     run_lua_local(
         r#"
         local server = async.spawn(function()
-            http.serve(18084, {
+            http.serve(0, {
                 GET = {
                     ["/exists"] = function(req) return { body = "here" } end,
                 }
             })
         end)
         sleep(0.1)
-        local resp = http.get("http://127.0.0.1:18084/missing")
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/missing")
         assert.eq(resp.status, 404)
     "#,
     )
@@ -125,7 +130,7 @@ async fn test_http_serve_multiple_methods_same_path() {
     run_lua_local(
         r#"
         local server = async.spawn(function()
-            http.serve(18085, {
+            http.serve(0, {
                 GET = {
                     ["/resource"] = function(req) return { body = "get-result" } end,
                 },
@@ -135,10 +140,11 @@ async fn test_http_serve_multiple_methods_same_path() {
             })
         end)
         sleep(0.1)
-        local get_resp = http.get("http://127.0.0.1:18085/resource")
+        local port = _SERVER_PORT
+        local get_resp = http.get("http://127.0.0.1:" .. port .. "/resource")
         assert.eq(get_resp.status, 200)
         assert.eq(get_resp.body, "get-result")
-        local post_resp = http.post("http://127.0.0.1:18085/resource", "")
+        local post_resp = http.post("http://127.0.0.1:" .. port .. "/resource", "")
         assert.eq(post_resp.status, 201)
         assert.eq(post_resp.body, "post-result")
     "#,
@@ -152,7 +158,7 @@ async fn test_http_serve_request_query() {
     run_lua_local(
         r#"
         local server = async.spawn(function()
-            http.serve(18086, {
+            http.serve(0, {
                 GET = {
                     ["/search"] = function(req)
                         return { body = req.query }
@@ -161,7 +167,8 @@ async fn test_http_serve_request_query() {
             })
         end)
         sleep(0.1)
-        local resp = http.get("http://127.0.0.1:18086/search?q=hello&page=1")
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/search?q=hello&page=1")
         assert.eq(resp.status, 200)
         assert.eq(resp.body, "q=hello&page=1")
     "#,
@@ -175,7 +182,7 @@ async fn test_http_serve_request_headers() {
     run_lua_local(
         r#"
         local server = async.spawn(function()
-            http.serve(18087, {
+            http.serve(0, {
                 GET = {
                     ["/echo-header"] = function(req)
                         return { body = req.headers["x-test-header"] or "missing" }
@@ -184,7 +191,8 @@ async fn test_http_serve_request_headers() {
             })
         end)
         sleep(0.1)
-        local resp = http.get("http://127.0.0.1:18087/echo-header", {
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/echo-header", {
             headers = { ["x-test-header"] = "my-value" }
         })
         assert.eq(resp.status, 200)

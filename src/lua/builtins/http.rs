@@ -173,6 +173,12 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
             .await
             .map_err(|e| mlua::Error::runtime(format!("http.serve: bind failed: {e}")))?;
 
+        // Expose the actual bound port so callers using port 0 can discover it
+        let actual_port = listener.local_addr()
+            .map_err(|e| mlua::Error::runtime(format!("http.serve: failed to get local addr: {e}")))?
+            .port();
+        lua.globals().set("_SERVER_PORT", actual_port)?;
+
         loop {
             let (stream, _addr) = listener
                 .accept()
