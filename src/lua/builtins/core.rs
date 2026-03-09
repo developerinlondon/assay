@@ -101,7 +101,14 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
 
     let remove_fn = lua.create_function(|_, path: String| {
         let p = std::path::Path::new(&path);
-        if p.is_dir() {
+        // Use symlink_metadata to detect symlinks without following them.
+        // A symlink to a directory should be removed as a file (unlink),
+        // not recursively delete the target directory.
+        let is_dir = match std::fs::symlink_metadata(&path) {
+            Ok(m) => m.file_type().is_dir(),
+            Err(_) => p.is_dir(),
+        };
+        if is_dir {
             std::fs::remove_dir_all(&path).map_err(|e| {
                 mlua::Error::runtime(format!("fs.remove: failed to remove directory {path:?}: {e}"))
             })
@@ -144,11 +151,16 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
         let metadata = std::fs::metadata(&path).map_err(|e| {
             mlua::Error::runtime(format!("fs.stat: failed to stat {path:?}: {e}"))
         })?;
+        // Use symlink_metadata separately to correctly detect symlinks,
+        // since std::fs::metadata follows symlinks (is_symlink always false).
+        let is_symlink = std::fs::symlink_metadata(&path)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false);
         let info = lua.create_table()?;
         info.set("size", metadata.len())?;
         info.set("is_file", metadata.is_file())?;
         info.set("is_dir", metadata.is_dir())?;
-        info.set("is_symlink", metadata.is_symlink())?;
+        info.set("is_symlink", is_symlink)?;
         if let Ok(modified) = metadata.modified()
             && let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH)
         {
