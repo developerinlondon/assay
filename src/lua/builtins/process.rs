@@ -137,6 +137,14 @@ pub fn register_process(lua: &Lua) -> mlua::Result<()> {
                 _ => Err(mlua::Error::runtime("process.kill: pid must be a number")),
             })?;
 
+        // Validate pid > 0 to prevent dangerous signals:
+        // pid 0 = caller's process group, pid -1 = all permitted processes
+        if pid <= 0 {
+            return Err(mlua::Error::runtime(format!(
+                "process.kill: pid must be > 0, got {pid}"
+            )));
+        }
+
         let signal: i32 = args_iter
             .next()
             .map(|v| match v {
@@ -149,7 +157,13 @@ pub fn register_process(lua: &Lua) -> mlua::Result<()> {
             })
             .unwrap_or(Ok(15))?;
 
-        // Use libc::kill directly — works on both Linux and macOS
+        if signal < 0 {
+            return Err(mlua::Error::runtime(format!(
+                "process.kill: signal must be >= 0, got {signal}"
+            )));
+        }
+
+        // Use libc::kill via the libc crate — works on both Linux and macOS
         let result = unsafe { libc::kill(pid, signal) };
         if result == 0 {
             Ok(true)

@@ -32,8 +32,17 @@ pub fn register_shell(lua: &Lua) -> mlua::Result<()> {
             }
         }
 
-        // Build command — use sh -c for shell interpretation
-        let mut command = std::process::Command::new("sh");
+        // Validate timeout before use — Duration::from_secs_f64 panics on NaN/negative
+        if let Some(secs) = timeout_secs
+            && (!secs.is_finite() || secs < 0.0)
+        {
+            return Err(mlua::Error::runtime(
+                "shell.exec: timeout must be a non-negative finite number",
+            ));
+        }
+
+        // Build command — use /bin/sh explicitly for predictable behavior
+        let mut command = std::process::Command::new("/bin/sh");
         command.arg("-c").arg(&cmd);
 
         if let Some(ref dir) = cwd {
@@ -72,25 +81,47 @@ pub fn register_shell(lua: &Lua) -> mlua::Result<()> {
         let output = if let Some(secs) = timeout_secs {
             let duration = std::time::Duration::from_secs_f64(secs);
             let start = std::time::Instant::now();
+
+            // Drain stdout/stderr in background threads to prevent pipe buffer deadlock.
+            // If the child fills the OS pipe buffer (~64KB), it blocks waiting for a reader.
+            // Without concurrent draining, try_wait() polls forever since the child never exits.
+            let mut stdout_handle = child.stdout.take().map(|mut s| {
+                std::thread::spawn(move || {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut s, &mut buf);
+                    buf
+                })
+            });
+            let mut stderr_handle = child.stderr.take().map(|mut s| {
+                std::thread::spawn(move || {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut s, &mut buf);
+                    buf
+                })
+            });
+
             loop {
                 match child.try_wait() {
                     Ok(Some(status)) => {
-                        let stdout = child.stdout.take().map_or_else(String::new, |mut s| {
-                            let mut buf = String::new();
-                            std::io::Read::read_to_string(&mut s, &mut buf).unwrap_or(0);
-                            buf
-                        });
-                        let stderr = child.stderr.take().map_or_else(String::new, |mut s| {
-                            let mut buf = String::new();
-                            std::io::Read::read_to_string(&mut s, &mut buf).unwrap_or(0);
-                            buf
-                        });
+                        let stdout = stdout_handle
+                            .take()
+                            .map_or_else(String::new, |h| h.join().unwrap_or_default());
+                        let stderr = stderr_handle
+                            .take()
+                            .map_or_else(String::new, |h| h.join().unwrap_or_default());
                         break Ok((status.code().unwrap_or(-1), stdout, stderr, false));
                     }
                     Ok(None) => {
                         if start.elapsed() >= duration {
                             let _ = child.kill();
                             let _ = child.wait();
+                            // Join reader threads to avoid leaking them
+                            if let Some(handle) = stdout_handle.take() {
+                                let _ = handle.join();
+                            }
+                            if let Some(handle) = stderr_handle.take() {
+                                let _ = handle.join();
+                            }
                             break Ok((-1, String::new(), String::new(), true));
                         }
                         std::thread::sleep(std::time::Duration::from_millis(10));

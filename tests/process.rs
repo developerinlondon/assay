@@ -83,12 +83,19 @@ async fn test_process_kill_spawned() {
         -- Kill it with SIGKILL for immediate termination
         process.kill(pid, 9)
 
-        -- Give kernel time to reap
-        sleep(0.5)
+        -- Poll until the process is reaped (avoids flaky fixed sleep)
+        local deadline = time() + 5  -- 5-second overall timeout
+        local gone = false
+        while time() < deadline do
+            local ok = pcall(process.kill, pid, 0)
+            if not ok then
+                gone = true
+                break
+            end
+            sleep(0.1)
+        end
 
-        -- Verify it's gone (kill with signal 0 should fail)
-        local ok = pcall(process.kill, pid, 0)
-        assert.eq(ok, false)
+        assert.eq(gone, true, "process did not terminate within timeout")
     "#;
     run_lua(script).await.unwrap();
 }
