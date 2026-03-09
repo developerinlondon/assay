@@ -75,6 +75,7 @@ struct StatvfsInfo {
     free: u64,
 }
 
+#[allow(clippy::unnecessary_cast)] // f_frsize/f_blocks/f_bfree are u32 on macOS, u64 on Linux
 fn statvfs_info(path: &str) -> Result<StatvfsInfo, String> {
     use std::ffi::CString;
 
