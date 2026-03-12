@@ -522,8 +522,8 @@ async fn test_unleash_tokens() {
         .and(path("/api/admin/api-tokens"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "tokens": [
-                {"secret": "*:development.abc123", "username": "simons-dev", "type": "client", "environment": "development", "projects": ["simons"]},
-                {"secret": "*:*.admin456", "username": "admin", "type": "admin", "projects": ["*"]}
+                {"secret": "*:development.abc123", "tokenName": "simons-dev", "type": "client", "environment": "development", "projects": ["simons"]},
+                {"secret": "*:*.admin456", "tokenName": "admin", "type": "admin", "projects": ["*"]}
             ]
         })))
         .mount(&server)
@@ -535,7 +535,7 @@ async fn test_unleash_tokens() {
         local c = unleash.client("{}", {{ token = "test-token" }})
         local tokens = c:tokens()
         assert.eq(#tokens, 2)
-        assert.eq(tokens[1].username, "simons-dev")
+        assert.eq(tokens[1].tokenName, "simons-dev")
         assert.eq(tokens[1].type, "client")
         assert.eq(tokens[2].type, "admin")
         "#,
@@ -551,7 +551,7 @@ async fn test_unleash_create_token() {
         .and(path("/api/admin/api-tokens"))
         .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
             "secret": "simons:development.newtoken789",
-            "username": "simons-client",
+            "tokenName": "simons-client",
             "type": "client",
             "environment": "development",
             "projects": ["simons"],
@@ -565,13 +565,13 @@ async fn test_unleash_create_token() {
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
         local t = c:create_token({{
-            username = "simons-client",
+            tokenName = "simons-client",
             type = "client",
             environment = "development",
             projects = {{ "simons" }}
         }})
         assert.eq(t.secret, "simons:development.newtoken789")
-        assert.eq(t.username, "simons-client")
+        assert.eq(t.tokenName, "simons-client")
         assert.eq(t.type, "client")
         "#,
         server.uri()
@@ -744,7 +744,7 @@ async fn test_unleash_ensure_token_existing() {
         .and(path("/api/admin/api-tokens"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "tokens": [
-                {"secret": "hidden", "username": "simons-dev", "type": "client", "environment": "development", "projects": ["simons"]}
+                {"secret": "hidden", "tokenName": "simons-dev", "type": "client", "environment": "development", "projects": ["simons"]}
             ]
         })))
         .mount(&server)
@@ -759,7 +759,7 @@ async fn test_unleash_ensure_token_existing() {
             type = "client",
             environment = "development"
         }})
-        assert.eq(t.username, "simons-dev")
+        assert.eq(t.tokenName, "simons-dev")
         assert.eq(t.type, "client")
         "#,
         server.uri()
@@ -781,7 +781,7 @@ async fn test_unleash_ensure_token_new() {
         .and(path("/api/admin/api-tokens"))
         .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
             "secret": "simons:production.newtoken",
-            "username": "simons-prod",
+            "tokenName": "simons-prod",
             "type": "client",
             "environment": "production",
             "projects": ["simons"]
@@ -794,13 +794,13 @@ async fn test_unleash_ensure_token_new() {
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
         local t = unleash.ensure_token(c, {{
-            username = "simons-prod",
+            tokenName = "simons-prod",
             type = "client",
             environment = "production",
             projects = {{ "simons" }}
         }})
         assert.eq(t.secret, "simons:production.newtoken")
-        assert.eq(t.username, "simons-prod")
+        assert.eq(t.tokenName, "simons-prod")
         "#,
         server.uri()
     );

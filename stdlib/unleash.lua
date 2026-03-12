@@ -257,23 +257,24 @@ function M.ensure_environment(client, project_id, env_name)
 end
 
 function M.ensure_token(client, opts)
-  assert.not_nil(opts.username, "unleash.ensure_token: opts.username is required")
+  local token_name = opts.tokenName or opts.username
+  assert.not_nil(token_name, "unleash.ensure_token: opts.tokenName is required")
   assert.not_nil(opts.type, "unleash.ensure_token: opts.type is required")
 
   local existing = client:tokens()
   for _, t in ipairs(existing) do
-    local match = t.username == opts.username and t.type == opts.type
+    local match = (t.tokenName or t.username) == token_name and t.type == opts.type
     if match and opts.environment then
       match = t.environment == opts.environment
     end
     if match then
-      log.info("Token already exists for " .. opts.username .. " (" .. opts.type .. ")")
+      log.info("Token already exists for " .. token_name .. " (" .. opts.type .. ")")
       return t
     end
   end
 
   local token_config = {
-    username = opts.username,
+    tokenName = token_name,
     type = opts.type,
   }
   if opts.environment then
@@ -284,7 +285,7 @@ function M.ensure_token(client, opts)
   end
 
   local created = client:create_token(token_config)
-  log.info("Created token for " .. opts.username .. " (" .. opts.type .. ")")
+  log.info("Created token for " .. token_name .. " (" .. opts.type .. ")")
   return created
 end
 
