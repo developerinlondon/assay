@@ -755,7 +755,7 @@ async fn test_unleash_ensure_token_existing() {
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
         local t = unleash.ensure_token(c, {{
-            username = "simons-dev",
+            tokenName = "simons-dev",
             type = "client",
             environment = "development"
         }})

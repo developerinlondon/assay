@@ -257,13 +257,13 @@ function M.ensure_environment(client, project_id, env_name)
 end
 
 function M.ensure_token(client, opts)
-  local token_name = opts.tokenName or opts.username
+  local token_name = opts.tokenName
   assert.not_nil(token_name, "unleash.ensure_token: opts.tokenName is required")
   assert.not_nil(opts.type, "unleash.ensure_token: opts.type is required")
 
   local existing = client:tokens()
   for _, t in ipairs(existing) do
-    local match = (t.tokenName or t.username) == token_name and t.type == opts.type
+    local match = t.tokenName == token_name and t.type == opts.type
     if match and opts.environment then
       match = t.environment == opts.environment
     end
