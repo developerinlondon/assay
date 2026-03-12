@@ -4,6 +4,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
+static TEMPDIR_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub fn register_log(lua: &Lua) -> mlua::Result<()> {
     let log_table = lua.create_table()?;
 
@@ -249,11 +251,12 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     // fs.tempdir() — create a temporary directory, returns path string
     let tempdir_fn = lua.create_function(|_, ()| {
         let base = std::env::temp_dir();
-        let suffix: u64 = std::time::SystemTime::now()
+        let nanos: u64 = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64;
-        let dir = base.join(format!("assay-{suffix:x}"));
+        let seq = TEMPDIR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = base.join(format!("assay-{nanos:x}-{seq}"));
         std::fs::create_dir_all(&dir).map_err(|e| {
             mlua::Error::runtime(format!("fs.tempdir: failed to create {dir:?}: {e}"))
         })?;
