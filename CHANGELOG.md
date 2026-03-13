@@ -2,6 +2,17 @@
 
 All notable changes to Assay are documented here.
 
+
+## [0.5.5] - 2026-03-13
+
+### Added
+
+- **follow_redirects** option for YAML HTTP checks. Set `follow_redirects: false` to disable
+  automatic redirect following, allowing verification of auth-protected endpoints that return
+  302 redirects to identity providers. Defaults to `true` for backward compatibility.
+- **follow_redirects** option for Lua `http.client()` builder. Create clients with
+  `http.client({ follow_redirects = false })` for the same no-redirect behavior in scripts.
+
 ## [0.5.4] - 2026-03-12
 
 ### Fixed
@@ -81,6 +92,7 @@ All notable changes to Assay are documented here.
   Projects (CRUD, list), environments (enable/disable per project), features (CRUD, archive,
   toggle on/off), strategies (list, add), API tokens (CRUD). Idempotent helpers:
   `ensure_project`, `ensure_environment`, `ensure_token`.
+
 
 ## [0.4.3] - 2026-02-13
 
