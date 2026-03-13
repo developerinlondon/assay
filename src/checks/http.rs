@@ -1,6 +1,7 @@
 use crate::config::CheckConfig;
 use crate::output::CheckResult;
 use anyhow::{Context, Result, bail};
+use std::time::Duration;
 
 pub struct HttpCheck;
 
@@ -15,7 +16,20 @@ impl HttpCheck {
             .as_deref()
             .context("http check requires a 'url' field")?;
 
-        let resp = client
+        // Build a no-redirect client when follow_redirects is false
+        let no_redirect_client;
+        let effective_client = if config.follow_redirects {
+            client
+        } else {
+            no_redirect_client = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(Duration::from_secs(30))
+                .build()
+                .context("building no-redirect HTTP client")?;
+            &no_redirect_client
+        };
+
+        let resp = effective_client
             .get(url)
             .send()
             .await
