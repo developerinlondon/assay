@@ -50,6 +50,14 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
             .unwrap_or(30.0);
         builder = builder.timeout(std::time::Duration::from_secs_f64(timeout_secs));
 
+        let follow_redirects: bool = opts
+            .as_ref()
+            .and_then(|t| t.get::<bool>("follow_redirects").ok())
+            .unwrap_or(true);
+        if !follow_redirects {
+            builder = builder.redirect(reqwest::redirect::Policy::none());
+        }
+
         if let Some(ref opts_table) = opts {
             if let Ok(ca_path) = opts_table.get::<String>("ca_cert_file") {
                 let pem = std::fs::read(&ca_path).map_err(|e| {
