@@ -21,6 +21,7 @@ pub struct CheckConfig {
     pub expect: Option<ExpectConfig>,
     pub query: Option<String>,
     pub file: Option<String>,
+    pub follow_redirects: bool,
     pub env: HashMap<String, String>,
 }
 
@@ -65,6 +66,10 @@ fn default_backoff() -> String {
     "5s".to_string()
 }
 
+fn default_follow_redirects() -> bool {
+    true
+}
+
 #[derive(Deserialize)]
 struct RawCheck {
     name: String,
@@ -72,6 +77,8 @@ struct RawCheck {
     check_type: String,
     url: Option<String>,
     expect: Option<RawExpect>,
+    #[serde(default = "default_follow_redirects")]
+    follow_redirects: bool,
     query: Option<String>,
     file: Option<String>,
     #[serde(default)]
@@ -137,6 +144,7 @@ pub fn parse(yaml: &str) -> Result<Config> {
                     min: e.min,
                     max: e.max,
                 }),
+                follow_redirects: c.follow_redirects,
                 query: c.query,
                 file: c.file,
                 env: c.env,
