@@ -543,10 +543,10 @@ fn lua_response_to_http(
                 }
             };
 
-            if let Err(e) = sse_fn.call::<()>(send_fn) {
-                if !e.to_string().contains("SSE stream closed") {
-                    error!("http.serve SSE: handler error: {e}");
-                }
+            if let Err(e) = sse_fn.call::<()>(send_fn)
+                && !e.to_string().contains("SSE stream closed")
+            {
+                error!("http.serve SSE: handler error: {e}");
             }
 
             // Explicitly close the channel so the response body completes
