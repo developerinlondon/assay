@@ -13,7 +13,7 @@
 - [GitHub](https://github.com/developerinlondon/assay): Source code and issues
 
 ## Built-in Globals (no require needed)
-- [http](https://assay.rs/modules.html#http): HTTP client and server — http.get/post/put/patch/delete/serve
+- [http](https://assay.rs/modules.html#http): HTTP client, server, SSE streaming — http.get/post/put/patch/delete/serve
 - [json](https://assay.rs/modules.html#json): JSON parse and encode
 - [yaml](https://assay.rs/modules.html#yaml): YAML parse and encode
 - [toml](https://assay.rs/modules.html#toml): TOML parse and encode

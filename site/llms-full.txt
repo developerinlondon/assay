@@ -31,6 +31,10 @@ Options table supports `{headers = {["X-Key"] = "value"}}`.
 - `http.serve(port, routes)` → blocks — Start HTTP server
   - Routes: `{GET = {["/path"] = function(req) return {status=200, body="ok"} end}}`
   - Handlers receive `{method, path, body, headers, query}`, return `{status, body, json?, headers?}`
+  - SSE: return `{sse = function(send) send({event="update", data="hello", id="1"}) end}`
+    - `send()` accepts: `event`, `data`, `id`, `retry` fields
+    - Sets `Content-Type: text/event-stream` automatically
+    - Stream closes when function returns
 
 ## json
 
