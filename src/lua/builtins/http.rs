@@ -502,18 +502,34 @@ fn lua_response_to_http(
 
         let mut builder =
             Response::builder().status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
-        builder = builder.header("content-type", "text/event-stream");
-        builder = builder.header("cache-control", "no-cache");
-        builder = builder.header("connection", "keep-alive");
 
-        // Apply any custom headers from the response table
+        // Apply custom headers first so they take precedence over SSE defaults
         if let Ok(Some(headers_table)) = resp_table.get::<Option<Table>>("headers") {
             for (k, v) in headers_table.pairs::<String, String>().flatten() {
                 builder = builder.header(k, v);
             }
         }
 
-        let response = builder.body(Either::Right(SseBody { rx })).unwrap();
+        let mut response = builder.body(Either::Right(SseBody { rx })).unwrap();
+        let response_headers = response.headers_mut();
+        if !response_headers.contains_key(hyper::header::CONTENT_TYPE) {
+            response_headers.insert(
+                hyper::header::CONTENT_TYPE,
+                hyper::header::HeaderValue::from_static("text/event-stream"),
+            );
+        }
+        if !response_headers.contains_key(hyper::header::CACHE_CONTROL) {
+            response_headers.insert(
+                hyper::header::CACHE_CONTROL,
+                hyper::header::HeaderValue::from_static("no-cache"),
+            );
+        }
+        if !response_headers.contains_key(hyper::header::CONNECTION) {
+            response_headers.insert(
+                hyper::header::CONNECTION,
+                hyper::header::HeaderValue::from_static("keep-alive"),
+            );
+        }
 
         // Spawn the SSE function on the local set.
         // We wrap tx in Rc<RefCell<Option>> so we can explicitly close the channel
@@ -526,15 +542,18 @@ fn lua_response_to_http(
                 Rc::new(RefCell::new(Some(tx)));
             let tx_for_fn = tx_holder.clone();
 
-            let send_fn = match lua_clone.create_function(move |_lua, event_table: Table| {
-                let binding = tx_for_fn.borrow();
-                if let Some(ref tx) = *binding {
-                    let formatted = format_sse_event(&event_table)?;
-                    if tx.try_send(Bytes::from(formatted)).is_err() {
-                        return Err(mlua::Error::runtime("SSE stream closed"));
+            let send_fn = match lua_clone.create_async_function(move |_lua, event_table: Table| {
+                let tx_ref = tx_for_fn.clone();
+                async move {
+                    let binding = tx_ref.borrow();
+                    if let Some(ref tx) = *binding {
+                        let formatted = format_sse_event(&event_table)?;
+                        if tx.send(Bytes::from(formatted)).await.is_err() {
+                            return Err(mlua::Error::runtime("SSE stream closed"));
+                        }
                     }
+                    Ok(())
                 }
-                Ok(())
             }) {
                 Ok(f) => f,
                 Err(e) => {
@@ -543,7 +562,7 @@ fn lua_response_to_http(
                 }
             };
 
-            if let Err(e) = sse_fn.call::<()>(send_fn)
+            if let Err(e) = sse_fn.call_async::<()>(send_fn).await
                 && !e.to_string().contains("SSE stream closed")
             {
                 error!("http.serve SSE: handler error: {e}");
