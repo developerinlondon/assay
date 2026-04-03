@@ -2,9 +2,9 @@ use super::json::lua_table_to_json;
 #[cfg(feature = "server")]
 use super::json::lua_value_to_json;
 #[cfg(feature = "server")]
-use http_body_util::Full;
+use http_body_util::{Either, Full};
 #[cfg(feature = "server")]
-use hyper::body::{Bytes, Incoming};
+use hyper::body::{Bytes, Frame, Incoming};
 #[cfg(feature = "server")]
 use hyper::server::conn::http1;
 #[cfg(feature = "server")]
@@ -15,7 +15,13 @@ use mlua::{Lua, Table, UserData, Value};
 #[cfg(feature = "server")]
 use std::collections::HashMap;
 #[cfg(feature = "server")]
+use std::cell::RefCell;
+#[cfg(feature = "server")]
+use std::pin::Pin;
+#[cfg(feature = "server")]
 use std::rc::Rc;
+#[cfg(feature = "server")]
+use std::task::{Context, Poll};
 #[cfg(feature = "server")]
 use tokio::net::TcpListener;
 #[cfg(feature = "server")]
@@ -336,6 +342,63 @@ async fn execute_http_request(
     Ok(Value::Table(result))
 }
 
+/// A streaming body backed by an mpsc channel, used for SSE responses.
+#[cfg(feature = "server")]
+struct SseBody {
+    rx: tokio::sync::mpsc::Receiver<Bytes>,
+}
+
+#[cfg(feature = "server")]
+impl hyper::body::Body for SseBody {
+    type Data = Bytes;
+    type Error = std::convert::Infallible;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        match self.rx.poll_recv(cx) {
+            Poll::Ready(Some(bytes)) => Poll::Ready(Some(Ok(Frame::data(bytes)))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// Format a Lua table with optional `event`, `data`, `id`, `retry` fields into an SSE text block.
+#[cfg(feature = "server")]
+fn format_sse_event(event_table: &Table) -> mlua::Result<String> {
+    let mut out = String::new();
+
+    if let Ok(Some(event)) = event_table.get::<Option<String>>("event") {
+        out.push_str("event: ");
+        out.push_str(&event);
+        out.push('\n');
+    }
+    if let Ok(Some(data)) = event_table.get::<Option<String>>("data") {
+        // SSE spec: each line of data gets its own "data:" prefix
+        for line in data.split('\n') {
+            out.push_str("data: ");
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    if let Ok(Some(id)) = event_table.get::<Option<String>>("id") {
+        out.push_str("id: ");
+        out.push_str(&id);
+        out.push('\n');
+    }
+    if let Ok(Some(retry)) = event_table.get::<Option<i64>>("retry") {
+        out.push_str("retry: ");
+        out.push_str(&retry.to_string());
+        out.push('\n');
+    }
+
+    // SSE events are terminated by a blank line
+    out.push('\n');
+    Ok(out)
+}
+
 #[cfg(feature = "server")]
 fn parse_routes(routes_table: &Table) -> mlua::Result<HashMap<(String, String), mlua::Function>> {
     let mut routes = HashMap::new();
@@ -351,11 +414,14 @@ fn parse_routes(routes_table: &Table) -> mlua::Result<HashMap<(String, String), 
 }
 
 #[cfg(feature = "server")]
+type ServerBody = Either<Full<Bytes>, SseBody>;
+
+#[cfg(feature = "server")]
 async fn handle_request(
     lua: &Lua,
     routes: &HashMap<(String, String), mlua::Function>,
     req: Request<Incoming>,
-) -> Result<Response<Full<Bytes>>, hyper::Error> {
+) -> Result<Response<ServerBody>, hyper::Error> {
     let method = req.method().to_string();
     let path = req.uri().path().to_string();
     let query = req.uri().query().unwrap_or("").to_string();
@@ -378,17 +444,19 @@ async fn handle_request(
             return Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .header("content-type", "text/plain")
-                .body(Full::new(Bytes::from("not found")))
+                .body(Either::Left(Full::new(Bytes::from("not found"))))
                 .unwrap());
         }
     };
 
     match build_lua_request_and_call(lua, handler, &method, &path, &query, &headers, &body_str) {
-        Ok(lua_resp) => lua_response_to_http(&lua_resp),
+        Ok(lua_resp) => lua_response_to_http(lua, &lua_resp),
         Err(e) => Ok(Response::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
             .header("content-type", "text/plain")
-            .body(Full::new(Bytes::from(format!("handler error: {e}"))))
+            .body(Either::Left(Full::new(Bytes::from(format!(
+                "handler error: {e}"
+            )))))
             .unwrap()),
     }
 }
@@ -419,11 +487,74 @@ fn build_lua_request_and_call(
 }
 
 #[cfg(feature = "server")]
-fn lua_response_to_http(resp_table: &Table) -> Result<Response<Full<Bytes>>, hyper::Error> {
+fn lua_response_to_http(
+    lua: &Lua,
+    resp_table: &Table,
+) -> Result<Response<ServerBody>, hyper::Error> {
     let status = resp_table
         .get::<Option<u16>>("status")
         .unwrap_or(None)
         .unwrap_or(200);
+
+    // Check for SSE function first
+    if let Ok(Some(sse_fn)) = resp_table.get::<Option<mlua::Function>>("sse") {
+        let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(32);
+
+        let mut builder =
+            Response::builder().status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
+        builder = builder.header("content-type", "text/event-stream");
+        builder = builder.header("cache-control", "no-cache");
+        builder = builder.header("connection", "keep-alive");
+
+        // Apply any custom headers from the response table
+        if let Ok(Some(headers_table)) = resp_table.get::<Option<Table>>("headers") {
+            for (k, v) in headers_table.pairs::<String, String>().flatten() {
+                builder = builder.header(k, v);
+            }
+        }
+
+        let response = builder.body(Either::Right(SseBody { rx })).unwrap();
+
+        // Spawn the SSE function on the local set.
+        // We wrap tx in Rc<RefCell<Option>> so we can explicitly close the channel
+        // after the SSE function returns. If tx were only inside the Lua closure,
+        // it would stay alive as long as Lua's GC keeps the closure, preventing the
+        // channel from closing and the response body from completing.
+        let lua_clone = lua.clone();
+        tokio::task::spawn_local(async move {
+            let tx_holder: Rc<RefCell<Option<tokio::sync::mpsc::Sender<Bytes>>>> =
+                Rc::new(RefCell::new(Some(tx)));
+            let tx_for_fn = tx_holder.clone();
+
+            let send_fn = match lua_clone.create_function(move |_lua, event_table: Table| {
+                let binding = tx_for_fn.borrow();
+                if let Some(ref tx) = *binding {
+                    let formatted = format_sse_event(&event_table)?;
+                    if tx.try_send(Bytes::from(formatted)).is_err() {
+                        return Err(mlua::Error::runtime("SSE stream closed"));
+                    }
+                }
+                Ok(())
+            }) {
+                Ok(f) => f,
+                Err(e) => {
+                    error!("http.serve SSE: failed to create send callback: {e}");
+                    return;
+                }
+            };
+
+            if let Err(e) = sse_fn.call::<()>(send_fn) {
+                if !e.to_string().contains("SSE stream closed") {
+                    error!("http.serve SSE: handler error: {e}");
+                }
+            }
+
+            // Explicitly close the channel so the response body completes
+            tx_holder.borrow_mut().take();
+        });
+
+        return Ok(response);
+    }
 
     let mut builder =
         Response::builder().status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
@@ -463,5 +594,7 @@ fn lua_response_to_http(resp_table: &Table) -> Result<Response<Full<Bytes>>, hyp
         Bytes::new()
     };
 
-    Ok(builder.body(Full::new(body_bytes)).unwrap())
+    Ok(builder
+        .body(Either::Left(Full::new(body_bytes)))
+        .unwrap())
 }

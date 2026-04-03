@@ -272,6 +272,7 @@ yaml, assert, log, env, sleep, time, base64).
 | `http.serve(port, routes)`               | Start HTTP server (blocking)               |
 | `opts.headers = {["X-Key"] = "value"}`   | Custom headers                             |
 | `routes = {GET = {["/path"] = handler}}` | Route table for server                     |
+| `return {sse = function(send) ... end}`  | SSE streaming response (server)            |
 
 ### Serialization
 
@@ -496,6 +497,39 @@ http.serve(8080, {
   }
 })
 ```
+
+### Server-Sent Events (SSE)
+
+```lua
+#!/usr/bin/assay
+-- Stream events to clients in real-time
+http.serve(8080, {
+  GET = {
+    ["/events"] = function(req)
+      return {
+        status = 200,
+        sse = function(send)
+          send({ data = "connected" })
+          for i = 1, 5 do
+            sleep(1)
+            send({
+              event = "update",
+              data = json.encode({ count = i }),
+              id = tostring(i)
+            })
+          end
+          send({ event = "done", data = "stream complete" })
+        end
+      }
+    end
+  }
+})
+```
+
+The `send` callback accepts a table with optional fields: `event`, `data`, `id`, `retry`.
+Headers `Content-Type: text/event-stream`, `Cache-Control: no-cache`, and
+`Connection: keep-alive` are set automatically. The stream closes when the
+function returns.
 
 ### Prometheus Verification
 

@@ -202,3 +202,41 @@ async fn test_http_serve_request_headers() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn test_http_serve_sse() {
+    run_lua_local(
+        r#"
+        local server = async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/events"] = function(req)
+                        return {
+                            status = 200,
+                            sse = function(send)
+                                send({ data = "hello" })
+                                send({ event = "update", data = "world" })
+                                send({ event = "done", data = "bye", id = "3" })
+                            end
+                        }
+                    end,
+                }
+            })
+        end)
+        sleep(0.2)
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/events")
+        assert.eq(resp.status, 200)
+        assert.contains(resp.headers["content-type"], "text/event-stream")
+        -- Verify SSE events are present in order
+        assert.contains(resp.body, "data: hello")
+        assert.contains(resp.body, "event: update")
+        assert.contains(resp.body, "data: world")
+        assert.contains(resp.body, "event: done")
+        assert.contains(resp.body, "data: bye")
+        assert.contains(resp.body, "id: 3")
+    "#,
+    )
+    .await
+    .unwrap();
+}
