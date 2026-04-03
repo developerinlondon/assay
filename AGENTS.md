@@ -99,6 +99,34 @@ Available in all `.lua` scripts — no `require` needed:
 
 HTTP responses: `{status, body, headers}`. Options: `{headers = {["X-Key"] = "val"}}`.
 
+### `http.serve` Response Shapes
+
+Route handlers return a table. Three shapes are supported:
+
+```lua
+-- Body response (default Content-Type: text/plain)
+return { status = 200, body = "hello" }
+
+-- JSON response (default Content-Type: application/json)
+return { status = 200, json = { ok = true } }
+
+-- SSE streaming response (default Content-Type: text/event-stream)
+return {
+  status = 200,
+  sse = function(send)
+    send({ data = "connected" })
+    sleep(1)  -- async builtins work inside SSE handlers
+    send({ event = "update", data = json.encode({ count = 1 }), id = "1" })
+    -- stream closes when function returns
+  end
+}
+```
+
+Custom headers override defaults: `headers = { ["content-type"] = "text/html" }`.
+
+SSE `send()` accepts: `event` (string), `data` (string), `id` (string), `retry` (integer).
+`event` and `id` must not contain newlines. `data` handles multi-line automatically.
+
 ## Stdlib Modules
 
 23 embedded Lua modules loaded via `require("assay.<name>")`:
@@ -289,7 +317,7 @@ assay/
 │       ├── async_bridge.rs   # Async Lua execution, shebang stripping
 │       └── builtins/
 │           ├── mod.rs        # register_all() — wires builtins into Lua globals
-│           ├── http.rs       # http.{get,post,put,patch,delete,serve}
+│           ├── http.rs       # http.{get,post,put,patch,delete,serve} + SSE streaming
 │           ├── json.rs       # json.{parse,encode}
 │           ├── serialization.rs  # yaml + toml parse/encode
 │           ├── core.rs       # env, sleep, time, fs, base64, regex, log, async
