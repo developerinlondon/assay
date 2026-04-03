@@ -61,6 +61,27 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
       </tbody>
     </table>
 
+    <h4>SSE Streaming Example</h4>
+    <pre><code>http.serve(8080, {
+  GET = {
+    ["/events"] = function(req)
+      return {
+        sse = function(send)
+          send({ data = "connected" })
+          sleep(1)
+          send({ event = "update", data = json.encode({count = 1}), id = "1" })
+          -- stream closes when function returns
+        end
+      }
+    end
+  }
+})</code></pre>
+    <p>
+      The <code>send</code> callback accepts <code>event</code>, <code>data</code>, <code>id</code>,
+      and <code>retry</code> fields. SSE headers (<code>text/event-stream</code>, <code>no-cache</code>,
+      <code>keep-alive</code>) are set automatically.
+    </p>
+
     <!-- Serialization -->
     <h3>Serialization</h3>
     <table>
