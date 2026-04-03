@@ -545,12 +545,12 @@ fn lua_response_to_http(
             let send_fn = match lua_clone.create_async_function(move |_lua, event_table: Table| {
                 let tx_ref = tx_for_fn.clone();
                 async move {
-                    let binding = tx_ref.borrow();
-                    if let Some(ref tx) = *binding {
-                        let formatted = format_sse_event(&event_table)?;
-                        if tx.send(Bytes::from(formatted)).await.is_err() {
-                            return Err(mlua::Error::runtime("SSE stream closed"));
-                        }
+                    let formatted = format_sse_event(&event_table)?;
+                    let tx_clone = tx_ref.borrow().clone();
+                    if let Some(tx) = tx_clone
+                        && tx.send(Bytes::from(formatted)).await.is_err()
+                    {
+                        return Err(mlua::Error::runtime("SSE stream closed"));
                     }
                     Ok(())
                 }
