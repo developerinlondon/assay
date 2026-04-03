@@ -202,3 +202,76 @@ async fn test_http_serve_request_headers() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn test_http_serve_sse() {
+    run_lua_local(
+        r#"
+        local server = async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/events"] = function(req)
+                        return {
+                            status = 200,
+                            sse = function(send)
+                                send({ data = "hello" })
+                                send({ event = "update", data = "world" })
+                                send({ event = "done", data = "bye", id = "3" })
+                            end
+                        }
+                    end,
+                }
+            })
+        end)
+        sleep(0.2)
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/events")
+        assert.eq(resp.status, 200)
+        assert.contains(resp.headers["content-type"], "text/event-stream")
+        -- Verify SSE events are present in order
+        local hello_idx = string.find(resp.body, "data: hello", 1, true)
+        assert.ne(hello_idx, nil)
+        local update_idx = string.find(resp.body, "event: update", hello_idx + 1, true)
+        assert.ne(update_idx, nil)
+        local world_idx = string.find(resp.body, "data: world", update_idx + 1, true)
+        assert.ne(world_idx, nil)
+        local done_idx = string.find(resp.body, "event: done", world_idx + 1, true)
+        assert.ne(done_idx, nil)
+        local bye_idx = string.find(resp.body, "data: bye", done_idx + 1, true)
+        assert.ne(bye_idx, nil)
+        local id_idx = string.find(resp.body, "id: 3", bye_idx + 1, true)
+        assert.ne(id_idx, nil)
+    "#,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_http_serve_custom_content_type() {
+    run_lua_local(
+        r#"
+        local server = async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/html"] = function(req)
+                        return {
+                            status = 200,
+                            body = "<h1>ok</h1>",
+                            headers = { ["content-type"] = "text/html" }
+                        }
+                    end,
+                }
+            })
+        end)
+        sleep(0.2)
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/html")
+        assert.eq(resp.status, 200)
+        assert.eq(resp.headers["content-type"], "text/html")
+        assert.eq(resp.body, "<h1>ok</h1>")
+    "#,
+    )
+    .await
+    .unwrap();
+}

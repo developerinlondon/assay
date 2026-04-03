@@ -13,7 +13,7 @@
 - [GitHub](https://github.com/developerinlondon/assay): Source code and issues
 
 ## Built-in Globals (no require needed)
-- [http](https://assay.rs/modules.html#http): HTTP client and server — http.get/post/put/patch/delete/serve
+- [http](https://assay.rs/modules.html#http): HTTP client, server, SSE streaming — http.get/post/put/patch/delete/serve
 - [json](https://assay.rs/modules.html#json): JSON parse and encode
 - [yaml](https://assay.rs/modules.html#yaml): YAML parse and encode
 - [toml](https://assay.rs/modules.html#toml): TOML parse and encode
@@ -25,7 +25,7 @@
 - [ws](https://assay.rs/modules.html#ws): WebSocket client — ws.connect/send/recv/close
 - [template](https://assay.rs/modules.html#template): Jinja2-compatible template rendering
 - [async](https://assay.rs/modules.html#async): Async task spawn and await
-- [assert](https://assay.rs/modules.html#assert): Assertions — assert.eq/gt/lt/contains/not_nil/matches
+- [assert](https://assay.rs/modules.html#assert): Assertions — assert.eq/ne/gt/lt/contains/not_nil/matches
 - [log](https://assay.rs/modules.html#log): Logging — log.info/warn/error
 - [env](https://assay.rs/modules.html#env): Environment variables — env.get
 - [sleep](https://assay.rs/modules.html#sleep): Sleep for N seconds

@@ -51,7 +51,7 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
         <tr>
           <td><code>http</code></td>
           <td><code>http.get/post/put/patch/delete/serve</code></td>
-          <td>HTTP client and server</td>
+          <td>HTTP client, server, and SSE streaming</td>
         </tr>
         <tr>
           <td><code>ws</code></td>
@@ -60,6 +60,27 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
         </tr>
       </tbody>
     </table>
+
+    <h4>SSE Streaming Example</h4>
+    <pre><code>http.serve(8080, {
+  GET = {
+    ["/events"] = function(req)
+      return {
+        sse = function(send)
+          send({ data = "connected" })
+          sleep(1)
+          send({ event = "update", data = json.encode({count = 1}), id = "1" })
+          -- stream closes when function returns
+        end
+      }
+    end
+  }
+})</code></pre>
+    <p>
+      The <code>send</code> callback accepts <code>event</code>, <code>data</code>, <code>id</code>,
+      and <code>retry</code> fields. SSE headers (<code>text/event-stream</code>, <code>no-cache</code>,
+      <code>keep-alive</code>) are set automatically.
+    </p>
 
     <!-- Serialization -->
     <h3>Serialization</h3>
@@ -209,7 +230,7 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
       <tbody>
         <tr>
           <td><code>assert</code></td>
-          <td><code>assert.eq/gt/lt/contains/not_nil/matches</code></td>
+          <td><code>assert.eq/ne/gt/lt/contains/not_nil/matches</code></td>
           <td>Assertions</td>
         </tr>
         <tr>
