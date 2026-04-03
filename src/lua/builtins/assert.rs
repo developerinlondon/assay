@@ -22,6 +22,25 @@ pub fn register_assert(lua: &Lua) -> mlua::Result<()> {
     })?;
     assert_table.set("eq", eq_fn)?;
 
+    let ne_fn = lua.create_function(|lua, args: mlua::MultiValue| {
+        let mut args_iter = args.into_iter();
+        let a = args_iter.next().unwrap_or(Value::Nil);
+        let b = args_iter.next().unwrap_or(Value::Nil);
+        let msg = extract_string_arg(lua, args_iter.next());
+
+        if lua_values_equal(&a, &b) {
+            let detail = format!(
+                "assert.ne failed: {:?} == {:?}{}",
+                format_lua_value(&a),
+                format_lua_value(&b),
+                msg.map(|m| format!(" - {m}")).unwrap_or_default()
+            );
+            return Err(mlua::Error::runtime(detail));
+        }
+        Ok(())
+    })?;
+    assert_table.set("ne", ne_fn)?;
+
     let gt_fn = lua.create_function(|lua, args: mlua::MultiValue| {
         let mut args_iter = args.into_iter();
         let a = lua_value_to_f64(args_iter.next().unwrap_or(Value::Nil));
