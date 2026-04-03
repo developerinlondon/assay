@@ -428,23 +428,38 @@ fn lua_response_to_http(resp_table: &Table) -> Result<Response<Full<Bytes>>, hyp
     let mut builder =
         Response::builder().status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
 
-    if let Ok(Some(headers_table)) = resp_table.get::<Option<Table>>("headers") {
+    let has_content_type = if let Ok(Some(headers_table)) =
+        resp_table.get::<Option<Table>>("headers")
+    {
+        let mut found_ct = false;
         for (k, v) in headers_table.pairs::<String, String>().flatten() {
+            if k.eq_ignore_ascii_case("content-type") {
+                found_ct = true;
+            }
             builder = builder.header(k, v);
         }
-    }
+        found_ct
+    } else {
+        false
+    };
 
     let body_bytes = if let Ok(Some(json_table)) = resp_table.get::<Option<Table>>("json") {
         let json_val =
             lua_value_to_json(&Value::Table(json_table)).unwrap_or(serde_json::Value::Null);
         let serialized = serde_json::to_string(&json_val).unwrap_or_else(|_| "null".to_string());
-        builder = builder.header("content-type", "application/json");
+        if !has_content_type {
+            builder = builder.header("content-type", "application/json");
+        }
         Bytes::from(serialized)
     } else if let Ok(Some(body_str)) = resp_table.get::<Option<String>>("body") {
-        builder = builder.header("content-type", "text/plain");
+        if !has_content_type {
+            builder = builder.header("content-type", "text/plain");
+        }
         Bytes::from(body_str)
     } else {
-        builder = builder.header("content-type", "text/plain");
+        if !has_content_type {
+            builder = builder.header("content-type", "text/plain");
+        }
         Bytes::new()
     };
 
