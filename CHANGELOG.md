@@ -3,6 +3,23 @@
 All notable changes to Assay are documented here.
 
 
+## [0.5.6] - 2026-04-03
+
+### Added
+
+- **SSE streaming** for `http.serve` via `{ sse = function(send) ... end }` return shape.
+  SSE handler runs async so `sleep()` and other async builtins work inside the producer.
+  `send` callback uses async channel send with proper backpressure handling.
+  Custom headers take precedence over SSE defaults (Content-Type, Cache-Control, Connection).
+- **assert.ne(a, b, msg?)** — inequality assertion for the test framework.
+
+### Fixed
+
+- **Content-Type precedence**: User-provided `Content-Type` header no longer overwritten
+  by defaults (`text/plain` / `application/json`) in `http.serve` responses.
+- **SSE newline validation**: `event` and `id` fields reject values containing newlines
+  or carriage returns to prevent SSE field injection.
+
 ## [0.5.5] - 2026-03-13
 
 ### Added
