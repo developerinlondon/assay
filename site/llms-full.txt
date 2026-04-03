@@ -139,6 +139,7 @@ Async task management. No `require()` needed.
 Assertion utilities. No `require()` needed. All raise `error()` on failure.
 
 - `assert.eq(a, b, msg?)` — Assert `a == b`
+- `assert.ne(a, b, msg?)` — Assert `a ~= b`
 - `assert.gt(a, b, msg?)` — Assert `a > b`
 - `assert.lt(a, b, msg?)` — Assert `a < b`
 - `assert.contains(str, sub, msg?)` — Assert string contains substring

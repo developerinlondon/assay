@@ -357,6 +357,7 @@ Supported URLs:
 | Function                          | Description         |
 | --------------------------------- | ------------------- |
 | `assert.eq(a, b, msg?)`           | Assert equal        |
+| `assert.ne(a, b, msg?)`           | Assert not equal    |
 | `assert.gt(a, b, msg?)`           | Assert greater than |
 | `assert.lt(a, b, msg?)`           | Assert less than    |
 | `assert.contains(str, sub, msg?)` | Assert substring    |
