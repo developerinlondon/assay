@@ -371,6 +371,11 @@ fn format_sse_event(event_table: &Table) -> mlua::Result<String> {
     let mut out = String::new();
 
     if let Ok(Some(event)) = event_table.get::<Option<String>>("event") {
+        if event.contains('\n') || event.contains('\r') {
+            return Err(mlua::Error::runtime(
+                "SSE event name must not contain newlines",
+            ));
+        }
         out.push_str("event: ");
         out.push_str(&event);
         out.push('\n');
@@ -384,6 +389,9 @@ fn format_sse_event(event_table: &Table) -> mlua::Result<String> {
         }
     }
     if let Ok(Some(id)) = event_table.get::<Option<String>>("id") {
+        if id.contains('\n') || id.contains('\r') {
+            return Err(mlua::Error::runtime("SSE id must not contain newlines"));
+        }
         out.push_str("id: ");
         out.push_str(&id);
         out.push('\n');
@@ -546,10 +554,11 @@ fn lua_response_to_http(
                 let tx_ref = tx_for_fn.clone();
                 async move {
                     let formatted = format_sse_event(&event_table)?;
-                    let tx_clone = tx_ref.borrow().clone();
-                    if let Some(tx) = tx_clone
-                        && tx.send(Bytes::from(formatted)).await.is_err()
-                    {
+                    let tx = tx_ref
+                        .borrow()
+                        .clone()
+                        .ok_or_else(|| mlua::Error::runtime("SSE stream closed"))?;
+                    if tx.send(Bytes::from(formatted)).await.is_err() {
                         return Err(mlua::Error::runtime("SSE stream closed"));
                     }
                     Ok(())
