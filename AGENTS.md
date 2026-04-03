@@ -89,7 +89,7 @@ Available in all `.lua` scripts — no `require` needed:
 | WebSocket | `ws.connect(url)`, `ws.send(conn, msg)`, `ws.recv(conn)`, `ws.close(conn)` |
 | Templates | `template.render(path, vars)`, `template.render_string(tmpl, vars)` |
 | Async | `async.spawn(fn)`, `async.spawn_interval(fn, ms)`, `handle:await()`, `handle:cancel()` |
-| Assert | `assert.eq(a, b, msg?)`, `assert.gt(a, b, msg?)`, `assert.lt(a, b, msg?)`, `assert.contains(str, sub, msg?)`, `assert.not_nil(val, msg?)`, `assert.matches(str, pat, msg?)` |
+| Assert | `assert.eq(a, b, msg?)`, `assert.ne(a, b, msg?)`, `assert.gt(a, b, msg?)`, `assert.lt(a, b, msg?)`, `assert.contains(str, sub, msg?)`, `assert.not_nil(val, msg?)`, `assert.matches(str, pat, msg?)` |
 | Logging | `log.info(msg)`, `log.warn(msg)`, `log.error(msg)` |
 | Utilities | `env.get(key)`, `env.set(key, value)`, `env.list()`, `sleep(secs)`, `time()` |
 | Shell | `shell.exec(cmd, opts?)` — execute commands with timeout, working dir, env |
@@ -293,7 +293,7 @@ assay/
 │           ├── json.rs       # json.{parse,encode}
 │           ├── serialization.rs  # yaml + toml parse/encode
 │           ├── core.rs       # env, sleep, time, fs, base64, regex, log, async
-│           ├── assert.rs     # assert.{eq,gt,lt,contains,not_nil,matches}
+│           ├── assert.rs     # assert.{eq,ne,gt,lt,contains,not_nil,matches}
 │           ├── crypto.rs     # crypto.{jwt_sign,hash,hmac,random}
 │           ├── db.rs         # db.{connect,query,execute,close}
 │           ├── ws.rs         # ws.{connect,send,recv,close}
@@ -319,6 +319,28 @@ assay/
 | Not Luau | Rejected | Lua 5.1 base, Roblox ecosystem, no int64 |
 | Not Rhai | Rejected | 6x slower, no async, no coroutines |
 | Not Wasmtime | Rejected | Requires compile step, bad for script iteration |
+
+## Release Process
+
+After merging a feature PR, always create a version bump PR before moving on:
+
+1. **Bump version** in `Cargo.toml` (triggers `Cargo.lock` update on next build)
+2. **Update CHANGELOG.md** — add new version section at the top with date and changes
+3. **Update AGENTS.md** — if new builtins/functions were added, update the tables
+4. **Update all docs** — README.md, SKILL.md, site/modules.html, site/llms.txt, site/llms-full.txt
+5. **Run checks**: `cargo clippy --tests -- -D warnings && cargo test`
+6. **Create a new branch** (e.g., `chore/bump-0.5.6`), commit, push, open PR
+7. **After merge**: tag the release (`git tag v0.5.6 && git push origin v0.5.6`)
+
+Files to update per release:
+- `Cargo.toml` — version field
+- `CHANGELOG.md` — new version entry
+- `AGENTS.md` — if API surface changed
+- `README.md` — if API surface changed
+- `SKILL.md` — if API surface changed
+- `site/modules.html` — if API surface changed
+- `site/llms.txt` — if API surface changed
+- `site/llms-full.txt` — if API surface changed
 
 ## Commands
 
