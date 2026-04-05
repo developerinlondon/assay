@@ -1,0 +1,17 @@
+{
+  "name": "@assay/openclaw-extension",
+  "version": "0.6.0",
+  "description": "Assay Lua workflow runtime for OpenClaw — run infrastructure automation, AI agent workflows, and DevOps tasks",
+  "license": "MIT",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "devDependencies": {
+    "openclaw": "*"
+  }
+}

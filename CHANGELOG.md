@@ -2,31 +2,66 @@
 
 All notable changes to Assay are documented here.
 
+## [0.6.0] - 2026-04-05
+
+### Added
+
+- **6 new stdlib modules** (23 -> 29 total):
+  - **assay.openclaw** — OpenClaw AI agent platform integration. Invoke tools, send messages,
+    manage persistent state with JSON files, diff detection, approval gates, cron jobs, sub-agent
+    spawning, and LLM task execution. Auto-discovers `$OPENCLAW_URL`/`$CLAWD_URL`.
+  - **assay.github** — GitHub REST API client (no `gh` CLI dependency). Pull requests (view, list,
+    reviews, merge), issues (list, get, create, comment), repositories, Actions workflow runs, and
+    GraphQL queries. Bearer token auth via `$GITHUB_TOKEN`.
+  - **assay.gmail** — Gmail REST API client with OAuth2 token auto-refresh. Search, read, reply,
+    send emails, and list labels. Uses Google OAuth2 credentials and token files.
+  - **assay.gcal** — Google Calendar REST API client with OAuth2 token auto-refresh. Events CRUD
+    (list, get, create, update, delete) and calendar list. Same auth pattern as gmail.
+  - **assay.oauth2** — Google OAuth2 token management. File-based credentials loading, automatic
+    access token refresh via refresh_token grant, token persistence, and auth header generation.
+    Used internally by gmail and gcal modules. Default paths: `~/.config/gog/credentials.json`
+    and `~/.config/gog/token.json`.
+  - **assay.email_triage** — Email classification and triage. Deterministic rule-based
+    categorization of emails into needs_reply, needs_action, and fyi buckets. Optional
+    LLM-assisted triage via OpenClaw for smarter classification. Subject and sender pattern
+    matching for automated mail detection.
+- **Tool mode**: `assay run --mode tool` for OpenClaw integration. Runs Lua scripts as
+  deterministic tools invoked by AI agents, with structured JSON output.
+- **Resume mechanism**: `assay resume --token <token> --approve yes|no` for resuming paused
+  workflows after human approval gates.
+- **OpenClaw extension**: `@assay/openclaw-extension` npm package. Registers Assay as an OpenClaw
+  agent tool with configurable script directory, timeout, output size limits, and approval-based
+  resume flow. Install via `openclaw plugins install @assay/openclaw-extension`.
+
+### Architecture
+
+- **Shell-free design**: All 6 new modules use native HTTP APIs exclusively. No shell commands,
+  no CLI dependencies (no `gh`, no `gcloud`, no `oauth2l`). Pure Lua over Assay HTTP builtins.
 
 ## [0.5.6] - 2026-04-03
 
 ### Added
 
-- **SSE streaming** for `http.serve` via `{ sse = function(send) ... end }` return shape.
-  SSE handler runs async so `sleep()` and other async builtins work inside the producer.
-  `send` callback uses async channel send with proper backpressure handling.
-  Custom headers take precedence over SSE defaults (Content-Type, Cache-Control, Connection).
+- **SSE streaming** for `http.serve` via `{ sse = function(send) ... end }` return shape. SSE
+  handler runs async so `sleep()` and other async builtins work inside the producer. `send` callback
+  uses async channel send with proper backpressure handling. Custom headers take precedence over SSE
+  defaults (Content-Type, Cache-Control, Connection).
 - **assert.ne(a, b, msg?)** — inequality assertion for the test framework.
 
 ### Fixed
 
-- **Content-Type precedence**: User-provided `Content-Type` header no longer overwritten
-  by defaults (`text/plain` / `application/json`) in `http.serve` responses.
-- **SSE newline validation**: `event` and `id` fields reject values containing newlines
-  or carriage returns to prevent SSE field injection.
+- **Content-Type precedence**: User-provided `Content-Type` header no longer overwritten by defaults
+  (`text/plain` / `application/json`) in `http.serve` responses.
+- **SSE newline validation**: `event` and `id` fields reject values containing newlines or carriage
+  returns to prevent SSE field injection.
 
 ## [0.5.5] - 2026-03-13
 
 ### Added
 
 - **follow_redirects** option for YAML HTTP checks. Set `follow_redirects: false` to disable
-  automatic redirect following, allowing verification of auth-protected endpoints that return
-  302 redirects to identity providers. Defaults to `true` for backward compatibility.
+  automatic redirect following, allowing verification of auth-protected endpoints that return 302
+  redirects to identity providers. Defaults to `true` for backward compatibility.
 - **follow_redirects** option for Lua `http.client()` builder. Create clients with
   `http.client({ follow_redirects = false })` for the same no-redirect behavior in scripts.
 
@@ -34,10 +69,10 @@ All notable changes to Assay are documented here.
 
 ### Fixed
 
-- **unleash.ensure_token**: Send `tokenName` instead of `username` in create token API payload.
-  The Unleash API expects `tokenName` — sending `username` caused HTTP 400 (BadDataError).
-  Function now accepts both `opts.tokenName` and `opts.username` for backward compatibility.
-  Existing token matching also checks `t.tokenName` with fallback to `t.username`.
+- **unleash.ensure_token**: Send `tokenName` instead of `username` in create token API payload. The
+  Unleash API expects `tokenName` — sending `username` caused HTTP 400 (BadDataError). Function now
+  accepts both `opts.tokenName` and `opts.username` for backward compatibility. Existing token
+  matching also checks `t.tokenName` with fallback to `t.username`.
 
 ## [0.5.3] - 2026-03-12
 
@@ -72,8 +107,8 @@ All notable changes to Assay are documented here.
 
 ### Added
 
-- **Website**: Static site at assay.rs on Cloudflare Pages with homepage, module reference,
-  AI agent integration guides, and MCP comparison page mapping 42 servers
+- **Website**: Static site at assay.rs on Cloudflare Pages with homepage, module reference, AI agent
+  integration guides, and MCP comparison page mapping 42 servers
 - **llms.txt**: LLM agent context traversal files (`llms.txt` and `llms-full.txt`)
 - **Enriched search keywords**: All 23 stdlib modules and builtins enriched with `@keywords`
   metadata for improved discovery
@@ -105,20 +140,19 @@ All notable changes to Assay are documented here.
 
 ### Added
 
-- **Unleash stdlib module** (`assay.unleash`): Feature flag management client for Unleash.
-  Projects (CRUD, list), environments (enable/disable per project), features (CRUD, archive,
-  toggle on/off), strategies (list, add), API tokens (CRUD). Idempotent helpers:
-  `ensure_project`, `ensure_environment`, `ensure_token`.
-
+- **Unleash stdlib module** (`assay.unleash`): Feature flag management client for Unleash. Projects
+  (CRUD, list), environments (enable/disable per project), features (CRUD, archive, toggle on/off),
+  strategies (list, add), API tokens (CRUD). Idempotent helpers: `ensure_project`,
+  `ensure_environment`, `ensure_token`.
 
 ## [0.4.3] - 2026-02-13
 
 ### Added
 
 - **crypto.hmac**: HMAC builtin supporting all 8 hash algorithms (SHA-224/256/384/512,
-  SHA3-224/256/384/512). Binary-safe key/data via `mlua::String`. Supports `raw` output mode for
-  key chaining (required by AWS Sig V4). Manual RFC 2104 implementation using existing sha2/sha3
-  crates — zero new dependencies.
+  SHA3-224/256/384/512). Binary-safe key/data via `mlua::String`. Supports `raw` output mode for key
+  chaining (required by AWS Sig V4). Manual RFC 2104 implementation using existing sha2/sha3 crates
+  — zero new dependencies.
 - **S3 stdlib module** (`assay.s3`): Pure Lua S3 client with AWS Signature V4 request signing. Works
   with any S3-compatible endpoint (AWS, iDrive e2, Cloudflare R2, MinIO). Operations: create/delete
   bucket, list buckets, put/get/delete/list/head/copy objects, bucket_exists. Path-style URLs

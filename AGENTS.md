@@ -16,12 +16,14 @@ Key skills that apply to this project:
 
 ## What is Assay
 
-General-purpose enhanced Lua runtime. Single ~9 MB static binary with batteries
-included: HTTP client/server, JSON/YAML/TOML, crypto, database, WebSocket,
-filesystem, shell execution, process management, async, and 23 embedded stdlib
-modules for infrastructure services (Kubernetes, Prometheus, Vault, ArgoCD, etc.).
+General-purpose enhanced Lua runtime. Single ~9 MB static binary with batteries included: HTTP
+client/server, JSON/YAML/TOML, crypto, database, WebSocket, filesystem, shell execution, process
+management, async, and 29 embedded stdlib modules for infrastructure services (Kubernetes,
+Prometheus, Vault, ArgoCD, etc.) and AI agent integrations (OpenClaw, GitHub, Gmail, Google
+Calendar).
 
 Use cases:
+
 - **Standalone scripting** — system automation, CI/CD tasks, file processing
 - **Embedded runtime** — other Rust services embed assay as a library (`pub mod lua`)
 - **Kubernetes Jobs** — replaces 50–250 MB Python/Node/kubectl containers (~6 MB image)
@@ -77,25 +79,25 @@ spec:
 
 Available in all `.lua` scripts — no `require` needed:
 
-| Category | Functions |
-|----------|-----------|
-| HTTP | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)` |
-| JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str)`, `yaml.encode(tbl)`, `toml.parse(str)`, `toml.encode(tbl)` |
-| Filesystem | `fs.read(path)`, `fs.write(path, str)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)`, `fs.copy(src, dst)`, `fs.rename(src, dst)`, `fs.glob(pattern)`, `fs.tempdir()`, `fs.chmod(path, mode)`, `fs.readdir(path, opts?)` |
-| Crypto | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)` |
-| Base64 | `base64.encode(str)`, `base64.decode(str)` |
-| Regex | `regex.match(pat, str)`, `regex.find(pat, str)`, `regex.find_all(pat, str)`, `regex.replace(pat, str, repl)` |
-| Database | `db.connect(url)`, `db.query(conn, sql, params?)`, `db.execute(conn, sql, params?)`, `db.close(conn)` |
-| WebSocket | `ws.connect(url)`, `ws.send(conn, msg)`, `ws.recv(conn)`, `ws.close(conn)` |
-| Templates | `template.render(path, vars)`, `template.render_string(tmpl, vars)` |
-| Async | `async.spawn(fn)`, `async.spawn_interval(fn, ms)`, `handle:await()`, `handle:cancel()` |
-| Assert | `assert.eq(a, b, msg?)`, `assert.ne(a, b, msg?)`, `assert.gt(a, b, msg?)`, `assert.lt(a, b, msg?)`, `assert.contains(str, sub, msg?)`, `assert.not_nil(val, msg?)`, `assert.matches(str, pat, msg?)` |
-| Logging | `log.info(msg)`, `log.warn(msg)`, `log.error(msg)` |
-| Utilities | `env.get(key)`, `env.set(key, value)`, `env.list()`, `sleep(secs)`, `time()` |
-| Shell | `shell.exec(cmd, opts?)` — execute commands with timeout, working dir, env |
-| Process | `process.list()`, `process.is_running(name)`, `process.kill(pid, signal?)`, `process.wait_idle(names, timeout, interval)` |
-| Disk | `disk.usage(path)` — returns `{total, used, available, percent}`, `disk.sweep(dir, age_secs)`, `disk.dir_size(path)` |
-| OS | `os.hostname()`, `os.arch()`, `os.platform()` |
+| Category       | Functions                                                                                                                                                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP           | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)`                                                                                          |
+| JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str)`, `yaml.encode(tbl)`, `toml.parse(str)`, `toml.encode(tbl)`                                                                                                                                                 |
+| Filesystem     | `fs.read(path)`, `fs.write(path, str)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)`, `fs.copy(src, dst)`, `fs.rename(src, dst)`, `fs.glob(pattern)`, `fs.tempdir()`, `fs.chmod(path, mode)`, `fs.readdir(path, opts?)` |
+| Crypto         | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)`                                                                                                                                     |
+| Base64         | `base64.encode(str)`, `base64.decode(str)`                                                                                                                                                                                                                          |
+| Regex          | `regex.match(pat, str)`, `regex.find(pat, str)`, `regex.find_all(pat, str)`, `regex.replace(pat, str, repl)`                                                                                                                                                        |
+| Database       | `db.connect(url)`, `db.query(conn, sql, params?)`, `db.execute(conn, sql, params?)`, `db.close(conn)`                                                                                                                                                               |
+| WebSocket      | `ws.connect(url)`, `ws.send(conn, msg)`, `ws.recv(conn)`, `ws.close(conn)`                                                                                                                                                                                          |
+| Templates      | `template.render(path, vars)`, `template.render_string(tmpl, vars)`                                                                                                                                                                                                 |
+| Async          | `async.spawn(fn)`, `async.spawn_interval(fn, ms)`, `handle:await()`, `handle:cancel()`                                                                                                                                                                              |
+| Assert         | `assert.eq(a, b, msg?)`, `assert.ne(a, b, msg?)`, `assert.gt(a, b, msg?)`, `assert.lt(a, b, msg?)`, `assert.contains(str, sub, msg?)`, `assert.not_nil(val, msg?)`, `assert.matches(str, pat, msg?)`                                                                |
+| Logging        | `log.info(msg)`, `log.warn(msg)`, `log.error(msg)`                                                                                                                                                                                                                  |
+| Utilities      | `env.get(key)`, `env.set(key, value)`, `env.list()`, `sleep(secs)`, `time()`                                                                                                                                                                                        |
+| Shell          | `shell.exec(cmd, opts?)` — execute commands with timeout, working dir, env                                                                                                                                                                                          |
+| Process        | `process.list()`, `process.is_running(name)`, `process.kill(pid, signal?)`, `process.wait_idle(names, timeout, interval)`                                                                                                                                           |
+| Disk           | `disk.usage(path)` — returns `{total, used, available, percent}`, `disk.sweep(dir, age_secs)`, `disk.dir_size(path)`                                                                                                                                                |
+| OS             | `os.hostname()`, `os.arch()`, `os.platform()`                                                                                                                                                                                                                       |
 
 HTTP responses: `{status, body, headers}`. Options: `{headers = {["X-Key"] = "val"}}`.
 
@@ -124,38 +126,44 @@ return {
 
 Custom headers override defaults: `headers = { ["content-type"] = "text/html" }`.
 
-SSE `send()` accepts: `event` (string), `data` (string), `id` (string), `retry` (integer).
-`event` and `id` must not contain newlines. `data` handles multi-line automatically.
+SSE `send()` accepts: `event` (string), `data` (string), `id` (string), `retry` (integer). `event`
+and `id` must not contain newlines. `data` handles multi-line automatically.
 
 ## Stdlib Modules
 
-23 embedded Lua modules loaded via `require("assay.<name>")`:
+29 embedded Lua modules loaded via `require("assay.<name>")`:
 
-| Module | Description |
-|--------|-------------|
-| `assay.prometheus` | Query metrics, alerts, targets, rules, label values, series |
-| `assay.alertmanager` | Manage alerts, silences, receivers, config |
-| `assay.loki` | Push logs, query, labels, series |
-| `assay.grafana` | Health, dashboards, datasources, annotations |
-| `assay.k8s` | 30+ resource types, CRDs, readiness checks |
-| `assay.argocd` | Apps, sync, health, projects, repositories |
-| `assay.kargo` | Stages, freight, promotions, verification |
-| `assay.flux` | GitRepositories, Kustomizations, HelmReleases |
-| `assay.traefik` | Routers, services, middlewares, entrypoints |
-| `assay.vault` | KV secrets, policies, auth, transit, PKI |
-| `assay.openbao` | Alias for vault (API-compatible) |
-| `assay.certmanager` | Certificates, issuers, ACME challenges |
-| `assay.eso` | ExternalSecrets, SecretStores, ClusterSecretStores |
-| `assay.dex` | OIDC discovery, JWKS, health |
-| `assay.crossplane` | Providers, XRDs, compositions, managed resources |
-| `assay.velero` | Backups, restores, schedules, storage locations |
-| `assay.temporal` | Workflows, task queues, schedules |
-| `assay.harbor` | Projects, repositories, artifacts, vulnerability scanning |
-| `assay.healthcheck` | HTTP checks, JSON path, body matching, latency, multi-check |
-| `assay.s3` | S3-compatible storage (AWS, R2, MinIO) with Sig V4 |
-| `assay.postgres` | Postgres-specific helpers |
-| `assay.zitadel` | OIDC identity management with JWT machine auth |
-| `assay.unleash` | Feature flags: projects, environments, features, strategies, API tokens |
+| Module                | Description                                                                       |
+| --------------------- | --------------------------------------------------------------------------------- |
+| `assay.prometheus`    | Query metrics, alerts, targets, rules, label values, series                       |
+| `assay.alertmanager`  | Manage alerts, silences, receivers, config                                        |
+| `assay.loki`          | Push logs, query, labels, series                                                  |
+| `assay.grafana`       | Health, dashboards, datasources, annotations                                      |
+| `assay.k8s`           | 30+ resource types, CRDs, readiness checks                                        |
+| `assay.argocd`        | Apps, sync, health, projects, repositories                                        |
+| `assay.kargo`         | Stages, freight, promotions, verification                                         |
+| `assay.flux`          | GitRepositories, Kustomizations, HelmReleases                                     |
+| `assay.traefik`       | Routers, services, middlewares, entrypoints                                       |
+| `assay.vault`         | KV secrets, policies, auth, transit, PKI                                          |
+| `assay.openbao`       | Alias for vault (API-compatible)                                                  |
+| `assay.certmanager`   | Certificates, issuers, ACME challenges                                            |
+| `assay.eso`           | ExternalSecrets, SecretStores, ClusterSecretStores                                |
+| `assay.dex`           | OIDC discovery, JWKS, health                                                      |
+| `assay.crossplane`    | Providers, XRDs, compositions, managed resources                                  |
+| `assay.velero`        | Backups, restores, schedules, storage locations                                   |
+| `assay.temporal`      | Workflows, task queues, schedules                                                 |
+| `assay.harbor`        | Projects, repositories, artifacts, vulnerability scanning                         |
+| `assay.healthcheck`   | HTTP checks, JSON path, body matching, latency, multi-check                       |
+| `assay.s3`            | S3-compatible storage (AWS, R2, MinIO) with Sig V4                                |
+| `assay.postgres`      | Postgres-specific helpers                                                         |
+| `assay.zitadel`       | OIDC identity management with JWT machine auth                                    |
+| `assay.unleash`       | Feature flags: projects, environments, features, strategies, API tokens           |
+| `assay.openclaw`      | OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks        |
+| `assay.github`        | GitHub REST API — PRs, issues, actions, repos, GraphQL                            |
+| `assay.gmail`         | Gmail REST API with OAuth2 — search, read, reply, send, labels                    |
+| `assay.gcal`          | Google Calendar REST API with OAuth2 — events CRUD, calendar list                 |
+| `assay.oauth2`        | Google OAuth2 token management — file-based credentials, auto-refresh, persistence |
+| `assay.email_triage`  | Email classification — deterministic rules + optional LLM-assisted triage via OpenClaw |
 
 ### Client Pattern
 
@@ -173,7 +181,56 @@ assert.eq(h.database, "ok")
 3. Client methods use `c:method()` (colon = implicit self)
 4. Errors raised via `error()` — use `pcall()` to catch
 
-Auth varies by service: `{ token = "..." }`, `{ api_key = "..." }`, `{ username = "...", password = "..." }`.
+Auth varies by service: `{ token = "..." }`, `{ api_key = "..." }`,
+`{ username = "...", password = "..." }`.
+
+## Tool Mode (OpenClaw Integration)
+
+Assay v0.6.0 adds tool mode for integration with OpenClaw AI agents:
+
+```bash
+assay run --mode tool script.lua                    # Run as agent tool, structured JSON output
+assay resume --token <token> --approve yes|no       # Resume paused approval gate
+```
+
+Tool mode produces structured JSON output suitable for agent consumption. When a script hits an
+approval gate (via `openclaw.approve()`), execution pauses and returns a resume token. The agent or
+human can then approve or reject via `assay resume`.
+
+```
++-------------------------------------------------------+
+| OpenClaw Agent                                        |
+|   |                                                   |
+|   +--> assay run --mode tool deploy.lua               |
+|   |      |                                            |
+|   |      +--> approval gate -> pauses, returns token  |
+|   |                                                   |
+|   +--> human reviews                                  |
+|   |                                                   |
+|   +--> assay resume --token <t> --approve yes         |
+|          |                                            |
+|          +--> script resumes from gate                |
++-------------------------------------------------------+
+```
+
+### OpenClaw Extension
+
+The `@assay/openclaw-extension` npm package registers Assay as an OpenClaw agent tool:
+
+```bash
+openclaw plugins install @assay/openclaw-extension
+```
+
+Configuration in OpenClaw plugin config:
+
+| Key              | Default        | Description                              |
+| ---------------- | -------------- | ---------------------------------------- |
+| `binaryPath`     | PATH lookup    | Explicit path to the `assay` binary      |
+| `timeout`        | `20`           | Execution timeout in seconds             |
+| `maxOutputSize`  | `524288`       | Maximum stdout collected from Assay      |
+| `scriptsDir`     | workspace root | Root directory for Lua scripts           |
+
+See [openclaw-extension/README.md](openclaw-extension/README.md) for full details.
 
 ## Adding a New Stdlib Module
 
@@ -182,8 +239,8 @@ in `src/lua/mod.rs`.
 
 ### 1. Create `stdlib/<name>.lua`
 
-Follow the client pattern. Reference `grafana.lua` (simple, 110 lines) or `vault.lua` (comprehensive,
-330 lines):
+Follow the client pattern. Reference `grafana.lua` (simple, 110 lines) or `vault.lua`
+(comprehensive, 330 lines):
 
 ```lua
 local M = {}
@@ -341,12 +398,12 @@ assay/
 
 ## Design Decisions (FINAL)
 
-| Decision | Choice | Reason |
-|----------|--------|--------|
-| Language runtime | Lua 5.5 | ArgoCD compatible, 30yr ecosystem, native int64, perf irrelevant for I/O |
-| Not Luau | Rejected | Lua 5.1 base, Roblox ecosystem, no int64 |
-| Not Rhai | Rejected | 6x slower, no async, no coroutines |
-| Not Wasmtime | Rejected | Requires compile step, bad for script iteration |
+| Decision         | Choice   | Reason                                                                   |
+| ---------------- | -------- | ------------------------------------------------------------------------ |
+| Language runtime | Lua 5.5  | ArgoCD compatible, 30yr ecosystem, native int64, perf irrelevant for I/O |
+| Not Luau         | Rejected | Lua 5.1 base, Roblox ecosystem, no int64                                 |
+| Not Rhai         | Rejected | 6x slower, no async, no coroutines                                       |
+| Not Wasmtime     | Rejected | Requires compile step, bad for script iteration                          |
 
 ## Release Process
 
@@ -361,6 +418,7 @@ After merging a feature PR, always create a version bump PR before moving on:
 7. **After merge**: tag the release (`git tag v0.5.6 && git push origin v0.5.6`)
 
 Files to update per release:
+
 - `Cargo.toml` — version field
 - `CHANGELOG.md` — new version entry
 - `AGENTS.md` — if API surface changed
