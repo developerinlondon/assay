@@ -1,1 +1,7 @@
 /target
+/.cargo/
+/.env
+/.wrangler/
+/.claude/settings.local.json
+/.sisyphus/evidence/
+/.sisyphus/boulder.json
