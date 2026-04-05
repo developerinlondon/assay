@@ -211,7 +211,8 @@ async fn test_invalid_length() {
 
 #[tokio::test]
 async fn test_hmac_sha256_basic() {
-    let result: String = eval_lua(r#"return crypto.hmac("Jefe", "what do ya want for nothing?", "sha256")"#).await;
+    let result: String =
+        eval_lua(r#"return crypto.hmac("Jefe", "what do ya want for nothing?", "sha256")"#).await;
     assert_eq!(
         result,
         "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"

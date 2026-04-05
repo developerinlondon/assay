@@ -118,7 +118,10 @@ async fn test_fs_mkdir_and_remove() {
         fs.remove("{}")
         assert.eq(fs.exists("{}"), false)
         "#,
-        dir.display(), dir.display(), dir.display(), dir.display()
+        dir.display(),
+        dir.display(),
+        dir.display(),
+        dir.display()
     );
     run_lua(&script).await.unwrap();
     let _ = std::fs::remove_dir_all(&dir);
