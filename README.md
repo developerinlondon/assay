@@ -692,10 +692,15 @@ assay resume --token <token> --approve yes|no   # Resume after human approval
 
 ### OpenClaw Extension
 
-Install the `@assay/openclaw-extension` npm package to register Assay as an OpenClaw tool:
+Install the `@developerinlondon/assay-openclaw-extension` package (GitHub Packages) to register
+Assay as an OpenClaw tool:
 
 ```bash
-openclaw plugins install @assay/openclaw-extension
+# One-time: configure npm to use GitHub Packages for @developerinlondon scope
+echo "@developerinlondon:registry=https://npm.pkg.github.com" >> ~/.npmrc
+
+# Install the extension
+openclaw plugins install @developerinlondon/assay-openclaw-extension
 ```
 
 See [openclaw-extension/README.md](openclaw-extension/README.md) for full configuration details.

@@ -29,9 +29,10 @@ All notable changes to Assay are documented here.
   deterministic tools invoked by AI agents, with structured JSON output.
 - **Resume mechanism**: `assay resume --token <token> --approve yes|no` for resuming paused
   workflows after human approval gates.
-- **OpenClaw extension**: `@assay/openclaw-extension` npm package. Registers Assay as an OpenClaw
-  agent tool with configurable script directory, timeout, output size limits, and approval-based
-  resume flow. Install via `openclaw plugins install @assay/openclaw-extension`.
+- **OpenClaw extension**: `@developerinlondon/assay-openclaw-extension` package (GitHub Packages).
+  Registers Assay as an OpenClaw agent tool with configurable script directory, timeout, output
+  size limits, and approval-based resume flow.
+  Install via `openclaw plugins install @developerinlondon/assay-openclaw-extension`.
 
 ### Architecture
 

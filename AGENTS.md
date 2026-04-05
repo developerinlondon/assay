@@ -215,10 +215,15 @@ human can then approve or reject via `assay resume`.
 
 ### OpenClaw Extension
 
-The `@assay/openclaw-extension` npm package registers Assay as an OpenClaw agent tool:
+The `@developerinlondon/assay-openclaw-extension` package (GitHub Packages) registers Assay as an
+OpenClaw agent tool:
 
 ```bash
-openclaw plugins install @assay/openclaw-extension
+# One-time: configure npm to use GitHub Packages for @developerinlondon scope
+echo "@developerinlondon:registry=https://npm.pkg.github.com" >> ~/.npmrc
+
+# Install the extension
+openclaw plugins install @developerinlondon/assay-openclaw-extension
 ```
 
 Configuration in OpenClaw plugin config:
@@ -427,6 +432,14 @@ Files to update per release:
 - `site/modules.html` — if API surface changed
 - `site/llms.txt` — if API surface changed
 - `site/llms-full.txt` — if API surface changed
+- `openclaw-extension/package.json` — version field (auto-synced from git tag by CI, but keep
+  in sync manually for local development)
+
+The tag push triggers `.github/workflows/release.yml` which publishes:
+- GitHub Release (binaries + checksums)
+- crates.io (`assay-lua` crate)
+- Docker image (`ghcr.io/developerinlondon/assay`)
+- GitHub Packages npm (`@developerinlondon/assay-openclaw-extension`)
 
 ## Commands
 

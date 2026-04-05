@@ -2,12 +2,18 @@
 
 Adds the `assay` agent tool to OpenClaw so agents can run checked-in Assay Lua workflows with resumable approvals.
 
+Published to [GitHub Packages](https://github.com/developerinlondon/assay/pkgs/npm/assay-openclaw-extension).
+
 ## Installation
 
-Install from npm:
+Install from GitHub Packages:
 
 ```bash
-openclaw plugins install @assay/openclaw-extension
+# One-time: configure npm to use GitHub Packages for @developerinlondon scope
+echo "@developerinlondon:registry=https://npm.pkg.github.com" >> ~/.npmrc
+
+# Install the extension
+openclaw plugins install @developerinlondon/assay-openclaw-extension
 ```
 
 Install from a local checkout:

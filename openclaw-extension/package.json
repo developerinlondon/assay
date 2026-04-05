@@ -1,8 +1,17 @@
 {
-  "name": "@assay/openclaw-extension",
+  "name": "@developerinlondon/assay-openclaw-extension",
   "version": "0.6.0",
   "description": "Assay Lua workflow runtime for OpenClaw — run infrastructure automation, AI agent workflows, and DevOps tasks",
+  "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/developerinlondon/assay.git",
+    "directory": "openclaw-extension"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "openclaw": {
     "extensions": [
       "./index.ts"
@@ -11,7 +20,14 @@
   "peerDependencies": {
     "openclaw": "*"
   },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
-    "openclaw": "*"
+    "openclaw": "*",
+    "@sinclair/typebox": "0.34.48",
+    "vitest": "^3.1.1",
+    "typescript": "^5.8.3"
   }
 }
