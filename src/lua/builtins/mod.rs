@@ -1,12 +1,12 @@
 mod assert;
 mod core;
 mod crypto;
-mod disk;
 #[cfg(feature = "db")]
 mod db;
+mod disk;
 mod http;
-mod os_info;
 mod json;
+mod os_info;
 mod process;
 mod serialization;
 mod shell;

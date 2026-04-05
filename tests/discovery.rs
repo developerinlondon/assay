@@ -1,4 +1,4 @@
-use assay::discovery::{build_index, discover_modules, search_modules, ModuleSource};
+use assay::discovery::{ModuleSource, build_index, discover_modules, search_modules};
 
 use std::collections::HashSet;
 
@@ -258,9 +258,13 @@ fn test_search_keyword_docker_finds_harbor() {
 #[test]
 fn test_search_regression_grafana_is_first() {
     let results = search_modules("grafana", 5);
-    assert!(!results.is_empty(), "search for 'grafana' should return results");
+    assert!(
+        !results.is_empty(),
+        "search for 'grafana' should return results"
+    );
     assert_eq!(
-        results[0].id, "assay.grafana",
+        results[0].id,
+        "assay.grafana",
         "search for 'grafana' should return assay.grafana first, got: {:?}",
         results.iter().map(|r| r.id.as_str()).collect::<Vec<_>>()
     );
@@ -279,9 +283,13 @@ fn test_search_regression_vault_in_results() {
 #[test]
 fn test_search_regression_prometheus_is_first() {
     let results = search_modules("prometheus", 5);
-    assert!(!results.is_empty(), "search for 'prometheus' should return results");
+    assert!(
+        !results.is_empty(),
+        "search for 'prometheus' should return results"
+    );
     assert_eq!(
-        results[0].id, "assay.prometheus",
+        results[0].id,
+        "assay.prometheus",
         "search for 'prometheus' should return assay.prometheus first, got: {:?}",
         results.iter().map(|r| r.id.as_str()).collect::<Vec<_>>()
     );

@@ -17,54 +17,67 @@ async fn test_require_postgres() {
 
 #[tokio::test]
 async fn test_postgres_quote_ident_simple() {
-    let result: String = eval_lua(r#"
+    let result: String = eval_lua(
+        r#"
         local pg = require("assay.postgres")
         return pg._quote_ident("users")
-    "#).await;
+    "#,
+    )
+    .await;
     assert_eq!(result, "\"users\"");
 }
 
 #[tokio::test]
 async fn test_postgres_quote_ident_with_quotes() {
-    let result: String = eval_lua(r#"
+    let result: String = eval_lua(
+        r#"
         local pg = require("assay.postgres")
         return pg._quote_ident('my"table')
-    "#).await;
+    "#,
+    )
+    .await;
     assert_eq!(result, "\"my\"\"table\"");
 }
 
 #[tokio::test]
 async fn test_postgres_quote_literal_simple() {
-    let result: String = eval_lua(r#"
+    let result: String = eval_lua(
+        r#"
         local pg = require("assay.postgres")
         return pg._quote_literal("hello")
-    "#).await;
+    "#,
+    )
+    .await;
     assert_eq!(result, "'hello'");
 }
 
 #[tokio::test]
 async fn test_postgres_quote_literal_with_quotes() {
-    let result: String = eval_lua(r#"
+    let result: String = eval_lua(
+        r#"
         local pg = require("assay.postgres")
         return pg._quote_literal("it's")
-    "#).await;
+    "#,
+    )
+    .await;
     assert_eq!(result, "'it''s'");
 }
 
 #[tokio::test]
 async fn test_postgres_client_from_vault_missing_secret() {
-    use wiremock::{MockServer, Mock, ResponseTemplate};
     use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
-    
+
     Mock::given(method("GET"))
         .and(path("/v1/secrets/data/db/postgres"))
         .respond_with(ResponseTemplate::new(404))
         .mount(&mock_server)
         .await;
 
-    let script = format!(r#"
+    let script = format!(
+        r#"
         local vault = require("assay.vault")
         local pg = require("assay.postgres")
         
@@ -76,7 +89,9 @@ async fn test_postgres_client_from_vault_missing_secret() {
         
         assert.eq(ok, false, "client_from_vault should fail when secret is missing")
         assert.not_nil(err, "error message should be present")
-    "#, mock_server.uri());
-    
+    "#,
+        mock_server.uri()
+    );
+
     run_lua_local(&script).await.unwrap();
 }

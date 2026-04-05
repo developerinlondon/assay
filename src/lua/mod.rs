@@ -25,7 +25,10 @@ pub fn create_vm_with_lib_path(client: reqwest::Client, lib_path: String) -> Res
     create_vm_with_paths(client, Some(lib_path))
 }
 
-pub fn create_vm_with_paths(client: reqwest::Client, global_modules_path: Option<String>) -> Result<Lua> {
+pub fn create_vm_with_paths(
+    client: reqwest::Client,
+    global_modules_path: Option<String>,
+) -> Result<Lua> {
     let libs = StdLib::ALL_SAFE;
     let lua = Lua::new_with(libs, LuaOptions::default()).map_err(lua_err)?;
     lua.set_memory_limit(64 * 1024 * 1024).map_err(lua_err)?;

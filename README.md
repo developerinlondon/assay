@@ -11,7 +11,7 @@ and web services.
 
 Assay is a single ~9 MB binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes
 Jobs. It provides a full-featured Lua runtime with built-in HTTP client/server, database access,
-WebSocket, JWT signing, templates, and 20+ embedded Kubernetes-native libraries.
+WebSocket, JWT signing, templates, and 29 embedded Kubernetes-native and AI agent libraries.
 
 One binary, auto-detected behavior:
 
@@ -382,8 +382,9 @@ Supported URLs:
 
 ## Stdlib Modules
 
-Assay embeds 23 Lua modules for Kubernetes-native operations. Use `require("assay.<module>")` — or
-run `assay modules` to see all 40+ available modules including Rust builtins:
+Assay embeds 29 Lua modules for Kubernetes-native and AI agent operations. Use
+`require("assay.<module>")` — or run `assay modules` to see all 46+ available modules including Rust
+builtins:
 
 | Module               | Description                                                                   |
 | -------------------- | ----------------------------------------------------------------------------- |
@@ -410,6 +411,12 @@ run `assay modules` to see all 40+ available modules including Rust builtins:
 | `assay.unleash`      | Feature flags: projects, environments, features, strategies, API tokens       |
 | `assay.postgres`     | PostgreSQL helpers. User/database management, grants, Vault integration       |
 | `assay.zitadel`      | Zitadel OIDC identity management. Projects, apps, IdPs, users, login policies |
+| `assay.openclaw`     | OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks    |
+| `assay.github`       | GitHub REST API — PRs, issues, actions, repos, GraphQL                        |
+| `assay.gmail`        | Gmail REST API with OAuth2 — search, read, reply, send, labels                |
+| `assay.gcal`         | Google Calendar REST API with OAuth2 — events CRUD, calendar list             |
+| `assay.oauth2`       | Google OAuth2 token management — file-based credentials, auto-refresh         |
+| `assay.email_triage` | Email classification — deterministic rules + optional LLM-assisted triage     |
 
 Example:
 
@@ -527,10 +534,9 @@ http.serve(8080, {
 })
 ```
 
-The `send` callback accepts a table with optional fields: `event`, `data`, `id`, `retry`.
-Headers `Content-Type: text/event-stream`, `Cache-Control: no-cache`, and
-`Connection: keep-alive` are set automatically. The stream closes when the
-function returns.
+The `send` callback accepts a table with optional fields: `event`, `data`, `id`, `retry`. Headers
+`Content-Type: text/event-stream`, `Cache-Control: no-cache`, and `Connection: keep-alive` are set
+automatically. The stream closes when the function returns.
 
 ### Prometheus Verification
 
@@ -672,19 +678,48 @@ cargo run -- examples/prometheus-scrape.lua
 cargo run -- examples/loki-test.lua
 ```
 
+## OpenClaw Integration
+
+Assay v0.6.0 integrates with [OpenClaw](https://openclaw.dev) as an agent tool. This enables AI
+agents to execute deterministic Lua workflows with human approval gates.
+
+### Tool Mode
+
+```bash
+assay run --mode tool script.lua    # Structured JSON output for agent consumption
+assay resume --token <token> --approve yes|no   # Resume after human approval
+```
+
+### OpenClaw Extension
+
+Install the `@developerinlondon/assay-openclaw-extension` package (GitHub Packages) to register
+Assay as an OpenClaw tool:
+
+```bash
+# One-time: configure npm to use GitHub Packages for @developerinlondon scope
+echo "@developerinlondon:registry=https://npm.pkg.github.com" >> ~/.npmrc
+
+# Install the extension
+openclaw plugins install @developerinlondon/assay-openclaw-extension
+```
+
+See [openclaw-extension/README.md](openclaw-extension/README.md) for full configuration details.
+
 ## Architecture
 
 ```
 +------------------------------------------------------------------+
-| Assay v0.5.0 (~9 MB static MUSL binary, Alpine container)       |
+| Assay v0.6.0 (~9 MB static MUSL binary, Alpine container)       |
 |                                                                  |
 | CLI subcommands:                                                 |
 |   assay <file.yaml>           (.yaml -> check orchestration)     |
 |   assay <file.lua>            (.lua  -> run script)              |
 |   assay run <file>            (explicit run, any extension)      |
-|   assay exec -e '<lua>'       (inline Lua evaluation)           |
-|   assay modules               (list all 40+ modules)            |
-|   assay context <query>       (LLM-ready module context)        |
+|   assay run --mode tool <f>   (tool mode for OpenClaw agents)    |
+|   assay resume --token <t>    (resume paused approval gates)     |
+|   assay exec -e '<lua>'       (inline Lua evaluation)            |
+|   assay modules               (list all 46+ modules)             |
+|   assay context <query>       (LLM-ready module context)         |
 |                                                                  |
 | Shebang support:                                                 |
 |   #!/usr/bin/assay            (works like #!/usr/bin/python3)    |
@@ -702,7 +737,7 @@ cargo run -- examples/loki-test.lua
 | Rust Builtins (all available to .lua scripts):                   |
 |   http.{get,post,put,patch,delete,serve}                         |
 |   ws.{connect,send,recv,close}                                   |
-|   json.{parse,encode}  yaml.{parse,encode}  toml.{parse,encode}  |
+|   json.{parse,encode}  yaml.{parse,encode}  toml.{parse,encode} |
 |   fs.{read,write}  base64.{encode,decode}                        |
 |   crypto.{jwt_sign,hash,random}  regex.{match,find,replace}      |
 |   db.{connect,query,execute,close}  (postgres, mysql, sqlite)    |
@@ -711,7 +746,7 @@ cargo run -- examples/loki-test.lua
 |   log.{info,warn,error}  env.get  sleep  time                    |
 |   async.{spawn,spawn_interval}                                   |
 |                                                                  |
-| Lua Stdlib (23 embedded .lua files via include_dir!):            |
+| Lua Stdlib (29 embedded .lua files via include_dir!):            |
 |   Monitoring: prometheus, alertmanager, loki, grafana             |
 |   K8s/GitOps: k8s, argocd, kargo, flux, traefik                 |
 |   Security:   vault, openbao, certmanager, eso, dex              |
@@ -719,6 +754,8 @@ cargo run -- examples/loki-test.lua
 |   Data:       postgres, s3                                       |
 |   Identity:   zitadel                                            |
 |   Utilities:  healthcheck, unleash                               |
+|   AI/Agent:   openclaw, github, gmail, gcal, oauth2,             |
+|               email_triage                                        |
 +------------------------------------------------------------------+
 ```
 

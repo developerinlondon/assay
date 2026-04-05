@@ -36,5 +36,8 @@ fn test_context_limit_flag() {
         .args(["context", "a", "--limit", "2"])
         .output()
         .unwrap();
-    assert!(output.status.success(), "context with --limit should exit 0");
+    assert!(
+        output.status.success(),
+        "context with --limit should exit 0"
+    );
 }

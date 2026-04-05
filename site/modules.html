@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Assay — Module Reference</title>
-  <meta name="description" content="Complete reference for all 40+ Assay modules — 17 Rust builtins and 23 embedded Lua stdlib modules, zero dependencies.">
+  <meta name="description" content="Complete reference for all 46+ Assay modules — 17 Rust builtins and 29 embedded Lua stdlib modules, zero dependencies.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,7 +24,7 @@
   <main>
     <h1>Module Reference</h1>
     <p style="font-size: 1.15rem; color: var(--text-light); margin-bottom: 1.5rem;">
-      40+ built-in modules, zero dependencies. Use <code>assay context &lt;query&gt;</code> for LLM-ready docs on any module.
+      46+ built-in modules, zero dependencies. Use <code>assay context &lt;query&gt;</code> for LLM-ready docs on any module.
     </p>
 
     <pre><code>assay modules                    # list all modules
@@ -242,12 +242,12 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
     </table>
 
     <!-- ============================================================ -->
-    <!-- STDLIB MODULES (23 modules)                                  -->
+    <!-- STDLIB MODULES (29 modules)                                  -->
     <!-- ============================================================ -->
 
     <h2>Stdlib Modules</h2>
     <p>
-      23 embedded Lua modules loaded via <code>require("assay.&lt;name&gt;")</code>.
+      29 embedded Lua modules loaded via <code>require("assay.&lt;name&gt;")</code>.
       All follow the client pattern: <code>M.client(url, opts)</code> &rarr; client object &rarr; <code>c:method()</code>.
     </p>
 
@@ -475,6 +475,216 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
           <td><code>require("assay.unleash")</code></td>
           <td>Feature flags, environments</td>
           <td><code>unleash.client(url, opts)</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ============================================================ -->
+    <!-- AI AGENT & WORKFLOW                                          -->
+    <!-- ============================================================ -->
+
+    <h2 id="ai-agent">AI Agent &amp; Workflow</h2>
+    <p>Integrate with AI agent platforms, GitHub, Gmail, and Google Calendar — all via native HTTP, zero shell dependencies.</p>
+
+    <h3 id="openclaw"><code>assay.openclaw</code></h3>
+    <p>OpenClaw AI agent platform integration. Invoke tools, send messages, manage state, spawn sub-agents, approval gates, LLM tasks.</p>
+    <pre><code>local openclaw = require("assay.openclaw")
+local c = openclaw.client()  -- auto-discovers $OPENCLAW_URL + $OPENCLAW_TOKEN
+
+-- Invoke any OpenClaw tool
+local result = c:invoke("message", "send", { target = "#general", message = "Hello!" })
+
+-- Shorthand: send message
+c:send("discord", "#alerts", "Service is down!")
+c:notify("ops-team", "Deployment complete")
+
+-- Persistent state
+c:state_set("last-deploy", { version = "1.2.3", time = time() })
+local prev = c:state_get("last-deploy")
+
+-- Diff detection
+local diff = c:diff("pr-state", new_snapshot)
+if diff.changed then log.info("State changed!") end
+
+-- LLM task
+local answer = c:llm_task("Summarize this PR", { model = "claude-sonnet" })
+
+-- Cron jobs
+c:cron_add({ schedule = "0 9 * * *", task = "daily-report" })
+
+-- Sub-agents
+c:spawn("Fix the login bug", { model = "gpt-4o" })</code></pre>
+
+    <h3 id="github"><code>assay.github</code></h3>
+    <p>GitHub REST API client. PRs, issues, actions, repositories, GraphQL. No <code>gh</code> CLI dependency.</p>
+    <pre><code>local github = require("assay.github")
+local c = github.client()  -- uses $GITHUB_TOKEN
+
+-- Pull requests
+local pr = c:pr_view("owner/repo", 123)
+local prs = c:pr_list("owner/repo", { state = "open" })
+local reviews = c:pr_reviews("owner/repo", 123)
+c:pr_merge("owner/repo", 123, { merge_method = "squash" })
+
+-- Issues
+local issues = c:issue_list("owner/repo", { labels = "bug", state = "open" })
+local issue = c:issue_get("owner/repo", 42)
+c:issue_create("owner/repo", "Bug title", "Description", { labels = {"bug"} })
+c:issue_comment("owner/repo", 42, "Fixed in PR #123")
+
+-- Actions
+local runs = c:runs_list("owner/repo", { status = "completed" })
+local run = c:run_get("owner/repo", 12345)
+
+-- GraphQL
+local data = c:graphql("query { viewer { login } }")</code></pre>
+
+    <h3 id="gmail"><code>assay.gmail</code></h3>
+    <p>Gmail REST API with OAuth2 token auto-refresh. Search, read, reply, send emails.</p>
+    <pre><code>local gmail = require("assay.gmail")
+local c = gmail.client({
+  credentials_file = "/path/to/credentials.json",
+  token_file = "/path/to/token.json",
+})
+
+-- Search emails
+local emails = c:search("newer_than:1d is:unread", { max = 20 })
+
+-- Read a message
+local msg = c:get("message-id-here")
+
+-- Reply to an email
+c:reply("message-id", { body = "Thanks for the update!" })
+
+-- Send new email
+c:send("user@example.com", "Subject", "Email body")
+
+-- List labels
+local labels = c:labels()</code></pre>
+
+    <h3 id="gcal"><code>assay.gcal</code></h3>
+    <p>Google Calendar REST API with OAuth2 token auto-refresh. Events CRUD, calendar list.</p>
+    <pre><code>local gcal = require("assay.gcal")
+local c = gcal.client({
+  credentials_file = "/path/to/credentials.json",
+  token_file = "/path/to/token.json",
+})
+
+-- List upcoming events
+local events = c:events({ timeMin = "2026-04-05T00:00:00Z", maxResults = 10 })
+
+-- Get specific event
+local event = c:event_get("event-id")
+
+-- Create event
+c:event_create({
+  summary = "Team standup",
+  start = { dateTime = "2026-04-06T09:00:00Z" },
+  ["end"] = { dateTime = "2026-04-06T09:30:00Z" },
+})
+
+-- Update / delete
+c:event_update("event-id", updated_event)
+c:event_delete("event-id")
+
+-- List all calendars
+local calendars = c:calendars()</code></pre>
+
+    <h3 id="oauth2"><code>assay.oauth2</code></h3>
+    <p>Google OAuth2 token management. File-based credentials loading, automatic access token refresh, token persistence.</p>
+    <pre><code>local oauth2 = require("assay.oauth2")
+
+-- Load credentials and token from default paths
+-- (~/.config/gog/credentials.json and ~/.config/gog/token.json)
+local auth = oauth2.from_file()
+
+-- Or specify custom paths
+local auth = oauth2.from_file("/path/to/credentials.json", "/path/to/token.json")
+
+-- Refresh access token
+auth:refresh()
+
+-- Persist updated token back to file
+auth:save()
+
+-- Get auth headers for API calls
+local headers = auth:headers()
+-- Returns: {Authorization = "Bearer ...", ["Content-Type"] = "application/json"}
+
+-- Use with http builtins
+local resp = http.get("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+  headers = auth:headers()
+})</code></pre>
+
+    <h3 id="email_triage"><code>assay.email_triage</code></h3>
+    <p>Email classification and triage. Deterministic rule-based categorization or OpenClaw LLM-assisted classification into action, reply, and FYI buckets.</p>
+    <pre><code>local email_triage = require("assay.email_triage")
+local gmail = require("assay.gmail")
+
+local gc = gmail.client({
+  credentials_file = "/path/to/credentials.json",
+  token_file = "/path/to/token.json",
+})
+
+-- Fetch recent emails
+local emails = gc:search("newer_than:1d", { max = 50 })
+
+-- Deterministic categorization (no LLM needed)
+local buckets = email_triage.categorize(emails)
+log.info("Needs reply: " .. #buckets.needs_reply)
+log.info("Needs action: " .. #buckets.needs_action)
+log.info("FYI: " .. #buckets.fyi)
+
+-- LLM-assisted triage via OpenClaw (smarter classification)
+local openclaw = require("assay.openclaw")
+local oc = openclaw.client()
+local smart_buckets = email_triage.categorize_llm(emails, oc)</code></pre>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>require()</th>
+          <th>Description</th>
+          <th>Client Pattern</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>assay.openclaw</code></td>
+          <td><code>require("assay.openclaw")</code></td>
+          <td>AI agent tools, state, approve, LLM</td>
+          <td><code>openclaw.client(url?, opts?)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.github</code></td>
+          <td><code>require("assay.github")</code></td>
+          <td>PRs, issues, actions, GraphQL</td>
+          <td><code>github.client(opts?)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.gmail</code></td>
+          <td><code>require("assay.gmail")</code></td>
+          <td>Email search, read, reply, send</td>
+          <td><code>gmail.client(opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.gcal</code></td>
+          <td><code>require("assay.gcal")</code></td>
+          <td>Calendar events CRUD</td>
+          <td><code>gcal.client(opts)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.oauth2</code></td>
+          <td><code>require("assay.oauth2")</code></td>
+          <td>OAuth2 token management, auto-refresh</td>
+          <td><code>oauth2.from_file(creds?, token?)</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.email_triage</code></td>
+          <td><code>require("assay.email_triage")</code></td>
+          <td>Email classification, triage buckets</td>
+          <td><code>email_triage.categorize(emails)</code></td>
         </tr>
       </tbody>
     </table>

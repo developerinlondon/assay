@@ -424,7 +424,9 @@ async fn test_unleash_archive_feature() {
 async fn test_unleash_toggle_on() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/admin/projects/simons/features/dark-mode/environments/development/on"))
+        .and(path(
+            "/api/admin/projects/simons/features/dark-mode/environments/development/on",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&server)
         .await;
@@ -444,7 +446,9 @@ async fn test_unleash_toggle_on() {
 async fn test_unleash_toggle_off() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/admin/projects/simons/features/dark-mode/environments/production/off"))
+        .and(path(
+            "/api/admin/projects/simons/features/dark-mode/environments/production/off",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&server)
         .await;
@@ -464,7 +468,9 @@ async fn test_unleash_toggle_off() {
 async fn test_unleash_strategies() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/admin/projects/simons/features/dark-mode/environments/development/strategies"))
+        .and(path(
+            "/api/admin/projects/simons/features/dark-mode/environments/development/strategies",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
             {"id": "strategy-1", "name": "default", "parameters": {}},
             {"id": "strategy-2", "name": "userWithId", "parameters": {"userIds": "user1,user2"}}
@@ -490,7 +496,9 @@ async fn test_unleash_strategies() {
 async fn test_unleash_add_strategy() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/admin/projects/simons/features/dark-mode/environments/development/strategies"))
+        .and(path(
+            "/api/admin/projects/simons/features/dark-mode/environments/development/strategies",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "strategy-3",
             "name": "flexibleRollout",
@@ -604,7 +612,9 @@ async fn test_unleash_wait_success() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/health"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"health": "GOOD"})))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"health": "GOOD"})),
+        )
         .mount(&server)
         .await;
 

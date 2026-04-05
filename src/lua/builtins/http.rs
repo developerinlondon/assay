@@ -13,9 +13,9 @@ use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use mlua::{Lua, Table, UserData, Value};
 #[cfg(feature = "server")]
-use std::collections::HashMap;
-#[cfg(feature = "server")]
 use std::cell::RefCell;
+#[cfg(feature = "server")]
+use std::collections::HashMap;
 #[cfg(feature = "server")]
 use std::pin::Pin;
 #[cfg(feature = "server")]
@@ -40,9 +40,7 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
         let func = lua.create_async_function(move |lua, args: mlua::MultiValue| {
             let client = method_client.clone();
             let method_name = method_name.clone();
-            async move {
-                execute_http_request(&lua, &client, &method_name, args).await
-            }
+            async move { execute_http_request(&lua, &client, &method_name, args).await }
         })?;
         http_table.set(method, func)?;
     }
@@ -72,9 +70,7 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
                     ))
                 })?;
                 let cert = reqwest::Certificate::from_pem(&pem).map_err(|e| {
-                    mlua::Error::runtime(format!(
-                        "http.client: invalid PEM in {ca_path:?}: {e}"
-                    ))
+                    mlua::Error::runtime(format!("http.client: invalid PEM in {ca_path:?}: {e}"))
                 })?;
                 builder = builder.add_root_certificate(cert);
             }
@@ -188,8 +184,11 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
             .map_err(|e| mlua::Error::runtime(format!("http.serve: bind failed: {e}")))?;
 
         // Expose the actual bound port so callers using port 0 can discover it
-        let actual_port = listener.local_addr()
-            .map_err(|e| mlua::Error::runtime(format!("http.serve: failed to get local addr: {e}")))?
+        let actual_port = listener
+            .local_addr()
+            .map_err(|e| {
+                mlua::Error::runtime(format!("http.serve: failed to get local addr: {e}"))
+            })?
             .port();
         lua.globals().set("_SERVER_PORT", actual_port)?;
 
@@ -252,9 +251,7 @@ async fn execute_http_request(
             Some(Value::Table(t)) => {
                 let json_val = lua_table_to_json(&t)?;
                 let serialized = serde_json::to_string(&json_val).map_err(|e| {
-                    mlua::Error::runtime(format!(
-                        "http.{method_name}: JSON encode failed: {e}"
-                    ))
+                    mlua::Error::runtime(format!("http.{method_name}: JSON encode failed: {e}"))
                 })?;
                 (serialized, true)
             }
@@ -316,15 +313,14 @@ async fn execute_http_request(
         }
     }
 
-    let resp = req.send().await.map_err(|e| {
-        mlua::Error::runtime(format!("http.{method_name} failed: {e}"))
-    })?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| mlua::Error::runtime(format!("http.{method_name} failed: {e}")))?;
     let status = resp.status().as_u16();
     let resp_headers = resp.headers().clone();
     let body = resp.text().await.map_err(|e| {
-        mlua::Error::runtime(format!(
-            "http.{method_name}: reading body failed: {e}"
-        ))
+        mlua::Error::runtime(format!("http.{method_name}: reading body failed: {e}"))
     })?;
 
     let result = lua.create_table()?;
@@ -587,20 +583,19 @@ fn lua_response_to_http(
     let mut builder =
         Response::builder().status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
 
-    let has_content_type = if let Ok(Some(headers_table)) =
-        resp_table.get::<Option<Table>>("headers")
-    {
-        let mut found_ct = false;
-        for (k, v) in headers_table.pairs::<String, String>().flatten() {
-            if k.eq_ignore_ascii_case("content-type") {
-                found_ct = true;
+    let has_content_type =
+        if let Ok(Some(headers_table)) = resp_table.get::<Option<Table>>("headers") {
+            let mut found_ct = false;
+            for (k, v) in headers_table.pairs::<String, String>().flatten() {
+                if k.eq_ignore_ascii_case("content-type") {
+                    found_ct = true;
+                }
+                builder = builder.header(k, v);
             }
-            builder = builder.header(k, v);
-        }
-        found_ct
-    } else {
-        false
-    };
+            found_ct
+        } else {
+            false
+        };
 
     let body_bytes = if let Ok(Some(json_table)) = resp_table.get::<Option<Table>>("json") {
         let json_val =
@@ -622,7 +617,5 @@ fn lua_response_to_http(
         Bytes::new()
     };
 
-    Ok(builder
-        .body(Either::Left(Full::new(body_bytes)))
-        .unwrap())
+    Ok(builder.body(Either::Left(Full::new(body_bytes))).unwrap())
 }

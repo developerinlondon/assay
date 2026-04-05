@@ -1,0 +1,28 @@
+{
+  "id": "assay",
+  "name": "Assay Workflow Runtime",
+  "description": "Run Lua workflow scripts via the Assay runtime",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "binaryPath": {
+        "type": "string",
+        "description": "Path to the assay binary (default: found via PATH)"
+      },
+      "timeout": {
+        "type": "number",
+        "default": 20,
+        "description": "Execution timeout in seconds"
+      },
+      "maxOutputSize": {
+        "type": "number",
+        "default": 524288,
+        "description": "Maximum output size in bytes"
+      },
+      "scriptsDir": {
+        "type": "string",
+        "description": "Directory containing Lua scripts (default: workspace root)"
+      }
+    }
+  }
+}

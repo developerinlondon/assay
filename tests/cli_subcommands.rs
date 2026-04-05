@@ -118,7 +118,6 @@ fn version_flag_works() {
     );
 }
 
-
 #[test]
 fn backward_compat_yaml_file() {
     let output = assay_bin()
@@ -147,10 +146,7 @@ fn backward_compat_toml_file() {
 
 #[test]
 fn unsupported_extension_fails() {
-    let output = assay_bin()
-        .arg("nonexistent.txt")
-        .output()
-        .unwrap();
+    let output = assay_bin().arg("nonexistent.txt").output().unwrap();
     assert!(
         !output.status.success(),
         "unsupported extension should exit non-zero"
