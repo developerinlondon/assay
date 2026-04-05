@@ -36,7 +36,7 @@ assay modules
 | `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 40 modules (23 stdlib + 17 builtins) |
+| `assay modules`             | List all 46 modules (29 stdlib + 17 builtins) |
 
 ## Discovering Modules
 
@@ -209,33 +209,39 @@ URLs: `postgres://user:pass@host:5432/db`, `mysql://...`, `sqlite:///path/to/fil
 
 ## Stdlib Modules Quick Reference
 
-All 23 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 29 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
-| Module               | Description                                                         |
-| -------------------- | ------------------------------------------------------------------- |
-| `assay.prometheus`   | PromQL queries, alerts, targets, rules, label values, series        |
-| `assay.alertmanager` | Manage alerts, silences, receivers, config                          |
-| `assay.loki`         | Push logs, query with LogQL, labels, series, tail                   |
-| `assay.grafana`      | Health, dashboards, datasources, annotations, alert rules, folders  |
-| `assay.k8s`          | 30+ resource types, CRDs, readiness checks, pod logs, rollouts      |
-| `assay.argocd`       | Apps, sync, health, projects, repositories, clusters                |
-| `assay.kargo`        | Stages, freight, promotions, warehouses, pipeline status            |
-| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases, notifications        |
-| `assay.traefik`      | Routers, services, middlewares, entrypoints, TLS status             |
-| `assay.vault`        | KV secrets, policies, auth, transit, PKI, token management          |
-| `assay.openbao`      | Alias for vault (OpenBao API-compatible)                            |
-| `assay.certmanager`  | Certificates, issuers, ACME orders and challenges                   |
-| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores sync status      |
-| `assay.dex`          | OIDC discovery, JWKS, health, configuration validation              |
-| `assay.crossplane`   | Providers, XRDs, compositions, managed resources                    |
-| `assay.velero`       | Backups, restores, schedules, storage locations                     |
-| `assay.temporal`     | Workflows, task queues, schedules, signals                          |
-| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning           |
-| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check         |
-| `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth             |
-| `assay.postgres`     | Postgres helpers: users, databases, grants, Vault integration       |
-| `assay.zitadel`      | OIDC identity management with JWT machine auth                      |
-| `assay.unleash`      | Feature flags: projects, environments, features, strategies, tokens |
+| Module                | Description                                                                |
+| --------------------- | -------------------------------------------------------------------------- |
+| `assay.prometheus`    | PromQL queries, alerts, targets, rules, label values, series               |
+| `assay.alertmanager`  | Manage alerts, silences, receivers, config                                 |
+| `assay.loki`          | Push logs, query with LogQL, labels, series, tail                          |
+| `assay.grafana`       | Health, dashboards, datasources, annotations, alert rules, folders         |
+| `assay.k8s`           | 30+ resource types, CRDs, readiness checks, pod logs, rollouts             |
+| `assay.argocd`        | Apps, sync, health, projects, repositories, clusters                       |
+| `assay.kargo`         | Stages, freight, promotions, warehouses, pipeline status                   |
+| `assay.flux`          | GitRepositories, Kustomizations, HelmReleases, notifications               |
+| `assay.traefik`       | Routers, services, middlewares, entrypoints, TLS status                    |
+| `assay.vault`         | KV secrets, policies, auth, transit, PKI, token management                 |
+| `assay.openbao`       | Alias for vault (OpenBao API-compatible)                                   |
+| `assay.certmanager`   | Certificates, issuers, ACME orders and challenges                          |
+| `assay.eso`           | ExternalSecrets, SecretStores, ClusterSecretStores sync status             |
+| `assay.dex`           | OIDC discovery, JWKS, health, configuration validation                     |
+| `assay.crossplane`    | Providers, XRDs, compositions, managed resources                           |
+| `assay.velero`        | Backups, restores, schedules, storage locations                            |
+| `assay.temporal`      | Workflows, task queues, schedules, signals                                 |
+| `assay.harbor`        | Projects, repositories, artifacts, vulnerability scanning                  |
+| `assay.healthcheck`   | HTTP checks, JSON path, body matching, latency, multi-check                |
+| `assay.s3`            | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                    |
+| `assay.postgres`      | Postgres helpers: users, databases, grants, Vault integration              |
+| `assay.zitadel`       | OIDC identity management with JWT machine auth                             |
+| `assay.unleash`       | Feature flags: projects, environments, features, strategies, tokens        |
+| `assay.openclaw`      | OpenClaw AI agent — invoke tools, state, diff, approve, LLM tasks          |
+| `assay.github`        | GitHub REST API — PRs, issues, actions, repos, GraphQL                     |
+| `assay.gmail`         | Gmail REST API with OAuth2 — search, read, reply, send, labels             |
+| `assay.gcal`          | Google Calendar REST API with OAuth2 — events CRUD, calendar list          |
+| `assay.oauth2`        | Google OAuth2 token management — credentials, auto-refresh, persistence    |
+| `assay.email_triage`  | Email classification — deterministic rules + LLM-assisted triage           |
 
 ## Common Patterns
 
@@ -408,7 +414,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 23 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: All 29 stdlib modules are embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use

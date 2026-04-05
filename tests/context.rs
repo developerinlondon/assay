@@ -1,4 +1,4 @@
-use assay::context::{format_context, ModuleContextEntry, QuickRefEntry};
+use assay::context::{ModuleContextEntry, QuickRefEntry, format_context};
 
 #[test]
 fn test_format_single_module() {

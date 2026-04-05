@@ -5,8 +5,8 @@
 //! 2. Global  — `$ASSAY_MODULES_PATH` or `~/.assay/modules/`
 //! 3. BuiltIn — embedded stdlib + hardcoded Rust builtins
 
-use include_dir::{include_dir, Dir};
 use crate::search::{SearchEngine, SearchResult};
+use include_dir::{Dir, include_dir};
 
 use crate::metadata::{self, ModuleMetadata};
 #[cfg(not(feature = "db"))]
@@ -41,22 +41,47 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
     (
         "http",
         "HTTP client and server: get, post, put, patch, delete, serve",
-        &["http", "client", "server", "request", "response", "headers", "endpoint", "api", "webhook", "rest"],
+        &[
+            "http", "client", "server", "request", "response", "headers", "endpoint", "api",
+            "webhook", "rest",
+        ],
     ),
     (
         "json",
         "JSON serialization: parse and encode",
-        &["json", "serialization", "deserialize", "stringify", "parse", "encode", "format"],
+        &[
+            "json",
+            "serialization",
+            "deserialize",
+            "stringify",
+            "parse",
+            "encode",
+            "format",
+        ],
     ),
     (
         "yaml",
         "YAML serialization: parse and encode",
-        &["yaml", "serialization", "deserialize", "parse", "encode", "format"],
+        &[
+            "yaml",
+            "serialization",
+            "deserialize",
+            "parse",
+            "encode",
+            "format",
+        ],
     ),
     (
         "toml",
         "TOML serialization: parse and encode",
-        &["toml", "serialization", "deserialize", "parse", "encode", "configuration"],
+        &[
+            "toml",
+            "serialization",
+            "deserialize",
+            "parse",
+            "encode",
+            "configuration",
+        ],
     ),
     (
         "fs",
@@ -66,7 +91,20 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
     (
         "crypto",
         "Cryptography: jwt_sign, hash, hmac, random",
-        &["crypto", "jwt", "signature", "hash", "hmac", "encryption", "random", "security", "password", "signing", "rsa", "sha256"],
+        &[
+            "crypto",
+            "jwt",
+            "signature",
+            "hash",
+            "hmac",
+            "encryption",
+            "random",
+            "security",
+            "password",
+            "signing",
+            "rsa",
+            "sha256",
+        ],
     ),
     (
         "base64",
@@ -76,37 +114,88 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
     (
         "regex",
         "Regular expressions: match, find, find_all, replace",
-        &["regex", "pattern", "match", "find", "replace", "regular-expression", "regexp"],
+        &[
+            "regex",
+            "pattern",
+            "match",
+            "find",
+            "replace",
+            "regular-expression",
+            "regexp",
+        ],
     ),
     (
         "db",
         "Database: connect, query, execute, close (Postgres, MySQL, SQLite)",
-        &["db", "database", "sql", "postgres", "mysql", "sqlite", "connection", "query", "execute"],
+        &[
+            "db",
+            "database",
+            "sql",
+            "postgres",
+            "mysql",
+            "sqlite",
+            "connection",
+            "query",
+            "execute",
+        ],
     ),
     (
         "ws",
         "WebSocket: connect, send, recv, close",
-        &["ws", "websocket", "connection", "message", "streaming", "realtime", "socket"],
+        &[
+            "ws",
+            "websocket",
+            "connection",
+            "message",
+            "streaming",
+            "realtime",
+            "socket",
+        ],
     ),
     (
         "template",
         "Jinja2-compatible templates: render file or string",
-        &["template", "jinja2", "rendering", "string-template", "mustache", "render"],
+        &[
+            "template",
+            "jinja2",
+            "rendering",
+            "string-template",
+            "mustache",
+            "render",
+        ],
     ),
     (
         "async",
         "Async tasks: spawn, spawn_interval, await, cancel",
-        &["async", "asynchronous", "task", "coroutine", "concurrent", "spawn", "interval"],
+        &[
+            "async",
+            "asynchronous",
+            "task",
+            "coroutine",
+            "concurrent",
+            "spawn",
+            "interval",
+        ],
     ),
     (
         "assert",
         "Assertions: eq, gt, lt, contains, not_nil, matches",
-        &["assert", "assertion", "test", "validation", "comparison", "check", "verify"],
+        &[
+            "assert",
+            "assertion",
+            "test",
+            "validation",
+            "comparison",
+            "check",
+            "verify",
+        ],
     ),
     (
         "log",
         "Logging: info, warn, error",
-        &["log", "logging", "output", "debug", "error", "warning", "info", "trace"],
+        &[
+            "log", "logging", "output", "debug", "error", "warning", "info", "trace",
+        ],
     ),
     (
         "env",

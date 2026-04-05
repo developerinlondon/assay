@@ -77,11 +77,7 @@ fn list_processes() -> Result<Vec<(i64, String, Option<String>)>, String> {
             continue;
         }
         // Extract just the binary name from the full path (e.g. /usr/sbin/syslogd -> syslogd)
-        let name = comm
-            .rsplit('/')
-            .next()
-            .unwrap_or(&comm)
-            .to_string();
+        let name = comm.rsplit('/').next().unwrap_or(&comm).to_string();
         result.push((pid, name, Some(comm)));
     }
     Ok(result)
@@ -100,8 +96,7 @@ pub fn register_process(lua: &Lua) -> mlua::Result<()> {
 
     // process.list() — returns table of {pid, name, cmdline?}
     let list_fn = lua.create_function(|lua, ()| {
-        let proc_list =
-            list_processes().map_err(mlua::Error::runtime)?;
+        let proc_list = list_processes().map_err(mlua::Error::runtime)?;
 
         let procs = lua.create_table()?;
         for (i, (pid, name, cmdline)) in proc_list.into_iter().enumerate() {
@@ -119,9 +114,7 @@ pub fn register_process(lua: &Lua) -> mlua::Result<()> {
     process_table.set("list", list_fn)?;
 
     // process.is_running(name) — check if a process with given name exists
-    let is_running_fn = lua.create_function(|_, name: String| {
-        Ok(is_process_running(&name))
-    })?;
+    let is_running_fn = lua.create_function(|_, name: String| Ok(is_process_running(&name)))?;
     process_table.set("is_running", is_running_fn)?;
 
     // process.kill(pid, signal?) — send signal to process (default SIGTERM = 15)

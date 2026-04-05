@@ -1078,7 +1078,9 @@ async fn test_vault_wait_success() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/sys/health"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"initialized": true})))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"initialized": true})),
+        )
         .mount(&server)
         .await;
 

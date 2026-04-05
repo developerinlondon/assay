@@ -140,7 +140,9 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
         };
         if is_dir {
             std::fs::remove_dir_all(&path).map_err(|e| {
-                mlua::Error::runtime(format!("fs.remove: failed to remove directory {path:?}: {e}"))
+                mlua::Error::runtime(format!(
+                    "fs.remove: failed to remove directory {path:?}: {e}"
+                ))
             })
         } else {
             std::fs::remove_file(&path).map_err(|e| {
@@ -150,37 +152,37 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     })?;
     fs_table.set("remove", remove_fn)?;
 
-    let list_fn = lua.create_function(|lua, path: String| {
-        let entries = lua.create_table()?;
-        for (i, entry) in (1..).zip(std::fs::read_dir(&path).map_err(|e| {
-            mlua::Error::runtime(format!("fs.list: failed to list {path:?}: {e}"))
-        })?) {
-            let entry = entry.map_err(|e| {
-                mlua::Error::runtime(format!("fs.list: error reading entry in {path:?}: {e}"))
-            })?;
-            let info = lua.create_table()?;
-            let name = entry.file_name().to_string_lossy().to_string();
-            info.set("name", name)?;
-            let file_type = entry.file_type().map_err(|e| {
-                mlua::Error::runtime(format!("fs.list: failed to get file type: {e}"))
-            })?;
-            if file_type.is_dir() {
-                info.set("type", "directory")?;
-            } else if file_type.is_symlink() {
-                info.set("type", "symlink")?;
-            } else {
-                info.set("type", "file")?;
+    let list_fn =
+        lua.create_function(|lua, path: String| {
+            let entries = lua.create_table()?;
+            for (i, entry) in (1..).zip(std::fs::read_dir(&path).map_err(|e| {
+                mlua::Error::runtime(format!("fs.list: failed to list {path:?}: {e}"))
+            })?) {
+                let entry = entry.map_err(|e| {
+                    mlua::Error::runtime(format!("fs.list: error reading entry in {path:?}: {e}"))
+                })?;
+                let info = lua.create_table()?;
+                let name = entry.file_name().to_string_lossy().to_string();
+                info.set("name", name)?;
+                let file_type = entry.file_type().map_err(|e| {
+                    mlua::Error::runtime(format!("fs.list: failed to get file type: {e}"))
+                })?;
+                if file_type.is_dir() {
+                    info.set("type", "directory")?;
+                } else if file_type.is_symlink() {
+                    info.set("type", "symlink")?;
+                } else {
+                    info.set("type", "file")?;
+                }
+                entries.set(i, info)?;
             }
-            entries.set(i, info)?;
-        }
-        Ok(entries)
-    })?;
+            Ok(entries)
+        })?;
     fs_table.set("list", list_fn)?;
 
     let stat_fn = lua.create_function(|lua, path: String| {
-        let metadata = std::fs::metadata(&path).map_err(|e| {
-            mlua::Error::runtime(format!("fs.stat: failed to stat {path:?}: {e}"))
-        })?;
+        let metadata = std::fs::metadata(&path)
+            .map_err(|e| mlua::Error::runtime(format!("fs.stat: failed to stat {path:?}: {e}")))?;
         // Use symlink_metadata separately to correctly detect symlinks,
         // since std::fs::metadata follows symlinks (is_symlink always false).
         let is_symlink = std::fs::symlink_metadata(&path)
@@ -206,13 +208,13 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     fs_table.set("stat", stat_fn)?;
 
     let mkdir_fn = lua.create_function(|_, path: String| {
-        std::fs::create_dir_all(&path).map_err(|e| {
-            mlua::Error::runtime(format!("fs.mkdir: failed to create {path:?}: {e}"))
-        })
+        std::fs::create_dir_all(&path)
+            .map_err(|e| mlua::Error::runtime(format!("fs.mkdir: failed to create {path:?}: {e}")))
     })?;
     fs_table.set("mkdir", mkdir_fn)?;
 
-    let exists_fn = lua.create_function(|_, path: String| Ok(std::path::Path::new(&path).exists()))?;
+    let exists_fn =
+        lua.create_function(|_, path: String| Ok(std::path::Path::new(&path).exists()))?;
     fs_table.set("exists", exists_fn)?;
 
     // fs.copy(src, dst) — copy file, returns bytes copied
@@ -227,7 +229,9 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     // fs.rename(src, dst) — atomic rename
     let rename_fn = lua.create_function(|_, (src, dst): (String, String)| {
         std::fs::rename(&src, &dst).map_err(|e| {
-            mlua::Error::runtime(format!("fs.rename: failed to rename {src:?} to {dst:?}: {e}"))
+            mlua::Error::runtime(format!(
+                "fs.rename: failed to rename {src:?} to {dst:?}: {e}"
+            ))
         })
     })?;
     fs_table.set("rename", rename_fn)?;
@@ -239,9 +243,8 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
         })?;
         let results = lua.create_table()?;
         for (i, entry) in (1..).zip(paths) {
-            let path = entry.map_err(|e| {
-                mlua::Error::runtime(format!("fs.glob: error reading entry: {e}"))
-            })?;
+            let path = entry
+                .map_err(|e| mlua::Error::runtime(format!("fs.glob: error reading entry: {e}")))?;
             results.set(i, path.to_string_lossy().to_string())?;
         }
         Ok(results)
@@ -267,9 +270,8 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     // fs.chmod(path, mode) — set file permissions (octal integer, e.g. 493 = 0o755)
     let chmod_fn = lua.create_function(|_, (path, mode): (String, u32)| {
         let perms = std::fs::Permissions::from_mode(mode);
-        std::fs::set_permissions(&path, perms).map_err(|e| {
-            mlua::Error::runtime(format!("fs.chmod: failed to chmod {path:?}: {e}"))
-        })
+        std::fs::set_permissions(&path, perms)
+            .map_err(|e| mlua::Error::runtime(format!("fs.chmod: failed to chmod {path:?}: {e}")))
     })?;
     fs_table.set("chmod", chmod_fn)?;
 
@@ -328,9 +330,7 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
                 }
                 results.set(*i, info)?;
                 *i += 1;
-                if file_type.is_dir()
-                    && (max_depth.is_none() || depth < max_depth.unwrap())
-                {
+                if file_type.is_dir() && (max_depth.is_none() || depth < max_depth.unwrap()) {
                     walk(base, &entry.path(), results, lua, i, depth + 1, max_depth)?;
                 }
             }
