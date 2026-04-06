@@ -37,6 +37,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Stamp version into site
+        run: |
+          TAG=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="${TAG:-$SHORT_SHA}"
+          for f in site/*.html; do
+            sed -i "s|__GIT_SHA__|${VERSION}|g" "$f"
+          done
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
