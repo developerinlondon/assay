@@ -11,6 +11,23 @@ All notable changes to Assay are documented here.
   an async function from a route handler would crash with "attempt to yield from outside
   a coroutine". This was the only remaining sync call site for user Lua functions.
 
+### Added
+
+- **`npx skills add developerinlondon/assay`** — install Assay's SKILL.md into your
+  AI agent project via the skills CLI.
+- **Dark/light theme toggle** on assay.rs with localStorage persistence.
+- **Version stamp in site footer** — shows git tag or SHA from deploy pipeline.
+- **Infrastructure Testing** highlighted as core capability on the homepage.
+
+### Changed
+
+- **Site overhaul** — compact hero, service grid above the fold with SVG icons,
+  side-by-side size & speed comparison charts, consistent nav across all pages,
+  accurate module coverage (removed misleading "Coming Soon" features).
+- **Comparison page** — renamed from "MCP Comparison", removed out-of-scope entries,
+  shows only domains Assay actually covers.
+- **README** — full size & speed comparison table with all 10 runtimes and cold start times.
+
 ## [0.6.0] - 2026-04-05
 
 ### Added
