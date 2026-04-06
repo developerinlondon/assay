@@ -56,6 +56,7 @@
 - [assay.crossplane](https://assay.rs/modules.html#crossplane): Crossplane providers, XRDs, compositions
 - [assay.velero](https://assay.rs/modules.html#velero): Velero backups, restores, schedules
 - [assay.temporal](https://assay.rs/modules.html#temporal): Temporal workflows, task queues, schedules
+- [temporal builtin](https://assay.rs/modules.html#temporal-grpc): Native gRPC workflow client (start, signal, query, describe, cancel, terminate)
 - [assay.harbor](https://assay.rs/modules.html#harbor): Harbor registry, projects, vulnerability scanning
 
 ## Data & Storage

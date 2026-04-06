@@ -2,6 +2,25 @@
 
 All notable changes to Assay are documented here.
 
+## [0.7.0] - 2026-04-06
+
+### Added
+
+- **Temporal gRPC client** (optional `temporal` feature): Native gRPC bridge for Temporal workflow
+  engine via `temporalio-client` v0.2.0. The `temporal` global provides `connect()` for persistent
+  clients and `start()` for one-shot workflow execution. Client methods: `start_workflow`,
+  `signal_workflow`, `query_workflow`, `describe_workflow`, `get_result`, `cancel_workflow`,
+  `terminate_workflow`. All methods are async and use JSON payload encoding. Build with
+  `cargo build --features temporal` — requires `protoc` (install via `mise install protoc`).
+- **8 new tests** for temporal gRPC registration, error handling, and stdlib compatibility.
+
+### Dependencies (temporal feature only)
+
+- `temporalio-client` 0.2.0
+- `temporalio-sdk` 0.2.0
+- `temporalio-common` 0.2.0
+- `url` 2.x
+
 ## [0.6.1] - 2026-04-06
 
 ### Fixed
