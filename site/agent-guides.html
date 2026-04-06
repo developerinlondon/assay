@@ -105,8 +105,8 @@ assay context "unleash flags"    # feature flag docs</code></pre>
       Install the Assay skill directly into your project. For OpenClaw agents, use
       <code>assay.openclaw</code> for native tool invocation, state management, and LLM tasks.
     </p>
-    <pre><code># Install Assay skill
-npx skills add developerinlondon/agent-skills
+    <pre><code># Download SKILL.md into your project
+curl -L -o SKILL.md https://raw.githubusercontent.com/developerinlondon/assay/main/SKILL.md
 
 # OpenClaw agents can use the openclaw module natively:
 local openclaw = require("assay.openclaw")
