@@ -27,25 +27,25 @@
   }
 }
 
-/* Manual overrides — !important beats @media prefers-color-scheme */
-html[data-theme="dark"] {
-  --bg: #0d1117 !important;
-  --bg-secondary: #161b22 !important;
-  --text: #c9d1d9 !important;
-  --text-secondary: #8b949e !important;
-  --border: #30363d !important;
-  --code-bg: #161b22 !important;
-  --code-text: #79c0ff !important;
+/* Manual overrides — doubled selector beats :root inside @media */
+html[data-theme="dark"][data-theme="dark"] {
+  --bg: #0d1117;
+  --bg-secondary: #161b22;
+  --text: #c9d1d9;
+  --text-secondary: #8b949e;
+  --border: #30363d;
+  --code-bg: #161b22;
+  --code-text: #79c0ff;
 }
 
-html[data-theme="light"] {
-  --bg: #ffffff !important;
-  --bg-secondary: #f6f8fa !important;
-  --text: #24292f !important;
-  --text-secondary: #57606a !important;
-  --border: #d0d7de !important;
-  --code-bg: #f6f8fa !important;
-  --code-text: #0550ae !important;
+html[data-theme="light"][data-theme="light"] {
+  --bg: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --text: #24292f;
+  --text-secondary: #57606a;
+  --border: #d0d7de;
+  --code-bg: #f6f8fa;
+  --code-text: #0550ae;
 }
 
 * {
