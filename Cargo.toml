@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.7.0"
+version = "0.7.1"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -19,7 +19,7 @@ name = "assay"
 path = "src/lib.rs"
 
 [features]
-default = ["db", "server", "cli"]
+default = ["db", "server", "cli", "temporal"]
 db = ["dep:sqlx"]
 server = ["dep:http-body-util", "dep:hyper", "dep:hyper-util"]
 cli = ["dep:clap", "dep:tracing-subscriber"]

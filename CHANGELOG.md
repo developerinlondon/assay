@@ -2,6 +2,15 @@
 
 All notable changes to Assay are documented here.
 
+## [0.7.1] - 2026-04-06
+
+### Changed
+
+- **Temporal included by default**: The `temporal` feature is now part of the default build.
+  The standard Docker image and binary include native gRPC workflow support out of the box.
+- **CI/Release/Docker**: Added `protoc` installation to all build environments for gRPC
+  proto compilation.
+
 ## [0.7.0] - 2026-04-06
 
 ### Added
