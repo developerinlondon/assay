@@ -16,6 +16,7 @@
         <li><a href="comparison.html">Comparison</a></li>
         <li><a href="agent-guides.html">Agent Guides</a></li>
         <li><a href="modules.html">Modules</a></li>
+        <li><a href="changelog.html">Changelog</a></li>
         <li><a href="https://github.com/developerinlondon/assay" target="_blank"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a></li>
         <li><button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light mode">&#9789;</button></li>
       </ul>
@@ -412,12 +413,6 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
           <td><code>velero.client(url, opts)</code></td>
         </tr>
         <tr>
-          <td><code>assay.temporal</code></td>
-          <td><code>require("assay.temporal")</code></td>
-          <td>Workflows, task queues</td>
-          <td><code>temporal.client(url, opts)</code></td>
-        </tr>
-        <tr>
           <td><code>assay.harbor</code></td>
           <td><code>require("assay.harbor")</code></td>
           <td>Projects, repos, vulnerability scanning</td>
@@ -476,6 +471,239 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
           <td><code>require("assay.unleash")</code></td>
           <td>Feature flags, environments</td>
           <td><code>unleash.client(url, opts)</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Temporal Workflow Engine -->
+    <h3 id="temporal">Temporal Workflow Engine</h3>
+    <p>
+      Full Temporal workflow orchestration with two complementary APIs:
+      a <strong>native gRPC client</strong> (Rust builtin, optional <code>temporal</code> feature) for starting and controlling workflows,
+      and an <strong>HTTP REST client</strong> (Lua stdlib) for querying the Temporal Web UI.
+    </p>
+
+    <h4>Native gRPC Client (builtin)</h4>
+    <p>
+      Available globally as <code>temporal</code> when built with <code>--features temporal</code>.
+      Connects directly to the Temporal frontend gRPC service. No <code>require</code> needed.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Function</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>temporal.connect({ url, namespace? })</code></td>
+          <td>Connect to Temporal server, returns reusable client</td>
+        </tr>
+        <tr>
+          <td><code>temporal.start({ url, namespace?, task_queue, workflow_type, workflow_id, input? })</code></td>
+          <td>One-shot: connect + start workflow + return handle</td>
+        </tr>
+        <tr>
+          <td><code>client:start_workflow({ task_queue, workflow_type, workflow_id, input? })</code></td>
+          <td>Start a workflow execution &rarr; <code>{workflow_id, run_id}</code></td>
+        </tr>
+        <tr>
+          <td><code>client:signal_workflow({ workflow_id, signal_name, input? })</code></td>
+          <td>Send a signal to a running workflow</td>
+        </tr>
+        <tr>
+          <td><code>client:query_workflow({ workflow_id, query_type, input? })</code></td>
+          <td>Query workflow state (returns decoded JSON)</td>
+        </tr>
+        <tr>
+          <td><code>client:describe_workflow(workflow_id)</code></td>
+          <td>Get status, type, timestamps, history length</td>
+        </tr>
+        <tr>
+          <td><code>client:get_result({ workflow_id, follow_runs? })</code></td>
+          <td>Block until workflow completes, return result</td>
+        </tr>
+        <tr>
+          <td><code>client:cancel_workflow(workflow_id)</code></td>
+          <td>Request graceful cancellation</td>
+        </tr>
+        <tr>
+          <td><code>client:terminate_workflow(workflow_id)</code></td>
+          <td>Force terminate immediately</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h5>gRPC Example: Start and Monitor a Workflow</h5>
+    <pre><code>-- Connect to Temporal (gRPC, no require needed)
+local client = temporal.connect({
+  url = "temporal-frontend.infra:7233",
+  namespace = "production",
+})
+
+-- Start a promotion workflow
+local handle = client:start_workflow({
+  task_queue = "promotions",
+  workflow_type = "PromoteToEnvironment",
+  workflow_id = "promote-prod-v1.2.0",
+  input = {
+    version = "v1.2.0",
+    target_env = "prod",
+    triggered_by = "admin@example.com",
+  },
+})
+log.info("Started workflow: " .. handle.run_id)
+
+-- Check status
+local info = client:describe_workflow("promote-prod-v1.2.0")
+log.info("Status: " .. info.status)  -- RUNNING, COMPLETED, FAILED, etc.
+
+-- Signal the workflow (e.g., approve a step)
+client:signal_workflow({
+  workflow_id = "promote-prod-v1.2.0",
+  signal_name = "approve_deploy",
+  input = { approved_by = "admin" },
+})
+
+-- Wait for the final result
+local result = client:get_result({ workflow_id = "promote-prod-v1.2.0" })
+log.info("Workflow completed: " .. json.encode(result))</code></pre>
+
+    <h4>HTTP REST Client (stdlib)</h4>
+    <p>
+      Loaded via <code>require("assay.temporal")</code>. Talks to the Temporal HTTP API for querying
+      workflows, namespaces, schedules, task queues, and history. Works with any Temporal deployment.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Function</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>c:health()</code></td>
+          <td>Check Temporal server health</td>
+        </tr>
+        <tr>
+          <td><code>c:system_info()</code></td>
+          <td>Get server version and capabilities</td>
+        </tr>
+        <tr>
+          <td><code>c:namespaces()</code></td>
+          <td>List all namespaces</td>
+        </tr>
+        <tr>
+          <td><code>c:workflows(opts?)</code></td>
+          <td>List workflow executions</td>
+        </tr>
+        <tr>
+          <td><code>c:workflow(workflow_id, run_id?)</code></td>
+          <td>Get workflow execution details</td>
+        </tr>
+        <tr>
+          <td><code>c:workflow_history(workflow_id, run_id?)</code></td>
+          <td>Get full event history</td>
+        </tr>
+        <tr>
+          <td><code>c:signal_workflow(workflow_id, signal_name, input?)</code></td>
+          <td>Signal a workflow via HTTP</td>
+        </tr>
+        <tr>
+          <td><code>c:cancel_workflow(workflow_id)</code></td>
+          <td>Cancel a workflow via HTTP</td>
+        </tr>
+        <tr>
+          <td><code>c:terminate_workflow(workflow_id, reason?)</code></td>
+          <td>Terminate a workflow via HTTP</td>
+        </tr>
+        <tr>
+          <td><code>c:task_queue(name)</code></td>
+          <td>Get task queue pollers and backlog</td>
+        </tr>
+        <tr>
+          <td><code>c:schedules()</code></td>
+          <td>List all schedules</td>
+        </tr>
+        <tr>
+          <td><code>c:search(query)</code></td>
+          <td>Search workflows by visibility query</td>
+        </tr>
+        <tr>
+          <td><code>c:is_workflow_running(workflow_id)</code></td>
+          <td>Check if a workflow is currently running</td>
+        </tr>
+        <tr>
+          <td><code>c:wait_workflow_complete(workflow_id, timeout_secs)</code></td>
+          <td>Poll until workflow completes or timeout</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h5>HTTP Example: Query Workflows and History</h5>
+    <pre><code>local temporal = require("assay.temporal")
+local c = temporal.client("http://temporal-web:8080", {
+  namespace = "production",
+  api_key = env.get("TEMPORAL_API_KEY"),
+})
+
+-- List running workflows
+local result = c:workflows({ query = "WorkflowType='PromoteToEnvironment'" })
+for _, exec in ipairs(result.executions or {}) do
+  log.info(exec.execution.workflowId .. " — " .. exec.status)
+end
+
+-- Get full history for a workflow
+local history = c:workflow_history("promote-prod-v1.2.0")
+for _, event in ipairs(history.history.events) do
+  log.info(event.eventType)
+end
+
+-- Check task queue health
+local tq = c:task_queue("promotions")
+log.info("Active pollers: " .. #tq.pollers)</code></pre>
+
+    <h4>When to Use Which</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>Use case</th>
+          <th>API</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Start a workflow</td>
+          <td>gRPC (<code>temporal.connect</code>)</td>
+          <td>Proper SDK payload encoding, direct to frontend</td>
+        </tr>
+        <tr>
+          <td>Signal / query / cancel</td>
+          <td>gRPC (<code>client:signal_workflow</code>)</td>
+          <td>Reliable, typed payloads</td>
+        </tr>
+        <tr>
+          <td>List workflows, search</td>
+          <td>HTTP (<code>c:workflows</code>)</td>
+          <td>Richer query filtering via visibility API</td>
+        </tr>
+        <tr>
+          <td>View event history</td>
+          <td>HTTP (<code>c:workflow_history</code>)</td>
+          <td>Full event detail not available via gRPC client</td>
+        </tr>
+        <tr>
+          <td>Check task queue health</td>
+          <td>HTTP (<code>c:task_queue</code>)</td>
+          <td>Poller info, backlog counts</td>
+        </tr>
+        <tr>
+          <td>Schedules</td>
+          <td>HTTP (<code>c:schedules</code>)</td>
+          <td>Schedule management via REST</td>
         </tr>
       </tbody>
     </table>

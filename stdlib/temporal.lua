@@ -17,6 +17,9 @@
 --- @quickref c:search(query, opts?) -> {executions} | Search workflows by query
 --- @quickref c:is_workflow_running(workflow_id, opts?) -> bool | Check if workflow is running
 --- @quickref c:wait_workflow_complete(workflow_id, timeout_secs, opts?) -> workflow | Wait for completion
+--- @note The `temporal` global (native gRPC, requires --features temporal) provides start_workflow,
+--- @note signal_workflow, query_workflow, describe_workflow, get_result, cancel_workflow, terminate_workflow.
+--- @note Use `temporal.connect({url, namespace})` for the gRPC client. This stdlib module uses HTTP REST.
 
 local M = {}
 

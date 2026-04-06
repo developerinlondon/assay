@@ -91,6 +91,7 @@ Available in all `.lua` scripts — no `require` needed:
 | Process        | `process.list()`, `process.is_running(name)`, `process.kill(pid, signal?)`, `process.wait_idle(names, timeout, interval)`                                                                                                                                           |
 | Disk           | `disk.usage(path)` — returns `{total, used, available, percent}`, `disk.sweep(dir, age_secs)`, `disk.dir_size(path)`                                                                                                                                                |
 | OS             | `os.hostname()`, `os.arch()`, `os.platform()`                                                                                                                                                                                                                       |
+| Temporal (gRPC) | `temporal.connect(opts)`, `temporal.start(opts)` — native gRPC workflow client (requires `temporal` feature) |
 
 HTTP responses: `{status, body, headers}`. Options: `{headers = {["X-Key"] = "val"}}`.
 
@@ -144,7 +145,7 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.dex`           | OIDC discovery, JWKS, health                                                      |
 | `assay.crossplane`    | Providers, XRDs, compositions, managed resources                                  |
 | `assay.velero`        | Backups, restores, schedules, storage locations                                   |
-| `assay.temporal`      | Workflows, task queues, schedules                                                 |
+| `assay.temporal`      | Workflows, task queues, schedules, signals + native gRPC client (temporal feature) |
 | `assay.harbor`        | Projects, repositories, artifacts, vulnerability scanning                         |
 | `assay.healthcheck`   | HTTP checks, JSON path, body matching, latency, multi-check                       |
 | `assay.s3`            | S3-compatible storage (AWS, R2, MinIO) with Sig V4                                |
@@ -382,7 +383,8 @@ assay/
 │           ├── ws.rs         # ws.{connect,send,recv,close}
 │           ├── template.rs   # template.{render,render_string}
 │           ├── disk.rs       # disk.{usage} + Lua helpers: disk.sweep, disk.dir_size
-│           └── os_info.rs    # os.{hostname,arch,platform}
+│           ├── os_info.rs    # os.{hostname,arch,platform}
+│           └── temporal.rs   # temporal.{connect,start} + client methods (gRPC, optional)
 ├── stdlib/                   # Embedded Lua modules (auto-discovered)
 │   ├── vault.lua             # Comprehensive reference (330 lines)
 │   ├── grafana.lua           # Simple reference (110 lines)
