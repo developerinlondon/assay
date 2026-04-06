@@ -111,7 +111,7 @@ These are always available in every `.lua` script.
 | `http.put(url, body, opts?)`   | PUT request                                    |
 | `http.patch(url, body, opts?)` | PATCH request                                  |
 | `http.delete(url, opts?)`      | DELETE request                                 |
-| `http.serve(port, routes)`     | Start HTTP server (blocking)                   |
+| `http.serve(port, routes)`     | Start HTTP server (async handlers)             |
 
 Options: `{ headers = { ["X-Key"] = "value" } }`
 

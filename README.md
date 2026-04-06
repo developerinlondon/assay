@@ -269,7 +269,7 @@ yaml, assert, log, env, sleep, time, base64).
 | `http.put(url, body, opts?)`             | PUT request                                |
 | `http.patch(url, body, opts?)`           | PATCH request                              |
 | `http.delete(url, opts?)`                | DELETE request                             |
-| `http.serve(port, routes)`               | Start HTTP server (blocking)               |
+| `http.serve(port, routes)`               | Start HTTP server (async handlers)         |
 | `opts.headers = {["X-Key"] = "value"}`   | Custom headers                             |
 | `routes = {GET = {["/path"] = handler}}` | Route table for server                     |
 | `return {sse = function(send) ... end}`  | SSE streaming response (server)            |
