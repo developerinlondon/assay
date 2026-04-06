@@ -23,15 +23,15 @@
   </header>
 
   <main>
-    <!-- Hero — minimal, gets out of the way -->
-    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0; border-bottom: 1px solid var(--border); margin-bottom: 0.75rem;">
-      <div>
-        <span style="font-size: 1.3rem; font-weight: 700;">Replaces your entire infrastructure scripting toolchain.</span>
-        <span class="text-muted" style="font-size: 0.9rem;"> One 9 MB binary. 46 modules.</span>
-      </div>
-      <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
-        <a href="modules.html" style="display: inline-block; background-color: var(--accent); color: #fff; padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Modules</a>
-        <a href="#install" style="display: inline-block; color: var(--accent); border: 1px solid var(--accent); padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Install</a>
+    <!-- Hero -->
+    <div style="padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem;">
+      <div style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem;">Replaces your entire infrastructure scripting toolchain.</div>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+        <span class="text-muted">One 9 MB binary. 46 built-in modules. Linux, macOS, Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.</span>
+        <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
+          <a href="modules.html" style="display: inline-block; background-color: var(--accent); color: #fff; padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Modules</a>
+          <a href="#install" style="display: inline-block; color: var(--accent); border: 1px solid var(--accent); padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Install</a>
+        </div>
       </div>
     </div>
 
@@ -200,60 +200,20 @@ db.close(conn)</code></pre>
     <h2>Size &amp; Speed Comparison</h2>
     <p><code>FROM scratch</code> &mdash; no shell, no package manager. Rust-level cold start.</p>
 
-    <!-- Visual bar chart -->
-    <div style="margin-bottom: 2rem;">
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right; font-weight: 700; color: var(--accent);">Assay</span>
-        <div style="background: var(--accent); height: 20px; border-radius: 3px; width: 4.7%;">&nbsp;</div>
-        <span style="font-size: 0.75rem; color: var(--accent); font-weight: 600;">6 MB &middot; 5 ms</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right;">Python alpine</span>
-        <div style="background: var(--border); height: 20px; border-radius: 3px; width: 13.3%;"></div>
-        <span style="font-size: 0.75rem;" class="text-muted">17 MB &middot; ~300 ms</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right;">bitnami/kubectl</span>
-        <div style="background: var(--border); height: 20px; border-radius: 3px; width: 27.3%;"></div>
-        <span style="font-size: 0.75rem;" class="text-muted">35 MB &middot; ~200 ms</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right;">Python slim</span>
-        <div style="background: var(--border); height: 20px; border-radius: 3px; width: 33.6%;"></div>
-        <span style="font-size: 0.75rem;" class="text-muted">43 MB &middot; ~300 ms</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right;">Node.js alpine</span>
-        <div style="background: var(--border); height: 20px; border-radius: 3px; width: 44.5%;"></div>
-        <span style="font-size: 0.75rem;" class="text-muted">57 MB &middot; ~500 ms</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right;">alpine/k8s</span>
-        <div style="background: var(--border); height: 20px; border-radius: 3px; width: 46.9%;"></div>
-        <span style="font-size: 0.75rem;" class="text-muted">60 MB &middot; ~200 ms</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right;">Deno</span>
-        <div style="background: var(--border); height: 20px; border-radius: 3px; width: 58.6%;"></div>
-        <span style="font-size: 0.75rem;" class="text-muted">75 MB &middot; ~50 ms</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right;">Node.js slim</span>
-        <div style="background: var(--border); height: 20px; border-radius: 3px; width: 82%;"></div>
-        <span style="font-size: 0.75rem;" class="text-muted">105 MB &middot; ~500 ms</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right;">Bun</span>
-        <div style="background: var(--border); height: 20px; border-radius: 3px; width: 89.8%;"></div>
-        <span style="font-size: 0.75rem;" class="text-muted">115 MB &middot; ~30 ms</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
-        <span style="width: 120px; font-size: 0.8rem; text-align: right;">postman/newman</span>
-        <div style="background: var(--border); height: 20px; border-radius: 3px; width: 100%;"></div>
-        <span style="font-size: 0.75rem;" class="text-muted">128 MB &middot; ~800 ms</span>
-      </div>
+    <!-- Visual bar chart — labels inside bars -->
+    <div style="margin-bottom: 2rem; font-size: 0.8rem;">
+      <div style="background: var(--accent); color: #fff; font-weight: 700; padding: 0.4rem 0.6rem; border-radius: 4px; margin-bottom: 3px; width: max(4.7%, 180px); white-space: nowrap;">Assay &nbsp; 6 MB &middot; 5 ms</div>
+      <div style="background: var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: 4px; margin-bottom: 3px; width: max(13.3%, 180px); white-space: nowrap;">Python alpine &nbsp; 17 MB &middot; ~300 ms</div>
+      <div style="background: var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: 4px; margin-bottom: 3px; width: max(27.3%, 180px); white-space: nowrap;">bitnami/kubectl &nbsp; 35 MB &middot; ~200 ms</div>
+      <div style="background: var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: 4px; margin-bottom: 3px; width: max(33.6%, 180px); white-space: nowrap;">Python slim &nbsp; 43 MB &middot; ~300 ms</div>
+      <div style="background: var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: 4px; margin-bottom: 3px; width: 44.5%; white-space: nowrap;">Node.js alpine &nbsp; 57 MB &middot; ~500 ms</div>
+      <div style="background: var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: 4px; margin-bottom: 3px; width: 46.9%; white-space: nowrap;">alpine/k8s &nbsp; 60 MB &middot; ~200 ms</div>
+      <div style="background: var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: 4px; margin-bottom: 3px; width: 58.6%; white-space: nowrap;">Deno &nbsp; 75 MB &middot; ~50 ms</div>
+      <div style="background: var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: 4px; margin-bottom: 3px; width: 82%; white-space: nowrap;">Node.js slim &nbsp; 105 MB &middot; ~500 ms</div>
+      <div style="background: var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: 4px; margin-bottom: 3px; width: 89.8%; white-space: nowrap;">Bun &nbsp; 115 MB &middot; ~30 ms</div>
+      <div style="background: var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: 4px; width: 100%; white-space: nowrap;">postman/newman &nbsp; 128 MB &middot; ~800 ms</div>
     </div>
-    <p class="text-muted" style="font-size: 0.85rem;">Docker compressed pull size. Cold start = time to first Lua instruction.</p>
+    <p class="text-muted" style="font-size: 0.8rem;">Docker compressed pull size. Cold start = time to first instruction.</p>
 
     <!-- Two Modes -->
     <h2>Two Modes</h2>
