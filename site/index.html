@@ -186,13 +186,17 @@ local jwt = crypto.jwt_sign(
   {sub="svc"}, key, "HS256")</code></pre>
       </div>
       <div class="card">
-        <h3 style="margin-top: 0;">Templates &amp; Databases</h3>
-        <p class="text-muted">Jinja2 templates for server-rendered HTML. PostgreSQL, MySQL, SQLite. JSON/YAML/TOML serialization.</p>
-        <pre style="margin-bottom: 0;"><code>local html = template.render(
-  "page.html", {title = "Hello"})
-local conn = db.connect(DB_URL)
-local rows = db.query(conn, sql)
-db.close(conn)</code></pre>
+        <h3 style="margin-top: 0;">Infrastructure Testing</h3>
+        <p class="text-muted">Built-in assertions, structured YAML checks with retry and backoff. Verify deployments, health endpoints, and service readiness.</p>
+        <pre style="margin-bottom: 0;"><code># checks.yaml — retry + backoff
+checks:
+  - name: api-healthy
+    type: http
+    url: http://api:8080/health
+    retries: 5
+    backoff: 3s
+    expect:
+      status: 200</code></pre>
       </div>
     </section>
 
