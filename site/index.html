@@ -196,6 +196,28 @@ db.close(conn)</code></pre>
       </div>
     </section>
 
+    <!-- Size & Speed Comparison -->
+    <h2>Size &amp; Speed Comparison</h2>
+    <p><code>FROM scratch</code> &mdash; no shell, no package manager. Rust-level cold start.</p>
+    <table>
+      <thead>
+        <tr><th>Runtime</th><th>Pull Size</th><th>vs Assay</th><th>Cold Start</th><th>K8s-native</th></tr>
+      </thead>
+      <tbody>
+        <tr style="font-weight: 600; color: var(--accent);"><td>Assay</td><td>6 MB</td><td>1x</td><td>5 ms</td><td>Yes (29 modules)</td></tr>
+        <tr><td>Python alpine</td><td>17 MB</td><td>3x</td><td>~300 ms</td><td>No</td></tr>
+        <tr><td>bitnami/kubectl</td><td>35 MB</td><td>6x</td><td>~200 ms</td><td>Partial</td></tr>
+        <tr><td>Python slim</td><td>43 MB</td><td>9x</td><td>~300 ms</td><td>No</td></tr>
+        <tr><td>Node.js alpine</td><td>57 MB</td><td>12x</td><td>~500 ms</td><td>No</td></tr>
+        <tr><td>alpine/k8s</td><td>60 MB</td><td>10x</td><td>~200 ms</td><td>Partial</td></tr>
+        <tr><td>Deno</td><td>75 MB</td><td>13x</td><td>~50 ms</td><td>No</td></tr>
+        <tr><td>Node.js slim</td><td>105 MB</td><td>18x</td><td>~500 ms</td><td>No</td></tr>
+        <tr><td>Bun</td><td>115 MB</td><td>19x</td><td>~30 ms</td><td>No</td></tr>
+        <tr><td>postman/newman</td><td>128 MB</td><td>21x</td><td>~800 ms</td><td>No</td></tr>
+      </tbody>
+    </table>
+    <p class="text-muted" style="font-size: 0.85rem;">K8s-native = built-in modules for Kubernetes resources, not just kubectl shell-outs.</p>
+
     <!-- Two Modes -->
     <h2>Two Modes</h2>
     <p>Auto-detected by file extension:</p>
