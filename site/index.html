@@ -206,16 +206,46 @@ db.close(conn)</code></pre>
       <div>
         <h3 style="margin-top: 0; font-size: 1rem;">Docker Image Size (compressed)</h3>
         <div style="font-size: 0.75rem;">
-          <div style="background: var(--accent); color: #fff; font-weight: 700; padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: max(4.7%, 90px); white-space: nowrap;">Assay 6 MB</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: max(13.3%, 90px); white-space: nowrap;">Python alp. 17 MB</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: max(27.3%, 90px); white-space: nowrap;">kubectl 35 MB</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: max(33.6%, 90px); white-space: nowrap;">Python slim 43 MB</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: 44.5%; white-space: nowrap;">Node alp. 57 MB</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: 46.9%; white-space: nowrap;">alpine/k8s 60 MB</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: 58.6%; white-space: nowrap;">Deno 75 MB</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: 82%; white-space: nowrap;">Node slim 105 MB</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: 89.8%; white-space: nowrap;">Bun 115 MB</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; width: 100%; white-space: nowrap;">newman 128 MB</div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--accent); padding: 0.3rem; border-radius: 3px; width: 4.7%; min-width: 4px;">&nbsp;</div>
+            <span style="color: var(--accent); font-weight: 700;">Assay 6 MB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 13.3%;">&nbsp;</div>
+            <span class="text-muted">Python alp. 17 MB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 27.3%;">&nbsp;</div>
+            <span class="text-muted">kubectl 35 MB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 33.6%;">&nbsp;</div>
+            <span class="text-muted">Python slim 43 MB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 44.5%;">&nbsp;</div>
+            <span class="text-muted">Node alp. 57 MB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 46.9%;">&nbsp;</div>
+            <span class="text-muted">alpine/k8s 60 MB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 58.6%;">&nbsp;</div>
+            <span class="text-muted">Deno 75 MB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 82%;">&nbsp;</div>
+            <span class="text-muted">Node slim 105 MB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 89.8%;">&nbsp;</div>
+            <span class="text-muted">Bun 115 MB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 100%;">&nbsp;</div>
+            <span class="text-muted">newman 128 MB</span>
+          </div>
         </div>
       </div>
 
@@ -223,16 +253,46 @@ db.close(conn)</code></pre>
       <div>
         <h3 style="margin-top: 0; font-size: 1rem;">Cold Start Time</h3>
         <div style="font-size: 0.75rem;">
-          <div style="background: var(--accent); color: #fff; font-weight: 700; padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: max(0.6%, 70px); white-space: nowrap;">Assay 5 ms</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: max(3.8%, 70px); white-space: nowrap;">Bun ~30 ms</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: max(6.3%, 70px); white-space: nowrap;">Deno ~50 ms</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: max(25%, 90px); white-space: nowrap;">kubectl ~200 ms</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: max(25%, 90px); white-space: nowrap;">alpine/k8s ~200 ms</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: 37.5%; white-space: nowrap;">Python alp. ~300 ms</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: 37.5%; white-space: nowrap;">Python slim ~300 ms</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: 62.5%; white-space: nowrap;">Node alp. ~500 ms</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; margin-bottom: 2px; width: 62.5%; white-space: nowrap;">Node slim ~500 ms</div>
-          <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; width: 100%; white-space: nowrap;">newman ~800 ms</div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--accent); color: #fff; font-weight: 700; padding: 0.3rem 0.5rem; border-radius: 3px; width: 0.6%; min-width: 4px;">&nbsp;</div>
+            <span style="color: var(--accent); font-weight: 700;">Assay 5 ms</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 3.8%; min-width: 4px;">&nbsp;</div>
+            <span class="text-muted">Bun ~30 ms</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 6.3%; min-width: 4px;">&nbsp;</div>
+            <span class="text-muted">Deno ~50 ms</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 25%;">&nbsp;</div>
+            <span class="text-muted">kubectl ~200 ms</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 25%;">&nbsp;</div>
+            <span class="text-muted">alpine/k8s ~200 ms</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 37.5%;">&nbsp;</div>
+            <span class="text-muted">Python alp. ~300 ms</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 37.5%;">&nbsp;</div>
+            <span class="text-muted">Python slim ~300 ms</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 62.5%;">&nbsp;</div>
+            <span class="text-muted">Node alp. ~500 ms</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 62.5%;">&nbsp;</div>
+            <span class="text-muted">Node slim ~500 ms</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
+            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 100%;">&nbsp;</div>
+            <span class="text-muted">newman ~800 ms</span>
+          </div>
         </div>
       </div>
 
