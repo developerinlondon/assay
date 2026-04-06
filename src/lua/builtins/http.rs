@@ -453,7 +453,9 @@ async fn handle_request(
         }
     };
 
-    match build_lua_request_and_call(lua, handler, &method, &path, &query, &headers, &body_str) {
+    match build_lua_request_and_call(lua, handler, &method, &path, &query, &headers, &body_str)
+        .await
+    {
         Ok(lua_resp) => lua_response_to_http(lua, &lua_resp),
         Err(e) => Ok(Response::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -466,7 +468,7 @@ async fn handle_request(
 }
 
 #[cfg(feature = "server")]
-fn build_lua_request_and_call(
+async fn build_lua_request_and_call(
     lua: &Lua,
     handler: &mlua::Function,
     method: &str,
@@ -487,7 +489,7 @@ fn build_lua_request_and_call(
     }
     req_table.set("headers", headers_table)?;
 
-    handler.call::<Table>(req_table)
+    handler.call_async::<Table>(req_table).await
 }
 
 #[cfg(feature = "server")]
