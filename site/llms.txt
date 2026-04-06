@@ -77,7 +77,7 @@
 
 ## Optional
 - [Crates.io](https://crates.io/crates/assay-lua): Use Assay as a Rust crate in your own projects
-- [Docker](https://github.com/developerinlondon/assay/pkgs/container/assay): ghcr.io/developerinlondon/assay:latest (~6MB compressed)
+- [Docker](https://github.com/developerinlondon/assay/pkgs/container/assay): ghcr.io/developerinlondon/assay:latest (~8MB compressed)
 - [MCP Comparison](https://assay.rs/mcp-comparison.html): How Assay replaces 42 popular MCP servers
 - [Agent Guides](https://assay.rs/agent-guides.html): Integration guides for Claude Code, Cursor, Windsurf, Cline, OpenCode
 - [Changelog](https://github.com/developerinlondon/assay/releases): Release history

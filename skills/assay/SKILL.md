@@ -12,7 +12,7 @@ Assay is a single ~9 MB static binary that runs Lua scripts in Kubernetes. It re
 Python/Node/kubectl containers in K8s Jobs. One binary, two modes: run a `.lua` script directly, or
 run a `.yaml` check config with retry/backoff/structured output.
 
-The image is `ghcr.io/developerinlondon/assay:latest` (~6 MB compressed). Install locally with
+The image is `ghcr.io/developerinlondon/assay:latest` (~8 MB compressed). Install locally with
 `cargo install assay-lua` or download from GitHub Releases.
 
 ## Quick Start

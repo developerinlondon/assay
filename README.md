@@ -31,7 +31,7 @@ Container image size comparison (compressed pull):
 +-----------------------------------------------------------------------+
 | Docker image size comparison (compressed pull)                        |
 |                                                                       |
-| Assay            ## 6 MB                                              |
+| Assay            ### 8 MB                                              |
 | Python alpine    ###### 17 MB                                         |
 | bitnami/kubectl  ############ 35 MB                                   |
 | Python slim      ############### 43 MB                                |
@@ -46,7 +46,7 @@ Container image size comparison (compressed pull):
 
 | Runtime         | Compressed |   On-disk | vs Assay | Cold Start | K8s-native |
 | --------------- | ---------: | --------: | :------: | ---------: | :--------: |
-| **Assay**       |   **6 MB** | **13 MB** |  **1x**  |   **5 ms** |  **Yes**   |
+| **Assay**       |   **8 MB** | **15 MB** |  **1x**  |   **5 ms** |  **Yes**   |
 | Python alpine   |      17 MB |     50 MB |    3x    |     300 ms |     No     |
 | bitnami/kubectl |      35 MB |     90 MB |    6x    |     200 ms |  Partial   |
 | Python slim     |      43 MB |    130 MB |    9x    |     300 ms |     No     |
