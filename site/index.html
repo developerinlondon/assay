@@ -13,9 +13,9 @@
       <a href="index.html" class="logo">Assay</a>
       <ul>
         <li><a href="index.html">Home</a></li>
-        <li><a href="modules.html">Modules</a></li>
-        <li><a href="agent-guides.html">Agent Guides</a></li>
         <li><a href="mcp-comparison.html">Comparison</a></li>
+        <li><a href="agent-guides.html">Agent Guides</a></li>
+        <li><a href="modules.html">Modules</a></li>
         <li><a href="https://github.com/developerinlondon/assay" target="_blank"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a></li>
         <li><button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light mode">&#9789;</button></li>
       </ul>
@@ -196,102 +196,11 @@ db.close(conn)</code></pre>
       </div>
     </section>
 
-    <!-- Size & Speed Comparison -->
-    <h2>Size &amp; Speed Comparison</h2>
-    <p><code>FROM scratch</code> &mdash; no shell, no package manager. Rust-level cold start.</p>
-
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
-
-      <!-- Image Size -->
-      <div>
-        <h3 style="margin-top: 0; font-size: 1rem;">Docker Image Size (compressed)</h3>
-        <div style="font-size: 0.75rem;">
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--accent); padding: 0.3rem; border-radius: 3px; width: 4.7%; min-width: 4px;">&nbsp;</div>
-            <span style="color: var(--accent); font-weight: 700;">Assay 6 MB</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 13.3%;">&nbsp;</div>
-            <span class="text-muted">alpine/python 17 MB</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 27.3%;">&nbsp;</div>
-            <span class="text-muted">kubectl 35 MB</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 33.6%;">&nbsp;</div>
-            <span class="text-muted">python slim 43 MB</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 44.5%;">&nbsp;</div>
-            <span class="text-muted">alpine/node 57 MB</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 46.9%;">&nbsp;</div>
-            <span class="text-muted">alpine/k8s 60 MB</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 58.6%;">&nbsp;</div>
-            <span class="text-muted">Deno 75 MB</span>
-          </div>
-          <div style="margin-bottom: 2px;">
-            <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; width: 82%; white-space: nowrap;">node slim 105 MB</div>
-          </div>
-          <div style="margin-bottom: 2px;">
-            <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; width: 89.8%; white-space: nowrap;">Bun 115 MB</div>
-          </div>
-          <div style="margin-bottom: 2px;">
-            <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; width: 100%; white-space: nowrap;">newman 128 MB</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Cold Start -->
-      <div>
-        <h3 style="margin-top: 0; font-size: 1rem;">Cold Start Time</h3>
-        <div style="font-size: 0.75rem;">
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--accent); width: 3px; height: 18px; border-radius: 2px;"></div>
-            <span style="color: var(--accent); font-weight: 700;">Assay 5 ms</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 3.75%;">&nbsp;</div>
-            <span class="text-muted">Bun ~30 ms</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 6.25%;">&nbsp;</div>
-            <span class="text-muted">Deno ~50 ms</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 25%;">&nbsp;</div>
-            <span class="text-muted">kubectl ~200 ms</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 25%;">&nbsp;</div>
-            <span class="text-muted">alpine/k8s ~200 ms</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 37.5%;">&nbsp;</div>
-            <span class="text-muted">alpine/python ~300 ms</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 2px;">
-            <div style="background: var(--border); padding: 0.3rem; border-radius: 3px; width: 37.5%;">&nbsp;</div>
-            <span class="text-muted">python slim ~300 ms</span>
-          </div>
-          <div style="margin-bottom: 2px;">
-            <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; width: 62.5%; white-space: nowrap;">alpine/node ~500 ms</div>
-          </div>
-          <div style="margin-bottom: 2px;">
-            <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; width: 62.5%; white-space: nowrap;">node slim ~500 ms</div>
-          </div>
-          <div style="margin-bottom: 2px;">
-            <div style="background: var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 3px; width: 100%; white-space: nowrap;">newman ~800 ms</div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-    <p class="text-muted" style="font-size: 0.8rem;">Docker compressed pull size. Cold start = time to first instruction.</p>
+    <!-- Size & Speed -->
+    <p style="padding: 1rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem;">
+      <strong>9 MB static binary</strong> &mdash; <code>FROM scratch</code>, 5 ms cold start, 21x smaller than postman/newman.
+      <a href="mcp-comparison.html">See full size &amp; speed comparison &rarr;</a>
+    </p>
 
     <!-- Two Modes -->
     <h2>Two Modes</h2>
