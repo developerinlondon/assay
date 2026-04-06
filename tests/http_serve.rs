@@ -275,3 +275,46 @@ async fn test_http_serve_custom_content_type() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn test_http_serve_async_handler() {
+    run_lua_local(
+        r#"
+        -- Start a simple backend server
+        local backend = async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/data"] = function(req)
+                        return { status = 200, body = "backend-response" }
+                    end,
+                }
+            })
+        end)
+        sleep(0.2)
+        local backend_port = _SERVER_PORT
+
+        -- Start a proxy server whose handler calls http.get (async inside handler)
+        local proxy = async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/proxy"] = function(req)
+                        local resp = http.get("http://127.0.0.1:" .. backend_port .. "/data")
+                        return {
+                            status = resp.status,
+                            body = "proxied: " .. resp.body
+                        }
+                    end,
+                }
+            })
+        end)
+        sleep(0.2)
+        local proxy_port = _SERVER_PORT
+
+        local resp = http.get("http://127.0.0.1:" .. proxy_port .. "/proxy")
+        assert.eq(resp.status, 200)
+        assert.eq(resp.body, "proxied: backend-response")
+    "#,
+    )
+    .await
+    .unwrap();
+}

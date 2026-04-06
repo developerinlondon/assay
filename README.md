@@ -28,30 +28,34 @@ jobs. Same binary, same builtins.
 Container image size comparison (compressed pull):
 
 ```
-+------------------------------------------------------------------+
-| Docker image size comparison (compressed pull)                   |
-|                                                                  |
-| Assay Full       ## 6 MB                                         |
-| Python alpine    ########## 17 MB                                |
-| bitnami/kubectl  #################### 35 MB                      |
-| Python slim      ########################## 43 MB                |
-| Node.js alpine   ################################## 57 MB        |
-| alpine/k8s       ######################################## 60 MB  |
-| Deno             ############################################ 75 |
-| Node.js slim     ############################################### |
-| Bun              ############################################### |
-| postman/newman   ############################################### |
-+------------------------------------------------------------------+
++-----------------------------------------------------------------------+
+| Docker image size comparison (compressed pull)                        |
+|                                                                       |
+| Assay            ## 6 MB                                              |
+| Python alpine    ###### 17 MB                                         |
+| bitnami/kubectl  ############ 35 MB                                   |
+| Python slim      ############### 43 MB                                |
+| Node.js alpine   #################### 57 MB                           |
+| alpine/k8s       ##################### 60 MB                          |
+| Deno             ########################## 75 MB                     |
+| Node.js slim     #################################### 105 MB          |
+| Bun              ######################################## 115 MB      |
+| postman/newman   ############################################ 128 MB  |
++-----------------------------------------------------------------------+
 ```
 
-| Runtime         | Compressed |   On-disk | vs Assay | Sandbox | K8s-native |
-| --------------- | ---------: | --------: | :------: | :-----: | :--------: |
-| **Assay**       |   **6 MB** | **13 MB** |  **1x**  | **Yes** |  **Yes**   |
-| Python alpine   |      17 MB |     50 MB |    3x    |   No    |     No     |
-| bitnami/kubectl |      35 MB |     90 MB |    6x    |   No    |  Partial   |
-| Python slim     |      43 MB |    130 MB |    9x    |   No    |     No     |
-| Node.js alpine  |      57 MB |    180 MB |   12x    |   No    |     No     |
-| alpine/k8s      |      60 MB |    150 MB |   10x    |   No    |  Partial   |
+| Runtime         | Compressed |   On-disk | vs Assay | Cold Start | K8s-native |
+| --------------- | ---------: | --------: | :------: | ---------: | :--------: |
+| **Assay**       |   **6 MB** | **13 MB** |  **1x**  |   **5 ms** |  **Yes**   |
+| Python alpine   |      17 MB |     50 MB |    3x    |     300 ms |     No     |
+| bitnami/kubectl |      35 MB |     90 MB |    6x    |     200 ms |  Partial   |
+| Python slim     |      43 MB |    130 MB |    9x    |     300 ms |     No     |
+| Node.js alpine  |      57 MB |    180 MB |   12x    |     500 ms |     No     |
+| alpine/k8s      |      60 MB |    150 MB |   10x    |     200 ms |  Partial   |
+| Deno            |      75 MB |    200 MB |   13x    |      50 ms |     No     |
+| Node.js slim    |     105 MB |    300 MB |   18x    |     500 ms |     No     |
+| Bun             |     115 MB |    250 MB |   19x    |      30 ms |     No     |
+| postman/newman  |     128 MB |    350 MB |   21x    |     800 ms |     No     |
 
 ## Installation
 
@@ -269,7 +273,7 @@ yaml, assert, log, env, sleep, time, base64).
 | `http.put(url, body, opts?)`             | PUT request                                |
 | `http.patch(url, body, opts?)`           | PATCH request                              |
 | `http.delete(url, opts?)`                | DELETE request                             |
-| `http.serve(port, routes)`               | Start HTTP server (blocking)               |
+| `http.serve(port, routes)`               | Start HTTP server (async handlers)         |
 | `opts.headers = {["X-Key"] = "value"}`   | Custom headers                             |
 | `routes = {GET = {["/path"] = handler}}` | Route table for server                     |
 | `return {sse = function(send) ... end}`  | SSE streaming response (server)            |

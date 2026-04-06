@@ -28,9 +28,10 @@ Options table supports `{headers = {["X-Key"] = "value"}}`.
 - `http.put(url, body, opts?)` → `{status, body, headers}` — PUT request
 - `http.patch(url, body, opts?)` → `{status, body, headers}` — PATCH request
 - `http.delete(url, opts?)` → `{status, body, headers}` — DELETE request
-- `http.serve(port, routes)` → blocks — Start HTTP server
+- `http.serve(port, routes)` → blocks — Start HTTP server with async handlers
   - Routes: `{GET = {["/path"] = function(req) return {status=200, body="ok"} end}}`
   - Handlers receive `{method, path, body, headers, query}`, return `{status, body, json?, headers?}`
+  - Handlers can call async builtins (`http.get`, `sleep`, etc.)
   - SSE: return `{sse = function(send) send({event="update", data="hello", id="1"}) end}`
     - `send()` accepts: `event`, `data`, `id`, `retry` fields
     - Sets `Content-Type: text/event-stream` automatically

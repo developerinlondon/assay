@@ -1,3 +1,11 @@
+---
+name: assay
+description: Infrastructure scripting runtime — 46 built-in modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one 9 MB binary.
+metadata:
+  author: developerinlondon
+  version: "0.6.1"
+---
+
 # Assay Skill — LLM Agent Guide
 
 Assay is a single ~9 MB static binary that runs Lua scripts in Kubernetes. It replaces 50-250 MB
@@ -111,7 +119,7 @@ These are always available in every `.lua` script.
 | `http.put(url, body, opts?)`   | PUT request                                    |
 | `http.patch(url, body, opts?)` | PATCH request                                  |
 | `http.delete(url, opts?)`      | DELETE request                                 |
-| `http.serve(port, routes)`     | Start HTTP server (blocking)                   |
+| `http.serve(port, routes)`     | Start HTTP server (async handlers)             |
 
 Options: `{ headers = { ["X-Key"] = "value" } }`
 

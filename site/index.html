@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Assay — Lightweight Lua Runtime for Kubernetes</title>
-  <meta name="description" content="Assay is a single ~9 MB binary that replaces 50-250 MB Python/Node/kubectl containers and dozens of MCP servers in Kubernetes Jobs.">
+  <title>Assay — Infrastructure Testing &amp; Automation Runtime</title>
+  <meta name="description" content="Assay is a 9 MB Lua runtime for infrastructure testing, Kubernetes automation, HTTP servers, and AI agent integration. 46 built-in modules. Replaces kubectl, Python, Node.js, curl, jq.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,69 +13,212 @@
       <a href="index.html" class="logo">Assay</a>
       <ul>
         <li><a href="index.html">Home</a></li>
-        <li><a href="mcp-comparison.html">MCP Comparison</a></li>
+        <li><a href="mcp-comparison.html">Comparison</a></li>
         <li><a href="agent-guides.html">Agent Guides</a></li>
         <li><a href="modules.html">Modules</a></li>
-        <li><a href="https://github.com/developerinlondon/assay" target="_blank">GitHub</a></li>
+        <li><a href="https://github.com/developerinlondon/assay" target="_blank"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a></li>
+        <li><button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light mode">&#9789;</button></li>
       </ul>
     </nav>
   </header>
 
   <main>
     <!-- Hero -->
-    <section style="text-align: center; padding: 3rem 0 2rem;">
-      <h1 style="font-size: 2.8rem; line-height: 1.2; margin-bottom: 1.5rem;">One Binary. 40+ Modules. Zero MCP Servers.</h1>
-      <p style="font-size: 1.25rem; max-width: 700px; margin: 0 auto 2rem; color: var(--text-light);">
-        Assay is a ~9 MB static binary that replaces 50–250 MB Python/Node/kubectl containers
-        and dozens of MCP servers in Kubernetes Jobs.
-      </p>
-      <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-        <a href="mcp-comparison.html" style="display: inline-block; background-color: var(--accent); color: #fff; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; text-decoration: none; transition: background-color 0.2s;">View MCP Comparison &rarr;</a>
-        <a href="#install" style="display: inline-block; background-color: transparent; color: var(--accent); border: 2px solid var(--accent); padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; text-decoration: none; transition: background-color 0.2s, color 0.2s;">Install Now &darr;</a>
+    <div style="padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem;">
+      <div style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem;">Replaces your entire infrastructure scripting toolchain.</div>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+        <span class="text-muted">One 9 MB binary. 46 built-in modules. Linux, macOS, Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.</span>
+        <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
+          <a href="modules.html" style="display: inline-block; background-color: var(--accent); color: #fff; padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Modules</a>
+          <a href="#install" style="display: inline-block; color: var(--accent); border: 1px solid var(--accent); padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Install</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Service Grid — the headline -->
+    <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem; padding: 1rem 0 2rem;">
+      <a href="modules.html#k8s" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 32 32" fill="var(--accent)"><path d="M15.9.5a2.4 2.4 0 00-1.1.3L4 6.6a2.3 2.3 0 00-1.1 1.4l-2.5 12A2.3 2.3 0 00.8 21.8l8.2 7.5a2.4 2.4 0 001.6.7h10.6a2.4 2.4 0 001.6-.7l8.2-7.5a2.3 2.3 0 00.7-1.8l-2.5-12A2.3 2.3 0 0028 6.6L17.1.8A2.4 2.4 0 0015.9.5z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Kubernetes</div>
+        <div style="font-size: 0.7rem;" class="text-muted">30+ resources</div>
+      </a>
+      <a href="modules.html#argocd" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M12 2C8 2 5 5 5 8c0 1.5.5 2.8 1.3 3.8-.2.7-.3 1.4-.3 2.2 0 .8.1 1.5.3 2.2L5 18l1.5 2 2-1.5c.7.3 1.5.5 2.3.5h2.4c.8 0 1.6-.2 2.3-.5L17.5 20 19 18l-1.3-1.8c.2-.7.3-1.4.3-2.2 0-.8-.1-1.5-.3-2.2C18.5 10.8 19 9.5 19 8c0-3-3-6-7-6zm-2 10a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm4 0a1.5 1.5 0 110 3 1.5 1.5 0 010-3z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">ArgoCD</div>
+        <div style="font-size: 0.7rem;" class="text-muted">Sync, health</div>
+      </a>
+      <a href="modules.html#prometheus" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zM17 15h-1c-1.1 0-2-.9-2-2v-2c0-1.1-.9-2-2-2H8V7.07c3.61-.45 7 1.94 7.96 5.52.14.5.04 1.05-.96 2.41z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Prometheus</div>
+        <div style="font-size: 0.7rem;" class="text-muted">PromQL, alerts</div>
+      </a>
+      <a href="modules.html#vault" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M3 6l9-4 9 4v5c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V6z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Vault</div>
+        <div style="font-size: 0.7rem;" class="text-muted">Secrets, PKI</div>
+      </a>
+      <a href="modules.html#grafana" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M3 13h2v7H3zm4-4h2v11H7zm4-3h2v14h-2zm4 5h2v9h-2zm4-2h2v11h-2z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Grafana</div>
+        <div style="font-size: 0.7rem;" class="text-muted">Dashboards</div>
+      </a>
+      <a href="modules.html#github" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 16 16" fill="var(--accent)"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">GitHub</div>
+        <div style="font-size: 0.7rem;" class="text-muted">PRs, issues</div>
+      </a>
+      <a href="modules.html#openclaw" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1.07A7 7 0 0113 21h-2a7 7 0 01-6.93-2H3a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2zm-2 10a1 1 0 100 2 1 1 0 000-2zm4 0a1 1 0 100 2 1 1 0 000-2z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">OpenClaw</div>
+        <div style="font-size: 0.7rem;" class="text-muted">AI agent tools</div>
+      </a>
+      <a href="modules.html#gmail" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Gmail</div>
+        <div style="font-size: 0.7rem;" class="text-muted">Search, send</div>
+      </a>
+      <a href="modules.html#gcal" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Google Cal</div>
+        <div style="font-size: 0.7rem;" class="text-muted">Events CRUD</div>
+      </a>
+      <a href="modules.html#loki" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M3 3h18v2H3V3zm0 4h12v2H3V7zm0 4h18v2H3v-2zm0 4h12v2H3v-2zm0 4h18v2H3v-2z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Loki</div>
+        <div style="font-size: 0.7rem;" class="text-muted">Logs</div>
+      </a>
+      <a href="modules.html#unleash" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M17 7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h10c2.76 0 5-2.24 5-5s-2.24-5-5-5zm0 8c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Unleash</div>
+        <div style="font-size: 0.7rem;" class="text-muted">Feature flags</div>
+      </a>
+      <a href="modules.html#s3" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">S3</div>
+        <div style="font-size: 0.7rem;" class="text-muted">Object storage</div>
+      </a>
+      <a href="modules.html#temporal" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Temporal</div>
+        <div style="font-size: 0.7rem;" class="text-muted">Workflows</div>
+      </a>
+      <a href="modules.html#certmanager" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+        <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg></div>
+        <div style="font-weight: 600; font-size: 0.8rem;">cert-manager</div>
+        <div style="font-size: 0.7rem;" class="text-muted">TLS certs</div>
+      </a>
+      <a href="modules.html" class="card" style="text-align: center; text-decoration: none; color: var(--accent); padding: 1rem 0.5rem;">
+        <div style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem;">+31</div>
+        <div style="font-weight: 600; font-size: 0.8rem;">More</div>
+        <div style="font-size: 0.7rem;">View all &rarr;</div>
+      </a>
+    </section>
+
+    <!-- Key Stats (compact) -->
+    <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; padding: 0 0 2rem;">
+      <div style="text-align: center; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
+        <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent);">9 MB</div>
+        <div class="text-muted" style="font-size: 0.8rem;">Static binary</div>
+      </div>
+      <div style="text-align: center; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
+        <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent);">46</div>
+        <div class="text-muted" style="font-size: 0.8rem;">Built-in modules</div>
+      </div>
+      <div style="text-align: center; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
+        <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent);">Lua 5.5</div>
+        <div class="text-muted" style="font-size: 0.8rem;">+ Rust/Tokio</div>
+      </div>
+      <div style="text-align: center; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
+        <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent);">5 ms</div>
+        <div class="text-muted" style="font-size: 0.8rem;">Cold start</div>
       </div>
     </section>
 
-    <!-- Key Stats -->
-    <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; padding: 2rem 0;">
-      <div style="text-align: center; padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background-color: var(--code-bg);">
-        <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">9 MB</div>
-        <div style="color: var(--text-light); margin-top: 0.25rem;">Binary size<br>(vs 50–250 MB containers)</div>
+    <!-- Core Capabilities -->
+    <h2>Core Capabilities</h2>
+    <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+      <div class="card">
+        <h3 style="margin-top: 0;">HTTP Server &amp; SSE</h3>
+        <p class="text-muted">Build web services with async route handlers. Handlers can call http.get, sleep, and any async builtin. SSE streaming built in.</p>
+        <pre style="margin-bottom: 0;"><code>http.serve(8080, {
+  GET = {
+    ["/api"] = function(req)
+      local resp = http.get(API_URL)
+      return { status = 200, json = resp }
+    end
+  }
+})</code></pre>
       </div>
-      <div style="text-align: center; padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background-color: var(--code-bg);">
-        <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">40+</div>
-        <div style="color: var(--text-light); margin-top: 0.25rem;">Built-in modules</div>
+      <div class="card">
+        <h3 style="margin-top: 0;">Kubernetes &amp; GitOps</h3>
+        <p class="text-muted">30+ K8s resource types, ArgoCD, Kargo, Flux, Traefik. In-cluster and cross-cluster auth.</p>
+        <pre style="margin-bottom: 0;"><code>local k8s = require("assay.k8s")
+local pods = k8s.list("default", "pod")
+local argo = require("assay.argocd")
+local c = argo.client(url, {token=t})
+local apps = c:applications()</code></pre>
       </div>
-      <div style="text-align: center; padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background-color: var(--code-bg);">
-        <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">15 ms</div>
-        <div style="color: var(--text-light); margin-top: 0.25rem;">Context query latency</div>
+      <div class="card">
+        <h3 style="margin-top: 0;">AI Agent Integration</h3>
+        <p class="text-muted">OpenClaw platform tools, GitHub PRs/issues, Gmail, Google Calendar. Build AI-powered workflows.</p>
+        <pre style="margin-bottom: 0;"><code>local oc = require("assay.openclaw")
+local c = oc.client()
+c:send("discord", "#ops", "Done!")
+local r = c:llm_task("Summarize")
+c:state_set("key", {v="1.2"})</code></pre>
       </div>
-      <div style="text-align: center; padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background-color: var(--code-bg);">
-        <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">5 ms</div>
-        <div style="color: var(--text-light); margin-top: 0.25rem;">Cold start time</div>
+      <div class="card">
+        <h3 style="margin-top: 0;">Monitoring &amp; Observability</h3>
+        <p class="text-muted">Prometheus, Grafana, Loki, Alertmanager. Query metrics, push logs, manage alerts and dashboards.</p>
+        <pre style="margin-bottom: 0;"><code>local prom = require("assay.prometheus")
+local r = prom.query(url, "up")
+assert.gt(#r, 0, "No targets")
+local loki = require("assay.loki")
+loki.push(url, "log line")</code></pre>
+      </div>
+      <div class="card">
+        <h3 style="margin-top: 0;">Security &amp; Secrets</h3>
+        <p class="text-muted">Vault, cert-manager, ESO, Dex, Zitadel. JWT signing, OIDC, secret management.</p>
+        <pre style="margin-bottom: 0;"><code>local vault = require("assay.vault")
+local c = vault.client(url, {token=t})
+local s = c:kv_get("my/secret")
+local jwt = crypto.jwt_sign(
+  {sub="svc"}, key, "HS256")</code></pre>
+      </div>
+      <div class="card">
+        <h3 style="margin-top: 0;">Infrastructure Testing</h3>
+        <p class="text-muted">Built-in assertions, structured YAML checks with retry and backoff. Verify deployments, health endpoints, and service readiness.</p>
+        <pre style="margin-bottom: 0;"><code># checks.yaml — retry + backoff
+checks:
+  - name: api-healthy
+    type: http
+    url: http://api:8080/health
+    retries: 5
+    backoff: 3s
+    expect:
+      status: 200</code></pre>
       </div>
     </section>
 
-    <!-- What is Assay? -->
-    <h2>What is Assay?</h2>
-    <p>
-      Assay is a universal API execution engine &mdash; a lightweight Lua runtime purpose-built for
-      Kubernetes. It runs in two modes, auto-detected by file extension:
+    <!-- Size & Speed -->
+    <p style="padding: 1rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem;">
+      <strong>9 MB static binary</strong> &mdash; <code>FROM scratch</code>, 5 ms cold start, 21x smaller than postman/newman.
+      <a href="mcp-comparison.html">See full size &amp; speed comparison &rarr;</a>
     </p>
 
-    <h3>Lua Script Mode</h3>
-    <p>Run any Lua script with all builtins available &mdash; HTTP client/server, SSE streaming, JSON, crypto, database, and 29 embedded stdlib modules:</p>
-    <pre><code>-- Lua mode: query Prometheus directly
+    <!-- Two Modes -->
+    <h2>Two Modes</h2>
+    <p>Auto-detected by file extension:</p>
+
+    <h3>Lua Scripts (.lua)</h3>
+    <pre><code>#!/usr/bin/assay
 local prom = require("assay.prometheus")
 local result = prom.query("http://prom:9090", "up")
 assert.gt(#result, 0, "No targets up")
 log.info("Targets up: " .. #result)</code></pre>
 
-    <h3>YAML Check Mode</h3>
-    <p>Structured verification with retry, backoff, parallel execution, and JSON output:</p>
-    <pre><code># YAML mode: orchestrated checks
-assay checks.yaml  # retry, backoff, parallel, structured JSON output</code></pre>
-    <pre><code># checks.yaml
-timeout: 120s
+    <h3>YAML Checks (.yaml)</h3>
+    <pre><code>timeout: 120s
 retries: 3
 backoff: 5s
 checks:
@@ -86,73 +229,27 @@ checks:
       status: 200
       json: ".database == \"ok\""</code></pre>
 
-    <!-- Container Size Comparison -->
+    <!-- Container Size -->
     <h2>Container Image Size</h2>
-    <p>
-      Assay ships as a <code>FROM scratch</code> container &mdash; no shell, no package manager,
-      just the static binary. Compare compressed pull sizes:
-    </p>
+    <p><code>FROM scratch</code> &mdash; no shell, no package manager, just the static binary:</p>
     <table>
       <thead>
-        <tr>
-          <th>Runtime</th>
-          <th>Compressed</th>
-          <th>vs Assay</th>
-        </tr>
+        <tr><th>Runtime</th><th>Compressed</th><th>vs Assay</th></tr>
       </thead>
       <tbody>
-        <tr style="font-weight: 600; color: var(--accent);">
-          <td>Assay</td>
-          <td>6 MB</td>
-          <td>1x</td>
-        </tr>
-        <tr>
-          <td>Python alpine</td>
-          <td>17 MB</td>
-          <td>3x</td>
-        </tr>
-        <tr>
-          <td>bitnami/kubectl</td>
-          <td>35 MB</td>
-          <td>6x</td>
-        </tr>
-        <tr>
-          <td>Python slim</td>
-          <td>43 MB</td>
-          <td>9x</td>
-        </tr>
-        <tr>
-          <td>Node.js alpine</td>
-          <td>57 MB</td>
-          <td>12x</td>
-        </tr>
-        <tr>
-          <td>alpine/k8s</td>
-          <td>60 MB</td>
-          <td>10x</td>
-        </tr>
+        <tr style="font-weight: 600; color: var(--accent);"><td>Assay</td><td>6 MB</td><td>1x</td></tr>
+        <tr><td>alpine/python</td><td>17 MB</td><td>3x</td></tr>
+        <tr><td>bitnami/kubectl</td><td>35 MB</td><td>6x</td></tr>
+        <tr><td>Node.js alpine</td><td>57 MB</td><td>12x</td></tr>
+        <tr><td>alpine/k8s</td><td>60 MB</td><td>10x</td></tr>
       </tbody>
     </table>
-
-    <!-- MCP Replacement -->
-    <h2>Replace Your MCP Servers</h2>
-    <p>
-      Assay replaces 42 popular MCP servers. Instead of running 10 separate <code>npx -y</code> processes
-      consuming 500 MB of npm dependencies, use one 9 MB binary with 40+ modules built in.
-    </p>
-    <p>
-      Every MCP server you remove is one fewer process to manage, one fewer <code>node_modules</code>
-      to update, and one fewer attack surface in your cluster.
-    </p>
-    <p>
-      <a href="mcp-comparison.html">View full MCP comparison &rarr;</a>
-    </p>
 
     <!-- Install -->
     <h2 id="install">Install</h2>
 
-    <h3>Pre-built Binary (fastest)</h3>
-    <pre><code># Linux (x86_64, static — runs on any distro)
+    <h3>Pre-built Binary</h3>
+    <pre><code># Linux (x86_64, static)
 curl -L -o assay https://github.com/developerinlondon/assay/releases/latest/download/assay-linux-x86_64
 chmod +x assay && sudo mv assay /usr/local/bin/
 
@@ -163,28 +260,44 @@ chmod +x assay && sudo mv assay /usr/local/bin/</code></pre>
     <h3>Docker</h3>
     <pre><code>docker pull ghcr.io/developerinlondon/assay:latest</code></pre>
 
-    <h3>Cargo</h3>
-    <pre><code>cargo install assay-lua</code></pre>
+    <h3>Cargo / Rust Library</h3>
+    <pre><code># CLI tool
+cargo install assay-lua
 
-    <!-- Quick Example -->
-    <h2>Quick Example</h2>
-    <p>A complete health check script &mdash; JWT auth, HTTP request, assertion &mdash; in 10 lines:</p>
-    <pre><code>#!/usr/bin/assay
-local token = crypto.jwt_sign({
-  iss = "assay", sub = "health-check",
-  exp = time() + 300
-}, env.get("JWT_SECRET"), "HS256")
+# As a Rust dependency
+# Cargo.toml: assay-lua = "0.6"</code></pre>
 
-local resp = http.get("https://api.example.com/health", {
-  headers = { Authorization = "Bearer " .. token }
-})
-assert.eq(resp.status, 200, "API health check failed")
-log.info("API healthy: " .. resp.body)</code></pre>
+    <h3>mise</h3>
+    <pre><code># .mise.toml
+"github:developerinlondon/assay" = "v0.6.1"</code></pre>
+
   </main>
 
   <footer>
-    <p>Assay is MIT licensed &mdash; <a href="https://github.com/developerinlondon/assay">GitHub</a> · <a href="https://crates.io/crates/assay-lua">crates.io</a> · <a href="https://github.com/developerinlondon/assay/pkgs/container/assay">Docker</a></p>
-    <p class="text-muted">&copy; 2025 Assay Contributors</p>
+    <p>Assay is MIT licensed &mdash;
+      <a href="https://github.com/developerinlondon/assay"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; margin-right: 2px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a> &middot;
+      <a href="https://crates.io/crates/assay-lua">crates.io</a> &middot;
+      <a href="https://github.com/developerinlondon/assay/pkgs/container/assay">Docker</a>
+    </p>
+    <p class="text-muted">&copy; 2026 Assay Contributors</p>
   </footer>
+
+  <script>
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : (current === 'light' ? 'dark' :
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark'));
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      document.querySelector('.theme-toggle').textContent = next === 'dark' ? '\u2600' : '\u263D';
+    }
+    // Restore saved theme
+    const saved = localStorage.getItem('theme');
+    if (saved) {
+      document.documentElement.setAttribute('data-theme', saved);
+      document.querySelector('.theme-toggle').textContent = saved === 'dark' ? '\u2600' : '\u263D';
+    }
+  </script>
 </body>
 </html>

@@ -2,14 +2,7 @@
 
 ## Skills & Rules
 
-For coding practices, commit hygiene, and workflow rules, install from
-[agent-skills](https://github.com/developerinlondon/agent-skills):
-
-```bash
-npx skills add developerinlondon/agent-skills
-```
-
-Key skills that apply to this project:
+Key coding practices for this project:
 
 - **autonomous-workflow** — Proposal-first development, decision authority, commit hygiene
 - **code-quality** — Warnings-as-errors, no underscore prefixes, test coverage, type safety

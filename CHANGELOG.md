@@ -2,6 +2,15 @@
 
 All notable changes to Assay are documented here.
 
+## [0.6.1] - 2026-04-06
+
+### Fixed
+
+- **http.serve async handlers**: Route handlers are now async (`call_async`), allowing
+  them to call `http.get`, `sleep`, and any other async builtins. Previously, calling
+  an async function from a route handler would crash with "attempt to yield from outside
+  a coroutine". This was the only remaining sync call site for user Lua functions.
+
 ## [0.6.0] - 2026-04-05
 
 ### Added
