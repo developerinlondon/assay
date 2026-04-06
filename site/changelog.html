@@ -6,6 +6,13 @@
   <title>Assay — Changelog</title>
   <meta name="description" content="Assay release history and changelog. All notable changes, new features, bug fixes, and breaking changes.">
   <link rel="stylesheet" href="style.css">
+  <style>
+    .changelog h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; margin-top: 2.5rem; }
+    .changelog h3 { font-size: 1.1rem; margin-top: 1rem; margin-bottom: 0.5rem; }
+    .changelog ul { margin-top: 0.3rem; }
+    .changelog code { font-size: 0.9em; }
+    .changelog > h2:first-child { margin-top: 0; }
+  </style>
 </head>
 <body>
   <header>
@@ -31,174 +38,35 @@
       as pre-built binaries, Docker image, and crates.io package.
     </p>
 
-    <!-- v0.7.0 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.7.0" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.7.0 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-04-06</span>
-      </h2>
-      <h3>Added</h3>
-      <ul>
-        <li><strong>Temporal gRPC client</strong> (optional <code>temporal</code> feature) — Native gRPC bridge for Temporal workflow engine via <code>temporalio-client</code> v0.2.0. The <code>temporal</code> global provides <code>connect()</code> for persistent clients and <code>start()</code> for one-shot workflow execution.</li>
-        <li>Client methods: <code>start_workflow</code>, <code>signal_workflow</code>, <code>query_workflow</code>, <code>describe_workflow</code>, <code>get_result</code>, <code>cancel_workflow</code>, <code>terminate_workflow</code>.</li>
-        <li>All methods are async with JSON payload encoding.</li>
-        <li>Build with <code>cargo build --features temporal</code> (requires <code>protoc</code>).</li>
-        <li>8 new tests for gRPC registration, error handling, and stdlib compatibility.</li>
-      </ul>
-      <h3>Dependencies (temporal feature only)</h3>
-      <ul>
-        <li><code>temporalio-client</code> 0.2.0, <code>temporalio-sdk</code> 0.2.0, <code>temporalio-common</code> 0.2.0, <code>url</code> 2.x</li>
-      </ul>
-    </section>
-
-    <!-- v0.6.1 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.6.1" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.6.1 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-04-06</span>
-      </h2>
-      <h3>Fixed</h3>
-      <ul>
-        <li><strong>http.serve async handlers</strong> — Route handlers are now async (<code>call_async</code>), allowing them to call <code>http.get</code>, <code>sleep</code>, and other async builtins from inside route handlers.</li>
-      </ul>
-      <h3>Added</h3>
-      <ul>
-        <li><code>npx skills add developerinlondon/assay</code> for SKILL.md installation.</li>
-        <li>Dark/light theme toggle on assay.rs with localStorage persistence.</li>
-        <li>Infrastructure Testing highlighted as core capability on homepage.</li>
-      </ul>
-      <h3>Changed</h3>
-      <ul>
-        <li><strong>Site overhaul</strong> — compact hero, service grid above fold, size &amp; speed comparison charts, consistent nav.</li>
-        <li><strong>Comparison page</strong> — renamed from "MCP Comparison", shows only domains Assay covers.</li>
-      </ul>
-    </section>
-
-    <!-- v0.6.0 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.6.0" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.6.0 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-04-05</span>
-      </h2>
-      <h3>Added</h3>
-      <ul>
-        <li><strong>6 new stdlib modules</strong> (23 &rarr; 29 total):
-          <code>assay.openclaw</code>, <code>assay.github</code>, <code>assay.gmail</code>, <code>assay.gcal</code>, <code>assay.oauth2</code>, <code>assay.email_triage</code></li>
-        <li><strong>Tool mode</strong>: <code>assay run --mode tool</code> for OpenClaw AI agent integration with structured JSON output.</li>
-        <li><strong>Resume mechanism</strong>: <code>assay resume --token &lt;token&gt; --approve yes|no</code> for paused workflows.</li>
-        <li><strong>OpenClaw extension</strong>: <code>@developerinlondon/assay-openclaw-extension</code> npm package.</li>
-      </ul>
-    </section>
-
-    <!-- v0.5.6 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.5.6" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.5.6 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-04-03</span>
-      </h2>
-      <h3>Added</h3>
-      <ul>
-        <li><strong>SSE streaming</strong> for <code>http.serve</code> via <code>{ sse = function(send) ... end }</code> return shape.</li>
-        <li><strong>assert.ne(a, b, msg?)</strong> — inequality assertion.</li>
-      </ul>
-      <h3>Fixed</h3>
-      <ul>
-        <li>Content-Type precedence in <code>http.serve</code> responses.</li>
-        <li>SSE newline validation prevents field injection.</li>
-      </ul>
-    </section>
-
-    <!-- v0.5.5 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.5.5" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.5.5 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-03-13</span>
-      </h2>
-      <h3>Added</h3>
-      <ul>
-        <li><strong>follow_redirects</strong> option for YAML HTTP checks and Lua <code>http.client()</code> builder.</li>
-      </ul>
-    </section>
-
-    <!-- v0.5.4 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.5.4" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.5.4 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-03-12</span>
-      </h2>
-      <h3>Fixed</h3>
-      <ul>
-        <li><strong>unleash.ensure_token</strong>: Send <code>tokenName</code> instead of <code>username</code> in create token API payload.</li>
-      </ul>
-    </section>
-
-    <!-- v0.5.3 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.5.3" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.5.3 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-03-12</span>
-      </h2>
-      <h3>Added</h3>
-      <ul>
-        <li><strong>disk builtins</strong>: <code>disk.usage(path)</code> and <code>disk.mounts()</code>.</li>
-        <li><strong>os builtins</strong>: <code>os.info()</code> — name, version, arch, hostname, uptime.</li>
-        <li><strong>Expanded fs and env builtins</strong>: <code>fs.exists</code>, <code>fs.mkdir</code>, <code>fs.glob</code>, <code>env.set</code>, <code>env.list</code>, etc.</li>
-      </ul>
-    </section>
-
-    <!-- v0.5.0 - v0.5.2 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.5.0" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.5.0 &ndash; v0.5.2 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-02 to 2026-03</span>
-      </h2>
-      <ul>
-        <li><strong>CLI subcommands</strong>: <code>assay exec</code>, <code>assay context</code>, <code>assay modules</code></li>
-        <li><strong>Module discovery</strong>: BM25 search with FTS5 backend.</li>
-        <li><strong>shell builtins</strong>: <code>shell.run</code>, <code>shell.output</code>, <code>shell.pipe</code></li>
-        <li><strong>process builtins</strong>: <code>process.spawn</code>, <code>process.kill</code>, <code>process.list</code></li>
-      </ul>
-    </section>
-
-    <!-- v0.4.x -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.4.0" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.4.0 &ndash; v0.4.4 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-02</span>
-      </h2>
-      <ul>
-        <li><strong>unleash</strong>, <strong>zitadel</strong>, <strong>postgres</strong> stdlib modules.</li>
-        <li><strong>crypto.hmac</strong> with all 8 hash algorithms.</li>
-        <li><strong>S3 stdlib module</strong> with AWS Sig V4 auth.</li>
-        <li>Modular builtins refactoring (split monolithic builtins.rs).</li>
-      </ul>
-    </section>
-
-    <!-- v0.3.0 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.3.0" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.3.0 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-02-11</span>
-      </h2>
-      <p>First feature-complete release. 19 stdlib modules, HTTP server, database, WebSocket, JWT, templates, async, regex, YAML/TOML, crypto. Lua 5.5. 491 tests.</p>
-    </section>
-
-    <!-- v0.0.1 -->
-    <section style="margin-bottom: 2.5rem;">
-      <h2 id="v0.0.1" style="border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;">
-        v0.0.1 <span style="font-weight: 400; font-size: 0.9rem; color: var(--text-secondary);">— 2026-02-09</span>
-      </h2>
-      <p>Initial release. YAML-based check orchestration for ArgoCD PostSync verification.</p>
-    </section>
-
+    <div class="changelog">
+__CHANGELOG_CONTENT__
+    </div>
   </main>
 
   <footer>
-    <p>Assay &copy; 2026 &mdash; MIT License &mdash; <a href="https://github.com/developerinlondon/assay">Source</a></p>
+    <p>Assay is MIT licensed &mdash;
+      <a href="https://github.com/developerinlondon/assay">GitHub</a> &middot;
+      <a href="https://crates.io/crates/assay-lua">crates.io</a> &middot;
+      <a href="https://github.com/developerinlondon/assay/pkgs/container/assay">Docker</a>
+    </p>
+    <p class="text-muted">&copy; 2026 Assay Contributors &middot; <span style="font-family: monospace; font-size: 0.75rem;">__GIT_SHA__</span></p>
   </footer>
 
   <script>
     function toggleTheme() {
       const html = document.documentElement;
       const current = html.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : 'dark';
+      const next = current === 'dark' ? 'light' : (current === 'light' ? 'dark' :
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark'));
       html.setAttribute('data-theme', next);
       localStorage.setItem('theme', next);
+      document.querySelector('.theme-toggle').textContent = next === 'dark' ? '\u2600' : '\u263D';
     }
-    (function() {
-      const saved = localStorage.getItem('theme');
-      if (saved) document.documentElement.setAttribute('data-theme', saved);
-    })();
+    const saved = localStorage.getItem('theme');
+    if (saved) {
+      document.documentElement.setAttribute('data-theme', saved);
+      document.querySelector('.theme-toggle').textContent = saved === 'dark' ? '\u2600' : '\u263D';
+    }
   </script>
 </body>
 </html>
