@@ -19,11 +19,11 @@ Use cases:
 
 - **Standalone scripting** — system automation, CI/CD tasks, file processing
 - **Embedded runtime** — other Rust services embed assay as a library (`pub mod lua`)
-- **Kubernetes Jobs** — replaces 50–250 MB Python/Node/kubectl containers (~6 MB image)
+- **Kubernetes Jobs** — replaces 50–250 MB Python/Node/kubectl containers (~9 MB image)
 - **Infrastructure automation** — GitOps hooks, health checks, service configuration
 
 - **Repo**: [github.com/developerinlondon/assay](https://github.com/developerinlondon/assay)
-- **Image**: `ghcr.io/developerinlondon/assay:latest` (~6 MB compressed)
+- **Image**: `ghcr.io/developerinlondon/assay:latest` (~9 MB compressed)
 - **Crate**: [crates.io/crates/assay-lua](https://crates.io/crates/assay-lua)
 - **Stack**: Rust (2024 edition), Tokio, Lua 5.5 (mlua), reqwest, clap, axum
 

@@ -45,6 +45,11 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Clippy (warnings = errors)
         run: cargo clippy --tests --target ${{ matrix.target }} -- -D warnings
 
