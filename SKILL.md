@@ -215,6 +215,22 @@ URLs: `postgres://user:pass@host:5432/db`, `mysql://...`, `sqlite:///path/to/fil
 | `sleep(secs)`    | Sleep for N seconds      |
 | `time()`         | Unix timestamp (integer) |
 
+### Temporal gRPC (optional feature)
+
+Available when built with `--features temporal`. Native gRPC client for Temporal workflow engine.
+
+| Function                                     | Description                                           |
+| -------------------------------------------- | ----------------------------------------------------- |
+| `temporal.connect({ url, namespace? })`      | Connect to Temporal server, returns client             |
+| `temporal.start({ url, namespace?, ... })`   | One-shot: connect + start workflow                     |
+| `client:start_workflow({ task_queue, workflow_type, workflow_id, input? })` | Start a workflow execution |
+| `client:signal_workflow({ workflow_id, signal_name, input? })`             | Signal a running workflow  |
+| `client:query_workflow({ workflow_id, query_type, input? })`               | Query workflow state       |
+| `client:describe_workflow(workflow_id)`       | Get workflow status and metadata                       |
+| `client:get_result({ workflow_id })`          | Wait for workflow completion and get result             |
+| `client:cancel_workflow(workflow_id)`         | Request workflow cancellation                           |
+| `client:terminate_workflow(workflow_id)`      | Forcefully terminate a workflow                         |
+
 ## Stdlib Modules Quick Reference
 
 All 29 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
@@ -237,7 +253,7 @@ All 29 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.dex`           | OIDC discovery, JWKS, health, configuration validation                     |
 | `assay.crossplane`    | Providers, XRDs, compositions, managed resources                           |
 | `assay.velero`        | Backups, restores, schedules, storage locations                            |
-| `assay.temporal`      | Workflows, task queues, schedules, signals                                 |
+| `assay.temporal`      | Workflows, task queues, schedules, signals + native gRPC (temporal feature)|
 | `assay.harbor`        | Projects, repositories, artifacts, vulnerability scanning                  |
 | `assay.healthcheck`   | HTTP checks, JSON path, body matching, latency, multi-check                |
 | `assay.s3`            | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                    |
@@ -341,6 +357,37 @@ assert.gt(up_count, 0, "No Prometheus targets are up")
 log.info("Active targets: " .. up_count .. ", up query: " .. tostring(c:query("up")))
 ```
 
+### Temporal Workflow (gRPC)
+
+```lua
+#!/usr/bin/assay
+-- Native gRPC client (requires --features temporal)
+local client = temporal.connect({
+  url = "temporal-frontend.infra:7233",
+  namespace = "my-namespace",
+})
+
+-- Start a workflow
+local handle = client:start_workflow({
+  task_queue = "my-queue",
+  workflow_type = "ProcessOrder",
+  workflow_id = "order-12345",
+  input = { item = "widget", quantity = 3 },
+})
+log.info("Started workflow: " .. handle.run_id)
+
+-- Check status
+local info = client:describe_workflow("order-12345")
+log.info("Status: " .. info.status)
+
+-- Signal a running workflow
+client:signal_workflow({
+  workflow_id = "order-12345",
+  signal_name = "approve",
+  input = { approved_by = "admin" },
+})
+```
+
 ## Error Handling
 
 Errors from stdlib methods follow the format: `"<module>: <METHOD> <path> HTTP <status>: <body>"`
@@ -430,6 +477,10 @@ fails, run `assay modules` to see the exact module names.
 
 **Debugging**: Add `log.info(json.encode(some_table))` to inspect table contents. The `json.encode`
 builtin handles nested tables.
+
+**Temporal gRPC vs HTTP**: The `temporal` builtin (gRPC) and `assay.temporal` stdlib (HTTP) are
+complementary. Use `temporal.connect()` for starting/signaling workflows (gRPC, more reliable).
+Use `require("assay.temporal").client()` for querying the Temporal Web UI (HTTP REST API).
 
 ## MCP Replacement
 
