@@ -2,6 +2,14 @@
 
 All notable changes to Assay are documented here.
 
+## [0.7.1] - 2026-04-06
+
+### Changed
+
+- **Temporal included by default**: The `temporal` feature is now part of the default build.
+  The standard Docker image and binary include native gRPC workflow support out of the box.
+  Binary size increases from ~6.8 MB to ~8.7 MB.
+
 ## [0.7.0] - 2026-04-06
 
 ### Added
