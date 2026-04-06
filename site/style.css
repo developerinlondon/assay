@@ -27,8 +27,8 @@
   }
 }
 
-/* Manual overrides — html[] beats :root inside @media */
-html[data-theme="dark"], html[data-theme="dark"] :root {
+/* Manual overrides — doubled selector beats :root inside @media */
+html[data-theme="dark"][data-theme="dark"] {
   --bg: #0d1117;
   --bg-secondary: #161b22;
   --text: #c9d1d9;
@@ -38,7 +38,7 @@ html[data-theme="dark"], html[data-theme="dark"] :root {
   --code-text: #79c0ff;
 }
 
-html[data-theme="light"], html[data-theme="light"] :root {
+html[data-theme="light"][data-theme="light"] {
   --bg: #ffffff;
   --bg-secondary: #f6f8fa;
   --text: #24292f;
