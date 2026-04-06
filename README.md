@@ -1,7 +1,6 @@
 # Assay
 
-Universal API Execution Engine — Lightweight Lua runtime for Kubernetes. Verification, scripting,
-and web services.
+Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 46 built-in modules.
 
 [![CI](https://github.com/developerinlondon/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/developerinlondon/assay/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/assay-lua.svg)](https://crates.io/crates/assay-lua)
@@ -9,15 +8,17 @@ and web services.
 
 ## What is Assay?
 
-Assay is a single ~9 MB binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes
-Jobs. It provides a full-featured Lua runtime with built-in HTTP client/server, database access,
-WebSocket, JWT signing, templates, and 29 embedded Kubernetes-native and AI agent libraries.
-
-One binary, auto-detected behavior:
+A single ~9 MB static binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes.
+Full-featured Lua 5.5 runtime with HTTP client/server, database, WebSocket, JWT, templates, native
+Temporal gRPC workflows, and 29 embedded stdlib modules for Kubernetes, monitoring, security, and
+AI agent integrations.
 
 ```bash
-assay checks.yaml    # YAML → check orchestration (retry, backoff, structured output)
-assay script.lua     # Lua → run it (all builtins, script decides what to do)
+assay script.lua     # Run Lua with all builtins
+assay checks.yaml    # Structured checks with retry/backoff/JSON output
+assay exec -e 'log.info("hello")'   # Inline evaluation
+assay context "grafana"              # LLM-ready module docs
+assay modules                        # List all 46+ modules
 ```
 
 Scripts that call `http.serve()` become web services. Scripts that call `http.get()` and exit are
@@ -25,512 +26,185 @@ jobs. Same binary, same builtins.
 
 ## Why Assay?
 
-Container image size comparison (compressed pull):
-
-```
-+-----------------------------------------------------------------------+
-| Docker image size comparison (compressed pull)                        |
-|                                                                       |
-| Assay            ### 9 MB                                              |
-| Python alpine    ###### 17 MB                                         |
-| bitnami/kubectl  ############ 35 MB                                   |
-| Python slim      ############### 43 MB                                |
-| Node.js alpine   #################### 57 MB                           |
-| alpine/k8s       ##################### 60 MB                          |
-| Deno             ########################## 75 MB                     |
-| Node.js slim     #################################### 105 MB          |
-| Bun              ######################################## 115 MB      |
-| postman/newman   ############################################ 128 MB  |
-+-----------------------------------------------------------------------+
-```
-
 | Runtime         | Compressed |   On-disk | vs Assay | Cold Start | K8s-native |
 | --------------- | ---------: | --------: | :------: | ---------: | :--------: |
 | **Assay**       |   **9 MB** | **15 MB** |  **1x**  |   **5 ms** |  **Yes**   |
-| Python alpine   |      17 MB |     50 MB |    3x    |     300 ms |     No     |
-| bitnami/kubectl |      35 MB |     90 MB |    6x    |     200 ms |  Partial   |
-| Python slim     |      43 MB |    130 MB |    9x    |     300 ms |     No     |
-| Node.js alpine  |      57 MB |    180 MB |   12x    |     500 ms |     No     |
-| alpine/k8s      |      60 MB |    150 MB |   10x    |     200 ms |  Partial   |
-| Deno            |      75 MB |    200 MB |   13x    |      50 ms |     No     |
-| Node.js slim    |     105 MB |    300 MB |   18x    |     500 ms |     No     |
-| Bun             |     115 MB |    250 MB |   19x    |      30 ms |     No     |
-| postman/newman  |     128 MB |    350 MB |   21x    |     800 ms |     No     |
+| Python alpine   |      17 MB |     50 MB |    2x    |     300 ms |     No     |
+| bitnami/kubectl |      35 MB |     90 MB |    4x    |     200 ms |  Partial   |
+| Node.js alpine  |      57 MB |    180 MB |    6x    |     500 ms |     No     |
+| Deno            |      75 MB |    200 MB |    8x    |      50 ms |     No     |
+| Bun             |     115 MB |    250 MB |   13x    |      30 ms |     No     |
+| postman/newman  |     128 MB |    350 MB |   14x    |     800 ms |     No     |
 
 ## Installation
 
-### Pre-built Binary (fastest)
-
-Download from [GitHub Releases](https://github.com/developerinlondon/assay/releases/latest):
-
 ```bash
-# Linux (x86_64, static — runs on any distro, no dependencies)
+# Pre-built binary (Linux x86_64 static)
 curl -L -o assay https://github.com/developerinlondon/assay/releases/latest/download/assay-linux-x86_64
-chmod +x assay
-sudo mv assay /usr/local/bin/
+chmod +x assay && sudo mv assay /usr/local/bin/
 
 # macOS (Apple Silicon)
 curl -L -o assay https://github.com/developerinlondon/assay/releases/latest/download/assay-darwin-aarch64
-chmod +x assay
-sudo mv assay /usr/local/bin/
-```
+chmod +x assay && sudo mv assay /usr/local/bin/
 
-### Docker
-
-```bash
+# Docker
 docker pull ghcr.io/developerinlondon/assay:latest
-docker run --rm ghcr.io/developerinlondon/assay:latest --version
-```
 
-### Cargo
-
-```bash
+# Cargo
 cargo install assay-lua
 ```
 
-### From Source
-
-```bash
-git clone https://github.com/developerinlondon/assay.git
-cd assay
-cargo build --release
-./target/release/assay --version
-```
-
-## Usage
-
-### Two Modes
-
-Assay auto-detects behavior by file extension:
-
-#### 1. YAML Check Mode (Orchestration)
-
-Run structured verification checks with retry, backoff, and JSON output:
-
-```yaml
-# checks.yaml
-timeout: 120s
-retries: 3
-backoff: 5s
-parallel: false
-
-checks:
-  - name: grafana-healthy
-    type: http
-    url: http://grafana.monitoring:80/api/health
-    expect:
-      status: 200
-      json: ".database == \"ok\""
-
-  - name: prometheus-targets
-    type: prometheus
-    url: http://prometheus.monitoring:9090
-    query: "count(up)"
-    expect:
-      min: 1
-
-  - name: custom-check
-    type: script
-    file: verify.lua
-```
-
-```bash
-assay checks.yaml
-```
-
-#### 2. Lua Script Mode (Direct Execution)
-
-Run Lua scripts with all builtins available:
-
-```lua
-#!/usr/bin/assay
--- HTTP health check with JWT auth
-local token = crypto.jwt_sign({
-  iss = "assay",
-  sub = "health-check",
-  exp = time() + 300
-}, env.get("JWT_SECRET"), "HS256")
-
-local resp = http.get("https://api.example.com/health", {
-  headers = { Authorization = "Bearer " .. token }
-})
-
-assert.eq(resp.status, 200, "API health check failed")
-log.info("API healthy: " .. resp.body)
-```
-
-```bash
-chmod +x script.lua
-./script.lua
-```
-
-### Shebang Support
-
-Assay supports shebang for executable Lua scripts:
-
-```lua
-#!/usr/bin/assay
-log.info("Hello from Assay!")
-```
-
-```bash
-chmod +x hello.lua
-./hello.lua
-```
-
-## v0.5.0: Universal API Execution Engine
-
-Assay v0.5.0 adds intelligent module discovery and LLM-friendly context injection.
-
-### New Subcommands
-
-#### `assay context <query>` — Find modules by keyword
-
-Searches all available modules and returns prompt-ready Markdown with method signatures:
-
-```bash
-assay context "grafana"
-```
-
-Output:
-
-```
-# Assay Module Context
-
-## Matching Modules
-
-### assay.grafana
-Grafana monitoring and dashboards. Health, datasources, annotations, alerts, folders.
-Methods:
-  c:health() -> {database, version, commit} | Check Grafana health
-  c:datasources() -> [{id, name, type, url}] | List all datasources
-  c:dashboard(uid) -> {dashboard, meta} | Get dashboard by UID
-  ...
-```
-
-Paste the output directly into an LLM prompt to get accurate, hallucination-free Lua code.
-
-#### `assay modules` — List all available modules
-
-```bash
-assay modules
-```
-
-Lists all 40+ built-in modules with source and description:
-
-```
-MODULE                         SOURCE     DESCRIPTION
---------------------------------------------------------------------------------
-assay.grafana                  builtin    Grafana monitoring and dashboards...
-assay.k8s                      builtin    Kubernetes API client. 30+ resource types...
-http                           builtin    HTTP client and server: get, post, put, patch, delete, serve
-...
-```
-
-#### `assay exec -e '<lua>'` — Run Lua inline
-
-```bash
-assay exec -e 'log.info("hello from assay")'
-assay exec -e 'assert.eq(1 + 1, 2)'
-```
-
-#### `assay run <file>` — Explicit run (same as passing file directly)
-
-```bash
-assay run script.lua
-assay run checks.yaml
-```
-
-## v0.5.1: MCP Comparison & Website
-
-Keyword-enriched search across all 40 modules. Static website at assay.rs with MCP comparison (42
-servers), AI agent integration guides, and llms.txt for LLM context traversal.
-
-### Filesystem Module Loading
-
-Place custom `.lua` modules in `./modules/` (project-local) or `~/.assay/modules/` (global):
-
-```
-./modules/
-  myapi.lua      # require("assay.myapi") in scripts
-~/.assay/modules/
-  company.lua    # require("assay.company") in scripts
-```
-
-Set `ASSAY_MODULES_PATH` to override the global directory.
-
 ## Built-in API Reference
 
-All builtins are available to `.lua` scripts. YAML check mode uses a sandboxed subset (http, json,
-yaml, assert, log, env, sleep, time, base64).
+All builtins are available globally in `.lua` scripts — no `require` needed.
 
-### HTTP Client
+### HTTP & Networking
 
-| Function                                 | Description                                |
-| ---------------------------------------- | ------------------------------------------ |
-| `http.get(url, opts?)`                   | GET request, returns `{status, body, ...}` |
-| `http.post(url, body, opts?)`            | POST request (auto-JSON if table)          |
-| `http.put(url, body, opts?)`             | PUT request                                |
-| `http.patch(url, body, opts?)`           | PATCH request                              |
-| `http.delete(url, opts?)`                | DELETE request                             |
-| `http.serve(port, routes)`               | Start HTTP server (async handlers)         |
-| `opts.headers = {["X-Key"] = "value"}`   | Custom headers                             |
-| `routes = {GET = {["/path"] = handler}}` | Route table for server                     |
-| `return {sse = function(send) ... end}`  | SSE streaming response (server)            |
+| Function | Description |
+| --- | --- |
+| `http.get(url, opts?)` | GET request, returns `{status, body, headers}` |
+| `http.post(url, body, opts?)` | POST (auto-JSON if body is table) |
+| `http.put/patch/delete(url, ...)` | PUT, PATCH, DELETE |
+| `http.serve(port, routes)` | HTTP server with async handlers + SSE streaming |
+| `ws.connect(url)` | WebSocket client (`send`, `recv`, `close`) |
 
 ### Serialization
 
-| Function             | Description                     |
-| -------------------- | ------------------------------- |
-| `json.parse(str)`    | Parse JSON string to Lua table  |
-| `json.encode(table)` | Encode Lua table to JSON string |
-| `yaml.parse(str)`    | Parse YAML string to Lua table  |
-| `yaml.encode(table)` | Encode Lua table to YAML string |
-| `toml.parse(str)`    | Parse TOML string to Lua table  |
-| `toml.encode(table)` | Encode Lua table to TOML string |
-| `base64.encode(str)` | Base64 encode                   |
-| `base64.decode(str)` | Base64 decode                   |
+| Function | Description |
+| --- | --- |
+| `json.parse(str)` / `json.encode(tbl)` | JSON |
+| `yaml.parse(str)` / `yaml.encode(tbl)` | YAML |
+| `toml.parse(str)` / `toml.encode(tbl)` | TOML |
+| `base64.encode(str)` / `base64.decode(str)` | Base64 |
 
-### Filesystem
+### Filesystem & System
 
-| Function            | Description          |
-| ------------------- | -------------------- |
-| `fs.read(path)`     | Read file to string  |
-| `fs.write(path, s)` | Write string to file |
+| Function | Description |
+| --- | --- |
+| `fs.read(path)` / `fs.write(path, s)` | Read/write files |
+| `fs.exists(path)` / `fs.mkdir(path)` / `fs.glob(pattern)` | File operations |
+| `shell.exec(cmd, opts?)` | Execute shell commands |
+| `process.list()` / `process.kill(pid)` | Process management |
+| `disk.usage(path)` / `disk.sweep(dir, age)` | Disk info and cleanup |
+| `os.hostname()` / `os.arch()` / `os.platform()` | OS information |
+| `env.get(key)` / `env.set(key, val)` | Environment variables |
+| `sleep(secs)` / `time()` | Pause execution, Unix timestamp |
 
-### Cryptography
+### Cryptography & Regex
 
-| Function                                   | Description                                   |
-| ------------------------------------------ | --------------------------------------------- |
-| `crypto.jwt_sign(claims, key, alg, opts?)` | Sign JWT (RS256/384/512), opts: `{kid="..."}` |
-| `crypto.hash(str, alg)`                    | Hash string (sha256, sha384, sha512, etc.)    |
-| `crypto.hmac(key, data, alg?, raw?)`       | HMAC (sha256 default, raw=true for binary)    |
-| `crypto.random(len)`                       | Secure random string (hex)                    |
+| Function | Description |
+| --- | --- |
+| `crypto.jwt_sign(claims, key, alg, opts?)` | Sign JWT (HS256, RS256/384/512, ES256/384) |
+| `crypto.hash(str, alg)` | SHA-256, SHA-384, SHA-512, SHA3 |
+| `crypto.hmac(key, data, alg?, raw?)` | HMAC (all 8 hash algorithms) |
+| `crypto.random(len)` | Secure random hex string |
+| `regex.match/find/find_all/replace` | Regular expressions |
 
-### Regular Expressions
+### Database, Templates & Async
 
-| Function                         | Description             |
-| -------------------------------- | ----------------------- |
-| `regex.match(pattern, str)`      | Test if pattern matches |
-| `regex.find(pattern, str)`       | Find first match        |
-| `regex.find_all(pattern, str)`   | Find all matches        |
-| `regex.replace(pattern, str, r)` | Replace matches         |
+| Function | Description |
+| --- | --- |
+| `db.connect(url)` | Postgres, MySQL, SQLite |
+| `db.query(conn, sql, params?)` | Execute query, return rows |
+| `template.render(path, vars)` | Jinja2-compatible templates |
+| `async.spawn(fn)` / `async.spawn_interval(secs, fn)` | Async tasks with handles |
 
-### Database (SQL)
+### Assertions & Logging
 
-| Function                         | Description                                 |
-| -------------------------------- | ------------------------------------------- |
-| `db.connect(url)`                | Connect to database (Postgres/MySQL/SQLite) |
-| `db.query(conn, sql, params?)`   | Execute query, return rows                  |
-| `db.execute(conn, sql, params?)` | Execute statement, return affected count    |
-| `db.close(conn)`                 | Close connection                            |
+| Function | Description |
+| --- | --- |
+| `assert.eq/ne/gt/lt/contains/not_nil/matches` | Test assertions |
+| `log.info/warn/error(msg)` | Structured logging |
 
-Supported URLs:
+### Temporal Workflow Engine (native gRPC)
 
-- `postgres://user:pass@host:5432/dbname`
-- `mysql://user:pass@host:3306/dbname`
-- `sqlite:///path/to/file.db`
-
-### WebSocket
-
-| Function             | Description                 |
-| -------------------- | --------------------------- |
-| `ws.connect(url)`    | Connect to WebSocket server |
-| `ws.send(conn, msg)` | Send message                |
-| `ws.recv(conn)`      | Receive message (blocking)  |
-| `ws.close(conn)`     | Close connection            |
-
-### Templates (Jinja2-compatible)
-
-| Function                          | Description            |
-| --------------------------------- | ---------------------- |
-| `template.render(path, vars)`     | Render template file   |
-| `template.render_string(tmpl, v)` | Render template string |
-
-### Async
-
-| Function                       | Description                          |
-| ------------------------------ | ------------------------------------ |
-| `async.spawn(fn)`              | Spawn async task, returns handle     |
-| `async.spawn_interval(fn, ms)` | Spawn recurring task, returns handle |
-| `handle:await()`               | Wait for task completion             |
-| `handle:cancel()`              | Cancel recurring task                |
-
-### Assertions
-
-| Function                          | Description         |
-| --------------------------------- | ------------------- |
-| `assert.eq(a, b, msg?)`           | Assert equal        |
-| `assert.ne(a, b, msg?)`           | Assert not equal    |
-| `assert.gt(a, b, msg?)`           | Assert greater than |
-| `assert.lt(a, b, msg?)`           | Assert less than    |
-| `assert.contains(str, sub, msg?)` | Assert substring    |
-| `assert.not_nil(val, msg?)`       | Assert not nil      |
-| `assert.matches(str, pat, msg?)`  | Assert regex match  |
-
-### Logging
-
-| Function         | Description |
-| ---------------- | ----------- |
-| `log.info(msg)`  | Info log    |
-| `log.warn(msg)`  | Warning log |
-| `log.error(msg)` | Error log   |
-
-### Utilities
-
-| Function       | Description              |
-| -------------- | ------------------------ |
-| `env.get(key)` | Get environment variable |
-| `sleep(secs)`  | Sleep for seconds        |
-| `time()`       | Unix timestamp (seconds) |
+| Function | Description |
+| --- | --- |
+| `temporal.connect({ url, namespace? })` | Connect to Temporal gRPC frontend |
+| `temporal.start({ url, ..., workflow_type, workflow_id, input? })` | One-shot: connect + start |
+| `client:start_workflow(opts)` | Start a workflow execution |
+| `client:signal_workflow(opts)` | Signal a running workflow |
+| `client:query_workflow(opts)` | Query workflow state |
+| `client:describe_workflow(id)` | Get status, timestamps, history length |
+| `client:get_result({ workflow_id })` | Block until workflow completes |
+| `client:cancel_workflow(id)` | Graceful cancellation |
+| `client:terminate_workflow(id)` | Force terminate |
 
 ## Stdlib Modules
 
-Assay embeds 29 Lua modules for Kubernetes-native and AI agent operations. Use
-`require("assay.<module>")` — or run `assay modules` to see all 46+ available modules including Rust
-builtins:
+29 embedded Lua modules loaded via `require("assay.<name>")`. All follow the client pattern:
+`M.client(url, opts)` then `c:method()`.
 
-| Module               | Description                                                                   |
-| -------------------- | ----------------------------------------------------------------------------- |
-| `assay.prometheus`   | Query metrics, alerts, targets, rules, label values, series                   |
-| `assay.alertmanager` | Manage alerts, silences, receivers, config                                    |
-| `assay.loki`         | Push logs, query, labels, series                                              |
-| `assay.grafana`      | Health checks, dashboards, datasources                                        |
-| `assay.k8s`          | 30+ resource types, CRDs, readiness checks                                    |
-| `assay.argocd`       | Apps, sync, health, projects, repositories                                    |
-| `assay.kargo`        | Stages, freight, promotions, verification                                     |
-| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases                                 |
-| `assay.traefik`      | Routers, services, middlewares, entrypoints                                   |
-| `assay.vault`        | KV secrets, policies, auth, transit, PKI                                      |
-| `assay.openbao`      | Alias for vault (OpenBao API-compatible)                                      |
-| `assay.certmanager`  | Certificates, issuers, ACME challenges                                        |
-| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores                            |
-| `assay.dex`          | OIDC discovery, JWKS, health                                                  |
-| `assay.crossplane`   | Providers, XRDs, compositions, managed resources                              |
-| `assay.velero`       | Backups, restores, schedules, storage locations                               |
-| `assay.temporal`     | Workflows, task queues, schedules                                             |
-| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                     |
-| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                   |
-| `assay.s3`           | S3-compatible storage (AWS, iDrive e2, R2, MinIO) — Sig V4                    |
-| `assay.unleash`      | Feature flags: projects, environments, features, strategies, API tokens       |
-| `assay.postgres`     | PostgreSQL helpers. User/database management, grants, Vault integration       |
-| `assay.zitadel`      | Zitadel OIDC identity management. Projects, apps, IdPs, users, login policies |
-| `assay.openclaw`     | OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks    |
-| `assay.github`       | GitHub REST API — PRs, issues, actions, repos, GraphQL                        |
-| `assay.gmail`        | Gmail REST API with OAuth2 — search, read, reply, send, labels                |
-| `assay.gcal`         | Google Calendar REST API with OAuth2 — events CRUD, calendar list             |
-| `assay.oauth2`       | Google OAuth2 token management — file-based credentials, auto-refresh         |
-| `assay.email_triage` | Email classification — deterministic rules + optional LLM-assisted triage     |
-
-Example:
-
-```lua
-local prom = require("assay.prometheus")
-local result = prom.query("http://prometheus:9090", "up")
-log.info("Targets up: " .. tostring(result))
-```
+| Module | Description |
+| --- | --- |
+| **Monitoring** | |
+| `assay.prometheus` | PromQL queries, alerts, targets, rules, series |
+| `assay.alertmanager` | Alerts, silences, receivers |
+| `assay.loki` | Log push, query (LogQL), labels, series |
+| `assay.grafana` | Health, dashboards, datasources, annotations |
+| **Kubernetes & GitOps** | |
+| `assay.k8s` | 30+ resource types, CRDs, readiness, pod logs |
+| `assay.argocd` | Apps, sync, health, projects, repositories |
+| `assay.kargo` | Stages, freight, promotions, pipelines |
+| `assay.flux` | GitRepositories, Kustomizations, HelmReleases |
+| `assay.traefik` | Routers, services, middlewares |
+| **Security & Identity** | |
+| `assay.vault` / `assay.openbao` | KV secrets, transit, PKI, policies |
+| `assay.certmanager` | Certificates, issuers, ACME |
+| `assay.eso` | ExternalSecrets, SecretStores |
+| `assay.dex` | OIDC discovery, JWKS |
+| `assay.zitadel` | OIDC identity, JWT machine auth |
+| **Infrastructure** | |
+| `assay.crossplane` | Providers, XRDs, compositions |
+| `assay.velero` | Backups, restores, schedules |
+| `assay.harbor` | Projects, repos, vulnerability scanning |
+| `assay.temporal` | Workflows, task queues, schedules (HTTP REST) |
+| **Data & Storage** | |
+| `assay.postgres` | User/database management, grants |
+| `assay.s3` | S3-compatible storage with Sig V4 auth |
+| `assay.unleash` | Feature flags, environments, strategies |
+| `assay.healthcheck` | HTTP checks, JSON path, latency |
+| **AI Agent** | |
+| `assay.openclaw` | Agent tools, state, diff, approve, LLM tasks |
+| `assay.github` | PRs, issues, actions, repos, GraphQL |
+| `assay.gmail` | Search, read, reply, send (OAuth2) |
+| `assay.gcal` | Calendar events CRUD (OAuth2) |
+| `assay.oauth2` | Google OAuth2 token management |
+| `assay.email_triage` | Email classification and triage |
 
 ## Examples
 
-### HTTP Health Check
+### Kubernetes Health Check
 
 ```lua
 #!/usr/bin/assay
-local resp = http.get("http://grafana.monitoring:80/api/health")
-assert.eq(resp.status, 200, "Grafana not responding")
-
-local data = json.parse(resp.body)
-assert.eq(data.database, "ok", "Grafana database unhealthy")
-log.info("Grafana healthy: version=" .. data.version)
-```
-
-### JWT Authentication to API
-
-```lua
-#!/usr/bin/assay
--- Read RSA private key from file
-local key = fs.read("/secrets/jwt-key.pem")
-
--- Sign JWT with RS256
-local token = crypto.jwt_sign({
-  iss = "assay-client",
-  sub = "admin@example.com",
-  exp = time() + 3600
-}, key, "RS256")
-
--- Call API with JWT
-local resp = http.get("https://api.example.com/users", {
-  headers = { Authorization = "Bearer " .. token }
+local k8s = require("assay.k8s")
+local c = k8s.client("https://kubernetes.default.svc", {
+  token = fs.read("/var/run/secrets/kubernetes.io/serviceaccount/token"),
 })
 
-assert.eq(resp.status, 200, "API call failed")
-local users = json.parse(resp.body)
-log.info("Found " .. #users .. " users")
+local deploy = c:deployment("default", "my-app")
+assert.eq(deploy.status.readyReplicas, deploy.spec.replicas, "Not all replicas ready")
+log.info("Deployment ready: " .. deploy.metadata.name)
 ```
 
-### Database Query
+### Web Server with SSE
 
 ```lua
 #!/usr/bin/assay
-local pg = db.connect("postgres://user:pass@postgres:5432/mydb")
-
--- Parameterized query (safe from SQL injection)
-local rows = db.query(pg, "SELECT id, name FROM users WHERE active = $1", {true})
-
-for _, row in ipairs(rows) do
-  log.info("User: " .. row.name .. " (ID: " .. row.id .. ")")
-end
-
-db.close(pg)
-```
-
-### Web Server
-
-```lua
-#!/usr/bin/assay
--- Simple API server
 http.serve(8080, {
   GET = {
     ["/health"] = function(req)
-      return { status = 200, body = "ok" }
+      return { status = 200, json = { ok = true } }
     end,
-    ["/api/time"] = function(req)
-      return {
-        status = 200,
-        json = { timestamp = time(), zone = "UTC" }
-      }
-    end
-  },
-  POST = {
-    ["/api/echo"] = function(req)
-      local data = json.parse(req.body)
-      return { status = 200, json = data }
-    end
-  }
-})
-```
-
-### Server-Sent Events (SSE)
-
-```lua
-#!/usr/bin/assay
--- Stream events to clients in real-time
-http.serve(8080, {
-  GET = {
     ["/events"] = function(req)
       return {
-        status = 200,
         sse = function(send)
           send({ data = "connected" })
-          for i = 1, 5 do
+          for i = 1, 10 do
             sleep(1)
-            send({
-              event = "update",
-              data = json.encode({ count = i }),
-              id = tostring(i)
-            })
+            send({ event = "update", data = json.encode({ count = i }), id = tostring(i) })
           end
-          send({ event = "done", data = "stream complete" })
         end
       }
     end
@@ -538,46 +212,35 @@ http.serve(8080, {
 })
 ```
 
-The `send` callback accepts a table with optional fields: `event`, `data`, `id`, `retry`. Headers
-`Content-Type: text/event-stream`, `Cache-Control: no-cache`, and `Connection: keep-alive` are set
-automatically. The stream closes when the function returns.
-
-### Prometheus Verification
+### Temporal Workflow
 
 ```lua
 #!/usr/bin/assay
-local prom = require("assay.prometheus")
+local client = temporal.connect({
+  url = "temporal-frontend:7233",
+  namespace = "production",
+})
 
--- Check Prometheus is up
-local targets = prom.targets("http://prometheus.monitoring:9090")
-local up_count = 0
-for _, target in ipairs(targets.activeTargets) do
-  if target.health == "up" then
-    up_count = up_count + 1
-  end
-end
+local handle = client:start_workflow({
+  task_queue = "promotions",
+  workflow_type = "PromoteToEnv",
+  workflow_id = "promote-prod-v1.2.0",
+  input = { version = "v1.2.0", target = "prod" },
+})
+log.info("Started: " .. handle.run_id)
 
-assert.gt(up_count, 0, "No Prometheus targets are up")
-log.info("Prometheus targets up: " .. up_count)
-
--- Query metrics
-local result = prom.query("http://prometheus.monitoring:9090", "up")
-log.info("Query result: " .. tostring(result))
+local info = client:describe_workflow("promote-prod-v1.2.0")
+log.info("Status: " .. info.status)
 ```
 
-## YAML Check Mode
-
-YAML check mode provides structured orchestration with retry, backoff, and parallel execution:
+### YAML Check Mode
 
 ```yaml
-# Global config
-timeout: 120s # Max time for all checks
-retries: 3 # Retry failed checks
-backoff: 5s # Wait between retries
-parallel: false # Run checks sequentially (true = parallel)
+timeout: 120s
+retries: 3
+backoff: 5s
 
 checks:
-  # HTTP check with JSON path assertion
   - name: api-health
     type: http
     url: https://api.example.com/health
@@ -585,222 +248,61 @@ checks:
       status: 200
       json: ".status == \"healthy\""
 
-  # Prometheus query check
-  - name: high-cpu
+  - name: prometheus-targets
     type: prometheus
     url: http://prometheus:9090
-    query: "avg(rate(cpu_usage[5m]))"
+    query: "count(up)"
     expect:
-      max: 0.8 # Alert if CPU > 80%
-
-  # Custom Lua script check
-  - name: database-check
-    type: script
-    file: verify-db.lua
-    env:
-      DB_URL: postgres://user:pass@postgres:5432/mydb
+      min: 1
 ```
-
-Check types:
-
-- `type: http` — HTTP request with status/body/JSON assertions
-- `type: prometheus` — PromQL query with min/max assertions
-- `type: script` — Custom Lua script (sandboxed builtins)
-
-Output is structured JSON:
-
-```json
-{
-  "passed": 2,
-  "failed": 1,
-  "total": 3,
-  "results": [
-    {
-      "name": "api-health",
-      "status": "passed",
-      "duration_ms": 45
-    },
-    {
-      "name": "high-cpu",
-      "status": "failed",
-      "error": "expected max 0.8, got 0.92",
-      "duration_ms": 120
-    }
-  ]
-}
-```
-
-Exit code: 0 if all checks pass, 1 if any fail.
-
-## Development
-
-### Build
 
 ```bash
-cargo build --release
-```
-
-### Test
-
-```bash
-cargo test
-```
-
-### Lint
-
-```bash
-cargo clippy -- -D warnings
-```
-
-### Format
-
-```bash
-dprint fmt
-```
-
-### Run Examples
-
-Self-contained scripts (no external services needed):
-
-```bash
-cargo run -- tests/e2e/check_json.lua
-cargo run -- tests/e2e/check_yaml.lua
-cargo run -- tests/e2e/check_toml.lua
-cargo run -- tests/e2e/check_base64.lua
-cargo run -- tests/e2e/check_crypto.lua
-cargo run -- tests/e2e/check_regex.lua
-cargo run -- tests/e2e/check_fs.lua
-cargo run -- tests/e2e/check_template.lua
-```
-
-Kubernetes examples (require services running in-cluster):
-
-```bash
-cargo run -- examples/checks.yaml
-cargo run -- examples/grafana-health.lua
-cargo run -- examples/prometheus-scrape.lua
-cargo run -- examples/loki-test.lua
+assay checks.yaml   # Exit 0 if all pass, 1 if any fail
 ```
 
 ## OpenClaw Integration
 
-Assay v0.6.0 integrates with [OpenClaw](https://openclaw.dev) as an agent tool. This enables AI
-agents to execute deterministic Lua workflows with human approval gates.
-
-### Tool Mode
+Assay integrates with [OpenClaw](https://openclaw.dev) as an agent tool with human approval gates:
 
 ```bash
-assay run --mode tool script.lua    # Structured JSON output for agent consumption
-assay resume --token <token> --approve yes|no   # Resume after human approval
+assay run --mode tool script.lua              # Structured JSON output for agents
+assay resume --token <token> --approve yes    # Resume after human approval
 ```
 
-### OpenClaw Extension
+Install the extension: `openclaw plugins install @developerinlondon/assay-openclaw-extension`
 
-Install the `@developerinlondon/assay-openclaw-extension` package (GitHub Packages) to register
-Assay as an OpenClaw tool:
+## Module Discovery
+
+Find the right module before writing code:
 
 ```bash
-# One-time: configure npm to use GitHub Packages for @developerinlondon scope
-echo "@developerinlondon:registry=https://npm.pkg.github.com" >> ~/.npmrc
-
-# Install the extension
-openclaw plugins install @developerinlondon/assay-openclaw-extension
+assay context "grafana"   # Returns method signatures for LLM prompts
+assay context "vault"     # Exact API docs, no hallucination
+assay modules             # List all 46+ modules
 ```
 
-See [openclaw-extension/README.md](openclaw-extension/README.md) for full configuration details.
+Custom modules: place `.lua` files in `./modules/` (project) or `~/.assay/modules/` (global).
 
-## Architecture
+## Development
 
+```bash
+cargo build --release     # Release build (~9 MB)
+cargo clippy -- -D warnings
+cargo test
+dprint fmt                # Format (Rust, Markdown, YAML, JSON, TOML)
 ```
-+------------------------------------------------------------------+
-| Assay v0.6.0 (~9 MB static MUSL binary, Alpine container)       |
-|                                                                  |
-| CLI subcommands:                                                 |
-|   assay <file.yaml>           (.yaml -> check orchestration)     |
-|   assay <file.lua>            (.lua  -> run script)              |
-|   assay run <file>            (explicit run, any extension)      |
-|   assay run --mode tool <f>   (tool mode for OpenClaw agents)    |
-|   assay resume --token <t>    (resume paused approval gates)     |
-|   assay exec -e '<lua>'       (inline Lua evaluation)            |
-|   assay modules               (list all 46+ modules)             |
-|   assay context <query>       (LLM-ready module context)         |
-|                                                                  |
-| Shebang support:                                                 |
-|   #!/usr/bin/assay            (works like #!/usr/bin/python3)    |
-|                                                                  |
-| Rust Core:                                                       |
-|   Config parser (YAML) -> Runner (retry/backoff/timeout)         |
-|   -> Structured JSON output -> Exit code (0/1)                   |
-|                                                                  |
-| Lua Runtime (mlua + Lua 5.5):                                    |
-|   - 64 MB memory limit per VM                                    |
-|   - Fresh VM per check (YAML mode)                               |
-|   - Single VM per script (Lua mode)                              |
-|   - Async support via tokio LocalSet                             |
-|                                                                  |
-| Rust Builtins (all available to .lua scripts):                   |
-|   http.{get,post,put,patch,delete,serve}                         |
-|   ws.{connect,send,recv,close}                                   |
-|   json.{parse,encode}  yaml.{parse,encode}  toml.{parse,encode} |
-|   fs.{read,write}  base64.{encode,decode}                        |
-|   crypto.{jwt_sign,hash,random}  regex.{match,find,replace}      |
-|   db.{connect,query,execute,close}  (postgres, mysql, sqlite)    |
-|   template.{render,render_string}                                |
-|   assert.{eq,gt,lt,contains,not_nil,matches}                     |
-|   log.{info,warn,error}  env.get  sleep  time                    |
-|   async.{spawn,spawn_interval}                                   |
-|                                                                  |
-| Lua Stdlib (29 embedded .lua files via include_dir!):            |
-|   Monitoring: prometheus, alertmanager, loki, grafana             |
-|   K8s/GitOps: k8s, argocd, kargo, flux, traefik                 |
-|   Security:   vault, openbao, certmanager, eso, dex              |
-|   Infra:      crossplane, velero, temporal, harbor               |
-|   Data:       postgres, s3                                       |
-|   Identity:   zitadel                                            |
-|   Utilities:  healthcheck, unleash                               |
-|   AI/Agent:   openclaw, github, gmail, gcal, oauth2,             |
-|               email_triage                                        |
-+------------------------------------------------------------------+
-```
-
-## Use Cases
-
-- **ArgoCD/Kargo Hooks**: PostSync verification, PreSync validation, health checks
-- **Kubernetes Jobs**: Database migrations, API configuration, secret rotation
-- **Lightweight Web Services**: Webhook receivers, API proxies, mock servers, dashboards
-- **Platform Automation**: Operational tasks, cross-service connectivity checks, report generation
-- **Verification**: E2E tests, smoke tests, integration tests
-
-## Why Lua 5.5?
-
-Assay uses Lua 5.5 (released Dec 2025) over LuaJIT for:
-
-- **Global declarations**: Catches accidental globals (reduces bugs)
-- **Named vararg tables**: Cleaner function signatures
-- **Incremental major GC**: Smoother latency for long-running servers
-- **Native int64**: Better for timestamps, IDs
-- **MUSL static linking**: No assembler issues
-
-Our scripts are I/O bound (HTTP calls, database queries). LuaJIT's 5-10x CPU speedup provides
-negligible benefit (<1% of total job time).
 
 ## License
 
 MIT
 
-## Contributing
-
-Contributions welcome! Please open an issue or PR on GitHub.
-
 ## Links
 
-- **Repository**: https://github.com/developerinlondon/assay
-- **Crates.io**: https://crates.io/crates/assay-lua
-- **Docker**: https://github.com/developerinlondon/assay/pkgs/container/assay
-- **Issues**: https://github.com/developerinlondon/assay/issues
 - **Website**: https://assay.rs
-- **MCP Comparison**: https://assay.rs/mcp-comparison.html — Assay vs 42 MCP servers
-- **Agent Guides**: https://assay.rs/agent-guides.html — Claude Code, Cursor, Windsurf, Cline,
-  OpenCode
-- **Module Reference**: https://assay.rs/modules.html — All 40+ modules with method signatures
-- **LLM Context**: https://assay.rs/llms.txt — Jeremy Howard spec for LLM agent traversal
+- **Crate**: https://crates.io/crates/assay-lua
+- **Docker**: `ghcr.io/developerinlondon/assay:latest`
+- **Changelog**: https://assay.rs/changelog.html
+- **Module Reference**: https://assay.rs/modules.html
+- **Comparison**: https://assay.rs/comparison.html
+- **Agent Guides**: https://assay.rs/agent-guides.html
+- **LLM Context**: https://assay.rs/llms.txt
