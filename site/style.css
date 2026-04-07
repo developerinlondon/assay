@@ -117,6 +117,16 @@ nav a:hover {
   color: var(--accent);
 }
 
+/* Active page in nav — driven by a body class set per page */
+body.page-home      nav a[href="index.html"],
+body.page-comparison nav a[href="comparison.html"],
+body.page-agents    nav a[href="agent-guides.html"],
+body.page-modules   nav a[href="modules.html"],
+body.page-changelog nav a[href="changelog.html"] {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 /* Theme toggle */
 .theme-toggle {
   background: none;

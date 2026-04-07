@@ -19,6 +19,7 @@ on:
       - main
     paths:
       - "site/**"
+      - "site-partials/**"
       - "CHANGELOG.md"
       - "wrangler.toml"
 
@@ -47,14 +48,8 @@ jobs:
             d
           }' site/changelog.html
 
-      - name: Stamp version into site
-        run: |
-          TAG=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          VERSION="${TAG:-$SHORT_SHA}"
-          for f in site/*.html; do
-            sed -i "s|__GIT_SHA__|${VERSION}|g" "$f"
-          done
+      - name: Render site (inline partials, stamp version)
+        run: ./site-partials/build.sh
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
