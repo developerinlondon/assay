@@ -20,8 +20,8 @@ async fn test_hydra_list_clients() {
     Mock::given(method("GET"))
         .and(path("/admin/clients"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-            { "client_id": "cc", "client_name": "Command Center" },
-            { "client_id": "temporal", "client_name": "Temporal" }
+            { "client_id": "example-app", "client_name": "Example App" },
+            { "client_id": "another-app", "client_name": "Another App" }
         ])))
         .mount(&admin)
         .await;
@@ -32,7 +32,7 @@ async fn test_hydra_list_clients() {
         local h = hydra.client({{ admin_url = "{}" }})
         local clients = h:list_clients()
         assert.eq(#clients, 2)
-        assert.eq(clients[1].client_id, "cc")
+        assert.eq(clients[1].client_id, "example-app")
         "#,
         admin.uri()
     );
@@ -43,10 +43,10 @@ async fn test_hydra_list_clients() {
 async fn test_hydra_update_client() {
     let admin = MockServer::start().await;
     Mock::given(method("PUT"))
-        .and(path("/admin/clients/cc"))
+        .and(path("/admin/clients/example-app"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "client_id": "cc",
-            "client_name": "Command Center",
+            "client_id": "example-app",
+            "client_name": "Example App",
             "token_endpoint_auth_method": "client_secret_post"
         })))
         .mount(&admin)
@@ -56,16 +56,16 @@ async fn test_hydra_update_client() {
         r#"
         local hydra = require("assay.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
-        local client = h:update_client("cc", {{
-          client_name = "Command Center",
+        local client = h:update_client("example-app", {{
+          client_name = "Example App",
           client_secret = "secret",
           grant_types = {{"authorization_code", "refresh_token"}},
           response_types = {{"code"}},
           scope = "openid profile email",
-          redirect_uris = {{"https://cc.example.com/auth/callback"}},
+          redirect_uris = {{"https://app.example.com/auth/callback"}},
           token_endpoint_auth_method = "client_secret_post",
         }})
-        assert.eq(client.client_id, "cc")
+        assert.eq(client.client_id, "example-app")
         "#,
         admin.uri()
     );
@@ -77,13 +77,13 @@ async fn test_hydra_build_authorize_url() {
     let script = r#"
         local hydra = require("assay.hydra")
         local h = hydra.client({ public_url = "https://hydra.example.com" })
-        local url = h:build_authorize_url("cc", {
-          redirect_uri = "https://cc.example.com/auth/callback",
+        local url = h:build_authorize_url("example-app", {
+          redirect_uri = "https://app.example.com/auth/callback",
           scope = "openid profile email",
           state = "xyz",
         })
         assert.contains(url, "https://hydra.example.com/oauth2/auth?")
-        assert.contains(url, "client_id=cc")
+        assert.contains(url, "client_id=example-app")
         assert.contains(url, "response_type=code")
         assert.contains(url, "state=xyz")
     "#;
@@ -113,8 +113,8 @@ async fn test_hydra_exchange_code() {
         local h = hydra.client({{ public_url = "{}" }})
         local tokens = h:exchange_code({{
           code = "abc",
-          redirect_uri = "https://cc.example.com/auth/callback",
-          client_id = "cc",
+          redirect_uri = "https://app.example.com/auth/callback",
+          client_id = "example-app",
           client_secret = "secret",
         }})
         assert.eq(tokens.access_token, "access.jwt")
@@ -132,7 +132,7 @@ async fn test_hydra_accept_login() {
         .and(path("/admin/oauth2/auth/requests/login/accept"))
         .and(query_param("login_challenge", "abc123"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "redirect_to": "https://hydra.example.com/oauth2/auth?client_id=cc&..."
+            "redirect_to": "https://hydra.example.com/oauth2/auth?client_id=example-app&..."
         })))
         .mount(&admin)
         .await;
@@ -156,7 +156,7 @@ async fn test_hydra_accept_consent_with_claims() {
         .and(path("/admin/oauth2/auth/requests/consent/accept"))
         .and(query_param("consent_challenge", "xyz789"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "redirect_to": "https://cc.example.com/auth/callback?code=..."
+            "redirect_to": "https://app.example.com/auth/callback?code=..."
         })))
         .mount(&admin)
         .await;
@@ -175,7 +175,7 @@ async fn test_hydra_accept_consent_with_claims() {
             }},
           }},
         }})
-        assert.contains(result.redirect_to, "cc.example.com")
+        assert.contains(result.redirect_to, "app.example.com")
         "#,
         admin.uri()
     );
@@ -193,7 +193,7 @@ async fn test_hydra_get_logout_request() {
             "rp_initiated": true,
             "sid": "session-xyz",
             "subject": "user:alice",
-            "client": { "client_id": "command-center" }
+            "client": { "client_id": "example-app" }
         })))
         .mount(&admin)
         .await;
@@ -205,7 +205,7 @@ async fn test_hydra_get_logout_request() {
         local req = h:get_logout_request("logout-abc")
         assert.eq(req.subject, "user:alice")
         assert.eq(req.rp_initiated, true)
-        assert.eq(req.client.client_id, "command-center")
+        assert.eq(req.client.client_id, "example-app")
         "#,
         admin.uri()
     );
@@ -219,7 +219,7 @@ async fn test_hydra_accept_logout() {
         .and(path("/admin/oauth2/auth/requests/logout/accept"))
         .and(query_param("logout_challenge", "logout-abc"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "redirect_to": "https://command-center.example.com/auth/login"
+            "redirect_to": "https://app.example.com/auth/login"
         })))
         .mount(&admin)
         .await;
@@ -229,7 +229,7 @@ async fn test_hydra_accept_logout() {
         local hydra = require("assay.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
         local result = h:accept_logout("logout-abc")
-        assert.contains(result.redirect_to, "command-center.example.com")
+        assert.contains(result.redirect_to, "app.example.com")
         "#,
         admin.uri()
     );

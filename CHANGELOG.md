@@ -21,8 +21,7 @@ All notable changes to Assay are documented here.
   - `c:reject_logout(challenge)` — for "stay signed in" UIs that let the
     user cancel the logout
 
-  Symmetric with the existing login/consent methods. Used by hydra-login
-  to handle Command Center and Temporal logout flows.
+  Symmetric with the existing login/consent challenge methods.
 
 ## [0.8.1] - 2026-04-07
 

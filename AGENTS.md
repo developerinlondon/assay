@@ -7,6 +7,39 @@ Key coding practices for this project:
 - **autonomous-workflow** — Proposal-first development, decision authority, commit hygiene
 - **code-quality** — Warnings-as-errors, no underscore prefixes, test coverage, type safety
 
+## Library hygiene: no application-domain leakage
+
+**Assay is a general-purpose library. It must have zero knowledge of any
+specific application that uses it.** When writing or modifying any code,
+test, comment, doc, changelog entry, commit message, or PR description in
+this repo, never reference:
+
+- Specific consumer applications by name (e.g. "Command Center",
+  "hydra-login", or any internal product)
+- Specific deployments, environments, or company-specific URLs
+  (e.g. `*.dev.simons.disw.siemens.com`, internal cluster names)
+- Company- or project-specific role names, namespaces, client IDs, or
+  resource names that only make sense in one consumer's context
+- The user's organisation, team, or internal project naming conventions
+
+Use generic placeholder names instead:
+
+- Client IDs: `example-app`, `demo-client`, `app-1`
+- Hostnames: `example.com`, `app.example.com`, `hydra.example.com`
+- Role objects: `app:role-a`, `namespace1:role-a`, `app:admin`
+- Project IDs: `demo-project`, `project-1`
+- Workflow names: `MyWorkflow`, `my-queue`
+
+When motivating a new feature in a CHANGELOG entry, commit message, or PR
+description, describe **the OIDC/Kubernetes/HTTP scenario it enables**, not
+**the specific consumer that asked for it**. The library should read the
+same to a stranger who has never heard of any of assay's consumers as it
+does to someone who works on one of them every day.
+
+This applies to all files in the repo: `stdlib/`, `src/`, `tests/`, `*.md`,
+`*.html`, `CHANGELOG.md`, and any commit/PR text. The only legitimate
+exception is the copyright holder's name in `LICENSE`/`NOTICE`/`CLA.md`.
+
 ## What is Assay
 
 General-purpose enhanced Lua runtime. Single ~9 MB static binary with batteries included: HTTP

@@ -92,9 +92,11 @@ function M.client(read_url, opts)
   end
 
   -- Helper: get all role memberships for a user.
-  -- By default queries the Role namespace which is the SIMONS convention.
+  -- By default queries the "Role" namespace, the standard convention for
+  -- modelling RBAC-style memberships in Keto. Pass a different namespace
+  -- if your application uses one.
   -- Returns a list of { object, relation } entries, e.g.
-  --   { {object="platform:super-admin", relation="members"}, {object="command-center:admin", relation="members"} }
+  --   { {object="app:role-a", relation="members"}, {object="app:role-b", relation="members"} }
   function c:get_user_roles(user_id, namespace)
     local subject = user_id
     if not user_id:match("^user:") then
@@ -112,7 +114,7 @@ function M.client(read_url, opts)
     return roles
   end
 
-  -- Helper: check if a user has any of the given role objects (e.g. {"platform:super-admin", "command-center:admin"})
+  -- Helper: check if a user has any of the given role objects (e.g. {"app:admin", "app:operator"})
   function c:user_has_any_role(user_id, role_objects, namespace)
     local roles = self:get_user_roles(user_id, namespace)
     local set = {}
