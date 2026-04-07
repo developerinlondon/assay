@@ -18,7 +18,7 @@
 - [yaml](https://assay.rs/modules.html#yaml): YAML parse and encode
 - [toml](https://assay.rs/modules.html#toml): TOML parse and encode
 - [fs](https://assay.rs/modules.html#fs): Filesystem — fs.read/write
-- [crypto](https://assay.rs/modules.html#crypto): JWT signing, HMAC, hashing, random — crypto.jwt_sign/hash/hmac/random
+- [crypto](https://assay.rs/modules.html#crypto): JWT signing/decoding, HMAC, hashing, random — crypto.jwt_sign/jwt_decode/hash/hmac/random
 - [base64](https://assay.rs/modules.html#base64): Base64 encode/decode
 - [regex](https://assay.rs/modules.html#regex): Regex match, find, replace
 - [db](https://assay.rs/modules.html#db): SQL database — Postgres, MySQL, SQLite — db.connect/query/execute
@@ -51,10 +51,11 @@
 - [assay.eso](https://assay.rs/modules.html#eso): External Secrets Operator
 - [assay.dex](https://assay.rs/modules.html#dex): Dex OIDC discovery, JWKS, health
 - [assay.zitadel](https://assay.rs/modules.html#zitadel): Zitadel OIDC identity, JWT machine auth
-- [assay.kratos](https://assay.rs/modules.html#ory): Ory Kratos identity — login/registration/recovery flows, identities, sessions, schemas
-- [assay.hydra](https://assay.rs/modules.html#ory): Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs
-- [assay.keto](https://assay.rs/modules.html#ory): Ory Keto ReBAC — relation tuples, permission checks, role/group queries, expand
-- [assay.ory](https://assay.rs/modules.html#ory): Ory stack wrapper — `ory.connect()` builds kratos/hydra/keto clients together
+- [assay.ory.kratos](https://assay.rs/modules.html#ory): Ory Kratos identity — login/registration/recovery flows, identities, sessions, schemas
+- [assay.ory.hydra](https://assay.rs/modules.html#ory): Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs
+- [assay.ory.keto](https://assay.rs/modules.html#ory): Ory Keto ReBAC — relation tuples, permission checks, role/group queries, expand
+- [assay.ory.rbac](https://assay.rs/modules.html#ory): Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships
+- [assay.ory](https://assay.rs/modules.html#ory): Ory stack wrapper — `ory.connect()` builds kratos/hydra/keto clients together; also re-exports `rbac`
 
 ## Infrastructure
 - [assay.crossplane](https://assay.rs/modules.html#crossplane): Crossplane providers, XRDs, compositions

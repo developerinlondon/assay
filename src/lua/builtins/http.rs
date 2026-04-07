@@ -486,7 +486,7 @@ async fn build_lua_request_and_call(
     // Parse query string into a params table with URL-decoded keys and values
     // (e.g. "a=1&b=hello%20world" -> {a="1", b="hello world"}).
     // Uses form_urlencoded which handles percent-encoding and `+` -> ` ` correctly,
-    // so consumers like assay.hydra get the raw value back rather than a doubly-encoded string.
+    // so consumers like assay.ory.hydra get the raw value back rather than a doubly-encoded string.
     let params_table = lua.create_table()?;
     if !query.is_empty() {
         for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {

@@ -1,4 +1,4 @@
---- @module assay.hydra
+--- @module assay.ory.hydra
 --- @description Ory Hydra OAuth2 and OpenID Connect — client CRUD, authorize URL builder, token exchange, login/consent/logout challenges, introspection, JWK endpoint.
 --- @keywords hydra, ory, oauth2, oidc, openid, authentication, clients, tokens, login_challenge, consent_challenge, logout_challenge, jwk, authorize, introspect
 --- @quickref hydra.client(opts) -> client | Create a Hydra client. opts: {public_url, admin_url}

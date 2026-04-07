@@ -2,6 +2,61 @@
 
 All notable changes to Assay are documented here.
 
+## [0.8.3] - 2026-04-07
+
+### Added
+
+- **`assay.ory.rbac`** — capability-based RBAC engine layered on top of
+  Ory Keto. Define a policy once (role → capability set) and get user
+  lookups, capability checks, and membership management for free.
+  Users can hold multiple roles and the effective capability set is
+  the union, which means proper separation of duties is enforceable
+  at the authorization layer (e.g. an "approver" role can have
+  `approve` without also getting `trigger`, even if it's listed
+  above an "operator" role with `trigger`).
+
+  Public surface:
+    - `rbac.policy({namespace, keto, roles, default_role?})`
+    - `p:user_roles(user_id)` — sorted by rank, highest first
+    - `p:user_primary_role(user_id)` — for compact UI badges
+    - `p:user_capabilities(user_id)` — union set
+    - `p:user_has_capability(user_id, cap)` — single check
+    - `p:add(user_id, role)` / `p:remove(user_id, role)` — idempotent
+    - `p:list_members(role)` / `p:list_all_memberships()`
+    - `p:reset_role(role)` — for bootstrap/seed scripts
+    - `p:require_capability(cap, handler)` — http.serve middleware
+
+- **`crypto.jwt_decode(token)`** — decode a JWT WITHOUT verifying its
+  signature. Returns `{header, claims}` parsed from the base64url
+  segments. Useful when the JWT travels through a trusted channel
+  (your own session cookie set over TLS) and you just need to read
+  the claims rather than verify them. For untrusted JWTs, verify the
+  signature with a JWKS-aware verifier instead.
+
+- **Nested stdlib module loading**: `require("assay.ory.kratos")` now
+  resolves to `stdlib/ory/kratos.lua`. The stdlib and filesystem
+  loaders translate dotted module paths into directory paths and try
+  both `<path>.lua` and `<path>/init.lua`, matching standard Lua
+  package loading conventions.
+
+### Changed
+
+- **BREAKING: Ory stack modules moved under `assay.ory.*`**. The flat
+  top-level `assay.kratos`, `assay.hydra`, and `assay.keto` modules
+  are now `assay.ory.kratos`, `assay.ory.hydra`, and `assay.ory.keto`.
+  The convenience wrapper `require("assay.ory")` is unchanged and
+  still returns `{kratos, hydra, keto, rbac}`.
+
+  Migration: replace
+    `require("assay.kratos")` → `require("assay.ory.kratos")`
+    `require("assay.hydra")`  → `require("assay.ory.hydra")`
+    `require("assay.keto")`   → `require("assay.ory.keto")`
+
+  This is the right architectural shape: Ory-specific modules sit
+  under the `assay.ory.*` umbrella alongside the new
+  `assay.ory.rbac`, leaving room for `assay.<other-vendor>.*` later
+  without polluting the top-level namespace.
+
 ## [0.8.2] - 2026-04-07
 
 ### Added

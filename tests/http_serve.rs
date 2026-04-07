@@ -357,7 +357,7 @@ async fn test_http_serve_query_params() {
 async fn test_http_serve_url_encoded_query_params() {
     // Regression test: req.params must contain URL-decoded values, not raw
     // percent-encoded strings. Otherwise consumers that re-encode (e.g.
-    // assay.hydra) end up double-encoding values like "g=" -> "g%3D" -> "g%253D".
+    // assay.ory.hydra) end up double-encoding values like "g=" -> "g%3D" -> "g%253D".
     run_lua_local(
         r#"
         local server = async.spawn(function()

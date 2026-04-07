@@ -1,6 +1,6 @@
 ---
 name: assay
-description: Infrastructure scripting runtime — 50 modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one 9 MB binary.
+description: Infrastructure scripting runtime — 51 modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one 9 MB binary.
 metadata:
   author: developerinlondon
   version: "0.6.1"
@@ -44,7 +44,7 @@ assay modules
 | `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 50 modules (33 stdlib + 17 builtins) |
+| `assay modules`             | List all 51 modules (34 stdlib + 17 builtins) |
 
 ## Discovering Modules
 
@@ -164,12 +164,13 @@ String header values still work as before.
 
 ### Cryptography
 
-| Function                             | Description                                     |
-| ------------------------------------ | ----------------------------------------------- |
-| `crypto.jwt_sign(claims, key, alg)`  | Sign JWT — alg: HS256, RS256/384/512, ES256/384 |
-| `crypto.hash(str, alg)`              | Hash string (sha256, sha384, sha512, md5)       |
-| `crypto.hmac(key, data, alg?, raw?)` | HMAC (sha256 default, raw=true for binary)      |
-| `crypto.random(len)`                 | Secure random hex string of length `len`        |
+| Function                             | Description                                                   |
+| ------------------------------------ | ------------------------------------------------------------- |
+| `crypto.jwt_sign(claims, key, alg)`  | Sign JWT — alg: HS256, RS256/384/512, ES256/384               |
+| `crypto.jwt_decode(token)`           | Decode `{header, claims}` WITHOUT verifying — trusted channel |
+| `crypto.hash(str, alg)`              | Hash string (sha256, sha384, sha512, md5)                     |
+| `crypto.hmac(key, data, alg?, raw?)` | HMAC (sha256 default, raw=true for binary)                    |
+| `crypto.random(len)`                 | Secure random hex string of length `len`                      |
 
 ### Regex
 
@@ -252,7 +253,7 @@ Available when built with `--features temporal`. Native gRPC client for Temporal
 
 ## Stdlib Modules Quick Reference
 
-All 33 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 34 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module                | Description                                                                |
 | --------------------- | -------------------------------------------------------------------------- |
@@ -271,10 +272,11 @@ All 33 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.eso`           | ExternalSecrets, SecretStores, ClusterSecretStores sync status             |
 | `assay.dex`           | OIDC discovery, JWKS, health, configuration validation                     |
 | `assay.zitadel`       | OIDC identity management with JWT machine auth                             |
-| `assay.kratos`        | Ory Kratos — login/registration/recovery/settings flows, identities, sessions |
-| `assay.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs |
-| `assay.keto`          | Ory Keto ReBAC — relation tuples, permission checks, expand                |
-| `assay.ory`           | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together |
+| `assay.ory.kratos`        | Ory Kratos — login/registration/recovery/settings flows, identities, sessions |
+| `assay.ory.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs |
+| `assay.ory.keto`          | Ory Keto ReBAC — relation tuples, permission checks, expand                |
+| `assay.ory.rbac`          | Capability-based RBAC engine over Keto — roles + capabilities, separation of duties |
+| `assay.ory`           | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together; also re-exports `rbac` |
 | `assay.crossplane`    | Providers, XRDs, compositions, managed resources                           |
 | `assay.velero`        | Backups, restores, schedules, storage locations                            |
 | `assay.temporal`      | Workflows, task queues, schedules, signals + native gRPC (temporal feature)|
@@ -492,7 +494,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 33 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: All 34 stdlib modules are embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use
@@ -584,7 +586,7 @@ Today: use `assay context <query>` from terminal and paste output into agent con
 
 ## MCP-Serve Vision (v0.6.0)
 
-`assay mcp-serve` will expose all 50 modules (33 stdlib + 17 builtins) as MCP tools over stdio/SSE transport:
+`assay mcp-serve` will expose all 51 modules (34 stdlib + 17 builtins) as MCP tools over stdio/SSE transport:
 
 - Each stdlib module becomes an MCP tool (e.g., `grafana_health`, `k8s_pods`)
 - Each builtin becomes an MCP tool (e.g., `http_get`, `crypto_jwt_sign`)

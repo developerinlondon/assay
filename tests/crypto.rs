@@ -112,6 +112,90 @@ async fn test_jwt_sign_invalid_key() {
 }
 
 #[tokio::test]
+async fn test_jwt_decode_basic_claims() {
+    // JWT with header {"alg":"RS256","typ":"JWT"} and claims
+    // {"sub":"user:alice","email":"alice@example.com","role":"admin","groups":["a","b"]}
+    // Signature is fake (jwt_decode doesn't verify).
+    run_lua(
+        r#"
+        local token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyOmFsaWNlIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsInJvbGUiOiJhZG1pbiIsImdyb3VwcyI6WyJhIiwiYiJdfQ.fake-signature"
+        local out = crypto.jwt_decode(token)
+        assert.eq(out.header.alg, "RS256")
+        assert.eq(out.header.typ, "JWT")
+        assert.eq(out.claims.sub, "user:alice")
+        assert.eq(out.claims.email, "alice@example.com")
+        assert.eq(out.claims.role, "admin")
+        assert.eq(#out.claims.groups, 2)
+        assert.eq(out.claims.groups[1], "a")
+        assert.eq(out.claims.groups[2], "b")
+        "#,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_jwt_decode_roundtrip_with_jwt_sign() {
+    // Sign a JWT with crypto.jwt_sign, then decode it with jwt_decode
+    // and verify all the claims round-trip correctly.
+    let pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+
+    let vm = create_vm();
+    vm.globals()
+        .set("test_pem", vm.create_string(&pem).unwrap())
+        .unwrap();
+
+    vm.load(
+        r#"
+        local token = crypto.jwt_sign({
+          sub = "user:alice",
+          email = "alice@example.com",
+          role = "admin",
+          groups = {"a", "b", "c"},
+        }, test_pem, "RS256", { kid = "test-key-1" })
+
+        local decoded = crypto.jwt_decode(token)
+        assert.eq(decoded.header.alg, "RS256")
+        assert.eq(decoded.header.typ, "JWT")
+        assert.eq(decoded.header.kid, "test-key-1")
+        assert.eq(decoded.claims.sub, "user:alice")
+        assert.eq(decoded.claims.email, "alice@example.com")
+        assert.eq(decoded.claims.role, "admin")
+        assert.eq(#decoded.claims.groups, 3)
+        assert.eq(decoded.claims.groups[1], "a")
+        assert.eq(decoded.claims.groups[3], "c")
+        "#,
+    )
+    .exec_async()
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_jwt_decode_rejects_malformed_token() {
+    // Not three segments
+    let result = run_lua(r#"crypto.jwt_decode("only.two")"#).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("three '.'-separated segments"), "got: {err}");
+
+    // Invalid base64url in payload
+    let result = run_lua(r#"crypto.jwt_decode("eyJhbGciOiJSUzI1NiJ9.!!!notbase64.sig")"#).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("invalid base64url") || err.contains("payload"),
+        "got: {err}"
+    );
+
+    // Valid base64url but invalid JSON in payload (base64url of "not json")
+    let result = run_lua(r#"crypto.jwt_decode("eyJhbGciOiJSUzI1NiJ9.bm90LWpzb24.sig")"#).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("invalid JSON") || err.contains("payload"), "got: {err}");
+}
+
+#[tokio::test]
 async fn test_sha256_default() {
     let result: String = eval_lua(r#"return crypto.hash("hello")"#).await;
     assert_eq!(

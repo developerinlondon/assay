@@ -7,7 +7,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[tokio::test]
 async fn test_hydra_require() {
     let script = r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         assert.not_nil(hydra)
         assert.not_nil(hydra.client)
     "#;
@@ -28,7 +28,7 @@ async fn test_hydra_list_clients() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
         local clients = h:list_clients()
         assert.eq(#clients, 2)
@@ -54,7 +54,7 @@ async fn test_hydra_update_client() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
         local client = h:update_client("example-app", {{
           client_name = "Example App",
@@ -75,7 +75,7 @@ async fn test_hydra_update_client() {
 #[tokio::test]
 async fn test_hydra_build_authorize_url() {
     let script = r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({ public_url = "https://hydra.example.com" })
         local url = h:build_authorize_url("example-app", {
           redirect_uri = "https://app.example.com/auth/callback",
@@ -109,7 +109,7 @@ async fn test_hydra_exchange_code() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ public_url = "{}" }})
         local tokens = h:exchange_code({{
           code = "abc",
@@ -139,7 +139,7 @@ async fn test_hydra_accept_login() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
         local result = h:accept_login("abc123", "user:alice", {{ remember = true, remember_for = 86400 }})
         assert.contains(result.redirect_to, "hydra.example.com")
@@ -163,7 +163,7 @@ async fn test_hydra_accept_consent_with_claims() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
         local result = h:accept_consent("xyz789", {{
           grant_scope = {{"openid", "profile", "email"}},
@@ -200,7 +200,7 @@ async fn test_hydra_get_logout_request() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
         local req = h:get_logout_request("logout-abc")
         assert.eq(req.subject, "user:alice")
@@ -226,7 +226,7 @@ async fn test_hydra_accept_logout() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
         local result = h:accept_logout("logout-abc")
         assert.contains(result.redirect_to, "app.example.com")
@@ -248,7 +248,7 @@ async fn test_hydra_reject_logout() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
         h:reject_logout("logout-abc")
         "#,
@@ -272,7 +272,7 @@ async fn test_hydra_introspect() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
         local info = h:introspect("access.jwt")
         assert.eq(info.active, true)
@@ -298,7 +298,7 @@ async fn test_hydra_well_known() {
 
     let script = format!(
         r#"
-        local hydra = require("assay.hydra")
+        local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ public_url = "{}" }})
         local wk = h:well_known()
         assert.contains(wk.issuer, "hydra.example.com")

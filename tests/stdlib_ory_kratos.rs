@@ -7,7 +7,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[tokio::test]
 async fn test_kratos_require() {
     let script = r#"
-        local kratos = require("assay.kratos")
+        local kratos = require("assay.ory.kratos")
         assert.not_nil(kratos)
         assert.not_nil(kratos.client)
     "#;
@@ -36,7 +36,7 @@ async fn test_kratos_whoami_authenticated() {
 
     let script = format!(
         r#"
-        local kratos = require("assay.kratos")
+        local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ public_url = "{}" }})
         local session = k:whoami("ory_session_abc=xyz")
         assert.not_nil(session)
@@ -60,7 +60,7 @@ async fn test_kratos_whoami_unauthenticated() {
 
     let script = format!(
         r#"
-        local kratos = require("assay.kratos")
+        local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ public_url = "{}" }})
         local session = k:whoami("bogus=cookie")
         assert.eq(session, nil)
@@ -88,7 +88,7 @@ async fn test_kratos_get_identity() {
 
     let script = format!(
         r#"
-        local kratos = require("assay.kratos")
+        local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ admin_url = "{}" }})
         local identity = k:get_identity("user-123")
         assert.eq(identity.id, "user-123")
@@ -113,7 +113,7 @@ async fn test_kratos_list_identities() {
 
     let script = format!(
         r#"
-        local kratos = require("assay.kratos")
+        local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ admin_url = "{}" }})
         local identities = k:list_identities()
         assert.eq(#identities, 2)
@@ -138,7 +138,7 @@ async fn test_kratos_create_identity() {
 
     let script = format!(
         r#"
-        local kratos = require("assay.kratos")
+        local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ admin_url = "{}" }})
         local identity = k:create_identity({{
           schema_id = "default",
@@ -171,7 +171,7 @@ async fn test_kratos_get_login_flow() {
 
     let script = format!(
         r#"
-        local kratos = require("assay.kratos")
+        local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ public_url = "{}" }})
         local flow = k:get_login_flow("flow-abc")
         assert.eq(flow.id, "flow-abc")
