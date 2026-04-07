@@ -2,6 +2,18 @@
 
 All notable changes to Assay are documented here.
 
+## [0.8.1] - 2026-04-07
+
+### Fixed
+
+- **`req.params` now URL-decodes query string values** in `http.serve`. Previously
+  `?challenge=abc%3D` produced `req.params.challenge == "abc%3D"`, so consumers
+  that re-encoded the value (such as `assay.hydra:get_login_request`) ended up
+  double-encoding it to `abc%253D` and getting a 404 from the upstream service.
+  Values are now decoded with `form_urlencoded::parse`, so `+` becomes a space
+  and percent-escapes are decoded correctly. The raw query string remains
+  available as `req.query` for handlers that need the verbatim form.
+
 ## [0.8.0] - 2026-04-07
 
 ### Added
