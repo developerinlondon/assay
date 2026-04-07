@@ -183,6 +183,81 @@ async fn test_hydra_accept_consent_with_claims() {
 }
 
 #[tokio::test]
+async fn test_hydra_get_logout_request() {
+    let admin = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/admin/oauth2/auth/requests/logout"))
+        .and(query_param("logout_challenge", "logout-abc"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "request_url": "https://hydra.example.com/oauth2/sessions/logout",
+            "rp_initiated": true,
+            "sid": "session-xyz",
+            "subject": "user:alice",
+            "client": { "client_id": "command-center" }
+        })))
+        .mount(&admin)
+        .await;
+
+    let script = format!(
+        r#"
+        local hydra = require("assay.hydra")
+        local h = hydra.client({{ admin_url = "{}" }})
+        local req = h:get_logout_request("logout-abc")
+        assert.eq(req.subject, "user:alice")
+        assert.eq(req.rp_initiated, true)
+        assert.eq(req.client.client_id, "command-center")
+        "#,
+        admin.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_hydra_accept_logout() {
+    let admin = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/admin/oauth2/auth/requests/logout/accept"))
+        .and(query_param("logout_challenge", "logout-abc"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "redirect_to": "https://command-center.example.com/auth/login"
+        })))
+        .mount(&admin)
+        .await;
+
+    let script = format!(
+        r#"
+        local hydra = require("assay.hydra")
+        local h = hydra.client({{ admin_url = "{}" }})
+        local result = h:accept_logout("logout-abc")
+        assert.contains(result.redirect_to, "command-center.example.com")
+        "#,
+        admin.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_hydra_reject_logout() {
+    let admin = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/admin/oauth2/auth/requests/logout/reject"))
+        .and(query_param("logout_challenge", "logout-abc"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&admin)
+        .await;
+
+    let script = format!(
+        r#"
+        local hydra = require("assay.hydra")
+        local h = hydra.client({{ admin_url = "{}" }})
+        h:reject_logout("logout-abc")
+        "#,
+        admin.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
 async fn test_hydra_introspect() {
     let admin = MockServer::start().await;
     Mock::given(method("POST"))
