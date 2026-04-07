@@ -164,12 +164,13 @@ String header values still work as before.
 
 ### Cryptography
 
-| Function                             | Description                                     |
-| ------------------------------------ | ----------------------------------------------- |
-| `crypto.jwt_sign(claims, key, alg)`  | Sign JWT — alg: HS256, RS256/384/512, ES256/384 |
-| `crypto.hash(str, alg)`              | Hash string (sha256, sha384, sha512, md5)       |
-| `crypto.hmac(key, data, alg?, raw?)` | HMAC (sha256 default, raw=true for binary)      |
-| `crypto.random(len)`                 | Secure random hex string of length `len`        |
+| Function                             | Description                                                   |
+| ------------------------------------ | ------------------------------------------------------------- |
+| `crypto.jwt_sign(claims, key, alg)`  | Sign JWT — alg: HS256, RS256/384/512, ES256/384               |
+| `crypto.jwt_decode(token)`           | Decode `{header, claims}` WITHOUT verifying — trusted channel |
+| `crypto.hash(str, alg)`              | Hash string (sha256, sha384, sha512, md5)                     |
+| `crypto.hmac(key, data, alg?, raw?)` | HMAC (sha256 default, raw=true for binary)                    |
+| `crypto.random(len)`                 | Secure random hex string of length `len`                      |
 
 ### Regex
 
@@ -274,7 +275,8 @@ All 33 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.ory.kratos`        | Ory Kratos — login/registration/recovery/settings flows, identities, sessions |
 | `assay.ory.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs |
 | `assay.ory.keto`          | Ory Keto ReBAC — relation tuples, permission checks, expand                |
-| `assay.ory`           | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together |
+| `assay.ory.rbac`          | Capability-based RBAC engine over Keto — roles + capabilities, separation of duties |
+| `assay.ory`           | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together; also re-exports `rbac` |
 | `assay.crossplane`    | Providers, XRDs, compositions, managed resources                           |
 | `assay.velero`        | Backups, restores, schedules, storage locations                            |
 | `assay.temporal`      | Workflows, task queues, schedules, signals + native gRPC (temporal feature)|

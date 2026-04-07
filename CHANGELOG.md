@@ -26,6 +26,13 @@ All notable changes to Assay are documented here.
     - `p:reset_role(role)` — for bootstrap/seed scripts
     - `p:require_capability(cap, handler)` — http.serve middleware
 
+- **`crypto.jwt_decode(token)`** — decode a JWT WITHOUT verifying its
+  signature. Returns `{header, claims}` parsed from the base64url
+  segments. Useful when the JWT travels through a trusted channel
+  (your own session cookie set over TLS) and you just need to read
+  the claims rather than verify them. For untrusted JWTs, verify the
+  signature with a JWKS-aware verifier instead.
+
 - **Nested stdlib module loading**: `require("assay.ory.kratos")` now
   resolves to `stdlib/ory/kratos.lua`. The stdlib and filesystem
   loaders translate dotted module paths into directory paths and try

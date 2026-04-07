@@ -110,7 +110,7 @@ Available as globals in all `.lua` scripts — no `require` needed:
 | HTTP           | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)` — `http.serve` response handlers accept array header values to emit the same header name multiple times (e.g., multiple `Set-Cookie`) |
 | JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str)`, `yaml.encode(tbl)`, `toml.parse(str)`, `toml.encode(tbl)`                                                                                                                                                 |
 | Filesystem     | `fs.read(path)`, `fs.write(path, str)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)`, `fs.copy(src, dst)`, `fs.rename(src, dst)`, `fs.glob(pattern)`, `fs.tempdir()`, `fs.chmod(path, mode)`, `fs.readdir(path, opts?)` |
-| Crypto         | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)`                                                                                                                                     |
+| Crypto         | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.jwt_decode(token)` (decode without verifying), `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)`                                                                                |
 | Base64         | `base64.encode(str)`, `base64.decode(str)`                                                                                                                                                                                                                          |
 | Regex          | `regex.match(pat, str)`, `regex.find(pat, str)`, `regex.find_all(pat, str)`, `regex.replace(pat, str, repl)`                                                                                                                                                        |
 | Database       | `db.connect(url)`, `db.query(conn, sql, params?)`, `db.execute(conn, sql, params?)`, `db.close(conn)`                                                                                                                                                               |
@@ -197,7 +197,8 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.ory.kratos`        | Ory Kratos identity — login/registration/recovery/settings flows, identities, sessions, schemas |
 | `assay.ory.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs |
 | `assay.ory.keto`          | Ory Keto ReBAC — relation tuples, permission checks, role/group membership, expand |
-| `assay.ory`           | Convenience wrapper re-exporting kratos/hydra/keto with `ory.connect(opts)`       |
+| `assay.ory.rbac`          | Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships, separation of duties |
+| `assay.ory`           | Convenience wrapper re-exporting kratos/hydra/keto/rbac with `ory.connect(opts)`  |
 | `assay.crossplane`    | Providers, XRDs, compositions, managed resources                                  |
 | `assay.velero`        | Backups, restores, schedules, storage locations                                   |
 | `assay.temporal`      | Workflows, task queues, schedules, signals + native gRPC client (temporal feature) |

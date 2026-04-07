@@ -176,8 +176,8 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
       <tbody>
         <tr>
           <td><code>crypto</code></td>
-          <td><code>crypto.jwt_sign/hash/hmac/random</code></td>
-          <td>JWT, hashing, HMAC</td>
+          <td><code>crypto.jwt_sign/jwt_decode/hash/hmac/random</code></td>
+          <td>JWT signing &amp; decoding, hashing, HMAC</td>
         </tr>
         <tr>
           <td><code>regex</code></td>
@@ -415,9 +415,15 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
           <td><code>keto.client({read_url, write_url})</code></td>
         </tr>
         <tr>
+          <td><code>assay.ory.rbac</code></td>
+          <td><code>require("assay.ory.rbac")</code></td>
+          <td>Capability-based RBAC engine over Keto &mdash; roles + capabilities, separation of duties, idempotent membership management, http.serve middleware</td>
+          <td><code>rbac.policy({namespace, keto, roles, default_role})</code></td>
+        </tr>
+        <tr>
           <td><code>assay.ory</code></td>
           <td><code>require("assay.ory")</code></td>
-          <td>Ory stack wrapper &mdash; builds kratos/hydra/keto clients in one call</td>
+          <td>Ory stack wrapper &mdash; builds kratos/hydra/keto clients in one call; also re-exports <code>rbac</code></td>
           <td><code>ory.connect({kratos_public, hydra_admin, keto_read, ...})</code></td>
         </tr>
       </tbody>
