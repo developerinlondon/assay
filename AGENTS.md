@@ -44,7 +44,7 @@ exception is the copyright holder's name in `LICENSE`/`NOTICE`/`CLA.md`.
 
 General-purpose enhanced Lua runtime. Single ~9 MB static binary with batteries included: HTTP
 client/server, JSON/YAML/TOML, crypto, database, WebSocket, filesystem, shell execution, process
-management, async, and 33 embedded stdlib modules for infrastructure services (Kubernetes,
+management, async, and 34 embedded stdlib modules for infrastructure services (Kubernetes,
 Prometheus, Vault, ArgoCD, etc.) and AI agent integrations (OpenClaw, GitHub, Gmail, Google
 Calendar).
 
@@ -175,7 +175,7 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 
 ## Stdlib Modules
 
-33 embedded Lua modules loaded via `require("assay.<name>")`:
+34 embedded Lua modules loaded via `require("assay.<name>")`:
 
 | Module                | Description                                                                       |
 | --------------------- | --------------------------------------------------------------------------------- |
