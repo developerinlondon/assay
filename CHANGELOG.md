@@ -2,6 +2,51 @@
 
 All notable changes to Assay are documented here.
 
+## [0.8.0] - 2026-04-07
+
+### Added
+
+- **Ory stack stdlib modules** — full Lua SDK for the Ory identity/authorization stack:
+  - **`assay.kratos`** — Identity management. Login/registration/recovery/settings flows,
+    identity CRUD via admin API, session introspection (`whoami`), schema management.
+  - **`assay.hydra`** — OAuth2 and OpenID Connect. Client CRUD, authorize URL builder,
+    token exchange (authorization_code grant), accept/reject login and consent challenges,
+    token introspection, JWK endpoint.
+  - **`assay.keto`** — Relationship-based access control. Relation-tuple CRUD, permission
+    checks (Zanzibar-style), role/group membership queries, expand API for role inheritance.
+  - **`assay.ory`** — Convenience wrapper that re-exports all three modules, with
+    `ory.connect(opts)` to build all three clients from one options table.
+
+  Pure Lua wrappers over the Ory REST APIs. Zero new Rust dependencies — binary size
+  unchanged. Each module follows the standard `M.client(url, opts)` pattern with
+  comprehensive `@quickref` metadata for `assay context` discovery.
+
+- **Multi-value response headers in `http.serve`**: Header values can now be a Lua
+  array of strings, emitting the same header name multiple times. Required for
+  `Set-Cookie` when setting multiple cookies in one response, and for other headers
+  that legitimately repeat (e.g., `Link`, `Vary`, `Cache-Control`).
+
+  ```lua
+  return {
+    status = 200,
+    headers = {
+      ["Set-Cookie"] = {
+        "session=abc; Path=/",
+        "csrf=xyz; Path=/",
+      },
+    },
+  }
+  ```
+
+  String values continue to work as before.
+
+### Theme
+
+This is the **identity and auth stack** release. Assay now ships with a complete SDK
+for building OIDC-integrated apps on Ory: one app can handle Hydra login/consent
+challenges, query Keto permissions, and manage Kratos identities — all in idiomatic
+Lua with zero external dependencies beyond the existing assay binary.
+
 ## [0.7.2] - 2026-04-07
 
 ### Added

@@ -522,8 +522,23 @@ fn lua_response_to_http(
 
         // Apply custom headers first so they take precedence over SSE defaults
         if let Ok(Some(headers_table)) = resp_table.get::<Option<Table>>("headers") {
-            for (k, v) in headers_table.pairs::<String, String>().flatten() {
-                builder = builder.header(k, v);
+            for pair in headers_table.pairs::<String, Value>().flatten() {
+                let (k, v) = pair;
+                match v {
+                    Value::String(s) => {
+                        if let Ok(s) = s.to_str() {
+                            builder = builder.header(&k, s.as_ref());
+                        }
+                    }
+                    Value::Table(t) => {
+                        // Array of strings → multiple headers with the same name
+                        // (required for Set-Cookie when setting multiple cookies)
+                        for val in t.sequence_values::<String>().flatten() {
+                            builder = builder.header(&k, val);
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -599,11 +614,26 @@ fn lua_response_to_http(
     let has_content_type =
         if let Ok(Some(headers_table)) = resp_table.get::<Option<Table>>("headers") {
             let mut found_ct = false;
-            for (k, v) in headers_table.pairs::<String, String>().flatten() {
+            for pair in headers_table.pairs::<String, Value>().flatten() {
+                let (k, v) = pair;
                 if k.eq_ignore_ascii_case("content-type") {
                     found_ct = true;
                 }
-                builder = builder.header(k, v);
+                match v {
+                    Value::String(s) => {
+                        if let Ok(s) = s.to_str() {
+                            builder = builder.header(&k, s.as_ref());
+                        }
+                    }
+                    Value::Table(t) => {
+                        // Array of strings → multiple headers with the same name
+                        // (required for Set-Cookie when setting multiple cookies)
+                        for val in t.sequence_values::<String>().flatten() {
+                            builder = builder.header(&k, val);
+                        }
+                    }
+                    _ => {}
+                }
             }
             found_ct
         } else {
