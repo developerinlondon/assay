@@ -89,6 +89,10 @@ Cryptography utilities. No `require()` needed.
   - `key`: string — signing key (secret or PEM private key)
   - `alg`: `"HS256"` | `"HS384"` | `"HS512"` | `"RS256"` | `"RS384"` | `"RS512"`
   - `opts`: `{kid = "key-id"}` — optional key ID header
+- `crypto.jwt_decode(token)` → `{header, claims}` — Decode a JWT WITHOUT verifying its signature
+  - Returns `header` and `claims` parsed from the base64url segments
+  - Use when the JWT travels through a trusted channel (your own session cookie over TLS) and you just need to read the claims
+  - For untrusted JWTs, verify the signature with a JWKS-aware verifier instead
 - `crypto.hash(str, alg)` → string — Hash string (hex output)
   - `alg`: `"sha256"` | `"sha384"` | `"sha512"` | `"md5"`
 - `crypto.hmac(key, data, alg?, raw?)` → string — HMAC signature
@@ -736,7 +740,7 @@ local app = c:ensure_oidc_app(proj.id, {
 })
 ```
 
-## assay.kratos
+## assay.ory.kratos
 
 Ory Kratos identity management. Self-service login, registration, recovery and settings flows,
 identity CRUD via the admin API, session introspection (whoami), and identity schemas.
@@ -759,7 +763,7 @@ Client: `kratos.client({public_url="...", admin_url="..."})`.
 
 Example:
 ```lua
-local kratos = require("assay.kratos")
+local kratos = require("assay.ory.kratos")
 local c = kratos.client({
   public_url = "http://kratos-public:4433",
   admin_url = "http://kratos-admin:4434",
@@ -768,7 +772,7 @@ local session = c:whoami(cookie)
 log.info("Logged in as: " .. session.identity.traits.email)
 ```
 
-## assay.hydra
+## assay.ory.hydra
 
 Ory Hydra OAuth2 and OpenID Connect server. OAuth2 client CRUD via the admin API,
 authorize URL builder, token exchange, accept/reject login and consent challenges,
@@ -792,7 +796,7 @@ Client: `hydra.client({public_url="...", admin_url="..."})`.
 
 Example:
 ```lua
-local hydra = require("assay.hydra")
+local hydra = require("assay.ory.hydra")
 local c = hydra.client({
   public_url = "https://hydra.example.com",
   admin_url = "http://hydra-admin:4445",
@@ -804,7 +808,7 @@ local client = c:create_client({
 })
 ```
 
-## assay.keto
+## assay.ory.keto
 
 Ory Keto relationship-based access control (Zanzibar-style ReBAC). Relation-tuple CRUD,
 permission checks, role/group membership queries, and the expand API.
@@ -819,7 +823,7 @@ Client: `keto.client({read_url="...", write_url="..."})`.
 
 Example:
 ```lua
-local keto = require("assay.keto")
+local keto = require("assay.ory.keto")
 local c = keto.client({
   read_url = "http://keto-read:4466",
   write_url = "http://keto-write:4467",
@@ -831,14 +835,65 @@ c:create_tuple({
 assert(c:check("apps", "cc", "admin", "user:alice"))
 ```
 
+## assay.ory.rbac
+
+Capability-based RBAC engine layered on top of Ory Keto. Define a policy once
+(role → capability set) and get user lookups, capability checks, and membership
+management for free. Users can hold multiple roles and the effective capability
+set is the union, so separation of duties is enforceable at the authorization
+layer (an `approver` role can have `approve` without also getting `trigger`,
+even if listed above an `operator` role with `trigger`).
+
+Policy: `rbac.policy({namespace, keto, roles, default_role?})`. `namespace`
+filters Keto tuples (e.g. `"command-center"`); `keto` is a Keto client;
+`roles` maps role names to `{rank, capabilities, label?, description?}`;
+`default_role` is the role assumed for users with no memberships.
+
+- `p:user_roles(user_id)` → `{role}` — held roles, sorted by rank descending
+- `p:user_primary_role(user_id)` → role — highest-ranked, for compact UI badges
+- `p:user_capabilities(user_id)` → `{cap=true,...}` — union over all held roles, falls back to `default_role` caps when empty
+- `p:user_has_capability(user_id, cap)` → bool — single capability check
+- `p:add(user_id, role)` — idempotent membership add (no-op if already a member)
+- `p:remove(user_id, role)` — membership remove (swallows 404)
+- `p:list_members(role)` → `{user_id}` — direct members of a role
+- `p:list_all_memberships()` → `{[role]={user_id,...}}` — full snapshot
+- `p:reset_role(role)` — delete all members of a role (for bootstrap/seed scripts)
+- `p:require_capability(cap, handler)` → handler — `http.serve` middleware that 403s callers without `cap`
+
+Example:
+```lua
+local keto = require("assay.ory.keto")
+local rbac = require("assay.ory.rbac")
+
+local kc = keto.client({ read_url = "http://keto-read:4466", write_url = "http://keto-write:4467" })
+local policy = rbac.policy({
+  namespace = "command-center",
+  keto = kc,
+  default_role = "viewer",
+  roles = {
+    owner    = { rank = 5, capabilities = { "manage_roles", "approve", "trigger", "view" } },
+    admin    = { rank = 4, capabilities = { "manage_roles", "approve", "trigger", "view" } },
+    approver = { rank = 3, capabilities = { "approve", "view" } },
+    operator = { rank = 2, capabilities = { "trigger", "view" } },
+    viewer   = { rank = 1, capabilities = { "view" } },
+  },
+})
+
+policy:add("user:alice", "approver")
+assert(policy:user_has_capability("user:alice", "approve"))
+assert(not policy:user_has_capability("user:alice", "trigger"))
+```
+
 ## assay.ory
 
-Convenience wrapper re-exporting `assay.kratos`, `assay.hydra`, and `assay.keto`, with
-`ory.connect(opts)` to build all three clients in a single call.
+Convenience wrapper re-exporting `assay.ory.kratos`, `assay.ory.hydra`,
+`assay.ory.keto`, and `assay.ory.rbac`, with `ory.connect(opts)` to build
+all three Ory clients in a single call.
 
-- `M.kratos` — re-export of `assay.kratos`
-- `M.hydra` — re-export of `assay.hydra`
-- `M.keto` — re-export of `assay.keto`
+- `M.kratos` — re-export of `assay.ory.kratos`
+- `M.hydra` — re-export of `assay.ory.hydra`
+- `M.keto` — re-export of `assay.ory.keto`
+- `M.rbac` — re-export of `assay.ory.rbac`
 - `M.connect(opts)` → `{kratos, hydra, keto}` — Build all three clients. `opts`: `{kratos_public, kratos_admin, hydra_public, hydra_admin, keto_read, keto_write}`
 
 Example:

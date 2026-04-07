@@ -7,7 +7,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[tokio::test]
 async fn test_keto_require() {
     let script = r#"
-        local keto = require("assay.keto")
+        local keto = require("assay.ory.keto")
         assert.not_nil(keto)
         assert.not_nil(keto.client)
     "#;
@@ -36,7 +36,7 @@ async fn test_keto_list() {
 
     let script = format!(
         r#"
-        local keto = require("assay.keto")
+        local keto = require("assay.ory.keto")
         local k = keto.client("{}")
         local result = k:list({{ namespace = "Role" }})
         assert.eq(#result.relation_tuples, 1)
@@ -60,7 +60,7 @@ async fn test_keto_check_allowed() {
 
     let script = format!(
         r#"
-        local keto = require("assay.keto")
+        local keto = require("assay.ory.keto")
         local k = keto.client("{}")
         local ok = k:check("apps", "cc", "admin", "user:alice")
         assert.eq(ok, true)
@@ -83,7 +83,7 @@ async fn test_keto_check_denied() {
 
     let script = format!(
         r#"
-        local keto = require("assay.keto")
+        local keto = require("assay.ory.keto")
         local k = keto.client("{}")
         local ok = k:check("apps", "cc", "admin", "user:bob")
         assert.eq(ok, false)
@@ -122,7 +122,7 @@ async fn test_keto_get_user_roles() {
 
     let script = format!(
         r#"
-        local keto = require("assay.keto")
+        local keto = require("assay.ory.keto")
         local k = keto.client("{}")
         local roles = k:get_user_roles("alice")
         assert.eq(#roles, 2)
@@ -154,7 +154,7 @@ async fn test_keto_user_has_any_role() {
 
     let script = format!(
         r#"
-        local keto = require("assay.keto")
+        local keto = require("assay.ory.keto")
         local k = keto.client("{}")
         local has_admin = k:user_has_any_role("bob", {{"namespace1:role-a", "namespace2:role-a"}})
         assert.eq(has_admin, false)
@@ -185,7 +185,7 @@ async fn test_keto_expand() {
 
     let script = format!(
         r#"
-        local keto = require("assay.keto")
+        local keto = require("assay.ory.keto")
         local k = keto.client("{}")
         local tree = k:expand("Role", "namespace1:role-a", "members")
         assert.eq(tree.type, "union")
@@ -207,7 +207,7 @@ async fn test_keto_create_tuple() {
 
     let script = format!(
         r#"
-        local keto = require("assay.keto")
+        local keto = require("assay.ory.keto")
         local k = keto.client("{}", {{ write_url = "{}" }})
         k:create({{
           namespace = "Role",
@@ -228,7 +228,7 @@ async fn test_keto_write_requires_write_url() {
 
     let script = format!(
         r#"
-        local keto = require("assay.keto")
+        local keto = require("assay.ory.keto")
         local k = keto.client("{}")
         local ok, err = pcall(function()
           k:create({{ namespace = "Role", object = "x", relation = "members", subject_id = "user:y" }})

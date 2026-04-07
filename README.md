@@ -1,6 +1,6 @@
 # Assay
 
-Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 50 modules.
+Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 51 modules.
 
 [![CI](https://github.com/developerinlondon/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/developerinlondon/assay/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/assay-lua.svg)](https://crates.io/crates/assay-lua)
@@ -10,7 +10,7 @@ Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 50 mod
 
 A single ~9 MB static binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes.
 Full-featured Lua 5.5 runtime with HTTP client/server, database, WebSocket, JWT, templates, native
-Temporal gRPC workflows, and 33 embedded stdlib modules for Kubernetes, monitoring, security, and
+Temporal gRPC workflows, and 34 embedded stdlib modules for Kubernetes, monitoring, security, and
 AI agent integrations.
 
 ```bash
@@ -18,7 +18,7 @@ assay script.lua     # Run Lua with all builtins
 assay checks.yaml    # Structured checks with retry/backoff/JSON output
 assay exec -e 'log.info("hello")'   # Inline evaluation
 assay context "grafana"              # LLM-ready module docs
-assay modules                        # List all 50+ modules
+assay modules                        # List all 51 modules
 ```
 
 Scripts that call `http.serve()` become web services. Scripts that call `http.get()` and exit are
@@ -132,7 +132,7 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 
 ## Stdlib Modules
 
-33 embedded Lua modules loaded via `require("assay.<name>")`. All follow the client pattern:
+34 embedded Lua modules loaded via `require("assay.<name>")`. All follow the client pattern:
 `M.client(url, opts)` then `c:method()`.
 
 | Module | Description |
@@ -154,10 +154,11 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 | `assay.eso` | ExternalSecrets, SecretStores |
 | `assay.dex` | OIDC discovery, JWKS |
 | `assay.zitadel` | OIDC identity, JWT machine auth |
-| `assay.kratos` | Ory Kratos — login/registration/recovery flows, identities, sessions |
-| `assay.hydra` | Ory Hydra — OAuth2/OIDC clients, authorize, tokens, login/consent |
-| `assay.keto` | Ory Keto — ReBAC relation tuples, permission checks, expand |
-| `assay.ory` | Ory stack wrapper — `ory.connect()` builds kratos/hydra/keto in one call |
+| `assay.ory.kratos` | Ory Kratos — login/registration/recovery flows, identities, sessions |
+| `assay.ory.hydra` | Ory Hydra — OAuth2/OIDC clients, authorize, tokens, login/consent/logout |
+| `assay.ory.keto` | Ory Keto — ReBAC relation tuples, permission checks, expand |
+| `assay.ory.rbac` | Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships |
+| `assay.ory` | Ory stack umbrella — `ory.connect()` builds kratos/hydra/keto in one call; also re-exports `rbac` |
 | **Infrastructure** | |
 | `assay.crossplane` | Providers, XRDs, compositions |
 | `assay.velero` | Backups, restores, schedules |
@@ -296,7 +297,7 @@ Find the right module before writing code:
 ```bash
 assay context "grafana"   # Returns method signatures for LLM prompts
 assay context "vault"     # Exact API docs, no hallucination
-assay modules             # List all 50+ modules
+assay modules             # List all 51 modules
 ```
 
 Custom modules: place `.lua` files in `./modules/` (project) or `~/.assay/modules/` (global).
