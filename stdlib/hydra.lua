@@ -1,6 +1,6 @@
 --- @module assay.hydra
---- @description Ory Hydra OAuth2 and OpenID Connect — client CRUD, authorize URL builder, token exchange, login/consent challenges, introspection, JWK endpoint.
---- @keywords hydra, ory, oauth2, oidc, openid, authentication, clients, tokens, login_challenge, consent_challenge, jwk, authorize, introspect
+--- @description Ory Hydra OAuth2 and OpenID Connect — client CRUD, authorize URL builder, token exchange, login/consent/logout challenges, introspection, JWK endpoint.
+--- @keywords hydra, ory, oauth2, oidc, openid, authentication, clients, tokens, login_challenge, consent_challenge, logout_challenge, jwk, authorize, introspect
 --- @quickref hydra.client(opts) -> client | Create a Hydra client. opts: {public_url, admin_url}
 --- @quickref c:list_clients(opts?) -> [{client_id, ...}] | List registered OAuth2 clients
 --- @quickref c:get_client(client_id) -> client | Get a registered OAuth2 client
@@ -18,6 +18,9 @@
 --- @quickref c:get_consent_request(challenge) -> {challenge, subject, requested_scope, ...} | Fetch a pending consent challenge
 --- @quickref c:accept_consent(challenge, opts) -> {redirect_to} | Accept a consent challenge (with claims)
 --- @quickref c:reject_consent(challenge, error) -> {redirect_to} | Reject a consent challenge
+--- @quickref c:get_logout_request(challenge) -> {request_url, rp_initiated, sid, subject, client} | Fetch a pending logout challenge
+--- @quickref c:accept_logout(challenge) -> {redirect_to} | Accept a logout challenge (invalidates session)
+--- @quickref c:reject_logout(challenge) -> nil | Reject a logout challenge (user stays signed in)
 --- @quickref c:well_known() -> {issuer, authorization_endpoint, ...} | Fetch OIDC discovery document
 --- @quickref c:jwks() -> {keys} | Fetch JSON Web Key Set
 
@@ -240,6 +243,31 @@ function M.client(opts)
 
   function c:reject_consent(challenge, err)
     return admin_put(self, "/admin/oauth2/auth/requests/consent/reject?consent_challenge=" .. urlencode(challenge), err or { error = "access_denied" })
+  end
+
+  -- ========== Logout Challenges ==========
+  -- When an OAuth2 client triggers an OIDC logout (typically by hitting
+  -- /oauth2/sessions/logout with id_token_hint and post_logout_redirect_uri),
+  -- Hydra creates a logout request and redirects the user to the configured
+  -- urls.logout endpoint. The logout handler accepts or rejects the request
+  -- via the admin API and gets back a redirect_to URL to send the browser to.
+
+  function c:get_logout_request(challenge)
+    return admin_get(self, "/admin/oauth2/auth/requests/logout?logout_challenge=" .. urlencode(challenge))
+  end
+
+  -- Accept a logout challenge. Hydra invalidates the user's Hydra session
+  -- (and any backing Kratos session) and returns a redirect_to URL pointing
+  -- at the post_logout_redirect_uri the client requested.
+  function c:accept_logout(challenge)
+    return admin_put(self, "/admin/oauth2/auth/requests/logout/accept?logout_challenge=" .. urlencode(challenge), {})
+  end
+
+  -- Reject a logout challenge (for example, if the user clicks "stay
+  -- signed in" on a logout confirmation page). Returns nothing meaningful;
+  -- the handler should redirect the browser back to the application.
+  function c:reject_logout(challenge)
+    return admin_put(self, "/admin/oauth2/auth/requests/logout/reject?logout_challenge=" .. urlencode(challenge), {})
   end
 
   -- ========== OIDC Discovery ==========

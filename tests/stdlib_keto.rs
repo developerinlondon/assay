@@ -24,7 +24,7 @@ async fn test_keto_list() {
             "relation_tuples": [
                 {
                     "namespace": "Role",
-                    "object": "platform:super-admin",
+                    "object": "namespace1:role-a",
                     "relation": "members",
                     "subject_id": "user:alice"
                 }
@@ -40,7 +40,7 @@ async fn test_keto_list() {
         local k = keto.client("{}")
         local result = k:list({{ namespace = "Role" }})
         assert.eq(#result.relation_tuples, 1)
-        assert.eq(result.relation_tuples[1].object, "platform:super-admin")
+        assert.eq(result.relation_tuples[1].object, "namespace1:role-a")
         "#,
         server.uri()
     );
@@ -105,13 +105,13 @@ async fn test_keto_get_user_roles() {
             "relation_tuples": [
                 {
                     "namespace": "Role",
-                    "object": "platform:super-admin",
+                    "object": "namespace1:role-a",
                     "relation": "members",
                     "subject_id": "user:alice"
                 },
                 {
                     "namespace": "Role",
-                    "object": "command-center:admin",
+                    "object": "namespace2:role-a",
                     "relation": "members",
                     "subject_id": "user:alice"
                 }
@@ -126,8 +126,8 @@ async fn test_keto_get_user_roles() {
         local k = keto.client("{}")
         local roles = k:get_user_roles("alice")
         assert.eq(#roles, 2)
-        assert.eq(roles[1].object, "platform:super-admin")
-        assert.eq(roles[2].object, "command-center:admin")
+        assert.eq(roles[1].object, "namespace1:role-a")
+        assert.eq(roles[2].object, "namespace2:role-a")
         "#,
         server.uri()
     );
@@ -143,7 +143,7 @@ async fn test_keto_user_has_any_role() {
             "relation_tuples": [
                 {
                     "namespace": "Role",
-                    "object": "command-center:operator",
+                    "object": "namespace2:role-b",
                     "relation": "members",
                     "subject_id": "user:bob"
                 }
@@ -156,9 +156,9 @@ async fn test_keto_user_has_any_role() {
         r#"
         local keto = require("assay.keto")
         local k = keto.client("{}")
-        local has_admin = k:user_has_any_role("bob", {{"platform:super-admin", "command-center:admin"}})
+        local has_admin = k:user_has_any_role("bob", {{"namespace1:role-a", "namespace2:role-a"}})
         assert.eq(has_admin, false)
-        local has_op = k:user_has_any_role("bob", {{"command-center:operator"}})
+        local has_op = k:user_has_any_role("bob", {{"namespace2:role-b"}})
         assert.eq(has_op, true)
         "#,
         server.uri()
@@ -175,7 +175,7 @@ async fn test_keto_expand() {
             "type": "union",
             "tuple": {
                 "namespace": "Role",
-                "object": "platform:super-admin",
+                "object": "namespace1:role-a",
                 "relation": "members"
             },
             "children": []
@@ -187,7 +187,7 @@ async fn test_keto_expand() {
         r#"
         local keto = require("assay.keto")
         local k = keto.client("{}")
-        local tree = k:expand("Role", "platform:super-admin", "members")
+        local tree = k:expand("Role", "namespace1:role-a", "members")
         assert.eq(tree.type, "union")
         "#,
         server.uri()
@@ -211,7 +211,7 @@ async fn test_keto_create_tuple() {
         local k = keto.client("{}", {{ write_url = "{}" }})
         k:create({{
           namespace = "Role",
-          object = "command-center:viewer",
+          object = "namespace2:role-c",
           relation = "members",
           subject_id = "user:carol",
         }})
