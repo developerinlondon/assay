@@ -483,6 +483,17 @@ async fn build_lua_request_and_call(
     req_table.set("query", query.to_string())?;
     req_table.set("body", body.to_string())?;
 
+    // Parse query string into a params table (e.g. "a=1&b=2" -> {a="1", b="2"})
+    let params_table = lua.create_table()?;
+    if !query.is_empty() {
+        for pair in query.split('&') {
+            if let Some((key, value)) = pair.split_once('=') {
+                params_table.set(key.to_string(), value.to_string())?;
+            }
+        }
+    }
+    req_table.set("params", params_table)?;
+
     let headers_table = lua.create_table()?;
     for (k, v) in headers {
         headers_table.set(k.as_str(), v.as_str())?;

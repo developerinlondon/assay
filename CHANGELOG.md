@@ -2,6 +2,15 @@
 
 All notable changes to Assay are documented here.
 
+## [0.7.2] - 2026-04-07
+
+### Added
+
+- **`req.params` in `http.serve`**: Query string parameters are now automatically parsed
+  into a `params` table on incoming requests. For example, `?login_challenge=abc&foo=bar`
+  becomes `req.params.login_challenge == "abc"` and `req.params.foo == "bar"`. The raw
+  query string remains available as `req.query`.
+
 ## [0.7.1] - 2026-04-06
 
 ### Changed
