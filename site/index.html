@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Assay — Infrastructure Testing &amp; Automation Runtime</title>
-  <meta name="description" content="Assay is a 9 MB Lua runtime for infrastructure testing, Kubernetes automation, HTTP servers, and AI agent integration. 46 built-in modules. Replaces kubectl, Python, Node.js, curl, jq.">
+  <meta name="description" content="Assay is a 9 MB Lua runtime for infrastructure testing, Kubernetes automation, HTTP servers, and AI agent integration. 50 built-in modules. Replaces kubectl, Python, Node.js, curl, jq.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -28,7 +28,7 @@
     <div style="padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem;">
       <div style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem;">Replaces your entire infrastructure scripting toolchain.</div>
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-        <span class="text-muted">One 9 MB binary. 46 built-in modules. Linux, macOS, Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.</span>
+        <span class="text-muted">One 9 MB binary. 50 built-in modules. Linux, macOS, Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.</span>
         <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
           <a href="modules.html" style="display: inline-block; background-color: var(--accent); color: #fff; padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Modules</a>
           <a href="#install" style="display: inline-block; color: var(--accent); border: 1px solid var(--accent); padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Install</a>
@@ -109,7 +109,7 @@
         <div style="font-size: 0.7rem;" class="text-muted">TLS certs</div>
       </a>
       <a href="modules.html" class="card" style="text-align: center; text-decoration: none; color: var(--accent); padding: 1rem 0.5rem;">
-        <div style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem;">+31</div>
+        <div style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem;">+35</div>
         <div style="font-weight: 600; font-size: 0.8rem;">More</div>
         <div style="font-size: 0.7rem;">View all &rarr;</div>
       </a>
@@ -122,7 +122,7 @@
         <div class="text-muted" style="font-size: 0.8rem;">Static binary</div>
       </div>
       <div style="text-align: center; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
-        <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent);">46</div>
+        <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent);">50</div>
         <div class="text-muted" style="font-size: 0.8rem;">Built-in modules</div>
       </div>
       <div style="text-align: center; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
@@ -140,12 +140,20 @@
     <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
       <div class="card">
         <h3 style="margin-top: 0;">HTTP Server &amp; SSE</h3>
-        <p class="text-muted">Build web services with async route handlers. Handlers can call http.get, sleep, and any async builtin. SSE streaming built in.</p>
+        <p class="text-muted">Build web services with async route handlers. Handlers can call http.get, sleep, and any async builtin. SSE streaming built in. Header values can be arrays for multiple <code>Set-Cookie</code>, <code>Link</code>, etc.</p>
         <pre style="margin-bottom: 0;"><code>http.serve(8080, {
   GET = {
-    ["/api"] = function(req)
-      local resp = http.get(API_URL)
-      return { status = 200, json = resp }
+    ["/login"] = function(req)
+      return {
+        status = 200,
+        headers = {
+          ["Set-Cookie"] = {
+            "session=abc; Path=/",
+            "csrf=xyz; Path=/",
+          },
+        },
+        json = { ok = true },
+      }
     end
   }
 })</code></pre>

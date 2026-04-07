@@ -1,6 +1,6 @@
 ---
 name: assay
-description: Infrastructure scripting runtime — 46 built-in modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one 9 MB binary.
+description: Infrastructure scripting runtime — 50 built-in modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one 9 MB binary.
 metadata:
   author: developerinlondon
   version: "0.6.1"
@@ -44,7 +44,7 @@ assay modules
 | `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 46 modules (29 stdlib + 17 builtins) |
+| `assay modules`             | List all 50 modules (33 stdlib + 17 builtins) |
 
 ## Discovering Modules
 
@@ -122,6 +122,25 @@ These are always available in every `.lua` script.
 | `http.serve(port, routes)`     | Start HTTP server (async handlers)             |
 
 Options: `{ headers = { ["X-Key"] = "value" } }`
+
+`http.serve` response handlers accept array values for headers to emit the same header name
+multiple times — required for `Set-Cookie` with multiple cookies, and useful for `Link`, `Vary`,
+`Cache-Control`, etc.:
+
+```lua
+return {
+  status = 200,
+  headers = {
+    ["Set-Cookie"] = {
+      "session=abc; Path=/; HttpOnly",
+      "csrf=xyz; Path=/",
+    },
+  },
+  body = "ok",
+}
+```
+
+String header values still work as before.
 
 ### Serialization
 
@@ -233,7 +252,7 @@ Available when built with `--features temporal`. Native gRPC client for Temporal
 
 ## Stdlib Modules Quick Reference
 
-All 29 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 33 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module                | Description                                                                |
 | --------------------- | -------------------------------------------------------------------------- |
@@ -251,6 +270,11 @@ All 29 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.certmanager`   | Certificates, issuers, ACME orders and challenges                          |
 | `assay.eso`           | ExternalSecrets, SecretStores, ClusterSecretStores sync status             |
 | `assay.dex`           | OIDC discovery, JWKS, health, configuration validation                     |
+| `assay.zitadel`       | OIDC identity management with JWT machine auth                             |
+| `assay.kratos`        | Ory Kratos — login/registration/recovery/settings flows, identities, sessions |
+| `assay.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs |
+| `assay.keto`          | Ory Keto ReBAC — relation tuples, permission checks, expand                |
+| `assay.ory`           | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together |
 | `assay.crossplane`    | Providers, XRDs, compositions, managed resources                           |
 | `assay.velero`        | Backups, restores, schedules, storage locations                            |
 | `assay.temporal`      | Workflows, task queues, schedules, signals + native gRPC (temporal feature)|
@@ -258,7 +282,6 @@ All 29 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.healthcheck`   | HTTP checks, JSON path, body matching, latency, multi-check                |
 | `assay.s3`            | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                    |
 | `assay.postgres`      | Postgres helpers: users, databases, grants, Vault integration              |
-| `assay.zitadel`       | OIDC identity management with JWT machine auth                             |
 | `assay.unleash`       | Feature flags: projects, environments, features, strategies, tokens        |
 | `assay.openclaw`      | OpenClaw AI agent — invoke tools, state, diff, approve, LLM tasks          |
 | `assay.github`        | GitHub REST API — PRs, issues, actions, repos, GraphQL                     |
@@ -469,7 +492,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 29 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: All 33 stdlib modules are embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use

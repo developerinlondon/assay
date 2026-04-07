@@ -354,6 +354,61 @@ async fn test_http_serve_query_params() {
 }
 
 #[tokio::test]
+async fn test_http_serve_multi_value_header() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+
+    // Start server via Lua
+    let vm = common::create_vm();
+    let script = r#"
+        async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/multi-cookie"] = function(req)
+                        return {
+                            status = 200,
+                            body = "ok",
+                            headers = {
+                                ["Set-Cookie"] = {
+                                    "a=1; Path=/",
+                                    "b=2; Path=/",
+                                },
+                            },
+                        }
+                    end,
+                }
+            })
+        end)
+        sleep(0.1)
+        return _SERVER_PORT
+    "#;
+    let local = tokio::task::LocalSet::new();
+    let port: i64 = local
+        .run_until(async {
+            vm.load(assay::lua::async_bridge::strip_shebang(script))
+                .eval_async::<i64>()
+                .await
+                .unwrap()
+        })
+        .await;
+
+    // Raw HTTP request to inspect multiple Set-Cookie headers
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+        .await
+        .unwrap();
+    stream
+        .write_all(b"GET /multi-cookie HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
+    let mut buf = String::new();
+    stream.read_to_string(&mut buf).await.unwrap();
+
+    // Both Set-Cookie headers should be present in the raw response
+    assert!(buf.contains("set-cookie: a=1"), "missing a=1 in: {}", buf);
+    assert!(buf.contains("set-cookie: b=2"), "missing b=2 in: {}", buf);
+}
+
+#[tokio::test]
 async fn test_http_serve_empty_query_params() {
     run_lua_local(
         r#"

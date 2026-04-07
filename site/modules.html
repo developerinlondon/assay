@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Assay — Module Reference</title>
-  <meta name="description" content="Complete reference for all 46+ Assay modules — 17 Rust builtins and 29 embedded Lua stdlib modules, zero dependencies.">
+  <meta name="description" content="Complete reference for all 50+ Assay modules — 17 Rust builtins and 33 embedded Lua stdlib modules, zero dependencies.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,7 +26,7 @@
   <main>
     <h1>Module Reference</h1>
     <p style="font-size: 1.15rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
-      46+ built-in modules, zero dependencies. Use <code>assay context &lt;query&gt;</code> for LLM-ready docs on any module.
+      50+ built-in modules, zero dependencies. Use <code>assay context &lt;query&gt;</code> for LLM-ready docs on any module.
     </p>
 
     <pre><code>assay modules                    # list all modules
@@ -53,7 +53,7 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
         <tr>
           <td><code>http</code></td>
           <td><code>http.get/post/put/patch/delete/serve</code></td>
-          <td>HTTP client, server, and SSE streaming</td>
+          <td>HTTP client, server, and SSE streaming. <code>http.serve</code> response headers accept array values to emit the same header name multiple times (e.g., multiple <code>Set-Cookie</code>).</td>
         </tr>
         <tr>
           <td><code>ws</code></td>
@@ -83,6 +83,30 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
       and <code>retry</code> fields. SSE headers (<code>text/event-stream</code>, <code>no-cache</code>,
       <code>keep-alive</code>) are set automatically.
     </p>
+
+    <h4>Multi-Value Response Headers</h4>
+    <p>
+      Response handlers can return an array of strings as a header value. Each entry emits the
+      same header name once — required for setting multiple <code>Set-Cookie</code> values in a
+      single response and useful for headers like <code>Link</code>, <code>Vary</code>, and
+      <code>Cache-Control</code>. String values continue to work as before.
+    </p>
+    <pre><code>http.serve(8080, {
+  GET = {
+    ["/login"] = function(req)
+      return {
+        status = 200,
+        headers = {
+          ["Set-Cookie"] = {
+            "session=abc; Path=/; HttpOnly",
+            "csrf=xyz; Path=/",
+          },
+        },
+        json = { ok = true },
+      }
+    end
+  }
+})</code></pre>
 
     <!-- Serialization -->
     <h3>Serialization</h3>
@@ -244,12 +268,12 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
     </table>
 
     <!-- ============================================================ -->
-    <!-- STDLIB MODULES (29 modules)                                  -->
+    <!-- STDLIB MODULES (33 modules)                                  -->
     <!-- ============================================================ -->
 
     <h2>Stdlib Modules</h2>
     <p>
-      29 embedded Lua modules loaded via <code>require("assay.&lt;name&gt;")</code>.
+      33 embedded Lua modules loaded via <code>require("assay.&lt;name&gt;")</code>.
       All follow the client pattern: <code>M.client(url, opts)</code> &rarr; client object &rarr; <code>c:method()</code>.
     </p>
 
@@ -385,6 +409,30 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
           <td>OIDC identity, JWT machine auth</td>
           <td><code>zitadel.client(url, opts)</code></td>
         </tr>
+        <tr>
+          <td><code>assay.kratos</code></td>
+          <td><code>require("assay.kratos")</code></td>
+          <td>Ory Kratos identity &mdash; login flows, identities, sessions, schemas</td>
+          <td><code>kratos.client({public_url, admin_url})</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.hydra</code></td>
+          <td><code>require("assay.hydra")</code></td>
+          <td>Ory Hydra OAuth2/OIDC &mdash; clients, authorize, tokens, login/consent, JWKs</td>
+          <td><code>hydra.client({public_url, admin_url})</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.keto</code></td>
+          <td><code>require("assay.keto")</code></td>
+          <td>Ory Keto ReBAC &mdash; relation tuples, permission checks, expand</td>
+          <td><code>keto.client({read_url, write_url})</code></td>
+        </tr>
+        <tr>
+          <td><code>assay.ory</code></td>
+          <td><code>require("assay.ory")</code></td>
+          <td>Ory stack wrapper &mdash; builds kratos/hydra/keto clients in one call</td>
+          <td><code>ory.connect({kratos_public, hydra_admin, keto_read, ...})</code></td>
+        </tr>
       </tbody>
     </table>
 
@@ -474,6 +522,42 @@ assay context "grafana health"   # get detailed docs for LLM</code></pre>
         </tr>
       </tbody>
     </table>
+
+    <!-- Ory Stack -->
+    <h3 id="ory">Ory Stack</h3>
+    <p>
+      Complete Ory identity and authorization stack: <strong>Kratos</strong> (identity management,
+      login/registration/recovery flows), <strong>Hydra</strong> (OAuth2 and OpenID Connect server),
+      and <strong>Keto</strong> (Zanzibar-style ReBAC). Each module can be used independently, or
+      combined via the <code>assay.ory</code> convenience wrapper.
+    </p>
+
+    <h5>Example: Build all three clients at once and check a permission</h5>
+    <pre><code>local ory = require("assay.ory")
+
+local o = ory.connect({
+  kratos_public = "http://kratos-public:4433",
+  kratos_admin  = "http://kratos-admin:4434",
+  hydra_public  = "https://hydra.example.com",
+  hydra_admin   = "http://hydra-admin:4445",
+  keto_read     = "http://keto-read:4466",
+  keto_write    = "http://keto-write:4467",
+})
+
+-- Kratos: introspect a session cookie
+local session = o.kratos:whoami(cookie)
+log.info("Logged in as: " .. session.identity.traits.email)
+
+-- Hydra: register an OAuth2 client
+local client = o.hydra:create_client({
+  client_name = "my-app",
+  grant_types = { "authorization_code", "refresh_token" },
+  redirect_uris = { "https://app.example.com/callback" },
+})
+
+-- Keto: check a ReBAC permission
+local allowed = o.keto:check("apps", "cc", "admin", "user:alice")
+if not allowed then error("permission denied") end</code></pre>
 
     <!-- Temporal Workflow Engine -->
     <h3 id="temporal">Temporal Workflow Engine</h3>

@@ -1,7 +1,7 @@
 # Assay
 
 > Assay is a ~9 MB static binary that runs Lua scripts in Kubernetes. It replaces 50-250 MB
-> Python/Node/kubectl containers. One binary handles HTTP, database, crypto, WebSocket, and 29
+> Python/Node/kubectl containers. One binary handles HTTP, database, crypto, WebSocket, and 33
 > Kubernetes-native and AI agent service integrations. No `require()` for builtins — they are global.
 > Stdlib modules use `require("assay.<name>")` then `M.client(url, opts)` → `c:method()`.
 > Run `assay context <query>` to get LLM-ready method signatures for any module.
@@ -32,6 +32,21 @@ Options table supports `{headers = {["X-Key"] = "value"}}`.
   - Routes: `{GET = {["/path"] = function(req) return {status=200, body="ok"} end}}`
   - Handlers receive `{method, path, body, headers, query}`, return `{status, body, json?, headers?}`
   - Handlers can call async builtins (`http.get`, `sleep`, etc.)
+  - Header values can be a string or an array of strings. Array values emit the same header
+    name multiple times — required for `Set-Cookie` with multiple cookies, and useful for
+    `Link`, `Vary`, `Cache-Control`, etc.:
+    ```lua
+    return {
+      status = 200,
+      headers = {
+        ["Set-Cookie"] = {
+          "session=abc; Path=/; HttpOnly",
+          "csrf=xyz; Path=/",
+        },
+      },
+      body = "ok",
+    }
+    ```
   - SSE: return `{sse = function(send) send({event="update", data="hello", id="1"}) end}`
     - `send()` accepts: `event`, `data`, `id`, `retry` fields
     - Sets `Content-Type: text/event-stream` automatically
@@ -719,6 +734,125 @@ local proj = c:ensure_project("my-platform")
 local app = c:ensure_oidc_app(proj.id, {
   name = "grafana", subdomain = "grafana", callbackPath = "/login/generic_oauth",
 })
+```
+
+## assay.kratos
+
+Ory Kratos identity management. Self-service login, registration, recovery and settings flows,
+identity CRUD via the admin API, session introspection (whoami), and identity schemas.
+Client: `kratos.client({public_url="...", admin_url="..."})`.
+
+- `c:whoami(cookie_or_token)` → session|nil — Introspect a session (nil on 401)
+- `c:create_login_flow(opts?)` → flow — Initialize a login flow (browser or api)
+- `c:create_registration_flow(opts?)` → flow — Initialize a registration flow
+- `c:create_recovery_flow(opts?)` → flow — Initialize a recovery flow
+- `c:create_settings_flow(opts?)` → flow — Initialize a settings flow
+- `c:submit_login(flow_id, payload)` → `{session, session_token?}` — Submit login flow
+- `c:submit_registration(flow_id, payload)` → `{identity, session?}` — Submit registration flow
+- `c:list_identities(opts?)` → [identity] — Admin: list identities
+- `c:get_identity(id)` → identity|nil — Admin: get identity by ID
+- `c:create_identity(payload)` → identity — Admin: create identity
+- `c:update_identity(id, payload)` → identity — Admin: update identity
+- `c:delete_identity(id)` → bool — Admin: delete identity
+- `c:list_schemas()` → [schema] — List identity schemas
+- `c:get_schema(id)` → schema|nil — Get schema by ID
+
+Example:
+```lua
+local kratos = require("assay.kratos")
+local c = kratos.client({
+  public_url = "http://kratos-public:4433",
+  admin_url = "http://kratos-admin:4434",
+})
+local session = c:whoami(cookie)
+log.info("Logged in as: " .. session.identity.traits.email)
+```
+
+## assay.hydra
+
+Ory Hydra OAuth2 and OpenID Connect server. OAuth2 client CRUD via the admin API,
+authorize URL builder, token exchange, accept/reject login and consent challenges,
+introspection, JWK endpoint, and OIDC discovery.
+Client: `hydra.client({public_url="...", admin_url="..."})`.
+
+- `c:discovery()` → `{issuer, authorization_endpoint, token_endpoint, jwks_uri, ...}` — OIDC discovery
+- `c:jwks()` → `{keys}` — JSON Web Key Set
+- `c:list_clients(opts?)` → [client] — Admin: list OAuth2 clients
+- `c:get_client(id)` → client|nil — Admin: get client by ID
+- `c:create_client(payload)` → client — Admin: create OAuth2 client
+- `c:update_client(id, payload)` → client — Admin: update OAuth2 client
+- `c:delete_client(id)` → bool — Admin: delete OAuth2 client
+- `c:authorize_url(opts)` → string — Build an authorization URL from `{client_id, redirect_uri, scope, state, ...}`
+- `c:exchange_token(opts)` → `{access_token, id_token?, refresh_token?, expires_in}` — Exchange code for tokens
+- `c:introspect(token, scope?)` → `{active, sub, scope, ...}` — Admin introspection
+- `c:accept_login(challenge, payload)` → `{redirect_to}` — Accept a login challenge
+- `c:reject_login(challenge, payload)` → `{redirect_to}` — Reject a login challenge
+- `c:accept_consent(challenge, payload)` → `{redirect_to}` — Accept a consent challenge
+- `c:reject_consent(challenge, payload)` → `{redirect_to}` — Reject a consent challenge
+
+Example:
+```lua
+local hydra = require("assay.hydra")
+local c = hydra.client({
+  public_url = "https://hydra.example.com",
+  admin_url = "http://hydra-admin:4445",
+})
+local client = c:create_client({
+  client_name = "my-app",
+  grant_types = { "authorization_code", "refresh_token" },
+  redirect_uris = { "https://app.example.com/callback" },
+})
+```
+
+## assay.keto
+
+Ory Keto relationship-based access control (Zanzibar-style ReBAC). Relation-tuple CRUD,
+permission checks, role/group membership queries, and the expand API.
+Client: `keto.client({read_url="...", write_url="..."})`.
+
+- `c:check(namespace, object, relation, subject)` → bool — Check if a relation tuple allows access
+- `c:create_tuple(tuple)` → bool — Create a relation tuple `{namespace, object, relation, subject_id|subject_set}`
+- `c:delete_tuple(tuple)` → bool — Delete a relation tuple
+- `c:list_tuples(query)` → [tuple] — List tuples matching query filters
+- `c:expand(namespace, object, relation, depth?)` → tree — Expand a subject tree (Zanzibar expand)
+- `c:list_relations(namespace, object)` → [relation] — List relations for an object
+
+Example:
+```lua
+local keto = require("assay.keto")
+local c = keto.client({
+  read_url = "http://keto-read:4466",
+  write_url = "http://keto-write:4467",
+})
+c:create_tuple({
+  namespace = "apps", object = "cc", relation = "admin",
+  subject_id = "user:alice",
+})
+assert(c:check("apps", "cc", "admin", "user:alice"))
+```
+
+## assay.ory
+
+Convenience wrapper re-exporting `assay.kratos`, `assay.hydra`, and `assay.keto`, with
+`ory.connect(opts)` to build all three clients in a single call.
+
+- `M.kratos` — re-export of `assay.kratos`
+- `M.hydra` — re-export of `assay.hydra`
+- `M.keto` — re-export of `assay.keto`
+- `M.connect(opts)` → `{kratos, hydra, keto}` — Build all three clients. `opts`: `{kratos_public, kratos_admin, hydra_public, hydra_admin, keto_read, keto_write}`
+
+Example:
+```lua
+local ory = require("assay.ory")
+local o = ory.connect({
+  kratos_public = "http://kratos-public:4433",
+  kratos_admin = "http://kratos-admin:4434",
+  hydra_public = "https://hydra.example.com",
+  hydra_admin = "http://hydra-admin:4445",
+  keto_read = "http://keto-read:4466",
+  keto_write = "http://keto-write:4467",
+})
+local allowed = o.keto:check("apps", "cc", "admin", "user:alice")
 ```
 
 ## assay.crossplane

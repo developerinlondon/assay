@@ -11,7 +11,7 @@ Key coding practices for this project:
 
 General-purpose enhanced Lua runtime. Single ~9 MB static binary with batteries included: HTTP
 client/server, JSON/YAML/TOML, crypto, database, WebSocket, filesystem, shell execution, process
-management, async, and 29 embedded stdlib modules for infrastructure services (Kubernetes,
+management, async, and 33 embedded stdlib modules for infrastructure services (Kubernetes,
 Prometheus, Vault, ArgoCD, etc.) and AI agent integrations (OpenClaw, GitHub, Gmail, Google
 Calendar).
 
@@ -74,7 +74,7 @@ Available in all `.lua` scripts — no `require` needed:
 
 | Category       | Functions                                                                                                                                                                                                                                                           |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HTTP           | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)`                                                                                          |
+| HTTP           | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)` — `http.serve` response handlers accept array header values to emit the same header name multiple times (e.g., multiple `Set-Cookie`) |
 | JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str)`, `yaml.encode(tbl)`, `toml.parse(str)`, `toml.encode(tbl)`                                                                                                                                                 |
 | Filesystem     | `fs.read(path)`, `fs.write(path, str)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)`, `fs.copy(src, dst)`, `fs.rename(src, dst)`, `fs.glob(pattern)`, `fs.tempdir()`, `fs.chmod(path, mode)`, `fs.readdir(path, opts?)` |
 | Crypto         | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)`                                                                                                                                     |
@@ -120,12 +120,29 @@ return {
 
 Custom headers override defaults: `headers = { ["content-type"] = "text/html" }`.
 
+Header values can be either a string or an array of strings. Array values emit the same header
+name multiple times — required for `Set-Cookie` with multiple cookies and useful for `Link`,
+`Vary`, `Cache-Control`, etc.:
+
+```lua
+return {
+  status = 200,
+  headers = {
+    ["Set-Cookie"] = {
+      "session=abc; Path=/; HttpOnly",
+      "csrf=xyz; Path=/",
+    },
+  },
+  body = "ok",
+}
+```
+
 SSE `send()` accepts: `event` (string), `data` (string), `id` (string), `retry` (integer). `event`
 and `id` must not contain newlines. `data` handles multi-line automatically.
 
 ## Stdlib Modules
 
-29 embedded Lua modules loaded via `require("assay.<name>")`:
+33 embedded Lua modules loaded via `require("assay.<name>")`:
 
 | Module                | Description                                                                       |
 | --------------------- | --------------------------------------------------------------------------------- |
@@ -143,6 +160,11 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.certmanager`   | Certificates, issuers, ACME challenges                                            |
 | `assay.eso`           | ExternalSecrets, SecretStores, ClusterSecretStores                                |
 | `assay.dex`           | OIDC discovery, JWKS, health                                                      |
+| `assay.zitadel`       | OIDC identity management with JWT machine auth                                    |
+| `assay.kratos`        | Ory Kratos identity — login/registration/recovery/settings flows, identities, sessions, schemas |
+| `assay.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs |
+| `assay.keto`          | Ory Keto ReBAC — relation tuples, permission checks, role/group membership, expand |
+| `assay.ory`           | Convenience wrapper re-exporting kratos/hydra/keto with `ory.connect(opts)`       |
 | `assay.crossplane`    | Providers, XRDs, compositions, managed resources                                  |
 | `assay.velero`        | Backups, restores, schedules, storage locations                                   |
 | `assay.temporal`      | Workflows, task queues, schedules, signals + native gRPC client (temporal feature) |
@@ -150,7 +172,6 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.healthcheck`   | HTTP checks, JSON path, body matching, latency, multi-check                       |
 | `assay.s3`            | S3-compatible storage (AWS, R2, MinIO) with Sig V4                                |
 | `assay.postgres`      | Postgres-specific helpers                                                         |
-| `assay.zitadel`       | OIDC identity management with JWT machine auth                                    |
 | `assay.unleash`       | Feature flags: projects, environments, features, strategies, API tokens           |
 | `assay.openclaw`      | OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks        |
 | `assay.github`        | GitHub REST API — PRs, issues, actions, repos, GraphQL                            |

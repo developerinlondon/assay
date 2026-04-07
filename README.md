@@ -1,6 +1,6 @@
 # Assay
 
-Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 46 built-in modules.
+Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 50 built-in modules.
 
 [![CI](https://github.com/developerinlondon/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/developerinlondon/assay/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/assay-lua.svg)](https://crates.io/crates/assay-lua)
@@ -10,7 +10,7 @@ Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 46 bui
 
 A single ~9 MB static binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes.
 Full-featured Lua 5.5 runtime with HTTP client/server, database, WebSocket, JWT, templates, native
-Temporal gRPC workflows, and 29 embedded stdlib modules for Kubernetes, monitoring, security, and
+Temporal gRPC workflows, and 33 embedded stdlib modules for Kubernetes, monitoring, security, and
 AI agent integrations.
 
 ```bash
@@ -18,7 +18,7 @@ assay script.lua     # Run Lua with all builtins
 assay checks.yaml    # Structured checks with retry/backoff/JSON output
 assay exec -e 'log.info("hello")'   # Inline evaluation
 assay context "grafana"              # LLM-ready module docs
-assay modules                        # List all 46+ modules
+assay modules                        # List all 50+ modules
 ```
 
 Scripts that call `http.serve()` become web services. Scripts that call `http.get()` and exit are
@@ -65,7 +65,7 @@ All builtins are available globally in `.lua` scripts — no `require` needed.
 | `http.get(url, opts?)` | GET request, returns `{status, body, headers}` |
 | `http.post(url, body, opts?)` | POST (auto-JSON if body is table) |
 | `http.put/patch/delete(url, ...)` | PUT, PATCH, DELETE |
-| `http.serve(port, routes)` | HTTP server with async handlers + SSE streaming |
+| `http.serve(port, routes)` | HTTP server with async handlers + SSE streaming (header values can be strings or arrays — array values emit the header multiple times for `Set-Cookie`, `Link`, `Vary`, etc.) |
 | `ws.connect(url)` | WebSocket client (`send`, `recv`, `close`) |
 
 ### Serialization
@@ -132,7 +132,7 @@ All builtins are available globally in `.lua` scripts — no `require` needed.
 
 ## Stdlib Modules
 
-29 embedded Lua modules loaded via `require("assay.<name>")`. All follow the client pattern:
+33 embedded Lua modules loaded via `require("assay.<name>")`. All follow the client pattern:
 `M.client(url, opts)` then `c:method()`.
 
 | Module | Description |
@@ -154,6 +154,10 @@ All builtins are available globally in `.lua` scripts — no `require` needed.
 | `assay.eso` | ExternalSecrets, SecretStores |
 | `assay.dex` | OIDC discovery, JWKS |
 | `assay.zitadel` | OIDC identity, JWT machine auth |
+| `assay.kratos` | Ory Kratos — login/registration/recovery flows, identities, sessions |
+| `assay.hydra` | Ory Hydra — OAuth2/OIDC clients, authorize, tokens, login/consent |
+| `assay.keto` | Ory Keto — ReBAC relation tuples, permission checks, expand |
+| `assay.ory` | Ory stack wrapper — `ory.connect()` builds kratos/hydra/keto in one call |
 | **Infrastructure** | |
 | `assay.crossplane` | Providers, XRDs, compositions |
 | `assay.velero` | Backups, restores, schedules |
@@ -196,6 +200,20 @@ http.serve(8080, {
   GET = {
     ["/health"] = function(req)
       return { status = 200, json = { ok = true } }
+    end,
+    ["/login"] = function(req)
+      -- Array header values emit the same header name multiple times.
+      -- Required for setting multiple Set-Cookie values in one response.
+      return {
+        status = 200,
+        headers = {
+          ["Set-Cookie"] = {
+            "session=abc; Path=/; HttpOnly",
+            "csrf=xyz; Path=/",
+          },
+        },
+        json = { ok = true },
+      }
     end,
     ["/events"] = function(req)
       return {
@@ -278,7 +296,7 @@ Find the right module before writing code:
 ```bash
 assay context "grafana"   # Returns method signatures for LLM prompts
 assay context "vault"     # Exact API docs, no hallucination
-assay modules             # List all 46+ modules
+assay modules             # List all 50+ modules
 ```
 
 Custom modules: place `.lua` files in `./modules/` (project) or `~/.assay/modules/` (global).
