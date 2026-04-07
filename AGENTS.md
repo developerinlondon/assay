@@ -68,9 +68,9 @@ spec:
       restartPolicy: Never
 ```
 
-## Built-in Globals
+## Builtins
 
-Available in all `.lua` scripts — no `require` needed:
+Available as globals in all `.lua` scripts — no `require` needed:
 
 | Category       | Functions                                                                                                                                                                                                                                                           |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Assay — Infrastructure Testing &amp; Automation Runtime</title>
-  <meta name="description" content="Assay is a 9 MB Lua runtime for infrastructure testing, Kubernetes automation, HTTP servers, and AI agent integration. 50 built-in modules. Replaces kubectl, Python, Node.js, curl, jq.">
+  <meta name="description" content="Assay is a 9 MB Lua runtime for infrastructure testing, Kubernetes automation, HTTP servers, and AI agent integration. 50 modules. Replaces kubectl, Python, Node.js, curl, jq.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -28,7 +28,7 @@
     <div style="padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem;">
       <div style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem;">Replaces your entire infrastructure scripting toolchain.</div>
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-        <span class="text-muted">One 9 MB binary. 50 built-in modules. Linux, macOS, Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.</span>
+        <span class="text-muted">One 9 MB binary. 50 modules. Linux, macOS, Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.</span>
         <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
           <a href="modules.html" style="display: inline-block; background-color: var(--accent); color: #fff; padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Modules</a>
           <a href="#install" style="display: inline-block; color: var(--accent); border: 1px solid var(--accent); padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Install</a>
@@ -123,7 +123,7 @@
       </div>
       <div style="text-align: center; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
         <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent);">50</div>
-        <div class="text-muted" style="font-size: 0.8rem;">Built-in modules</div>
+        <div class="text-muted" style="font-size: 0.8rem;">Modules</div>
       </div>
       <div style="text-align: center; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
         <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent);">Lua 5.5</div>
@@ -196,7 +196,7 @@ local jwt = crypto.jwt_sign(
       </div>
       <div class="card">
         <h3 style="margin-top: 0;">Infrastructure Testing</h3>
-        <p class="text-muted">Built-in assertions, structured YAML checks with retry and backoff. Verify deployments, health endpoints, and service readiness.</p>
+        <p class="text-muted">Builtin assertions, structured YAML checks with retry and backoff. Verify deployments, health endpoints, and service readiness.</p>
         <pre style="margin-bottom: 0;"><code># checks.yaml — retry + backoff
 checks:
   - name: api-healthy

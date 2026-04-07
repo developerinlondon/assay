@@ -1,6 +1,6 @@
 ---
 name: assay
-description: Infrastructure scripting runtime — 50 built-in modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one 9 MB binary.
+description: Infrastructure scripting runtime — 50 modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one 9 MB binary.
 metadata:
   author: developerinlondon
   version: "0.6.1"
@@ -106,7 +106,7 @@ local c = grafana.client(url, { api_key = "glsa_..." })
 local c = grafana.client(url, { username = "admin", password = "secret" })
 ```
 
-## Built-in Functions (no require needed)
+## Builtins (no require needed)
 
 These are always available in every `.lua` script.
 
@@ -584,7 +584,7 @@ Today: use `assay context <query>` from terminal and paste output into agent con
 
 ## MCP-Serve Vision (v0.6.0)
 
-`assay mcp-serve` will expose all 40+ modules as MCP tools over stdio/SSE transport:
+`assay mcp-serve` will expose all 50 modules (33 stdlib + 17 builtins) as MCP tools over stdio/SSE transport:
 
 - Each stdlib module becomes an MCP tool (e.g., `grafana_health`, `k8s_pods`)
 - Each builtin becomes an MCP tool (e.g., `http_get`, `crypto_jwt_sign`)

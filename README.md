@@ -1,6 +1,6 @@
 # Assay
 
-Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 50 built-in modules.
+Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 50 modules.
 
 [![CI](https://github.com/developerinlondon/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/developerinlondon/assay/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/assay-lua.svg)](https://crates.io/crates/assay-lua)
@@ -54,9 +54,9 @@ docker pull ghcr.io/developerinlondon/assay:latest
 cargo install assay-lua
 ```
 
-## Built-in API Reference
+## Builtins API Reference
 
-All builtins are available globally in `.lua` scripts — no `require` needed.
+All 17 Rust builtins are available globally in `.lua` scripts — no `require` needed.
 
 ### HTTP & Networking
 

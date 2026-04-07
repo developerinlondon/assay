@@ -12,7 +12,7 @@
 - [SKILL.md](https://github.com/developerinlondon/assay/blob/main/SKILL.md): LLM agent integration guide
 - [GitHub](https://github.com/developerinlondon/assay): Source code and issues
 
-## Built-in Globals (no require needed)
+## Builtins (no require needed)
 - [http](https://assay.rs/modules.html#http): HTTP client, server, SSE streaming — http.get/post/put/patch/delete/serve
 - [json](https://assay.rs/modules.html#json): JSON parse and encode
 - [yaml](https://assay.rs/modules.html#yaml): YAML parse and encode
