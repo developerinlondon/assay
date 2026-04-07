@@ -4,7 +4,7 @@ Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 50 mod
 
 [![CI](https://github.com/developerinlondon/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/developerinlondon/assay/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/assay-lua.svg)](https://crates.io/crates/assay-lua)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 ## What is Assay?
 
@@ -312,7 +312,17 @@ dprint fmt                # Format (Rust, Markdown, YAML, JSON, TOML)
 
 ## License
 
-MIT
+Assay is licensed under the [Apache License, Version 2.0](LICENSE). You can use,
+modify, and redistribute it freely — including in commercial and proprietary
+products — as long as you preserve the copyright notice and the license text.
+
+## Contributing
+
+Pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+workflow and [CLA.md](CLA.md) for the Contributor License Agreement that all
+contributors are required to sign (it lets the project owner relicense or
+incorporate contributions into commercial editions in the future, while you
+keep the copyright on your contribution).
 
 ## Links
 
