@@ -318,3 +318,69 @@ async fn test_http_serve_async_handler() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn test_http_serve_query_params() {
+    run_lua_local(
+        r#"
+        local server = async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/search"] = function(req)
+                        return {
+                            status = 200,
+                            json = {
+                                raw_query = req.query,
+                                name = req.params.name,
+                                page = req.params.page,
+                            }
+                        }
+                    end,
+                }
+            })
+        end)
+        sleep(0.1)
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/search?name=hello&page=2")
+        assert.eq(resp.status, 200)
+        local data = json.parse(resp.body)
+        assert.eq(data.raw_query, "name=hello&page=2")
+        assert.eq(data.name, "hello")
+        assert.eq(data.page, "2")
+    "#,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_http_serve_empty_query_params() {
+    run_lua_local(
+        r#"
+        local server = async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/noquery"] = function(req)
+                        return {
+                            status = 200,
+                            json = {
+                                raw_query = req.query,
+                                has_params = next(req.params) ~= nil,
+                            }
+                        }
+                    end,
+                }
+            })
+        end)
+        sleep(0.1)
+        local port = _SERVER_PORT
+        local resp = http.get("http://127.0.0.1:" .. port .. "/noquery")
+        assert.eq(resp.status, 200)
+        local data = json.parse(resp.body)
+        assert.eq(data.raw_query, "")
+        assert.eq(data.has_params, false)
+    "#,
+    )
+    .await
+    .unwrap();
+}
