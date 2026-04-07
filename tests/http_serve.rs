@@ -354,6 +354,51 @@ async fn test_http_serve_query_params() {
 }
 
 #[tokio::test]
+async fn test_http_serve_url_encoded_query_params() {
+    // Regression test: req.params must contain URL-decoded values, not raw
+    // percent-encoded strings. Otherwise consumers that re-encode (e.g.
+    // assay.hydra) end up double-encoding values like "g=" -> "g%3D" -> "g%253D".
+    run_lua_local(
+        r#"
+        local server = async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/echo"] = function(req)
+                        return {
+                            status = 200,
+                            json = {
+                                challenge = req.params.challenge,
+                                space    = req.params.space,
+                                plus     = req.params.plus,
+                                eq       = req.params.eq,
+                                unicode  = req.params.unicode,
+                            }
+                        }
+                    end,
+                }
+            })
+        end)
+        sleep(0.1)
+        local port = _SERVER_PORT
+        -- challenge ends with `=` (base64 padding) URL-encoded as %3D
+        -- space encoded as %20 and as `+`
+        -- raw `=` mid-value, and a unicode char
+        local resp = http.get("http://127.0.0.1:" .. port
+            .. "/echo?challenge=abc%3D&space=hello%20world&plus=hello+world&eq=a%3Db&unicode=caf%C3%A9")
+        assert.eq(resp.status, 200)
+        local data = json.parse(resp.body)
+        assert.eq(data.challenge, "abc=")
+        assert.eq(data.space, "hello world")
+        assert.eq(data.plus, "hello world")
+        assert.eq(data.eq, "a=b")
+        assert.eq(data.unicode, "café")
+    "#,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn test_http_serve_multi_value_header() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
