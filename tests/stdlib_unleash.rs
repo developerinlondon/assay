@@ -51,7 +51,7 @@ async fn test_unleash_projects() {
             "version": 1,
             "projects": [
                 {"id": "default", "name": "Default", "description": "Default project", "memberCount": 1, "featureCount": 5},
-                {"id": "simons", "name": "Simons", "description": "Golden Image Factory", "memberCount": 2, "featureCount": 3}
+                {"id": "demo-project", "name": "Demo Project", "description": "Demo project description", "memberCount": 2, "featureCount": 3}
             ]
         })))
         .mount(&server)
@@ -64,8 +64,8 @@ async fn test_unleash_projects() {
         local projects = c:projects()
         assert.eq(#projects, 2)
         assert.eq(projects[1].id, "default")
-        assert.eq(projects[2].id, "simons")
-        assert.eq(projects[2].name, "Simons")
+        assert.eq(projects[2].id, "demo-project")
+        assert.eq(projects[2].name, "Demo Project")
         "#,
         server.uri()
     );
@@ -76,11 +76,11 @@ async fn test_unleash_projects() {
 async fn test_unleash_project() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/admin/projects/simons"))
+        .and(path("/api/admin/projects/demo-project"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "simons",
-            "name": "Simons",
-            "description": "Golden Image Factory",
+            "id": "demo-project",
+            "name": "Demo Project",
+            "description": "Demo project description",
             "environments": [
                 {"environment": "development", "enabled": true},
                 {"environment": "production", "enabled": true}
@@ -94,9 +94,9 @@ async fn test_unleash_project() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local p = c:project("simons")
-        assert.eq(p.id, "simons")
-        assert.eq(p.name, "Simons")
+        local p = c:project("demo-project")
+        assert.eq(p.id, "demo-project")
+        assert.eq(p.name, "Demo Project")
         assert.eq(#p.environments, 2)
         "#,
         server.uri()
@@ -131,9 +131,9 @@ async fn test_unleash_create_project() {
     Mock::given(method("POST"))
         .and(path("/api/admin/projects"))
         .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-            "id": "simons",
-            "name": "Simons",
-            "description": "Golden Image Factory"
+            "id": "demo-project",
+            "name": "Demo Project",
+            "description": "Demo project description"
         })))
         .mount(&server)
         .await;
@@ -142,9 +142,9 @@ async fn test_unleash_create_project() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local p = c:create_project({{ id = "simons", name = "Simons", description = "Golden Image Factory" }})
-        assert.eq(p.id, "simons")
-        assert.eq(p.name, "Simons")
+        local p = c:create_project({{ id = "demo-project", name = "Demo Project", description = "Demo project description" }})
+        assert.eq(p.id, "demo-project")
+        assert.eq(p.name, "Demo Project")
         "#,
         server.uri()
     );
@@ -155,10 +155,10 @@ async fn test_unleash_create_project() {
 async fn test_unleash_update_project() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
-        .and(path("/api/admin/projects/simons"))
+        .and(path("/api/admin/projects/demo-project"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "simons",
-            "name": "Simons Updated",
+            "id": "demo-project",
+            "name": "Demo Project Updated",
             "description": "Updated description"
         })))
         .mount(&server)
@@ -168,8 +168,8 @@ async fn test_unleash_update_project() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local p = c:update_project("simons", {{ name = "Simons Updated", description = "Updated description" }})
-        assert.eq(p.name, "Simons Updated")
+        local p = c:update_project("demo-project", {{ name = "Demo Project Updated", description = "Updated description" }})
+        assert.eq(p.name, "Demo Project Updated")
         "#,
         server.uri()
     );
@@ -180,7 +180,7 @@ async fn test_unleash_update_project() {
 async fn test_unleash_delete_project() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
-        .and(path("/api/admin/projects/simons"))
+        .and(path("/api/admin/projects/demo-project"))
         .respond_with(ResponseTemplate::new(200))
         .mount(&server)
         .await;
@@ -189,7 +189,7 @@ async fn test_unleash_delete_project() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:delete_project("simons")
+        c:delete_project("demo-project")
         "#,
         server.uri()
     );
@@ -229,7 +229,7 @@ async fn test_unleash_environments() {
 async fn test_unleash_enable_environment() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/admin/projects/simons/environments"))
+        .and(path("/api/admin/projects/demo-project/environments"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&server)
         .await;
@@ -238,7 +238,7 @@ async fn test_unleash_enable_environment() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:enable_environment("simons", "production")
+        c:enable_environment("demo-project", "production")
         "#,
         server.uri()
     );
@@ -249,7 +249,7 @@ async fn test_unleash_enable_environment() {
 async fn test_unleash_disable_environment() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
-        .and(path("/api/admin/projects/simons/environments/staging"))
+        .and(path("/api/admin/projects/demo-project/environments/staging"))
         .respond_with(ResponseTemplate::new(200))
         .mount(&server)
         .await;
@@ -258,7 +258,7 @@ async fn test_unleash_disable_environment() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:disable_environment("simons", "staging")
+        c:disable_environment("demo-project", "staging")
         "#,
         server.uri()
     );
@@ -269,12 +269,12 @@ async fn test_unleash_disable_environment() {
 async fn test_unleash_features() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/admin/projects/simons/features"))
+        .and(path("/api/admin/projects/demo-project/features"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "version": 2,
             "features": [
-                {"name": "dark-mode", "type": "release", "enabled": false, "project": "simons"},
-                {"name": "new-dashboard", "type": "experiment", "enabled": true, "project": "simons"}
+                {"name": "dark-mode", "type": "release", "enabled": false, "project": "demo-project"},
+                {"name": "new-dashboard", "type": "experiment", "enabled": true, "project": "demo-project"}
             ]
         })))
         .mount(&server)
@@ -284,7 +284,7 @@ async fn test_unleash_features() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local features = c:features("simons")
+        local features = c:features("demo-project")
         assert.eq(#features, 2)
         assert.eq(features[1].name, "dark-mode")
         assert.eq(features[2].name, "new-dashboard")
@@ -299,11 +299,11 @@ async fn test_unleash_features() {
 async fn test_unleash_feature() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/admin/projects/simons/features/dark-mode"))
+        .and(path("/api/admin/projects/demo-project/features/dark-mode"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "name": "dark-mode",
             "type": "release",
-            "project": "simons",
+            "project": "demo-project",
             "enabled": false,
             "environments": [
                 {"name": "development", "enabled": true},
@@ -317,7 +317,7 @@ async fn test_unleash_feature() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local f = c:feature("simons", "dark-mode")
+        local f = c:feature("demo-project", "dark-mode")
         assert.eq(f.name, "dark-mode")
         assert.eq(f.type, "release")
         assert.eq(#f.environments, 2)
@@ -331,7 +331,7 @@ async fn test_unleash_feature() {
 async fn test_unleash_feature_not_found() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/admin/projects/simons/features/nonexistent"))
+        .and(path("/api/admin/projects/demo-project/features/nonexistent"))
         .respond_with(ResponseTemplate::new(404))
         .mount(&server)
         .await;
@@ -340,7 +340,7 @@ async fn test_unleash_feature_not_found() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local f = c:feature("simons", "nonexistent")
+        local f = c:feature("demo-project", "nonexistent")
         assert.eq(f, nil)
         "#,
         server.uri()
@@ -352,11 +352,11 @@ async fn test_unleash_feature_not_found() {
 async fn test_unleash_create_feature() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/admin/projects/simons/features"))
+        .and(path("/api/admin/projects/demo-project/features"))
         .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
             "name": "dark-mode",
             "type": "release",
-            "project": "simons",
+            "project": "demo-project",
             "description": "Enable dark mode UI"
         })))
         .mount(&server)
@@ -366,7 +366,7 @@ async fn test_unleash_create_feature() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local f = c:create_feature("simons", {{ name = "dark-mode", type = "release", description = "Enable dark mode UI" }})
+        local f = c:create_feature("demo-project", {{ name = "dark-mode", type = "release", description = "Enable dark mode UI" }})
         assert.eq(f.name, "dark-mode")
         assert.eq(f.type, "release")
         "#,
@@ -379,7 +379,7 @@ async fn test_unleash_create_feature() {
 async fn test_unleash_update_feature() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
-        .and(path("/api/admin/projects/simons/features/dark-mode"))
+        .and(path("/api/admin/projects/demo-project/features/dark-mode"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "name": "dark-mode",
             "type": "release",
@@ -392,7 +392,7 @@ async fn test_unleash_update_feature() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local f = c:update_feature("simons", "dark-mode", {{ description = "Updated dark mode" }})
+        local f = c:update_feature("demo-project", "dark-mode", {{ description = "Updated dark mode" }})
         assert.eq(f.description, "Updated dark mode")
         "#,
         server.uri()
@@ -404,7 +404,7 @@ async fn test_unleash_update_feature() {
 async fn test_unleash_archive_feature() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
-        .and(path("/api/admin/projects/simons/features/dark-mode"))
+        .and(path("/api/admin/projects/demo-project/features/dark-mode"))
         .respond_with(ResponseTemplate::new(200))
         .mount(&server)
         .await;
@@ -413,7 +413,7 @@ async fn test_unleash_archive_feature() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:archive_feature("simons", "dark-mode")
+        c:archive_feature("demo-project", "dark-mode")
         "#,
         server.uri()
     );
@@ -425,7 +425,7 @@ async fn test_unleash_toggle_on() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(
-            "/api/admin/projects/simons/features/dark-mode/environments/development/on",
+            "/api/admin/projects/demo-project/features/dark-mode/environments/development/on",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&server)
@@ -435,7 +435,7 @@ async fn test_unleash_toggle_on() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:toggle_on("simons", "dark-mode", "development")
+        c:toggle_on("demo-project", "dark-mode", "development")
         "#,
         server.uri()
     );
@@ -447,7 +447,7 @@ async fn test_unleash_toggle_off() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(
-            "/api/admin/projects/simons/features/dark-mode/environments/production/off",
+            "/api/admin/projects/demo-project/features/dark-mode/environments/production/off",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&server)
@@ -457,7 +457,7 @@ async fn test_unleash_toggle_off() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:toggle_off("simons", "dark-mode", "production")
+        c:toggle_off("demo-project", "dark-mode", "production")
         "#,
         server.uri()
     );
@@ -469,7 +469,7 @@ async fn test_unleash_strategies() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(
-            "/api/admin/projects/simons/features/dark-mode/environments/development/strategies",
+            "/api/admin/projects/demo-project/features/dark-mode/environments/development/strategies",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
             {"id": "strategy-1", "name": "default", "parameters": {}},
@@ -482,7 +482,7 @@ async fn test_unleash_strategies() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local strats = c:strategies("simons", "dark-mode", "development")
+        local strats = c:strategies("demo-project", "dark-mode", "development")
         assert.eq(#strats, 2)
         assert.eq(strats[1].name, "default")
         assert.eq(strats[2].name, "userWithId")
@@ -497,7 +497,7 @@ async fn test_unleash_add_strategy() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(
-            "/api/admin/projects/simons/features/dark-mode/environments/development/strategies",
+            "/api/admin/projects/demo-project/features/dark-mode/environments/development/strategies",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "strategy-3",
@@ -511,7 +511,7 @@ async fn test_unleash_add_strategy() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local s = c:add_strategy("simons", "dark-mode", "development", {{
+        local s = c:add_strategy("demo-project", "dark-mode", "development", {{
             name = "flexibleRollout",
             parameters = {{ rollout = "50", stickiness = "default" }}
         }})
@@ -530,7 +530,7 @@ async fn test_unleash_tokens() {
         .and(path("/api/admin/api-tokens"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "tokens": [
-                {"secret": "*:development.abc123", "tokenName": "simons-dev", "type": "client", "environment": "development", "projects": ["simons"]},
+                {"secret": "*:development.abc123", "tokenName": "demo-project-dev", "type": "client", "environment": "development", "projects": ["demo-project"]},
                 {"secret": "*:*.admin456", "tokenName": "admin", "type": "admin", "projects": ["*"]}
             ]
         })))
@@ -543,7 +543,7 @@ async fn test_unleash_tokens() {
         local c = unleash.client("{}", {{ token = "test-token" }})
         local tokens = c:tokens()
         assert.eq(#tokens, 2)
-        assert.eq(tokens[1].tokenName, "simons-dev")
+        assert.eq(tokens[1].tokenName, "demo-project-dev")
         assert.eq(tokens[1].type, "client")
         assert.eq(tokens[2].type, "admin")
         "#,
@@ -558,11 +558,11 @@ async fn test_unleash_create_token() {
     Mock::given(method("POST"))
         .and(path("/api/admin/api-tokens"))
         .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-            "secret": "simons:development.newtoken789",
-            "tokenName": "simons-client",
+            "secret": "demo-project:development.newtoken789",
+            "tokenName": "demo-project-client",
             "type": "client",
             "environment": "development",
-            "projects": ["simons"],
+            "projects": ["demo-project"],
             "createdAt": "2026-02-20T00:00:00Z"
         })))
         .mount(&server)
@@ -573,13 +573,13 @@ async fn test_unleash_create_token() {
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
         local t = c:create_token({{
-            tokenName = "simons-client",
+            tokenName = "demo-project-client",
             type = "client",
             environment = "development",
-            projects = {{ "simons" }}
+            projects = {{ "demo-project" }}
         }})
-        assert.eq(t.secret, "simons:development.newtoken789")
-        assert.eq(t.tokenName, "simons-client")
+        assert.eq(t.secret, "demo-project:development.newtoken789")
+        assert.eq(t.tokenName, "demo-project-client")
         assert.eq(t.type, "client")
         "#,
         server.uri()
@@ -653,10 +653,10 @@ async fn test_unleash_wait_timeout() {
 async fn test_unleash_ensure_project_existing() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/admin/projects/simons"))
+        .and(path("/api/admin/projects/demo-project"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "simons",
-            "name": "Simons",
+            "id": "demo-project",
+            "name": "Demo Project",
             "description": "Existing project"
         })))
         .mount(&server)
@@ -666,9 +666,9 @@ async fn test_unleash_ensure_project_existing() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local p = unleash.ensure_project(c, "simons")
-        assert.eq(p.id, "simons")
-        assert.eq(p.name, "Simons")
+        local p = unleash.ensure_project(c, "demo-project")
+        assert.eq(p.id, "demo-project")
+        assert.eq(p.name, "Demo Project")
         "#,
         server.uri()
     );
@@ -709,7 +709,7 @@ async fn test_unleash_ensure_project_new() {
 async fn test_unleash_ensure_environment_new() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/admin/projects/simons/environments"))
+        .and(path("/api/admin/projects/demo-project/environments"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&server)
         .await;
@@ -718,7 +718,7 @@ async fn test_unleash_ensure_environment_new() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local result = unleash.ensure_environment(c, "simons", "qa")
+        local result = unleash.ensure_environment(c, "demo-project", "qa")
         assert.eq(result, true)
         "#,
         server.uri()
@@ -730,7 +730,7 @@ async fn test_unleash_ensure_environment_new() {
 async fn test_unleash_ensure_environment_already_exists() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/admin/projects/simons/environments"))
+        .and(path("/api/admin/projects/demo-project/environments"))
         .respond_with(ResponseTemplate::new(409).set_body_string("Environment already enabled"))
         .mount(&server)
         .await;
@@ -739,7 +739,7 @@ async fn test_unleash_ensure_environment_already_exists() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local result = unleash.ensure_environment(c, "simons", "development")
+        local result = unleash.ensure_environment(c, "demo-project", "development")
         assert.eq(result, true)
         "#,
         server.uri()
@@ -754,7 +754,7 @@ async fn test_unleash_ensure_token_existing() {
         .and(path("/api/admin/api-tokens"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "tokens": [
-                {"secret": "hidden", "tokenName": "simons-dev", "type": "client", "environment": "development", "projects": ["simons"]}
+                {"secret": "hidden", "tokenName": "demo-project-dev", "type": "client", "environment": "development", "projects": ["demo-project"]}
             ]
         })))
         .mount(&server)
@@ -765,11 +765,11 @@ async fn test_unleash_ensure_token_existing() {
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
         local t = unleash.ensure_token(c, {{
-            tokenName = "simons-dev",
+            tokenName = "demo-project-dev",
             type = "client",
             environment = "development"
         }})
-        assert.eq(t.tokenName, "simons-dev")
+        assert.eq(t.tokenName, "demo-project-dev")
         assert.eq(t.type, "client")
         "#,
         server.uri()
@@ -790,11 +790,11 @@ async fn test_unleash_ensure_token_new() {
     Mock::given(method("POST"))
         .and(path("/api/admin/api-tokens"))
         .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-            "secret": "simons:production.newtoken",
-            "tokenName": "simons-prod",
+            "secret": "demo-project:production.newtoken",
+            "tokenName": "demo-project-prod",
             "type": "client",
             "environment": "production",
-            "projects": ["simons"]
+            "projects": ["demo-project"]
         })))
         .mount(&server)
         .await;
@@ -804,13 +804,13 @@ async fn test_unleash_ensure_token_new() {
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
         local t = unleash.ensure_token(c, {{
-            tokenName = "simons-prod",
+            tokenName = "demo-project-prod",
             type = "client",
             environment = "production",
-            projects = {{ "simons" }}
+            projects = {{ "demo-project" }}
         }})
-        assert.eq(t.secret, "simons:production.newtoken")
-        assert.eq(t.tokenName, "simons-prod")
+        assert.eq(t.secret, "demo-project:production.newtoken")
+        assert.eq(t.tokenName, "demo-project-prod")
         "#,
         server.uri()
     );

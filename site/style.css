@@ -117,7 +117,9 @@ nav a:hover {
   color: var(--accent);
 }
 
-/* Active page in nav — driven by a body class set per page */
+/* Active page in nav — driven by a body class set per page.
+   Highlights the link with the accent color, bolder weight,
+   and a clear underline so the current page is unmistakable. */
 body.page-home      nav a[href="index.html"],
 body.page-comparison nav a[href="comparison.html"],
 body.page-agents    nav a[href="agent-guides.html"],
@@ -125,6 +127,8 @@ body.page-modules   nav a[href="modules.html"],
 body.page-changelog nav a[href="changelog.html"] {
   color: var(--accent);
   font-weight: 700;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 2px;
 }
 
 /* Theme toggle */

@@ -5,13 +5,13 @@
 /// Usage from Lua:
 ///   local client = temporal.connect({
 ///     url = "temporal-frontend:7233",
-///     namespace = "command-center",
+///     namespace = "default",
 ///   })
 ///   local handle = client:start_workflow({
-///     task_queue = "promotions",
-///     workflow_type = "promote",
-///     workflow_id = "promote-prod-v0.2.0",
-///     input = { version = "v0.2.0", target = "prod" },
+///     task_queue = "my-queue",
+///     workflow_type = "MyWorkflow",
+///     workflow_id = "workflow-1",
+///     input = { foo = "bar" },
 ///   })
 #[cfg(feature = "temporal")]
 pub fn register_temporal(lua: &mlua::Lua) -> mlua::Result<()> {

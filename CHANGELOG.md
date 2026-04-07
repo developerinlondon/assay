@@ -2,6 +2,27 @@
 
 All notable changes to Assay are documented here.
 
+## [0.8.2] - 2026-04-07
+
+### Added
+
+- **`assay.hydra` logout challenge methods**: completes the OIDC challenge
+  trio (login, consent, logout). When an app calls Hydra's
+  `/oauth2/sessions/logout` endpoint with `id_token_hint` and
+  `post_logout_redirect_uri`, Hydra creates a logout request and redirects
+  the browser to the configured `urls.logout` endpoint with a
+  `logout_challenge` query param. The handler now has SDK methods to
+  process these requests:
+  - `c:get_logout_request(challenge)` — fetch the pending logout request
+    (subject, sid, client, rp_initiated flag)
+  - `c:accept_logout(challenge)` — invalidate the Hydra and Kratos sessions
+    and get back the `redirect_to` URL pointing at the app's
+    `post_logout_redirect_uri`
+  - `c:reject_logout(challenge)` — for "stay signed in" UIs that let the
+    user cancel the logout
+
+  Symmetric with the existing login/consent challenge methods.
+
 ## [0.8.1] - 2026-04-07
 
 ### Fixed
