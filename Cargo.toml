@@ -5,7 +5,7 @@ categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
 keywords = ["lua", "scripting", "automation", "runtime", "kubernetes"]
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/developerinlondon/assay"
 description = "General-purpose enhanced Lua runtime. Batteries-included scripting, automation, and web services."
 
