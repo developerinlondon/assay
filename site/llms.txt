@@ -1,7 +1,7 @@
 # Assay
 
 > Assay is a ~9 MB static binary that runs Lua scripts in Kubernetes. It replaces 50-250 MB
-> Python/Node/kubectl containers. One binary handles HTTP, database, crypto, WebSocket, and 29
+> Python/Node/kubectl containers. One binary handles HTTP, database, crypto, WebSocket, and 33
 > Kubernetes-native and AI agent service integrations. No `require()` for builtins — they are global.
 > Stdlib modules use `require("assay.<name>")` then `M.client(url, opts)` → `c:method()`.
 > Run `assay context <query>` to get LLM-ready method signatures for any module.
@@ -12,7 +12,7 @@
 - [SKILL.md](https://github.com/developerinlondon/assay/blob/main/SKILL.md): LLM agent integration guide
 - [GitHub](https://github.com/developerinlondon/assay): Source code and issues
 
-## Built-in Globals (no require needed)
+## Builtins (no require needed)
 - [http](https://assay.rs/modules.html#http): HTTP client, server, SSE streaming — http.get/post/put/patch/delete/serve
 - [json](https://assay.rs/modules.html#json): JSON parse and encode
 - [yaml](https://assay.rs/modules.html#yaml): YAML parse and encode
@@ -51,6 +51,10 @@
 - [assay.eso](https://assay.rs/modules.html#eso): External Secrets Operator
 - [assay.dex](https://assay.rs/modules.html#dex): Dex OIDC discovery, JWKS, health
 - [assay.zitadel](https://assay.rs/modules.html#zitadel): Zitadel OIDC identity, JWT machine auth
+- [assay.kratos](https://assay.rs/modules.html#ory): Ory Kratos identity — login/registration/recovery flows, identities, sessions, schemas
+- [assay.hydra](https://assay.rs/modules.html#ory): Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs
+- [assay.keto](https://assay.rs/modules.html#ory): Ory Keto ReBAC — relation tuples, permission checks, role/group queries, expand
+- [assay.ory](https://assay.rs/modules.html#ory): Ory stack wrapper — `ory.connect()` builds kratos/hydra/keto clients together
 
 ## Infrastructure
 - [assay.crossplane](https://assay.rs/modules.html#crossplane): Crossplane providers, XRDs, compositions

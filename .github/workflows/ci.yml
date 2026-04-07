@@ -43,7 +43,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          # Shared across all branches — cache is only invalidated when
+          # Cargo.lock changes (new deps). Dramatically cuts CI time for
+          # PRs that don't touch dependencies (most of them).
+          shared-key: ${{ matrix.target }}-v2
+          # Cache all crates (including dev-dependencies like wiremock)
+          cache-all-crates: "true"
+          # Save cache even if tests fail, so next run has partial builds
+          save-if: "true"
 
       - name: Install protoc
         uses: arduino/setup-protoc@v3
@@ -51,9 +58,14 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Clippy (warnings = errors)
+        timeout-minutes: 10
         run: cargo clippy --tests --target ${{ matrix.target }} -- -D warnings
 
       - name: Tests
+        # Global safety timeout — no individual test should hang more than
+        # a few seconds; if the step takes longer than 8 minutes something
+        # is wrong and we fail fast instead of waiting for CI timeout
+        timeout-minutes: 8
         run: cargo test --target ${{ matrix.target }}
 
       # Formatting is enforced by dprint locally (not rustfmt)

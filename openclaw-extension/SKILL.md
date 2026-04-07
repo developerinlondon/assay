@@ -6,7 +6,7 @@ Assay executes Lua workflows for infrastructure automation, AI agent orchestrati
 
 - Multi-step infrastructure tasks that should live in a checked-in Lua script
 - Scheduled or repeatable workflows with deterministic behavior
-- Data processing or service automation that benefits from Assay's built-in HTTP, JSON, DB, and filesystem support
+- Data processing or service automation that benefits from Assay's builtin HTTP, JSON, DB, and filesystem support
 - Tasks that may pause for human approval and resume later
 - Workflows that need Assay stdlib modules for Kubernetes, GitOps, observability, identity, storage, or AI agents
 
