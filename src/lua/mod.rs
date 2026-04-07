@@ -55,30 +55,40 @@ fn register_stdlib_loader(lua: &Lua) -> mlua::Result<()> {
     let package: mlua::Table = lua.globals().get("package")?;
     let searchers: mlua::Table = package.get("searchers")?;
 
+    // Resolves `require("assay.ory.kratos")` -> "ory/kratos.lua" by replacing
+    // dots with slashes, matching standard Lua package loading convention.
+    // Tries "<path>.lua" first, then falls back to "<path>/init.lua" so
+    // both `stdlib/ory.lua` (flat convenience wrapper) and
+    // `stdlib/ory/kratos.lua` (nested submodule) resolve correctly.
     let stdlib_searcher = lua.create_function(|lua, module_name: String| {
-        let path = if let Some(rest) = module_name.strip_prefix("assay.") {
-            format!("{rest}.lua")
-        } else {
-            return Ok(mlua::Value::String(
-                lua.create_string(format!("not an assay.* module: {module_name}"))?,
-            ));
+        let rest = match module_name.strip_prefix("assay.") {
+            Some(r) => r,
+            None => {
+                return Ok(mlua::Value::String(
+                    lua.create_string(format!("not an assay.* module: {module_name}"))?,
+                ));
+            }
         };
 
-        match STDLIB_DIR.get_file(&path) {
-            Some(file) => {
-                let source = file
-                    .contents_utf8()
-                    .ok_or_else(|| mlua::Error::runtime(format!("stdlib {path}: invalid UTF-8")))?;
+        let base = rest.replace('.', "/");
+        let candidates = [format!("{base}.lua"), format!("{base}/init.lua")];
+
+        for path in &candidates {
+            if let Some(file) = STDLIB_DIR.get_file(path) {
+                let source = file.contents_utf8().ok_or_else(|| {
+                    mlua::Error::runtime(format!("stdlib {path}: invalid UTF-8"))
+                })?;
                 let loader = lua
                     .load(source)
                     .set_name(format!("@assay/{path}"))
                     .into_function()?;
-                Ok(mlua::Value::Function(loader))
+                return Ok(mlua::Value::Function(loader));
             }
-            None => Ok(mlua::Value::String(
-                lua.create_string(format!("no embedded stdlib file: {path}"))?,
-            )),
         }
+
+        Ok(mlua::Value::String(
+            lua.create_string(format!("no embedded stdlib file: {}", candidates[0]))?,
+        ))
     })?;
 
     let len = searchers.len()?;
@@ -91,26 +101,40 @@ fn register_fs_loader(lua: &Lua, global_modules_path: Option<String>) -> mlua::R
     let package: mlua::Table = lua.globals().get("package")?;
     let searchers: mlua::Table = package.get("searchers")?;
 
+    // Same dotted-path resolution as the stdlib loader: `assay.ory.kratos`
+    // -> "ory/kratos.lua", falling back to "ory/kratos/init.lua".
     let fs_searcher = lua.create_function(move |lua, module_name: String| {
-        let filename = if let Some(rest) = module_name.strip_prefix("assay.") {
-            format!("{rest}.lua")
-        } else {
-            return Ok(mlua::Value::String(
-                lua.create_string(format!("not an assay.* module: {module_name}"))?,
-            ));
+        let rest = match module_name.strip_prefix("assay.") {
+            Some(r) => r,
+            None => {
+                return Ok(mlua::Value::String(
+                    lua.create_string(format!("not an assay.* module: {module_name}"))?,
+                ));
+            }
+        };
+        let base = rest.replace('.', "/");
+        let candidates = [format!("{base}.lua"), format!("{base}/init.lua")];
+
+        let try_load = |dir: &std::path::Path| -> Option<(std::path::PathBuf, String)> {
+            for rel in &candidates {
+                let full = dir.join(rel);
+                if let Ok(source) = std::fs::read_to_string(&full) {
+                    return Some((full, source));
+                }
+            }
+            None
         };
 
-        // Priority 1: ./modules/<name>.lua (per-project)
-        let project_path = std::path::Path::new("./modules").join(&filename);
-        if let Ok(source) = std::fs::read_to_string(&project_path) {
+        // Priority 1: ./modules/<path>.lua (per-project)
+        if let Some((full, source)) = try_load(std::path::Path::new("./modules")) {
             let loader = lua
                 .load(source)
-                .set_name(format!("@{}", project_path.display()))
+                .set_name(format!("@{}", full.display()))
                 .into_function()?;
             return Ok(mlua::Value::Function(loader));
         }
 
-        // Priority 2: ~/.assay/modules/<name>.lua (global user) or $ASSAY_MODULES_PATH
+        // Priority 2: $ASSAY_MODULES_PATH or ~/.assay/modules/<path>.lua
         let global_path = if let Some(ref custom_path) = global_modules_path {
             std::path::PathBuf::from(custom_path)
         } else if let Ok(modules_env) = std::env::var(MODULES_PATH_ENV) {
@@ -118,19 +142,17 @@ fn register_fs_loader(lua: &Lua, global_modules_path: Option<String>) -> mlua::R
         } else if let Ok(home) = std::env::var("HOME") {
             std::path::Path::new(&home).join(".assay/modules")
         } else {
-            // No home directory available, skip global path
             std::path::PathBuf::new()
         };
 
-        if !global_path.as_os_str().is_empty() {
-            let global_file_path = global_path.join(&filename);
-            if let Ok(source) = std::fs::read_to_string(&global_file_path) {
-                let loader = lua
-                    .load(source)
-                    .set_name(format!("@{}", global_file_path.display()))
-                    .into_function()?;
-                return Ok(mlua::Value::Function(loader));
-            }
+        if !global_path.as_os_str().is_empty()
+            && let Some((full, source)) = try_load(&global_path)
+        {
+            let loader = lua
+                .load(source)
+                .set_name(format!("@{}", full.display()))
+                .into_function()?;
+            return Ok(mlua::Value::Function(loader));
         }
 
         // Priority 3: Built-in modules are handled by register_stdlib_loader

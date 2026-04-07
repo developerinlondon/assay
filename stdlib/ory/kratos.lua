@@ -1,4 +1,4 @@
---- @module assay.kratos
+--- @module assay.ory.kratos
 --- @description Ory Kratos identity management — login/registration/recovery flows, identity CRUD via admin API, session introspection, schemas.
 --- @keywords kratos, ory, identity, authentication, login, registration, recovery, settings, sessions, identities, schemas, whoami
 --- @quickref kratos.client(opts) -> client | Create a Kratos client. opts: {public_url, admin_url}

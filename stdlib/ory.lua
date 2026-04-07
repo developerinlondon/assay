@@ -1,19 +1,22 @@
 --- @module assay.ory
---- @description Convenience wrapper that re-exports all three Ory stack modules (kratos, hydra, keto). Prefer requiring the individual modules directly if you only need one.
---- @keywords ory, stack, kratos, hydra, keto, identity, oauth2, oidc, authz, zanzibar
+--- @description Convenience umbrella for the Ory stack submodules (kratos, hydra, keto, rbac). Prefer requiring the individual submodules directly (e.g. assay.ory.kratos) if you only need one.
+--- @keywords ory, stack, kratos, hydra, keto, rbac, identity, oauth2, oidc, authz, zanzibar, capability
 --- @quickref ory.kratos.client(opts) -> kratos client | Kratos identity management
 --- @quickref ory.hydra.client(opts) -> hydra client | Hydra OAuth2 and OIDC
 --- @quickref ory.keto.client(read_url, opts?) -> keto client | Keto authorization (Zanzibar-style ReBAC)
+--- @quickref ory.rbac.policy(opts) -> policy | Capability-based RBAC engine over Keto
 --- @quickref ory.connect(opts) -> {kratos, hydra, keto} | Build all three clients in one call
 
-local kratos = require("assay.kratos")
-local hydra = require("assay.hydra")
-local keto = require("assay.keto")
+local kratos = require("assay.ory.kratos")
+local hydra = require("assay.ory.hydra")
+local keto = require("assay.ory.keto")
+local rbac = require("assay.ory.rbac")
 
 local M = {
   kratos = kratos,
   hydra = hydra,
   keto = keto,
+  rbac = rbac,
 }
 
 -- Convenience: build all three clients from a single options table.

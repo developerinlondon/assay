@@ -154,10 +154,11 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 | `assay.eso` | ExternalSecrets, SecretStores |
 | `assay.dex` | OIDC discovery, JWKS |
 | `assay.zitadel` | OIDC identity, JWT machine auth |
-| `assay.kratos` | Ory Kratos — login/registration/recovery flows, identities, sessions |
-| `assay.hydra` | Ory Hydra — OAuth2/OIDC clients, authorize, tokens, login/consent |
-| `assay.keto` | Ory Keto — ReBAC relation tuples, permission checks, expand |
-| `assay.ory` | Ory stack wrapper — `ory.connect()` builds kratos/hydra/keto in one call |
+| `assay.ory.kratos` | Ory Kratos — login/registration/recovery flows, identities, sessions |
+| `assay.ory.hydra` | Ory Hydra — OAuth2/OIDC clients, authorize, tokens, login/consent/logout |
+| `assay.ory.keto` | Ory Keto — ReBAC relation tuples, permission checks, expand |
+| `assay.ory.rbac` | Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships |
+| `assay.ory` | Ory stack umbrella — `ory.connect()` builds kratos/hydra/keto in one call; also re-exports `rbac` |
 | **Infrastructure** | |
 | `assay.crossplane` | Providers, XRDs, compositions |
 | `assay.velero` | Backups, restores, schedules |

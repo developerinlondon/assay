@@ -1,4 +1,5 @@
-use super::json::lua_value_to_json;
+use super::json::{json_value_to_lua, lua_value_to_json};
+use data_encoding::BASE64URL_NOPAD;
 use digest::Digest;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use mlua::{Lua, Value};
@@ -76,6 +77,43 @@ pub fn register_crypto(lua: &Lua) -> mlua::Result<()> {
         Ok(token)
     })?;
     crypto_table.set("jwt_sign", jwt_sign_fn)?;
+
+    // crypto.jwt_decode(token) -> { header, claims }
+    //
+    // Decodes a JWT WITHOUT verifying its signature. Returns a table with
+    // `header` and `claims` sub-tables — both parsed from the base64url
+    // segments of the token. Useful when the JWT travels through a trusted
+    // channel (e.g. your own session cookie set over TLS) and you just
+    // need to read the claims. For untrusted JWTs, use a verifier instead.
+    let jwt_decode_fn = lua.create_function(|lua, token: String| {
+        let parts: Vec<&str> = token.split('.').collect();
+        if parts.len() != 3 {
+            return Err(mlua::Error::runtime(
+                "crypto.jwt_decode: token must have three '.'-separated segments (header.payload.signature)",
+            ));
+        }
+
+        let decode_segment = |segment: &str, label: &str| -> mlua::Result<serde_json::Value> {
+            // JWTs use unpadded base64url encoding per RFC 7515.
+            let bytes = BASE64URL_NOPAD.decode(segment.as_bytes()).map_err(|e| {
+                mlua::Error::runtime(format!(
+                    "crypto.jwt_decode: {label}: invalid base64url: {e}"
+                ))
+            })?;
+            serde_json::from_slice(&bytes).map_err(|e| {
+                mlua::Error::runtime(format!("crypto.jwt_decode: {label}: invalid JSON: {e}"))
+            })
+        };
+
+        let header = decode_segment(parts[0], "header")?;
+        let claims = decode_segment(parts[1], "payload")?;
+
+        let result = lua.create_table()?;
+        result.set("header", json_value_to_lua(lua, &header)?)?;
+        result.set("claims", json_value_to_lua(lua, &claims)?)?;
+        Ok(result)
+    })?;
+    crypto_table.set("jwt_decode", jwt_decode_fn)?;
 
     let hash_fn = lua.create_function(|_, args: mlua::MultiValue| {
         let mut args_iter = args.into_iter();

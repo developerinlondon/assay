@@ -194,9 +194,9 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.eso`           | ExternalSecrets, SecretStores, ClusterSecretStores                                |
 | `assay.dex`           | OIDC discovery, JWKS, health                                                      |
 | `assay.zitadel`       | OIDC identity management with JWT machine auth                                    |
-| `assay.kratos`        | Ory Kratos identity — login/registration/recovery/settings flows, identities, sessions, schemas |
-| `assay.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs |
-| `assay.keto`          | Ory Keto ReBAC — relation tuples, permission checks, role/group membership, expand |
+| `assay.ory.kratos`        | Ory Kratos identity — login/registration/recovery/settings flows, identities, sessions, schemas |
+| `assay.ory.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs |
+| `assay.ory.keto`          | Ory Keto ReBAC — relation tuples, permission checks, role/group membership, expand |
 | `assay.ory`           | Convenience wrapper re-exporting kratos/hydra/keto with `ory.connect(opts)`       |
 | `assay.crossplane`    | Providers, XRDs, compositions, managed resources                                  |
 | `assay.velero`        | Backups, restores, schedules, storage locations                                   |

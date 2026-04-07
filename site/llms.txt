@@ -51,9 +51,9 @@
 - [assay.eso](https://assay.rs/modules.html#eso): External Secrets Operator
 - [assay.dex](https://assay.rs/modules.html#dex): Dex OIDC discovery, JWKS, health
 - [assay.zitadel](https://assay.rs/modules.html#zitadel): Zitadel OIDC identity, JWT machine auth
-- [assay.kratos](https://assay.rs/modules.html#ory): Ory Kratos identity — login/registration/recovery flows, identities, sessions, schemas
-- [assay.hydra](https://assay.rs/modules.html#ory): Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs
-- [assay.keto](https://assay.rs/modules.html#ory): Ory Keto ReBAC — relation tuples, permission checks, role/group queries, expand
+- [assay.ory.kratos](https://assay.rs/modules.html#ory): Ory Kratos identity — login/registration/recovery flows, identities, sessions, schemas
+- [assay.ory.hydra](https://assay.rs/modules.html#ory): Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs
+- [assay.ory.keto](https://assay.rs/modules.html#ory): Ory Keto ReBAC — relation tuples, permission checks, role/group queries, expand
 - [assay.ory](https://assay.rs/modules.html#ory): Ory stack wrapper — `ory.connect()` builds kratos/hydra/keto clients together
 
 ## Infrastructure

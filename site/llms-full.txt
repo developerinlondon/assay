@@ -736,7 +736,7 @@ local app = c:ensure_oidc_app(proj.id, {
 })
 ```
 
-## assay.kratos
+## assay.ory.kratos
 
 Ory Kratos identity management. Self-service login, registration, recovery and settings flows,
 identity CRUD via the admin API, session introspection (whoami), and identity schemas.
@@ -759,7 +759,7 @@ Client: `kratos.client({public_url="...", admin_url="..."})`.
 
 Example:
 ```lua
-local kratos = require("assay.kratos")
+local kratos = require("assay.ory.kratos")
 local c = kratos.client({
   public_url = "http://kratos-public:4433",
   admin_url = "http://kratos-admin:4434",
@@ -768,7 +768,7 @@ local session = c:whoami(cookie)
 log.info("Logged in as: " .. session.identity.traits.email)
 ```
 
-## assay.hydra
+## assay.ory.hydra
 
 Ory Hydra OAuth2 and OpenID Connect server. OAuth2 client CRUD via the admin API,
 authorize URL builder, token exchange, accept/reject login and consent challenges,
@@ -792,7 +792,7 @@ Client: `hydra.client({public_url="...", admin_url="..."})`.
 
 Example:
 ```lua
-local hydra = require("assay.hydra")
+local hydra = require("assay.ory.hydra")
 local c = hydra.client({
   public_url = "https://hydra.example.com",
   admin_url = "http://hydra-admin:4445",
@@ -804,7 +804,7 @@ local client = c:create_client({
 })
 ```
 
-## assay.keto
+## assay.ory.keto
 
 Ory Keto relationship-based access control (Zanzibar-style ReBAC). Relation-tuple CRUD,
 permission checks, role/group membership queries, and the expand API.
@@ -819,7 +819,7 @@ Client: `keto.client({read_url="...", write_url="..."})`.
 
 Example:
 ```lua
-local keto = require("assay.keto")
+local keto = require("assay.ory.keto")
 local c = keto.client({
   read_url = "http://keto-read:4466",
   write_url = "http://keto-write:4467",
@@ -833,12 +833,12 @@ assert(c:check("apps", "cc", "admin", "user:alice"))
 
 ## assay.ory
 
-Convenience wrapper re-exporting `assay.kratos`, `assay.hydra`, and `assay.keto`, with
+Convenience wrapper re-exporting `assay.ory.kratos`, `assay.ory.hydra`, and `assay.ory.keto`, with
 `ory.connect(opts)` to build all three clients in a single call.
 
-- `M.kratos` — re-export of `assay.kratos`
-- `M.hydra` — re-export of `assay.hydra`
-- `M.keto` — re-export of `assay.keto`
+- `M.kratos` — re-export of `assay.ory.kratos`
+- `M.hydra` — re-export of `assay.ory.hydra`
+- `M.keto` — re-export of `assay.ory.keto`
 - `M.connect(opts)` → `{kratos, hydra, keto}` — Build all three clients. `opts`: `{kratos_public, kratos_admin, hydra_public, hydra_admin, keto_read, keto_write}`
 
 Example:

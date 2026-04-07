@@ -271,9 +271,9 @@ All 33 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.eso`           | ExternalSecrets, SecretStores, ClusterSecretStores sync status             |
 | `assay.dex`           | OIDC discovery, JWKS, health, configuration validation                     |
 | `assay.zitadel`       | OIDC identity management with JWT machine auth                             |
-| `assay.kratos`        | Ory Kratos — login/registration/recovery/settings flows, identities, sessions |
-| `assay.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs |
-| `assay.keto`          | Ory Keto ReBAC — relation tuples, permission checks, expand                |
+| `assay.ory.kratos`        | Ory Kratos — login/registration/recovery/settings flows, identities, sessions |
+| `assay.ory.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs |
+| `assay.ory.keto`          | Ory Keto ReBAC — relation tuples, permission checks, expand                |
 | `assay.ory`           | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together |
 | `assay.crossplane`    | Providers, XRDs, compositions, managed resources                           |
 | `assay.velero`        | Backups, restores, schedules, storage locations                            |
