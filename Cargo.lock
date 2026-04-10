@@ -104,6 +104,7 @@ dependencies = [
  "temporalio-client",
  "temporalio-common",
  "temporalio-sdk",
+ "temporalio-sdk-core",
  "tokio",
  "tokio-test",
  "tokio-tungstenite",
