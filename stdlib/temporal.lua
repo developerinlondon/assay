@@ -249,45 +249,6 @@ function M.client(url, opts)
     return api_get("/api/v1/namespaces/" .. ns .. "/schedules/" .. schedule_id)
   end
 
-  -- ===== Backward-compatible shims =====
-  -- Old API: c:workflows(opts), c:namespaces(), c:schedules(opts) collide with sub-object names.
-  -- Use __call on sub-objects for the colliding ones, __index on c for the rest.
-
-  -- c:workflows(opts) -> c.workflows:list(opts)
-  setmetatable(c.workflows, { __call = function(self, _client, o)
-    return c.workflows:list(o)
-  end })
-
-  -- c:namespaces() -> c.namespaces:list()
-  setmetatable(c.namespaces, { __call = function(self, _client)
-    return c.namespaces:list()
-  end })
-
-  -- c:schedules(opts) -> c.schedules:list(opts)
-  setmetatable(c.schedules, { __call = function(self, _client, o)
-    return c.schedules:list(o)
-  end })
-
-  local compat = {
-    namespace = function(self, name) return c.namespaces:get(name) end,
-    workflow = function(self, wid, rid, o) return c.workflows:get(wid, rid, o) end,
-    workflow_history = function(self, wid, rid, o) return c.workflows:history(wid, rid, o) end,
-    signal_workflow = function(self, wid, sn, inp, o) return c.workflows:signal(wid, sn, inp, o) end,
-    terminate_workflow = function(self, wid, reason, o) return c.workflows:terminate(wid, reason, o) end,
-    cancel_workflow = function(self, wid, o) return c.workflows:cancel(wid, o) end,
-    task_queue = function(self, name, o) return c.task_queues:get(name, o) end,
-    schedule = function(self, sid, o) return c.schedules:get(sid, o) end,
-    search = function(self, q, o) return c.workflows:search(q, o) end,
-    is_workflow_running = function(self, wid, o) return c.workflows:is_running(wid, o) end,
-    wait_workflow_complete = function(self, wid, ts, o) return c.workflows:wait_complete(wid, ts, o) end,
-  }
-
-  setmetatable(c, {
-    __index = function(tbl, key)
-      return compat[key]
-    end,
-  })
-
   return c
 end
 

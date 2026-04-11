@@ -17,21 +17,6 @@
 
 local M = {}
 
--- Legacy module-level functions for backward compatibility
-M.discovery = nil
-M.jwks = nil
-M.issuer = nil
-M.health = nil
-M.ready = nil
-M.has_endpoint = nil
-M.supported_scopes = nil
-M.supported_response_types = nil
-M.supported_grant_types = nil
-M.supports_scope = nil
-M.supports_grant_type = nil
-M.validate_config = nil
-M.admin_version = nil
-
 function M.client(url)
   local base_url = url:gsub("/+$", "")
 
@@ -184,61 +169,6 @@ function M.client(url)
   end
 
   return c
-end
-
--- Legacy module-level functions (delegate to a temporary client)
--- These preserve backward compatibility: M.discovery(url) still works.
-
-M.discovery = function(url)
-  return M.client(url).discovery:config()
-end
-
-M.jwks = function(url)
-  return M.client(url).discovery:jwks()
-end
-
-M.issuer = function(url)
-  return M.client(url).discovery:issuer()
-end
-
-M.health = function(url)
-  return M.client(url).health:check()
-end
-
-M.ready = function(url)
-  return M.client(url).health:ready()
-end
-
-M.has_endpoint = function(url, endpoint_name)
-  return M.client(url).discovery:has_endpoint(endpoint_name)
-end
-
-M.supported_scopes = function(url)
-  return M.client(url).scopes:list()
-end
-
-M.supported_response_types = function(url)
-  return M.client(url).grants:response_types()
-end
-
-M.supported_grant_types = function(url)
-  return M.client(url).grants:list()
-end
-
-M.supports_scope = function(url, scope)
-  return M.client(url).scopes:supports(scope)
-end
-
-M.supports_grant_type = function(url, grant_type)
-  return M.client(url).grants:supports(grant_type)
-end
-
-M.validate_config = function(url)
-  return M.client(url):validate_config()
-end
-
-M.admin_version = function(url)
-  return M.client(url):admin_version()
 end
 
 return M

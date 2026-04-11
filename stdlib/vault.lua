@@ -372,7 +372,7 @@ function M.authenticated_client(url, opts)
   local secret_name = opts.secret_name or "openbao-root-token"
   local secret_key = opts.secret_key or "root-token"
 
-  local secret_data = k8s.get_secret(secret_ns, secret_name)
+  local secret_data = k8s.secrets:get(secret_ns, secret_name)
   local token = secret_data[secret_key]
   assert.not_nil(token, "vault.authenticated_client: key '" .. secret_key .. "' not found in secret " .. secret_ns .. "/" .. secret_name)
 

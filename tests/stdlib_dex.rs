@@ -37,7 +37,8 @@ async fn test_dex_discovery() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local config = dex.discovery("{}")
+        local c = dex.client("{}")
+        local config = c.discovery:config()
         assert.eq(config.issuer, "{}")
         assert.eq(config.authorization_endpoint, "{}/auth")
         assert.eq(config.token_endpoint, "{}/token")
@@ -77,7 +78,8 @@ async fn test_dex_jwks() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local jwks = dex.jwks("{}")
+        local c = dex.client("{}")
+        local jwks = c.discovery:jwks()
         assert.eq(#jwks.keys, 1)
         assert.eq(jwks.keys[1].kty, "RSA")
         assert.eq(jwks.keys[1].kid, "test-key-id")
@@ -96,7 +98,8 @@ async fn test_dex_issuer() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local iss = dex.issuer("{}")
+        local c = dex.client("{}")
+        local iss = c.discovery:issuer()
         assert.eq(iss, "{}")
         "#,
         server.uri(),
@@ -117,7 +120,8 @@ async fn test_dex_health_success() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local ok = dex.health("{}")
+        local c = dex.client("{}")
+        local ok = c.health:check()
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -137,7 +141,8 @@ async fn test_dex_health_failure() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local ok = dex.health("{}")
+        local c = dex.client("{}")
+        local ok = c.health:check()
         assert.eq(ok, false)
         "#,
         server.uri()
@@ -157,7 +162,8 @@ async fn test_dex_ready() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local ok = dex.ready("{}")
+        local c = dex.client("{}")
+        local ok = c.health:ready()
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -173,12 +179,11 @@ async fn test_dex_has_endpoint_true() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        assert.eq(dex.has_endpoint("{}", "authorization_endpoint"), true)
-        assert.eq(dex.has_endpoint("{}", "token_endpoint"), true)
-        assert.eq(dex.has_endpoint("{}", "userinfo_endpoint"), true)
+        local c = dex.client("{}")
+        assert.eq(c.discovery:has_endpoint("authorization_endpoint"), true)
+        assert.eq(c.discovery:has_endpoint("token_endpoint"), true)
+        assert.eq(c.discovery:has_endpoint("userinfo_endpoint"), true)
         "#,
-        server.uri(),
-        server.uri(),
         server.uri()
     );
     run_lua(&script).await.unwrap();
@@ -192,10 +197,10 @@ async fn test_dex_has_endpoint_false() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        assert.eq(dex.has_endpoint("{}", "device_authorization_endpoint"), false)
-        assert.eq(dex.has_endpoint("{}", "nonexistent_endpoint"), false)
+        local c = dex.client("{}")
+        assert.eq(c.discovery:has_endpoint("device_authorization_endpoint"), false)
+        assert.eq(c.discovery:has_endpoint("nonexistent_endpoint"), false)
         "#,
-        server.uri(),
         server.uri()
     );
     run_lua(&script).await.unwrap();
@@ -209,7 +214,8 @@ async fn test_dex_supported_scopes() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local scopes = dex.supported_scopes("{}")
+        local c = dex.client("{}")
+        local scopes = c.scopes:list()
         assert.eq(#scopes, 5)
         assert.eq(scopes[1], "openid")
         assert.eq(scopes[2], "profile")
@@ -228,12 +234,11 @@ async fn test_dex_supports_scope_true() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        assert.eq(dex.supports_scope("{}", "openid"), true)
-        assert.eq(dex.supports_scope("{}", "email"), true)
-        assert.eq(dex.supports_scope("{}", "offline_access"), true)
+        local c = dex.client("{}")
+        assert.eq(c.scopes:supports("openid"), true)
+        assert.eq(c.scopes:supports("email"), true)
+        assert.eq(c.scopes:supports("offline_access"), true)
         "#,
-        server.uri(),
-        server.uri(),
         server.uri()
     );
     run_lua(&script).await.unwrap();
@@ -247,10 +252,10 @@ async fn test_dex_supports_scope_false() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        assert.eq(dex.supports_scope("{}", "phone"), false)
-        assert.eq(dex.supports_scope("{}", "address"), false)
+        local c = dex.client("{}")
+        assert.eq(c.scopes:supports("phone"), false)
+        assert.eq(c.scopes:supports("address"), false)
         "#,
-        server.uri(),
         server.uri()
     );
     run_lua(&script).await.unwrap();
@@ -264,7 +269,8 @@ async fn test_dex_supported_response_types() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local types = dex.supported_response_types("{}")
+        local c = dex.client("{}")
+        local types = c.grants:response_types()
         assert.eq(#types, 3)
         assert.eq(types[1], "code")
         "#,
@@ -281,7 +287,8 @@ async fn test_dex_supported_grant_types() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local types = dex.supported_grant_types("{}")
+        local c = dex.client("{}")
+        local types = c.grants:list()
         assert.eq(#types, 3)
         assert.eq(types[1], "authorization_code")
         assert.eq(types[2], "refresh_token")
@@ -299,10 +306,10 @@ async fn test_dex_supports_grant_type_true() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        assert.eq(dex.supports_grant_type("{}", "authorization_code"), true)
-        assert.eq(dex.supports_grant_type("{}", "refresh_token"), true)
+        local c = dex.client("{}")
+        assert.eq(c.grants:supports("authorization_code"), true)
+        assert.eq(c.grants:supports("refresh_token"), true)
         "#,
-        server.uri(),
         server.uri()
     );
     run_lua(&script).await.unwrap();
@@ -316,7 +323,8 @@ async fn test_dex_supports_grant_type_false() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        assert.eq(dex.supports_grant_type("{}", "implicit"), false)
+        local c = dex.client("{}")
+        assert.eq(c.grants:supports("implicit"), false)
         "#,
         server.uri()
     );
@@ -331,7 +339,8 @@ async fn test_dex_validate_config_valid() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local result = dex.validate_config("{}")
+        local c = dex.client("{}")
+        local result = c:validate_config()
         assert.eq(result.ok, true)
         assert.eq(#result.errors, 0)
         "#,
@@ -355,7 +364,8 @@ async fn test_dex_validate_config_invalid_missing_fields() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local result = dex.validate_config("{}")
+        local c = dex.client("{}")
+        local result = c:validate_config()
         assert.eq(result.ok, false)
         assert.eq(#result.errors, 3)
         "#,
@@ -381,7 +391,8 @@ async fn test_dex_validate_config_issuer_mismatch() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local result = dex.validate_config("{}")
+        local c = dex.client("{}")
+        local result = c:validate_config()
         assert.eq(result.ok, false)
         assert.eq(#result.errors, 1)
         "#,
@@ -405,7 +416,8 @@ async fn test_dex_admin_version_success() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local ver = dex.admin_version("{}")
+        local c = dex.client("{}")
+        local ver = c:admin_version()
         assert.eq(ver.server, "dex")
         assert.eq(ver.version, "2.39.0")
         "#,
@@ -426,7 +438,8 @@ async fn test_dex_admin_version_unavailable() {
     let script = format!(
         r#"
         local dex = require("assay.dex")
-        local ver = dex.admin_version("{}")
+        local c = dex.client("{}")
+        local ver = c:admin_version()
         assert.eq(ver, nil)
         "#,
         server.uri()

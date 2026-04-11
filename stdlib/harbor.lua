@@ -107,11 +107,6 @@ function M.client(url, opts)
     return api_get("/api/v2.0/projects/" .. name_or_id)
   end
 
-  -- Make c.projects callable: c:projects(opts) -> c.projects:list(opts)
-  setmetatable(c.projects, { __call = function(self, _client, list_opts)
-    return c.projects:list(list_opts)
-  end })
-
   -- ===== Repositories =====
 
   c.repositories = {}
@@ -128,11 +123,6 @@ function M.client(url, opts)
   function c.repositories:get(project_name, repo_name)
     return api_get("/api/v2.0/projects/" .. project_name .. "/repositories/" .. repo_name)
   end
-
-  -- Make c.repositories callable: c:repositories(project, opts) -> c.repositories:list(project, opts)
-  setmetatable(c.repositories, { __call = function(self, _client, project_name, list_opts)
-    return c.repositories:list(project_name, list_opts)
-  end })
 
   -- ===== Artifacts =====
 
@@ -169,11 +159,6 @@ function M.client(url, opts)
     if #list == 0 then return nil end
     return list[1]
   end
-
-  -- Make c.artifacts callable: c:artifacts(project, repo, opts) -> c.artifacts:list(project, repo, opts)
-  setmetatable(c.artifacts, { __call = function(self, _client, project_name, repo_name, list_opts)
-    return c.artifacts:list(project_name, repo_name, list_opts)
-  end })
 
   -- ===== Scan =====
 
@@ -229,33 +214,6 @@ function M.client(url, opts)
     if exec_opts.policy_id then params[#params + 1] = "policy_id=" .. exec_opts.policy_id end
     return api_get("/api/v2.0/replication/executions" .. build_qs(params))
   end
-
-  -- ===== Backward-compatible shims =====
-  -- Old API methods that don't collide with sub-object names go directly on c.
-  -- Methods whose names collide (projects, repositories, artifacts) use __call above.
-
-  local compat = {
-    health = function(self) return c.system:health() end,
-    system_info = function(self) return c.system:info() end,
-    statistics = function(self) return c.system:statistics() end,
-    is_healthy = function(self) return c.system:is_healthy() end,
-    project = function(self, n) return c.projects:get(n) end,
-    repository = function(self, p, r) return c.repositories:get(p, r) end,
-    artifact = function(self, p, r, ref) return c.artifacts:get(p, r, ref) end,
-    artifact_tags = function(self, p, r, ref) return c.artifacts:tags(p, r, ref) end,
-    scan_artifact = function(self, p, r, ref) return c.scan:trigger(p, r, ref) end,
-    artifact_vulnerabilities = function(self, p, r, ref) return c.scan:vulnerabilities(p, r, ref) end,
-    replication_policies = function(self) return c.replication:policies() end,
-    replication_executions = function(self, o) return c.replication:executions(o) end,
-    image_exists = function(self, p, r, t) return c.artifacts:exists(p, r, t) end,
-    latest_artifact = function(self, p, r) return c.artifacts:latest(p, r) end,
-  }
-
-  setmetatable(c, {
-    __index = function(tbl, key)
-      return compat[key]
-    end,
-  })
 
   return c
 end
