@@ -451,27 +451,22 @@ async fn handle_request(
         // Try wildcard routes: "/a/b/c" → try "/a/b/*", "/a/*", "/*"
         let mut matched = None;
         let mut search = path.as_str();
-        loop {
-            match search.rfind('/') {
-                Some(pos) => {
-                    let prefix = &search[..pos];
-                    let wildcard_key = (method.clone(), format!("{prefix}/*"));
-                    if let Some(f) = routes.get(&wildcard_key) {
-                        matched = Some(f);
-                        break;
-                    }
-                    // Try the root wildcard
-                    if pos == 0 {
-                        let root_key = (method.clone(), "/*".to_string());
-                        if let Some(f) = routes.get(&root_key) {
-                            matched = Some(f);
-                        }
-                        break;
-                    }
-                    search = prefix;
-                }
-                None => break,
+        while let Some(pos) = search.rfind('/') {
+            let prefix = &search[..pos];
+            let wildcard_key = (method.clone(), format!("{prefix}/*"));
+            if let Some(f) = routes.get(&wildcard_key) {
+                matched = Some(f);
+                break;
             }
+            // Try the root wildcard
+            if pos == 0 {
+                let root_key = (method.clone(), "/*".to_string());
+                if let Some(f) = routes.get(&root_key) {
+                    matched = Some(f);
+                }
+                break;
+            }
+            search = prefix;
         }
         match matched {
             Some(f) => f,
