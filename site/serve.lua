@@ -14,6 +14,8 @@ local content_types = {
   png  = "image/png",
   svg  = "image/svg+xml",
   ico  = "image/x-icon",
+  pagefind = "application/octet-stream",
+  pf_meta  = "application/octet-stream",
 }
 
 local function serve_file(path)
@@ -23,7 +25,7 @@ local function serve_file(path)
     ok, content = pcall(fs.read, file_path .. ".html")
   end
   if not ok then return { status = 404, body = "Not found: " .. path } end
-  local ext = path:match("%.(%w+)$") or "html"
+  local ext = path:match("%.([%w_]+)$") or "html"
   return {
     status = 200,
     body = content,

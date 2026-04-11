@@ -55,6 +55,9 @@ jobs:
       - name: Build site (assay builds its own docs)
         run: ./target/release/assay site/build.lua
 
+      - name: Index site for search
+        run: npx --yes pagefind --site build/site
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:

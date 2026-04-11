@@ -151,9 +151,64 @@ body.page-changelog nav a[href="/changelog.html"] {
   transition: color 0.15s, background-color 0.15s;
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.search-toggle:hover {
   color: var(--text);
   background-color: var(--bg-secondary);
+}
+
+/* Search toggle */
+.search-toggle {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.3rem 0.45rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+/* Search overlay */
+.search-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.search-overlay.active {
+  display: flex;
+  justify-content: center;
+  padding-top: 10vh;
+}
+
+.search-container {
+  width: 100%;
+  max-width: 640px;
+  background: var(--bg);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Pagefind UI theme overrides */
+:root {
+  --pagefind-ui-scale: 0.9;
+  --pagefind-ui-primary: var(--accent);
+  --pagefind-ui-text: var(--text);
+  --pagefind-ui-background: var(--bg);
+  --pagefind-ui-border: var(--border);
+  --pagefind-ui-tag: var(--bg-secondary);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 8px;
+  --pagefind-ui-font: inherit;
 }
 
 /* Main Content */
