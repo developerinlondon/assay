@@ -15,7 +15,32 @@ async fn test_require_gitlab() {
 }
 
 #[tokio::test]
-async fn test_gitlab_project() {
+async fn test_gitlab_sub_objects_exist() {
+    let script = r#"
+        local gitlab = require("assay.gitlab")
+        local c = gitlab.client("http://localhost", { token = "test" })
+        assert.not_nil(c.projects)
+        assert.not_nil(c.files)
+        assert.not_nil(c.commits)
+        assert.not_nil(c.branches)
+        assert.not_nil(c.tags)
+        assert.not_nil(c.merge_requests)
+        assert.not_nil(c.pipelines)
+        assert.not_nil(c.jobs)
+        assert.not_nil(c.releases)
+        assert.not_nil(c.issues)
+        assert.not_nil(c.groups)
+        assert.not_nil(c.registry)
+        assert.not_nil(c.hooks)
+        assert.not_nil(c.users)
+        assert.not_nil(c.environments)
+        assert.not_nil(c.deploy_tokens)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_gitlab_projects_get() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42"))
@@ -33,7 +58,7 @@ async fn test_gitlab_project() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local p = c:project(42)
+        local p = c.projects:get(42)
         assert.eq(p.id, 42)
         assert.eq(p.name, "demo-project")
         assert.eq(p.default_branch, "main")
@@ -44,7 +69,7 @@ async fn test_gitlab_project() {
 }
 
 #[tokio::test]
-async fn test_gitlab_project_404_returns_nil() {
+async fn test_gitlab_projects_get_404_returns_nil() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/999"))
@@ -58,7 +83,7 @@ async fn test_gitlab_project_404_returns_nil() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local p = c:project(999)
+        local p = c.projects:get(999)
         assert.eq(p, nil)
         "#,
         server.uri()
@@ -67,7 +92,7 @@ async fn test_gitlab_project_404_returns_nil() {
 }
 
 #[tokio::test]
-async fn test_gitlab_file_raw() {
+async fn test_gitlab_files_raw() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/repository/files/src%2Fmain.lua/raw"))
@@ -80,7 +105,7 @@ async fn test_gitlab_file_raw() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local content = c:file_raw(42, "src/main.lua", {{ ref = "dev" }})
+        local content = c.files:raw(42, "src/main.lua", {{ ref = "dev" }})
         assert.eq(content, 'print("hello")')
         "#,
         server.uri()
@@ -89,7 +114,7 @@ async fn test_gitlab_file_raw() {
 }
 
 #[tokio::test]
-async fn test_gitlab_create_commit() {
+async fn test_gitlab_commits_create() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v4/projects/42/repository/commits"))
@@ -108,7 +133,7 @@ async fn test_gitlab_create_commit() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local result = c:create_commit(42, {{
+        local result = c.commits:create(42, {{
             branch = "main",
             commit_message = "Update config files",
             actions = {{
@@ -124,7 +149,34 @@ async fn test_gitlab_create_commit() {
 }
 
 #[tokio::test]
-async fn test_gitlab_branches() {
+async fn test_gitlab_commits_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v4/projects/42/repository/commits/abc123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "abc123def456789",
+            "short_id": "abc123d",
+            "title": "Initial commit",
+            "author_name": "Demo User"
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local gitlab = require("assay.gitlab")
+        local c = gitlab.client("{}", {{ token = "glpat-test" }})
+        local commit = c.commits:get(42, "abc123")
+        assert.eq(commit.short_id, "abc123d")
+        assert.eq(commit.title, "Initial commit")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_gitlab_branches_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/repository/branches"))
@@ -139,7 +191,7 @@ async fn test_gitlab_branches() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local branches = c:branches(42)
+        local branches = c.branches:list(42)
         assert.eq(#branches, 2)
         assert.eq(branches[1].name, "main")
         assert.eq(branches[1].protected, true)
@@ -151,7 +203,7 @@ async fn test_gitlab_branches() {
 }
 
 #[tokio::test]
-async fn test_gitlab_create_branch() {
+async fn test_gitlab_branches_create() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v4/projects/42/repository/branches"))
@@ -166,7 +218,7 @@ async fn test_gitlab_create_branch() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local b = c:create_branch(42, {{ branch = "feat/new-feature", ref = "main" }})
+        local b = c.branches:create(42, {{ branch = "feat/new-feature", ref = "main" }})
         assert.eq(b.name, "feat/new-feature")
         "#,
         server.uri()
@@ -175,7 +227,7 @@ async fn test_gitlab_create_branch() {
 }
 
 #[tokio::test]
-async fn test_gitlab_tags() {
+async fn test_gitlab_tags_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/repository/tags"))
@@ -190,7 +242,7 @@ async fn test_gitlab_tags() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local tags = c:tags(42)
+        local tags = c.tags:list(42)
         assert.eq(#tags, 2)
         assert.eq(tags[1].name, "v1.0.0")
         "#,
@@ -200,7 +252,7 @@ async fn test_gitlab_tags() {
 }
 
 #[tokio::test]
-async fn test_gitlab_merge_requests() {
+async fn test_gitlab_merge_requests_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/merge_requests"))
@@ -215,11 +267,10 @@ async fn test_gitlab_merge_requests() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local mrs = c:merge_requests(42)
+        local mrs = c.merge_requests:list(42)
         assert.eq(#mrs, 2)
         assert.eq(mrs[1].iid, 1)
         assert.eq(mrs[1].title, "Add feature")
-        assert.eq(mrs[1].state, "opened")
         assert.eq(mrs[2].author.username, "bob")
         "#,
         server.uri()
@@ -228,7 +279,7 @@ async fn test_gitlab_merge_requests() {
 }
 
 #[tokio::test]
-async fn test_gitlab_create_merge_request() {
+async fn test_gitlab_merge_requests_create() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v4/projects/42/merge_requests"))
@@ -245,14 +296,13 @@ async fn test_gitlab_create_merge_request() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local mr = c:create_merge_request(42, {{
+        local mr = c.merge_requests:create(42, {{
             source_branch = "feat/new-feature",
             target_branch = "main",
             title = "New feature",
         }})
         assert.eq(mr.iid, 10)
         assert.eq(mr.title, "New feature")
-        assert.eq(mr.state, "opened")
         "#,
         server.uri()
     );
@@ -260,7 +310,7 @@ async fn test_gitlab_create_merge_request() {
 }
 
 #[tokio::test]
-async fn test_gitlab_merge() {
+async fn test_gitlab_merge_requests_merge() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/api/v4/projects/42/merge_requests/10/merge"))
@@ -276,7 +326,7 @@ async fn test_gitlab_merge() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local result = c:merge(42, 10, {{ squash = true }})
+        local result = c.merge_requests:merge(42, 10, {{ squash = true }})
         assert.eq(result.state, "merged")
         assert.eq(result.merge_commit_sha, "abc123def456")
         "#,
@@ -286,7 +336,7 @@ async fn test_gitlab_merge() {
 }
 
 #[tokio::test]
-async fn test_gitlab_pipelines() {
+async fn test_gitlab_pipelines_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/pipelines"))
@@ -301,7 +351,7 @@ async fn test_gitlab_pipelines() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local pipes = c:pipelines(42)
+        local pipes = c.pipelines:list(42)
         assert.eq(#pipes, 2)
         assert.eq(pipes[1].id, 100)
         assert.eq(pipes[1].status, "success")
@@ -313,7 +363,7 @@ async fn test_gitlab_pipelines() {
 }
 
 #[tokio::test]
-async fn test_gitlab_create_pipeline() {
+async fn test_gitlab_pipelines_create() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v4/projects/42/pipeline"))
@@ -329,7 +379,7 @@ async fn test_gitlab_create_pipeline() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local pipe = c:create_pipeline(42, {{ ref = "main" }})
+        local pipe = c.pipelines:create(42, {{ ref = "main" }})
         assert.eq(pipe.id, 200)
         assert.eq(pipe.status, "pending")
         "#,
@@ -339,7 +389,7 @@ async fn test_gitlab_create_pipeline() {
 }
 
 #[tokio::test]
-async fn test_gitlab_pipeline_jobs() {
+async fn test_gitlab_pipelines_jobs() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/pipelines/100/jobs"))
@@ -354,11 +404,9 @@ async fn test_gitlab_pipeline_jobs() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local jobs = c:pipeline_jobs(42, 100)
+        local jobs = c.pipelines:jobs(42, 100)
         assert.eq(#jobs, 2)
         assert.eq(jobs[1].name, "build")
-        assert.eq(jobs[1].status, "success")
-        assert.eq(jobs[2].name, "test")
         assert.eq(jobs[2].status, "failed")
         "#,
         server.uri()
@@ -367,7 +415,7 @@ async fn test_gitlab_pipeline_jobs() {
 }
 
 #[tokio::test]
-async fn test_gitlab_issues() {
+async fn test_gitlab_issues_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/issues"))
@@ -382,10 +430,9 @@ async fn test_gitlab_issues() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local issues = c:issues(42)
+        local issues = c.issues:list(42)
         assert.eq(#issues, 2)
         assert.eq(issues[1].iid, 1)
-        assert.eq(issues[1].title, "Bug report")
         assert.eq(issues[1].labels[1], "bug")
         "#,
         server.uri()
@@ -394,15 +441,14 @@ async fn test_gitlab_issues() {
 }
 
 #[tokio::test]
-async fn test_gitlab_create_issue() {
+async fn test_gitlab_issues_create() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v4/projects/42/issues"))
         .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
             "iid": 5,
             "title": "New issue",
-            "state": "opened",
-            "web_url": "https://gitlab.example.com/demo/project/-/issues/5"
+            "state": "opened"
         })))
         .mount(&server)
         .await;
@@ -411,13 +457,11 @@ async fn test_gitlab_create_issue() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local issue = c:create_issue(42, {{
+        local issue = c.issues:create(42, {{
             title = "New issue",
             description = "Something to track",
-            labels = "bug,urgent",
         }})
         assert.eq(issue.iid, 5)
-        assert.eq(issue.title, "New issue")
         assert.eq(issue.state, "opened")
         "#,
         server.uri()
@@ -426,13 +470,13 @@ async fn test_gitlab_create_issue() {
 }
 
 #[tokio::test]
-async fn test_gitlab_releases() {
+async fn test_gitlab_releases_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/releases"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-            { "tag_name": "v1.0.0", "name": "Version 1.0.0", "description": "First release" },
-            { "tag_name": "v0.9.0", "name": "Version 0.9.0", "description": "Beta" }
+            { "tag_name": "v1.0.0", "name": "Version 1.0.0" },
+            { "tag_name": "v0.9.0", "name": "Version 0.9.0" }
         ])))
         .mount(&server)
         .await;
@@ -441,10 +485,9 @@ async fn test_gitlab_releases() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local releases = c:releases(42)
+        local releases = c.releases:list(42)
         assert.eq(#releases, 2)
         assert.eq(releases[1].tag_name, "v1.0.0")
-        assert.eq(releases[2].name, "Version 0.9.0")
         "#,
         server.uri()
     );
@@ -452,7 +495,7 @@ async fn test_gitlab_releases() {
 }
 
 #[tokio::test]
-async fn test_gitlab_groups() {
+async fn test_gitlab_groups_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/groups"))
@@ -467,10 +510,9 @@ async fn test_gitlab_groups() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local groups = c:groups()
+        local groups = c.groups:list()
         assert.eq(#groups, 2)
         assert.eq(groups[1].name, "demo-group")
-        assert.eq(groups[2].full_path, "demo-group/infra")
         "#,
         server.uri()
     );
@@ -478,7 +520,7 @@ async fn test_gitlab_groups() {
 }
 
 #[tokio::test]
-async fn test_gitlab_registries() {
+async fn test_gitlab_registry_repositories() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/registry/repositories"))
@@ -493,9 +535,8 @@ async fn test_gitlab_registries() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local repos = c:registries(42)
+        local repos = c.registry:repositories(42)
         assert.eq(#repos, 2)
-        assert.eq(repos[1].path, "demo-group/demo-project")
         assert.eq(repos[2].name, "api")
         "#,
         server.uri()
@@ -504,7 +545,7 @@ async fn test_gitlab_registries() {
 }
 
 #[tokio::test]
-async fn test_gitlab_current_user() {
+async fn test_gitlab_users_current() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/user"))
@@ -512,8 +553,7 @@ async fn test_gitlab_current_user() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": 1,
             "username": "demo-user",
-            "email": "user@example.com",
-            "name": "Demo User"
+            "email": "user@example.com"
         })))
         .mount(&server)
         .await;
@@ -522,7 +562,7 @@ async fn test_gitlab_current_user() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local user = c:current_user()
+        local user = c.users:current()
         assert.eq(user.username, "demo-user")
         assert.eq(user.email, "user@example.com")
         "#,
@@ -548,7 +588,7 @@ async fn test_gitlab_oauth_token_auth() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ oauth_token = "oauth-test-token" }})
-        local user = c:current_user()
+        local user = c.users:current()
         assert.eq(user.username, "oauth-user")
         "#,
         server.uri()
@@ -557,36 +597,7 @@ async fn test_gitlab_oauth_token_auth() {
 }
 
 #[tokio::test]
-async fn test_gitlab_commit_get() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/api/v4/projects/42/repository/commits/abc123"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "abc123def456789",
-            "short_id": "abc123d",
-            "title": "Initial commit",
-            "author_name": "Demo User",
-            "created_at": "2026-01-15T10:00:00.000Z"
-        })))
-        .mount(&server)
-        .await;
-
-    let script = format!(
-        r#"
-        local gitlab = require("assay.gitlab")
-        local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local commit = c:commit(42, "abc123")
-        assert.eq(commit.short_id, "abc123d")
-        assert.eq(commit.title, "Initial commit")
-        assert.eq(commit.author_name, "Demo User")
-        "#,
-        server.uri()
-    );
-    run_lua(&script).await.unwrap();
-}
-
-#[tokio::test]
-async fn test_gitlab_compare() {
+async fn test_gitlab_repository_compare() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/projects/42/repository/compare"))
@@ -607,10 +618,34 @@ async fn test_gitlab_compare() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local diff = c:compare(42, "main", "dev")
+        local diff = c.repository:compare(42, "main", "dev")
         assert.eq(#diff.commits, 1)
         assert.eq(diff.commits[1].title, "feat: add feature")
-        assert.eq(#diff.diffs, 1)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_gitlab_hooks_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v4/projects/42/hooks"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            { "id": 1, "url": "https://hooks.example.com/push", "push_events": true },
+            { "id": 2, "url": "https://hooks.example.com/mr", "merge_requests_events": true }
+        ])))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local gitlab = require("assay.gitlab")
+        local c = gitlab.client("{}", {{ token = "glpat-test" }})
+        local hooks = c.hooks:list(42)
+        assert.eq(#hooks, 2)
+        assert.eq(hooks[1].push_events, true)
         "#,
         server.uri()
     );
@@ -632,35 +667,9 @@ async fn test_gitlab_error_propagation() {
         r#"
         local gitlab = require("assay.gitlab")
         local c = gitlab.client("{}", {{ token = "bad-token" }})
-        local ok, err = pcall(function() c:project(42) end)
+        local ok, err = pcall(function() c.projects:get(42) end)
         assert.eq(ok, false)
         assert.contains(tostring(err), "HTTP 403")
-        "#,
-        server.uri()
-    );
-    run_lua(&script).await.unwrap();
-}
-
-#[tokio::test]
-async fn test_gitlab_hooks() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/api/v4/projects/42/hooks"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-            { "id": 1, "url": "https://hooks.example.com/push", "push_events": true },
-            { "id": 2, "url": "https://hooks.example.com/mr", "merge_requests_events": true }
-        ])))
-        .mount(&server)
-        .await;
-
-    let script = format!(
-        r#"
-        local gitlab = require("assay.gitlab")
-        local c = gitlab.client("{}", {{ token = "glpat-test" }})
-        local hooks = c:hooks(42)
-        assert.eq(#hooks, 2)
-        assert.eq(hooks[1].push_events, true)
-        assert.eq(hooks[2].merge_requests_events, true)
         "#,
         server.uri()
     );

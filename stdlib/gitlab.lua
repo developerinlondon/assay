@@ -1,36 +1,35 @@
 --- @module assay.gitlab
 --- @description GitLab REST API v4 — projects, repositories, commits, merge requests, pipelines, issues, releases, container registry.
 --- @keywords gitlab, git, ci, cd, merge-request, pipeline, repository, commit, registry, release
---- @quickref c:project(id) -> table|nil | Get project details
---- @quickref c:file_raw(project, path, opts?) -> string|nil | Read raw file content from repository
---- @quickref c:create_commit(project, opts) -> table | Atomic multi-file commit
---- @quickref c:merge_requests(project, opts?) -> [table] | List merge requests
---- @quickref c:create_merge_request(project, opts) -> table | Create merge request
---- @quickref c:merge(project, iid, opts?) -> table | Accept (merge) a merge request
---- @quickref c:pipelines(project, opts?) -> [table] | List CI/CD pipelines
---- @quickref c:create_pipeline(project, opts) -> table | Trigger a new pipeline
---- @quickref c:branches(project, opts?) -> [table] | List branches
---- @quickref c:tags(project, opts?) -> [table] | List tags
---- @quickref c:releases(project, opts?) -> [table] | List releases
---- @quickref c:issues(project, opts?) -> [table] | List issues
+--- @quickref c.projects:get(id) -> table|nil | Get project details
+--- @quickref c.files:raw(project, path, opts?) -> string|nil | Read raw file content
+--- @quickref c.commits:create(project, opts) -> table | Atomic multi-file commit
+--- @quickref c.merge_requests:list(project, opts?) -> [table] | List merge requests
+--- @quickref c.merge_requests:create(project, opts) -> table | Create merge request
+--- @quickref c.merge_requests:merge(project, iid, opts?) -> table | Accept a merge request
+--- @quickref c.pipelines:list(project, opts?) -> [table] | List CI/CD pipelines
+--- @quickref c.pipelines:create(project, opts) -> table | Trigger a new pipeline
+--- @quickref c.branches:list(project, opts?) -> [table] | List branches
+--- @quickref c.tags:list(project, opts?) -> [table] | List tags
+--- @quickref c.releases:list(project, opts?) -> [table] | List releases
+--- @quickref c.issues:list(project, opts?) -> [table] | List issues
 
 local M = {}
 
 function M.client(url, opts)
   opts = opts or {}
-  local c = {
-    url = url:gsub("/+$", ""),
-    token = opts.token,
-    oauth_token = opts.oauth_token,
-  }
+  local base_url = url:gsub("/+$", "")
+  local token = opts.token
+  local oauth_token = opts.oauth_token
 
-  -- Auth: PRIVATE-TOKEN header (personal/project access token) or OAuth2 Bearer
-  local function headers(self)
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
+
+  local function headers()
     local h = { ["Content-Type"] = "application/json" }
-    if self.token then
-      h["PRIVATE-TOKEN"] = self.token
-    elseif self.oauth_token then
-      h["Authorization"] = "Bearer " .. self.oauth_token
+    if token then
+      h["PRIVATE-TOKEN"] = token
+    elseif oauth_token then
+      h["Authorization"] = "Bearer " .. oauth_token
     end
     return h
   end
@@ -41,7 +40,6 @@ function M.client(url, opts)
     end)
   end
 
-  -- Encode project ID: numeric IDs pass through, namespace/name paths get URL-encoded
   local function encode_project(project)
     if type(project) == "number" then return tostring(project) end
     return urlencode(tostring(project))
@@ -59,9 +57,9 @@ function M.client(url, opts)
     return #parts > 0 and "?" .. table.concat(parts, "&") or ""
   end
 
-  local function api_get(self, path_str, query_params)
-    local resp = http.get(self.url .. "/api/v4" .. path_str .. build_query(query_params),
-      { headers = headers(self) })
+  local function api_get(path_str, query_params)
+    local resp = http.get(base_url .. "/api/v4" .. path_str .. build_query(query_params),
+      { headers = headers() })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
       error("gitlab: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. (resp.body or ""))
@@ -69,10 +67,10 @@ function M.client(url, opts)
     return json.parse(resp.body)
   end
 
-  local function api_get_raw(self, path_str, query_params)
-    local h = headers(self)
+  local function api_get_raw(path_str, query_params)
+    local h = headers()
     h["Content-Type"] = nil
-    local resp = http.get(self.url .. "/api/v4" .. path_str .. build_query(query_params),
+    local resp = http.get(base_url .. "/api/v4" .. path_str .. build_query(query_params),
       { headers = h })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
@@ -81,25 +79,24 @@ function M.client(url, opts)
     return resp.body
   end
 
-  local function api_post(self, path_str, payload)
-    local resp = http.post(self.url .. "/api/v4" .. path_str, payload or {}, { headers = headers(self) })
+  local function api_post(path_str, payload)
+    local resp = http.post(base_url .. "/api/v4" .. path_str, payload or {}, { headers = headers() })
     if resp.status ~= 200 and resp.status ~= 201 then
       error("gitlab: POST " .. path_str .. " HTTP " .. resp.status .. ": " .. (resp.body or ""))
     end
     return json.parse(resp.body)
   end
 
-  local function api_put(self, path_str, payload)
-    local resp = http.put(self.url .. "/api/v4" .. path_str, payload or {}, { headers = headers(self) })
+  local function api_put(path_str, payload)
+    local resp = http.put(base_url .. "/api/v4" .. path_str, payload or {}, { headers = headers() })
     if resp.status ~= 200 then
       error("gitlab: PUT " .. path_str .. " HTTP " .. resp.status .. ": " .. (resp.body or ""))
     end
     return json.parse(resp.body)
   end
 
-  local function api_delete(self, path_str)
-    local h = headers(self)
-    local resp = http.delete(self.url .. "/api/v4" .. path_str, { headers = h })
+  local function api_delete(path_str)
+    local resp = http.delete(base_url .. "/api/v4" .. path_str, { headers = headers() })
     if resp.status ~= 200 and resp.status ~= 204 then
       error("gitlab: DELETE " .. path_str .. " HTTP " .. resp.status .. ": " .. (resp.body or ""))
     end
@@ -110,46 +107,52 @@ function M.client(url, opts)
     return nil
   end
 
+  local function proj(id) return "/projects/" .. encode_project(id) end
+
+  -- ===== Client =====
+
+  local c = {}
+
   -- ===== Projects =====
 
-  function c:projects(query_opts)
-    return api_get(self, "/projects", query_opts)
+  c.projects = {}
+
+  function c.projects:list(query_opts)
+    return api_get("/projects", query_opts)
   end
 
-  function c:project(id)
-    return api_get(self, "/projects/" .. encode_project(id))
+  function c.projects:get(id)
+    return api_get(proj(id))
   end
 
   -- ===== Repository Files =====
 
-  function c:file(project, file_path, file_opts)
+  c.files = {}
+
+  function c.files:get(project, file_path, file_opts)
     file_opts = file_opts or {}
-    local params = { ref = file_opts.ref or "main" }
-    return api_get(self, "/projects/" .. encode_project(project)
-      .. "/repository/files/" .. urlencode(file_path), params)
+    return api_get(proj(project) .. "/repository/files/" .. urlencode(file_path),
+      { ref = file_opts.ref or "main" })
   end
 
-  function c:file_raw(project, file_path, file_opts)
+  function c.files:raw(project, file_path, file_opts)
     file_opts = file_opts or {}
-    local params = { ref = file_opts.ref or "main" }
-    return api_get_raw(self, "/projects/" .. encode_project(project)
-      .. "/repository/files/" .. urlencode(file_path) .. "/raw", params)
+    return api_get_raw(proj(project) .. "/repository/files/" .. urlencode(file_path) .. "/raw",
+      { ref = file_opts.ref or "main" })
   end
 
-  function c:create_file(project, file_path, file_opts)
-    return api_post(self, "/projects/" .. encode_project(project)
-      .. "/repository/files/" .. urlencode(file_path), file_opts)
+  function c.files:create(project, file_path, file_opts)
+    return api_post(proj(project) .. "/repository/files/" .. urlencode(file_path), file_opts)
   end
 
-  function c:update_file(project, file_path, file_opts)
-    return api_put(self, "/projects/" .. encode_project(project)
-      .. "/repository/files/" .. urlencode(file_path), file_opts)
+  function c.files:update(project, file_path, file_opts)
+    return api_put(proj(project) .. "/repository/files/" .. urlencode(file_path), file_opts)
   end
 
-  function c:delete_file(project, file_path, file_opts)
+  function c.files:delete(project, file_path, file_opts)
     file_opts = file_opts or {}
-    local h = headers(self)
-    local resp = http.delete(self.url .. "/api/v4/projects/" .. encode_project(project)
+    local h = headers()
+    local resp = http.delete(base_url .. "/api/v4" .. proj(project)
       .. "/repository/files/" .. urlencode(file_path), {
       headers = h,
       body = json.encode(file_opts),
@@ -160,315 +163,329 @@ function M.client(url, opts)
     return nil
   end
 
-  -- ===== Repository Tree =====
+  -- ===== Repository =====
 
-  function c:tree(project, tree_opts)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/repository/tree", tree_opts)
+  c.repository = {}
+
+  function c.repository:tree(project, tree_opts)
+    return api_get(proj(project) .. "/repository/tree", tree_opts)
   end
 
-  function c:compare(project, from, to)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/repository/compare",
-      { from = from, to = to })
+  function c.repository:compare(project, from, to)
+    return api_get(proj(project) .. "/repository/compare", { from = from, to = to })
   end
 
   -- ===== Commits =====
 
-  function c:commits(project, commit_opts)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/repository/commits", commit_opts)
+  c.commits = {}
+
+  function c.commits:list(project, commit_opts)
+    return api_get(proj(project) .. "/repository/commits", commit_opts)
   end
 
-  function c:commit(project, sha)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/repository/commits/" .. sha)
+  function c.commits:get(project, sha)
+    return api_get(proj(project) .. "/repository/commits/" .. sha)
   end
 
-  function c:create_commit(project, commit_opts)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/repository/commits", commit_opts)
+  function c.commits:create(project, commit_opts)
+    return api_post(proj(project) .. "/repository/commits", commit_opts)
   end
 
-  function c:cherry_pick(project, sha, cherry_opts)
-    return api_post(self, "/projects/" .. encode_project(project)
-      .. "/repository/commits/" .. sha .. "/cherry_pick", cherry_opts)
+  function c.commits:cherry_pick(project, sha, cherry_opts)
+    return api_post(proj(project) .. "/repository/commits/" .. sha .. "/cherry_pick", cherry_opts)
   end
 
   -- ===== Branches =====
 
-  function c:branches(project, branch_opts)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/repository/branches", branch_opts)
+  c.branches = {}
+
+  function c.branches:list(project, branch_opts)
+    return api_get(proj(project) .. "/repository/branches", branch_opts)
   end
 
-  function c:branch(project, name)
-    return api_get(self, "/projects/" .. encode_project(project)
-      .. "/repository/branches/" .. urlencode(name))
+  function c.branches:get(project, name)
+    return api_get(proj(project) .. "/repository/branches/" .. urlencode(name))
   end
 
-  function c:create_branch(project, branch_opts)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/repository/branches", branch_opts)
+  function c.branches:create(project, branch_opts)
+    return api_post(proj(project) .. "/repository/branches", branch_opts)
   end
 
-  function c:delete_branch(project, name)
-    return api_delete(self, "/projects/" .. encode_project(project)
-      .. "/repository/branches/" .. urlencode(name))
+  function c.branches:delete(project, name)
+    return api_delete(proj(project) .. "/repository/branches/" .. urlencode(name))
   end
 
   -- ===== Tags =====
 
-  function c:tags(project, tag_opts)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/repository/tags", tag_opts)
+  c.tags = {}
+
+  function c.tags:list(project, tag_opts)
+    return api_get(proj(project) .. "/repository/tags", tag_opts)
   end
 
-  function c:tag(project, name)
-    return api_get(self, "/projects/" .. encode_project(project)
-      .. "/repository/tags/" .. urlencode(name))
+  function c.tags:get(project, name)
+    return api_get(proj(project) .. "/repository/tags/" .. urlencode(name))
   end
 
-  function c:create_tag(project, tag_opts)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/repository/tags", tag_opts)
+  function c.tags:create(project, tag_opts)
+    return api_post(proj(project) .. "/repository/tags", tag_opts)
   end
 
-  function c:delete_tag(project, name)
-    return api_delete(self, "/projects/" .. encode_project(project)
-      .. "/repository/tags/" .. urlencode(name))
+  function c.tags:delete(project, name)
+    return api_delete(proj(project) .. "/repository/tags/" .. urlencode(name))
   end
 
   -- ===== Merge Requests =====
 
-  function c:merge_requests(project, mr_opts)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/merge_requests", mr_opts)
+  c.merge_requests = {}
+
+  function c.merge_requests:list(project, mr_opts)
+    return api_get(proj(project) .. "/merge_requests", mr_opts)
   end
 
-  function c:merge_request(project, iid)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/merge_requests/" .. iid)
+  function c.merge_requests:get(project, iid)
+    return api_get(proj(project) .. "/merge_requests/" .. iid)
   end
 
-  function c:create_merge_request(project, mr_opts)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/merge_requests", mr_opts)
+  function c.merge_requests:create(project, mr_opts)
+    return api_post(proj(project) .. "/merge_requests", mr_opts)
   end
 
-  function c:update_merge_request(project, iid, mr_opts)
-    return api_put(self, "/projects/" .. encode_project(project) .. "/merge_requests/" .. iid, mr_opts)
+  function c.merge_requests:update(project, iid, mr_opts)
+    return api_put(proj(project) .. "/merge_requests/" .. iid, mr_opts)
   end
 
-  function c:merge(project, iid, merge_opts)
-    return api_put(self, "/projects/" .. encode_project(project)
-      .. "/merge_requests/" .. iid .. "/merge", merge_opts)
+  function c.merge_requests:merge(project, iid, merge_opts)
+    return api_put(proj(project) .. "/merge_requests/" .. iid .. "/merge", merge_opts)
   end
 
-  function c:approve_merge_request(project, iid)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/merge_requests/" .. iid .. "/approve")
+  function c.merge_requests:approve(project, iid)
+    return api_post(proj(project) .. "/merge_requests/" .. iid .. "/approve")
   end
 
-  function c:merge_request_changes(project, iid)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/merge_requests/" .. iid .. "/changes")
+  function c.merge_requests:changes(project, iid)
+    return api_get(proj(project) .. "/merge_requests/" .. iid .. "/changes")
   end
 
-  function c:merge_request_notes(project, iid, note_opts)
-    return api_get(self, "/projects/" .. encode_project(project)
-      .. "/merge_requests/" .. iid .. "/notes", note_opts)
+  function c.merge_requests:notes(project, iid, note_opts)
+    return api_get(proj(project) .. "/merge_requests/" .. iid .. "/notes", note_opts)
   end
 
-  function c:create_merge_request_note(project, iid, body)
-    return api_post(self, "/projects/" .. encode_project(project)
-      .. "/merge_requests/" .. iid .. "/notes", { body = body })
+  function c.merge_requests:create_note(project, iid, body)
+    return api_post(proj(project) .. "/merge_requests/" .. iid .. "/notes", { body = body })
   end
 
   -- ===== Pipelines =====
 
-  function c:pipelines(project, pipe_opts)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/pipelines", pipe_opts)
+  c.pipelines = {}
+
+  function c.pipelines:list(project, pipe_opts)
+    return api_get(proj(project) .. "/pipelines", pipe_opts)
   end
 
-  function c:pipeline(project, id)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/pipelines/" .. id)
+  function c.pipelines:get(project, id)
+    return api_get(proj(project) .. "/pipelines/" .. id)
   end
 
-  function c:create_pipeline(project, pipe_opts)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/pipeline", pipe_opts)
+  function c.pipelines:create(project, pipe_opts)
+    return api_post(proj(project) .. "/pipeline", pipe_opts)
   end
 
-  function c:cancel_pipeline(project, id)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/pipelines/" .. id .. "/cancel")
+  function c.pipelines:cancel(project, id)
+    return api_post(proj(project) .. "/pipelines/" .. id .. "/cancel")
   end
 
-  function c:retry_pipeline(project, id)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/pipelines/" .. id .. "/retry")
+  function c.pipelines:retry(project, id)
+    return api_post(proj(project) .. "/pipelines/" .. id .. "/retry")
   end
 
-  function c:delete_pipeline(project, id)
-    return api_delete(self, "/projects/" .. encode_project(project) .. "/pipelines/" .. id)
+  function c.pipelines:delete(project, id)
+    return api_delete(proj(project) .. "/pipelines/" .. id)
+  end
+
+  function c.pipelines:jobs(project, pipeline_id, job_opts)
+    return api_get(proj(project) .. "/pipelines/" .. pipeline_id .. "/jobs", job_opts)
   end
 
   -- ===== Jobs =====
 
-  function c:pipeline_jobs(project, pipeline_id, job_opts)
-    return api_get(self, "/projects/" .. encode_project(project)
-      .. "/pipelines/" .. pipeline_id .. "/jobs", job_opts)
+  c.jobs = {}
+
+  function c.jobs:list(project, job_opts)
+    return api_get(proj(project) .. "/jobs", job_opts)
   end
 
-  function c:jobs(project, job_opts)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/jobs", job_opts)
+  function c.jobs:get(project, id)
+    return api_get(proj(project) .. "/jobs/" .. id)
   end
 
-  function c:job(project, id)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/jobs/" .. id)
+  function c.jobs:retry(project, id)
+    return api_post(proj(project) .. "/jobs/" .. id .. "/retry")
   end
 
-  function c:retry_job(project, id)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/jobs/" .. id .. "/retry")
+  function c.jobs:cancel(project, id)
+    return api_post(proj(project) .. "/jobs/" .. id .. "/cancel")
   end
 
-  function c:cancel_job(project, id)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/jobs/" .. id .. "/cancel")
-  end
-
-  function c:job_log(project, id)
-    return api_get_raw(self, "/projects/" .. encode_project(project) .. "/jobs/" .. id .. "/trace")
+  function c.jobs:log(project, id)
+    return api_get_raw(proj(project) .. "/jobs/" .. id .. "/trace")
   end
 
   -- ===== Releases =====
 
-  function c:releases(project, release_opts)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/releases", release_opts)
+  c.releases = {}
+
+  function c.releases:list(project, release_opts)
+    return api_get(proj(project) .. "/releases", release_opts)
   end
 
-  function c:release(project, tag_name)
-    return api_get(self, "/projects/" .. encode_project(project)
-      .. "/releases/" .. urlencode(tag_name))
+  function c.releases:get(project, tag_name)
+    return api_get(proj(project) .. "/releases/" .. urlencode(tag_name))
   end
 
-  function c:create_release(project, release_opts)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/releases", release_opts)
+  function c.releases:create(project, release_opts)
+    return api_post(proj(project) .. "/releases", release_opts)
   end
 
-  function c:update_release(project, tag_name, release_opts)
-    return api_put(self, "/projects/" .. encode_project(project)
-      .. "/releases/" .. urlencode(tag_name), release_opts)
+  function c.releases:update(project, tag_name, release_opts)
+    return api_put(proj(project) .. "/releases/" .. urlencode(tag_name), release_opts)
   end
 
-  function c:delete_release(project, tag_name)
-    return api_delete(self, "/projects/" .. encode_project(project)
-      .. "/releases/" .. urlencode(tag_name))
+  function c.releases:delete(project, tag_name)
+    return api_delete(proj(project) .. "/releases/" .. urlencode(tag_name))
   end
 
   -- ===== Issues =====
 
-  function c:issues(project, issue_opts)
+  c.issues = {}
+
+  function c.issues:list(project, issue_opts)
     if project then
-      return api_get(self, "/projects/" .. encode_project(project) .. "/issues", issue_opts)
+      return api_get(proj(project) .. "/issues", issue_opts)
     end
-    return api_get(self, "/issues", issue_opts)
+    return api_get("/issues", issue_opts)
   end
 
-  function c:issue(project, iid)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/issues/" .. iid)
+  function c.issues:get(project, iid)
+    return api_get(proj(project) .. "/issues/" .. iid)
   end
 
-  function c:create_issue(project, issue_opts)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/issues", issue_opts)
+  function c.issues:create(project, issue_opts)
+    return api_post(proj(project) .. "/issues", issue_opts)
   end
 
-  function c:update_issue(project, iid, issue_opts)
-    return api_put(self, "/projects/" .. encode_project(project) .. "/issues/" .. iid, issue_opts)
+  function c.issues:update(project, iid, issue_opts)
+    return api_put(proj(project) .. "/issues/" .. iid, issue_opts)
   end
 
-  function c:issue_notes(project, iid, note_opts)
-    return api_get(self, "/projects/" .. encode_project(project)
-      .. "/issues/" .. iid .. "/notes", note_opts)
+  function c.issues:notes(project, iid, note_opts)
+    return api_get(proj(project) .. "/issues/" .. iid .. "/notes", note_opts)
   end
 
-  function c:create_issue_note(project, iid, body)
-    return api_post(self, "/projects/" .. encode_project(project)
-      .. "/issues/" .. iid .. "/notes", { body = body })
+  function c.issues:create_note(project, iid, body)
+    return api_post(proj(project) .. "/issues/" .. iid .. "/notes", { body = body })
   end
 
   -- ===== Groups =====
 
-  function c:groups(group_opts)
-    return api_get(self, "/groups", group_opts)
+  c.groups = {}
+
+  function c.groups:list(group_opts)
+    return api_get("/groups", group_opts)
   end
 
-  function c:group(id)
-    return api_get(self, "/groups/" .. encode_project(id))
+  function c.groups:get(id)
+    return api_get("/groups/" .. encode_project(id))
   end
 
-  function c:group_projects(id, group_opts)
-    return api_get(self, "/groups/" .. encode_project(id) .. "/projects", group_opts)
+  function c.groups:projects(id, group_opts)
+    return api_get("/groups/" .. encode_project(id) .. "/projects", group_opts)
   end
 
   -- ===== Container Registry =====
 
-  function c:registries(project)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/registry/repositories")
+  c.registry = {}
+
+  function c.registry:repositories(project)
+    return api_get(proj(project) .. "/registry/repositories")
   end
 
-  function c:registry_tags(project, repo_id)
-    return api_get(self, "/projects/" .. encode_project(project)
-      .. "/registry/repositories/" .. repo_id .. "/tags")
+  function c.registry:tags(project, repo_id)
+    return api_get(proj(project) .. "/registry/repositories/" .. repo_id .. "/tags")
   end
 
-  function c:registry_tag(project, repo_id, tag_name)
-    return api_get(self, "/projects/" .. encode_project(project)
-      .. "/registry/repositories/" .. repo_id .. "/tags/" .. urlencode(tag_name))
+  function c.registry:tag(project, repo_id, tag_name)
+    return api_get(proj(project) .. "/registry/repositories/" .. repo_id
+      .. "/tags/" .. urlencode(tag_name))
   end
 
-  function c:delete_registry_tag(project, repo_id, tag_name)
-    return api_delete(self, "/projects/" .. encode_project(project)
-      .. "/registry/repositories/" .. repo_id .. "/tags/" .. urlencode(tag_name))
+  function c.registry:delete_tag(project, repo_id, tag_name)
+    return api_delete(proj(project) .. "/registry/repositories/" .. repo_id
+      .. "/tags/" .. urlencode(tag_name))
   end
 
-  -- ===== Webhooks (Project Hooks) =====
+  -- ===== Webhooks =====
 
-  function c:hooks(project)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/hooks")
+  c.hooks = {}
+
+  function c.hooks:list(project)
+    return api_get(proj(project) .. "/hooks")
   end
 
-  function c:hook(project, id)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/hooks/" .. id)
+  function c.hooks:get(project, id)
+    return api_get(proj(project) .. "/hooks/" .. id)
   end
 
-  function c:create_hook(project, hook_opts)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/hooks", hook_opts)
+  function c.hooks:create(project, hook_opts)
+    return api_post(proj(project) .. "/hooks", hook_opts)
   end
 
-  function c:update_hook(project, id, hook_opts)
-    return api_put(self, "/projects/" .. encode_project(project) .. "/hooks/" .. id, hook_opts)
+  function c.hooks:update(project, id, hook_opts)
+    return api_put(proj(project) .. "/hooks/" .. id, hook_opts)
   end
 
-  function c:delete_hook(project, id)
-    return api_delete(self, "/projects/" .. encode_project(project) .. "/hooks/" .. id)
+  function c.hooks:delete(project, id)
+    return api_delete(proj(project) .. "/hooks/" .. id)
   end
 
   -- ===== Users =====
 
-  function c:current_user()
-    return api_get(self, "/user")
+  c.users = {}
+
+  function c.users:current()
+    return api_get("/user")
   end
 
-  function c:users(user_opts)
-    return api_get(self, "/users", user_opts)
+  function c.users:list(user_opts)
+    return api_get("/users", user_opts)
   end
 
   -- ===== Environments =====
 
-  function c:environments(project, env_opts)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/environments", env_opts)
+  c.environments = {}
+
+  function c.environments:list(project, env_opts)
+    return api_get(proj(project) .. "/environments", env_opts)
   end
 
-  function c:environment(project, id)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/environments/" .. id)
+  function c.environments:get(project, id)
+    return api_get(proj(project) .. "/environments/" .. id)
   end
 
   -- ===== Deploy Tokens =====
 
-  function c:deploy_tokens(project)
-    return api_get(self, "/projects/" .. encode_project(project) .. "/deploy_tokens")
+  c.deploy_tokens = {}
+
+  function c.deploy_tokens:list(project)
+    return api_get(proj(project) .. "/deploy_tokens")
   end
 
-  function c:create_deploy_token(project, dt_opts)
-    return api_post(self, "/projects/" .. encode_project(project) .. "/deploy_tokens", dt_opts)
+  function c.deploy_tokens:create(project, dt_opts)
+    return api_post(proj(project) .. "/deploy_tokens", dt_opts)
   end
 
-  function c:delete_deploy_token(project, id)
-    return api_delete(self, "/projects/" .. encode_project(project) .. "/deploy_tokens/" .. id)
+  function c.deploy_tokens:delete(project, id)
+    return api_delete(proj(project) .. "/deploy_tokens/" .. id)
   end
 
   return c
