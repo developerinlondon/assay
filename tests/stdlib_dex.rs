@@ -433,3 +433,198 @@ async fn test_dex_admin_version_unavailable() {
     );
     run_lua(&script).await.unwrap();
 }
+
+// ===== Sub-object client pattern tests =====
+
+#[tokio::test]
+async fn test_dex_client_discovery_config() {
+    let server = MockServer::start().await;
+    mount_discovery(&server).await;
+
+    let script = format!(
+        r#"
+        local dex = require("assay.dex")
+        local c = dex.client("{}")
+        local config = c.discovery:config()
+        assert.eq(config.issuer, "{}")
+        assert.eq(config.authorization_endpoint, "{}/auth")
+        "#,
+        server.uri(),
+        server.uri(),
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_dex_client_discovery_jwks() {
+    let server = MockServer::start().await;
+    mount_discovery(&server).await;
+
+    Mock::given(method("GET"))
+        .and(path("/keys"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "keys": [{
+                "kty": "RSA",
+                "alg": "RS256",
+                "use": "sig",
+                "kid": "client-test-key",
+                "n": "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM",
+                "e": "AQAB"
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local dex = require("assay.dex")
+        local c = dex.client("{}")
+        local jwks = c.discovery:jwks()
+        assert.eq(#jwks.keys, 1)
+        assert.eq(jwks.keys[1].kid, "client-test-key")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_dex_client_discovery_issuer() {
+    let server = MockServer::start().await;
+    mount_discovery(&server).await;
+
+    let script = format!(
+        r#"
+        local dex = require("assay.dex")
+        local c = dex.client("{}")
+        local iss = c.discovery:issuer()
+        assert.eq(iss, "{}")
+        "#,
+        server.uri(),
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_dex_client_health_check() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/healthz"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local dex = require("assay.dex")
+        local c = dex.client("{}")
+        assert.eq(c.health:check(), true)
+        assert.eq(c.health:ready(), true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_dex_client_scopes() {
+    let server = MockServer::start().await;
+    mount_discovery(&server).await;
+
+    let script = format!(
+        r#"
+        local dex = require("assay.dex")
+        local c = dex.client("{}")
+        local scopes = c.scopes:list()
+        assert.eq(#scopes, 5)
+        assert.eq(c.scopes:supports("openid"), true)
+        assert.eq(c.scopes:supports("phone"), false)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_dex_client_grants() {
+    let server = MockServer::start().await;
+    mount_discovery(&server).await;
+
+    let script = format!(
+        r#"
+        local dex = require("assay.dex")
+        local c = dex.client("{}")
+        local grants = c.grants:list()
+        assert.eq(#grants, 3)
+        assert.eq(c.grants:supports("authorization_code"), true)
+        assert.eq(c.grants:supports("implicit"), false)
+        local rt = c.grants:response_types()
+        assert.eq(#rt, 3)
+        assert.eq(rt[1], "code")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_dex_client_validate_config() {
+    let server = MockServer::start().await;
+    mount_discovery(&server).await;
+
+    let script = format!(
+        r#"
+        local dex = require("assay.dex")
+        local c = dex.client("{}")
+        local result = c:validate_config()
+        assert.eq(result.ok, true)
+        assert.eq(#result.errors, 0)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_dex_client_admin_version() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/version"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "server": "dex",
+            "version": "2.39.0"
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local dex = require("assay.dex")
+        local c = dex.client("{}")
+        local ver = c:admin_version()
+        assert.eq(ver.server, "dex")
+        assert.eq(ver.version, "2.39.0")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_dex_client_has_endpoint() {
+    let server = MockServer::start().await;
+    mount_discovery(&server).await;
+
+    let script = format!(
+        r#"
+        local dex = require("assay.dex")
+        local c = dex.client("{}")
+        assert.eq(c.discovery:has_endpoint("authorization_endpoint"), true)
+        assert.eq(c.discovery:has_endpoint("nonexistent_endpoint"), false)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}

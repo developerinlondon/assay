@@ -46,7 +46,7 @@ async fn test_kargo_stages_list() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local stages = c:stages("jeebon-test")
+        local stages = c.stages:list("jeebon-test")
         assert.eq(#stages, 2)
         assert.eq(stages[1].metadata.name, "test")
         assert.eq(stages[1].status.phase, "Steady")
@@ -88,7 +88,7 @@ async fn test_kargo_stage_get() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local s = c:stage("jeebon-test", "test")
+        local s = c.stages:get("jeebon-test", "test")
         assert.eq(s.metadata.name, "test")
         assert.eq(s.status.phase, "Steady")
         assert.eq(s.status.currentFreightId, "freight-abc123")
@@ -126,7 +126,7 @@ async fn test_kargo_stage_status() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local st = c:stage_status("jeebon-test", "test")
+        local st = c.stages:status("jeebon-test", "test")
         assert.eq(st.phase, "Steady")
         assert.eq(st.current_freight_id, "freight-abc123")
         assert.eq(st.health.status, "Healthy")
@@ -158,7 +158,7 @@ async fn test_kargo_is_stage_healthy_steady() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local healthy = c:is_stage_healthy("jeebon-test", "test")
+        local healthy = c.stages:is_healthy("jeebon-test", "test")
         assert.eq(healthy, true)
         "#,
         server.uri()
@@ -191,7 +191,7 @@ async fn test_kargo_is_stage_healthy_condition() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local healthy = c:is_stage_healthy("jeebon-test", "test")
+        local healthy = c.stages:is_healthy("jeebon-test", "test")
         assert.eq(healthy, true)
         "#,
         server.uri()
@@ -224,7 +224,7 @@ async fn test_kargo_is_stage_unhealthy() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local healthy = c:is_stage_healthy("jeebon-test", "broken")
+        local healthy = c.stages:is_healthy("jeebon-test", "broken")
         assert.eq(healthy, false)
         "#,
         server.uri()
@@ -270,7 +270,7 @@ async fn test_kargo_freight_list() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local freight = c:freight_list("jeebon-test")
+        local freight = c.freight:list("jeebon-test")
         assert.eq(#freight, 2)
         assert.eq(freight[1].metadata.name, "freight-abc123")
         assert.eq(freight[2].metadata.name, "freight-def456")
@@ -307,7 +307,7 @@ async fn test_kargo_freight_get() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local f = c:freight("jeebon-test", "freight-abc123")
+        local f = c.freight:get("jeebon-test", "freight-abc123")
         assert.eq(f.metadata.name, "freight-abc123")
         assert.eq(f.spec.images[1].tag, "v1.2.3")
         assert.eq(f.spec.commits[1].id, "abc123")
@@ -340,7 +340,7 @@ async fn test_kargo_freight_status() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local st = c:freight_status("jeebon-test", "freight-abc123")
+        local st = c.freight:status("jeebon-test", "freight-abc123")
         assert.not_nil(st.verifiedIn)
         assert.not_nil(st.approvedFor)
         "#,
@@ -383,7 +383,7 @@ async fn test_kargo_promotions_list() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local promos = c:promotions("jeebon-test")
+        local promos = c.promotions:list("jeebon-test")
         assert.eq(#promos, 2)
         assert.eq(promos[1].metadata.name, "test-abc")
         assert.eq(promos[1].status.phase, "Succeeded")
@@ -424,7 +424,7 @@ async fn test_kargo_promote() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local promo = c:promote("jeebon-test", "test", "freight-abc123")
+        local promo = c.promotions:create("jeebon-test", "test", "freight-abc123")
         assert.eq(promo.metadata.name, "test-x7k9z")
         assert.eq(promo.spec.stage, "test")
         assert.eq(promo.spec.freight, "freight-abc123")
@@ -460,7 +460,7 @@ async fn test_kargo_promotion_status() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local st = c:promotion_status("jeebon-test", "test-abc")
+        local st = c.promotions:status("jeebon-test", "test-abc")
         assert.eq(st.phase, "Succeeded")
         assert.eq(st.message, "Promotion completed successfully")
         assert.eq(st.freight_id, "freight-abc123")
@@ -500,7 +500,7 @@ async fn test_kargo_warehouses_list() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local wh = c:warehouses("jeebon-test")
+        local wh = c.warehouses:list("jeebon-test")
         assert.eq(#wh, 1)
         assert.eq(wh[1].metadata.name, "main")
         "#,
@@ -533,7 +533,7 @@ async fn test_kargo_warehouse_get() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local wh = c:warehouse("jeebon-test", "main")
+        local wh = c.warehouses:get("jeebon-test", "main")
         assert.eq(wh.metadata.name, "main")
         assert.eq(wh.kind, "Warehouse")
         "#,
@@ -572,7 +572,7 @@ async fn test_kargo_projects_list() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local projects = c:projects()
+        local projects = c.projects:list()
         assert.eq(#projects, 2)
         assert.eq(projects[1].metadata.name, "jeebon-test")
         assert.eq(projects[2].metadata.name, "jeebon-dev")
@@ -600,7 +600,7 @@ async fn test_kargo_project_get() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local p = c:project("jeebon-test")
+        local p = c.projects:get("jeebon-test")
         assert.eq(p.metadata.name, "jeebon-test")
         assert.eq(p.status.phase, "Ready")
         "#,
@@ -662,7 +662,7 @@ async fn test_kargo_pipeline_status() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}", "fake-token")
-        local ps = c:pipeline_status("jeebon-test")
+        local ps = c.stages:pipeline_status("jeebon-test")
         assert.eq(#ps, 3)
 
         assert.eq(ps[1].name, "test")
@@ -701,7 +701,7 @@ async fn test_kargo_url_trailing_slash_stripped() {
         r#"
         local kargo = require("assay.kargo")
         local c = kargo.client("{}///", "fake-token")
-        local p = c:project("jeebon-test")
+        local p = c.projects:get("jeebon-test")
         assert.eq(p.metadata.name, "jeebon-test")
         "#,
         server.uri()

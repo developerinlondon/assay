@@ -594,3 +594,297 @@ async fn test_harbor_robot_token_auth() {
     );
     run_lua(&script).await.unwrap();
 }
+
+// ===== Sub-object client pattern tests =====
+
+#[tokio::test]
+async fn test_harbor_system_health() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/health"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "healthy",
+            "components": [
+                {"name": "core", "status": "healthy"},
+                {"name": "database", "status": "healthy"}
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local h = c.system:health()
+        assert.eq(h.status, "healthy")
+        assert.eq(#h.components, 2)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_system_info_subobj() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/systeminfo"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "harbor_version": "v2.11.0",
+            "auth_mode": "db_auth"
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local info = c.system:info()
+        assert.eq(info.harbor_version, "v2.11.0")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_system_is_healthy() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/health"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "healthy",
+            "components": [
+                {"name": "core", "status": "healthy"},
+                {"name": "redis", "status": "healthy"}
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        assert.eq(c.system:is_healthy(), true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_projects_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/projects"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {"project_id": 1, "name": "library"},
+            {"project_id": 2, "name": "my-app"}
+        ])))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local projects = c.projects:list()
+        assert.eq(#projects, 2)
+        assert.eq(projects[1].name, "library")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_projects_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/projects/library"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "project_id": 1,
+            "name": "library",
+            "repo_count": 12
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local proj = c.projects:get("library")
+        assert.eq(proj.name, "library")
+        assert.eq(proj.repo_count, 12)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_repositories_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/projects/library/repositories"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {"id": 1, "name": "library/nginx", "artifact_count": 3}
+        ])))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local repos = c.repositories:list("library")
+        assert.eq(#repos, 1)
+        assert.eq(repos[1].name, "library/nginx")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_artifacts_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {"id": 1, "digest": "sha256:abc", "type": "IMAGE"}
+        ])))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local arts = c.artifacts:list("library", "nginx")
+        assert.eq(#arts, 1)
+        assert.eq(arts[1].type, "IMAGE")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_artifacts_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": 1,
+            "digest": "sha256:abc",
+            "type": "IMAGE"
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local art = c.artifacts:get("library", "nginx", "latest")
+        assert.eq(art.digest, "sha256:abc")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_artifacts_exists() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/1.25.0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": 1})))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        assert.eq(c.artifacts:exists("library", "nginx", "1.25.0"), true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_scan_trigger() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/latest/scan"))
+        .respond_with(ResponseTemplate::new(202))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local ok = c.scan:trigger("library", "nginx", "latest")
+        assert.eq(ok, true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_replication_policies_subobj() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/replication/policies"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {"id": 1, "name": "push-to-dockerhub", "enabled": true}
+        ])))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local policies = c.replication:policies()
+        assert.eq(#policies, 1)
+        assert.eq(policies[1].name, "push-to-dockerhub")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_harbor_artifacts_tags() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/sha256:abc/tags"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {"id": 1, "name": "latest"},
+            {"id": 2, "name": "1.25.0"}
+        ])))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local harbor = require("assay.harbor")
+        local c = harbor.client("{}")
+        local tags = c.artifacts:tags("library", "nginx", "sha256:abc")
+        assert.eq(#tags, 2)
+        assert.eq(tags[1].name, "latest")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}

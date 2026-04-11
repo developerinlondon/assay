@@ -57,7 +57,7 @@ async fn test_certificates_list() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local list = c:certificates("infra")
+        local list = c.certificates:list("infra")
         assert.eq(list.kind, "CertificateList")
         assert.eq(#list.items, 2)
         assert.eq(list.items[1].metadata.name, "web-tls")
@@ -95,7 +95,7 @@ async fn test_certificate_get() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local cert = c:certificate("infra", "web-tls")
+        local cert = c.certificates:get("infra", "web-tls")
         assert.eq(cert.kind, "Certificate")
         assert.eq(cert.metadata.name, "web-tls")
         assert.eq(cert.spec.secretName, "web-tls-secret")
@@ -131,7 +131,7 @@ async fn test_certificate_status() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local st = c:certificate_status("infra", "web-tls")
+        local st = c.certificates:status("infra", "web-tls")
         assert.eq(st.ready, true)
         assert.eq(st.not_after, "2026-06-01T00:00:00Z")
         assert.eq(st.not_before, "2026-03-01T00:00:00Z")
@@ -166,7 +166,7 @@ async fn test_is_certificate_ready_true() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        assert.eq(c:is_certificate_ready("infra", "web-tls"), true)
+        assert.eq(c.certificates:is_ready("infra", "web-tls"), true)
         "#,
         server.uri()
     );
@@ -195,7 +195,7 @@ async fn test_is_certificate_ready_false() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        assert.eq(c:is_certificate_ready("infra", "web-tls"), false)
+        assert.eq(c.certificates:is_ready("infra", "web-tls"), false)
         "#,
         server.uri()
     );
@@ -226,7 +226,7 @@ async fn test_issuers_list() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local list = c:issuers("infra")
+        local list = c.issuers:list("infra")
         assert.eq(list.kind, "IssuerList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "selfsigned")
@@ -256,7 +256,7 @@ async fn test_is_issuer_ready() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        assert.eq(c:is_issuer_ready("infra", "selfsigned"), true)
+        assert.eq(c.issuers:is_ready("infra", "selfsigned"), true)
         "#,
         server.uri()
     );
@@ -293,7 +293,7 @@ async fn test_cluster_issuers_list() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local list = c:cluster_issuers()
+        local list = c.cluster_issuers:list()
         assert.eq(list.kind, "ClusterIssuerList")
         assert.eq(#list.items, 2)
         assert.eq(list.items[1].metadata.name, "letsencrypt-prod")
@@ -324,7 +324,7 @@ async fn test_is_cluster_issuer_ready() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        assert.eq(c:is_cluster_issuer_ready("letsencrypt-prod"), true)
+        assert.eq(c.cluster_issuers:is_ready("letsencrypt-prod"), true)
         "#,
         server.uri()
     );
@@ -362,7 +362,7 @@ async fn test_certificate_requests_list() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local list = c:certificate_requests("infra")
+        local list = c.requests:list("infra")
         assert.eq(list.kind, "CertificateRequestList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "web-tls-abc12")
@@ -397,7 +397,7 @@ async fn test_is_request_approved() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        assert.eq(c:is_request_approved("infra", "web-tls-abc12"), true)
+        assert.eq(c.requests:is_approved("infra", "web-tls-abc12"), true)
         "#,
         server.uri()
     );
@@ -430,7 +430,7 @@ async fn test_orders_list() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local list = c:orders("infra")
+        local list = c.orders:list("infra")
         assert.eq(list.kind, "OrderList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "web-tls-order-xyz")
@@ -468,7 +468,7 @@ async fn test_challenges_list() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local list = c:challenges("infra")
+        local list = c.challenges:list("infra")
         assert.eq(list.kind, "ChallengeList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "web-tls-challenge-abc")
@@ -512,7 +512,7 @@ async fn test_all_certificates_ready_all_ready() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local result = c:all_certificates_ready("infra")
+        local result = c.certificates:all_ready("infra")
         assert.eq(result.total, 3)
         assert.eq(result.ready, 3)
         assert.eq(result.not_ready, 0)
@@ -555,7 +555,7 @@ async fn test_all_certificates_ready_some_not_ready() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local result = c:all_certificates_ready("infra")
+        local result = c.certificates:all_ready("infra")
         assert.eq(result.total, 3)
         assert.eq(result.ready, 1)
         assert.eq(result.not_ready, 2)
@@ -594,7 +594,7 @@ async fn test_all_issuers_ready() {
         r#"
         local cm = require("assay.certmanager")
         local c = cm.client("{}", "fake-token")
-        local result = c:all_issuers_ready("infra")
+        local result = c.issuers:all_ready("infra")
         assert.eq(result.total, 2)
         assert.eq(result.ready, 1)
         assert.eq(result.not_ready, 1)

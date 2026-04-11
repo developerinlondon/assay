@@ -2,7 +2,7 @@
 
 All notable changes to Assay are documented here.
 
-## [0.9.1] - 2026-04-11
+## [0.10.0] - 2026-04-11
 
 ### Added
 
@@ -13,6 +13,30 @@ All notable changes to Assay are documented here.
   token and OAuth2 bearer authentication. Enables GitOps automation scripts to
   read/write repository content, trigger pipelines, manage merge requests, and
   interact with container registries without external CLI dependencies.
+
+### Changed
+
+- **Sub-object OO convention** across all 35 stdlib modules. Methods are now
+  grouped by resource into sub-objects instead of flat on the client:
+
+  ```lua
+  -- Before (flat)
+  c:merge_requests(project, opts)
+  c:create_merge_request(project, opts)
+
+  -- After (sub-objects)
+  c.merge_requests:list(project, opts)
+  c.merge_requests:create(project, opts)
+  ```
+
+  Standard CRUD verbs (`list`, `get`, `create`, `update`, `delete`) are
+  consistent across all resources. This makes the API more intuitive and
+  self-documenting. Modules refactored: gitlab, github, argocd, vault, s3,
+  unleash, grafana, keto, kratos, hydra, rbac, prometheus, alertmanager,
+  traefik, loki, k8s, harbor, temporal, dex, flux, certmanager, eso,
+  crossplane, velero, kargo, gcal, gmail, openclaw, zitadel, postgres.
+  Modules unchanged (no client pattern): healthcheck, oauth2, email_triage,
+  openbao (alias).
 
 ## [0.9.0] - 2026-04-11
 

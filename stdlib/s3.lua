@@ -1,16 +1,16 @@
 --- @module assay.s3
 --- @description S3-compatible object storage. Buckets, objects, copy, list with AWS Signature V4 auth.
 --- @keywords s3, storage, buckets, objects, aws, minio, r2, sigv4, bucket, object, copy, metadata, signature-v4, compatible, cloudflare-r2
---- @quickref c:create_bucket(bucket) -> true | Create a new bucket
---- @quickref c:delete_bucket(bucket) -> true | Delete a bucket
---- @quickref c:list_buckets() -> [{name, creation_date}] | List all buckets
---- @quickref c:put_object(bucket, key, body, opts?) -> true | Upload an object
---- @quickref c:get_object(bucket, key) -> string|nil | Download object content
---- @quickref c:delete_object(bucket, key) -> true | Delete an object
---- @quickref c:list_objects(bucket, opts?) -> {objects, is_truncated} | List objects in bucket
---- @quickref c:head_object(bucket, key) -> {status, headers}|nil | Get object metadata
---- @quickref c:copy_object(src_bucket, src_key, dst_bucket, dst_key) -> true | Copy object between buckets
---- @quickref c:bucket_exists(bucket) -> bool | Check if bucket exists
+--- @quickref c.buckets:create(bucket) -> true | Create a new bucket
+--- @quickref c.buckets:delete(bucket) -> true | Delete a bucket
+--- @quickref c.buckets:list() -> [{name, creation_date}] | List all buckets
+--- @quickref c.buckets:exists(bucket) -> bool | Check if bucket exists
+--- @quickref c.objects:put(bucket, key, body, opts?) -> true | Upload an object
+--- @quickref c.objects:get(bucket, key) -> string|nil | Download object content
+--- @quickref c.objects:delete(bucket, key) -> true | Delete an object
+--- @quickref c.objects:list(bucket, opts?) -> {objects, is_truncated} | List objects in bucket
+--- @quickref c.objects:head(bucket, key) -> {status, headers}|nil | Get object metadata
+--- @quickref c.objects:copy(src_bucket, src_key, dst_bucket, dst_key) -> true | Copy object between buckets
 
 local M = {}
 
@@ -174,50 +174,44 @@ function M.client(opts)
 
   endpoint = endpoint:gsub("/+$", "")
 
-  local c = {
-    endpoint = endpoint,
-    region = region,
-    access_key = access_key,
-    secret_key = secret_key,
-    path_style = path_style,
-  }
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
 
-  local function make_url(self, bucket, key)
-    if self.path_style then
-      local url = self.endpoint
-      if bucket then url = url .. "/" .. bucket end
-      if key then url = url .. "/" .. key end
-      return url
+  local function make_url(bucket, key)
+    if path_style then
+      local u = endpoint
+      if bucket then u = u .. "/" .. bucket end
+      if key then u = u .. "/" .. key end
+      return u
     else
       if bucket then
-        local base = self.endpoint:gsub("^(https?://)", "%1" .. bucket .. ".")
+        local base = endpoint:gsub("^(https?://)", "%1" .. bucket .. ".")
         if key then return base .. "/" .. key end
         return base
       end
-      return self.endpoint
+      return endpoint
     end
   end
 
-  local function build_headers(self, method_str, bucket, key, query, payload_hash, extra_headers)
+  local function build_headers(method_str, bucket, key, query, payload_hash, extra_headers)
     local dt = epoch_to_utc(time())
     local datetime_stamp = utc_datetime_stamp(dt)
 
-    local path = "/"
-    if self.path_style then
-      if bucket then path = path .. bucket end
-      if key then path = path .. "/" .. key end
+    local p = "/"
+    if path_style then
+      if bucket then p = p .. bucket end
+      if key then p = p .. "/" .. key end
     else
-      if key then path = path .. key end
+      if key then p = p .. key end
     end
 
     local host
-    if self.path_style then
-      host = self.endpoint:gsub("^https?://", "")
+    if path_style then
+      host = endpoint:gsub("^https?://", "")
     else
       if bucket then
-        host = bucket .. "." .. self.endpoint:gsub("^https?://", "")
+        host = bucket .. "." .. endpoint:gsub("^https?://", "")
       else
-        host = self.endpoint:gsub("^https?://", "")
+        host = endpoint:gsub("^https?://", "")
       end
     end
 
@@ -233,11 +227,11 @@ function M.client(opts)
     end
 
     local signature, signed_headers, credential_scope = sign(
-      self.secret_key, self.region, dt, method_str,
-      path, query or "", headers_map, payload_hash
+      secret_key, region, dt, method_str,
+      p, query or "", headers_map, payload_hash
     )
 
-    local auth = "AWS4-HMAC-SHA256 Credential=" .. self.access_key .. "/" .. credential_scope
+    local auth = "AWS4-HMAC-SHA256 Credential=" .. access_key .. "/" .. credential_scope
       .. ", SignedHeaders=" .. signed_headers
       .. ", Signature=" .. signature
 
@@ -255,55 +249,75 @@ function M.client(opts)
     return req_headers
   end
 
-  function c:create_bucket(bucket)
+  -- ===== Client =====
+
+  local c = {}
+
+  -- ===== Buckets =====
+
+  c.buckets = {}
+
+  function c.buckets:create(bucket)
     local body = ""
-    if self.region ~= "us-east-1" then
+    if region ~= "us-east-1" then
       body = '<?xml version="1.0" encoding="UTF-8"?>'
         .. '<CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
-        .. '<LocationConstraint>' .. self.region .. '</LocationConstraint>'
+        .. '<LocationConstraint>' .. region .. '</LocationConstraint>'
         .. '</CreateBucketConfiguration>'
     end
     local payload_hash = crypto.hash(body, "sha256")
-    local hdrs = build_headers(self, "PUT", bucket, nil, nil, payload_hash, {
+    local hdrs = build_headers("PUT", bucket, nil, nil, payload_hash, {
       ["content-type"] = "application/xml",
     })
-    local url = make_url(self, bucket)
-    local resp = http.put(url, body, { headers = hdrs })
+    local u = make_url(bucket)
+    local resp = http.put(u, body, { headers = hdrs })
     if resp.status ~= 200 and resp.status ~= 204 then
       error("s3: PUT /" .. bucket .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return true
   end
 
-  function c:delete_bucket(bucket)
-    local hdrs = build_headers(self, "DELETE", bucket, nil, nil, EMPTY_SHA256)
-    local url = make_url(self, bucket)
-    local resp = http.delete(url, { headers = hdrs })
+  function c.buckets:delete(bucket)
+    local hdrs = build_headers("DELETE", bucket, nil, nil, EMPTY_SHA256)
+    local u = make_url(bucket)
+    local resp = http.delete(u, { headers = hdrs })
     if resp.status ~= 200 and resp.status ~= 204 then
       error("s3: DELETE /" .. bucket .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return true
   end
 
-  function c:list_buckets()
-    local hdrs = build_headers(self, "GET", nil, nil, nil, EMPTY_SHA256)
-    local url = make_url(self)
-    local resp = http.get(url, { headers = hdrs })
+  function c.buckets:list()
+    local hdrs = build_headers("GET", nil, nil, nil, EMPTY_SHA256)
+    local u = make_url()
+    local resp = http.get(u, { headers = hdrs })
     if resp.status ~= 200 then
       error("s3: GET / HTTP " .. resp.status .. ": " .. resp.body)
     end
-    local buckets = {}
+    local result = {}
     for block in resp.body:gmatch("<Bucket>(.-)</Bucket>") do
       local name = xml_extract(block, "Name")
       local creation_date = xml_extract(block, "CreationDate")
       if name then
-        buckets[#buckets + 1] = { name = name, creation_date = creation_date }
+        result[#result + 1] = { name = name, creation_date = creation_date }
       end
     end
-    return buckets
+    return result
   end
 
-  function c:put_object(bucket, key, body, put_opts)
+  function c.buckets:exists(bucket)
+    local query = "list-type=2&max-keys=0"
+    local hdrs = build_headers("GET", bucket, nil, query, EMPTY_SHA256)
+    local u = make_url(bucket) .. "?" .. query
+    local resp = http.get(u, { headers = hdrs })
+    return resp.status == 200
+  end
+
+  -- ===== Objects =====
+
+  c.objects = {}
+
+  function c.objects:put(bucket, key, body, put_opts)
     put_opts = put_opts or {}
     body = body or ""
     local payload_hash = crypto.hash(body, "sha256")
@@ -311,19 +325,19 @@ function M.client(opts)
     if put_opts.content_type then
       extra["content-type"] = put_opts.content_type
     end
-    local hdrs = build_headers(self, "PUT", bucket, key, nil, payload_hash, extra)
-    local url = make_url(self, bucket, key)
-    local resp = http.put(url, body, { headers = hdrs })
+    local hdrs = build_headers("PUT", bucket, key, nil, payload_hash, extra)
+    local u = make_url(bucket, key)
+    local resp = http.put(u, body, { headers = hdrs })
     if resp.status ~= 200 and resp.status ~= 204 then
       error("s3: PUT /" .. bucket .. "/" .. key .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return true
   end
 
-  function c:get_object(bucket, key)
-    local hdrs = build_headers(self, "GET", bucket, key, nil, EMPTY_SHA256)
-    local url = make_url(self, bucket, key)
-    local resp = http.get(url, { headers = hdrs })
+  function c.objects:get(bucket, key)
+    local hdrs = build_headers("GET", bucket, key, nil, EMPTY_SHA256)
+    local u = make_url(bucket, key)
+    local resp = http.get(u, { headers = hdrs })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
       error("s3: GET /" .. bucket .. "/" .. key .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -331,17 +345,17 @@ function M.client(opts)
     return resp.body
   end
 
-  function c:delete_object(bucket, key)
-    local hdrs = build_headers(self, "DELETE", bucket, key, nil, EMPTY_SHA256)
-    local url = make_url(self, bucket, key)
-    local resp = http.delete(url, { headers = hdrs })
+  function c.objects:delete(bucket, key)
+    local hdrs = build_headers("DELETE", bucket, key, nil, EMPTY_SHA256)
+    local u = make_url(bucket, key)
+    local resp = http.delete(u, { headers = hdrs })
     if resp.status ~= 200 and resp.status ~= 204 then
       error("s3: DELETE /" .. bucket .. "/" .. key .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return true
   end
 
-  function c:list_objects(bucket, list_opts)
+  function c.objects:list(bucket, list_opts)
     list_opts = list_opts or {}
     local query_parts = { "list-type=2" }
     if list_opts.prefix then
@@ -354,9 +368,9 @@ function M.client(opts)
       query_parts[#query_parts + 1] = "continuation-token=" .. url_encode(list_opts.continuation_token)
     end
     local query = table.concat(query_parts, "&")
-    local hdrs = build_headers(self, "GET", bucket, nil, query, EMPTY_SHA256)
-    local url = make_url(self, bucket) .. "?" .. query
-    local resp = http.get(url, { headers = hdrs })
+    local hdrs = build_headers("GET", bucket, nil, query, EMPTY_SHA256)
+    local u = make_url(bucket) .. "?" .. query
+    local resp = http.get(u, { headers = hdrs })
     if resp.status ~= 200 then
       error("s3: GET /" .. bucket .. "?list-type=2 HTTP " .. resp.status .. ": " .. resp.body)
     end
@@ -380,10 +394,10 @@ function M.client(opts)
     return result
   end
 
-  function c:head_object(bucket, key)
-    local hdrs = build_headers(self, "GET", bucket, key, nil, EMPTY_SHA256)
-    local url = make_url(self, bucket, key)
-    local resp = http.get(url, { headers = hdrs })
+  function c.objects:head(bucket, key)
+    local hdrs = build_headers("GET", bucket, key, nil, EMPTY_SHA256)
+    local u = make_url(bucket, key)
+    local resp = http.get(u, { headers = hdrs })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
       error("s3: HEAD /" .. bucket .. "/" .. key .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -391,26 +405,18 @@ function M.client(opts)
     return { status = resp.status, headers = resp.headers }
   end
 
-  function c:copy_object(src_bucket, src_key, dst_bucket, dst_key)
+  function c.objects:copy(src_bucket, src_key, dst_bucket, dst_key)
     local copy_source = "/" .. src_bucket .. "/" .. src_key
-    local hdrs = build_headers(self, "PUT", dst_bucket, dst_key, nil, EMPTY_SHA256, {
+    local hdrs = build_headers("PUT", dst_bucket, dst_key, nil, EMPTY_SHA256, {
       ["x-amz-copy-source"] = copy_source,
     })
-    local url = make_url(self, dst_bucket, dst_key)
-    local resp = http.put(url, "", { headers = hdrs })
+    local u = make_url(dst_bucket, dst_key)
+    local resp = http.put(u, "", { headers = hdrs })
     if resp.status ~= 200 then
       error("s3: COPY " .. copy_source .. " -> /" .. dst_bucket .. "/" .. dst_key
         .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return true
-  end
-
-  function c:bucket_exists(bucket)
-    local query = "list-type=2&max-keys=0"
-    local hdrs = build_headers(self, "GET", bucket, nil, query, EMPTY_SHA256)
-    local url = make_url(self, bucket) .. "?" .. query
-    local resp = http.get(url, { headers = hdrs })
-    return resp.status == 200
   end
 
   return c

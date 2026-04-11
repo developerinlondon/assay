@@ -5,40 +5,37 @@ Client: `eso.client(url, token)`.
 
 ### ExternalSecrets
 
-- `c:external_secrets(namespace)` → `{items}` — List ExternalSecrets
-- `c:external_secret(namespace, name)` → es|nil — Get ExternalSecret by name
-- `c:external_secret_status(namespace, name)` → `{ready, status, sync_hash, conditions}` — Get sync status
-- `c:is_secret_synced(namespace, name)` → bool — Check if ExternalSecret is synced (Ready=True)
-- `c:wait_secret_synced(namespace, name, timeout_secs?)` → true — Wait for sync. Default 60s.
+- `c.external_secrets:list(namespace)` -> `{items}` -- List ExternalSecrets
+- `c.external_secrets:get(namespace, name)` -> es|nil -- Get ExternalSecret by name
+- `c.external_secrets:status(namespace, name)` -> `{ready, status, sync_hash, conditions}` -- Get sync status
+- `c.external_secrets:is_synced(namespace, name)` -> bool -- Check if ExternalSecret is synced (Ready=True)
+- `c.external_secrets:wait_synced(namespace, name, timeout_secs?)` -> true -- Wait for sync. Default 60s.
+- `c.external_secrets:all_synced(namespace)` -> `{synced, failed, total, failed_names}` -- Check all ExternalSecrets
 
 ### SecretStores
 
-- `c:secret_stores(namespace)` → `{items}` — List SecretStores in namespace
-- `c:secret_store(namespace, name)` → store|nil — Get SecretStore by name
-- `c:secret_store_status(namespace, name)` → `{ready, conditions}` — Get store status
-- `c:is_store_ready(namespace, name)` → bool — Check if SecretStore is ready
+- `c.secret_stores:list(namespace)` -> `{items}` -- List SecretStores in namespace
+- `c.secret_stores:get(namespace, name)` -> store|nil -- Get SecretStore by name
+- `c.secret_stores:status(namespace, name)` -> `{ready, conditions}` -- Get store status
+- `c.secret_stores:is_ready(namespace, name)` -> bool -- Check if SecretStore is ready
+- `c.secret_stores:all_ready(namespace)` -> `{ready, not_ready, total, not_ready_names}` -- Check all SecretStores
 
 ### ClusterSecretStores
 
-- `c:cluster_secret_stores()` → `{items}` — List cluster-scoped SecretStores
-- `c:cluster_secret_store(name)` → store|nil — Get ClusterSecretStore by name
-- `c:is_cluster_store_ready(name)` → bool — Check if ClusterSecretStore is ready
+- `c.cluster_secret_stores:list()` -> `{items}` -- List cluster-scoped SecretStores
+- `c.cluster_secret_stores:get(name)` -> store|nil -- Get ClusterSecretStore by name
+- `c.cluster_secret_stores:is_ready(name)` -> bool -- Check if ClusterSecretStore is ready
 
 ### ClusterExternalSecrets
 
-- `c:cluster_external_secrets()` → `{items}` — List ClusterExternalSecrets
-- `c:cluster_external_secret(name)` → es|nil — Get ClusterExternalSecret by name
-
-### Utilities
-
-- `c:all_secrets_synced(namespace)` → `{synced, failed, total, failed_names}` — Check all ExternalSecrets
-- `c:all_stores_ready(namespace)` → `{ready, not_ready, total, not_ready_names}` — Check all SecretStores
+- `c.cluster_external_secrets:list()` -> `{items}` -- List ClusterExternalSecrets
+- `c.cluster_external_secrets:get(name)` -> es|nil -- Get ClusterExternalSecret by name
 
 Example:
 ```lua
 local eso = require("assay.eso")
 local c = eso.client("https://k8s-api:6443", env.get("K8S_TOKEN"))
-c:wait_secret_synced("default", "my-external-secret", 120)
-local status = c:all_secrets_synced("default")
+c.external_secrets:wait_synced("default", "my-external-secret", 120)
+local status = c.external_secrets:all_synced("default")
 assert.eq(status.failed, 0)
 ```

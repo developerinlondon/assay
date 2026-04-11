@@ -21,7 +21,7 @@ async fn test_grafana_health() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local h = c:health()
+        local h = c.health:check()
         assert.eq(h.commit, "abc123")
         assert.eq(h.database, "ok")
         assert.eq(h.version, "10.4.1")
@@ -59,7 +59,7 @@ async fn test_grafana_datasources() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local ds = c:datasources()
+        local ds = c.datasources:list()
         assert.eq(#ds, 2)
         assert.eq(ds[1].name, "Prometheus")
         assert.eq(ds[1].uid, "prometheus-uid")
@@ -92,7 +92,7 @@ async fn test_grafana_datasource_by_uid() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local ds = c:datasource("prometheus-uid")
+        local ds = c.datasources:get("prometheus-uid")
         assert.eq(ds.id, 1)
         assert.eq(ds.uid, "prometheus-uid")
         assert.eq(ds.name, "Prometheus")
@@ -135,7 +135,7 @@ async fn test_grafana_search() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local results = c:search({{ query = "node" }})
+        local results = c.dashboards:search({{ query = "node" }})
         assert.eq(#results, 2)
         assert.eq(results[1].title, "Node Exporter")
         assert.eq(results[1].uid, "dash-abc")
@@ -177,7 +177,7 @@ async fn test_grafana_dashboard() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local result = c:dashboard("dash-abc")
+        local result = c.dashboards:get("dash-abc")
         assert.eq(result.dashboard.title, "Node Exporter")
         assert.eq(result.dashboard.uid, "dash-abc")
         assert.eq(#result.dashboard.panels, 2)
@@ -221,7 +221,7 @@ async fn test_grafana_annotations() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local anns = c:annotations({{ from = 1700000000000, to = 1700002000000, limit = 10 }})
+        local anns = c.annotations:list({{ from = 1700000000000, to = 1700002000000, limit = 10 }})
         assert.eq(#anns, 2)
         assert.eq(anns[1].text, "Deployment v1.2.3")
         assert.eq(anns[1].tags[1], "deploy")
@@ -248,7 +248,7 @@ async fn test_grafana_create_annotation() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local result = c:create_annotation({{
+        local result = c.annotations:create({{
             dashboardId = 100,
             panelId = 5,
             text = "Deployment started",
@@ -288,7 +288,7 @@ async fn test_grafana_org() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local org = c:org()
+        local org = c.org:get()
         assert.eq(org.id, 1)
         assert.eq(org.name, "Main Org.")
         "#,
@@ -333,7 +333,7 @@ async fn test_grafana_alert_rules() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local rules = c:alert_rules()
+        local rules = c.alerts:rules()
         assert.eq(#rules, 2)
         assert.eq(rules[1].title, "High CPU Usage")
         assert.eq(rules[1].uid, "rule-abc")
@@ -371,7 +371,7 @@ async fn test_grafana_folders() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}")
-        local folders = c:folders()
+        local folders = c.folders:list()
         assert.eq(#folders, 2)
         assert.eq(folders[1].title, "Infrastructure")
         assert.eq(folders[1].uid, "infra")
@@ -399,7 +399,7 @@ async fn test_grafana_api_key_auth() {
         r#"
         local grafana = require("assay.grafana")
         local c = grafana.client("{}", {{ api_key = "glsa_test_key_12345" }})
-        local org = c:org()
+        local org = c.org:get()
         assert.eq(org.id, 1)
         assert.eq(org.name, "Main Org.")
         "#,

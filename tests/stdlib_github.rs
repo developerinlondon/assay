@@ -34,7 +34,7 @@ async fn test_github_pr_view() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ token = "ghp_test123", base_url = "{}" }})
-        local pr = c:pr_view("octocat/hello-world", 42)
+        local pr = c.pulls:get("octocat/hello-world", 42)
         assert.eq(pr.number, 42)
         assert.eq(pr.title, "Fix bug")
         assert.eq(pr.state, "open")
@@ -62,7 +62,7 @@ async fn test_github_pr_list() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ base_url = "{}" }})
-        local prs = c:pr_list("octocat/hello-world")
+        local prs = c.pulls:list("octocat/hello-world")
         assert.eq(#prs, 2)
         assert.eq(prs[1].number, 1)
         assert.eq(prs[1].title, "First PR")
@@ -89,7 +89,7 @@ async fn test_github_pr_reviews() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ base_url = "{}" }})
-        local reviews = c:pr_reviews("octocat/hello-world", 42)
+        local reviews = c.pulls:reviews("octocat/hello-world", 42)
         assert.eq(#reviews, 2)
         assert.eq(reviews[1].state, "APPROVED")
         assert.eq(reviews[2].user.login, "bob")
@@ -115,7 +115,7 @@ async fn test_github_pr_merge() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ token = "ghp_test", base_url = "{}" }})
-        local result = c:pr_merge("octocat/hello-world", 42, {{ merge_method = "squash" }})
+        local result = c.pulls:merge("octocat/hello-world", 42, {{ merge_method = "squash" }})
         assert.eq(result.merged, true)
         assert.eq(result.sha, "abc123")
         "#,
@@ -140,7 +140,7 @@ async fn test_github_issue_list() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ base_url = "{}" }})
-        local issues = c:issue_list("octocat/hello-world")
+        local issues = c.issues:list("octocat/hello-world")
         assert.eq(#issues, 2)
         assert.eq(issues[1].number, 10)
         assert.eq(issues[1].title, "Bug report")
@@ -170,7 +170,7 @@ async fn test_github_issue_get() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ base_url = "{}" }})
-        local issue = c:issue_get("octocat/hello-world", 10)
+        local issue = c.issues:get("octocat/hello-world", 10)
         assert.eq(issue.number, 10)
         assert.eq(issue.title, "Bug report")
         assert.eq(issue.user.login, "reporter")
@@ -199,7 +199,7 @@ async fn test_github_issue_create() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ token = "ghp_test", base_url = "{}" }})
-        local issue = c:issue_create("octocat/hello-world", "New issue", "Description here", {{
+        local issue = c.issues:create("octocat/hello-world", "New issue", "Description here", {{
             labels = {{"bug", "urgent"}},
         }})
         assert.eq(issue.number, 42)
@@ -227,7 +227,7 @@ async fn test_github_issue_comment() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ token = "ghp_test", base_url = "{}" }})
-        local comment = c:issue_comment("octocat/hello-world", 10, "Looking into this now")
+        local comment = c.issues:create_note("octocat/hello-world", 10, "Looking into this now")
         assert.eq(comment.id, 500)
         assert.eq(comment.body, "Looking into this now")
         "#,
@@ -284,7 +284,7 @@ async fn test_github_repo_get() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ base_url = "{}" }})
-        local repo = c:repo_get("octocat/hello-world")
+        local repo = c.repos:get("octocat/hello-world")
         assert.eq(repo.full_name, "octocat/hello-world")
         assert.eq(repo.stargazers_count, 80)
         assert.eq(repo.language, "Lua")
@@ -314,7 +314,7 @@ async fn test_github_runs_list() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ base_url = "{}" }})
-        local result = c:runs_list("octocat/hello-world")
+        local result = c.runs:list("octocat/hello-world")
         assert.eq(result.total_count, 2)
         assert.eq(#result.workflow_runs, 2)
         assert.eq(result.workflow_runs[1].id, 100)
@@ -344,7 +344,7 @@ async fn test_github_run_get() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ base_url = "{}" }})
-        local run = c:run_get("octocat/hello-world", 100)
+        local run = c.runs:get("octocat/hello-world", 100)
         assert.eq(run.id, 100)
         assert.eq(run.status, "completed")
         assert.eq(run.conclusion, "success")
@@ -369,7 +369,7 @@ async fn test_github_pr_404_returns_nil() {
         r#"
         local github = require("assay.github")
         local c = github.client({{ base_url = "{}" }})
-        local pr = c:pr_view("octocat/hello-world", 999)
+        local pr = c.pulls:get("octocat/hello-world", 999)
         assert.eq(pr, nil)
         "#,
         server.uri()

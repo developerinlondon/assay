@@ -15,7 +15,7 @@ async fn test_keto_require() {
 }
 
 #[tokio::test]
-async fn test_keto_list() {
+async fn test_keto_tuples_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/relation-tuples"))
@@ -38,7 +38,7 @@ async fn test_keto_list() {
         r#"
         local keto = require("assay.ory.keto")
         local k = keto.client("{}")
-        local result = k:list({{ namespace = "Role" }})
+        local result = k.tuples:list({{ namespace = "Role" }})
         assert.eq(#result.relation_tuples, 1)
         assert.eq(result.relation_tuples[1].object, "namespace1:role-a")
         "#,
@@ -48,7 +48,7 @@ async fn test_keto_list() {
 }
 
 #[tokio::test]
-async fn test_keto_check_allowed() {
+async fn test_keto_permissions_check_allowed() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/relation-tuples/check"))
@@ -62,7 +62,7 @@ async fn test_keto_check_allowed() {
         r#"
         local keto = require("assay.ory.keto")
         local k = keto.client("{}")
-        local ok = k:check("apps", "cc", "admin", "user:alice")
+        local ok = k.permissions:check("apps", "cc", "admin", "user:alice")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -71,7 +71,7 @@ async fn test_keto_check_allowed() {
 }
 
 #[tokio::test]
-async fn test_keto_check_denied() {
+async fn test_keto_permissions_check_denied() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/relation-tuples/check"))
@@ -85,7 +85,7 @@ async fn test_keto_check_denied() {
         r#"
         local keto = require("assay.ory.keto")
         local k = keto.client("{}")
-        local ok = k:check("apps", "cc", "admin", "user:bob")
+        local ok = k.permissions:check("apps", "cc", "admin", "user:bob")
         assert.eq(ok, false)
         "#,
         server.uri()
@@ -94,7 +94,7 @@ async fn test_keto_check_denied() {
 }
 
 #[tokio::test]
-async fn test_keto_get_user_roles() {
+async fn test_keto_roles_user_roles() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/relation-tuples"))
@@ -124,7 +124,7 @@ async fn test_keto_get_user_roles() {
         r#"
         local keto = require("assay.ory.keto")
         local k = keto.client("{}")
-        local roles = k:get_user_roles("alice")
+        local roles = k.roles:user_roles("alice")
         assert.eq(#roles, 2)
         assert.eq(roles[1].object, "namespace1:role-a")
         assert.eq(roles[2].object, "namespace2:role-a")
@@ -135,7 +135,7 @@ async fn test_keto_get_user_roles() {
 }
 
 #[tokio::test]
-async fn test_keto_user_has_any_role() {
+async fn test_keto_roles_has_any() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/relation-tuples"))
@@ -156,9 +156,9 @@ async fn test_keto_user_has_any_role() {
         r#"
         local keto = require("assay.ory.keto")
         local k = keto.client("{}")
-        local has_admin = k:user_has_any_role("bob", {{"namespace1:role-a", "namespace2:role-a"}})
+        local has_admin = k.roles:has_any("bob", {{"namespace1:role-a", "namespace2:role-a"}})
         assert.eq(has_admin, false)
-        local has_op = k:user_has_any_role("bob", {{"namespace2:role-b"}})
+        local has_op = k.roles:has_any("bob", {{"namespace2:role-b"}})
         assert.eq(has_op, true)
         "#,
         server.uri()
@@ -167,7 +167,7 @@ async fn test_keto_user_has_any_role() {
 }
 
 #[tokio::test]
-async fn test_keto_expand() {
+async fn test_keto_permissions_expand() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/relation-tuples/expand"))
@@ -187,7 +187,7 @@ async fn test_keto_expand() {
         r#"
         local keto = require("assay.ory.keto")
         local k = keto.client("{}")
-        local tree = k:expand("Role", "namespace1:role-a", "members")
+        local tree = k.permissions:expand("Role", "namespace1:role-a", "members")
         assert.eq(tree.type, "union")
         "#,
         server.uri()
@@ -196,7 +196,7 @@ async fn test_keto_expand() {
 }
 
 #[tokio::test]
-async fn test_keto_create_tuple() {
+async fn test_keto_tuples_create() {
     let read_server = MockServer::start().await;
     let write_server = MockServer::start().await;
     Mock::given(method("PUT"))
@@ -209,7 +209,7 @@ async fn test_keto_create_tuple() {
         r#"
         local keto = require("assay.ory.keto")
         local k = keto.client("{}", {{ write_url = "{}" }})
-        k:create({{
+        k.tuples:create({{
           namespace = "Role",
           object = "namespace2:role-c",
           relation = "members",
@@ -231,7 +231,7 @@ async fn test_keto_write_requires_write_url() {
         local keto = require("assay.ory.keto")
         local k = keto.client("{}")
         local ok, err = pcall(function()
-          k:create({{ namespace = "Role", object = "x", relation = "members", subject_id = "user:y" }})
+          k.tuples:create({{ namespace = "Role", object = "x", relation = "members", subject_id = "user:y" }})
         end)
         assert.eq(ok, false)
         assert.contains(tostring(err), "write_url not configured")

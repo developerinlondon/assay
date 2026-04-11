@@ -2,28 +2,28 @@
 --- @description Ory Kratos identity management — login/registration/recovery/settings flows, identity CRUD via admin API, session introspection, schemas.
 --- @keywords kratos, ory, identity, authentication, login, registration, recovery, settings, sessions, identities, schemas, whoami
 --- @quickref kratos.client(opts) -> client | Create a Kratos client. opts: {public_url, admin_url}
---- @quickref c:whoami(cookie) -> {identity, expires_at, ...} | Check if the current session is valid
---- @quickref c:create_login_flow(opts?) -> flow | Create a browser login flow
---- @quickref c:get_login_flow(id, cookie?) -> flow | Fetch an existing login flow
---- @quickref c:submit_login_flow(flow_id, payload, cookie?) -> {session, ...} | Submit a login flow
---- @quickref c:create_registration_flow(opts?) -> flow | Create a registration flow
---- @quickref c:get_registration_flow(id, cookie?) -> flow | Fetch a registration flow
---- @quickref c:submit_registration_flow(flow_id, payload, cookie?) -> {identity, session, ...} | Submit a registration flow
---- @quickref c:create_recovery_flow(opts?) -> flow | Create a recovery flow (password reset)
---- @quickref c:get_recovery_flow(id, cookie?) -> flow | Fetch a recovery flow
---- @quickref c:submit_recovery_flow(flow_id, payload, cookie?) -> flow | Submit a recovery flow
---- @quickref c:create_settings_flow(cookie) -> flow | Create a settings flow (profile/password change)
---- @quickref c:get_settings_flow(id, cookie?) -> flow | Fetch a settings flow
---- @quickref c:submit_settings_flow(flow_id, payload, cookie?) -> flow | Submit a settings flow
---- @quickref c:get_identity(id) -> identity | Get an identity by ID (admin API)
---- @quickref c:list_identities(opts?) -> [identity] | List all identities (admin API)
---- @quickref c:create_identity(spec) -> identity | Create an identity (admin API)
---- @quickref c:update_identity(id, spec) -> identity | Update an identity (admin API)
---- @quickref c:delete_identity(id) -> nil | Delete an identity (admin API)
---- @quickref c:list_sessions(id) -> [session] | List active sessions for an identity
---- @quickref c:delete_sessions(id) -> nil | Revoke all sessions for an identity
---- @quickref c:list_schemas() -> [schema] | List identity schemas
---- @quickref c:get_schema(id) -> schema | Get a specific identity schema
+--- @quickref c.sessions:whoami(cookie) -> {identity, expires_at, ...} | Check if the current session is valid
+--- @quickref c.sessions:list(identity_id) -> [session] | List active sessions for an identity
+--- @quickref c.sessions:revoke(identity_id) -> nil | Revoke all sessions for an identity
+--- @quickref c.flows:create_login(opts?) -> flow | Create a browser login flow
+--- @quickref c.flows:get_login(id, cookie?) -> flow | Fetch an existing login flow
+--- @quickref c.flows:submit_login(flow_id, payload, cookie?) -> {session, ...} | Submit a login flow
+--- @quickref c.flows:create_registration(opts?) -> flow | Create a registration flow
+--- @quickref c.flows:get_registration(id, cookie?) -> flow | Fetch a registration flow
+--- @quickref c.flows:submit_registration(flow_id, payload, cookie?) -> {identity, session, ...} | Submit a registration flow
+--- @quickref c.flows:create_recovery(opts?) -> flow | Create a recovery flow (password reset)
+--- @quickref c.flows:get_recovery(id, cookie?) -> flow | Fetch a recovery flow
+--- @quickref c.flows:submit_recovery(flow_id, payload, cookie?) -> flow | Submit a recovery flow
+--- @quickref c.flows:create_settings(cookie) -> flow | Create a settings flow (profile/password change)
+--- @quickref c.flows:get_settings(id, cookie?) -> flow | Fetch a settings flow
+--- @quickref c.flows:submit_settings(flow_id, payload, cookie?) -> flow | Submit a settings flow
+--- @quickref c.identities:get(id) -> identity | Get an identity by ID (admin API)
+--- @quickref c.identities:list(opts?) -> [identity] | List all identities (admin API)
+--- @quickref c.identities:create(spec) -> identity | Create an identity (admin API)
+--- @quickref c.identities:update(id, spec) -> identity | Update an identity (admin API)
+--- @quickref c.identities:delete(id) -> nil | Delete an identity (admin API)
+--- @quickref c.schemas:list() -> [schema] | List identity schemas
+--- @quickref c.schemas:get(id) -> schema | Get a specific identity schema
 
 local M = {}
 
@@ -37,39 +37,37 @@ end
 -- and opts.admin_url for admin API (identity CRUD, session management).
 function M.client(opts)
   opts = opts or {}
-  local c = {
-    public_url = opts.public_url and opts.public_url:gsub("/+$", "") or nil,
-    admin_url = opts.admin_url and opts.admin_url:gsub("/+$", "") or nil,
-  }
+  local public_url = opts.public_url and opts.public_url:gsub("/+$", "") or nil
+  local admin_url = opts.admin_url and opts.admin_url:gsub("/+$", "") or nil
 
-  local function require_public(self)
-    if not self.public_url then
+  local function require_public()
+    if not public_url then
       error("kratos: public_url not configured")
     end
   end
 
-  local function require_admin(self)
-    if not self.admin_url then
+  local function require_admin()
+    if not admin_url then
       error("kratos: admin_url not configured")
     end
   end
 
-  local function public_get(self, path_str, cookie)
-    require_public(self)
+  local function public_get(path_str, cookie)
+    require_public()
     local headers = {}
     if cookie then headers["Cookie"] = cookie end
-    local resp = http.get(self.public_url .. path_str, { headers = headers })
+    local resp = http.get(public_url .. path_str, { headers = headers })
     if resp.status ~= 200 then
       error("kratos: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
 
-  local function public_post(self, path_str, payload, cookie)
-    require_public(self)
+  local function public_post(path_str, payload, cookie)
+    require_public()
     local headers = { ["Content-Type"] = "application/json" }
     if cookie then headers["Cookie"] = cookie end
-    local resp = http.post(self.public_url .. path_str, payload, { headers = headers })
+    local resp = http.post(public_url .. path_str, payload, { headers = headers })
     if resp.status ~= 200 and resp.status ~= 201 then
       -- Kratos returns 422 for browser flows that need a redirect (e.g. after registration)
       if resp.status == 422 then
@@ -80,9 +78,9 @@ function M.client(opts)
     return json.parse(resp.body)
   end
 
-  local function admin_get(self, path_str)
-    require_admin(self)
-    local resp = http.get(self.admin_url .. path_str)
+  local function admin_get(path_str)
+    require_admin()
+    local resp = http.get(admin_url .. path_str)
     if resp.status ~= 200 and resp.status ~= 404 then
       error("kratos: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
@@ -90,33 +88,39 @@ function M.client(opts)
     return json.parse(resp.body)
   end
 
-  local function admin_post(self, path_str, payload)
-    require_admin(self)
-    local resp = http.post(self.admin_url .. path_str, payload)
+  local function admin_post(path_str, payload)
+    require_admin()
+    local resp = http.post(admin_url .. path_str, payload)
     if resp.status ~= 200 and resp.status ~= 201 then
       error("kratos: POST " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
 
-  local function admin_put(self, path_str, payload)
-    require_admin(self)
-    local resp = http.put(self.admin_url .. path_str, payload)
+  local function admin_put(path_str, payload)
+    require_admin()
+    local resp = http.put(admin_url .. path_str, payload)
     if resp.status ~= 200 then
       error("kratos: PUT " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
 
-  -- ========== Session ==========
+  -- ========== Sub-objects ==========
+
+  local c = {}
+
+  -- ========== c.sessions ==========
+
+  c.sessions = {}
 
   -- Check if the current session is valid. Pass the user's cookie header.
   -- Returns the session object or nil if not authenticated.
-  function c:whoami(cookie)
-    require_public(self)
+  function c.sessions:whoami(cookie)
+    require_public()
     local headers = {}
     if cookie then headers["Cookie"] = cookie end
-    local resp = http.get(self.public_url .. "/sessions/whoami", { headers = headers })
+    local resp = http.get(public_url .. "/sessions/whoami", { headers = headers })
     if resp.status == 200 then
       return json.parse(resp.body)
     elseif resp.status == 401 then
@@ -125,10 +129,26 @@ function M.client(opts)
     error("kratos: whoami HTTP " .. resp.status .. ": " .. resp.body)
   end
 
-  -- ========== Login Flows ==========
+  -- List active sessions for an identity (admin API).
+  function c.sessions:list(identity_id)
+    return admin_get("/admin/identities/" .. urlencode(identity_id) .. "/sessions")
+  end
+
+  -- Revoke all sessions for an identity (admin API).
+  function c.sessions:revoke(identity_id)
+    require_admin()
+    local resp = http.delete(admin_url .. "/admin/identities/" .. urlencode(identity_id) .. "/sessions")
+    if resp.status ~= 204 and resp.status ~= 200 then
+      error("kratos: delete sessions HTTP " .. resp.status .. ": " .. resp.body)
+    end
+  end
+
+  -- ========== c.flows ==========
+
+  c.flows = {}
 
   -- Create a login flow. opts: { return_to, refresh, login_challenge, aal }
-  function c:create_login_flow(opts)
+  function c.flows:create_login(opts)
     opts = opts or {}
     local params = {}
     if opts.return_to then params[#params + 1] = "return_to=" .. urlencode(opts.return_to) end
@@ -137,82 +157,78 @@ function M.client(opts)
     if opts.aal then params[#params + 1] = "aal=" .. urlencode(opts.aal) end
     local qs = ""
     if #params > 0 then qs = "?" .. table.concat(params, "&") end
-    return public_get(self, "/self-service/login/browser" .. qs)
+    return public_get("/self-service/login/browser" .. qs)
   end
 
-  function c:get_login_flow(flow_id, cookie)
-    return public_get(self, "/self-service/login/flows?id=" .. urlencode(flow_id), cookie)
+  function c.flows:get_login(flow_id, cookie)
+    return public_get("/self-service/login/flows?id=" .. urlencode(flow_id), cookie)
   end
 
-  function c:submit_login_flow(flow_id, payload, cookie)
-    return public_post(self, "/self-service/login?flow=" .. urlencode(flow_id), payload, cookie)
+  function c.flows:submit_login(flow_id, payload, cookie)
+    return public_post("/self-service/login?flow=" .. urlencode(flow_id), payload, cookie)
   end
-
-  -- ========== Registration Flows ==========
 
   -- Create a registration flow. opts: { return_to }
-  function c:create_registration_flow(opts)
+  function c.flows:create_registration(opts)
     opts = opts or {}
     local qs = ""
     if opts.return_to then qs = "?return_to=" .. urlencode(opts.return_to) end
-    return public_get(self, "/self-service/registration/browser" .. qs)
+    return public_get("/self-service/registration/browser" .. qs)
   end
 
-  function c:get_registration_flow(flow_id, cookie)
-    return public_get(self, "/self-service/registration/flows?id=" .. urlencode(flow_id), cookie)
+  function c.flows:get_registration(flow_id, cookie)
+    return public_get("/self-service/registration/flows?id=" .. urlencode(flow_id), cookie)
   end
 
   -- Submit a registration flow. payload should include method and traits, e.g.:
   --   { method = "password", password = "...", traits = { email = "..." } }
-  function c:submit_registration_flow(flow_id, payload, cookie)
-    return public_post(self, "/self-service/registration?flow=" .. urlencode(flow_id), payload, cookie)
+  function c.flows:submit_registration(flow_id, payload, cookie)
+    return public_post("/self-service/registration?flow=" .. urlencode(flow_id), payload, cookie)
   end
 
-  -- ========== Recovery Flows (password reset) ==========
-
   -- Create a recovery flow. opts: { return_to }
-  function c:create_recovery_flow(opts)
+  function c.flows:create_recovery(opts)
     opts = opts or {}
     local qs = ""
     if opts.return_to then qs = "?return_to=" .. urlencode(opts.return_to) end
-    return public_get(self, "/self-service/recovery/browser" .. qs)
+    return public_get("/self-service/recovery/browser" .. qs)
   end
 
-  function c:get_recovery_flow(flow_id, cookie)
-    return public_get(self, "/self-service/recovery/flows?id=" .. urlencode(flow_id), cookie)
+  function c.flows:get_recovery(flow_id, cookie)
+    return public_get("/self-service/recovery/flows?id=" .. urlencode(flow_id), cookie)
   end
 
   -- Submit a recovery flow. payload should include method, e.g.:
   --   { method = "code", email = "user@example.com" }
-  function c:submit_recovery_flow(flow_id, payload, cookie)
-    return public_post(self, "/self-service/recovery?flow=" .. urlencode(flow_id), payload, cookie)
+  function c.flows:submit_recovery(flow_id, payload, cookie)
+    return public_post("/self-service/recovery?flow=" .. urlencode(flow_id), payload, cookie)
   end
-
-  -- ========== Settings Flows (profile/password change) ==========
 
   -- Create a settings flow. Requires an active session (pass cookie).
-  function c:create_settings_flow(cookie)
-    return public_get(self, "/self-service/settings/browser", cookie)
+  function c.flows:create_settings(cookie)
+    return public_get("/self-service/settings/browser", cookie)
   end
 
-  function c:get_settings_flow(flow_id, cookie)
-    return public_get(self, "/self-service/settings/flows?id=" .. urlencode(flow_id), cookie)
+  function c.flows:get_settings(flow_id, cookie)
+    return public_get("/self-service/settings/flows?id=" .. urlencode(flow_id), cookie)
   end
 
   -- Submit a settings flow. payload depends on method, e.g.:
   --   { method = "password", password = "new-password" }
   --   { method = "profile", traits = { email = "new@example.com" } }
-  function c:submit_settings_flow(flow_id, payload, cookie)
-    return public_post(self, "/self-service/settings?flow=" .. urlencode(flow_id), payload, cookie)
+  function c.flows:submit_settings(flow_id, payload, cookie)
+    return public_post("/self-service/settings?flow=" .. urlencode(flow_id), payload, cookie)
   end
 
-  -- ========== Identity CRUD (Admin API) ==========
+  -- ========== c.identities ==========
 
-  function c:get_identity(id)
-    return admin_get(self, "/admin/identities/" .. urlencode(id))
+  c.identities = {}
+
+  function c.identities:get(id)
+    return admin_get("/admin/identities/" .. urlencode(id))
   end
 
-  function c:list_identities(opts)
+  function c.identities:list(opts)
     opts = opts or {}
     local params = {}
     if opts.per_page then params[#params + 1] = "per_page=" .. opts.per_page end
@@ -222,52 +238,40 @@ function M.client(opts)
     end
     local qs = ""
     if #params > 0 then qs = "?" .. table.concat(params, "&") end
-    return admin_get(self, "/admin/identities" .. qs)
+    return admin_get("/admin/identities" .. qs)
   end
 
-  function c:create_identity(spec)
-    return admin_post(self, "/admin/identities", spec)
+  function c.identities:create(spec)
+    return admin_post("/admin/identities", spec)
   end
 
-  function c:update_identity(id, spec)
-    return admin_put(self, "/admin/identities/" .. urlencode(id), spec)
+  function c.identities:update(id, spec)
+    return admin_put("/admin/identities/" .. urlencode(id), spec)
   end
 
-  function c:delete_identity(id)
-    require_admin(self)
-    local resp = http.delete(self.admin_url .. "/admin/identities/" .. urlencode(id))
+  function c.identities:delete(id)
+    require_admin()
+    local resp = http.delete(admin_url .. "/admin/identities/" .. urlencode(id))
     if resp.status ~= 204 and resp.status ~= 200 then
       error("kratos: delete identity HTTP " .. resp.status .. ": " .. resp.body)
     end
   end
 
-  -- ========== Session Management (Admin API) ==========
+  -- ========== c.schemas ==========
 
-  function c:list_sessions(identity_id)
-    return admin_get(self, "/admin/identities/" .. urlencode(identity_id) .. "/sessions")
-  end
+  c.schemas = {}
 
-  function c:delete_sessions(identity_id)
-    require_admin(self)
-    local resp = http.delete(self.admin_url .. "/admin/identities/" .. urlencode(identity_id) .. "/sessions")
-    if resp.status ~= 204 and resp.status ~= 200 then
-      error("kratos: delete sessions HTTP " .. resp.status .. ": " .. resp.body)
-    end
-  end
-
-  -- ========== Schemas ==========
-
-  function c:list_schemas()
-    require_public(self)
-    local resp = http.get(self.public_url .. "/schemas")
+  function c.schemas:list()
+    require_public()
+    local resp = http.get(public_url .. "/schemas")
     if resp.status ~= 200 then
       error("kratos: list schemas HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
 
-  function c:get_schema(schema_id)
-    return public_get(self, "/schemas/" .. urlencode(schema_id))
+  function c.schemas:get(schema_id)
+    return public_get("/schemas/" .. urlencode(schema_id))
   end
 
   return c

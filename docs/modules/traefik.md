@@ -1,29 +1,30 @@
 ## assay.traefik
 
 Traefik reverse proxy API. Routers, services, middlewares, entrypoints, TLS status.
-Module-level functions (no client needed): `M.function(url, ...)`.
+Client: `traefik.client(url)`.
 
-- `M.overview(url)` → overview — Get Traefik dashboard overview
-- `M.version(url)` → version — Get Traefik version
-- `M.entrypoints(url)` → [entrypoint] — List all entrypoints
-- `M.entrypoint(url, name)` → entrypoint — Get entrypoint by name
-- `M.http_routers(url)` → [router] — List HTTP routers
-- `M.http_router(url, name)` → router — Get HTTP router by name
-- `M.http_services(url)` → [service] — List HTTP services
-- `M.http_service(url, name)` → service — Get HTTP service by name
-- `M.http_middlewares(url)` → [middleware] — List HTTP middlewares
-- `M.http_middleware(url, name)` → middleware — Get HTTP middleware by name
-- `M.tcp_routers(url)` → [router] — List TCP routers
-- `M.tcp_services(url)` → [service] — List TCP services
-- `M.rawdata(url)` → data — Get raw Traefik configuration data
-- `M.is_router_enabled(url, name)` → bool — Check if router status is "enabled"
-- `M.router_has_tls(url, name)` → bool — Check if router has TLS configured
-- `M.service_server_count(url, name)` → number — Count load balancer servers for service
-- `M.healthy_routers(url)` → enabled, errored — Count enabled vs errored HTTP routers (two return values)
+- `c.info:overview()` → overview — Get Traefik dashboard overview
+- `c.info:version()` → version — Get Traefik version
+- `c.info:rawdata()` → data — Get raw Traefik configuration data
+- `c.entrypoints:list()` → [entrypoint] — List all entrypoints
+- `c.entrypoints:get(name)` → entrypoint — Get entrypoint by name
+- `c.routers:list()` → [router] — List HTTP routers
+- `c.routers:get(name)` → router — Get HTTP router by name
+- `c.routers:is_enabled(name)` → bool — Check if router status is "enabled"
+- `c.routers:has_tls(name)` → bool — Check if router has TLS configured
+- `c.routers:healthy()` → enabled, errored — Count enabled vs errored HTTP routers (two return values)
+- `c.services:list()` → [service] — List HTTP services
+- `c.services:get(name)` → service — Get HTTP service by name
+- `c.services:server_count(name)` → number — Count load balancer servers for service
+- `c.middlewares:list()` → [middleware] — List HTTP middlewares
+- `c.middlewares:get(name)` → middleware — Get HTTP middleware by name
+- `c.tcp:routers()` → [router] — List TCP routers
+- `c.tcp:services()` → [service] — List TCP services
 
 Example:
 ```lua
 local traefik = require("assay.traefik")
-local enabled, errored = traefik.healthy_routers("http://traefik:8080")
+local c = traefik.client("http://traefik:8080")
+local enabled, errored = c.routers:healthy()
 assert.eq(errored, 0, "Some routers have errors")
 ```

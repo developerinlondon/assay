@@ -32,7 +32,7 @@ async fn test_s3_create_bucket() {
             access_key = "AKIAIOSFODNN7EXAMPLE",
             secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         }})
-        local ok = c:create_bucket("test-bucket")
+        local ok = c.buckets:create("test-bucket")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -66,7 +66,7 @@ async fn test_s3_list_buckets() {
             access_key = "AKIAIOSFODNN7EXAMPLE",
             secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         }})
-        local buckets = c:list_buckets()
+        local buckets = c.buckets:list()
         assert.eq(#buckets, 2)
         assert.eq(buckets[1].name, "bucket-one")
         assert.eq(buckets[2].name, "bucket-two")
@@ -94,7 +94,7 @@ async fn test_s3_put_object() {
             access_key = "AKIAIOSFODNN7EXAMPLE",
             secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         }})
-        local ok = c:put_object("my-bucket", "hello.txt", "Hello World!", {{ content_type = "text/plain" }})
+        local ok = c.objects:put("my-bucket", "hello.txt", "Hello World!", {{ content_type = "text/plain" }})
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -120,7 +120,7 @@ async fn test_s3_get_object() {
             access_key = "AKIAIOSFODNN7EXAMPLE",
             secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         }})
-        local body = c:get_object("my-bucket", "hello.txt")
+        local body = c.objects:get("my-bucket", "hello.txt")
         assert.eq(body, "Hello World!")
         "#,
         server.uri()
@@ -146,7 +146,7 @@ async fn test_s3_delete_object() {
             access_key = "AKIAIOSFODNN7EXAMPLE",
             secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         }})
-        local ok = c:delete_object("my-bucket", "hello.txt")
+        local ok = c.objects:delete("my-bucket", "hello.txt")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -189,7 +189,7 @@ async fn test_s3_list_objects() {
             access_key = "AKIAIOSFODNN7EXAMPLE",
             secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         }})
-        local result = c:list_objects("my-bucket")
+        local result = c.objects:list("my-bucket")
         assert.eq(#result.objects, 2)
         assert.eq(result.objects[1].key, "file1.txt")
         assert.eq(result.objects[1].size, 1024)
@@ -223,7 +223,7 @@ async fn test_s3_bucket_exists() {
             access_key = "AKIAIOSFODNN7EXAMPLE",
             secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         }})
-        local exists = c:bucket_exists("existing-bucket")
+        local exists = c.buckets:exists("existing-bucket")
         assert.eq(exists, true)
         "#,
         server.uri()

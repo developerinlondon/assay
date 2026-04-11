@@ -1,17 +1,17 @@
 --- @module assay.github
 --- @description GitHub REST API client. PRs, issues, actions, repositories, GraphQL. No gh CLI dependency.
 --- @keywords github, pr, pull-request, issue, actions, runs, graphql, repository, merge, review, comment
---- @quickref c:pr_view(repo, number) -> pr | Get pull request details
---- @quickref c:pr_list(repo, opts?) -> [pr] | List pull requests
---- @quickref c:pr_reviews(repo, number) -> [review] | List PR reviews
---- @quickref c:pr_merge(repo, number, opts?) -> result | Merge a pull request
---- @quickref c:issue_list(repo, opts?) -> [issue] | List issues
---- @quickref c:issue_get(repo, number) -> issue | Get issue details
---- @quickref c:issue_create(repo, title, body, opts?) -> issue | Create an issue
---- @quickref c:issue_comment(repo, number, body) -> comment | Add issue comment
---- @quickref c:repo_get(repo) -> repository | Get repository details
---- @quickref c:runs_list(repo, opts?) -> {workflow_runs} | List workflow runs
---- @quickref c:run_get(repo, run_id) -> run | Get workflow run details
+--- @quickref c.pulls:get(repo, number) -> pr | Get pull request details
+--- @quickref c.pulls:list(repo, opts?) -> [pr] | List pull requests
+--- @quickref c.pulls:reviews(repo, number) -> [review] | List PR reviews
+--- @quickref c.pulls:merge(repo, number, opts?) -> result | Merge a pull request
+--- @quickref c.issues:list(repo, opts?) -> [issue] | List issues
+--- @quickref c.issues:get(repo, number) -> issue | Get issue details
+--- @quickref c.issues:create(repo, title, body, opts?) -> issue | Create an issue
+--- @quickref c.issues:create_note(repo, number, body) -> comment | Add issue comment
+--- @quickref c.repos:get(repo) -> repository | Get repository details
+--- @quickref c.runs:list(repo, opts?) -> {workflow_runs} | List workflow runs
+--- @quickref c.runs:get(repo, run_id) -> run | Get workflow run details
 --- @quickref c:graphql(query, variables?) -> data | Execute GraphQL query
 
 local M = {}
@@ -19,20 +19,17 @@ local M = {}
 function M.client(opts)
   opts = opts or {}
   local token = opts.token or env.get("GITHUB_TOKEN")
-  local base_url = opts.base_url or "https://api.github.com"
+  local base_url = (opts.base_url or "https://api.github.com"):gsub("/+$", "")
 
-  local c = {
-    base_url = base_url:gsub("/+$", ""),
-    token = token,
-  }
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
 
-  local function headers(self)
+  local function headers()
     local h = {
       ["Content-Type"] = "application/json",
       ["Accept"] = "application/vnd.github+json",
     }
-    if self.token then
-      h["Authorization"] = "Bearer " .. self.token
+    if token then
+      h["Authorization"] = "Bearer " .. token
     end
     return h
   end
@@ -45,8 +42,8 @@ function M.client(opts)
     return owner, name
   end
 
-  local function api_get(self, path_str)
-    local resp = http.get(self.base_url .. path_str, { headers = headers(self) })
+  local function api_get(path_str)
+    local resp = http.get(base_url .. path_str, { headers = headers() })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
       error("github: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -54,16 +51,16 @@ function M.client(opts)
     return json.parse(resp.body)
   end
 
-  local function api_post(self, path_str, payload)
-    local resp = http.post(self.base_url .. path_str, payload, { headers = headers(self) })
+  local function api_post(path_str, payload)
+    local resp = http.post(base_url .. path_str, payload, { headers = headers() })
     if resp.status ~= 200 and resp.status ~= 201 then
       error("github: POST " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
 
-  local function api_put(self, path_str, payload)
-    local resp = http.put(self.base_url .. path_str, payload or {}, { headers = headers(self) })
+  local function api_put(path_str, payload)
+    local resp = http.put(base_url .. path_str, payload or {}, { headers = headers() })
     if resp.status ~= 200 and resp.status ~= 204 then
       error("github: PUT " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
@@ -73,12 +70,20 @@ function M.client(opts)
     return true
   end
 
-  function c:pr_view(repo, number)
+  -- ===== Client =====
+
+  local c = {}
+
+  -- ===== Pull Requests =====
+
+  c.pulls = {}
+
+  function c.pulls:get(repo, number)
     local owner, name = parse_repo(repo)
-    return api_get(self, "/repos/" .. owner .. "/" .. name .. "/pulls/" .. number)
+    return api_get("/repos/" .. owner .. "/" .. name .. "/pulls/" .. number)
   end
 
-  function c:pr_list(repo, pr_opts)
+  function c.pulls:list(repo, pr_opts)
     pr_opts = pr_opts or {}
     local owner, name = parse_repo(repo)
     local params = {}
@@ -88,25 +93,29 @@ function M.client(opts)
     if pr_opts.per_page then params[#params + 1] = "per_page=" .. pr_opts.per_page end
     local qs = ""
     if #params > 0 then qs = "?" .. table.concat(params, "&") end
-    return api_get(self, "/repos/" .. owner .. "/" .. name .. "/pulls" .. qs)
+    return api_get("/repos/" .. owner .. "/" .. name .. "/pulls" .. qs)
   end
 
-  function c:pr_reviews(repo, number)
+  function c.pulls:reviews(repo, number)
     local owner, name = parse_repo(repo)
-    return api_get(self, "/repos/" .. owner .. "/" .. name .. "/pulls/" .. number .. "/reviews")
+    return api_get("/repos/" .. owner .. "/" .. name .. "/pulls/" .. number .. "/reviews")
   end
 
-  function c:pr_merge(repo, number, merge_opts)
+  function c.pulls:merge(repo, number, merge_opts)
     merge_opts = merge_opts or {}
     local owner, name = parse_repo(repo)
     local payload = {}
     if merge_opts.merge_method then payload.merge_method = merge_opts.merge_method end
     if merge_opts.commit_title then payload.commit_title = merge_opts.commit_title end
     if merge_opts.commit_message then payload.commit_message = merge_opts.commit_message end
-    return api_put(self, "/repos/" .. owner .. "/" .. name .. "/pulls/" .. number .. "/merge", payload)
+    return api_put("/repos/" .. owner .. "/" .. name .. "/pulls/" .. number .. "/merge", payload)
   end
 
-  function c:issue_list(repo, issue_opts)
+  -- ===== Issues =====
+
+  c.issues = {}
+
+  function c.issues:list(repo, issue_opts)
     issue_opts = issue_opts or {}
     local owner, name = parse_repo(repo)
     local params = {}
@@ -117,15 +126,15 @@ function M.client(opts)
     if issue_opts.per_page then params[#params + 1] = "per_page=" .. issue_opts.per_page end
     local qs = ""
     if #params > 0 then qs = "?" .. table.concat(params, "&") end
-    return api_get(self, "/repos/" .. owner .. "/" .. name .. "/issues" .. qs)
+    return api_get("/repos/" .. owner .. "/" .. name .. "/issues" .. qs)
   end
 
-  function c:issue_get(repo, number)
+  function c.issues:get(repo, number)
     local owner, name = parse_repo(repo)
-    return api_get(self, "/repos/" .. owner .. "/" .. name .. "/issues/" .. number)
+    return api_get("/repos/" .. owner .. "/" .. name .. "/issues/" .. number)
   end
 
-  function c:issue_create(repo, title, body, create_opts)
+  function c.issues:create(repo, title, body, create_opts)
     create_opts = create_opts or {}
     local owner, name = parse_repo(repo)
     local payload = {
@@ -135,22 +144,30 @@ function M.client(opts)
     if create_opts.labels then payload.labels = create_opts.labels end
     if create_opts.assignees then payload.assignees = create_opts.assignees end
     if create_opts.milestone then payload.milestone = create_opts.milestone end
-    return api_post(self, "/repos/" .. owner .. "/" .. name .. "/issues", payload)
+    return api_post("/repos/" .. owner .. "/" .. name .. "/issues", payload)
   end
 
-  function c:issue_comment(repo, number, body)
+  function c.issues:create_note(repo, number, body)
     local owner, name = parse_repo(repo)
-    return api_post(self, "/repos/" .. owner .. "/" .. name .. "/issues/" .. number .. "/comments", {
+    return api_post("/repos/" .. owner .. "/" .. name .. "/issues/" .. number .. "/comments", {
       body = body,
     })
   end
 
-  function c:repo_get(repo)
+  -- ===== Repositories =====
+
+  c.repos = {}
+
+  function c.repos:get(repo)
     local owner, name = parse_repo(repo)
-    return api_get(self, "/repos/" .. owner .. "/" .. name)
+    return api_get("/repos/" .. owner .. "/" .. name)
   end
 
-  function c:runs_list(repo, runs_opts)
+  -- ===== Workflow Runs =====
+
+  c.runs = {}
+
+  function c.runs:list(repo, runs_opts)
     runs_opts = runs_opts or {}
     local owner, name = parse_repo(repo)
     local params = {}
@@ -159,18 +176,20 @@ function M.client(opts)
     if runs_opts.per_page then params[#params + 1] = "per_page=" .. runs_opts.per_page end
     local qs = ""
     if #params > 0 then qs = "?" .. table.concat(params, "&") end
-    return api_get(self, "/repos/" .. owner .. "/" .. name .. "/actions/runs" .. qs)
+    return api_get("/repos/" .. owner .. "/" .. name .. "/actions/runs" .. qs)
   end
 
-  function c:run_get(repo, run_id)
+  function c.runs:get(repo, run_id)
     local owner, name = parse_repo(repo)
-    return api_get(self, "/repos/" .. owner .. "/" .. name .. "/actions/runs/" .. run_id)
+    return api_get("/repos/" .. owner .. "/" .. name .. "/actions/runs/" .. run_id)
   end
+
+  -- ===== GraphQL (top-level, not resource-scoped) =====
 
   function c:graphql(query, variables)
     local payload = { query = query }
     if variables then payload.variables = variables end
-    return api_post(self, "/graphql", payload)
+    return api_post("/graphql", payload)
   end
 
   return c

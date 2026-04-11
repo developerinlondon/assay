@@ -44,7 +44,7 @@ async fn test_velero_backups_list() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local backups = c:backups()
+        local backups = c.backups:list()
         assert.eq(#backups, 2)
         assert.eq(backups[1].metadata.name, "daily-20260210")
         assert.eq(backups[2].metadata.name, "daily-20260209")
@@ -88,7 +88,7 @@ async fn test_velero_backup_get() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local b = c:backup("daily-20260210")
+        local b = c.backups:get("daily-20260210")
         assert.eq(b.metadata.name, "daily-20260210")
         assert.eq(b.spec.storageLocation, "default")
         assert.eq(b.status.phase, "Completed")
@@ -127,7 +127,7 @@ async fn test_velero_backup_status() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local s = c:backup_status("daily-20260210")
+        local s = c.backups:status("daily-20260210")
         assert.eq(s.phase, "Completed")
         assert.eq(s.started, "2026-02-10T02:00:00Z")
         assert.eq(s.completed, "2026-02-10T02:05:30Z")
@@ -162,7 +162,7 @@ async fn test_velero_is_backup_completed_true() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_backup_completed("daily-20260210"), true)
+        assert.eq(c.backups:is_completed("daily-20260210"), true)
         "#,
         server.uri()
     );
@@ -189,7 +189,7 @@ async fn test_velero_is_backup_completed_false() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_backup_completed("daily-20260210"), false)
+        assert.eq(c.backups:is_completed("daily-20260210"), false)
         "#,
         server.uri()
     );
@@ -216,7 +216,7 @@ async fn test_velero_is_backup_failed() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_backup_failed("broken-backup"), true)
+        assert.eq(c.backups:is_failed("broken-backup"), true)
         "#,
         server.uri()
     );
@@ -243,7 +243,7 @@ async fn test_velero_is_backup_failed_partially() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_backup_failed("partial-backup"), true)
+        assert.eq(c.backups:is_failed("partial-backup"), true)
         "#,
         server.uri()
     );
@@ -300,7 +300,7 @@ async fn test_velero_latest_backup() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local latest = c:latest_backup("daily")
+        local latest = c.backups:latest("daily")
         assert.not_nil(latest)
         assert.eq(latest.metadata.name, "daily-20260210")
         "#,
@@ -335,7 +335,7 @@ async fn test_velero_latest_backup_no_match() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local latest = c:latest_backup("nonexistent-schedule")
+        local latest = c.backups:latest("nonexistent-schedule")
         assert.eq(latest, nil)
         "#,
         server.uri()
@@ -367,7 +367,7 @@ async fn test_velero_restores_list() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local restores = c:restores()
+        local restores = c.restores:list()
         assert.eq(#restores, 1)
         assert.eq(restores[1].metadata.name, "restore-20260210")
         "#,
@@ -402,7 +402,7 @@ async fn test_velero_restore_status() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local s = c:restore_status("restore-20260210")
+        local s = c.restores:status("restore-20260210")
         assert.eq(s.phase, "Completed")
         assert.eq(s.started, "2026-02-10T10:00:00Z")
         assert.eq(s.completed, "2026-02-10T10:12:00Z")
@@ -434,7 +434,7 @@ async fn test_velero_is_restore_completed() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_restore_completed("restore-20260210"), true)
+        assert.eq(c.restores:is_completed("restore-20260210"), true)
         "#,
         server.uri()
     );
@@ -461,7 +461,7 @@ async fn test_velero_is_restore_completed_false() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_restore_completed("restore-20260210"), false)
+        assert.eq(c.restores:is_completed("restore-20260210"), false)
         "#,
         server.uri()
     );
@@ -500,7 +500,7 @@ async fn test_velero_schedules_list() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local schedules = c:schedules()
+        local schedules = c.schedules:list()
         assert.eq(#schedules, 2)
         assert.eq(schedules[1].metadata.name, "daily")
         assert.eq(schedules[2].metadata.name, "weekly")
@@ -532,7 +532,7 @@ async fn test_velero_schedule_status() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local s = c:schedule_status("daily")
+        local s = c.schedules:status("daily")
         assert.eq(s.phase, "Enabled")
         assert.eq(s.last_backup, "2026-02-10T02:00:00Z")
         assert.eq(#s.validation_errors, 0)
@@ -560,7 +560,7 @@ async fn test_velero_is_schedule_enabled_true() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_schedule_enabled("daily"), true)
+        assert.eq(c.schedules:is_enabled("daily"), true)
         "#,
         server.uri()
     );
@@ -587,7 +587,7 @@ async fn test_velero_is_schedule_enabled_false() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_schedule_enabled("paused"), false)
+        assert.eq(c.schedules:is_enabled("paused"), false)
         "#,
         server.uri()
     );
@@ -621,7 +621,7 @@ async fn test_velero_backup_storage_locations() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local bsls = c:backup_storage_locations()
+        local bsls = c.storage_locations:list()
         assert.eq(#bsls, 1)
         assert.eq(bsls[1].metadata.name, "default")
         assert.eq(bsls[1].spec.provider, "aws")
@@ -651,7 +651,7 @@ async fn test_velero_is_bsl_available_true() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_bsl_available("default"), true)
+        assert.eq(c.storage_locations:is_available("default"), true)
         "#,
         server.uri()
     );
@@ -678,7 +678,7 @@ async fn test_velero_is_bsl_available_false() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        assert.eq(c:is_bsl_available("broken"), false)
+        assert.eq(c.storage_locations:is_available("broken"), false)
         "#,
         server.uri()
     );
@@ -715,7 +715,7 @@ async fn test_velero_all_schedules_enabled() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local result = c:all_schedules_enabled()
+        local result = c.schedules:all_enabled()
         assert.eq(result.enabled, 2)
         assert.eq(result.disabled, 1)
         assert.eq(result.total, 3)
@@ -754,7 +754,7 @@ async fn test_velero_all_bsl_available() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token")
-        local result = c:all_bsl_available()
+        local result = c.storage_locations:all_available()
         assert.eq(result.available, 1)
         assert.eq(result.unavailable, 1)
         assert.eq(result.total, 2)
@@ -787,7 +787,7 @@ async fn test_velero_custom_namespace() {
         r#"
         local velero = require("assay.velero")
         local c = velero.client("{}", "fake-token", "custom-ns")
-        local backups = c:backups()
+        local backups = c.backups:list()
         assert.eq(#backups, 1)
         assert.eq(backups[1].metadata.name, "backup-1")
         "#,

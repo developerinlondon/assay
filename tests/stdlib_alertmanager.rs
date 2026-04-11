@@ -27,7 +27,8 @@ async fn test_alertmanager_alerts_active() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local alerts = am.alerts("{}")
+        local c = am.client("{}")
+        local alerts = c.alerts:list()
         assert.eq(#alerts, 1)
         assert.eq(alerts[1].labels.alertname, "HighMemory")
         assert.eq(alerts[1].labels.severity, "critical")
@@ -50,7 +51,8 @@ async fn test_alertmanager_alerts_empty() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local alerts = am.alerts("{}")
+        local c = am.client("{}")
+        local alerts = c.alerts:list()
         assert.eq(#alerts, 0)
         "#,
         server.uri()
@@ -70,7 +72,8 @@ async fn test_alertmanager_post_alerts() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local ok = am.post_alerts("{}", {{{{
+        local c = am.client("{}")
+        local ok = c.alerts:post({{{{
             labels = {{ alertname = "TestAlert", severity = "warning" }},
             annotations = {{ summary = "Test alert fired" }},
             startsAt = "2026-02-10T00:00:00.000Z",
@@ -113,7 +116,8 @@ async fn test_alertmanager_alert_groups() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local groups = am.alert_groups("{}")
+        local c = am.client("{}")
+        local groups = c.alerts:groups()
         assert.eq(#groups, 1)
         assert.eq(groups[1].labels.alertname, "HighMemory")
         assert.eq(#groups[1].alerts, 1)
@@ -149,7 +153,8 @@ async fn test_alertmanager_silences_list() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local silences = am.silences("{}")
+        local c = am.client("{}")
+        local silences = c.silences:list()
         assert.eq(#silences, 1)
         assert.eq(silences[1].id, "silence-001")
         assert.eq(silences[1].createdBy, "admin")
@@ -184,7 +189,8 @@ async fn test_alertmanager_silence_by_id() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local s = am.silence("{}", "silence-001")
+        local c = am.client("{}")
+        local s = c.silences:get("silence-001")
         assert.eq(s.id, "silence-001")
         assert.eq(s.comment, "Maintenance window")
         assert.eq(s.status.state, "active")
@@ -209,7 +215,8 @@ async fn test_alertmanager_create_silence() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local result = am.create_silence("{}", {{
+        local c = am.client("{}")
+        local result = c.silences:create({{
             matchers = {{{{ name = "alertname", value = "HighMemory", isRegex = false, isEqual = true }}}},
             startsAt = "2026-02-10T00:00:00.000Z",
             endsAt = "2026-02-10T02:00:00.000Z",
@@ -235,7 +242,8 @@ async fn test_alertmanager_delete_silence() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local ok = am.delete_silence("{}", "silence-001")
+        local c = am.client("{}")
+        local ok = c.silences:delete("silence-001")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -275,7 +283,8 @@ async fn test_alertmanager_status() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local st = am.status("{}")
+        local c = am.client("{}")
+        local st = c.status:get()
         assert.eq(st.cluster.status, "ready")
         assert.eq(st.versionInfo.version, "0.27.0")
         assert.eq(st.cluster.name, "cluster-1")
@@ -301,7 +310,8 @@ async fn test_alertmanager_receivers() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local recv = am.receivers("{}")
+        local c = am.client("{}")
+        local recv = c.receivers:list()
         assert.eq(#recv, 3)
         assert.eq(recv[1].name, "default")
         assert.eq(recv[2].name, "slack-critical")
@@ -335,7 +345,8 @@ async fn test_alertmanager_is_firing_true() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local firing = am.is_firing("{}", "HighMemory")
+        local c = am.client("{}")
+        local firing = c.alerts:is_firing("HighMemory")
         assert.eq(firing, true)
         "#,
         server.uri()
@@ -355,7 +366,8 @@ async fn test_alertmanager_is_firing_false() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local firing = am.is_firing("{}", "NonExistent")
+        local c = am.client("{}")
+        local firing = c.alerts:is_firing("NonExistent")
         assert.eq(firing, false)
         "#,
         server.uri()
@@ -406,7 +418,8 @@ async fn test_alertmanager_active_count() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local count = am.active_count("{}")
+        local c = am.client("{}")
+        local count = c.alerts:active_count()
         assert.eq(count, 3)
         "#,
         server.uri()
@@ -429,7 +442,8 @@ async fn test_alertmanager_silence_alert() {
     let script = format!(
         r#"
         local am = require("assay.alertmanager")
-        local sid = am.silence_alert("{}", "HighMemory", 2, {{
+        local c = am.client("{}")
+        local sid = c.silences:silence_alert("HighMemory", 2, {{
             created_by = "test-user",
             comment = "Silencing for maintenance",
         }})
