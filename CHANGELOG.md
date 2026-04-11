@@ -2,6 +2,51 @@
 
 All notable changes to Assay are documented here.
 
+## [0.8.4] - 2026-04-11
+
+### Added
+
+- **`assay.ory.keto` — OPL permit support and table-style check()**.
+  `k:check()` now accepts a table argument in addition to positional
+  args, making OPL permit checks natural:
+  ```lua
+  k:check({ namespace = "command_center", object = "cc",
+            relation = "trigger", subject_id = "user:uuid" })
+  ```
+  Keto evaluates the OPL rewrite rules and returns true/false — no
+  Lua-side capability mapping needed.
+
+- **`k:batch_check(tuples)`** — check multiple permission tuples in a
+  single call. Returns a list of booleans in the same order. Each
+  entry uses the same table format as `check()`.
+
+- **`assay.ory.kratos` — complete self-service flow coverage**.
+  Three flow families that were missing are now implemented:
+
+  - **Registration**: `c:submit_registration_flow(flow_id, payload, cookie?)`
+    was missing entirely, making the registration API unusable.
+  - **Recovery** (password reset): `c:create_recovery_flow(opts?)`,
+    `c:get_recovery_flow(id, cookie?)`,
+    `c:submit_recovery_flow(flow_id, payload, cookie?)`.
+  - **Settings** (profile/password change): `c:create_settings_flow(cookie)`,
+    `c:get_settings_flow(id, cookie?)`,
+    `c:submit_settings_flow(flow_id, payload, cookie?)`.
+
+### Fixed
+
+- **`assay.ory.keto`**: `k:delete()` now supports subject_set tuples.
+  Previously only `subject_id` was passed to the query string,
+  silently ignoring subject_set-based tuples.
+
+- **`assay.ory.keto`**: `build_query()` now URL-encodes parameter
+  values. Previously special characters in subject IDs (e.g. `@` in
+  email addresses) were passed raw, potentially corrupting the query
+  string.
+
+- **`assay.ory.kratos`**: `public_post()` now handles HTTP 422
+  responses (Kratos returns 422 for browser flows that need a
+  redirect after successful submission).
+
 ## [0.8.3] - 2026-04-07
 
 ### Added
