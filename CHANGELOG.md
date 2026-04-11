@@ -2,6 +2,77 @@
 
 All notable changes to Assay are documented here.
 
+## [0.9.0] - 2026-04-11
+
+### Added
+
+- **Temporal workflow engine** — full workflow execution via Lua coroutines.
+  `temporal.worker()` now supports both activities and workflows. Each
+  workflow runs as a coroutine with a deterministic `ctx` object:
+
+  - `ctx:execute_activity(name, input, opts?)` — schedule activity, block
+    until complete. Supports retry policies, timeouts, heartbeats. On
+    replay, returns cached results without re-executing.
+  - `ctx:wait_signal(name, opts?)` — block until external signal or
+    timeout. Signals are buffered (safe to call after signal arrives).
+  - `ctx:sleep(seconds)` — deterministic timer via Temporal, not wall clock.
+  - `ctx:side_effect(fn)` — run non-deterministic function (IDs, timestamps).
+  - `ctx:workflow_info()` — workflow metadata (id, type, namespace, attempt).
+
+  Activities and workflows can be registered together in one worker:
+  ```lua
+  temporal.worker({
+    url = "temporal-frontend:7233",
+    task_queue = "promotions",
+    activities = { update_gitops = function(input) ... end },
+    workflows = {
+      PromotionWorkflow = function(ctx, input)
+        local approval = ctx:wait_signal("approve", { timeout = 86400 })
+        local commit = ctx:execute_activity("update_gitops", input)
+        return { status = "done", commit_id = commit.id }
+      end,
+    },
+  })
+  ```
+
+- **`markdown.to_html(source)`** — new builtin for Markdown to HTML
+  conversion via pulldown-cmark. Supports tables, strikethrough, and task
+  lists. Zero binary size overhead (pulldown-cmark was already in the
+  dependency tree via temporalio crates).
+
+- **`http.serve()` wildcard routes** — routes ending with `/*` match any
+  path with that prefix. More specific wildcards take priority:
+  ```lua
+  http.serve(8080, {
+    GET = {
+      ["/api/*"] = function(req) ... end,  -- matches /api/users/123
+      ["/*"] = function(req) ... end,      -- catches everything else
+    },
+  })
+  ```
+
+- **Assay builds its own documentation site**. `site/build.lua` replaces
+  the bash/awk/npx pipeline. Module count (54) is computed automatically
+  from `src/lua/builtins/mod.rs` and `stdlib/**/*.lua`. Site source lives
+  under `site/`, build output goes to `build/site/` (gitignored).
+
+- **Per-module documentation pages**. 36 markdown source files under
+  `docs/modules/` are the single source of truth. `build.lua` generates
+  individual HTML pages, a module index, and `llms-full.txt` for LLM agents.
+
+- **`site/serve.lua`** — assay serves its own docs site using wildcard
+  routes. 40 lines of Lua, zero external dependencies.
+
+### Changed
+
+- Version bump to 0.9.0 (from 0.8.4).
+- Site source consolidated under `site/` (was split across `site/`,
+  `site-partials/`, `site-static/`).
+- Nav redesign: no underlines, subtle active page pill, frosted glass
+  header, theme toggle persistence across pages.
+- `deploy.yml` updated: `cargo build` → `assay site/build.lua` → wrangler
+  deploys `build/site/`.
+
 ## [0.8.4] - 2026-04-11
 
 ### Added
