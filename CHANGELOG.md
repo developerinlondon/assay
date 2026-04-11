@@ -63,7 +63,19 @@ All notable changes to Assay are documented here.
 - **`site/serve.lua`** — assay serves its own docs site using wildcard
   routes. 40 lines of Lua, zero external dependencies.
 
+- **`fs.read_bytes(path)` / `fs.write_bytes(path, data)`** — binary-safe
+  file I/O. Lua strings can hold arbitrary bytes, so these work for images,
+  WASM, protobuf, compressed data, etc.
+
+- **Pagefind search** — full-text search across all docs pages via Ctrl+K
+  modal. Indexed at build time (~100KB client bundle), runs entirely in
+  the browser.
+
 ### Changed
+
+- **`http.serve()` binary response body** — response `body` field now
+  preserves raw bytes (read via `mlua::String`) instead of forcing UTF-8
+  conversion. Binary assets (WASM, images) serve correctly.
 
 - Version bump to 0.9.0 (from 0.8.4).
 - Site source consolidated under `site/` (was split across `site/`,
