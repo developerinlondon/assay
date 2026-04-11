@@ -10,6 +10,8 @@
 #
 # Project URL: https://assay-rs.pages.dev
 # Deploy command: wrangler pages deploy site/ --project-name=assay-rs
+#
+# Build pipeline: cargo build → assay builds its own docs → wrangler deploys
 
 name: Deploy to Cloudflare Pages
 
@@ -21,6 +23,8 @@ on:
       - "site/**"
       - "site-partials/**"
       - "docs/modules/**"
+      - "src/lua/builtins/mod.rs"
+      - "stdlib/**"
       - "CHANGELOG.md"
       - "wrangler.toml"
 
@@ -40,17 +44,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-deploy-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-deploy-
+
+      - name: Build assay
+        run: cargo build --release
+
       - name: Build changelog from CHANGELOG.md
         run: |
-          npx marked -i CHANGELOG.md -o /tmp/changelog-body.html
+          npx --yes marked -i CHANGELOG.md -o /tmp/changelog-body.html
           sed -i '1,/<\/p>/{/<h1>/d;/<\/h1>/d;/^All notable/d;/<p>All notable/,/<\/p>/d}' /tmp/changelog-body.html
           sed -i '/__CHANGELOG_CONTENT__/{
             r /tmp/changelog-body.html
             d
           }' site/changelog.html
 
-      - name: Render site (inline partials, stamp version)
-        run: ./site-partials/build.sh
+      - name: Build site (assay builds its own docs)
+        run: ./target/release/assay site-partials/build.lua
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
