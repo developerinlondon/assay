@@ -9,6 +9,7 @@
 name: Deploy to Cloudflare Pages
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -19,6 +20,7 @@ on:
       - "stdlib/**"
       - "CHANGELOG.md"
       - "wrangler.toml"
+      - ".github/workflows/deploy.yml"
 
 concurrency:
   group: cloudflare-pages-deploy
