@@ -502,41 +502,57 @@ Total estimated binary with full worker support: **~10-11MB**.
 
 - **Activities**: Fully implemented. Lua functions are registered, polled, dispatched, and
   completed via the Core SDK. Error handling returns `Failure` objects to Temporal.
-- **Workflows**: Registered but not yet dispatched. The `ctx` coroutine bridge is the next
-  piece of work.
+- **Workflows**: Fully implemented. Lua coroutine bridge dispatches workflow activations,
+  with deterministic ctx methods for execute_activity, wait_signal, sleep, side_effect,
+  and workflow_info. Replay is handled via sequence-numbered resolved results.
 - **Shutdown**: Graceful via `handle:shutdown()`. Worker drains in-flight tasks.
 
 ## Implementation plan
 
 ```
-Phase 1: Workflow polling + coroutine lifecycle         [next]
-  - poll_workflow_activation() loop (same pattern as activity loop)
-  - Create Lua coroutine on StartWorkflow job
-  - Store WorkflowInstance per run_id
-  - Complete workflow on coroutine return
-  - Fail workflow on coroutine error
+Phase 1: Workflow polling + coroutine lifecycle         [done]
+  - poll_workflow_activation() loop (same channel pattern as activity loop)
+  - Create Lua coroutine on InitializeWorkflow job
+  - Store WfInstance per run_id with thread + ctx registry keys
+  - Complete workflow on coroutine return (CompleteWorkflowExecution)
+  - Fail workflow on coroutine error (FailWorkflowExecution)
+  - Eviction handling (RemoveFromCache → cleanup instance)
 
-Phase 2: ctx:execute_activity                           [next]
-  - ctx userdata with __index metamethod
-  - yield ScheduleActivity command from Lua
-  - Resume coroutine on ResolveActivity job
-  - Replay: match by sequence number, resume with cached result
+Phase 2: ctx:execute_activity                           [done]
+  - ctx as Lua table with methods that yield command tables
+  - yield ScheduleActivity command from Lua coroutine
+  - Resume coroutine on ResolveActivity job with decoded result
+  - Replay: sequence-numbered _resolved table, return cached result without yield
+  - Activity failure → _activity_error table → Lua error() in ctx method
+  - Retry policy, timeouts parsed from opts table
 
-Phase 3: ctx:wait_signal + ctx:sleep                    [next]
-  - Signal buffering (signals can arrive before wait_signal is called)
-  - Timer commands for sleep and signal timeouts
-  - Resume on SignalWorkflow / FireTimer jobs
+Phase 3: ctx:wait_signal + ctx:sleep                    [done]
+  - Signal buffering (_signals table, signals can arrive before wait_signal)
+  - StartTimer command for sleep and signal timeouts
+  - Resume on SignalWorkflow (payload) or FireTimer (nil for timeout)
+  - CancelTimer issued when signal arrives before timeout
 
-Phase 4: ctx:side_effect + ctx:workflow_info            [next]
-  - RecordMarker for side_effect persistence
-  - workflow_info from activation metadata
+Phase 4: ctx:side_effect + ctx:workflow_info            [done]
+  - side_effect: calls fn() directly, best-effort (not persisted via markers)
+  - workflow_info: returns table from InitializeWorkflow metadata
+  - Sequence numbers always increment for deterministic replay
 
-Phase 5: Error handling + edge cases
-  - Activity failure propagation (retries exhausted)
-  - Workflow cancellation (CancelWorkflow job → error in coroutine)
-  - Continue-as-new support
-  - Panic handling (non-determinism detected)
+Phase 5: Error handling + edge cases                    [done]
+  - Activity failure propagation (Completed/Failed/Cancelled variants)
+  - Workflow cancellation (CancelWorkflow → CancelWorkflowExecution command)
+  - SDK-level errors caught and reported as workflow task failures
+  - Unhandled activation jobs logged and skipped gracefully
 ```
+
+### Design note: ctx as Lua table vs Rust userdata
+
+The ctx object is implemented as a plain Lua table with methods that call
+`coroutine.yield()`. This was chosen over Rust userdata because:
+
+1. Yield from within a Rust-backed method has complex lifetime interactions
+2. Lua tables are transparent — easy to populate `_resolved`/`_signals` from Rust
+3. The ctx factory is a single embedded Lua source string (CTX_LUA constant)
+4. No `#[userdata]` proc macros needed for the yield/resume pattern
 
 ## Alternatives considered
 

@@ -23,7 +23,7 @@ default = ["db", "server", "cli", "temporal"]
 db = ["dep:sqlx"]
 server = ["dep:http-body-util", "dep:hyper", "dep:hyper-util"]
 cli = ["dep:clap", "dep:tracing-subscriber"]
-temporal = ["dep:temporalio-client", "dep:temporalio-sdk", "dep:temporalio-sdk-core", "dep:temporalio-common"]
+temporal = ["dep:temporalio-client", "dep:temporalio-sdk", "dep:temporalio-sdk-core", "dep:temporalio-common", "dep:prost-wkt-types"]
 
 [dependencies]
 # Lua scripting engine
@@ -95,6 +95,9 @@ temporalio-client = { version = "0.2.0", optional = true }
 temporalio-sdk = { version = "0.2.0", optional = true }
 temporalio-common = { version = "0.2.0", optional = true }
 temporalio-sdk-core = { version = "0.2.0", optional = true }
+
+# Protobuf well-known types (Duration, Timestamp — used by Temporal worker commands)
+prost-wkt-types = { version = "0.7", optional = true }
 
 # URL parsing/encoding (used by http server query string decoding and Temporal)
 url = "2"
