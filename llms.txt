@@ -1,7 +1,7 @@
 # Assay
 
 > Assay is a ~9 MB static binary that runs Lua scripts in Kubernetes. It replaces 50-250 MB
-> Python/Node/kubectl containers. One binary handles HTTP, database, crypto, WebSocket, and 33
+> Python/Node/kubectl containers. One binary handles HTTP, database, crypto, WebSocket, and
 > Kubernetes-native and AI agent service integrations. No `require()` for builtins — they are global.
 > Stdlib modules use `require("assay.<name>")` then `M.client(url, opts)` → `c:method()`.
 > Run `assay context <query>` to get LLM-ready method signatures for any module.
@@ -11,72 +11,62 @@
 - [README](https://github.com/developerinlondon/assay/blob/main/README.md): Installation, quick start, examples
 - [SKILL.md](https://github.com/developerinlondon/assay/blob/main/SKILL.md): LLM agent integration guide
 - [GitHub](https://github.com/developerinlondon/assay): Source code and issues
+- [Full API Reference](https://assay.rs/llms-full.txt): Complete method signatures for all modules
 
 ## Builtins (no require needed)
-- [http](https://assay.rs/modules.html#http): HTTP client and server — http.get/post/put/patch/delete/serve
-- [json](https://assay.rs/modules.html#json): JSON parse and encode
-- [yaml](https://assay.rs/modules.html#yaml): YAML parse and encode
-- [toml](https://assay.rs/modules.html#toml): TOML parse and encode
-- [fs](https://assay.rs/modules.html#fs): Filesystem — fs.read/write
-- [crypto](https://assay.rs/modules.html#crypto): JWT signing, HMAC, hashing, random — crypto.jwt_sign/hash/hmac/random
-- [base64](https://assay.rs/modules.html#base64): Base64 encode/decode
-- [regex](https://assay.rs/modules.html#regex): Regex match, find, replace
-- [db](https://assay.rs/modules.html#db): SQL database — Postgres, MySQL, SQLite — db.connect/query/execute
-- [ws](https://assay.rs/modules.html#ws): WebSocket client — ws.connect/send/recv/close
-- [template](https://assay.rs/modules.html#template): Jinja2-compatible template rendering
-- [async](https://assay.rs/modules.html#async): Async task spawn and await
-- [assert](https://assay.rs/modules.html#assert): Assertions — assert.eq/gt/lt/contains/not_nil/matches
-- [log](https://assay.rs/modules.html#log): Logging — log.info/warn/error
-- [env](https://assay.rs/modules.html#env): Environment variables — env.get
-- [sleep](https://assay.rs/modules.html#sleep): Sleep for N seconds
-- [time](https://assay.rs/modules.html#time): Unix timestamp in seconds
+- [http](https://assay.rs/modules/http.html): HTTP client, server, SSE streaming — http.get/post/put/patch/delete/serve
+- [json, yaml, toml](https://assay.rs/modules/serialization.html): JSON/YAML/TOML parse and encode
+- [fs](https://assay.rs/modules/fs.html): Filesystem — fs.read/write
+- [crypto, base64](https://assay.rs/modules/crypto.html): JWT signing/decoding, HMAC, hashing, random, base64
+- [regex](https://assay.rs/modules/regex.html): Regex match, find, replace
+- [db](https://assay.rs/modules/db.html): SQL database — Postgres, MySQL, SQLite — db.connect/query/execute
+- [ws](https://assay.rs/modules/ws.html): WebSocket client — ws.connect/send/recv/close
+- [template](https://assay.rs/modules/template.html): Jinja2-compatible template rendering
+- [async](https://assay.rs/modules/async.html): Async task spawn and await
+- [assert](https://assay.rs/modules/assert.html): Assertions — assert.eq/ne/gt/lt/contains/not_nil/matches
+- [log, env, sleep, time](https://assay.rs/modules/utilities.html): Logging, environment variables, sleep, timestamps
 
 ## Monitoring & Observability
-- [assay.prometheus](https://assay.rs/modules.html#prometheus): PromQL queries, alerts, targets, rules
-- [assay.alertmanager](https://assay.rs/modules.html#alertmanager): Alert management, silences, receivers
-- [assay.loki](https://assay.rs/modules.html#loki): Log push, query, labels, series
-- [assay.grafana](https://assay.rs/modules.html#grafana): Health, dashboards, datasources, annotations
+- [assay.prometheus](https://assay.rs/modules/prometheus.html): PromQL queries, alerts, targets, rules
+- [assay.alertmanager](https://assay.rs/modules/alertmanager.html): Alert management, silences, receivers
+- [assay.loki](https://assay.rs/modules/loki.html): Log push, query, labels, series
+- [assay.grafana](https://assay.rs/modules/grafana.html): Health, dashboards, datasources, annotations
 
 ## Kubernetes & GitOps
-- [assay.k8s](https://assay.rs/modules.html#k8s): 30+ K8s resource types, CRDs, readiness checks
-- [assay.argocd](https://assay.rs/modules.html#argocd): ArgoCD apps, sync, health, projects
-- [assay.kargo](https://assay.rs/modules.html#kargo): Kargo stages, freight, promotions
-- [assay.flux](https://assay.rs/modules.html#flux): Flux GitRepositories, Kustomizations, HelmReleases
-- [assay.traefik](https://assay.rs/modules.html#traefik): Traefik routers, services, middlewares
+- [assay.k8s](https://assay.rs/modules/k8s.html): 30+ K8s resource types, CRDs, readiness checks
+- [assay.argocd](https://assay.rs/modules/argocd.html): ArgoCD apps, sync, health, projects
+- [assay.kargo](https://assay.rs/modules/kargo.html): Kargo stages, freight, promotions
+- [assay.flux](https://assay.rs/modules/flux.html): Flux GitRepositories, Kustomizations, HelmReleases
+- [assay.traefik](https://assay.rs/modules/traefik.html): Traefik routers, services, middlewares
 
 ## Security & Identity
-- [assay.vault](https://assay.rs/modules.html#vault): HashiCorp Vault KV, transit, PKI, auth
-- [assay.openbao](https://assay.rs/modules.html#openbao): OpenBao (Vault API-compatible)
-- [assay.certmanager](https://assay.rs/modules.html#certmanager): cert-manager certificates, issuers, ACME
-- [assay.eso](https://assay.rs/modules.html#eso): External Secrets Operator
-- [assay.dex](https://assay.rs/modules.html#dex): Dex OIDC discovery, JWKS, health
-- [assay.zitadel](https://assay.rs/modules.html#zitadel): Zitadel OIDC identity, JWT machine auth
+- [assay.vault](https://assay.rs/modules/vault.html): HashiCorp Vault KV, transit, PKI, auth
+- [assay.openbao](https://assay.rs/modules/openbao.html): OpenBao (Vault API-compatible)
+- [assay.certmanager](https://assay.rs/modules/certmanager.html): cert-manager certificates, issuers, ACME
+- [assay.eso](https://assay.rs/modules/eso.html): External Secrets Operator
+- [assay.dex](https://assay.rs/modules/dex.html): Dex OIDC discovery, JWKS, health
+- [assay.zitadel](https://assay.rs/modules/zitadel.html): Zitadel OIDC identity, JWT machine auth
+- [assay.ory](https://assay.rs/modules/ory.html): Ory stack — Kratos identity, Hydra OAuth2, Keto ReBAC, RBAC engine
 
 ## Infrastructure
-- [assay.crossplane](https://assay.rs/modules.html#crossplane): Crossplane providers, XRDs, compositions
-- [assay.velero](https://assay.rs/modules.html#velero): Velero backups, restores, schedules
-- [assay.temporal](https://assay.rs/modules.html#temporal): Temporal workflows, task queues, schedules
-- [assay.harbor](https://assay.rs/modules.html#harbor): Harbor registry, projects, vulnerability scanning
+- [assay.crossplane](https://assay.rs/modules/crossplane.html): Crossplane providers, XRDs, compositions
+- [assay.velero](https://assay.rs/modules/velero.html): Velero backups, restores, schedules
+- [assay.temporal](https://assay.rs/modules/temporal.html): Temporal — HTTP REST client, gRPC client, worker runtime with workflow coroutines
+- [assay.harbor](https://assay.rs/modules/harbor.html): Harbor registry, projects, vulnerability scanning
 
 ## Data & Storage
-- [assay.postgres](https://assay.rs/modules.html#postgres): PostgreSQL helpers, user management
-- [assay.s3](https://assay.rs/modules.html#s3): S3-compatible storage (AWS, R2, MinIO) with Sig V4
+- [assay.postgres](https://assay.rs/modules/postgres.html): PostgreSQL helpers, user management
+- [assay.s3](https://assay.rs/modules/s3.html): S3-compatible storage (AWS, R2, MinIO) with Sig V4
 
 ## Feature Flags & Utilities
-- [assay.unleash](https://assay.rs/modules.html#unleash): Unleash feature flags, environments, strategies
-- [assay.healthcheck](https://assay.rs/modules.html#healthcheck): HTTP health checks, JSON path, latency
+- [assay.unleash](https://assay.rs/modules/unleash.html): Unleash feature flags, environments, strategies
+- [assay.healthcheck](https://assay.rs/modules/healthcheck.html): HTTP health checks, JSON path, latency
 
 ## AI Agent & Workflow
-- [assay.openclaw](https://assay.rs/modules.html#openclaw): OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks, cron, sub-agents
-- [assay.github](https://assay.rs/modules.html#github): GitHub REST API — PRs, issues, actions, GraphQL (no gh CLI)
-- [assay.gmail](https://assay.rs/modules.html#gmail): Gmail REST API with OAuth2 — search, read, reply, send
-- [assay.gcal](https://assay.rs/modules.html#gcal): Google Calendar REST API with OAuth2 — events CRUD, calendar list
-- [assay.oauth2](https://assay.rs/modules.html#oauth2): Google OAuth2 token management — file-based credentials, auto-refresh, persistence
-- [assay.email_triage](https://assay.rs/modules.html#email_triage): Email triage — deterministic rules + LLM-assisted classification
+- [AI Agents](https://assay.rs/modules/ai-agents.html): OpenClaw, GitHub, Gmail, Google Calendar, OAuth2, Email Triage
 
 ## Optional
 - [Crates.io](https://crates.io/crates/assay-lua): Use Assay as a Rust crate in your own projects
 - [Docker](https://github.com/developerinlondon/assay/pkgs/container/assay): ghcr.io/developerinlondon/assay:latest (~9MB compressed)
-- [MCP Comparison](https://assay.rs/mcp-comparison.html): How Assay replaces 42 popular MCP servers
 - [Agent Guides](https://assay.rs/agent-guides.html): Integration guides for Claude Code, Cursor, Windsurf, Cline, OpenCode
 - [Changelog](https://github.com/developerinlondon/assay/releases): Release history

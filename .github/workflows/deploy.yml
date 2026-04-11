@@ -20,6 +20,7 @@ on:
     paths:
       - "site/**"
       - "site-partials/**"
+      - "docs/modules/**"
       - "CHANGELOG.md"
       - "wrangler.toml"
 
