@@ -39,8 +39,8 @@ pub fn register_temporal_worker(lua: &mlua::Lua) -> mlua::Result<()> {
         worker::WorkerTaskTypes,
     };
     use temporalio_sdk_core::{
-        CoreRuntime, PollError, PollerBehavior, RuntimeOptions, Worker as CoreWorker,
-        WorkerConfig, WorkerVersioningStrategy, init_worker,
+        CoreRuntime, PollError, PollerBehavior, RuntimeOptions, WorkerConfig,
+        WorkerVersioningStrategy, init_worker,
     };
     use temporalio_common::worker::WorkerDeploymentOptions;
 
