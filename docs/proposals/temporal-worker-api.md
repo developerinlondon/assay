@@ -98,8 +98,17 @@ temporal = ["dep:temporalio-client", "dep:temporalio-sdk", "dep:temporalio-commo
 # ^^^ already exists, worker support added here (shared crates)
 ```
 
-The `temporalio-sdk` crate (already a dependency) includes the `Worker` type. No new crate
-dependencies are needed.
+Uses `temporalio-sdk-core` (the low-level Core SDK) rather than the high-level `temporalio-sdk`
+Worker type. The high-level SDK uses proc macros for activity/workflow registration which don't
+work with dynamic Lua function dispatch. The Core SDK gives direct control over:
+
+- Task polling (`poll_activity_task`, `poll_workflow_activation`)
+- Activity completion (`complete_activity_task`)
+- Workflow activation completion (`complete_workflow_activation`)
+- Worker lifecycle (`init_worker`, `initiate_shutdown`)
+
+This is the same approach the Python and .NET SDKs use — they bridge the Core SDK to their
+respective runtimes rather than using the Rust-native high-level abstractions.
 
 ### Architecture
 
@@ -107,43 +116,63 @@ dependencies are needed.
 temporal.worker(opts)
         |
         v
-  Rust: create Worker (temporalio-sdk)
+  Rust: init_worker() via temporalio-sdk-core
         |
-        +-- register activity functions
-        |     \-- each wraps a Lua function: deserialize JSON input,
-        |         call Lua fn, serialize JSON output
+        +-- Activity polling loop (tokio task)
+        |     poll_activity_task()
+        |       -> channel -> Lua dispatcher (spawn_local)
+        |         -> lookup registered Lua fn by activity_type
+        |         -> deserialize JSON payload -> call Lua fn -> serialize result
+        |       -> channel -> completer (tokio task)
+        |         -> complete_activity_task()
         |
-        +-- register workflow functions
-        |     \-- each wraps a Lua function with a deterministic ctx:
-        |         ctx:execute_activity -> schedules activity in Temporal
-        |         ctx:wait_signal -> blocks on Temporal signal channel
-        |         ctx:sleep -> Temporal timer
+        +-- Workflow polling loop (TODO — next iteration)
+        |     poll_workflow_activation()
+        |       -> dispatch activation jobs to Lua coroutine
+        |       -> ctx userdata bridges deterministic primitives
+        |       -> complete_workflow_activation()
         |
-        +-- worker.run() in background tokio task
-              \-- polls task queue, dispatches to registered fns
+        +-- Handle returned to Lua
+              handle:shutdown()   -- initiate graceful shutdown
+              handle:is_running() -- check if worker is still active
 ```
 
-### Activities (straightforward)
+### Activities (implemented)
 
 Activities are non-deterministic — they're just functions. The Rust bridge:
 
-1. Receives an activity task from Temporal (JSON payload)
-2. Calls the registered Lua function with the deserialized input
-3. Serializes the Lua return value as JSON
-4. Returns the result to Temporal
+1. Polls `poll_activity_task()` on a tokio task
+2. Sends `(activity_type, input_payloads, task_token)` via unbounded channel to the Lua dispatcher
+3. Lua dispatcher runs on `spawn_local` (same async context as the Lua VM):
+   - Looks up the registered Lua function by `activity_type`
+   - Deserializes the first input payload as JSON → Lua value
+   - Calls the Lua function
+   - Serializes the return value as JSON → Temporal Payload
+4. Sends `(task_token, ActivityExecutionResult)` via channel to the completer
+5. Completer calls `complete_activity_task()` to report success/failure to Temporal
 
-### Workflows (deterministic replay)
+The channel-based architecture keeps the poller and completer on regular tokio tasks (Send)
+while the Lua dispatch stays on `spawn_local` (Lua is !Send).
 
-Workflows must be deterministic for Temporal's replay mechanism. The Rust bridge:
+### Workflows (next iteration)
 
-1. Provides a `ctx` userdata object to the Lua workflow function
-2. `ctx:execute_activity()` records a command in the workflow history and blocks until the activity
-   completes
-3. `ctx:wait_signal()` records a signal wait and blocks until the signal arrives
-4. On replay, the bridge replays from history instead of re-executing
+Workflows require a deterministic replay bridge. The Rust side will:
 
-This follows the same pattern as the Go and Python SDKs — the workflow function runs "as if" it's
-executing fresh, but the `ctx` methods short-circuit using history on replay.
+1. Poll `poll_workflow_activation()` for activation jobs
+2. Provide a `ctx` userdata to the Lua workflow function with deterministic primitives:
+   - `ctx:execute_activity()` → schedules a command, blocks until result
+   - `ctx:wait_signal()` → blocks until signal received or timeout
+   - `ctx:sleep()` → Temporal timer (not wall clock)
+   - `ctx:side_effect()` → run once, replay from history
+3. On replay, `ctx` methods short-circuit using history instead of re-executing
+4. Call `complete_workflow_activation()` with the resulting commands
+
+This follows the same pattern as the Go and Python SDKs — the workflow function runs "as if"
+executing fresh, but the `ctx` methods are backed by the Temporal replay mechanism.
+
+The Lua coroutine model maps naturally to this: each workflow activation suspends the coroutine
+at `ctx:execute_activity()` / `ctx:wait_signal()`, and resumes when the next activation arrives
+with the result.
 
 ## Binary size impact (measured)
 
@@ -153,19 +182,32 @@ executing fresh, but the `ctx` methods short-circuit using history on replay.
 | With temporal client (current shipping)   | 8.7MB    | +1.9MB             |
 | With temporal client + worker (estimated) | ~10-11MB | +1-2MB over client |
 
-The `temporalio-sdk` Worker type shares the same protobuf/gRPC stack already linked by the client.
-The incremental cost for worker support is the polling loop, activity/workflow dispatch, and replay
-engine — estimated at 1-2MB additional over the current 8.7MB.
+The Core SDK shares the same protobuf/gRPC stack already linked by the client. The incremental
+cost for worker support is the polling loop, activity/workflow dispatch, and replay engine —
+estimated at 1-2MB additional over the current 8.7MB.
 
 Total estimated binary with full worker support: **~10-11MB**.
 
+## Current status
+
+- **Activities**: Fully implemented. Lua functions are registered, polled, dispatched, and
+  completed via the Core SDK. Error handling returns `Failure` objects to Temporal.
+- **Workflows**: Registered but not yet dispatched. The `ctx` coroutine bridge is the next
+  piece of work. Activities can be used standalone (many Temporal use cases are activity-only).
+- **Shutdown**: Graceful via `handle:shutdown()`. Worker drains in-flight tasks.
+
 ## Alternatives considered
 
-1. **External Go/TypeScript worker** — works today but adds operational complexity and a second
+1. **High-level `temporalio-sdk` Worker type** — Originally planned but rejected. The high-level
+   SDK uses Rust proc macros (`#[activity]`, `#[workflow]`) for static registration, which
+   doesn't work with dynamic Lua function dispatch. The Core SDK (`temporalio-sdk-core`) gives
+   the control needed to bridge to Lua's runtime model.
+
+2. **External Go/TypeScript worker** — works today but adds operational complexity and a second
    language. Defeats assay's single-binary value proposition.
 
-2. **Activity-only worker (no workflow support)** — simpler to implement but loses Temporal's core
-   value: durable orchestration with replay. Users would still need external workflow definitions.
+3. **Activity-only worker (no workflow support)** — This is effectively the current state.
+   Useful for many real workloads, but the full value comes when workflow orchestration lands.
 
-3. **Signal-driven workflows only** — pre-built Rust workflow templates driven by signals. Simpler
-   replay story but less flexible — can't define arbitrary workflow logic in Lua.
+4. **Signal-driven workflows only** — pre-built Rust workflow templates driven by signals.
+   Simpler replay story but less flexible — can't define arbitrary workflow logic in Lua.
