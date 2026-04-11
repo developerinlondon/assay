@@ -88,12 +88,23 @@ log.info("Git version: " .. git_sha)
 local header_html = fs.read(partials_dir .. "/header.html")
 local footer_html = fs.read(partials_dir .. "/footer.html")
 
+-- Build changelog HTML from CHANGELOG.md
+local changelog_html = ""
+local changelog_ok, changelog_md = pcall(fs.read, "CHANGELOG.md")
+if changelog_ok then
+  changelog_html = markdown.to_html(changelog_md)
+  -- Strip the top-level heading and intro paragraph
+  changelog_html = changelog_html:gsub("^<h1>.-</h1>%s*", "")
+  changelog_html = changelog_html:gsub("^<p>All notable.-</p>%s*", "")
+end
+
 --- Apply all placeholder substitutions to an HTML string.
 local function apply_placeholders(html)
   html = substitute(html, "__HEADER__", header_html)
   html = substitute(html, "__FOOTER__", footer_html)
   html = substitute(html, "__GIT_SHA__", git_sha)
   html = substitute(html, "__MODULE_COUNT__", tostring(module_count))
+  html = substitute(html, "__CHANGELOG_CONTENT__", changelog_html)
   return html
 end
 

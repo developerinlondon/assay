@@ -60,15 +60,6 @@ jobs:
       - name: Build assay
         run: cargo build --release
 
-      - name: Build changelog from CHANGELOG.md
-        run: |
-          npx --yes marked -i CHANGELOG.md -o /tmp/changelog-body.html
-          sed -i '1,/<\/p>/{/<h1>/d;/<\/h1>/d;/^All notable/d;/<p>All notable/,/<\/p>/d}' /tmp/changelog-body.html
-          sed -i '/__CHANGELOG_CONTENT__/{
-            r /tmp/changelog-body.html
-            d
-          }' site/changelog.html
-
       - name: Build site (assay builds its own docs)
         run: ./target/release/assay site-partials/build.lua
 
