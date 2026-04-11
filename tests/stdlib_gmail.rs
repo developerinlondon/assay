@@ -83,7 +83,7 @@ async fn test_gmail_search() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local messages = c:search("from:alice")
+        local messages = c.messages:search("from:alice")
         assert.eq(#messages, 2)
         assert.eq(messages[1].id, "msg-1")
         assert.eq(messages[1].snippet, "Hello from test")
@@ -130,7 +130,7 @@ async fn test_gmail_get() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local msg = c:get("msg-abc")
+        local msg = c.messages:get("msg-abc")
         assert.eq(msg.id, "msg-abc")
         assert.eq(msg.snippet, "Important message")
         assert.eq(msg.payload.mimeType, "text/plain")
@@ -168,7 +168,7 @@ async fn test_gmail_send() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local result = c:send("user@example.com", "Test Subject", "Hello there!")
+        local result = c.messages:send("user@example.com", "Test Subject", "Hello there!")
         assert.eq(result.id, "sent-msg-1")
         assert.eq(result.labelIds[1], "SENT")
         "#,
@@ -221,7 +221,7 @@ async fn test_gmail_reply() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local result = c:reply("msg-1", {{ body = "Thanks!" }})
+        local result = c.messages:reply("msg-1", {{ body = "Thanks!" }})
         assert.eq(result.id, "reply-1")
         assert.eq(result.threadId, "thread-1")
         "#,
@@ -260,7 +260,7 @@ async fn test_gmail_labels() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local labels = c:labels()
+        local labels = c.labels:list()
         assert.eq(#labels, 3)
         assert.eq(labels[1].name, "INBOX")
         assert.eq(labels[3].name, "Work")
@@ -323,7 +323,7 @@ async fn test_gmail_token_refresh() {
             api_base = "{}",
             token_url = "{}/token",
         }})
-        local labels = c:labels()
+        local labels = c.labels:list()
         assert.eq(#labels, 1)
         assert.eq(labels[1].name, "INBOX")
         "#,

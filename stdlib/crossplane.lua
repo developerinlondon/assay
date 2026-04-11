@@ -1,45 +1,44 @@
 --- @module assay.crossplane
 --- @description Crossplane infrastructure management. Providers, XRDs, compositions, managed resources.
 --- @keywords crossplane, providers, xrds, compositions, managed, kubernetes, infrastructure, configuration, function, composition, managed-resource, health, readiness, established, terraform
---- @quickref c:providers() -> {items} | List providers
---- @quickref c:provider(name) -> provider|nil | Get provider by name
---- @quickref c:is_provider_healthy(name) -> bool | Check if provider is healthy
---- @quickref c:is_provider_installed(name) -> bool | Check if provider is installed
---- @quickref c:provider_status(name) -> {installed, healthy, current_revision} | Get provider status
---- @quickref c:provider_revisions() -> {items} | List provider revisions
---- @quickref c:provider_revision(name) -> revision|nil | Get provider revision
---- @quickref c:configurations() -> {items} | List configurations
---- @quickref c:configuration(name) -> config|nil | Get configuration by name
---- @quickref c:is_configuration_healthy(name) -> bool | Check if configuration is healthy
---- @quickref c:is_configuration_installed(name) -> bool | Check if configuration is installed
---- @quickref c:functions() -> {items} | List functions
---- @quickref c:xfunction(name) -> function|nil | Get function by name
---- @quickref c:is_function_healthy(name) -> bool | Check if function is healthy
---- @quickref c:xrds() -> {items} | List composite resource definitions
---- @quickref c:xrd(name) -> xrd|nil | Get XRD by name
---- @quickref c:is_xrd_established(name) -> bool | Check if XRD is established
---- @quickref c:compositions() -> {items} | List compositions
---- @quickref c:composition(name) -> composition|nil | Get composition by name
---- @quickref c:managed_resource(api_group, version, kind, name) -> resource|nil | Get managed resource
---- @quickref c:is_managed_ready(api_group, version, kind, name) -> bool | Check if managed resource is ready
---- @quickref c:managed_resources(api_group, version, kind) -> {items} | List managed resources
---- @quickref c:all_providers_healthy() -> {healthy, unhealthy, total} | Check all providers health
---- @quickref c:all_xrds_established() -> {established, not_established, total} | Check all XRDs status
+--- @quickref c.providers:list() -> {items} | List providers
+--- @quickref c.providers:get(name) -> provider|nil | Get provider by name
+--- @quickref c.providers:is_healthy(name) -> bool | Check if provider is healthy
+--- @quickref c.providers:is_installed(name) -> bool | Check if provider is installed
+--- @quickref c.providers:status(name) -> {installed, healthy, current_revision} | Get provider status
+--- @quickref c.providers:all_healthy() -> {healthy, unhealthy, total} | Check all providers health
+--- @quickref c.provider_revisions:list() -> {items} | List provider revisions
+--- @quickref c.provider_revisions:get(name) -> revision|nil | Get provider revision
+--- @quickref c.configurations:list() -> {items} | List configurations
+--- @quickref c.configurations:get(name) -> config|nil | Get configuration by name
+--- @quickref c.configurations:is_healthy(name) -> bool | Check if configuration is healthy
+--- @quickref c.configurations:is_installed(name) -> bool | Check if configuration is installed
+--- @quickref c.functions:list() -> {items} | List functions
+--- @quickref c.functions:get(name) -> function|nil | Get function by name
+--- @quickref c.functions:is_healthy(name) -> bool | Check if function is healthy
+--- @quickref c.xrds:list() -> {items} | List composite resource definitions
+--- @quickref c.xrds:get(name) -> xrd|nil | Get XRD by name
+--- @quickref c.xrds:is_established(name) -> bool | Check if XRD is established
+--- @quickref c.xrds:all_established() -> {established, not_established, total} | Check all XRDs status
+--- @quickref c.compositions:list() -> {items} | List compositions
+--- @quickref c.compositions:get(name) -> composition|nil | Get composition by name
+--- @quickref c.managed_resources:get(api_group, version, kind, name) -> resource|nil | Get managed resource
+--- @quickref c.managed_resources:is_ready(api_group, version, kind, name) -> bool | Check if managed resource is ready
+--- @quickref c.managed_resources:list(api_group, version, kind) -> {items} | List managed resources
 
 local M = {}
 
 function M.client(url, token)
-  local c = {
-    url = url:gsub("/+$", ""),
-    token = token,
-  }
+  local base_url = url:gsub("/+$", "")
 
-  local function headers(self)
-    return { ["Authorization"] = "Bearer " .. self.token }
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
+
+  local function headers()
+    return { ["Authorization"] = "Bearer " .. token }
   end
 
-  local function api_get(self, path)
-    local resp = http.get(self.url .. path, { headers = headers(self) })
+  local function api_get(path)
+    local resp = http.get(base_url .. path, { headers = headers() })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
       error("crossplane: GET " .. path .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -47,8 +46,8 @@ function M.client(url, token)
     return json.parse(resp.body)
   end
 
-  local function api_list(self, path)
-    local resp = http.get(self.url .. path, { headers = headers(self) })
+  local function api_list(path)
+    local resp = http.get(base_url .. path, { headers = headers() })
     if resp.status == 404 then return { items = {} } end
     if resp.status ~= 200 then
       error("crossplane: LIST " .. path .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -68,26 +67,34 @@ function M.client(url, token)
     return false
   end
 
-  function c:providers()
-    return api_list(self, "/apis/pkg.crossplane.io/v1/providers")
+  -- ===== Client =====
+
+  local c = {}
+
+  -- ===== Providers =====
+
+  c.providers = {}
+
+  function c.providers:list()
+    return api_list("/apis/pkg.crossplane.io/v1/providers")
   end
 
-  function c:provider(name)
-    return api_get(self, "/apis/pkg.crossplane.io/v1/providers/" .. name)
+  function c.providers:get(name)
+    return api_get("/apis/pkg.crossplane.io/v1/providers/" .. name)
   end
 
-  function c:is_provider_healthy(name)
-    local p = self:provider(name)
+  function c.providers:is_healthy(name)
+    local p = c.providers:get(name)
     return check_condition(p, "Healthy")
   end
 
-  function c:is_provider_installed(name)
-    local p = self:provider(name)
+  function c.providers:is_installed(name)
+    local p = c.providers:get(name)
     return check_condition(p, "Installed")
   end
 
-  function c:provider_status(name)
-    local p = self:provider(name)
+  function c.providers:status(name)
+    local p = c.providers:get(name)
     if not p then
       error("crossplane: provider not found: " .. name)
     end
@@ -109,83 +116,8 @@ function M.client(url, token)
     }
   end
 
-  function c:provider_revisions()
-    return api_list(self, "/apis/pkg.crossplane.io/v1/providerrevisions")
-  end
-
-  function c:provider_revision(name)
-    return api_get(self, "/apis/pkg.crossplane.io/v1/providerrevisions/" .. name)
-  end
-
-  function c:configurations()
-    return api_list(self, "/apis/pkg.crossplane.io/v1/configurations")
-  end
-
-  function c:configuration(name)
-    return api_get(self, "/apis/pkg.crossplane.io/v1/configurations/" .. name)
-  end
-
-  function c:is_configuration_healthy(name)
-    local cfg = self:configuration(name)
-    return check_condition(cfg, "Healthy")
-  end
-
-  function c:is_configuration_installed(name)
-    local cfg = self:configuration(name)
-    return check_condition(cfg, "Installed")
-  end
-
-  function c:functions()
-    return api_list(self, "/apis/pkg.crossplane.io/v1beta1/functions")
-  end
-
-  function c:xfunction(name)
-    return api_get(self, "/apis/pkg.crossplane.io/v1beta1/functions/" .. name)
-  end
-
-  function c:is_function_healthy(name)
-    local fn_resource = self:xfunction(name)
-    return check_condition(fn_resource, "Healthy")
-  end
-
-  function c:xrds()
-    return api_list(self, "/apis/apiextensions.crossplane.io/v1/compositeresourcedefinitions")
-  end
-
-  function c:xrd(name)
-    return api_get(self, "/apis/apiextensions.crossplane.io/v1/compositeresourcedefinitions/" .. name)
-  end
-
-  function c:is_xrd_established(name)
-    local x = self:xrd(name)
-    return check_condition(x, "Established")
-  end
-
-  function c:compositions()
-    return api_list(self, "/apis/apiextensions.crossplane.io/v1/compositions")
-  end
-
-  function c:composition(name)
-    return api_get(self, "/apis/apiextensions.crossplane.io/v1/compositions/" .. name)
-  end
-
-  function c:managed_resource(api_group, version, kind, name)
-    local path = "/apis/" .. api_group .. "/" .. version .. "/" .. kind .. "/" .. name
-    return api_get(self, path)
-  end
-
-  function c:is_managed_ready(api_group, version, kind, name)
-    local r = self:managed_resource(api_group, version, kind, name)
-    return check_condition(r, "Ready")
-  end
-
-  function c:managed_resources(api_group, version, kind)
-    local path = "/apis/" .. api_group .. "/" .. version .. "/" .. kind
-    return api_list(self, path)
-  end
-
-  function c:all_providers_healthy()
-    local list = self:providers()
+  function c.providers:all_healthy()
+    local list = c.providers:list()
     local items = list.items or {}
     local healthy = 0
     local unhealthy = 0
@@ -207,8 +139,76 @@ function M.client(url, token)
     }
   end
 
-  function c:all_xrds_established()
-    local list = self:xrds()
+  -- ===== Provider Revisions =====
+
+  c.provider_revisions = {}
+
+  function c.provider_revisions:list()
+    return api_list("/apis/pkg.crossplane.io/v1/providerrevisions")
+  end
+
+  function c.provider_revisions:get(name)
+    return api_get("/apis/pkg.crossplane.io/v1/providerrevisions/" .. name)
+  end
+
+  -- ===== Configurations =====
+
+  c.configurations = {}
+
+  function c.configurations:list()
+    return api_list("/apis/pkg.crossplane.io/v1/configurations")
+  end
+
+  function c.configurations:get(name)
+    return api_get("/apis/pkg.crossplane.io/v1/configurations/" .. name)
+  end
+
+  function c.configurations:is_healthy(name)
+    local cfg = c.configurations:get(name)
+    return check_condition(cfg, "Healthy")
+  end
+
+  function c.configurations:is_installed(name)
+    local cfg = c.configurations:get(name)
+    return check_condition(cfg, "Installed")
+  end
+
+  -- ===== Functions =====
+
+  c.functions = {}
+
+  function c.functions:list()
+    return api_list("/apis/pkg.crossplane.io/v1beta1/functions")
+  end
+
+  function c.functions:get(name)
+    return api_get("/apis/pkg.crossplane.io/v1beta1/functions/" .. name)
+  end
+
+  function c.functions:is_healthy(name)
+    local fn_resource = c.functions:get(name)
+    return check_condition(fn_resource, "Healthy")
+  end
+
+  -- ===== XRDs =====
+
+  c.xrds = {}
+
+  function c.xrds:list()
+    return api_list("/apis/apiextensions.crossplane.io/v1/compositeresourcedefinitions")
+  end
+
+  function c.xrds:get(name)
+    return api_get("/apis/apiextensions.crossplane.io/v1/compositeresourcedefinitions/" .. name)
+  end
+
+  function c.xrds:is_established(name)
+    local x = c.xrds:get(name)
+    return check_condition(x, "Established")
+  end
+
+  function c.xrds:all_established()
+    local list = c.xrds:list()
     local items = list.items or {}
     local established = 0
     local not_established = 0
@@ -224,6 +224,37 @@ function M.client(url, token)
       not_established = not_established,
       total = #items,
     }
+  end
+
+  -- ===== Compositions =====
+
+  c.compositions = {}
+
+  function c.compositions:list()
+    return api_list("/apis/apiextensions.crossplane.io/v1/compositions")
+  end
+
+  function c.compositions:get(name)
+    return api_get("/apis/apiextensions.crossplane.io/v1/compositions/" .. name)
+  end
+
+  -- ===== Managed Resources =====
+
+  c.managed_resources = {}
+
+  function c.managed_resources:get(api_group, version, kind, name)
+    local path = "/apis/" .. api_group .. "/" .. version .. "/" .. kind .. "/" .. name
+    return api_get(path)
+  end
+
+  function c.managed_resources:is_ready(api_group, version, kind, name)
+    local r = c.managed_resources:get(api_group, version, kind, name)
+    return check_condition(r, "Ready")
+  end
+
+  function c.managed_resources:list(api_group, version, kind)
+    local path = "/apis/" .. api_group .. "/" .. version .. "/" .. kind
+    return api_list(path)
   end
 
   return c

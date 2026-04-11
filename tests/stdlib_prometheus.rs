@@ -22,7 +22,8 @@ async fn test_prometheus_query_scalar() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local val = prom.query("{}", "up")
+        local c = prom.client("{}")
+        local val = c.queries:instant("up")
         assert.eq(val, 42)
         "#,
         server.uri()
@@ -51,7 +52,8 @@ async fn test_prometheus_query_multi_result() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local results = prom.query("{}", "up")
+        local c = prom.client("{}")
+        local results = c.queries:instant("up")
         assert.eq(#results, 2)
         assert.eq(results[1].metric.instance, "host1:9090")
         assert.eq(results[1].value, 1)
@@ -84,7 +86,8 @@ async fn test_prometheus_query_range() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local result = prom.query_range("{}", "up", "1234567890", "1234567900", "10s")
+        local c = prom.client("{}")
+        local result = c.queries:range("up", "1234567890", "1234567900", "10s")
         assert.eq(#result, 1)
         assert.eq(result[1].metric.__name__, "up")
         assert.eq(#result[1].values, 2)
@@ -116,7 +119,8 @@ async fn test_prometheus_alerts_active() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local alerts = prom.alerts("{}")
+        local c = prom.client("{}")
+        local alerts = c.alerts:list()
         assert.eq(#alerts, 1)
         assert.eq(alerts[1].labels.alertname, "HighMemory")
         assert.eq(alerts[1].state, "firing")
@@ -141,7 +145,8 @@ async fn test_prometheus_alerts_empty() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local alerts = prom.alerts("{}")
+        local c = prom.client("{}")
+        local alerts = c.alerts:list()
         assert.eq(#alerts, 0)
         "#,
         server.uri()
@@ -175,7 +180,8 @@ async fn test_prometheus_targets() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local targets = prom.targets("{}")
+        local c = prom.client("{}")
+        local targets = c.targets:list()
         assert.eq(#targets.activeTargets, 1)
         assert.eq(targets.activeTargets[1].health, "up")
         assert.eq(targets.activeTargets[1].labels.instance, "localhost:9090")
@@ -211,7 +217,8 @@ async fn test_prometheus_rules() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local groups = prom.rules("{}")
+        local c = prom.client("{}")
+        local groups = c.rules:list()
         assert.eq(#groups, 1)
         assert.eq(groups[1].name, "example")
         assert.eq(groups[1].rules[1].name, "HighMemory")
@@ -237,7 +244,8 @@ async fn test_prometheus_label_values() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local values = prom.label_values("{}", "job")
+        local c = prom.client("{}")
+        local values = c.labels:values("job")
         assert.eq(#values, 3)
         assert.eq(values[1], "prometheus")
         assert.eq(values[2], "node-exporter")
@@ -266,7 +274,8 @@ async fn test_prometheus_series() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local series = prom.series("{}", {{"up"}})
+        local c = prom.client("{}")
+        local series = c.series:list({{"up"}})
         assert.eq(#series, 2)
         assert.eq(series[1].__name__, "up")
         assert.eq(series[1].job, "prometheus")
@@ -289,7 +298,8 @@ async fn test_prometheus_config_reload_success() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local ok = prom.config_reload("{}")
+        local c = prom.client("{}")
+        local ok = c.config:reload()
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -309,7 +319,8 @@ async fn test_prometheus_config_reload_failure() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local ok = prom.config_reload("{}")
+        local c = prom.client("{}")
+        local ok = c.config:reload()
         assert.eq(ok, false)
         "#,
         server.uri()
@@ -338,7 +349,8 @@ async fn test_prometheus_targets_metadata() {
     let script = format!(
         r#"
         local prom = require("assay.prometheus")
-        local meta = prom.targets_metadata("{}", {{
+        local c = prom.client("{}")
+        local meta = c.targets:metadata({{
             match_target = "{{job=\"prometheus\"}}",
             metric = "prometheus_build_info",
             limit = "1",

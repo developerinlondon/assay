@@ -15,7 +15,7 @@ async fn test_kratos_require() {
 }
 
 #[tokio::test]
-async fn test_kratos_whoami_authenticated() {
+async fn test_kratos_sessions_whoami_authenticated() {
     let public = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/sessions/whoami"))
@@ -38,7 +38,7 @@ async fn test_kratos_whoami_authenticated() {
         r#"
         local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ public_url = "{}" }})
-        local session = k:whoami("ory_session_abc=xyz")
+        local session = k.sessions:whoami("ory_session_abc=xyz")
         assert.not_nil(session)
         assert.eq(session.identity.traits.email, "alice@siemens.com")
         "#,
@@ -48,7 +48,7 @@ async fn test_kratos_whoami_authenticated() {
 }
 
 #[tokio::test]
-async fn test_kratos_whoami_unauthenticated() {
+async fn test_kratos_sessions_whoami_unauthenticated() {
     let public = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/sessions/whoami"))
@@ -62,7 +62,7 @@ async fn test_kratos_whoami_unauthenticated() {
         r#"
         local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ public_url = "{}" }})
-        local session = k:whoami("bogus=cookie")
+        local session = k.sessions:whoami("bogus=cookie")
         assert.eq(session, nil)
         "#,
         public.uri()
@@ -71,7 +71,7 @@ async fn test_kratos_whoami_unauthenticated() {
 }
 
 #[tokio::test]
-async fn test_kratos_get_identity() {
+async fn test_kratos_identities_get() {
     let admin = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/admin/identities/user-123"))
@@ -90,7 +90,7 @@ async fn test_kratos_get_identity() {
         r#"
         local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ admin_url = "{}" }})
-        local identity = k:get_identity("user-123")
+        local identity = k.identities:get("user-123")
         assert.eq(identity.id, "user-123")
         assert.eq(identity.traits.email, "bob@siemens.com")
         "#,
@@ -100,7 +100,7 @@ async fn test_kratos_get_identity() {
 }
 
 #[tokio::test]
-async fn test_kratos_list_identities() {
+async fn test_kratos_identities_list() {
     let admin = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/admin/identities"))
@@ -115,7 +115,7 @@ async fn test_kratos_list_identities() {
         r#"
         local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ admin_url = "{}" }})
-        local identities = k:list_identities()
+        local identities = k.identities:list()
         assert.eq(#identities, 2)
         "#,
         admin.uri()
@@ -124,7 +124,7 @@ async fn test_kratos_list_identities() {
 }
 
 #[tokio::test]
-async fn test_kratos_create_identity() {
+async fn test_kratos_identities_create() {
     let admin = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/admin/identities"))
@@ -140,7 +140,7 @@ async fn test_kratos_create_identity() {
         r#"
         local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ admin_url = "{}" }})
-        local identity = k:create_identity({{
+        local identity = k.identities:create({{
           schema_id = "default",
           traits = {{ email = "new@siemens.com" }},
         }})
@@ -152,7 +152,7 @@ async fn test_kratos_create_identity() {
 }
 
 #[tokio::test]
-async fn test_kratos_get_login_flow() {
+async fn test_kratos_flows_get_login() {
     let public = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/self-service/login/flows"))
@@ -173,7 +173,7 @@ async fn test_kratos_get_login_flow() {
         r#"
         local kratos = require("assay.ory.kratos")
         local k = kratos.client({{ public_url = "{}" }})
-        local flow = k:get_login_flow("flow-abc")
+        local flow = k.flows:get_login("flow-abc")
         assert.eq(flow.id, "flow-abc")
         assert.eq(flow.oauth2_login_challenge, "challenge-xyz")
         "#,

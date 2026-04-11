@@ -34,7 +34,7 @@ async fn test_unleash_health() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "*:*.test-admin-token" }})
-        local h = c:health()
+        local h = c.health:check()
         assert.eq(h.health, "GOOD")
         "#,
         server.uri()
@@ -61,7 +61,7 @@ async fn test_unleash_projects() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local projects = c:projects()
+        local projects = c.projects:list()
         assert.eq(#projects, 2)
         assert.eq(projects[1].id, "default")
         assert.eq(projects[2].id, "demo-project")
@@ -94,7 +94,7 @@ async fn test_unleash_project() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local p = c:project("demo-project")
+        local p = c.projects:get("demo-project")
         assert.eq(p.id, "demo-project")
         assert.eq(p.name, "Demo Project")
         assert.eq(#p.environments, 2)
@@ -117,7 +117,7 @@ async fn test_unleash_project_not_found() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local p = c:project("nonexistent")
+        local p = c.projects:get("nonexistent")
         assert.eq(p, nil)
         "#,
         server.uri()
@@ -142,7 +142,7 @@ async fn test_unleash_create_project() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local p = c:create_project({{ id = "demo-project", name = "Demo Project", description = "Demo project description" }})
+        local p = c.projects:create({{ id = "demo-project", name = "Demo Project", description = "Demo project description" }})
         assert.eq(p.id, "demo-project")
         assert.eq(p.name, "Demo Project")
         "#,
@@ -168,7 +168,7 @@ async fn test_unleash_update_project() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local p = c:update_project("demo-project", {{ name = "Demo Project Updated", description = "Updated description" }})
+        local p = c.projects:update("demo-project", {{ name = "Demo Project Updated", description = "Updated description" }})
         assert.eq(p.name, "Demo Project Updated")
         "#,
         server.uri()
@@ -189,7 +189,7 @@ async fn test_unleash_delete_project() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:delete_project("demo-project")
+        c.projects:delete("demo-project")
         "#,
         server.uri()
     );
@@ -215,7 +215,7 @@ async fn test_unleash_environments() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local envs = c:environments()
+        local envs = c.environments:list()
         assert.eq(#envs, 2)
         assert.eq(envs[1].name, "development")
         assert.eq(envs[2].name, "production")
@@ -238,7 +238,7 @@ async fn test_unleash_enable_environment() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:enable_environment("demo-project", "production")
+        c.environments:enable("demo-project", "production")
         "#,
         server.uri()
     );
@@ -258,7 +258,7 @@ async fn test_unleash_disable_environment() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:disable_environment("demo-project", "staging")
+        c.environments:disable("demo-project", "staging")
         "#,
         server.uri()
     );
@@ -284,7 +284,7 @@ async fn test_unleash_features() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local features = c:features("demo-project")
+        local features = c.features:list("demo-project")
         assert.eq(#features, 2)
         assert.eq(features[1].name, "dark-mode")
         assert.eq(features[2].name, "new-dashboard")
@@ -317,7 +317,7 @@ async fn test_unleash_feature() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local f = c:feature("demo-project", "dark-mode")
+        local f = c.features:get("demo-project", "dark-mode")
         assert.eq(f.name, "dark-mode")
         assert.eq(f.type, "release")
         assert.eq(#f.environments, 2)
@@ -340,7 +340,7 @@ async fn test_unleash_feature_not_found() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local f = c:feature("demo-project", "nonexistent")
+        local f = c.features:get("demo-project", "nonexistent")
         assert.eq(f, nil)
         "#,
         server.uri()
@@ -366,7 +366,7 @@ async fn test_unleash_create_feature() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local f = c:create_feature("demo-project", {{ name = "dark-mode", type = "release", description = "Enable dark mode UI" }})
+        local f = c.features:create("demo-project", {{ name = "dark-mode", type = "release", description = "Enable dark mode UI" }})
         assert.eq(f.name, "dark-mode")
         assert.eq(f.type, "release")
         "#,
@@ -392,7 +392,7 @@ async fn test_unleash_update_feature() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local f = c:update_feature("demo-project", "dark-mode", {{ description = "Updated dark mode" }})
+        local f = c.features:update("demo-project", "dark-mode", {{ description = "Updated dark mode" }})
         assert.eq(f.description, "Updated dark mode")
         "#,
         server.uri()
@@ -413,7 +413,7 @@ async fn test_unleash_archive_feature() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:archive_feature("demo-project", "dark-mode")
+        c.features:archive("demo-project", "dark-mode")
         "#,
         server.uri()
     );
@@ -435,7 +435,7 @@ async fn test_unleash_toggle_on() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:toggle_on("demo-project", "dark-mode", "development")
+        c.features:toggle_on("demo-project", "dark-mode", "development")
         "#,
         server.uri()
     );
@@ -457,7 +457,7 @@ async fn test_unleash_toggle_off() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:toggle_off("demo-project", "dark-mode", "production")
+        c.features:toggle_off("demo-project", "dark-mode", "production")
         "#,
         server.uri()
     );
@@ -482,7 +482,7 @@ async fn test_unleash_strategies() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local strats = c:strategies("demo-project", "dark-mode", "development")
+        local strats = c.strategies:list("demo-project", "dark-mode", "development")
         assert.eq(#strats, 2)
         assert.eq(strats[1].name, "default")
         assert.eq(strats[2].name, "userWithId")
@@ -511,7 +511,7 @@ async fn test_unleash_add_strategy() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local s = c:add_strategy("demo-project", "dark-mode", "development", {{
+        local s = c.strategies:add("demo-project", "dark-mode", "development", {{
             name = "flexibleRollout",
             parameters = {{ rollout = "50", stickiness = "default" }}
         }})
@@ -541,7 +541,7 @@ async fn test_unleash_tokens() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local tokens = c:tokens()
+        local tokens = c.tokens:list()
         assert.eq(#tokens, 2)
         assert.eq(tokens[1].tokenName, "demo-project-dev")
         assert.eq(tokens[1].type, "client")
@@ -572,7 +572,7 @@ async fn test_unleash_create_token() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        local t = c:create_token({{
+        local t = c.tokens:create({{
             tokenName = "demo-project-client",
             type = "client",
             environment = "development",
@@ -600,7 +600,7 @@ async fn test_unleash_delete_token() {
         r#"
         local unleash = require("assay.unleash")
         local c = unleash.client("{}", {{ token = "test-token" }})
-        c:delete_token("old-token-secret")
+        c.tokens:delete("old-token-secret")
         "#,
         server.uri()
     );

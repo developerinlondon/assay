@@ -31,7 +31,7 @@ async fn test_openclaw_invoke() {
         r#"
         local openclaw = require("assay.openclaw")
         local c = openclaw.client("{}", {{ token = "test-token" }})
-        local result = c:invoke("mytool", "run", {{ key = "value" }})
+        local result = c.tools:invoke("mytool", "run", {{ key = "value" }})
         assert.eq(result.result, "ok")
         assert.eq(result.output, "tool executed")
         "#,
@@ -64,7 +64,7 @@ async fn test_openclaw_send() {
         r##"
         local openclaw = require("assay.openclaw")
         local c = openclaw.client("{}", {{ token = "t" }})
-        local result = c:send("slack", "#alerts", "hello world")
+        local result = c.messaging:send("slack", "#alerts", "hello world")
         assert.eq(result.sent, true)
         "##,
         server.uri()
@@ -95,7 +95,7 @@ async fn test_openclaw_notify() {
         r#"
         local openclaw = require("assay.openclaw")
         local c = openclaw.client("{}", {{ token = "t" }})
-        local result = c:notify("ops", "deploy finished")
+        local result = c.messaging:notify("ops", "deploy finished")
         assert.eq(result.queued, true)
         "#,
         server.uri()
@@ -111,18 +111,18 @@ async fn test_openclaw_state_get_set() {
         local c = openclaw.client("http://localhost:1", { token = "t", state_dir = tmpdir })
 
         -- state_get returns nil for missing key
-        local val = c:state_get("nonexistent")
+        local val = c.state:get("nonexistent")
         assert.eq(val, nil)
 
         -- state_set and state_get round-trip
-        c:state_set("mykey", { count = 42, name = "test" })
-        local got = c:state_get("mykey")
+        c.state:set("mykey", { count = 42, name = "test" })
+        local got = c.state:get("mykey")
         assert.eq(got.count, 42)
         assert.eq(got.name, "test")
 
         -- overwrite
-        c:state_set("mykey", { count = 99 })
-        local got2 = c:state_get("mykey")
+        c.state:set("mykey", { count = 99 })
+        local got2 = c.state:get("mykey")
         assert.eq(got2.count, 99)
     "#;
     run_lua(script).await.unwrap();
@@ -136,19 +136,19 @@ async fn test_openclaw_diff() {
         local c = openclaw.client("http://localhost:1", { token = "t", state_dir = tmpdir })
 
         -- First diff: before is nil, after is new value
-        local d = c:diff("counter", { value = 1 })
+        local d = c.state:diff("counter", { value = 1 })
         assert.eq(d.changed, true)
         assert.eq(d.before, nil)
         assert.eq(d.after.value, 1)
 
         -- Same value: no change
-        local d2 = c:diff("counter", { value = 1 })
+        local d2 = c.state:diff("counter", { value = 1 })
         assert.eq(d2.changed, false)
         assert.eq(d2.before.value, 1)
         assert.eq(d2.after.value, 1)
 
         -- Different value: changed
-        local d3 = c:diff("counter", { value = 2 })
+        local d3 = c.state:diff("counter", { value = 2 })
         assert.eq(d3.changed, true)
         assert.eq(d3.before.value, 1)
         assert.eq(d3.after.value, 2)
@@ -172,7 +172,7 @@ async fn test_openclaw_llm_task() {
         r#"
         local openclaw = require("assay.openclaw")
         local c = openclaw.client("{}", {{ token = "t" }})
-        local result = c:llm_task("What is the meaning of life?", {{
+        local result = c.llm:task("What is the meaning of life?", {{
             model = "claude-sonnet",
             temperature = 0.5,
         }})
@@ -210,7 +210,7 @@ async fn test_openclaw_cron_add() {
         r#"
         local openclaw = require("assay.openclaw")
         local c = openclaw.client("{}", {{ token = "t" }})
-        local result = c:cron_add({{ schedule = "0 * * * *", task = "health-check" }})
+        local result = c.cron:add({{ schedule = "0 * * * *", task = "health-check" }})
         assert.eq(result.id, "cron-1")
         assert.eq(result.created, true)
         "#,
@@ -237,7 +237,7 @@ async fn test_openclaw_cron_list() {
         r#"
         local openclaw = require("assay.openclaw")
         local c = openclaw.client("{}", {{ token = "t" }})
-        local result = c:cron_list()
+        local result = c.cron:list()
         assert.eq(#result.jobs, 2)
         assert.eq(result.jobs[1].id, "job-1")
         assert.eq(result.jobs[2].task, "daily-report")
@@ -272,7 +272,7 @@ async fn test_openclaw_spawn() {
         r#"
         local openclaw = require("assay.openclaw")
         local c = openclaw.client("{}", {{ token = "t" }})
-        local result = c:spawn("draft summary", {{ model = "claude-sonnet", timeout = 30 }})
+        local result = c.sessions:spawn("draft summary", {{ model = "claude-sonnet", timeout = 30 }})
         assert.eq(result.session_id, "ses-123")
         assert.eq(result.status, "started")
         "#,
@@ -287,7 +287,7 @@ async fn test_openclaw_approve_noninteractive_errors() {
         local openclaw = require("assay.openclaw")
         local c = openclaw.client("http://localhost:1", { token = "t" })
         local ok, err = pcall(function()
-            c:approve("Deploy now?", { env = "prod" })
+            c.gates:approve("Deploy now?", { env = "prod" })
         end)
         assert.eq(ok, false)
         assert.contains(err, "openclaw: approval_required:")

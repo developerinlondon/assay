@@ -70,7 +70,7 @@ fn approval_script() -> PathBuf {
         r#"
         local oc = require("assay.openclaw")
         local c = oc.client("http://localhost:1", { token = "t" })
-        local approved = c:approve("Deploy?", { env = "prod" })
+        local approved = c.gates:approve("Deploy?", { env = "prod" })
         if approved then
           return { status = "deployed" }
         else

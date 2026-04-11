@@ -50,7 +50,7 @@ async fn test_zitadel_ensure_primary_domain_already_primary() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:ensure_primary_domain("example.com")
+        local ok = c.domains:ensure_primary("example.com")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -87,7 +87,7 @@ async fn test_zitadel_ensure_primary_domain_needs_setting() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:ensure_primary_domain("example.com")
+        local ok = c.domains:ensure_primary("example.com")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -124,7 +124,7 @@ async fn test_zitadel_ensure_primary_domain_add_conflict() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:ensure_primary_domain("example.com")
+        local ok = c.domains:ensure_primary("example.com")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -145,7 +145,7 @@ async fn test_zitadel_ensure_primary_domain_list_failure() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:ensure_primary_domain("example.com")
+        local ok = c.domains:ensure_primary("example.com")
         assert.eq(ok, false)
         "#,
         server.uri()
@@ -170,7 +170,7 @@ async fn test_zitadel_find_project_found() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local proj = c:find_project("my-project")
+        local proj = c.projects:find("my-project")
         assert.not_nil(proj)
         assert.eq(proj.id, "proj-123")
         assert.eq(proj.name, "my-project")
@@ -195,7 +195,7 @@ async fn test_zitadel_find_project_not_found() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local proj = c:find_project("nonexistent")
+        local proj = c.projects:find("nonexistent")
         assert.eq(proj, nil)
         "#,
         server.uri()
@@ -216,7 +216,7 @@ async fn test_zitadel_find_project_api_error() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local proj = c:find_project("my-project")
+        local proj = c.projects:find("my-project")
         assert.eq(proj, nil)
         "#,
         server.uri()
@@ -240,7 +240,7 @@ async fn test_zitadel_create_project() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local proj = c:create_project("new-project")
+        local proj = c.projects:create("new-project")
         assert.not_nil(proj)
         assert.eq(proj.id, "proj-456")
         "#,
@@ -273,7 +273,7 @@ async fn test_zitadel_ensure_project_creates_when_not_found() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local proj = c:ensure_project("my-project")
+        local proj = c.projects:ensure("my-project")
         assert.not_nil(proj)
         assert.eq(proj.id, "proj-789")
         "#,
@@ -299,7 +299,7 @@ async fn test_zitadel_ensure_project_returns_existing() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local proj = c:ensure_project("my-project")
+        local proj = c.projects:ensure("my-project")
         assert.not_nil(proj)
         assert.eq(proj.id, "proj-existing")
         "#,
@@ -326,7 +326,7 @@ async fn test_zitadel_find_app_found() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local app = c:find_app("proj-123", "my-app")
+        local app = c.apps:find("proj-123", "my-app")
         assert.not_nil(app)
         assert.eq(app.id, "app-1")
         assert.eq(app.name, "my-app")
@@ -353,7 +353,7 @@ async fn test_zitadel_find_app_not_found() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local app = c:find_app("proj-123", "nonexistent")
+        local app = c.apps:find("proj-123", "nonexistent")
         assert.eq(app, nil)
         "#,
         server.uri()
@@ -378,7 +378,7 @@ async fn test_zitadel_create_oidc_app() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local app = c:create_oidc_app("proj-123", {{
+        local app = c.apps:create_oidc("proj-123", {{
             name = "my-oidc-app",
             subdomain = "app",
             callbackPath = "/oauth/callback",
@@ -416,7 +416,7 @@ async fn test_zitadel_ensure_oidc_app_creates_when_not_found() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local app = c:ensure_oidc_app("proj-123", {{
+        local app = c.apps:ensure_oidc("proj-123", {{
             name = "my-oidc-app",
             subdomain = "app",
             callbackPath = "/oauth/callback",
@@ -446,7 +446,7 @@ async fn test_zitadel_ensure_oidc_app_returns_existing() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local app = c:ensure_oidc_app("proj-123", {{
+        local app = c.apps:ensure_oidc("proj-123", {{
             name = "my-oidc-app",
             subdomain = "app",
             callbackPath = "/oauth/callback",
@@ -476,7 +476,7 @@ async fn test_zitadel_find_idp_found() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local idp = c:find_idp("Google")
+        local idp = c.idps:find("Google")
         assert.not_nil(idp)
         assert.eq(idp.id, "idp-google-1")
         assert.eq(idp.name, "Google")
@@ -501,7 +501,7 @@ async fn test_zitadel_find_idp_not_found() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local idp = c:find_idp("Nonexistent")
+        local idp = c.idps:find("Nonexistent")
         assert.eq(idp, nil)
         "#,
         server.uri()
@@ -532,7 +532,7 @@ async fn test_zitadel_ensure_google_idp_creates_new() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local idp_id = c:ensure_google_idp({{
+        local idp_id = c.idps:ensure_google({{
             clientId = "google-client-id",
             clientSecret = "google-secret",
         }})
@@ -560,7 +560,7 @@ async fn test_zitadel_ensure_google_idp_returns_existing() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local idp_id = c:ensure_google_idp({{
+        local idp_id = c.idps:ensure_google({{
             clientId = "google-client-id",
             clientSecret = "google-secret",
         }})
@@ -594,7 +594,7 @@ async fn test_zitadel_ensure_oidc_idp_creates_new() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local idp_id = c:ensure_oidc_idp({{
+        local idp_id = c.idps:ensure_oidc({{
             name = "MyOIDC",
             clientId = "oidc-client-id",
             clientSecret = "oidc-secret",
@@ -630,7 +630,7 @@ async fn test_zitadel_ensure_oidc_idp_updates_existing() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local idp_id = c:ensure_oidc_idp({{
+        local idp_id = c.idps:ensure_oidc({{
             name = "MyOIDC",
             clientId = "oidc-client-id",
             clientSecret = "oidc-secret",
@@ -656,7 +656,7 @@ async fn test_zitadel_add_idp_to_login_policy_success() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:add_idp_to_login_policy("idp-123")
+        local ok = c.idps:add_to_login_policy("idp-123")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -679,7 +679,7 @@ async fn test_zitadel_add_idp_to_login_policy_already_exists() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:add_idp_to_login_policy("idp-123")
+        local ok = c.idps:add_to_login_policy("idp-123")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -700,7 +700,7 @@ async fn test_zitadel_add_idp_to_login_policy_failure() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:add_idp_to_login_policy("idp-123")
+        local ok = c.idps:add_to_login_policy("idp-123")
         assert.eq(ok, false)
         "#,
         server.uri()
@@ -726,7 +726,7 @@ async fn test_zitadel_search_users() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local users = c:search_users({{ queries = {{}} }})
+        local users = c.users:search({{ queries = {{}} }})
         assert.eq(#users, 2)
         assert.eq(users[1].userId, "user-1")
         assert.eq(users[2].userName, "bob@example.com")
@@ -751,7 +751,7 @@ async fn test_zitadel_search_users_empty() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local users = c:search_users({{ queries = {{}} }})
+        local users = c.users:search({{ queries = {{}} }})
         assert.eq(#users, 0)
         "#,
         server.uri()
@@ -772,7 +772,7 @@ async fn test_zitadel_search_users_api_error() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local users = c:search_users({{ queries = {{}} }})
+        local users = c.users:search({{ queries = {{}} }})
         assert.eq(#users, 0)
         "#,
         server.uri()
@@ -793,7 +793,7 @@ async fn test_zitadel_update_user_email_success() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:update_user_email("user-1", "newemail@example.com")
+        local ok = c.users:update_email("user-1", "newemail@example.com")
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -814,7 +814,7 @@ async fn test_zitadel_update_user_email_failure() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:update_user_email("user-1", "newemail@example.com")
+        local ok = c.users:update_email("user-1", "newemail@example.com")
         assert.eq(ok, false)
         "#,
         server.uri()
@@ -844,7 +844,7 @@ async fn test_zitadel_get_login_policy() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local policy = c:get_login_policy()
+        local policy = c.login_policy:get()
         assert.not_nil(policy)
         assert.eq(policy.allowUsernamePassword, true)
         assert.eq(policy.allowExternalIdp, true)
@@ -869,7 +869,7 @@ async fn test_zitadel_get_login_policy_failure() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local policy = c:get_login_policy()
+        local policy = c.login_policy:get()
         assert.eq(policy, nil)
         "#,
         server.uri()
@@ -890,7 +890,7 @@ async fn test_zitadel_update_login_policy_success() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:update_login_policy({{
+        local ok = c.login_policy:update({{
             allowUsernamePassword = false,
             allowExternalIdp = true,
         }})
@@ -914,7 +914,7 @@ async fn test_zitadel_update_login_policy_failure() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:update_login_policy({{
+        local ok = c.login_policy:update({{
             allowUsernamePassword = false,
         }})
         assert.eq(ok, false)
@@ -957,7 +957,7 @@ async fn test_zitadel_disable_password_login() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:disable_password_login()
+        local ok = c.login_policy:disable_password()
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -987,7 +987,7 @@ async fn test_zitadel_disable_password_login_already_disabled() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:disable_password_login()
+        local ok = c.login_policy:disable_password()
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -1008,7 +1008,7 @@ async fn test_zitadel_disable_password_login_policy_read_failure() {
         r#"
         local z = require("assay.zitadel")
         local c = z.client({{ url = "{}", domain = "example.com", token = "test-token" }})
-        local ok = c:disable_password_login()
+        local ok = c.login_policy:disable_password()
         assert.eq(ok, false)
         "#,
         server.uri()

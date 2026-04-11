@@ -163,7 +163,7 @@
 local pods = k8s.list("default", "pod")
 local argo = require("assay.argocd")
 local c = argo.client(url, {token=t})
-local apps = c:applications()</code></pre>
+local apps = c.apps:list()</code></pre>
       </div>
       <div class="card">
         <h3 style="margin-top: 0;">AI Agent Integration</h3>
@@ -178,10 +178,9 @@ c:state_set("key", {v="1.2"})</code></pre>
         <h3 style="margin-top: 0;">Monitoring &amp; Observability</h3>
         <p class="text-muted">Prometheus, Grafana, Loki, Alertmanager. Query metrics, push logs, manage alerts and dashboards.</p>
         <pre style="margin-bottom: 0;"><code>local prom = require("assay.prometheus")
-local r = prom.query(url, "up")
-assert.gt(#r, 0, "No targets")
-local loki = require("assay.loki")
-loki.push(url, "log line")</code></pre>
+local c = prom.client(url)
+local r = c.queries:instant("up")
+assert.gt(#r, 0, "No targets")</code></pre>
       </div>
       <div class="card">
         <h3 style="margin-top: 0;">Security &amp; Secrets</h3>
@@ -220,7 +219,8 @@ checks:
     <h3>Lua Scripts (.lua)</h3>
     <pre><code>#!/usr/bin/assay
 local prom = require("assay.prometheus")
-local result = prom.query("http://prom:9090", "up")
+local c = prom.client("http://prom:9090")
+local result = c.queries:instant("up")
 assert.gt(#result, 0, "No targets up")
 log.info("Targets up: " .. #result)</code></pre>
 

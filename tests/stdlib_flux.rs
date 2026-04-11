@@ -46,7 +46,7 @@ async fn test_git_repositories_list() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        local repos = c:git_repositories("flux-system")
+        local repos = c.git_repos:list("flux-system")
         assert.eq(repos.kind, "GitRepositoryList")
         assert.eq(#repos.items, 2)
         assert.eq(repos.items[1].metadata.name, "app-repo")
@@ -80,7 +80,7 @@ async fn test_git_repository_single() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        local repo = c:git_repository("flux-system", "app-repo")
+        local repo = c.git_repos:get("flux-system", "app-repo")
         assert.eq(repo.kind, "GitRepository")
         assert.eq(repo.metadata.name, "app-repo")
         assert.eq(repo.spec.url, "https://github.com/org/app")
@@ -114,7 +114,7 @@ async fn test_is_git_repo_ready_true() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        assert.eq(c:is_git_repo_ready("flux-system", "app-repo"), true)
+        assert.eq(c.git_repos:is_ready("flux-system", "app-repo"), true)
         "#,
         server.uri()
     );
@@ -143,7 +143,7 @@ async fn test_is_git_repo_ready_false() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        assert.eq(c:is_git_repo_ready("flux-system", "broken-repo"), false)
+        assert.eq(c.git_repos:is_ready("flux-system", "broken-repo"), false)
         "#,
         server.uri()
     );
@@ -176,7 +176,7 @@ async fn test_helm_repositories_list() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        local repos = c:helm_repositories("flux-system")
+        local repos = c.helm_repos:list("flux-system")
         assert.eq(repos.kind, "HelmRepositoryList")
         assert.eq(#repos.items, 1)
         assert.eq(repos.items[1].metadata.name, "bitnami")
@@ -221,7 +221,7 @@ async fn test_kustomizations_list() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        local ks = c:kustomizations("flux-system")
+        local ks = c.kustomizations:list("flux-system")
         assert.eq(ks.kind, "KustomizationList")
         assert.eq(#ks.items, 2)
         assert.eq(ks.items[1].metadata.name, "infra")
@@ -259,7 +259,7 @@ async fn test_kustomization_single() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        local ks = c:kustomization("flux-system", "infra")
+        local ks = c.kustomizations:get("flux-system", "infra")
         assert.eq(ks.kind, "Kustomization")
         assert.eq(ks.metadata.name, "infra")
         assert.eq(ks.spec.path, "./infrastructure")
@@ -289,7 +289,7 @@ async fn test_is_kustomization_ready() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        assert.eq(c:is_kustomization_ready("flux-system", "infra"), true)
+        assert.eq(c.kustomizations:is_ready("flux-system", "infra"), true)
         "#,
         server.uri()
     );
@@ -321,7 +321,7 @@ async fn test_kustomization_status() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        local st = c:kustomization_status("flux-system", "infra")
+        local st = c.kustomizations:status("flux-system", "infra")
         assert.eq(st.ready, true)
         assert.eq(st.revision, "main@sha1:abc123")
         assert.eq(st.last_applied_revision, "main@sha1:abc123")
@@ -364,7 +364,7 @@ async fn test_helm_releases_list() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        local releases = c:helm_releases("default")
+        local releases = c.helm_releases:list("default")
         assert.eq(releases.kind, "HelmReleaseList")
         assert.eq(#releases.items, 2)
         assert.eq(releases.items[1].metadata.name, "redis")
@@ -397,7 +397,7 @@ async fn test_is_helm_release_ready() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        assert.eq(c:is_helm_release_ready("default", "redis"), true)
+        assert.eq(c.helm_releases:is_ready("default", "redis"), true)
         "#,
         server.uri()
     );
@@ -446,7 +446,7 @@ async fn test_all_sources_ready() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        local result = c:all_sources_ready("flux-system")
+        local result = c.sources:all_ready("flux-system")
         assert.eq(result.total, 3)
         assert.eq(result.ready, 2)
         assert.eq(result.not_ready, 1)
@@ -488,7 +488,7 @@ async fn test_all_kustomizations_ready() {
         r#"
         local flux = require("assay.flux")
         local c = flux.client("{}", "fake-token")
-        local result = c:all_kustomizations_ready("flux-system")
+        local result = c.kustomizations:all_ready("flux-system")
         assert.eq(result.total, 3)
         assert.eq(result.ready, 2)
         assert.eq(result.not_ready, 1)

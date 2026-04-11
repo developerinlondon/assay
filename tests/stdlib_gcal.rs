@@ -54,7 +54,7 @@ async fn test_gcal_events() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local events = c:events()
+        local events = c.events:list()
         assert.eq(#events, 2)
         assert.eq(events[1].id, "evt-1")
         assert.eq(events[1].summary, "Team standup")
@@ -95,7 +95,7 @@ async fn test_gcal_event_create() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local evt = c:event_create({{
+        local evt = c.events:create({{
             summary = "New Meeting",
             start = {{ dateTime = "2026-04-06T10:00:00Z" }},
             ["end"] = {{ dateTime = "2026-04-06T11:00:00Z" }},
@@ -143,7 +143,7 @@ async fn test_gcal_event_get() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local evt = c:event_get("evt-123")
+        local evt = c.events:get("evt-123")
         assert.eq(evt.id, "evt-123")
         assert.eq(evt.summary, "Sprint Planning")
         assert.eq(evt.description, "Q2 planning session")
@@ -183,7 +183,7 @@ async fn test_gcal_event_update() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local evt = c:event_update("evt-123", {{ summary = "Updated Planning" }})
+        local evt = c.events:update("evt-123", {{ summary = "Updated Planning" }})
         assert.eq(evt.id, "evt-123")
         assert.eq(evt.summary, "Updated Planning")
         assert.eq(evt.status, "confirmed")
@@ -223,7 +223,7 @@ async fn test_gcal_calendars() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local cals = c:calendars()
+        local cals = c.calendars:list()
         assert.eq(#cals, 2)
         assert.eq(cals[1].summary, "My Calendar")
         assert.eq(cals[1].primary, true)
@@ -258,7 +258,7 @@ async fn test_gcal_event_delete() {
             token_file = tmpdir .. "/token.json",
             api_base = "{}",
         }})
-        local result = c:event_delete("evt-del")
+        local result = c.events:delete("evt-del")
         assert.eq(result, true)
         "#,
         server.uri()
@@ -313,7 +313,7 @@ async fn test_gcal_token_refresh_on_401() {
             api_base = "{}",
             token_url = "{}/token",
         }})
-        local cals = c:calendars()
+        local cals = c.calendars:list()
         assert.eq(#cals, 1)
         assert.eq(cals[1].summary, "My Calendar")
         "#,

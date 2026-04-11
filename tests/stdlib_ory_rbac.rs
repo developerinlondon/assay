@@ -68,10 +68,10 @@ async fn test_rbac_user_with_no_roles_gets_default() {
     let script = format!(
         r#"
         {policy}
-        local roles = p:user_roles("alice")
+        local roles = p.users:roles("alice")
         assert.eq(#roles, 0)
-        assert.eq(p:user_primary_role("alice"), "viewer")
-        local caps = p:user_capabilities("alice")
+        assert.eq(p.users:primary_role("alice"), "viewer")
+        local caps = p.users:capabilities("alice")
         assert.eq(caps.read, true)
         assert.eq(caps.trigger, nil)
         assert.eq(caps.approve, nil)
@@ -101,16 +101,16 @@ async fn test_rbac_user_with_single_role() {
     let script = format!(
         r#"
         {policy}
-        local roles = p:user_roles("bob")
+        local roles = p.users:roles("bob")
         assert.eq(#roles, 1)
         assert.eq(roles[1], "operator")
-        assert.eq(p:user_primary_role("bob"), "operator")
-        local caps = p:user_capabilities("bob")
+        assert.eq(p.users:primary_role("bob"), "operator")
+        local caps = p.users:capabilities("bob")
         assert.eq(caps.read, true)
         assert.eq(caps.trigger, true)
         assert.eq(caps.approve, nil)
-        assert.eq(p:user_has_capability("bob", "trigger"), true)
-        assert.eq(p:user_has_capability("bob", "approve"), false)
+        assert.eq(p.users:has_capability("bob", "trigger"), true)
+        assert.eq(p.users:has_capability("bob", "approve"), false)
         "#,
         policy = build_policy_snippet(&server.uri(), None)
     );
@@ -136,13 +136,13 @@ async fn test_rbac_user_with_multiple_roles_unions_capabilities() {
     let script = format!(
         r#"
         {policy}
-        local roles = p:user_roles("carol")
+        local roles = p.users:roles("carol")
         assert.eq(#roles, 2)
         -- highest rank first
         assert.eq(roles[1], "approver")
         assert.eq(roles[2], "operator")
-        assert.eq(p:user_primary_role("carol"), "approver")
-        local caps = p:user_capabilities("carol")
+        assert.eq(p.users:primary_role("carol"), "approver")
+        local caps = p.users:capabilities("carol")
         assert.eq(caps.read, true)
         assert.eq(caps.trigger, true)
         assert.eq(caps.approve, true)
@@ -171,7 +171,7 @@ async fn test_rbac_ignores_unknown_roles() {
     let script = format!(
         r#"
         {policy}
-        local roles = p:user_roles("dave")
+        local roles = p.users:roles("dave")
         assert.eq(#roles, 1)
         assert.eq(roles[1], "viewer")
         "#,
@@ -198,7 +198,7 @@ async fn test_rbac_ignores_other_namespaces() {
     let script = format!(
         r#"
         {policy}
-        local roles = p:user_roles("eve")
+        local roles = p.users:roles("eve")
         assert.eq(#roles, 1)
         assert.eq(roles[1], "operator")
         "#,
@@ -208,7 +208,7 @@ async fn test_rbac_ignores_other_namespaces() {
 }
 
 #[tokio::test]
-async fn test_rbac_list_members() {
+async fn test_rbac_members_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/relation-tuples"))
@@ -228,7 +228,7 @@ async fn test_rbac_list_members() {
     let script = format!(
         r#"
         {policy}
-        local members = p:list_members("admin")
+        local members = p.members:list("admin")
         assert.eq(#members, 2)
         assert.eq(members[1], "alice")
         assert.eq(members[2], "bob")
@@ -239,7 +239,7 @@ async fn test_rbac_list_members() {
 }
 
 #[tokio::test]
-async fn test_rbac_add_member() {
+async fn test_rbac_members_add() {
     let read = MockServer::start().await;
     let write = MockServer::start().await;
 
@@ -264,7 +264,7 @@ async fn test_rbac_add_member() {
     let script = format!(
         r#"
         {policy}
-        p:add("seth", "approver")
+        p.members:add("seth", "approver")
         "#,
         policy = build_policy_snippet(&read.uri(), Some(&write.uri()))
     );
@@ -272,7 +272,7 @@ async fn test_rbac_add_member() {
 }
 
 #[tokio::test]
-async fn test_rbac_add_member_is_idempotent() {
+async fn test_rbac_members_add_is_idempotent() {
     // The list call returns Seth already, so add() should NOT issue a
     // PUT — wiremock will fail the test if it does because we don't
     // mount a PUT mock.
@@ -294,7 +294,7 @@ async fn test_rbac_add_member_is_idempotent() {
     let script = format!(
         r#"
         {policy}
-        p:add("seth", "approver")
+        p.members:add("seth", "approver")
         "#,
         policy = build_policy_snippet(&read.uri(), Some(&write.uri()))
     );
@@ -302,7 +302,7 @@ async fn test_rbac_add_member_is_idempotent() {
 }
 
 #[tokio::test]
-async fn test_rbac_remove_member() {
+async fn test_rbac_members_remove() {
     let read = MockServer::start().await;
     let write = MockServer::start().await;
 
@@ -317,7 +317,7 @@ async fn test_rbac_remove_member() {
     let script = format!(
         r#"
         {policy}
-        p:remove("bob", "operator")
+        p.members:remove("bob", "operator")
         "#,
         policy = build_policy_snippet(&read.uri(), Some(&write.uri()))
     );
@@ -325,7 +325,7 @@ async fn test_rbac_remove_member() {
 }
 
 #[tokio::test]
-async fn test_rbac_reset_role() {
+async fn test_rbac_members_reset() {
     let read = MockServer::start().await;
     let write = MockServer::start().await;
 
@@ -341,7 +341,7 @@ async fn test_rbac_reset_role() {
     let script = format!(
         r#"
         {policy}
-        p:reset_role("owner")
+        p.members:reset("owner")
         "#,
         policy = build_policy_snippet(&read.uri(), Some(&write.uri()))
     );
@@ -354,7 +354,7 @@ async fn test_rbac_unknown_role_errors() {
     let script = format!(
         r#"
         {policy}
-        local ok, err = pcall(function() p:list_members("not-a-real-role") end)
+        local ok, err = pcall(function() p.members:list("not-a-real-role") end)
         assert.eq(ok, false)
         assert.contains(tostring(err), "unknown role")
         "#,
@@ -364,12 +364,12 @@ async fn test_rbac_unknown_role_errors() {
 }
 
 #[tokio::test]
-async fn test_rbac_roles_returned_in_rank_order() {
+async fn test_rbac_policy_roles_returned_in_rank_order() {
     let server = MockServer::start().await;
     let script = format!(
         r#"
         {policy}
-        local rs = p:roles()
+        local rs = p.policy:roles()
         assert.eq(#rs, 5)
         assert.eq(rs[1], "owner")
         assert.eq(rs[2], "admin")
@@ -383,12 +383,12 @@ async fn test_rbac_roles_returned_in_rank_order() {
 }
 
 #[tokio::test]
-async fn test_rbac_role_metadata_lookup() {
+async fn test_rbac_policy_role_metadata_lookup() {
     let server = MockServer::start().await;
     let script = format!(
         r#"
         {policy}
-        local r = p:role("approver")
+        local r = p.policy:get("approver")
         assert.eq(r.rank, 3)
         assert.eq(#r.capabilities, 2)
         -- capabilities are returned sorted alphabetically

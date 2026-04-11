@@ -1,26 +1,27 @@
 ## assay.alertmanager
 
 Alertmanager alert and silence management. Query, create, and delete alerts and silences.
-Module-level functions (no client needed): `M.function(url, ...)`.
+Client: `alertmanager.client(url)`.
 
-- `M.alerts(url, opts?)` → [alert] — List alerts. `opts`: `{active, silenced, inhibited, unprocessed, filter, receiver}`
-- `M.post_alerts(url, alerts)` → true — Post new alerts (array of alert objects)
-- `M.alert_groups(url, opts?)` → [group] — List alert groups. `opts`: `{active, silenced, inhibited, filter, receiver}`
-- `M.silences(url, opts?)` → [silence] — List silences. `opts`: `{filter}`
-- `M.silence(url, id)` → silence — Get silence by ID
-- `M.create_silence(url, silence)` → `{silenceID}` — Create a silence
-- `M.delete_silence(url, id)` → true — Delete silence by ID
-- `M.status(url)` → `{cluster, config}` — Get Alertmanager status and cluster info
-- `M.receivers(url)` → [receiver] — List notification receivers
-- `M.is_firing(url, alertname)` → bool — Check if a specific alert is currently firing
-- `M.silence_alert(url, alertname, duration_hours, opts?)` → silenceID — Silence an alert by name for N hours. `opts`: `{created_by, comment}`
-- `M.active_count(url)` → number — Count active non-silenced, non-inhibited alerts
+- `c.alerts:list(opts?)` → [alert] — List alerts. `opts`: `{active, silenced, inhibited, unprocessed, filter, receiver}`
+- `c.alerts:post(alerts)` → true — Post new alerts (array of alert objects)
+- `c.alerts:groups(opts?)` → [group] — List alert groups. `opts`: `{active, silenced, inhibited, filter, receiver}`
+- `c.alerts:is_firing(alertname)` → bool — Check if a specific alert is currently firing
+- `c.alerts:active_count()` → number — Count active non-silenced, non-inhibited alerts
+- `c.silences:list(opts?)` → [silence] — List silences. `opts`: `{filter}`
+- `c.silences:get(id)` → silence — Get silence by ID
+- `c.silences:create(silence)` → `{silenceID}` — Create a silence
+- `c.silences:delete(id)` → true — Delete silence by ID
+- `c.silences:silence_alert(alertname, duration_hours, opts?)` → silenceID — Silence an alert by name for N hours. `opts`: `{created_by, comment}`
+- `c.status:get()` → `{cluster, config}` — Get Alertmanager status and cluster info
+- `c.receivers:list()` → [receiver] — List notification receivers
 
 Example:
 ```lua
 local am = require("assay.alertmanager")
-local firing = am.is_firing("http://alertmanager:9093", "HighCPU")
+local c = am.client("http://alertmanager:9093")
+local firing = c.alerts:is_firing("HighCPU")
 if firing then
-  am.silence_alert("http://alertmanager:9093", "HighCPU", 2, {comment = "Investigating"})
+  c.silences:silence_alert("HighCPU", 2, {comment = "Investigating"})
 end
 ```

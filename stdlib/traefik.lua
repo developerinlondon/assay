@@ -1,119 +1,148 @@
 --- @module assay.traefik
 --- @description Traefik reverse proxy API. Routers, services, middlewares, entrypoints, TLS status.
 --- @keywords traefik, proxy, routers, services, middlewares, entrypoints, loadbalancer, http, tcp, tls, configuration, dashboard, ingress
---- @quickref M.overview(url) -> overview | Get Traefik dashboard overview
---- @quickref M.version(url) -> version | Get Traefik version
---- @quickref M.entrypoints(url) -> [entrypoint] | List entrypoints
---- @quickref M.entrypoint(url, name) -> entrypoint | Get entrypoint by name
---- @quickref M.http_routers(url) -> [router] | List HTTP routers
---- @quickref M.http_router(url, name) -> router | Get HTTP router by name
---- @quickref M.http_services(url) -> [service] | List HTTP services
---- @quickref M.http_service(url, name) -> service | Get HTTP service by name
---- @quickref M.http_middlewares(url) -> [middleware] | List HTTP middlewares
---- @quickref M.http_middleware(url, name) -> middleware | Get HTTP middleware by name
---- @quickref M.tcp_routers(url) -> [router] | List TCP routers
---- @quickref M.tcp_services(url) -> [service] | List TCP services
---- @quickref M.rawdata(url) -> data | Get raw configuration data
---- @quickref M.is_router_enabled(url, name) -> bool | Check if router is enabled
---- @quickref M.router_has_tls(url, name) -> bool | Check if router has TLS
---- @quickref M.service_server_count(url, name) -> number | Count load balancer servers
---- @quickref M.healthy_routers(url) -> enabled, errored | Count healthy vs errored routers
+--- @quickref c.entrypoints:list() -> [entrypoint] | List entrypoints
+--- @quickref c.entrypoints:get(name) -> entrypoint | Get entrypoint by name
+--- @quickref c.routers:list() -> [router] | List HTTP routers
+--- @quickref c.routers:get(name) -> router | Get HTTP router by name
+--- @quickref c.routers:is_enabled(name) -> bool | Check if router is enabled
+--- @quickref c.routers:has_tls(name) -> bool | Check if router has TLS
+--- @quickref c.routers:healthy() -> enabled, errored | Count healthy vs errored routers
+--- @quickref c.services:list() -> [service] | List HTTP services
+--- @quickref c.services:get(name) -> service | Get HTTP service by name
+--- @quickref c.services:server_count(name) -> number | Count load balancer servers
+--- @quickref c.middlewares:list() -> [middleware] | List HTTP middlewares
+--- @quickref c.middlewares:get(name) -> middleware | Get HTTP middleware by name
+--- @quickref c.tcp:routers() -> [router] | List TCP routers
+--- @quickref c.tcp:services() -> [service] | List TCP services
+--- @quickref c.info:overview() -> overview | Get Traefik dashboard overview
+--- @quickref c.info:version() -> version | Get Traefik version
+--- @quickref c.info:rawdata() -> data | Get raw configuration data
 
 local M = {}
 
-local function api_get(url, path_str)
-  local base = url:gsub("/+$", "")
-  local resp = http.get(base .. path_str, { headers = {} })
+function M.client(url)
+  local base_url = url:gsub("/+$", "")
 
-  if resp.status ~= 200 then
-    error("traefik: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
-  end
-
-  return json.parse(resp.body)
-end
-
-function M.overview(url)
-  return api_get(url, "/api/overview")
-end
-
-function M.version(url)
-  return api_get(url, "/api/version")
-end
-
-function M.entrypoints(url)
-  return api_get(url, "/api/entrypoints")
-end
-
-function M.entrypoint(url, name)
-  return api_get(url, "/api/entrypoints/" .. name)
-end
-
-function M.http_routers(url)
-  return api_get(url, "/api/http/routers")
-end
-
-function M.http_router(url, name)
-  return api_get(url, "/api/http/routers/" .. name)
-end
-
-function M.http_services(url)
-  return api_get(url, "/api/http/services")
-end
-
-function M.http_service(url, name)
-  return api_get(url, "/api/http/services/" .. name)
-end
-
-function M.http_middlewares(url)
-  return api_get(url, "/api/http/middlewares")
-end
-
-function M.http_middleware(url, name)
-  return api_get(url, "/api/http/middlewares/" .. name)
-end
-
-function M.tcp_routers(url)
-  return api_get(url, "/api/tcp/routers")
-end
-
-function M.tcp_services(url)
-  return api_get(url, "/api/tcp/services")
-end
-
-function M.rawdata(url)
-  return api_get(url, "/api/rawdata")
-end
-
-function M.is_router_enabled(url, name)
-  local router = M.http_router(url, name)
-  return router.status == "enabled"
-end
-
-function M.router_has_tls(url, name)
-  local router = M.http_router(url, name)
-  return router.tls ~= nil
-end
-
-function M.service_server_count(url, name)
-  local service = M.http_service(url, name)
-  if not service.loadBalancer or not service.loadBalancer.servers then
-    return 0
-  end
-  return #service.loadBalancer.servers
-end
-
-function M.healthy_routers(url)
-  local routers = M.http_routers(url)
-  local enabled = 0
-  local errored = 0
-  for _, router in ipairs(routers) do
-    if router.status == "enabled" then
-      enabled = enabled + 1
-    else
-      errored = errored + 1
+  local function api_get(path_str)
+    local resp = http.get(base_url .. path_str, { headers = {} })
+    if resp.status ~= 200 then
+      error("traefik: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
+    return json.parse(resp.body)
   end
-  return enabled, errored
+
+  local c = {}
+
+  -- ===== Info =====
+
+  c.info = {}
+
+  function c.info:overview()
+    return api_get("/api/overview")
+  end
+
+  function c.info:version()
+    return api_get("/api/version")
+  end
+
+  function c.info:rawdata()
+    return api_get("/api/rawdata")
+  end
+
+  -- ===== Entrypoints =====
+
+  c.entrypoints = {}
+
+  function c.entrypoints:list()
+    return api_get("/api/entrypoints")
+  end
+
+  function c.entrypoints:get(name)
+    return api_get("/api/entrypoints/" .. name)
+  end
+
+  -- ===== Routers (HTTP) =====
+
+  c.routers = {}
+
+  function c.routers:list()
+    return api_get("/api/http/routers")
+  end
+
+  function c.routers:get(name)
+    return api_get("/api/http/routers/" .. name)
+  end
+
+  function c.routers:is_enabled(name)
+    local router = c.routers:get(name)
+    return router.status == "enabled"
+  end
+
+  function c.routers:has_tls(name)
+    local router = c.routers:get(name)
+    return router.tls ~= nil
+  end
+
+  function c.routers:healthy()
+    local routers = c.routers:list()
+    local enabled = 0
+    local errored = 0
+    for _, router in ipairs(routers) do
+      if router.status == "enabled" then
+        enabled = enabled + 1
+      else
+        errored = errored + 1
+      end
+    end
+    return enabled, errored
+  end
+
+  -- ===== Services (HTTP) =====
+
+  c.services = {}
+
+  function c.services:list()
+    return api_get("/api/http/services")
+  end
+
+  function c.services:get(name)
+    return api_get("/api/http/services/" .. name)
+  end
+
+  function c.services:server_count(name)
+    local service = c.services:get(name)
+    if not service.loadBalancer or not service.loadBalancer.servers then
+      return 0
+    end
+    return #service.loadBalancer.servers
+  end
+
+  -- ===== Middlewares (HTTP) =====
+
+  c.middlewares = {}
+
+  function c.middlewares:list()
+    return api_get("/api/http/middlewares")
+  end
+
+  function c.middlewares:get(name)
+    return api_get("/api/http/middlewares/" .. name)
+  end
+
+  -- ===== TCP =====
+
+  c.tcp = {}
+
+  function c.tcp:routers()
+    return api_get("/api/tcp/routers")
+  end
+
+  function c.tcp:services()
+    return api_get("/api/tcp/services")
+  end
+
+  return c
 end
 
 return M

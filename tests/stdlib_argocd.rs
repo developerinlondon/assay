@@ -88,7 +88,7 @@ async fn test_argocd_applications_list() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local apps = c:applications()
+        local apps = c.apps:list()
         assert.eq(#apps, 2)
         assert.eq(apps[1].metadata.name, "guestbook")
         assert.eq(apps[1].status.health.status, "Healthy")
@@ -131,7 +131,7 @@ async fn test_argocd_application_get() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local app = c:application("guestbook")
+        local app = c.apps:get("guestbook")
         assert.eq(app.metadata.name, "guestbook")
         assert.eq(app.metadata.uid, "abc-123")
         assert.eq(app.spec.source.path, "guestbook")
@@ -163,7 +163,7 @@ async fn test_argocd_app_health() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local h = c:app_health("guestbook")
+        local h = c.apps:health("guestbook")
         assert.eq(h.status, "Degraded")
         assert.eq(h.sync, "Synced")
         assert.eq(h.message, "Pod crash loop")
@@ -198,7 +198,7 @@ async fn test_argocd_sync() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local result = c:sync("guestbook", {{ revision = "def456", prune = true }})
+        local result = c.apps:sync("guestbook", {{ revision = "def456", prune = true }})
         assert.eq(result.status.operationState.phase, "Running")
         assert.eq(result.status.operationState.syncResult.revision, "def456")
         "#,
@@ -227,7 +227,7 @@ async fn test_argocd_refresh() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local app = c:refresh("guestbook", {{ type = "hard" }})
+        local app = c.apps:refresh("guestbook", {{ type = "hard" }})
         assert.eq(app.metadata.name, "guestbook")
         assert.eq(app.status.sync.revision, "latest123")
         "#,
@@ -257,7 +257,7 @@ async fn test_argocd_rollback() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local result = c:rollback("guestbook", 5)
+        local result = c.apps:rollback("guestbook", 5)
         assert.eq(result.status.operationState.phase, "Succeeded")
         assert.eq(result.status.operationState.message, "Rollback complete")
         "#,
@@ -298,7 +298,7 @@ async fn test_argocd_app_resources() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local tree = c:app_resources("guestbook")
+        local tree = c.apps:resources("guestbook")
         assert.eq(#tree.nodes, 2)
         assert.eq(tree.nodes[1].kind, "Deployment")
         assert.eq(tree.nodes[1].name, "guestbook-ui")
@@ -328,7 +328,7 @@ async fn test_argocd_app_manifests() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local result = c:app_manifests("guestbook")
+        local result = c.apps:manifests("guestbook")
         assert.eq(#result.manifests, 2)
         assert.eq(result.revision, "abc123")
         "#,
@@ -353,7 +353,7 @@ async fn test_argocd_delete_app() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local result = c:delete_app("guestbook", {{ cascade = true, propagation_policy = "foreground" }})
+        local result = c.apps:delete("guestbook", {{ cascade = true, propagation_policy = "foreground" }})
         assert.eq(result.metadata.name, "guestbook")
         "#,
         server.uri()
@@ -394,7 +394,7 @@ async fn test_argocd_projects_list() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local projects = c:projects()
+        local projects = c.projects:list()
         assert.eq(#projects, 2)
         assert.eq(projects[1].metadata.name, "default")
         assert.eq(projects[1].spec.description, "Default project")
@@ -425,7 +425,7 @@ async fn test_argocd_project_get() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local proj = c:project("default")
+        local proj = c.projects:get("default")
         assert.eq(proj.metadata.name, "default")
         assert.eq(proj.spec.description, "Default project")
         assert.eq(proj.spec.sourceRepos[1], "*")
@@ -457,7 +457,7 @@ async fn test_argocd_repositories_list() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local repos = c:repositories()
+        local repos = c.repositories:list()
         assert.eq(#repos, 1)
         assert.eq(repos[1].type, "git")
         assert.eq(repos[1].connectionState.status, "Successful")
@@ -490,7 +490,7 @@ async fn test_argocd_clusters_list() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local clusters = c:clusters()
+        local clusters = c.clusters:list()
         assert.eq(#clusters, 1)
         assert.eq(clusters[1].name, "in-cluster")
         assert.eq(clusters[1].connectionState.status, "Successful")
@@ -519,7 +519,7 @@ async fn test_argocd_settings() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local settings = c:settings()
+        local settings = c.settings:get()
         assert.eq(settings.url, "https://argocd.example.com")
         assert.eq(settings.statusBadgeEnabled, true)
         "#,
@@ -579,7 +579,7 @@ async fn test_argocd_is_healthy_true() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        assert.eq(c:is_healthy("guestbook"), true)
+        assert.eq(c.apps:is_healthy("guestbook"), true)
         "#,
         server.uri()
     );
@@ -606,7 +606,7 @@ async fn test_argocd_is_healthy_false() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        assert.eq(c:is_healthy("guestbook"), false)
+        assert.eq(c.apps:is_healthy("guestbook"), false)
         "#,
         server.uri()
     );
@@ -633,7 +633,7 @@ async fn test_argocd_is_synced_true() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        assert.eq(c:is_synced("guestbook"), true)
+        assert.eq(c.apps:is_synced("guestbook"), true)
         "#,
         server.uri()
     );
@@ -660,7 +660,7 @@ async fn test_argocd_is_synced_false() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        assert.eq(c:is_synced("guestbook"), false)
+        assert.eq(c.apps:is_synced("guestbook"), false)
         "#,
         server.uri()
     );
@@ -682,7 +682,7 @@ async fn test_argocd_error_on_failure() {
         r#"
         local argocd = require("assay.argocd")
         local c = argocd.client("{}")
-        local ok, err = pcall(function() c:application("missing") end)
+        local ok, err = pcall(function() c.apps:get("missing") end)
         assert.eq(ok, false)
         assert.matches(err, "HTTP 404")
         "#,

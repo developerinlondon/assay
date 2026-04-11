@@ -4,20 +4,39 @@ Ory Kratos identity management. Self-service login, registration, recovery and s
 identity CRUD via the admin API, session introspection (whoami), and identity schemas.
 Client: `kratos.client({public_url="...", admin_url="..."})`.
 
-- `c:whoami(cookie_or_token)` → session|nil — Introspect a session (nil on 401)
-- `c:create_login_flow(opts?)` → flow — Initialize a login flow (browser or api)
-- `c:create_registration_flow(opts?)` → flow — Initialize a registration flow
-- `c:create_recovery_flow(opts?)` → flow — Initialize a recovery flow
-- `c:create_settings_flow(opts?)` → flow — Initialize a settings flow
-- `c:submit_login(flow_id, payload)` → `{session, session_token?}` — Submit login flow
-- `c:submit_registration(flow_id, payload)` → `{identity, session?}` — Submit registration flow
-- `c:list_identities(opts?)` → [identity] — Admin: list identities
-- `c:get_identity(id)` → identity|nil — Admin: get identity by ID
-- `c:create_identity(payload)` → identity — Admin: create identity
-- `c:update_identity(id, payload)` → identity — Admin: update identity
-- `c:delete_identity(id)` → bool — Admin: delete identity
-- `c:list_schemas()` → [schema] — List identity schemas
-- `c:get_schema(id)` → schema|nil — Get schema by ID
+**Sessions** (`c.sessions`):
+
+- `c.sessions:whoami(cookie_or_token)` → session|nil — Introspect a session (nil on 401)
+- `c.sessions:list(identity_id)` → [session] — Admin: list sessions for an identity
+- `c.sessions:revoke(identity_id)` → nil — Admin: revoke all sessions for an identity
+
+**Flows** (`c.flows`):
+
+- `c.flows:create_login(opts?)` → flow — Initialize a login flow (browser or api)
+- `c.flows:get_login(flow_id, cookie?)` → flow — Fetch an existing login flow
+- `c.flows:submit_login(flow_id, payload, cookie?)` → `{session, session_token?}` — Submit login flow
+- `c.flows:create_registration(opts?)` → flow — Initialize a registration flow
+- `c.flows:get_registration(flow_id, cookie?)` → flow — Fetch a registration flow
+- `c.flows:submit_registration(flow_id, payload, cookie?)` → `{identity, session?}` — Submit registration flow
+- `c.flows:create_recovery(opts?)` → flow — Initialize a recovery flow
+- `c.flows:get_recovery(flow_id, cookie?)` → flow — Fetch a recovery flow
+- `c.flows:submit_recovery(flow_id, payload, cookie?)` → flow — Submit recovery flow
+- `c.flows:create_settings(cookie)` → flow — Initialize a settings flow
+- `c.flows:get_settings(flow_id, cookie?)` → flow — Fetch a settings flow
+- `c.flows:submit_settings(flow_id, payload, cookie?)` → flow — Submit settings flow
+
+**Identities** (`c.identities`):
+
+- `c.identities:list(opts?)` → [identity] — Admin: list identities
+- `c.identities:get(id)` → identity|nil — Admin: get identity by ID
+- `c.identities:create(payload)` → identity — Admin: create identity
+- `c.identities:update(id, payload)` → identity — Admin: update identity
+- `c.identities:delete(id)` → nil — Admin: delete identity
+
+**Schemas** (`c.schemas`):
+
+- `c.schemas:list()` → [schema] — List identity schemas
+- `c.schemas:get(id)` → schema|nil — Get schema by ID
 
 Example:
 ```lua
@@ -26,7 +45,7 @@ local c = kratos.client({
   public_url = "http://kratos-public:4433",
   admin_url = "http://kratos-admin:4434",
 })
-local session = c:whoami(cookie)
+local session = c.sessions:whoami(cookie)
 log.info("Logged in as: " .. session.identity.traits.email)
 ```
 
@@ -37,20 +56,44 @@ authorize URL builder, token exchange, accept/reject login and consent challenge
 introspection, JWK endpoint, and OIDC discovery.
 Client: `hydra.client({public_url="...", admin_url="..."})`.
 
-- `c:discovery()` → `{issuer, authorization_endpoint, token_endpoint, jwks_uri, ...}` — OIDC discovery
-- `c:jwks()` → `{keys}` — JSON Web Key Set
-- `c:list_clients(opts?)` → [client] — Admin: list OAuth2 clients
-- `c:get_client(id)` → client|nil — Admin: get client by ID
-- `c:create_client(payload)` → client — Admin: create OAuth2 client
-- `c:update_client(id, payload)` → client — Admin: update OAuth2 client
-- `c:delete_client(id)` → bool — Admin: delete OAuth2 client
-- `c:authorize_url(opts)` → string — Build an authorization URL from `{client_id, redirect_uri, scope, state, ...}`
-- `c:exchange_token(opts)` → `{access_token, id_token?, refresh_token?, expires_in}` — Exchange code for tokens
-- `c:introspect(token, scope?)` → `{active, sub, scope, ...}` — Admin introspection
-- `c:accept_login(challenge, payload)` → `{redirect_to}` — Accept a login challenge
-- `c:reject_login(challenge, payload)` → `{redirect_to}` — Reject a login challenge
-- `c:accept_consent(challenge, payload)` → `{redirect_to}` — Accept a consent challenge
-- `c:reject_consent(challenge, payload)` → `{redirect_to}` — Reject a consent challenge
+**Clients** (`c.clients`):
+
+- `c.clients:list(opts?)` → [client] — Admin: list OAuth2 clients
+- `c.clients:get(id)` → client|nil — Admin: get client by ID
+- `c.clients:create(payload)` → client — Admin: create OAuth2 client
+- `c.clients:update(id, payload)` → client — Admin: update OAuth2 client
+- `c.clients:delete(id)` → nil — Admin: delete OAuth2 client
+
+**OAuth2** (`c.oauth2`):
+
+- `c.oauth2:authorize_url(client_id, opts)` → string — Build an authorization URL
+- `c.oauth2:exchange_code(opts)` → `{access_token, id_token?, refresh_token?, expires_in}` — Exchange code for tokens
+- `c.oauth2:refresh_token(client_id, client_secret, refresh_token)` → tokens — Refresh an access token
+- `c.oauth2:introspect(token)` → `{active, sub, scope, ...}` — Admin introspection
+- `c.oauth2:revoke_token(client_id, client_secret, token)` → nil — Revoke a token
+
+**Login challenges** (`c.login`):
+
+- `c.login:get(challenge)` → `{challenge, subject, client, ...}` — Fetch a pending login challenge
+- `c.login:accept(challenge, subject, opts?)` → `{redirect_to}` — Accept a login challenge
+- `c.login:reject(challenge, error?)` → `{redirect_to}` — Reject a login challenge
+
+**Consent challenges** (`c.consent`):
+
+- `c.consent:get(challenge)` → `{challenge, subject, requested_scope, ...}` — Fetch a pending consent challenge
+- `c.consent:accept(challenge, opts)` → `{redirect_to}` — Accept a consent challenge
+- `c.consent:reject(challenge, error?)` → `{redirect_to}` — Reject a consent challenge
+
+**Logout challenges** (`c.logout`):
+
+- `c.logout:get(challenge)` → `{request_url, rp_initiated, sid, subject, client}` — Fetch a pending logout challenge
+- `c.logout:accept(challenge)` → `{redirect_to}` — Accept a logout challenge
+- `c.logout:reject(challenge)` → nil — Reject a logout challenge
+
+**Discovery** (`c.discovery`):
+
+- `c.discovery:openid_config()` → `{issuer, authorization_endpoint, ...}` — OIDC discovery document
+- `c.discovery:jwks()` → `{keys}` — JSON Web Key Set
 
 Example:
 ```lua
@@ -59,7 +102,7 @@ local c = hydra.client({
   public_url = "https://hydra.example.com",
   admin_url = "http://hydra-admin:4445",
 })
-local client = c:create_client({
+local client = c.clients:create({
   client_name = "my-app",
   grant_types = { "authorization_code", "refresh_token" },
   redirect_uris = { "https://app.example.com/callback" },
@@ -70,27 +113,38 @@ local client = c:create_client({
 
 Ory Keto relationship-based access control (Zanzibar-style ReBAC). Relation-tuple CRUD,
 permission checks, role/group membership queries, and the expand API.
-Client: `keto.client({read_url="...", write_url="..."})`.
+Client: `keto.client(read_url, {write_url="..."})`.
 
-- `c:check(namespace, object, relation, subject)` → bool — Check if a relation tuple allows access
-- `c:create_tuple(tuple)` → bool — Create a relation tuple `{namespace, object, relation, subject_id|subject_set}`
-- `c:delete_tuple(tuple)` → bool — Delete a relation tuple
-- `c:list_tuples(query)` → [tuple] — List tuples matching query filters
-- `c:expand(namespace, object, relation, depth?)` → tree — Expand a subject tree (Zanzibar expand)
-- `c:list_relations(namespace, object)` → [relation] — List relations for an object
+**Tuples** (`c.tuples`):
+
+- `c.tuples:list(query)` → `{relation_tuples, next_page_token}` — List tuples matching query filters
+- `c.tuples:create(tuple)` → nil — Create a relation tuple `{namespace, object, relation, subject_id|subject_set}`
+- `c.tuples:delete(tuple)` → nil — Delete a relation tuple
+- `c.tuples:delete_all(filters)` → nil — Delete all matching relation tuples
+
+**Permissions** (`c.permissions`):
+
+- `c.permissions:check(namespace, object, relation, subject)` → bool — Check if a relation tuple allows access
+- `c.permissions:check({namespace, object, relation, subject_id})` → bool — Check (table form)
+- `c.permissions:batch_check(tuples)` → [bool] — Check multiple tuples in one call
+- `c.permissions:expand(namespace, object, relation, depth?)` → tree — Expand a subject tree (Zanzibar expand)
+
+**Roles** (`c.roles`):
+
+- `c.roles:user_roles(user_id, namespace?)` → [{object, relation}] — Get all role memberships for a user
+- `c.roles:has_any(user_id, role_objects, namespace?)` → bool — Check if a user has any of the given roles
 
 Example:
 ```lua
 local keto = require("assay.ory.keto")
-local c = keto.client({
-  read_url = "http://keto-read:4466",
+local c = keto.client("http://keto-read:4466", {
   write_url = "http://keto-write:4467",
 })
-c:create_tuple({
+c.tuples:create({
   namespace = "apps", object = "cc", relation = "admin",
   subject_id = "user:alice",
 })
-assert(c:check("apps", "cc", "admin", "user:alice"))
+assert(c.permissions:check("apps", "cc", "admin", "user:alice"))
 ```
 
 ## assay.ory.rbac
@@ -107,23 +161,36 @@ filters Keto tuples (e.g. `"command-center"`); `keto` is a Keto client;
 `roles` maps role names to `{rank, capabilities, label?, description?}`;
 `default_role` is the role assumed for users with no memberships.
 
-- `p:user_roles(user_id)` → `{role}` — held roles, sorted by rank descending
-- `p:user_primary_role(user_id)` → role — highest-ranked, for compact UI badges
-- `p:user_capabilities(user_id)` → `{cap=true,...}` — union over all held roles, falls back to `default_role` caps when empty
-- `p:user_has_capability(user_id, cap)` → bool — single capability check
-- `p:add(user_id, role)` — idempotent membership add (no-op if already a member)
-- `p:remove(user_id, role)` — membership remove (swallows 404)
-- `p:list_members(role)` → `{user_id}` — direct members of a role
-- `p:list_all_memberships()` → `{[role]={user_id,...}}` — full snapshot
-- `p:reset_role(role)` — delete all members of a role (for bootstrap/seed scripts)
-- `p:require_capability(cap, handler)` → handler — `http.serve` middleware that 403s callers without `cap`
+**Users** (`p.users`):
+
+- `p.users:roles(user_id)` → `{role}` — held roles, sorted by rank descending
+- `p.users:primary_role(user_id)` → role — highest-ranked, for compact UI badges
+- `p.users:capabilities(user_id)` → `{cap=true,...}` — union over all held roles, falls back to `default_role` caps when empty
+- `p.users:has_capability(user_id, cap)` → bool — single capability check
+
+**Members** (`p.members`):
+
+- `p.members:add(user_id, role)` — idempotent membership add (no-op if already a member)
+- `p.members:remove(user_id, role)` — membership remove (swallows 404)
+- `p.members:list(role)` → `{user_id}` — direct members of a role
+- `p.members:list_all()` → `{[role]={user_id,...}}` — full snapshot
+- `p.members:reset(role)` — delete all members of a role (for bootstrap/seed scripts)
+
+**Policy** (`p.policy`):
+
+- `p.policy:roles()` → `[role_name]` — all configured role names, highest rank first
+- `p.policy:get(role_name)` → `{rank, capabilities}` — role metadata from the policy definition
+
+**Middleware** (`p.middleware`):
+
+- `p.middleware:require_capability(cap, handler)` → handler — `http.serve` middleware that 403s callers without `cap`
 
 Example:
 ```lua
 local keto = require("assay.ory.keto")
 local rbac = require("assay.ory.rbac")
 
-local kc = keto.client({ read_url = "http://keto-read:4466", write_url = "http://keto-write:4467" })
+local kc = keto.client("http://keto-read:4466", { write_url = "http://keto-write:4467" })
 local policy = rbac.policy({
   namespace = "command-center",
   keto = kc,
@@ -137,9 +204,9 @@ local policy = rbac.policy({
   },
 })
 
-policy:add("user:alice", "approver")
-assert(policy:user_has_capability("user:alice", "approve"))
-assert(not policy:user_has_capability("user:alice", "trigger"))
+policy.members:add("user:alice", "approver")
+assert(policy.users:has_capability("user:alice", "approve"))
+assert(not policy.users:has_capability("user:alice", "trigger"))
 ```
 
 ## assay.ory
@@ -165,5 +232,5 @@ local o = ory.connect({
   keto_read = "http://keto-read:4466",
   keto_write = "http://keto-write:4467",
 })
-local allowed = o.keto:check("apps", "cc", "admin", "user:alice")
+local allowed = o.keto.permissions:check("apps", "cc", "admin", "user:alice")
 ```

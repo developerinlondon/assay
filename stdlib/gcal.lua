@@ -1,12 +1,12 @@
 --- @module assay.gcal
 --- @description Google Calendar REST API client with OAuth2 token refresh. Events CRUD, calendar list.
 --- @keywords google, calendar, gcal, events, oauth2, schedule, meeting, create, update, delete
---- @quickref c:events(opts?) -> [event] | List calendar events
---- @quickref c:event_get(event_id) -> event | Get event by ID
---- @quickref c:event_create(event) -> event | Create a calendar event
---- @quickref c:event_update(event_id, event) -> event | Update an event
---- @quickref c:event_delete(event_id) -> true | Delete an event
---- @quickref c:calendars() -> [calendar] | List all calendars
+--- @quickref c.events:list(opts?) -> [event] | List calendar events
+--- @quickref c.events:get(event_id) -> event | Get event by ID
+--- @quickref c.events:create(event) -> event | Create a calendar event
+--- @quickref c.events:update(event_id, event) -> event | Update an event
+--- @quickref c.events:delete(event_id) -> true | Delete an event
+--- @quickref c.calendars:list() -> [calendar] | List all calendars
 
 local M = {}
 local oauth2 = require("assay.oauth2")
@@ -32,25 +32,24 @@ function M.client(opts)
     token_url = token_url,
   })
 
-  local c = {
-    _oauth2 = auth,
-    _api_base = opts.api_base or GCAL_API,
-  }
+  local api_base = opts.api_base or GCAL_API
 
-  local function headers(self)
-    return self._oauth2:headers()
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
+
+  local function get_headers()
+    return auth:headers()
   end
 
-  local function refresh_auth(self)
-    self._oauth2:refresh()
-    self._oauth2:save()
+  local function refresh_auth()
+    auth:refresh()
+    auth:save()
   end
 
-  local function api_get(self, path_str)
-    local resp = http.get(self._api_base .. path_str, { headers = headers(self) })
+  local function api_get(path_str)
+    local resp = http.get(api_base .. path_str, { headers = get_headers() })
     if resp.status == 401 then
-      refresh_auth(self)
-      resp = http.get(self._api_base .. path_str, { headers = headers(self) })
+      refresh_auth()
+      resp = http.get(api_base .. path_str, { headers = get_headers() })
     end
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
@@ -59,11 +58,11 @@ function M.client(opts)
     return json.parse(resp.body)
   end
 
-  local function api_post(self, path_str, payload)
-    local resp = http.post(self._api_base .. path_str, payload, { headers = headers(self) })
+  local function api_post(path_str, payload)
+    local resp = http.post(api_base .. path_str, payload, { headers = get_headers() })
     if resp.status == 401 then
-      refresh_auth(self)
-      resp = http.post(self._api_base .. path_str, payload, { headers = headers(self) })
+      refresh_auth()
+      resp = http.post(api_base .. path_str, payload, { headers = get_headers() })
     end
     if resp.status ~= 200 and resp.status ~= 201 then
       error("gcal: POST " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -71,11 +70,11 @@ function M.client(opts)
     return json.parse(resp.body)
   end
 
-  local function api_put(self, path_str, payload)
-    local resp = http.put(self._api_base .. path_str, payload, { headers = headers(self) })
+  local function api_put(path_str, payload)
+    local resp = http.put(api_base .. path_str, payload, { headers = get_headers() })
     if resp.status == 401 then
-      refresh_auth(self)
-      resp = http.put(self._api_base .. path_str, payload, { headers = headers(self) })
+      refresh_auth()
+      resp = http.put(api_base .. path_str, payload, { headers = get_headers() })
     end
     if resp.status ~= 200 then
       error("gcal: PUT " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -83,11 +82,11 @@ function M.client(opts)
     return json.parse(resp.body)
   end
 
-  local function api_delete(self, path_str)
-    local resp = http.delete(self._api_base .. path_str, { headers = headers(self) })
+  local function api_delete(path_str)
+    local resp = http.delete(api_base .. path_str, { headers = get_headers() })
     if resp.status == 401 then
-      refresh_auth(self)
-      resp = http.delete(self._api_base .. path_str, { headers = headers(self) })
+      refresh_auth()
+      resp = http.delete(api_base .. path_str, { headers = get_headers() })
     end
     if resp.status ~= 200 and resp.status ~= 204 then
       error("gcal: DELETE " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -95,7 +94,15 @@ function M.client(opts)
     return true
   end
 
-  function c:events(events_opts)
+  -- ===== Client =====
+
+  local c = {}
+
+  -- ===== Events =====
+
+  c.events = {}
+
+  function c.events:list(events_opts)
     events_opts = events_opts or {}
     local params = {}
     if events_opts.timeMin then params[#params + 1] = "timeMin=" .. events_opts.timeMin end
@@ -104,31 +111,35 @@ function M.client(opts)
     if events_opts.q then params[#params + 1] = "q=" .. events_opts.q end
     local qs = ""
     if #params > 0 then qs = "?" .. table.concat(params, "&") end
-    local result = api_get(self, "/calendar/v3/calendars/primary/events" .. qs)
+    local result = api_get("/calendar/v3/calendars/primary/events" .. qs)
     if result and result.items then
       return result.items
     end
     return {}
   end
 
-  function c:event_get(event_id)
-    return api_get(self, "/calendar/v3/calendars/primary/events/" .. event_id)
+  function c.events:get(event_id)
+    return api_get("/calendar/v3/calendars/primary/events/" .. event_id)
   end
 
-  function c:event_create(event)
-    return api_post(self, "/calendar/v3/calendars/primary/events", event)
+  function c.events:create(event)
+    return api_post("/calendar/v3/calendars/primary/events", event)
   end
 
-  function c:event_update(event_id, event)
-    return api_put(self, "/calendar/v3/calendars/primary/events/" .. event_id, event)
+  function c.events:update(event_id, event)
+    return api_put("/calendar/v3/calendars/primary/events/" .. event_id, event)
   end
 
-  function c:event_delete(event_id)
-    return api_delete(self, "/calendar/v3/calendars/primary/events/" .. event_id)
+  function c.events:delete(event_id)
+    return api_delete("/calendar/v3/calendars/primary/events/" .. event_id)
   end
 
-  function c:calendars()
-    local result = api_get(self, "/calendar/v3/users/me/calendarList")
+  -- ===== Calendars =====
+
+  c.calendars = {}
+
+  function c.calendars:list()
+    local result = api_get("/calendar/v3/users/me/calendarList")
     if result and result.items then
       return result.items
     end

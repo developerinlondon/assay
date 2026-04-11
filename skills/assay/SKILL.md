@@ -253,7 +253,7 @@ Available when built with `--features temporal`. Native gRPC client for Temporal
 
 ## Stdlib Modules Quick Reference
 
-All 34 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 35 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module                | Description                                                                |
 | --------------------- | -------------------------------------------------------------------------- |
@@ -286,6 +286,7 @@ All 34 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.postgres`      | Postgres helpers: users, databases, grants, Vault integration              |
 | `assay.unleash`       | Feature flags: projects, environments, features, strategies, tokens        |
 | `assay.openclaw`      | OpenClaw AI agent — invoke tools, state, diff, approve, LLM tasks          |
+| `assay.gitlab`        | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, registry   |
 | `assay.github`        | GitHub REST API — PRs, issues, actions, repos, GraphQL                     |
 | `assay.gmail`         | Gmail REST API with OAuth2 — search, read, reply, send, labels             |
 | `assay.gcal`          | Google Calendar REST API with OAuth2 — events CRUD, calendar list          |
@@ -338,7 +339,7 @@ local token = env.get("VAULT_TOKEN")
 local c = vault.client("http://vault:8200", { token = token })
 
 -- Read KV v2 secret
-local secret = c:kv_get("secret", "myapp/config")
+local secret = c.kv:get("secret", "myapp/config")
 assert.not_nil(secret, "Secret not found")
 
 log.info("db_password: " .. secret.data.db_password)
@@ -371,7 +372,7 @@ local prom = require("assay.prometheus")
 local c = prom.client("http://prometheus.monitoring:9090")
 
 -- Check targets are up
-local targets = c:targets()
+local targets = c.targets:list()
 local up_count = 0
 for _, t in ipairs(targets.activeTargets) do
   if t.health == "up" then up_count = up_count + 1 end
@@ -379,7 +380,7 @@ end
 assert.gt(up_count, 0, "No Prometheus targets are up")
 
 -- Query a metric
-log.info("Active targets: " .. up_count .. ", up query: " .. tostring(c:query("up")))
+log.info("Active targets: " .. up_count .. ", up query: " .. tostring(c.queries:instant("up")))
 ```
 
 ### Temporal Workflow (gRPC)
@@ -424,7 +425,7 @@ local vault = require("assay.vault")
 
 local ok, err = pcall(function()
   local c = vault.client("http://vault:8200", { token = env.get("VAULT_TOKEN") })
-  return c:kv_get("secret", "myapp/config")
+  return c.kv:get("secret", "myapp/config")
 end)
 
 if not ok then
@@ -437,7 +438,7 @@ end
 For 404 responses, stdlib modules return `nil` rather than raising an error:
 
 ```lua
-local secret = c:kv_get("secret", "maybe/exists")
+local secret = c.kv:get("secret", "maybe/exists")
 if secret == nil then
   log.warn("Secret not found, using defaults")
 else

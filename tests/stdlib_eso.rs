@@ -54,7 +54,7 @@ async fn test_external_secrets_list() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local list = c:external_secrets("infra")
+        local list = c.external_secrets:list("infra")
         assert.eq(list.kind, "ExternalSecretList")
         assert.eq(#list.items, 2)
         assert.eq(list.items[1].metadata.name, "db-creds")
@@ -94,7 +94,7 @@ async fn test_external_secret_get() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local es = c:external_secret("infra", "db-creds")
+        local es = c.external_secrets:get("infra", "db-creds")
         assert.eq(es.kind, "ExternalSecret")
         assert.eq(es.metadata.name, "db-creds")
         assert.eq(es.spec.secretStoreRef.name, "vault-backend")
@@ -130,7 +130,7 @@ async fn test_external_secret_status() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local st = c:external_secret_status("infra", "db-creds")
+        local st = c.external_secrets:status("infra", "db-creds")
         assert.eq(st.ready, true)
         assert.eq(st.status, "SecretSynced")
         assert.eq(st.sync_hash, "v42")
@@ -163,7 +163,7 @@ async fn test_is_secret_synced_true() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        assert.eq(c:is_secret_synced("infra", "db-creds"), true)
+        assert.eq(c.external_secrets:is_synced("infra", "db-creds"), true)
         "#,
         server.uri()
     );
@@ -192,7 +192,7 @@ async fn test_is_secret_synced_false() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        assert.eq(c:is_secret_synced("infra", "db-creds"), false)
+        assert.eq(c.external_secrets:is_synced("infra", "db-creds"), false)
         "#,
         server.uri()
     );
@@ -228,7 +228,7 @@ async fn test_secret_stores_list() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local list = c:secret_stores("infra")
+        local list = c.secret_stores:list("infra")
         assert.eq(list.kind, "SecretStoreList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "vault-backend")
@@ -262,7 +262,7 @@ async fn test_secret_store_status() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local st = c:secret_store_status("infra", "vault-backend")
+        local st = c.secret_stores:status("infra", "vault-backend")
         assert.eq(st.ready, true)
         assert.eq(#st.conditions, 1)
         "#,
@@ -293,7 +293,7 @@ async fn test_is_store_ready() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        assert.eq(c:is_store_ready("infra", "vault-backend"), true)
+        assert.eq(c.secret_stores:is_ready("infra", "vault-backend"), true)
         "#,
         server.uri()
     );
@@ -329,7 +329,7 @@ async fn test_cluster_secret_stores_list() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local list = c:cluster_secret_stores()
+        local list = c.cluster_secret_stores:list()
         assert.eq(list.kind, "ClusterSecretStoreList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "global-vault")
@@ -361,7 +361,7 @@ async fn test_is_cluster_store_ready() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        assert.eq(c:is_cluster_store_ready("global-vault"), true)
+        assert.eq(c.cluster_secret_stores:is_ready("global-vault"), true)
         "#,
         server.uri()
     );
@@ -400,7 +400,7 @@ async fn test_all_secrets_synced_all_synced() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local result = c:all_secrets_synced("infra")
+        local result = c.external_secrets:all_synced("infra")
         assert.eq(result.synced, 2)
         assert.eq(result.failed, 0)
         assert.eq(result.total, 2)
@@ -449,7 +449,7 @@ async fn test_all_secrets_synced_some_failed() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local result = c:all_secrets_synced("infra")
+        local result = c.external_secrets:all_synced("infra")
         assert.eq(result.synced, 1)
         assert.eq(result.failed, 2)
         assert.eq(result.total, 3)
@@ -494,7 +494,7 @@ async fn test_all_stores_ready() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local result = c:all_stores_ready("infra")
+        local result = c.secret_stores:all_ready("infra")
         assert.eq(result.ready, 1)
         assert.eq(result.not_ready, 1)
         assert.eq(result.total, 2)
@@ -537,7 +537,7 @@ async fn test_cluster_external_secrets_list() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local list = c:cluster_external_secrets()
+        local list = c.cluster_external_secrets:list()
         assert.eq(list.kind, "ClusterExternalSecretList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "global-db-creds")
@@ -571,7 +571,7 @@ async fn test_cluster_external_secret_get() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}", "fake-token")
-        local ces = c:cluster_external_secret("global-db-creds")
+        local ces = c.cluster_external_secrets:get("global-db-creds")
         assert.eq(ces.kind, "ClusterExternalSecret")
         assert.eq(ces.metadata.name, "global-db-creds")
         "#,
@@ -602,7 +602,7 @@ async fn test_client_strips_trailing_slashes() {
         r#"
         local eso = require("assay.eso")
         local c = eso.client("{}///", "fake-token")
-        assert.eq(c:is_cluster_store_ready("test"), true)
+        assert.eq(c.cluster_secret_stores:is_ready("test"), true)
         "#,
         server.uri()
     );

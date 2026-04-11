@@ -2,15 +2,15 @@
 --- @description Loki log aggregation. Push logs, query with LogQL, labels, series, tail.
 --- @keywords loki, logs, logql, labels, series, monitoring, push, tail, stream, instant, range, query
 --- @quickref M.selector(labels) -> string | Build LogQL stream selector from labels table
---- @quickref c:push(stream_labels, entries) -> true | Push log entries to Loki
---- @quickref c:query(logql, opts?) -> [result] | Instant LogQL query
---- @quickref c:query_range(logql, opts?) -> [result] | Range LogQL query
---- @quickref c:labels(opts?) -> [string] | List label names
---- @quickref c:label_values(label_name, opts?) -> [string] | List values for a label
---- @quickref c:series(match_selectors, opts?) -> [series] | Query series metadata
---- @quickref c:tail(logql, opts?) -> data | Tail log stream
---- @quickref c:ready() -> bool | Check Loki readiness
---- @quickref c:metrics() -> string | Get Loki metrics in Prometheus format
+--- @quickref c.logs:push(stream_labels, entries) -> true | Push log entries to Loki
+--- @quickref c.queries:instant(logql, opts?) -> [result] | Instant LogQL query
+--- @quickref c.queries:range(logql, opts?) -> [result] | Range LogQL query
+--- @quickref c.queries:tail(logql, opts?) -> data | Tail log stream
+--- @quickref c.labels:list(opts?) -> [string] | List label names
+--- @quickref c.labels:values(label_name, opts?) -> [string] | List values for a label
+--- @quickref c.series:list(match_selectors, opts?) -> [series] | Query series metadata
+--- @quickref c.health:ready() -> bool | Check Loki readiness
+--- @quickref c.health:metrics() -> string | Get Loki metrics in Prometheus format
 
 local M = {}
 
@@ -23,9 +23,7 @@ function M.selector(labels)
 end
 
 function M.client(url)
-  local c = {
-    url = url:gsub("/+$", ""),
-  }
+  local base_url = url:gsub("/+$", "")
 
   local function build_params(tbl)
     local parts = {}
@@ -36,17 +34,23 @@ function M.client(url)
     return "?" .. table.concat(parts, "&")
   end
 
-  local function api_get(self, path, params)
+  local function api_get(path_str, params)
     local query = ""
     if params then query = build_params(params) end
-    local resp = http.get(self.url .. path .. query, { headers = {} })
+    local resp = http.get(base_url .. path_str .. query, { headers = {} })
     if resp.status ~= 200 then
-      error("loki: GET " .. path .. " HTTP " .. resp.status .. ": " .. resp.body)
+      error("loki: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
 
-  function c:push(stream_labels, entries)
+  local c = {}
+
+  -- ===== Logs =====
+
+  c.logs = {}
+
+  function c.logs:push(stream_labels, entries)
     local values = {}
     for i, entry in ipairs(entries) do
       if type(entry) == "string" then
@@ -67,7 +71,7 @@ function M.client(url)
     }
 
     local resp = http.post(
-      self.url .. "/loki/api/v1/push",
+      base_url .. "/loki/api/v1/push",
       json.encode(payload),
       { headers = { ["Content-Type"] = "application/json" } }
     )
@@ -77,17 +81,21 @@ function M.client(url)
     return true
   end
 
-  function c:query(logql, opts)
+  -- ===== Queries =====
+
+  c.queries = {}
+
+  function c.queries:instant(logql, opts)
     opts = opts or {}
     local params = { query = logql }
     if opts.limit then params.limit = opts.limit end
     if opts.time then params.time = opts.time end
     if opts.direction then params.direction = opts.direction end
-    local data = api_get(self, "/loki/api/v1/query", params)
+    local data = api_get("/loki/api/v1/query", params)
     return data.data.result
   end
 
-  function c:query_range(logql, opts)
+  function c.queries:range(logql, opts)
     opts = opts or {}
     local params = { query = logql }
     if opts.start then params.start = opts.start end
@@ -95,29 +103,46 @@ function M.client(url)
     if opts.limit then params.limit = opts.limit end
     if opts.step then params.step = opts.step end
     if opts.direction then params.direction = opts.direction end
-    local data = api_get(self, "/loki/api/v1/query_range", params)
+    local data = api_get("/loki/api/v1/query_range", params)
     return data.data.result
   end
 
-  function c:labels(opts)
+  function c.queries:tail(logql, opts)
+    opts = opts or {}
+    local params = { query = logql }
+    if opts.limit then params.limit = opts.limit end
+    if opts.start then params.start = opts.start end
+    local data = api_get("/loki/api/v1/tail", params)
+    return data
+  end
+
+  -- ===== Labels =====
+
+  c.labels = {}
+
+  function c.labels:list(opts)
     opts = opts or {}
     local params = {}
     if opts.start then params.start = opts.start end
     if opts.end_time then params["end"] = opts.end_time end
-    local data = api_get(self, "/loki/api/v1/labels", params)
+    local data = api_get("/loki/api/v1/labels", params)
     return data.data
   end
 
-  function c:label_values(label_name, opts)
+  function c.labels:values(label_name, opts)
     opts = opts or {}
     local params = {}
     if opts.start then params.start = opts.start end
     if opts.end_time then params["end"] = opts.end_time end
-    local data = api_get(self, "/loki/api/v1/label/" .. label_name .. "/values", params)
+    local data = api_get("/loki/api/v1/label/" .. label_name .. "/values", params)
     return data.data
   end
 
-  function c:series(match_selectors, opts)
+  -- ===== Series =====
+
+  c.series = {}
+
+  function c.series:list(match_selectors, opts)
     opts = opts or {}
     local parts = {}
     for _, sel in ipairs(match_selectors) do
@@ -127,29 +152,24 @@ function M.client(url)
     if opts.end_time then parts[#parts + 1] = "end=" .. opts.end_time end
     local query = ""
     if #parts > 0 then query = "?" .. table.concat(parts, "&") end
-    local resp = http.get(self.url .. "/loki/api/v1/series" .. query, { headers = {} })
+    local resp = http.get(base_url .. "/loki/api/v1/series" .. query, { headers = {} })
     if resp.status ~= 200 then
       error("loki: GET /loki/api/v1/series HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body).data
   end
 
-  function c:tail(logql, opts)
-    opts = opts or {}
-    local params = { query = logql }
-    if opts.limit then params.limit = opts.limit end
-    if opts.start then params.start = opts.start end
-    local data = api_get(self, "/loki/api/v1/tail", params)
-    return data
-  end
+  -- ===== Health =====
 
-  function c:ready()
-    local resp = http.get(self.url .. "/ready", { headers = {} })
+  c.health = {}
+
+  function c.health:ready()
+    local resp = http.get(base_url .. "/ready", { headers = {} })
     return resp.status == 200
   end
 
-  function c:metrics()
-    local resp = http.get(self.url .. "/metrics", { headers = {} })
+  function c.health:metrics()
+    local resp = http.get(base_url .. "/metrics", { headers = {} })
     if resp.status ~= 200 then
       error("loki: GET /metrics HTTP " .. resp.status .. ": " .. resp.body)
     end

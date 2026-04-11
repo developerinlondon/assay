@@ -1,47 +1,46 @@
 --- @module assay.velero
 --- @description Velero backup and restore. Backups, restores, schedules, storage locations.
 --- @keywords velero, backups, restores, schedules, disaster-recovery, kubernetes, backup, restore, schedule, storage-location, snapshot, repository, completion, status, failover
---- @quickref c:backups() -> [backup] | List backups
---- @quickref c:backup(name) -> backup|nil | Get backup by name
---- @quickref c:backup_status(name) -> {phase, errors, items_backed_up} | Get backup status
---- @quickref c:is_backup_completed(name) -> bool | Check if backup completed
---- @quickref c:is_backup_failed(name) -> bool | Check if backup failed
---- @quickref c:latest_backup(schedule_name) -> backup|nil | Get latest backup for schedule
---- @quickref c:restores() -> [restore] | List restores
---- @quickref c:restore(name) -> restore|nil | Get restore by name
---- @quickref c:restore_status(name) -> {phase, errors, warnings} | Get restore status
---- @quickref c:is_restore_completed(name) -> bool | Check if restore completed
---- @quickref c:schedules() -> [schedule] | List schedules
---- @quickref c:schedule(name) -> schedule|nil | Get schedule by name
---- @quickref c:schedule_status(name) -> {phase, last_backup} | Get schedule status
---- @quickref c:is_schedule_enabled(name) -> bool | Check if schedule is enabled
---- @quickref c:backup_storage_locations() -> [bsl] | List backup storage locations
---- @quickref c:backup_storage_location(name) -> bsl|nil | Get backup storage location
---- @quickref c:is_bsl_available(name) -> bool | Check if storage location is available
---- @quickref c:volume_snapshot_locations() -> [vsl] | List volume snapshot locations
---- @quickref c:volume_snapshot_location(name) -> vsl|nil | Get volume snapshot location
---- @quickref c:backup_repositories() -> [repo] | List backup repositories
---- @quickref c:backup_repository(name) -> repo|nil | Get backup repository
---- @quickref c:all_schedules_enabled() -> {enabled, disabled, total} | Check all schedules status
---- @quickref c:all_bsl_available() -> {available, unavailable, total} | Check all storage locations
+--- @quickref c.backups:list() -> [backup] | List backups
+--- @quickref c.backups:get(name) -> backup|nil | Get backup by name
+--- @quickref c.backups:status(name) -> {phase, errors, items_backed_up} | Get backup status
+--- @quickref c.backups:is_completed(name) -> bool | Check if backup completed
+--- @quickref c.backups:is_failed(name) -> bool | Check if backup failed
+--- @quickref c.backups:latest(schedule_name) -> backup|nil | Get latest backup for schedule
+--- @quickref c.restores:list() -> [restore] | List restores
+--- @quickref c.restores:get(name) -> restore|nil | Get restore by name
+--- @quickref c.restores:status(name) -> {phase, errors, warnings} | Get restore status
+--- @quickref c.restores:is_completed(name) -> bool | Check if restore completed
+--- @quickref c.schedules:list() -> [schedule] | List schedules
+--- @quickref c.schedules:get(name) -> schedule|nil | Get schedule by name
+--- @quickref c.schedules:status(name) -> {phase, last_backup} | Get schedule status
+--- @quickref c.schedules:is_enabled(name) -> bool | Check if schedule is enabled
+--- @quickref c.schedules:all_enabled() -> {enabled, disabled, total} | Check all schedules status
+--- @quickref c.storage_locations:list() -> [bsl] | List backup storage locations
+--- @quickref c.storage_locations:get(name) -> bsl|nil | Get backup storage location
+--- @quickref c.storage_locations:is_available(name) -> bool | Check if storage location is available
+--- @quickref c.storage_locations:all_available() -> {available, unavailable, total} | Check all storage locations
+--- @quickref c.volume_snapshots:list() -> [vsl] | List volume snapshot locations
+--- @quickref c.volume_snapshots:get(name) -> vsl|nil | Get volume snapshot location
+--- @quickref c.repositories:list() -> [repo] | List backup repositories
+--- @quickref c.repositories:get(name) -> repo|nil | Get backup repository
 
 local M = {}
 
 local API_BASE = "/apis/velero.io/v1"
 
 function M.client(url, token, namespace)
-  local c = {
-    url = url:gsub("/+$", ""),
-    token = token,
-    namespace = namespace or "velero",
-  }
+  local base_url = url:gsub("/+$", "")
+  local ns = namespace or "velero"
 
-  local function headers(self)
-    return { Authorization = "Bearer " .. self.token }
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
+
+  local function headers()
+    return { Authorization = "Bearer " .. token }
   end
 
-  local function api_get(self, api_path)
-    local resp = http.get(self.url .. api_path, { headers = headers(self) })
+  local function api_get(api_path)
+    local resp = http.get(base_url .. api_path, { headers = headers() })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
       error("velero: GET " .. api_path .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -49,62 +48,68 @@ function M.client(url, token, namespace)
     return json.parse(resp.body)
   end
 
-  local function api_list(self, api_path)
-    local data = api_get(self, api_path)
+  local function api_list_items(api_path)
+    local data = api_get(api_path)
     if not data then return {} end
     return data.items or {}
   end
 
-  local function ns_path(self, resource, name)
-    local p = API_BASE .. "/namespaces/" .. self.namespace .. "/" .. resource
+  local function ns_path(resource, name)
+    local p = API_BASE .. "/namespaces/" .. ns .. "/" .. resource
     if name then
       p = p .. "/" .. name
     end
     return p
   end
 
-  -- Backups
+  -- ===== Client =====
 
-  function c:backups()
-    return api_list(self, ns_path(self, "backups"))
+  local c = {}
+
+  -- ===== Backups =====
+
+  c.backups = {}
+
+  function c.backups:list()
+    return api_list_items(ns_path("backups"))
   end
 
-  function c:backup(name)
-    return api_get(self, ns_path(self, "backups", name))
+  function c.backups:get(name)
+    return api_get(ns_path("backups", name))
   end
 
-  function c:backup_status(name)
-    local b = self:backup(name)
+  function c.backups:status(name)
+    local b = c.backups:get(name)
     if not b then error("velero: backup " .. name .. " not found") end
-    local status = b.status or {}
+    local st = b.status or {}
     return {
-      phase = status.phase,
-      started = status.startTimestamp,
-      completed = status.completionTimestamp,
-      expiration = status.expiration,
-      errors = status.errors or 0,
-      warnings = status.warnings or 0,
-      items_backed_up = status.itemsBackedUp or 0,
-      items_total = status.totalItems or 0,
+      phase = st.phase,
+      started = st.startTimestamp,
+      completed = st.completionTimestamp,
+      expiration = st.expiration,
+      errors = st.errors or 0,
+      warnings = st.warnings or 0,
+      items_backed_up = st.itemsBackedUp or 0,
+      items_total = st.totalItems or 0,
     }
   end
 
-  function c:is_backup_completed(name)
-    local b = self:backup(name)
+  function c.backups:is_completed(name)
+    local b = c.backups:get(name)
     if not b then return false end
-    local status = b.status or {}
-    return status.phase == "Completed"
+    local st = b.status or {}
+    return st.phase == "Completed"
   end
 
-  function c:is_backup_failed(name)
-    local b = self:backup(name)
+  function c.backups:is_failed(name)
+    local b = c.backups:get(name)
     if not b then return false end
-    local status = b.status or {}
-    return status.phase == "Failed" or status.phase == "PartiallyFailed"
+    local st = b.status or {}
+    return st.phase == "Failed" or st.phase == "PartiallyFailed"
   end
 
-  function c:latest_backup(schedule_name)
-    local all = self:backups()
+  function c.backups:latest(schedule_name)
+    local all = c.backups:list()
     local matching = {}
     for _, b in ipairs(all) do
       local labels = (b.metadata or {}).labels or {}
@@ -121,111 +126,76 @@ function M.client(url, token, namespace)
     return matching[1]
   end
 
-  -- Restores
+  -- ===== Restores =====
 
-  function c:restores()
-    return api_list(self, ns_path(self, "restores"))
+  c.restores = {}
+
+  function c.restores:list()
+    return api_list_items(ns_path("restores"))
   end
 
-  function c:restore(name)
-    return api_get(self, ns_path(self, "restores", name))
+  function c.restores:get(name)
+    return api_get(ns_path("restores", name))
   end
 
-  function c:restore_status(name)
-    local r = self:restore(name)
+  function c.restores:status(name)
+    local r = c.restores:get(name)
     if not r then error("velero: restore " .. name .. " not found") end
-    local status = r.status or {}
+    local st = r.status or {}
     return {
-      phase = status.phase,
-      started = status.startTimestamp,
-      completed = status.completionTimestamp,
-      errors = status.errors or 0,
-      warnings = status.warnings or 0,
+      phase = st.phase,
+      started = st.startTimestamp,
+      completed = st.completionTimestamp,
+      errors = st.errors or 0,
+      warnings = st.warnings or 0,
     }
   end
 
-  function c:is_restore_completed(name)
-    local r = self:restore(name)
+  function c.restores:is_completed(name)
+    local r = c.restores:get(name)
     if not r then return false end
-    local status = r.status or {}
-    return status.phase == "Completed"
+    local st = r.status or {}
+    return st.phase == "Completed"
   end
 
-  -- Schedules
+  -- ===== Schedules =====
 
-  function c:schedules()
-    return api_list(self, ns_path(self, "schedules"))
+  c.schedules = {}
+
+  function c.schedules:list()
+    return api_list_items(ns_path("schedules"))
   end
 
-  function c:schedule(name)
-    return api_get(self, ns_path(self, "schedules", name))
+  function c.schedules:get(name)
+    return api_get(ns_path("schedules", name))
   end
 
-  function c:schedule_status(name)
-    local s = self:schedule(name)
+  function c.schedules:status(name)
+    local s = c.schedules:get(name)
     if not s then error("velero: schedule " .. name .. " not found") end
-    local status = s.status or {}
+    local st = s.status or {}
     return {
-      phase = status.phase,
-      last_backup = status.lastBackup,
-      validation_errors = status.validationErrors or {},
+      phase = st.phase,
+      last_backup = st.lastBackup,
+      validation_errors = st.validationErrors or {},
     }
   end
 
-  function c:is_schedule_enabled(name)
-    local s = self:schedule(name)
+  function c.schedules:is_enabled(name)
+    local s = c.schedules:get(name)
     if not s then return false end
-    local status = s.status or {}
-    return status.phase == "Enabled"
+    local st = s.status or {}
+    return st.phase == "Enabled"
   end
 
-  -- Backup Storage Locations
-
-  function c:backup_storage_locations()
-    return api_list(self, ns_path(self, "backupstoragelocations"))
-  end
-
-  function c:backup_storage_location(name)
-    return api_get(self, ns_path(self, "backupstoragelocations", name))
-  end
-
-  function c:is_bsl_available(name)
-    local bsl = self:backup_storage_location(name)
-    if not bsl then return false end
-    local status = bsl.status or {}
-    return status.phase == "Available"
-  end
-
-  -- Volume Snapshot Locations
-
-  function c:volume_snapshot_locations()
-    return api_list(self, ns_path(self, "volumesnapshotlocations"))
-  end
-
-  function c:volume_snapshot_location(name)
-    return api_get(self, ns_path(self, "volumesnapshotlocations", name))
-  end
-
-  -- Backup Repositories
-
-  function c:backup_repositories()
-    return api_list(self, ns_path(self, "backuprepositories"))
-  end
-
-  function c:backup_repository(name)
-    return api_get(self, ns_path(self, "backuprepositories", name))
-  end
-
-  -- Utilities
-
-  function c:all_schedules_enabled()
-    local all = self:schedules()
+  function c.schedules:all_enabled()
+    local all = c.schedules:list()
     local enabled = 0
     local disabled = 0
     local disabled_names = {}
     for _, s in ipairs(all) do
-      local status = s.status or {}
-      if status.phase == "Enabled" then
+      local st = s.status or {}
+      if st.phase == "Enabled" then
         enabled = enabled + 1
       else
         disabled = disabled + 1
@@ -240,14 +210,33 @@ function M.client(url, token, namespace)
     }
   end
 
-  function c:all_bsl_available()
-    local all = self:backup_storage_locations()
+  -- ===== Backup Storage Locations =====
+
+  c.storage_locations = {}
+
+  function c.storage_locations:list()
+    return api_list_items(ns_path("backupstoragelocations"))
+  end
+
+  function c.storage_locations:get(name)
+    return api_get(ns_path("backupstoragelocations", name))
+  end
+
+  function c.storage_locations:is_available(name)
+    local bsl = c.storage_locations:get(name)
+    if not bsl then return false end
+    local st = bsl.status or {}
+    return st.phase == "Available"
+  end
+
+  function c.storage_locations:all_available()
+    local all = c.storage_locations:list()
     local available = 0
     local unavailable = 0
     local unavailable_names = {}
     for _, bsl in ipairs(all) do
-      local status = bsl.status or {}
-      if status.phase == "Available" then
+      local st = bsl.status or {}
+      if st.phase == "Available" then
         available = available + 1
       else
         unavailable = unavailable + 1
@@ -260,6 +249,30 @@ function M.client(url, token, namespace)
       total = available + unavailable,
       unavailable_names = unavailable_names,
     }
+  end
+
+  -- ===== Volume Snapshot Locations =====
+
+  c.volume_snapshots = {}
+
+  function c.volume_snapshots:list()
+    return api_list_items(ns_path("volumesnapshotlocations"))
+  end
+
+  function c.volume_snapshots:get(name)
+    return api_get(ns_path("volumesnapshotlocations", name))
+  end
+
+  -- ===== Backup Repositories =====
+
+  c.repositories = {}
+
+  function c.repositories:list()
+    return api_list_items(ns_path("backuprepositories"))
+  end
+
+  function c.repositories:get(name)
+    return api_get(ns_path("backuprepositories", name))
   end
 
   return c

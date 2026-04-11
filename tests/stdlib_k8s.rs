@@ -10,7 +10,8 @@ async fn test_require_k8s() {
         local k8s = require("assay.k8s")
         assert.not_nil(k8s)
         assert.not_nil(k8s.get)
-        assert.not_nil(k8s.get_secret)
+        assert.not_nil(k8s.secrets)
+        assert.not_nil(k8s.resources)
     "#;
     run_lua(script).await.unwrap();
 }
@@ -60,7 +61,7 @@ async fn test_k8s_get_secret() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local secret = k8s.get_secret("infra", "db-creds", {{
+        local secret = k8s.secrets:get("infra", "db-creds", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -84,7 +85,7 @@ async fn test_k8s_exists_true() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local found = k8s.exists("infra", "secret", "db-creds", {{
+        local found = k8s.resources:exists("infra", "secret", "db-creds", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -107,7 +108,7 @@ async fn test_k8s_exists_false() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local found = k8s.exists("infra", "secret", "missing", {{
+        local found = k8s.resources:exists("infra", "secret", "missing", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -132,7 +133,7 @@ async fn test_k8s_is_ready_deployment() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local ready = k8s.is_ready("infra", "deployment", "api", {{
+        local ready = k8s.resources:is_ready("infra", "deployment", "api", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -157,7 +158,7 @@ async fn test_k8s_is_ready_deployment_not_ready() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local ready = k8s.is_ready("infra", "deployment", "api", {{
+        local ready = k8s.resources:is_ready("infra", "deployment", "api", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -186,7 +187,7 @@ async fn test_k8s_is_ready_pod() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local ready = k8s.is_ready("infra", "pod", "worker-0", {{
+        local ready = k8s.resources:is_ready("infra", "pod", "worker-0", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -215,7 +216,7 @@ async fn test_k8s_pod_status() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local status = k8s.pod_status("infra", {{
+        local status = k8s.pods:status("infra", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -248,7 +249,7 @@ async fn test_k8s_service_endpoints() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local ips = k8s.service_endpoints("infra", "postgres", {{
+        local ips = k8s.services:endpoints("infra", "postgres", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -273,7 +274,7 @@ async fn test_k8s_service_endpoints_empty() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local ips = k8s.service_endpoints("infra", "broken", {{
+        local ips = k8s.services:endpoints("infra", "broken", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -299,7 +300,7 @@ async fn test_k8s_logs() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local output = k8s.logs("infra", "api-7b9d4", {{
+        local output = k8s.pods:logs("infra", "api-7b9d4", {{
             base_url = "{}",
             token = "fake-token",
             tail = 50,
@@ -332,7 +333,7 @@ async fn test_k8s_rollout_status() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local rs = k8s.rollout_status("infra", "api", {{
+        local rs = k8s.deployments:rollout_status("infra", "api", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -364,7 +365,7 @@ async fn test_k8s_register_crd() {
         r#"
         local k8s = require("assay.k8s")
         k8s.register_crd("application", "argoproj.io", "v1alpha1", "applications")
-        local app = k8s.get_resource("argocd", "application", "traefik", {{
+        local app = k8s.resources:get("argocd", "application", "traefik", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -395,7 +396,7 @@ async fn test_k8s_list_generic() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local deploys = k8s.list("infra", "deployment", {{
+        local deploys = k8s.resources:list("infra", "deployment", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -425,7 +426,7 @@ async fn test_k8s_is_ready_generic_conditions() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local ready = k8s.is_ready("infra", "ingress", "web", {{
+        local ready = k8s.resources:is_ready("infra", "ingress", "web", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -453,7 +454,7 @@ async fn test_k8s_is_ready_phase_fallback() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local ready = k8s.is_ready("infra", "pvc", "data-vol", {{
+        local ready = k8s.resources:is_ready("infra", "pvc", "data-vol", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -479,7 +480,7 @@ async fn test_k8s_is_ready_job() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local ready = k8s.is_ready("infra", "job", "migrate", {{
+        local ready = k8s.resources:is_ready("infra", "job", "migrate", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -514,7 +515,7 @@ async fn test_k8s_node_status() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local nodes = k8s.node_status({{
+        local nodes = k8s.nodes:status({{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -546,7 +547,7 @@ async fn test_k8s_events_for() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local events = k8s.events_for("infra", "Pod", "api-7b9d4", {{
+        local events = k8s.events:for_resource("infra", "Pod", "api-7b9d4", {{
             base_url = "{}",
             token = "fake-token",
         }})
@@ -576,12 +577,445 @@ async fn test_k8s_get_configmap() {
     let script = format!(
         r#"
         local k8s = require("assay.k8s")
-        local cm = k8s.get_configmap("infra", "gitops-config", {{
+        local cm = k8s.configmaps:get("infra", "gitops-config", {{
             base_url = "{}",
             token = "fake-token",
         }})
         assert.eq(cm.clusterDomain, "jeebon.xyz")
         assert.eq(cm.environment, "test")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+// ===== Sub-object pattern tests =====
+
+#[tokio::test]
+async fn test_k8s_resources_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/secrets/db-creds"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "kind": "Secret",
+            "metadata": {"name": "db-creds"}
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local resource = k8s.resources:get("infra", "secret", "db-creds", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(resource.kind, "Secret")
+        assert.eq(resource.metadata.name, "db-creds")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_resources_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/apis/apps/v1/namespaces/infra/deployments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "kind": "DeploymentList",
+            "items": [
+                {"metadata": {"name": "api"}},
+                {"metadata": {"name": "worker"}},
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local deploys = k8s.resources:list("infra", "deployment", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(#deploys.items, 2)
+        assert.eq(deploys.items[1].metadata.name, "api")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_resources_exists() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/secrets/db-creds"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local found = k8s.resources:exists("infra", "secret", "db-creds", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(found, true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_resources_is_ready() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/apis/apps/v1/namespaces/infra/deployments/api"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": {"replicas": 3, "readyReplicas": 3}
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local ready = k8s.resources:is_ready("infra", "deployment", "api", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(ready, true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_secrets_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/secrets/db-creds"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "kind": "Secret",
+            "data": {
+                "username": "YWRtaW4=",
+                "password": "c2VjcmV0"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local secret = k8s.secrets:get("infra", "db-creds", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(secret.username, "admin")
+        assert.eq(secret.password, "secret")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_configmaps_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/configmaps/gitops-config"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "kind": "ConfigMap",
+            "data": {
+                "clusterDomain": "jeebon.xyz",
+                "environment": "test"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local cm = k8s.configmaps:get("infra", "gitops-config", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(cm.clusterDomain, "jeebon.xyz")
+        assert.eq(cm.environment, "test")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_pods_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/pods"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {"metadata": {"name": "pod-1"}, "status": {"phase": "Running"}},
+                {"metadata": {"name": "pod-2"}, "status": {"phase": "Running"}},
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local pods = k8s.pods:list("infra", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(#pods.items, 2)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_pods_status() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/pods"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {"status": {"phase": "Running"}},
+                {"status": {"phase": "Running"}},
+                {"status": {"phase": "Pending"}},
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local status = k8s.pods:status("infra", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(status.total, 3)
+        assert.eq(status.running, 2)
+        assert.eq(status.pending, 1)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_pods_logs() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/pods/api-7b9d4/log"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("2026-02-10 INFO started\n"),
+        )
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local output = k8s.pods:logs("infra", "api-7b9d4", {{
+            base_url = "{}",
+            token = "fake-token",
+            tail = 50,
+        }})
+        assert.contains(output, "started")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_services_endpoints() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/endpoints/postgres"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "subsets": [{
+                "addresses": [
+                    {"ip": "10.42.0.5"},
+                    {"ip": "10.42.0.6"}
+                ]
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local ips = k8s.services:endpoints("infra", "postgres", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(#ips, 2)
+        assert.eq(ips[1], "10.42.0.5")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_deployments_rollout_status() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/apis/apps/v1/namespaces/infra/deployments/api"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spec": {"replicas": 3},
+            "status": {
+                "updatedReplicas": 3,
+                "readyReplicas": 3,
+                "availableReplicas": 3,
+                "unavailableReplicas": 0,
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local rs = k8s.deployments:rollout_status("infra", "api", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(rs.desired, 3)
+        assert.eq(rs.ready, 3)
+        assert.eq(rs.complete, true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_nodes_status() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/nodes"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [{
+                "metadata": {
+                    "name": "node-1",
+                    "labels": {"node-role.kubernetes.io/control-plane": ""}
+                },
+                "status": {
+                    "conditions": [{"type": "Ready", "status": "True"}],
+                    "capacity": {"cpu": "4"},
+                    "allocatable": {"cpu": "3800m"}
+                }
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local nodes = k8s.nodes:status({{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(#nodes, 1)
+        assert.eq(nodes[1].name, "node-1")
+        assert.eq(nodes[1].ready, true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_namespaces_exists() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local found = k8s.namespaces:exists("infra", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(found, true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_events_for_resource() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {"reason": "Scheduled", "message": "Successfully assigned pod"},
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local events = k8s.events:for_resource("infra", "Pod", "api-7b9d4", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(#events.items, 1)
+        assert.eq(events.items[1].reason, "Scheduled")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_events_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/infra/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {"reason": "Scheduled"},
+                {"reason": "Pulled"},
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local events = k8s.events:list("infra", {{
+            base_url = "{}",
+            token = "fake-token",
+        }})
+        assert.eq(#events.items, 2)
         "#,
         server.uri()
     );

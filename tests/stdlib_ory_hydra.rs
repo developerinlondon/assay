@@ -15,7 +15,7 @@ async fn test_hydra_require() {
 }
 
 #[tokio::test]
-async fn test_hydra_list_clients() {
+async fn test_hydra_clients_list() {
     let admin = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/admin/clients"))
@@ -30,7 +30,7 @@ async fn test_hydra_list_clients() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
-        local clients = h:list_clients()
+        local clients = h.clients:list()
         assert.eq(#clients, 2)
         assert.eq(clients[1].client_id, "example-app")
         "#,
@@ -40,7 +40,7 @@ async fn test_hydra_list_clients() {
 }
 
 #[tokio::test]
-async fn test_hydra_update_client() {
+async fn test_hydra_clients_update() {
     let admin = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/admin/clients/example-app"))
@@ -56,7 +56,7 @@ async fn test_hydra_update_client() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
-        local client = h:update_client("example-app", {{
+        local client = h.clients:update("example-app", {{
           client_name = "Example App",
           client_secret = "secret",
           grant_types = {{"authorization_code", "refresh_token"}},
@@ -73,11 +73,11 @@ async fn test_hydra_update_client() {
 }
 
 #[tokio::test]
-async fn test_hydra_build_authorize_url() {
+async fn test_hydra_oauth2_authorize_url() {
     let script = r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({ public_url = "https://hydra.example.com" })
-        local url = h:build_authorize_url("example-app", {
+        local url = h.oauth2:authorize_url("example-app", {
           redirect_uri = "https://app.example.com/auth/callback",
           scope = "openid profile email",
           state = "xyz",
@@ -91,7 +91,7 @@ async fn test_hydra_build_authorize_url() {
 }
 
 #[tokio::test]
-async fn test_hydra_exchange_code() {
+async fn test_hydra_oauth2_exchange_code() {
     let public = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/oauth2/token"))
@@ -111,7 +111,7 @@ async fn test_hydra_exchange_code() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ public_url = "{}" }})
-        local tokens = h:exchange_code({{
+        local tokens = h.oauth2:exchange_code({{
           code = "abc",
           redirect_uri = "https://app.example.com/auth/callback",
           client_id = "example-app",
@@ -126,7 +126,7 @@ async fn test_hydra_exchange_code() {
 }
 
 #[tokio::test]
-async fn test_hydra_accept_login() {
+async fn test_hydra_login_accept() {
     let admin = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/admin/oauth2/auth/requests/login/accept"))
@@ -141,7 +141,7 @@ async fn test_hydra_accept_login() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
-        local result = h:accept_login("abc123", "user:alice", {{ remember = true, remember_for = 86400 }})
+        local result = h.login:accept("abc123", "user:alice", {{ remember = true, remember_for = 86400 }})
         assert.contains(result.redirect_to, "hydra.example.com")
         "#,
         admin.uri()
@@ -150,7 +150,7 @@ async fn test_hydra_accept_login() {
 }
 
 #[tokio::test]
-async fn test_hydra_accept_consent_with_claims() {
+async fn test_hydra_consent_accept_with_claims() {
     let admin = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/admin/oauth2/auth/requests/consent/accept"))
@@ -165,7 +165,7 @@ async fn test_hydra_accept_consent_with_claims() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
-        local result = h:accept_consent("xyz789", {{
+        local result = h.consent:accept("xyz789", {{
           grant_scope = {{"openid", "profile", "email"}},
           session = {{
             id_token = {{
@@ -183,7 +183,7 @@ async fn test_hydra_accept_consent_with_claims() {
 }
 
 #[tokio::test]
-async fn test_hydra_get_logout_request() {
+async fn test_hydra_logout_get() {
     let admin = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/admin/oauth2/auth/requests/logout"))
@@ -202,7 +202,7 @@ async fn test_hydra_get_logout_request() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
-        local req = h:get_logout_request("logout-abc")
+        local req = h.logout:get("logout-abc")
         assert.eq(req.subject, "user:alice")
         assert.eq(req.rp_initiated, true)
         assert.eq(req.client.client_id, "example-app")
@@ -213,7 +213,7 @@ async fn test_hydra_get_logout_request() {
 }
 
 #[tokio::test]
-async fn test_hydra_accept_logout() {
+async fn test_hydra_logout_accept() {
     let admin = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/admin/oauth2/auth/requests/logout/accept"))
@@ -228,7 +228,7 @@ async fn test_hydra_accept_logout() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
-        local result = h:accept_logout("logout-abc")
+        local result = h.logout:accept("logout-abc")
         assert.contains(result.redirect_to, "app.example.com")
         "#,
         admin.uri()
@@ -237,7 +237,7 @@ async fn test_hydra_accept_logout() {
 }
 
 #[tokio::test]
-async fn test_hydra_reject_logout() {
+async fn test_hydra_logout_reject() {
     let admin = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/admin/oauth2/auth/requests/logout/reject"))
@@ -250,7 +250,7 @@ async fn test_hydra_reject_logout() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
-        h:reject_logout("logout-abc")
+        h.logout:reject("logout-abc")
         "#,
         admin.uri()
     );
@@ -258,7 +258,7 @@ async fn test_hydra_reject_logout() {
 }
 
 #[tokio::test]
-async fn test_hydra_introspect() {
+async fn test_hydra_oauth2_introspect() {
     let admin = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/admin/oauth2/introspect"))
@@ -274,7 +274,7 @@ async fn test_hydra_introspect() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ admin_url = "{}" }})
-        local info = h:introspect("access.jwt")
+        local info = h.oauth2:introspect("access.jwt")
         assert.eq(info.active, true)
         assert.eq(info.sub, "user:alice")
         "#,
@@ -284,7 +284,7 @@ async fn test_hydra_introspect() {
 }
 
 #[tokio::test]
-async fn test_hydra_well_known() {
+async fn test_hydra_discovery_openid_config() {
     let public = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/.well-known/openid-configuration"))
@@ -300,7 +300,7 @@ async fn test_hydra_well_known() {
         r#"
         local hydra = require("assay.ory.hydra")
         local h = hydra.client({{ public_url = "{}" }})
-        local wk = h:well_known()
+        local wk = h.discovery:openid_config()
         assert.contains(wk.issuer, "hydra.example.com")
         "#,
         public.uri()

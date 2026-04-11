@@ -10,7 +10,7 @@ Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 51 mod
 
 A single ~9 MB static binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes.
 Full-featured Lua 5.5 runtime with HTTP client/server, database, WebSocket, JWT, templates, native
-Temporal gRPC workflows, and 34 embedded stdlib modules for Kubernetes, monitoring, security, and
+Temporal gRPC workflows, and 35 embedded stdlib modules for Kubernetes, monitoring, security, and
 AI agent integrations.
 
 ```bash
@@ -171,6 +171,7 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 | `assay.healthcheck` | HTTP checks, JSON path, latency |
 | **AI Agent** | |
 | `assay.openclaw` | Agent tools, state, diff, approve, LLM tasks |
+| `assay.gitlab` | Projects, repos, commits, MRs, pipelines, registry |
 | `assay.github` | PRs, issues, actions, repos, GraphQL |
 | `assay.gmail` | Search, read, reply, send (OAuth2) |
 | `assay.gcal` | Calendar events CRUD (OAuth2) |

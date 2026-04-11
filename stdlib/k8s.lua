@@ -1,5 +1,5 @@
 --- @module assay.k8s
---- @description Kubernetes API client. 30+ resource types, CRDs, readiness checks, pod logs, rollouts.
+--- @description Kubernetes API client for Kubernetes clusters. 30+ resource types, CRDs, readiness checks, pod logs, rollouts.
 --- @keywords kubernetes, k8s, pods, deployments, services, secrets, configmaps, namespaces, crd, custom-resources, rbac, events, logs, rollout, nodes, readiness, wait, deploy, deployment
 --- @env KUBERNETES_SERVICE_HOST, KUBERNETES_SERVICE_PORT
 --- @quickref M.register_crd(kind, api_group, version, plural, cluster_scoped?) -> nil | Register custom resource
@@ -8,26 +8,26 @@
 --- @quickref M.put(path, body, opts?) -> resource | PUT to any K8s API path
 --- @quickref M.patch(path, body, opts?) -> resource | PATCH any K8s API path
 --- @quickref M.delete(path, opts?) -> nil | DELETE any K8s API path
---- @quickref M.get_resource(namespace, kind, name, opts?) -> resource | Get resource by kind and name
---- @quickref M.list(namespace, kind, opts?) -> {items} | List resources by kind
---- @quickref M.create(namespace, kind, body, opts?) -> resource | Create resource
---- @quickref M.update(namespace, kind, name, body, opts?) -> resource | Update resource
---- @quickref M.patch_resource(namespace, kind, name, body, opts?) -> resource | Patch resource
---- @quickref M.delete_resource(namespace, kind, name, opts?) -> nil | Delete resource
---- @quickref M.exists(namespace, kind, name, opts?) -> bool | Check if resource exists
---- @quickref M.get_secret(namespace, name, opts?) -> {key=value} | Get decoded secret data
---- @quickref M.get_configmap(namespace, name, opts?) -> {key=value} | Get ConfigMap data
---- @quickref M.list_pods(namespace, opts?) -> {items} | List pods in namespace
---- @quickref M.list_events(namespace, opts?) -> {items} | List events in namespace
---- @quickref M.pod_status(namespace, opts?) -> {running, pending, failed, total} | Get pod status counts
---- @quickref M.is_ready(namespace, kind, name, opts?) -> bool | Check if resource is ready
---- @quickref M.wait_ready(namespace, kind, name, timeout_secs?, opts?) -> true | Wait for readiness
---- @quickref M.service_endpoints(namespace, name, opts?) -> [ip] | Get service endpoint IPs
---- @quickref M.logs(namespace, pod_name, opts?) -> string | Get pod logs
---- @quickref M.rollout_status(namespace, name, opts?) -> {desired, ready, complete} | Get deployment rollout
---- @quickref M.node_status(opts?) -> [{name, ready, roles, capacity}] | Get node statuses
---- @quickref M.namespace_exists(name, opts?) -> bool | Check if namespace exists
---- @quickref M.events_for(namespace, kind, name, opts?) -> {items} | Get events for resource
+--- @quickref M.resources:get(namespace, kind, name, opts?) -> resource | Get resource by kind and name
+--- @quickref M.resources:list(namespace, kind, opts?) -> {items} | List resources by kind
+--- @quickref M.resources:create(namespace, kind, body, opts?) -> resource | Create resource
+--- @quickref M.resources:update(namespace, kind, name, body, opts?) -> resource | Update resource
+--- @quickref M.resources:patch(namespace, kind, name, body, opts?) -> resource | Patch resource
+--- @quickref M.resources:delete(namespace, kind, name, opts?) -> nil | Delete resource
+--- @quickref M.resources:exists(namespace, kind, name, opts?) -> bool | Check if resource exists
+--- @quickref M.resources:is_ready(namespace, kind, name, opts?) -> bool | Check if resource is ready
+--- @quickref M.resources:wait_ready(namespace, kind, name, timeout_secs?, opts?) -> true | Wait for readiness
+--- @quickref M.secrets:get(namespace, name, opts?) -> {key=value} | Get decoded secret data
+--- @quickref M.configmaps:get(namespace, name, opts?) -> {key=value} | Get ConfigMap data
+--- @quickref M.pods:list(namespace, opts?) -> {items} | List pods in namespace
+--- @quickref M.pods:status(namespace, opts?) -> {running, pending, failed, total} | Get pod status counts
+--- @quickref M.pods:logs(namespace, pod_name, opts?) -> string | Get pod logs
+--- @quickref M.services:endpoints(namespace, name, opts?) -> [ip] | Get service endpoint IPs
+--- @quickref M.deployments:rollout_status(namespace, name, opts?) -> {desired, ready, complete} | Get deployment rollout
+--- @quickref M.nodes:status(opts?) -> [{name, ready, roles, capacity}] | Get node statuses
+--- @quickref M.namespaces:exists(name, opts?) -> bool | Check if namespace exists
+--- @quickref M.events:for_resource(namespace, kind, name, opts?) -> {items} | Get events for resource
+--- @quickref M.events:list(namespace, opts?) -> {items} | List events in namespace
 
 local M = {}
 
@@ -127,6 +127,8 @@ function M._list_path(namespace, kind)
   return info.api .. "/namespaces/" .. namespace .. "/" .. info.plural
 end
 
+-- ===== Raw HTTP verbs (top-level) =====
+
 function M.get(path, opts)
   opts = opts or {}
   local url = (opts.base_url or api_base()) .. path
@@ -189,11 +191,15 @@ function M.delete(path, opts)
   end
 end
 
-function M.get_resource(namespace, kind, name, opts)
+-- ===== Resources sub-object =====
+
+M.resources = {}
+
+function M.resources:get(namespace, kind, name, opts)
   return M.get(M._resource_path(namespace, kind, name), opts)
 end
 
-function M.list(namespace, kind, opts)
+function M.resources:list(namespace, kind, opts)
   opts = opts or {}
   local path = M._list_path(namespace, kind)
   local params = {}
@@ -206,23 +212,23 @@ function M.list(namespace, kind, opts)
   return M.get(path, opts)
 end
 
-function M.create(namespace, kind, body, opts)
+function M.resources:create(namespace, kind, body, opts)
   return M.post(M._list_path(namespace, kind), body, opts)
 end
 
-function M.update(namespace, kind, name, body, opts)
+function M.resources:update(namespace, kind, name, body, opts)
   return M.put(M._resource_path(namespace, kind, name), body, opts)
 end
 
-function M.patch_resource(namespace, kind, name, body, opts)
+function M.resources:patch(namespace, kind, name, body, opts)
   return M.patch(M._resource_path(namespace, kind, name), body, opts)
 end
 
-function M.delete_resource(namespace, kind, name, opts)
+function M.resources:delete(namespace, kind, name, opts)
   return M.delete(M._resource_path(namespace, kind, name), opts)
 end
 
-function M.exists(namespace, kind, name, opts)
+function M.resources:exists(namespace, kind, name, opts)
   opts = opts or {}
   local api_path = M._resource_path(namespace, kind, name)
   local url = (opts.base_url or api_base()) .. api_path
@@ -232,47 +238,8 @@ function M.exists(namespace, kind, name, opts)
   return resp.status == 200
 end
 
-function M.get_secret(namespace, name, opts)
-  local data = M.get_resource(namespace, "secret", name, opts)
-  local decoded = {}
-  if data.data then
-    for k, v in pairs(data.data) do
-      decoded[k] = base64.decode(v)
-    end
-  end
-  return decoded
-end
-
-function M.get_configmap(namespace, name, opts)
-  local data = M.get_resource(namespace, "configmap", name, opts)
-  return data.data or {}
-end
-
-function M.list_pods(namespace, opts)
-  return M.list(namespace, "pod", opts)
-end
-
-function M.list_events(namespace, opts)
-  return M.list(namespace, "event", opts)
-end
-
-function M.pod_status(namespace, opts)
-  local pod_list = M.list_pods(namespace, opts)
-  local counts = { running = 0, pending = 0, succeeded = 0, failed = 0, unknown = 0, total = 0 }
-  for _, pod in ipairs(pod_list.items or {}) do
-    counts.total = counts.total + 1
-    local phase = (pod.status and pod.status.phase or "Unknown"):lower()
-    if counts[phase] then
-      counts[phase] = counts[phase] + 1
-    else
-      counts.unknown = counts.unknown + 1
-    end
-  end
-  return counts
-end
-
-function M.is_ready(namespace, kind, name, opts)
-  local resource = M.get_resource(namespace, kind, name, opts)
+function M.resources:is_ready(namespace, kind, name, opts)
+  local resource = M.resources:get(namespace, kind, name, opts)
   local kind_lower = kind:lower()
 
   if kind_lower == "deployment" or kind_lower == "statefulset" then
@@ -319,12 +286,12 @@ function M.is_ready(namespace, kind, name, opts)
   return false
 end
 
-function M.wait_ready(namespace, kind, name, timeout_secs, opts)
+function M.resources:wait_ready(namespace, kind, name, timeout_secs, opts)
   timeout_secs = timeout_secs or 60
   local interval = 2
   local elapsed = 0
   while elapsed < timeout_secs do
-    local ok, ready = pcall(M.is_ready, namespace, kind, name, opts)
+    local ok, ready = pcall(M.resources.is_ready, M.resources, namespace, kind, name, opts)
     if ok and ready then
       return true
     end
@@ -334,18 +301,54 @@ function M.wait_ready(namespace, kind, name, timeout_secs, opts)
   error("k8s.wait_ready: " .. kind .. "/" .. name .. " not ready after " .. timeout_secs .. "s")
 end
 
-function M.service_endpoints(namespace, name, opts)
-  local ep = M.get_resource(namespace, "endpoints", name, opts)
-  local ips = {}
-  for _, subset in ipairs(ep.subsets or {}) do
-    for _, addr in ipairs(subset.addresses or {}) do
-      ips[#ips + 1] = addr.ip
+-- ===== Secrets sub-object =====
+
+M.secrets = {}
+
+function M.secrets:get(namespace, name, opts)
+  local data = M.resources:get(namespace, "secret", name, opts)
+  local decoded = {}
+  if data.data then
+    for k, v in pairs(data.data) do
+      decoded[k] = base64.decode(v)
     end
   end
-  return ips
+  return decoded
 end
 
-function M.logs(namespace, pod_name, opts)
+-- ===== ConfigMaps sub-object =====
+
+M.configmaps = {}
+
+function M.configmaps:get(namespace, name, opts)
+  local data = M.resources:get(namespace, "configmap", name, opts)
+  return data.data or {}
+end
+
+-- ===== Pods sub-object =====
+
+M.pods = {}
+
+function M.pods:list(namespace, opts)
+  return M.resources:list(namespace, "pod", opts)
+end
+
+function M.pods:status(namespace, opts)
+  local pod_list = M.pods:list(namespace, opts)
+  local counts = { running = 0, pending = 0, succeeded = 0, failed = 0, unknown = 0, total = 0 }
+  for _, pod in ipairs(pod_list.items or {}) do
+    counts.total = counts.total + 1
+    local phase = (pod.status and pod.status.phase or "Unknown"):lower()
+    if counts[phase] then
+      counts[phase] = counts[phase] + 1
+    else
+      counts.unknown = counts.unknown + 1
+    end
+  end
+  return counts
+end
+
+function M.pods:logs(namespace, pod_name, opts)
   opts = opts or {}
   local path = "/api/v1/namespaces/" .. namespace .. "/pods/" .. pod_name .. "/log"
   local params = {}
@@ -366,8 +369,27 @@ function M.logs(namespace, pod_name, opts)
   return resp.body
 end
 
-function M.rollout_status(namespace, name, opts)
-  local deploy = M.get_resource(namespace, "deployment", name, opts)
+-- ===== Services sub-object =====
+
+M.services = {}
+
+function M.services:endpoints(namespace, name, opts)
+  local ep = M.resources:get(namespace, "endpoints", name, opts)
+  local ips = {}
+  for _, subset in ipairs(ep.subsets or {}) do
+    for _, addr in ipairs(subset.addresses or {}) do
+      ips[#ips + 1] = addr.ip
+    end
+  end
+  return ips
+end
+
+-- ===== Deployments sub-object =====
+
+M.deployments = {}
+
+function M.deployments:rollout_status(namespace, name, opts)
+  local deploy = M.resources:get(namespace, "deployment", name, opts)
   local status = deploy.status or {}
   local spec = deploy.spec or {}
   return {
@@ -381,10 +403,14 @@ function M.rollout_status(namespace, name, opts)
   }
 end
 
-function M.node_status(opts)
-  local nodes = M.get("/api/v1/nodes", opts)
+-- ===== Nodes sub-object =====
+
+M.nodes = {}
+
+function M.nodes:status(opts)
+  local nodes_list = M.get("/api/v1/nodes", opts)
   local result = {}
-  for _, node in ipairs(nodes.items or {}) do
+  for _, node in ipairs(nodes_list.items or {}) do
     local ready = false
     for _, cond in ipairs((node.status or {}).conditions or {}) do
       if cond.type == "Ready" then
@@ -408,12 +434,24 @@ function M.node_status(opts)
   return result
 end
 
-function M.namespace_exists(name, opts)
-  return M.exists(nil, "namespace", name, opts)
+-- ===== Namespaces sub-object =====
+
+M.namespaces = {}
+
+function M.namespaces:exists(name, opts)
+  return M.resources:exists(nil, "namespace", name, opts)
 end
 
-function M.events_for(namespace, kind, name, opts)
-  return M.list(namespace, "event", {
+-- ===== Events sub-object =====
+
+M.events = {}
+
+function M.events:list(namespace, opts)
+  return M.resources:list(namespace, "event", opts)
+end
+
+function M.events:for_resource(namespace, kind, name, opts)
+  return M.resources:list(namespace, "event", {
     field_selector = "involvedObject.kind=" .. kind .. ",involvedObject.name=" .. name,
     base_url = (opts or {}).base_url,
     token = (opts or {}).token,
