@@ -29,56 +29,56 @@
 ---
 --- @quickref c:health() -> bool | Check Temporal health
 --- @quickref c:system_info() -> info | Get system information
---- @quickref c:namespaces() -> {namespaces} | List namespaces
---- @quickref c:namespace(name) -> namespace | Get namespace by name
---- @quickref c:workflows(opts?) -> {executions} | List workflow executions
---- @quickref c:workflow(workflow_id, run_id?, opts?) -> workflow | Get workflow execution
---- @quickref c:workflow_history(workflow_id, run_id?, opts?) -> {events} | Get workflow history
---- @quickref c:signal_workflow(workflow_id, signal_name, input?, opts?) -> result | Signal a workflow
---- @quickref c:terminate_workflow(workflow_id, reason?, opts?) -> result | Terminate a workflow
---- @quickref c:cancel_workflow(workflow_id, opts?) -> result | Cancel a workflow
---- @quickref c:task_queue(name, opts?) -> queue | Get task queue info
---- @quickref c:schedules(opts?) -> {schedules} | List schedules
---- @quickref c:schedule(schedule_id, opts?) -> schedule | Get schedule by ID
---- @quickref c:search(query, opts?) -> {executions} | Search workflows by query
---- @quickref c:is_workflow_running(workflow_id, opts?) -> bool | Check if workflow is running
---- @quickref c:wait_workflow_complete(workflow_id, timeout_secs, opts?) -> workflow | Wait for completion
+--- @quickref c.namespaces:list() -> {namespaces} | List namespaces
+--- @quickref c.namespaces:get(name) -> namespace | Get namespace by name
+--- @quickref c.workflows:list(opts?) -> {executions} | List workflow executions
+--- @quickref c.workflows:get(workflow_id, run_id?, opts?) -> workflow | Get workflow execution
+--- @quickref c.workflows:history(workflow_id, run_id?, opts?) -> {events} | Get workflow history
+--- @quickref c.workflows:signal(workflow_id, signal_name, input?, opts?) -> result | Signal a workflow
+--- @quickref c.workflows:terminate(workflow_id, reason?, opts?) -> result | Terminate a workflow
+--- @quickref c.workflows:cancel(workflow_id, opts?) -> result | Cancel a workflow
+--- @quickref c.workflows:search(query, opts?) -> {executions} | Search workflows by query
+--- @quickref c.workflows:is_running(workflow_id, opts?) -> bool | Check if workflow is running
+--- @quickref c.workflows:wait_complete(workflow_id, timeout_secs, opts?) -> workflow | Wait for completion
+--- @quickref c.task_queues:get(name, opts?) -> queue | Get task queue info
+--- @quickref c.schedules:list(opts?) -> {schedules} | List schedules
+--- @quickref c.schedules:get(schedule_id, opts?) -> schedule | Get schedule by ID
 
 local M = {}
 
 function M.client(url, opts)
   opts = opts or {}
-  local c = {
-    url = url:gsub("/+$", ""),
-    default_ns = opts.namespace or "default",
-    api_key = opts.api_key,
-  }
+  local base_url = url:gsub("/+$", "")
+  local default_ns = opts.namespace or "default"
+  local api_key = opts.api_key
 
-  local function headers(self)
+  -- Shared HTTP helpers (plain closures capturing upvalues)
+
+  local function headers()
     local h = { ["Content-Type"] = "application/json" }
-    if self.api_key then
-      h["Authorization"] = "Bearer " .. self.api_key
+    if api_key then
+      h["Authorization"] = "Bearer " .. api_key
     end
     return h
   end
 
-  local function resolve_ns(self, opts_override)
+  local function resolve_ns(opts_override)
     if opts_override and opts_override.namespace then
       return opts_override.namespace
     end
-    return self.default_ns
+    return default_ns
   end
 
-  local function api_get(self, path_str)
-    local resp = http.get(self.url .. path_str, { headers = headers(self) })
+  local function api_get(path_str)
+    local resp = http.get(base_url .. path_str, { headers = headers() })
     if resp.status ~= 200 then
       error("temporal: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
 
-  local function api_post(self, path_str, payload)
-    local resp = http.post(self.url .. path_str, payload, { headers = headers(self) })
+  local function api_post(path_str, payload)
+    local resp = http.post(base_url .. path_str, payload, { headers = headers() })
     if resp.status ~= 200 then
       error("temporal: POST " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
@@ -90,131 +90,121 @@ function M.client(url, opts)
     return "?" .. table.concat(params, "&")
   end
 
+  -- ===== Client =====
+
+  local c = {}
+
+  -- ===== Top-level =====
+
   function c:health()
-    local resp = http.get(self.url .. "/health")
+    local resp = http.get(base_url .. "/health")
     return resp.status == 200
   end
 
   function c:system_info()
-    return api_get(self, "/api/v1/system-info")
+    return api_get("/api/v1/system-info")
   end
 
-  function c:namespaces()
-    return api_get(self, "/api/v1/namespaces")
+  -- ===== Namespaces =====
+
+  c.namespaces = {}
+
+  function c.namespaces:list()
+    return api_get("/api/v1/namespaces")
   end
 
-  function c:namespace(name)
-    return api_get(self, "/api/v1/namespaces/" .. name)
+  function c.namespaces:get(name)
+    return api_get("/api/v1/namespaces/" .. name)
   end
 
-  function c:workflows(opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
+  -- ===== Workflows =====
+
+  c.workflows = {}
+
+  function c.workflows:list(wf_opts)
+    wf_opts = wf_opts or {}
+    local ns = resolve_ns(wf_opts)
     local params = {}
-    if opts.query then params[#params + 1] = "query=" .. opts.query end
-    if opts.page_size then params[#params + 1] = "pageSize=" .. opts.page_size end
+    if wf_opts.query then params[#params + 1] = "query=" .. wf_opts.query end
+    if wf_opts.page_size then params[#params + 1] = "pageSize=" .. wf_opts.page_size end
     local qs = build_query_string(params)
-    return api_get(self, "/api/v1/namespaces/" .. ns .. "/workflows" .. qs)
+    return api_get("/api/v1/namespaces/" .. ns .. "/workflows" .. qs)
   end
 
-  function c:workflow(workflow_id, run_id, opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
+  function c.workflows:get(workflow_id, run_id, wf_opts)
+    wf_opts = wf_opts or {}
+    local ns = resolve_ns(wf_opts)
     local params = {}
     if run_id then params[#params + 1] = "runId=" .. run_id end
     local qs = build_query_string(params)
-    return api_get(self, "/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. qs)
+    return api_get("/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. qs)
   end
 
-  function c:workflow_history(workflow_id, run_id, opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
+  function c.workflows:history(workflow_id, run_id, wf_opts)
+    wf_opts = wf_opts or {}
+    local ns = resolve_ns(wf_opts)
     local params = {}
     if run_id then params[#params + 1] = "runId=" .. run_id end
-    if opts.maximum_page_size then params[#params + 1] = "maximumPageSize=" .. opts.maximum_page_size end
+    if wf_opts.maximum_page_size then params[#params + 1] = "maximumPageSize=" .. wf_opts.maximum_page_size end
     local qs = build_query_string(params)
-    return api_get(self, "/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. "/history" .. qs)
+    return api_get("/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. "/history" .. qs)
   end
 
-  function c:signal_workflow(workflow_id, signal_name, input, opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
+  function c.workflows:signal(workflow_id, signal_name, input, wf_opts)
+    wf_opts = wf_opts or {}
+    local ns = resolve_ns(wf_opts)
     local params = {}
-    if opts.run_id then params[#params + 1] = "runId=" .. opts.run_id end
+    if wf_opts.run_id then params[#params + 1] = "runId=" .. wf_opts.run_id end
     local qs = build_query_string(params)
     local body = { signalName = signal_name }
     if input then body.input = input end
-    return api_post(self, "/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. "/signal" .. qs, body)
+    return api_post("/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. "/signal" .. qs, body)
   end
 
-  function c:terminate_workflow(workflow_id, reason, opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
+  function c.workflows:terminate(workflow_id, reason, wf_opts)
+    wf_opts = wf_opts or {}
+    local ns = resolve_ns(wf_opts)
     local params = {}
-    if opts.run_id then params[#params + 1] = "runId=" .. opts.run_id end
+    if wf_opts.run_id then params[#params + 1] = "runId=" .. wf_opts.run_id end
     local qs = build_query_string(params)
     local body = {}
     if reason then body.reason = reason end
-    return api_post(self, "/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. "/terminate" .. qs, body)
+    return api_post("/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. "/terminate" .. qs, body)
   end
 
-  function c:cancel_workflow(workflow_id, opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
+  function c.workflows:cancel(workflow_id, wf_opts)
+    wf_opts = wf_opts or {}
+    local ns = resolve_ns(wf_opts)
     local params = {}
-    if opts.run_id then params[#params + 1] = "runId=" .. opts.run_id end
+    if wf_opts.run_id then params[#params + 1] = "runId=" .. wf_opts.run_id end
     local qs = build_query_string(params)
-    return api_post(self, "/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. "/cancel" .. qs, {})
+    return api_post("/api/v1/namespaces/" .. ns .. "/workflows/" .. workflow_id .. "/cancel" .. qs, {})
   end
 
-  function c:task_queue(name, opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
-    local params = {}
-    if opts.task_queue_type then params[#params + 1] = "taskQueueType=" .. opts.task_queue_type end
-    local qs = build_query_string(params)
-    return api_get(self, "/api/v1/namespaces/" .. ns .. "/task-queues/" .. name .. qs)
-  end
-
-  function c:schedules(opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
-    local params = {}
-    if opts.maximum_page_size then params[#params + 1] = "maximumPageSize=" .. opts.maximum_page_size end
-    local qs = build_query_string(params)
-    return api_get(self, "/api/v1/namespaces/" .. ns .. "/schedules" .. qs)
-  end
-
-  function c:schedule(schedule_id, opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
-    return api_get(self, "/api/v1/namespaces/" .. ns .. "/schedules/" .. schedule_id)
-  end
-
-  function c:search(query, opts)
-    opts = opts or {}
-    local ns = resolve_ns(self, opts)
+  function c.workflows:search(query, wf_opts)
+    wf_opts = wf_opts or {}
+    local ns = resolve_ns(wf_opts)
     local params = {}
     if query then params[#params + 1] = "query=" .. query end
-    if opts.page_size then params[#params + 1] = "pageSize=" .. opts.page_size end
+    if wf_opts.page_size then params[#params + 1] = "pageSize=" .. wf_opts.page_size end
     local qs = build_query_string(params)
-    return api_get(self, "/api/v1/namespaces/" .. ns .. "/workflows" .. qs)
+    return api_get("/api/v1/namespaces/" .. ns .. "/workflows" .. qs)
   end
 
-  function c:is_workflow_running(workflow_id, opts)
-    opts = opts or {}
-    local wf = self:workflow(workflow_id, nil, opts)
+  function c.workflows:is_running(workflow_id, wf_opts)
+    wf_opts = wf_opts or {}
+    local wf = c.workflows:get(workflow_id, nil, wf_opts)
     if wf and wf.workflowExecutionInfo and wf.workflowExecutionInfo.status then
       return wf.workflowExecutionInfo.status == "WORKFLOW_EXECUTION_STATUS_RUNNING"
     end
     return false
   end
 
-  function c:wait_workflow_complete(workflow_id, timeout_secs, opts)
-    opts = opts or {}
+  function c.workflows:wait_complete(workflow_id, timeout_secs, wf_opts)
+    wf_opts = wf_opts or {}
     local deadline = time() + timeout_secs
     while true do
-      local wf = self:workflow(workflow_id, nil, opts)
+      local wf = c.workflows:get(workflow_id, nil, wf_opts)
       if wf and wf.workflowExecutionInfo and wf.workflowExecutionInfo.status then
         if wf.workflowExecutionInfo.status ~= "WORKFLOW_EXECUTION_STATUS_RUNNING" then
           return wf
@@ -225,6 +215,38 @@ function M.client(url, opts)
       end
       sleep(5)
     end
+  end
+
+  -- ===== Task Queues =====
+
+  c.task_queues = {}
+
+  function c.task_queues:get(name, tq_opts)
+    tq_opts = tq_opts or {}
+    local ns = resolve_ns(tq_opts)
+    local params = {}
+    if tq_opts.task_queue_type then params[#params + 1] = "taskQueueType=" .. tq_opts.task_queue_type end
+    local qs = build_query_string(params)
+    return api_get("/api/v1/namespaces/" .. ns .. "/task-queues/" .. name .. qs)
+  end
+
+  -- ===== Schedules =====
+
+  c.schedules = {}
+
+  function c.schedules:list(sched_opts)
+    sched_opts = sched_opts or {}
+    local ns = resolve_ns(sched_opts)
+    local params = {}
+    if sched_opts.maximum_page_size then params[#params + 1] = "maximumPageSize=" .. sched_opts.maximum_page_size end
+    local qs = build_query_string(params)
+    return api_get("/api/v1/namespaces/" .. ns .. "/schedules" .. qs)
+  end
+
+  function c.schedules:get(schedule_id, sched_opts)
+    sched_opts = sched_opts or {}
+    local ns = resolve_ns(sched_opts)
+    return api_get("/api/v1/namespaces/" .. ns .. "/schedules/" .. schedule_id)
   end
 
   return c

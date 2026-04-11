@@ -1,39 +1,38 @@
 --- @module assay.eso
 --- @description External Secrets Operator. ExternalSecrets, SecretStores, ClusterSecretStores sync status.
 --- @keywords eso, external-secrets, secretstores, kubernetes, secrets, sync, store, readiness, wait, cluster, external-secret
---- @quickref c:external_secrets(namespace) -> {items} | List ExternalSecrets in namespace
---- @quickref c:external_secret(namespace, name) -> es|nil | Get ExternalSecret by name
---- @quickref c:external_secret_status(namespace, name) -> {ready, status, sync_hash} | Get sync status
---- @quickref c:is_secret_synced(namespace, name) -> bool | Check if ExternalSecret is synced
---- @quickref c:wait_secret_synced(namespace, name, timeout_secs?) -> true | Wait for sync
---- @quickref c:secret_stores(namespace) -> {items} | List SecretStores in namespace
---- @quickref c:secret_store(namespace, name) -> store|nil | Get SecretStore by name
---- @quickref c:secret_store_status(namespace, name) -> {ready, conditions} | Get store status
---- @quickref c:is_store_ready(namespace, name) -> bool | Check if SecretStore is ready
---- @quickref c:cluster_secret_stores() -> {items} | List ClusterSecretStores
---- @quickref c:cluster_secret_store(name) -> store|nil | Get ClusterSecretStore by name
---- @quickref c:is_cluster_store_ready(name) -> bool | Check if ClusterSecretStore is ready
---- @quickref c:cluster_external_secrets() -> {items} | List ClusterExternalSecrets
---- @quickref c:cluster_external_secret(name) -> es|nil | Get ClusterExternalSecret by name
---- @quickref c:all_secrets_synced(namespace) -> {synced, failed, total} | Check all secrets sync status
---- @quickref c:all_stores_ready(namespace) -> {ready, not_ready, total} | Check all stores readiness
+--- @quickref c.external_secrets:list(namespace) -> {items} | List ExternalSecrets in namespace
+--- @quickref c.external_secrets:get(namespace, name) -> es|nil | Get ExternalSecret by name
+--- @quickref c.external_secrets:status(namespace, name) -> {ready, status, sync_hash} | Get sync status
+--- @quickref c.external_secrets:is_synced(namespace, name) -> bool | Check if ExternalSecret is synced
+--- @quickref c.external_secrets:wait_synced(namespace, name, timeout_secs?) -> true | Wait for sync
+--- @quickref c.external_secrets:all_synced(namespace) -> {synced, failed, total} | Check all secrets sync status
+--- @quickref c.secret_stores:list(namespace) -> {items} | List SecretStores in namespace
+--- @quickref c.secret_stores:get(namespace, name) -> store|nil | Get SecretStore by name
+--- @quickref c.secret_stores:status(namespace, name) -> {ready, conditions} | Get store status
+--- @quickref c.secret_stores:is_ready(namespace, name) -> bool | Check if SecretStore is ready
+--- @quickref c.secret_stores:all_ready(namespace) -> {ready, not_ready, total} | Check all stores readiness
+--- @quickref c.cluster_secret_stores:list() -> {items} | List ClusterSecretStores
+--- @quickref c.cluster_secret_stores:get(name) -> store|nil | Get ClusterSecretStore by name
+--- @quickref c.cluster_secret_stores:is_ready(name) -> bool | Check if ClusterSecretStore is ready
+--- @quickref c.cluster_external_secrets:list() -> {items} | List ClusterExternalSecrets
+--- @quickref c.cluster_external_secrets:get(name) -> es|nil | Get ClusterExternalSecret by name
 
 local M = {}
 
 local API_BASE = "/apis/external-secrets.io/v1beta1"
 
 function M.client(url, token)
-  local c = {
-    url = url:gsub("/+$", ""),
-    token = token,
-  }
+  local base_url = url:gsub("/+$", "")
 
-  local function headers(self)
-    return { Authorization = "Bearer " .. self.token }
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
+
+  local function headers()
+    return { Authorization = "Bearer " .. token }
   end
 
-  local function api_get(self, path)
-    local resp = http.get(self.url .. path, { headers = headers(self) })
+  local function api_get(path)
+    local resp = http.get(base_url .. path, { headers = headers() })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
       error("eso: GET " .. path .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -41,8 +40,8 @@ function M.client(url, token)
     return json.parse(resp.body)
   end
 
-  local function api_list(self, path)
-    local resp = http.get(self.url .. path, { headers = headers(self) })
+  local function api_list(path)
+    local resp = http.get(base_url .. path, { headers = headers() })
     if resp.status ~= 200 then
       error("eso: LIST " .. path .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
@@ -58,45 +57,51 @@ function M.client(url, token)
     return nil
   end
 
-  -- ExternalSecrets (namespaced)
+  -- ===== Client =====
 
-  function c:external_secrets(namespace)
-    return api_list(self, API_BASE .. "/namespaces/" .. namespace .. "/externalsecrets")
+  local c = {}
+
+  -- ===== ExternalSecrets (namespaced) =====
+
+  c.external_secrets = {}
+
+  function c.external_secrets:list(namespace)
+    return api_list(API_BASE .. "/namespaces/" .. namespace .. "/externalsecrets")
   end
 
-  function c:external_secret(namespace, name)
-    return api_get(self, API_BASE .. "/namespaces/" .. namespace .. "/externalsecrets/" .. name)
+  function c.external_secrets:get(namespace, name)
+    return api_get(API_BASE .. "/namespaces/" .. namespace .. "/externalsecrets/" .. name)
   end
 
-  function c:external_secret_status(namespace, name)
-    local es = api_get(self, API_BASE .. "/namespaces/" .. namespace .. "/externalsecrets/" .. name)
+  function c.external_secrets:status(namespace, name)
+    local es = api_get(API_BASE .. "/namespaces/" .. namespace .. "/externalsecrets/" .. name)
     if not es then
       error("eso: ExternalSecret " .. namespace .. "/" .. name .. " not found")
     end
-    local status = es.status or {}
-    local conditions = status.conditions or {}
+    local st = es.status or {}
+    local conditions = st.conditions or {}
     local ready_cond = find_condition(conditions, "Ready")
     return {
       ready = ready_cond ~= nil and ready_cond.status == "True",
       status = ready_cond and ready_cond.reason or "Unknown",
-      sync_hash = status.syncedResourceVersion or "",
+      sync_hash = st.syncedResourceVersion or "",
       conditions = conditions,
     }
   end
 
-  function c:is_secret_synced(namespace, name)
-    local es = api_get(self, API_BASE .. "/namespaces/" .. namespace .. "/externalsecrets/" .. name)
+  function c.external_secrets:is_synced(namespace, name)
+    local es = api_get(API_BASE .. "/namespaces/" .. namespace .. "/externalsecrets/" .. name)
     if not es then return false end
     local conditions = (es.status or {}).conditions or {}
     local ready_cond = find_condition(conditions, "Ready")
     return ready_cond ~= nil and ready_cond.status == "True"
   end
 
-  function c:wait_secret_synced(namespace, name, timeout_secs)
+  function c.external_secrets:wait_synced(namespace, name, timeout_secs)
     timeout_secs = timeout_secs or 60
     local elapsed = 0
     while elapsed < timeout_secs do
-      local synced = self:is_secret_synced(namespace, name)
+      local synced = c.external_secrets:is_synced(namespace, name)
       if synced then return true end
       sleep(5)
       elapsed = elapsed + 5
@@ -104,69 +109,8 @@ function M.client(url, token)
     error("eso: ExternalSecret " .. namespace .. "/" .. name .. " not synced after " .. timeout_secs .. "s")
   end
 
-  -- SecretStores (namespaced)
-
-  function c:secret_stores(namespace)
-    return api_list(self, API_BASE .. "/namespaces/" .. namespace .. "/secretstores")
-  end
-
-  function c:secret_store(namespace, name)
-    return api_get(self, API_BASE .. "/namespaces/" .. namespace .. "/secretstores/" .. name)
-  end
-
-  function c:secret_store_status(namespace, name)
-    local ss = api_get(self, API_BASE .. "/namespaces/" .. namespace .. "/secretstores/" .. name)
-    if not ss then
-      error("eso: SecretStore " .. namespace .. "/" .. name .. " not found")
-    end
-    local conditions = (ss.status or {}).conditions or {}
-    local ready_cond = find_condition(conditions, "Ready")
-    return {
-      ready = ready_cond ~= nil and ready_cond.status == "True",
-      conditions = conditions,
-    }
-  end
-
-  function c:is_store_ready(namespace, name)
-    local ss = api_get(self, API_BASE .. "/namespaces/" .. namespace .. "/secretstores/" .. name)
-    if not ss then return false end
-    local conditions = (ss.status or {}).conditions or {}
-    local ready_cond = find_condition(conditions, "Ready")
-    return ready_cond ~= nil and ready_cond.status == "True"
-  end
-
-  -- ClusterSecretStores (cluster-scoped)
-
-  function c:cluster_secret_stores()
-    return api_list(self, API_BASE .. "/clustersecretstores")
-  end
-
-  function c:cluster_secret_store(name)
-    return api_get(self, API_BASE .. "/clustersecretstores/" .. name)
-  end
-
-  function c:is_cluster_store_ready(name)
-    local css = api_get(self, API_BASE .. "/clustersecretstores/" .. name)
-    if not css then return false end
-    local conditions = (css.status or {}).conditions or {}
-    local ready_cond = find_condition(conditions, "Ready")
-    return ready_cond ~= nil and ready_cond.status == "True"
-  end
-
-  -- ClusterExternalSecrets (cluster-scoped)
-
-  function c:cluster_external_secrets()
-    return api_list(self, API_BASE .. "/clusterexternalsecrets")
-  end
-
-  function c:cluster_external_secret(name)
-    return api_get(self, API_BASE .. "/clusterexternalsecrets/" .. name)
-  end
-
-  -- Utilities
-
-  function c:all_secrets_synced(namespace)
-    local list = self:external_secrets(namespace)
+  function c.external_secrets:all_synced(namespace)
+    local list = c.external_secrets:list(namespace)
     local synced = 0
     local failed = 0
     local total = 0
@@ -185,8 +129,41 @@ function M.client(url, token)
     return { synced = synced, failed = failed, total = total, failed_names = failed_names }
   end
 
-  function c:all_stores_ready(namespace)
-    local list = self:secret_stores(namespace)
+  -- ===== SecretStores (namespaced) =====
+
+  c.secret_stores = {}
+
+  function c.secret_stores:list(namespace)
+    return api_list(API_BASE .. "/namespaces/" .. namespace .. "/secretstores")
+  end
+
+  function c.secret_stores:get(namespace, name)
+    return api_get(API_BASE .. "/namespaces/" .. namespace .. "/secretstores/" .. name)
+  end
+
+  function c.secret_stores:status(namespace, name)
+    local ss = api_get(API_BASE .. "/namespaces/" .. namespace .. "/secretstores/" .. name)
+    if not ss then
+      error("eso: SecretStore " .. namespace .. "/" .. name .. " not found")
+    end
+    local conditions = (ss.status or {}).conditions or {}
+    local ready_cond = find_condition(conditions, "Ready")
+    return {
+      ready = ready_cond ~= nil and ready_cond.status == "True",
+      conditions = conditions,
+    }
+  end
+
+  function c.secret_stores:is_ready(namespace, name)
+    local ss = api_get(API_BASE .. "/namespaces/" .. namespace .. "/secretstores/" .. name)
+    if not ss then return false end
+    local conditions = (ss.status or {}).conditions or {}
+    local ready_cond = find_condition(conditions, "Ready")
+    return ready_cond ~= nil and ready_cond.status == "True"
+  end
+
+  function c.secret_stores:all_ready(namespace)
+    local list = c.secret_stores:list(namespace)
     local ready = 0
     local not_ready = 0
     local total = 0
@@ -203,6 +180,38 @@ function M.client(url, token)
       end
     end
     return { ready = ready, not_ready = not_ready, total = total, not_ready_names = not_ready_names }
+  end
+
+  -- ===== ClusterSecretStores (cluster-scoped) =====
+
+  c.cluster_secret_stores = {}
+
+  function c.cluster_secret_stores:list()
+    return api_list(API_BASE .. "/clustersecretstores")
+  end
+
+  function c.cluster_secret_stores:get(name)
+    return api_get(API_BASE .. "/clustersecretstores/" .. name)
+  end
+
+  function c.cluster_secret_stores:is_ready(name)
+    local css = api_get(API_BASE .. "/clustersecretstores/" .. name)
+    if not css then return false end
+    local conditions = (css.status or {}).conditions or {}
+    local ready_cond = find_condition(conditions, "Ready")
+    return ready_cond ~= nil and ready_cond.status == "True"
+  end
+
+  -- ===== ClusterExternalSecrets (cluster-scoped) =====
+
+  c.cluster_external_secrets = {}
+
+  function c.cluster_external_secrets:list()
+    return api_list(API_BASE .. "/clusterexternalsecrets")
+  end
+
+  function c.cluster_external_secrets:get(name)
+    return api_get(API_BASE .. "/clusterexternalsecrets/" .. name)
   end
 
   return c

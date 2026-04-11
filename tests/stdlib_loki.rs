@@ -17,7 +17,7 @@ async fn test_loki_client_ready_success() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local ok = c:ready()
+        local ok = c.health:ready()
         assert.eq(ok, true)
         "#,
         server.uri()
@@ -38,7 +38,7 @@ async fn test_loki_client_ready_failure() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local ok = c:ready()
+        local ok = c.health:ready()
         assert.eq(ok, false)
         "#,
         server.uri()
@@ -59,7 +59,7 @@ async fn test_loki_push_string_entries() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local ok = c:push(
+        local ok = c.logs:push(
             {{app = "myapp", env = "test"}},
             {{"log line one", "log line two", "log line three"}}
         )
@@ -83,7 +83,7 @@ async fn test_loki_push_timestamp_entries() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local ok = c:push(
+        local ok = c.logs:push(
             {{app = "myapp"}},
             {{{{1234567890000000000, "first line"}}, {{1234567891000000000, "second line"}}}}
         )
@@ -119,7 +119,7 @@ async fn test_loki_query() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local result = c:query('{{app="myapp"}}')
+        local result = c.queries:instant('{{app="myapp"}}')
         assert.eq(#result, 1)
         assert.eq(result[1].stream.app, "myapp")
         assert.eq(#result[1].values, 2)
@@ -156,7 +156,7 @@ async fn test_loki_query_range() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local result = c:query_range('{{app="myapp"}}', {{
+        local result = c.queries:range('{{app="myapp"}}', {{
             start = "1234567890",
             end_time = "1234567900",
             limit = "100",
@@ -188,7 +188,7 @@ async fn test_loki_labels() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local labels = c:labels()
+        local labels = c.labels:list()
         assert.eq(#labels, 4)
         assert.eq(labels[1], "app")
         assert.eq(labels[4], "level")
@@ -214,7 +214,7 @@ async fn test_loki_label_values() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local values = c:label_values("app")
+        local values = c.labels:values("app")
         assert.eq(#values, 3)
         assert.eq(values[1], "frontend")
         assert.eq(values[2], "backend")
@@ -245,7 +245,7 @@ async fn test_loki_series() {
         local loki = require("assay.loki")
         local c = loki.client("{}")
         local sel = loki.selector({{app = "frontend"}})
-        local series = c:series({{sel}})
+        local series = c.series:list({{sel}})
         assert.eq(#series, 2)
         assert.eq(series[1].app, "frontend")
         assert.eq(series[2].app, "backend")
@@ -277,7 +277,7 @@ async fn test_loki_tail() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local data = c:tail('{{app="myapp"}}', {{limit = "10"}})
+        local data = c.queries:tail('{{app="myapp"}}', {{limit = "10"}})
         assert.eq(#data.streams, 1)
         assert.eq(data.streams[1].stream.app, "myapp")
         assert.eq(#data.streams[1].values, 2)
@@ -302,7 +302,7 @@ async fn test_loki_metrics() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}")
-        local body = c:metrics()
+        local body = c.health:metrics()
         assert.contains(body, "loki_ingester_streams 42")
         "#,
         server.uri()
@@ -346,7 +346,7 @@ async fn test_loki_client_strips_trailing_slash() {
         r#"
         local loki = require("assay.loki")
         local c = loki.client("{}///")
-        local ok = c:ready()
+        local ok = c.health:ready()
         assert.eq(ok, true)
         "#,
         server.uri()

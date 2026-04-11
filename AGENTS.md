@@ -44,7 +44,7 @@ exception is the copyright holder's name in `LICENSE`/`NOTICE`/`CLA.md`.
 
 General-purpose enhanced Lua runtime. Single ~9 MB static binary with batteries included: HTTP
 client/server, JSON/YAML/TOML, crypto, database, WebSocket, filesystem, shell execution, process
-management, async, and 34 embedded stdlib modules for infrastructure services (Kubernetes,
+management, async, and 35 embedded stdlib modules for infrastructure services (Kubernetes,
 Prometheus, Vault, ArgoCD, etc.) and AI agent integrations (OpenClaw, GitHub, Gmail, Google
 Calendar).
 
@@ -176,7 +176,7 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 
 ## Stdlib Modules
 
-34 embedded Lua modules loaded via `require("assay.<name>")`:
+35 embedded Lua modules loaded via `require("assay.<name>")`:
 
 | Module                | Description                                                                       |
 | --------------------- | --------------------------------------------------------------------------------- |
@@ -209,6 +209,7 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.postgres`      | Postgres-specific helpers                                                         |
 | `assay.unleash`       | Feature flags: projects, environments, features, strategies, API tokens           |
 | `assay.openclaw`      | OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks        |
+| `assay.gitlab`        | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, issues, registry   |
 | `assay.github`        | GitHub REST API — PRs, issues, actions, repos, GraphQL                            |
 | `assay.gmail`         | Gmail REST API with OAuth2 — search, read, reply, send, labels                    |
 | `assay.gcal`          | Google Calendar REST API with OAuth2 — events CRUD, calendar list                 |
@@ -436,7 +437,7 @@ assay/
 ├── stdlib/                   # Embedded Lua modules (auto-discovered)
 │   ├── vault.lua             # Comprehensive reference (330 lines)
 │   ├── grafana.lua           # Simple reference (110 lines)
-│   └── ...                   # 34 modules total
+│   └── ...                   # 35 modules total
 ├── docs/
 │   └── modules/              # Module documentation (single source of truth)
 │       ├── temporal.md       # → generates website page + llms-full.txt entry

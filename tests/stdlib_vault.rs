@@ -160,7 +160,7 @@ async fn test_vault_kv_get() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local data = c:kv_get("secret", "mykey")
+        local data = c.kv:get("secret", "mykey")
         assert.eq(data.data.foo, "bar")
         "#,
         server.uri()
@@ -181,7 +181,7 @@ async fn test_vault_kv_put() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:kv_put("secret", "mykey", {{ username = "admin", password = "s3cret" }})
+        c.kv:put("secret", "mykey", {{ username = "admin", password = "s3cret" }})
         "#,
         server.uri()
     );
@@ -201,7 +201,7 @@ async fn test_vault_kv_delete() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:kv_delete("secret", "mykey")
+        c.kv:delete("secret", "mykey")
         "#,
         server.uri()
     );
@@ -223,7 +223,7 @@ async fn test_vault_kv_list() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local keys = c:kv_list("secret")
+        local keys = c.kv:list("secret")
         assert.eq(#keys, 3)
         assert.eq(keys[1], "db-creds")
         assert.eq(keys[3], "tls/")
@@ -258,7 +258,7 @@ async fn test_vault_kv_metadata() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local meta = c:kv_metadata("secret", "mykey")
+        local meta = c.kv:metadata("secret", "mykey")
         assert.eq(meta.data.current_version, 3)
         assert.eq(meta.data.max_versions, 10)
         "#,
@@ -291,7 +291,7 @@ async fn test_vault_health() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local h = c:health()
+        local h = c.sys:health()
         assert.eq(h.initialized, true)
         assert.eq(h.sealed, false)
         assert.eq(h.version, "1.15.0")
@@ -329,7 +329,7 @@ async fn test_vault_seal_status() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local s = c:seal_status()
+        local s = c.sys:seal_status()
         assert.eq(s.sealed, false)
         assert.eq(s.initialized, true)
         assert.eq(s.t, 3)
@@ -359,7 +359,7 @@ async fn test_vault_is_sealed() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        assert.eq(c:is_sealed(), true)
+        assert.eq(c.sys:is_sealed(), true)
         "#,
         server.uri()
     );
@@ -385,7 +385,7 @@ async fn test_vault_is_initialized() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        assert.eq(c:is_initialized(), true)
+        assert.eq(c.sys:is_initialized(), true)
         "#,
         server.uri()
     );
@@ -410,7 +410,7 @@ async fn test_vault_policy_get() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local pol = c:policy_get("my-policy")
+        local pol = c.policies:get("my-policy")
         assert.eq(pol.name, "my-policy")
         assert.contains(pol.rules, "secret/data")
         "#,
@@ -432,7 +432,7 @@ async fn test_vault_policy_put() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:policy_put("my-policy", 'path "secret/data/*" {{ capabilities = ["read"] }}')
+        c.policies:create("my-policy", 'path "secret/data/*" {{ capabilities = ["read"] }}')
         "#,
         server.uri()
     );
@@ -452,7 +452,7 @@ async fn test_vault_policy_delete() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:policy_delete("my-policy")
+        c.policies:delete("my-policy")
         "#,
         server.uri()
     );
@@ -474,7 +474,7 @@ async fn test_vault_policy_list() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local policies = c:policy_list()
+        local policies = c.policies:list()
         assert.eq(#policies, 3)
         assert.eq(policies[1], "default")
         assert.eq(policies[3], "my-policy")
@@ -497,7 +497,7 @@ async fn test_vault_auth_enable() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:auth_enable("kubernetes", "kubernetes", {{ description = "K8s auth" }})
+        c.auth:enable("kubernetes", "kubernetes", {{ description = "K8s auth" }})
         "#,
         server.uri()
     );
@@ -517,7 +517,7 @@ async fn test_vault_auth_disable() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:auth_disable("kubernetes")
+        c.auth:disable("kubernetes")
         "#,
         server.uri()
     );
@@ -548,7 +548,7 @@ async fn test_vault_auth_list() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local auths = c:auth_list()
+        local auths = c.auth:methods()
         assert.not_nil(auths["token/"])
         assert.eq(auths["token/"].type, "token")
         assert.eq(auths["kubernetes/"].type, "kubernetes")
@@ -571,7 +571,7 @@ async fn test_vault_auth_config() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:auth_config("kubernetes", {{
+        c.auth:config("kubernetes", {{
             kubernetes_host = "https://kubernetes.default.svc",
         }})
         "#,
@@ -593,7 +593,7 @@ async fn test_vault_auth_create_role() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:auth_create_role("kubernetes", "my-app", {{
+        c.auth:create_role("kubernetes", "my-app", {{
             bound_service_account_names = {{ "my-app" }},
             bound_service_account_namespaces = {{ "default" }},
             policies = {{ "my-policy" }},
@@ -626,7 +626,7 @@ async fn test_vault_auth_read_role() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local role = c:auth_read_role("kubernetes", "my-app")
+        local role = c.auth:get_role("kubernetes", "my-app")
         assert.eq(role.policies[1], "my-policy")
         assert.eq(role.ttl, 3600)
         "#,
@@ -650,7 +650,7 @@ async fn test_vault_auth_list_roles() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local roles = c:auth_list_roles("kubernetes")
+        local roles = c.auth:list_roles("kubernetes")
         assert.eq(#roles, 3)
         assert.eq(roles[1], "my-app")
         "#,
@@ -672,7 +672,7 @@ async fn test_vault_engine_enable() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:engine_enable("transit", "transit", {{ description = "Encryption as a service" }})
+        c.engines:enable("transit", "transit", {{ description = "Encryption as a service" }})
         "#,
         server.uri()
     );
@@ -692,7 +692,7 @@ async fn test_vault_engine_disable() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:engine_disable("transit")
+        c.engines:disable("transit")
         "#,
         server.uri()
     );
@@ -727,7 +727,7 @@ async fn test_vault_engine_list() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local engines = c:engine_list()
+        local engines = c.engines:list()
         assert.not_nil(engines["secret/"])
         assert.eq(engines["secret/"].type, "kv")
         assert.eq(engines["transit/"].type, "transit")
@@ -750,7 +750,7 @@ async fn test_vault_engine_tune() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:engine_tune("secret", {{ max_lease_ttl = "87600h", default_lease_ttl = "1h" }})
+        c.engines:tune("secret", {{ max_lease_ttl = "87600h", default_lease_ttl = "1h" }})
         "#,
         server.uri()
     );
@@ -780,7 +780,7 @@ async fn test_vault_token_create() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local auth = c:token_create({{ policies = {{ "my-policy" }}, ttl = "1h" }})
+        local auth = c.token:create({{ policies = {{ "my-policy" }}, ttl = "1h" }})
         assert.eq(auth.client_token, "hvs.CAESI_new_child_token")
         assert.eq(auth.renewable, true)
         assert.eq(auth.lease_duration, 3600)
@@ -815,7 +815,7 @@ async fn test_vault_token_lookup() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local info = c:token_lookup("hvs.CAESI_some_token")
+        local info = c.token:lookup("hvs.CAESI_some_token")
         assert.eq(info.id, "hvs.CAESI_some_token")
         assert.eq(info.policies[2], "my-policy")
         assert.eq(info.renewable, true)
@@ -846,7 +846,7 @@ async fn test_vault_token_lookup_self() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local info = c:token_lookup_self()
+        local info = c.token:lookup_self()
         assert.eq(info.id, "hvs.CAESI_self_token")
         assert.eq(info.policies[2], "admin")
         "#,
@@ -868,7 +868,7 @@ async fn test_vault_token_revoke() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:token_revoke("hvs.CAESI_revoke_me")
+        c.token:revoke("hvs.CAESI_revoke_me")
         "#,
         server.uri()
     );
@@ -888,7 +888,7 @@ async fn test_vault_token_revoke_self() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:token_revoke_self()
+        c.token:revoke_self()
         "#,
         server.uri()
     );
@@ -912,7 +912,7 @@ async fn test_vault_transit_encrypt() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local ct = c:transit_encrypt("my-key", "hello world")
+        local ct = c.transit:encrypt("my-key", "hello world")
         assert.eq(ct, "vault:v1:ABCDEF1234567890encrypted")
         "#,
         server.uri()
@@ -937,7 +937,7 @@ async fn test_vault_transit_decrypt() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local pt = c:transit_decrypt("my-key", "vault:v1:ABCDEF1234567890encrypted")
+        local pt = c.transit:decrypt("my-key", "vault:v1:ABCDEF1234567890encrypted")
         assert.eq(pt, "hello world")
         "#,
         server.uri()
@@ -958,7 +958,7 @@ async fn test_vault_transit_create_key() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:transit_create_key("new-key", {{ type = "aes256-gcm96" }})
+        c.transit:create_key("new-key", {{ type = "aes256-gcm96" }})
         "#,
         server.uri()
     );
@@ -980,7 +980,7 @@ async fn test_vault_transit_list_keys() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local keys = c:transit_list_keys()
+        local keys = c.transit:list_keys()
         assert.eq(#keys, 3)
         assert.eq(keys[1], "my-key")
         assert.eq(keys[3], "signing-key")
@@ -1013,7 +1013,7 @@ async fn test_vault_pki_issue() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local cert = c:pki_issue("pki", "web-certs", {{ common_name = "example.com", ttl = "720h" }})
+        local cert = c.pki:issue("pki", "web-certs", {{ common_name = "example.com", ttl = "720h" }})
         assert.contains(cert.certificate, "BEGIN CERTIFICATE")
         assert.contains(cert.private_key, "BEGIN RSA PRIVATE KEY")
         assert.eq(cert.private_key_type, "rsa")
@@ -1040,7 +1040,7 @@ async fn test_vault_pki_ca_cert() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        local pem = c:pki_ca_cert("pki")
+        local pem = c.pki:ca_cert("pki")
         assert.contains(pem, "BEGIN CERTIFICATE")
         assert.contains(pem, "END CERTIFICATE")
         "#,
@@ -1062,7 +1062,7 @@ async fn test_vault_pki_create_role() {
         r#"
         local vault = require("assay.vault")
         local c = vault.client("{}", "test-token")
-        c:pki_create_role("pki", "web-certs", {{
+        c.pki:create_role("pki", "web-certs", {{
             allowed_domains = {{ "example.com" }},
             allow_subdomains = true,
             max_ttl = "720h",

@@ -127,7 +127,7 @@ async fn test_temporal_namespaces() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local result = c:namespaces()
+        local result = c.namespaces:list()
         assert.eq(#result.namespaces, 2)
         assert.eq(result.namespaces[1].namespaceInfo.name, "default")
         assert.eq(result.namespaces[2].namespaceInfo.name, "production")
@@ -165,7 +165,7 @@ async fn test_temporal_namespace() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local ns = c:namespace("default")
+        local ns = c.namespaces:get("default")
         assert.eq(ns.namespaceInfo.name, "default")
         assert.eq(ns.namespaceInfo.state, "NAMESPACE_STATE_REGISTERED")
         assert.eq(ns.config.workflowExecutionRetentionTtl, "259200s")
@@ -215,7 +215,7 @@ async fn test_temporal_workflows() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local result = c:workflows()
+        local result = c.workflows:list()
         assert.eq(#result.executions, 2)
         assert.eq(result.executions[1].execution.workflowId, "order-processing-001")
         assert.eq(result.executions[1].status, "WORKFLOW_EXECUTION_STATUS_RUNNING")
@@ -256,7 +256,7 @@ async fn test_temporal_workflow() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local wf = c:workflow("order-processing-001")
+        local wf = c.workflows:get("order-processing-001")
         assert.eq(wf.workflowExecutionInfo.execution.workflowId, "order-processing-001")
         assert.eq(wf.workflowExecutionInfo.execution.runId, "run-abc-123")
         assert.eq(wf.workflowExecutionInfo.status, "WORKFLOW_EXECUTION_STATUS_RUNNING")
@@ -294,7 +294,7 @@ async fn test_temporal_workflow_with_run_id() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local wf = c:workflow("order-processing-001", "run-abc-123")
+        local wf = c.workflows:get("order-processing-001", "run-abc-123")
         assert.eq(wf.workflowExecutionInfo.execution.runId, "run-abc-123")
         assert.eq(wf.workflowExecutionInfo.status, "WORKFLOW_EXECUTION_STATUS_COMPLETED")
         "#,
@@ -343,7 +343,7 @@ async fn test_temporal_workflow_history() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local result = c:workflow_history("order-processing-001")
+        local result = c.workflows:history("order-processing-001")
         assert.eq(#result.history.events, 3)
         assert.eq(result.history.events[1].eventType, "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED")
         assert.eq(result.history.events[2].eventType, "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED")
@@ -368,7 +368,7 @@ async fn test_temporal_signal_workflow() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local result = c:signal_workflow("order-processing-001", "approve-order", {{ approved = true }})
+        local result = c.workflows:signal("order-processing-001", "approve-order", {{ approved = true }})
         assert.not_nil(result)
         "#,
         server.uri()
@@ -391,7 +391,7 @@ async fn test_temporal_terminate_workflow() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local result = c:terminate_workflow("order-processing-001", "manual termination by operator")
+        local result = c.workflows:terminate("order-processing-001", "manual termination by operator")
         assert.not_nil(result)
         "#,
         server.uri()
@@ -435,7 +435,7 @@ async fn test_temporal_task_queue() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local tq = c:task_queue("order-queue")
+        local tq = c.task_queues:get("order-queue")
         assert.eq(#tq.pollers, 2)
         assert.eq(tq.pollers[1].identity, "worker-1@host-a")
         assert.eq(tq.pollers[2].identity, "worker-2@host-b")
@@ -485,7 +485,7 @@ async fn test_temporal_schedules() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local result = c:schedules()
+        local result = c.schedules:list()
         assert.eq(#result.schedules, 2)
         assert.eq(result.schedules[1].scheduleId, "daily-report")
         assert.eq(result.schedules[2].scheduleId, "hourly-cleanup")
@@ -520,7 +520,7 @@ async fn test_temporal_is_workflow_running_true() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        assert.eq(c:is_workflow_running("order-processing-001"), true)
+        assert.eq(c.workflows:is_running("order-processing-001"), true)
         "#,
         server.uri()
     );
@@ -552,7 +552,7 @@ async fn test_temporal_is_workflow_running_false() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        assert.eq(c:is_workflow_running("order-processing-002"), false)
+        assert.eq(c.workflows:is_running("order-processing-002"), false)
         "#,
         server.uri()
     );
@@ -610,7 +610,7 @@ async fn test_temporal_custom_namespace() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}", {{ namespace = "production" }})
-        local result = c:workflows()
+        local result = c.workflows:list()
         assert.eq(#result.executions, 1)
         assert.eq(result.executions[1].execution.workflowId, "prod-wf-001")
         "#,
@@ -635,7 +635,7 @@ async fn test_temporal_namespace_override() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local result = c:workflows({{ namespace = "staging" }})
+        local result = c.workflows:list({{ namespace = "staging" }})
         assert.eq(#result.executions, 0)
         "#,
         server.uri()
@@ -677,7 +677,7 @@ async fn test_temporal_schedule() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local sched = c:schedule("daily-report")
+        local sched = c.schedules:get("daily-report")
         assert.eq(sched.schedule.state.paused, false)
         assert.eq(sched.schedule.state.notes, "Daily report at 9 AM")
         assert.eq(sched.schedule.action.startWorkflow.taskQueue.name, "report-queue")
@@ -712,7 +712,7 @@ async fn test_temporal_search() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local result = c:search("WorkflowType='OrderWorkflow'")
+        local result = c.workflows:search("WorkflowType='OrderWorkflow'")
         assert.eq(#result.executions, 1)
         assert.eq(result.executions[1].type.name, "OrderWorkflow")
         "#,
@@ -736,8 +736,346 @@ async fn test_temporal_cancel_workflow() {
         r#"
         local temporal = require("assay.temporal")
         local c = temporal.client("{}")
-        local result = c:cancel_workflow("order-processing-001")
+        local result = c.workflows:cancel("order-processing-001")
         assert.not_nil(result)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+// ===== Sub-object client pattern tests =====
+
+#[tokio::test]
+async fn test_temporal_namespaces_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces"))
+        .and(header("Content-Type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "namespaces": [
+                {"namespaceInfo": {"name": "default"}},
+                {"namespaceInfo": {"name": "production"}}
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local result = c.namespaces:list()
+        assert.eq(#result.namespaces, 2)
+        assert.eq(result.namespaces[1].namespaceInfo.name, "default")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_namespaces_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/default"))
+        .and(header("Content-Type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "namespaceInfo": {"name": "default", "state": "NAMESPACE_STATE_REGISTERED"}
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local ns = c.namespaces:get("default")
+        assert.eq(ns.namespaceInfo.name, "default")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_workflows_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/default/workflows"))
+        .and(header("Content-Type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "executions": [
+                {
+                    "execution": {"workflowId": "wf-001", "runId": "run-001"},
+                    "status": "WORKFLOW_EXECUTION_STATUS_RUNNING"
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local result = c.workflows:list()
+        assert.eq(#result.executions, 1)
+        assert.eq(result.executions[1].execution.workflowId, "wf-001")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_workflows_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/default/workflows/wf-001"))
+        .and(header("Content-Type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "workflowExecutionInfo": {
+                "execution": {"workflowId": "wf-001", "runId": "run-001"},
+                "status": "WORKFLOW_EXECUTION_STATUS_RUNNING"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local wf = c.workflows:get("wf-001")
+        assert.eq(wf.workflowExecutionInfo.execution.workflowId, "wf-001")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_workflows_history() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/default/workflows/wf-001/history"))
+        .and(header("Content-Type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "history": {
+                "events": [
+                    {"eventId": "1", "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED"}
+                ]
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local result = c.workflows:history("wf-001")
+        assert.eq(#result.history.events, 1)
+        assert.eq(result.history.events[1].eventType, "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_workflows_signal() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/namespaces/default/workflows/wf-001/signal"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local result = c.workflows:signal("wf-001", "approve", {{ approved = true }})
+        assert.not_nil(result)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_workflows_terminate() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/namespaces/default/workflows/wf-001/terminate"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local result = c.workflows:terminate("wf-001", "manual termination")
+        assert.not_nil(result)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_workflows_cancel() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/namespaces/default/workflows/wf-001/cancel"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local result = c.workflows:cancel("wf-001")
+        assert.not_nil(result)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_workflows_search() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/default/workflows"))
+        .and(query_param("query", "WorkflowType='OrderWorkflow'"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "executions": [
+                {
+                    "execution": {"workflowId": "wf-001"},
+                    "type": {"name": "OrderWorkflow"}
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local result = c.workflows:search("WorkflowType='OrderWorkflow'")
+        assert.eq(#result.executions, 1)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_workflows_is_running() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/default/workflows/wf-001"))
+        .and(header("Content-Type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "workflowExecutionInfo": {
+                "execution": {"workflowId": "wf-001"},
+                "status": "WORKFLOW_EXECUTION_STATUS_RUNNING"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        assert.eq(c.workflows:is_running("wf-001"), true)
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_task_queues_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/default/task-queues/order-queue"))
+        .and(header("Content-Type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "pollers": [{"identity": "worker-1@host-a"}],
+            "taskQueueStatus": {"backlogCountHint": "0"}
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local tq = c.task_queues:get("order-queue")
+        assert.eq(#tq.pollers, 1)
+        assert.eq(tq.pollers[1].identity, "worker-1@host-a")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_schedules_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/default/schedules"))
+        .and(header("Content-Type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "schedules": [
+                {"scheduleId": "daily-report"},
+                {"scheduleId": "hourly-cleanup"}
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local result = c.schedules:list()
+        assert.eq(#result.schedules, 2)
+        assert.eq(result.schedules[1].scheduleId, "daily-report")
+        "#,
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_temporal_schedules_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/namespaces/default/schedules/daily-report"))
+        .and(header("Content-Type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "schedule": {
+                "state": {"paused": false, "notes": "Daily report"}
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local temporal = require("assay.temporal")
+        local c = temporal.client("{}")
+        local sched = c.schedules:get("daily-report")
+        assert.eq(sched.schedule.state.paused, false)
         "#,
         server.uri()
     );

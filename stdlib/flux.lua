@@ -1,29 +1,29 @@
 --- @module assay.flux
 --- @description Flux CD GitOps toolkit. GitRepositories, Kustomizations, HelmReleases, notifications.
 --- @keywords flux, gitops, kustomizations, helmreleases, gitrepositories, kubernetes, helm, oci, image-automation, notification, readiness, sources
---- @quickref c:git_repositories(namespace) -> {items} | List GitRepositories
---- @quickref c:git_repository(namespace, name) -> repo|nil | Get GitRepository by name
---- @quickref c:is_git_repo_ready(namespace, name) -> bool | Check if GitRepository is ready
---- @quickref c:helm_repositories(namespace) -> {items} | List HelmRepositories
---- @quickref c:helm_repository(namespace, name) -> repo|nil | Get HelmRepository by name
---- @quickref c:is_helm_repo_ready(namespace, name) -> bool | Check if HelmRepository is ready
---- @quickref c:helm_charts(namespace) -> {items} | List HelmCharts
---- @quickref c:oci_repositories(namespace) -> {items} | List OCIRepositories
---- @quickref c:kustomizations(namespace) -> {items} | List Kustomizations
---- @quickref c:kustomization(namespace, name) -> ks|nil | Get Kustomization by name
---- @quickref c:is_kustomization_ready(namespace, name) -> bool | Check if Kustomization is ready
---- @quickref c:kustomization_status(namespace, name) -> {ready, revision}|nil | Get Kustomization status
---- @quickref c:helm_releases(namespace) -> {items} | List HelmReleases
---- @quickref c:helm_release(namespace, name) -> hr|nil | Get HelmRelease by name
---- @quickref c:is_helm_release_ready(namespace, name) -> bool | Check if HelmRelease is ready
---- @quickref c:helm_release_status(namespace, name) -> {ready, revision}|nil | Get HelmRelease status
---- @quickref c:alerts(namespace) -> {items} | List notification alerts
---- @quickref c:providers_list(namespace) -> {items} | List notification providers
---- @quickref c:receivers(namespace) -> {items} | List notification receivers
---- @quickref c:image_policies(namespace) -> {items} | List image policies
---- @quickref c:all_sources_ready(namespace) -> {ready, not_ready, total} | Check all sources readiness
---- @quickref c:all_kustomizations_ready(namespace) -> {ready, not_ready, total} | Check all Kustomizations
---- @quickref c:all_helm_releases_ready(namespace) -> {ready, not_ready, total} | Check all HelmReleases
+--- @quickref c.git_repos:list(namespace) -> {items} | List GitRepositories
+--- @quickref c.git_repos:get(namespace, name) -> repo|nil | Get GitRepository by name
+--- @quickref c.git_repos:is_ready(namespace, name) -> bool | Check if GitRepository is ready
+--- @quickref c.helm_repos:list(namespace) -> {items} | List HelmRepositories
+--- @quickref c.helm_repos:get(namespace, name) -> repo|nil | Get HelmRepository by name
+--- @quickref c.helm_repos:is_ready(namespace, name) -> bool | Check if HelmRepository is ready
+--- @quickref c.helm_charts:list(namespace) -> {items} | List HelmCharts
+--- @quickref c.oci_repos:list(namespace) -> {items} | List OCIRepositories
+--- @quickref c.kustomizations:list(namespace) -> {items} | List Kustomizations
+--- @quickref c.kustomizations:get(namespace, name) -> ks|nil | Get Kustomization by name
+--- @quickref c.kustomizations:is_ready(namespace, name) -> bool | Check if Kustomization is ready
+--- @quickref c.kustomizations:status(namespace, name) -> {ready, revision}|nil | Get Kustomization status
+--- @quickref c.kustomizations:all_ready(namespace) -> {ready, not_ready, total} | Check all Kustomizations
+--- @quickref c.helm_releases:list(namespace) -> {items} | List HelmReleases
+--- @quickref c.helm_releases:get(namespace, name) -> hr|nil | Get HelmRelease by name
+--- @quickref c.helm_releases:is_ready(namespace, name) -> bool | Check if HelmRelease is ready
+--- @quickref c.helm_releases:status(namespace, name) -> {ready, revision}|nil | Get HelmRelease status
+--- @quickref c.helm_releases:all_ready(namespace) -> {ready, not_ready, total} | Check all HelmReleases
+--- @quickref c.notifications:alerts(namespace) -> {items} | List notification alerts
+--- @quickref c.notifications:providers(namespace) -> {items} | List notification providers
+--- @quickref c.notifications:receivers(namespace) -> {items} | List notification receivers
+--- @quickref c.image_policies:list(namespace) -> {items} | List image policies
+--- @quickref c.sources:all_ready(namespace) -> {ready, not_ready, total} | Check all sources readiness
 
 local M = {}
 
@@ -50,17 +50,16 @@ local function is_ready(resource)
 end
 
 function M.client(url, token)
-  local c = {
-    url = url:gsub("/+$", ""),
-    token = token,
-  }
+  local base_url = url:gsub("/+$", "")
 
-  local function headers(self)
-    return { ["Authorization"] = "Bearer " .. self.token }
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
+
+  local function headers()
+    return { ["Authorization"] = "Bearer " .. token }
   end
 
-  local function api_get(self, path)
-    local resp = http.get(self.url .. path, { headers = headers(self) })
+  local function api_get(path)
+    local resp = http.get(base_url .. path, { headers = headers() })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
       error("flux: GET " .. path .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -68,164 +67,101 @@ function M.client(url, token)
     return json.parse(resp.body)
   end
 
-  local function api_list(self, path)
-    local resp = http.get(self.url .. path, { headers = headers(self) })
+  local function api_list(path)
+    local resp = http.get(base_url .. path, { headers = headers() })
     if resp.status ~= 200 then
       error("flux: LIST " .. path .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
 
-  -- Sources: GitRepositories
+  -- ===== Client =====
 
-  function c:git_repositories(namespace)
-    return api_list(self, SOURCE_GROUP .. "/namespaces/" .. namespace .. "/gitrepositories")
+  local c = {}
+
+  -- ===== Git Repositories =====
+
+  c.git_repos = {}
+
+  function c.git_repos:list(namespace)
+    return api_list(SOURCE_GROUP .. "/namespaces/" .. namespace .. "/gitrepositories")
   end
 
-  function c:git_repository(namespace, name)
-    return api_get(self, SOURCE_GROUP .. "/namespaces/" .. namespace .. "/gitrepositories/" .. name)
+  function c.git_repos:get(namespace, name)
+    return api_get(SOURCE_GROUP .. "/namespaces/" .. namespace .. "/gitrepositories/" .. name)
   end
 
-  function c:is_git_repo_ready(namespace, name)
-    local resource = self:git_repository(namespace, name)
+  function c.git_repos:is_ready(namespace, name)
+    local resource = c.git_repos:get(namespace, name)
     return is_ready(resource)
   end
 
-  -- Sources: HelmRepositories
+  -- ===== Helm Repositories =====
 
-  function c:helm_repositories(namespace)
-    return api_list(self, SOURCE_GROUP .. "/namespaces/" .. namespace .. "/helmrepositories")
+  c.helm_repos = {}
+
+  function c.helm_repos:list(namespace)
+    return api_list(SOURCE_GROUP .. "/namespaces/" .. namespace .. "/helmrepositories")
   end
 
-  function c:helm_repository(namespace, name)
-    return api_get(self, SOURCE_GROUP .. "/namespaces/" .. namespace .. "/helmrepositories/" .. name)
+  function c.helm_repos:get(namespace, name)
+    return api_get(SOURCE_GROUP .. "/namespaces/" .. namespace .. "/helmrepositories/" .. name)
   end
 
-  function c:is_helm_repo_ready(namespace, name)
-    local resource = self:helm_repository(namespace, name)
+  function c.helm_repos:is_ready(namespace, name)
+    local resource = c.helm_repos:get(namespace, name)
     return is_ready(resource)
   end
 
-  -- Sources: HelmCharts
+  -- ===== Helm Charts =====
 
-  function c:helm_charts(namespace)
-    return api_list(self, SOURCE_GROUP .. "/namespaces/" .. namespace .. "/helmcharts")
+  c.helm_charts = {}
+
+  function c.helm_charts:list(namespace)
+    return api_list(SOURCE_GROUP .. "/namespaces/" .. namespace .. "/helmcharts")
   end
 
-  -- Sources: OCIRepositories
+  -- ===== OCI Repositories =====
 
-  function c:oci_repositories(namespace)
-    return api_list(self, SOURCE_GROUP_V1BETA2 .. "/namespaces/" .. namespace .. "/ocirepositories")
+  c.oci_repos = {}
+
+  function c.oci_repos:list(namespace)
+    return api_list(SOURCE_GROUP_V1BETA2 .. "/namespaces/" .. namespace .. "/ocirepositories")
   end
 
-  -- Kustomizations
+  -- ===== Kustomizations =====
 
-  function c:kustomizations(namespace)
-    return api_list(self, KUSTOMIZE_GROUP .. "/namespaces/" .. namespace .. "/kustomizations")
+  c.kustomizations = {}
+
+  function c.kustomizations:list(namespace)
+    return api_list(KUSTOMIZE_GROUP .. "/namespaces/" .. namespace .. "/kustomizations")
   end
 
-  function c:kustomization(namespace, name)
-    return api_get(self, KUSTOMIZE_GROUP .. "/namespaces/" .. namespace .. "/kustomizations/" .. name)
+  function c.kustomizations:get(namespace, name)
+    return api_get(KUSTOMIZE_GROUP .. "/namespaces/" .. namespace .. "/kustomizations/" .. name)
   end
 
-  function c:is_kustomization_ready(namespace, name)
-    local resource = self:kustomization(namespace, name)
+  function c.kustomizations:is_ready(namespace, name)
+    local resource = c.kustomizations:get(namespace, name)
     return is_ready(resource)
   end
 
-  function c:kustomization_status(namespace, name)
-    local resource = self:kustomization(namespace, name)
+  function c.kustomizations:status(namespace, name)
+    local resource = c.kustomizations:get(namespace, name)
     if not resource then return nil end
-    local status = resource.status or {}
+    local st = resource.status or {}
     return {
       ready = is_ready(resource),
-      revision = (status.lastAttemptedRevision or ""),
-      last_applied_revision = (status.lastAppliedRevision or ""),
-      conditions = status.conditions or {},
+      revision = (st.lastAttemptedRevision or ""),
+      last_applied_revision = (st.lastAppliedRevision or ""),
+      conditions = st.conditions or {},
     }
   end
 
-  -- Helm Releases
-
-  function c:helm_releases(namespace)
-    return api_list(self, HELM_GROUP .. "/namespaces/" .. namespace .. "/helmreleases")
-  end
-
-  function c:helm_release(namespace, name)
-    return api_get(self, HELM_GROUP .. "/namespaces/" .. namespace .. "/helmreleases/" .. name)
-  end
-
-  function c:is_helm_release_ready(namespace, name)
-    local resource = self:helm_release(namespace, name)
-    return is_ready(resource)
-  end
-
-  function c:helm_release_status(namespace, name)
-    local resource = self:helm_release(namespace, name)
-    if not resource then return nil end
-    local status = resource.status or {}
-    return {
-      ready = is_ready(resource),
-      revision = (status.lastAttemptedRevision or ""),
-      last_applied_revision = (status.lastAppliedRevision or ""),
-      conditions = status.conditions or {},
-    }
-  end
-
-  -- Notifications
-
-  function c:alerts(namespace)
-    return api_list(self, NOTIFICATION_GROUP .. "/namespaces/" .. namespace .. "/alerts")
-  end
-
-  function c:providers_list(namespace)
-    return api_list(self, NOTIFICATION_GROUP .. "/namespaces/" .. namespace .. "/providers")
-  end
-
-  function c:receivers(namespace)
-    return api_list(self, NOTIFICATION_GROUP_V1 .. "/namespaces/" .. namespace .. "/receivers")
-  end
-
-  -- Image Automation
-
-  function c:image_policies(namespace)
-    return api_list(self, IMAGE_GROUP .. "/namespaces/" .. namespace .. "/imagepolicies")
-  end
-
-  -- Utilities
-
-  function c:all_sources_ready(namespace)
+  function c.kustomizations:all_ready(namespace)
     local result = { ready = 0, not_ready = 0, total = 0, not_ready_names = {} }
 
-    local git_repos = self:git_repositories(namespace)
-    for i = 1, #git_repos.items do
-      result.total = result.total + 1
-      if is_ready(git_repos.items[i]) then
-        result.ready = result.ready + 1
-      else
-        result.not_ready = result.not_ready + 1
-        result.not_ready_names[#result.not_ready_names + 1] = git_repos.items[i].metadata.name
-      end
-    end
-
-    local helm_repos = self:helm_repositories(namespace)
-    for i = 1, #helm_repos.items do
-      result.total = result.total + 1
-      if is_ready(helm_repos.items[i]) then
-        result.ready = result.ready + 1
-      else
-        result.not_ready = result.not_ready + 1
-        result.not_ready_names[#result.not_ready_names + 1] = helm_repos.items[i].metadata.name
-      end
-    end
-
-    return result
-  end
-
-  function c:all_kustomizations_ready(namespace)
-    local result = { ready = 0, not_ready = 0, total = 0, not_ready_names = {} }
-
-    local ks_list = self:kustomizations(namespace)
+    local ks_list = c.kustomizations:list(namespace)
     for i = 1, #ks_list.items do
       result.total = result.total + 1
       if is_ready(ks_list.items[i]) then
@@ -239,10 +175,39 @@ function M.client(url, token)
     return result
   end
 
-  function c:all_helm_releases_ready(namespace)
+  -- ===== Helm Releases =====
+
+  c.helm_releases = {}
+
+  function c.helm_releases:list(namespace)
+    return api_list(HELM_GROUP .. "/namespaces/" .. namespace .. "/helmreleases")
+  end
+
+  function c.helm_releases:get(namespace, name)
+    return api_get(HELM_GROUP .. "/namespaces/" .. namespace .. "/helmreleases/" .. name)
+  end
+
+  function c.helm_releases:is_ready(namespace, name)
+    local resource = c.helm_releases:get(namespace, name)
+    return is_ready(resource)
+  end
+
+  function c.helm_releases:status(namespace, name)
+    local resource = c.helm_releases:get(namespace, name)
+    if not resource then return nil end
+    local st = resource.status or {}
+    return {
+      ready = is_ready(resource),
+      revision = (st.lastAttemptedRevision or ""),
+      last_applied_revision = (st.lastAppliedRevision or ""),
+      conditions = st.conditions or {},
+    }
+  end
+
+  function c.helm_releases:all_ready(namespace)
     local result = { ready = 0, not_ready = 0, total = 0, not_ready_names = {} }
 
-    local hr_list = self:helm_releases(namespace)
+    local hr_list = c.helm_releases:list(namespace)
     for i = 1, #hr_list.items do
       result.total = result.total + 1
       if is_ready(hr_list.items[i]) then
@@ -250,6 +215,62 @@ function M.client(url, token)
       else
         result.not_ready = result.not_ready + 1
         result.not_ready_names[#result.not_ready_names + 1] = hr_list.items[i].metadata.name
+      end
+    end
+
+    return result
+  end
+
+  -- ===== Notifications =====
+
+  c.notifications = {}
+
+  function c.notifications:alerts(namespace)
+    return api_list(NOTIFICATION_GROUP .. "/namespaces/" .. namespace .. "/alerts")
+  end
+
+  function c.notifications:providers(namespace)
+    return api_list(NOTIFICATION_GROUP .. "/namespaces/" .. namespace .. "/providers")
+  end
+
+  function c.notifications:receivers(namespace)
+    return api_list(NOTIFICATION_GROUP_V1 .. "/namespaces/" .. namespace .. "/receivers")
+  end
+
+  -- ===== Image Policies =====
+
+  c.image_policies = {}
+
+  function c.image_policies:list(namespace)
+    return api_list(IMAGE_GROUP .. "/namespaces/" .. namespace .. "/imagepolicies")
+  end
+
+  -- ===== Sources (aggregate) =====
+
+  c.sources = {}
+
+  function c.sources:all_ready(namespace)
+    local result = { ready = 0, not_ready = 0, total = 0, not_ready_names = {} }
+
+    local git_repos = c.git_repos:list(namespace)
+    for i = 1, #git_repos.items do
+      result.total = result.total + 1
+      if is_ready(git_repos.items[i]) then
+        result.ready = result.ready + 1
+      else
+        result.not_ready = result.not_ready + 1
+        result.not_ready_names[#result.not_ready_names + 1] = git_repos.items[i].metadata.name
+      end
+    end
+
+    local helm_repos_list = c.helm_repos:list(namespace)
+    for i = 1, #helm_repos_list.items do
+      result.total = result.total + 1
+      if is_ready(helm_repos_list.items[i]) then
+        result.ready = result.ready + 1
+      else
+        result.not_ready = result.not_ready + 1
+        result.not_ready_names[#result.not_ready_names + 1] = helm_repos_list.items[i].metadata.name
       end
     end
 

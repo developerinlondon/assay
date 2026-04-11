@@ -48,23 +48,23 @@ local github = require("assay.github")
 local c = github.client()  -- uses $GITHUB_TOKEN
 
 -- Pull requests
-local pr = c:pr_view("owner/repo", 123)
-local prs = c:pr_list("owner/repo", {state = "open", per_page = 10})
-local reviews = c:pr_reviews("owner/repo", 123)
-c:pr_merge("owner/repo", 123, {merge_method = "squash"})
+local pr = c.pulls:get("owner/repo", 123)
+local prs = c.pulls:list("owner/repo", {state = "open", per_page = 10})
+local reviews = c.pulls:reviews("owner/repo", 123)
+c.pulls:merge("owner/repo", 123, {merge_method = "squash"})
 
 -- Issues
-local issues = c:issue_list("owner/repo", {labels = "bug", state = "open"})
-local issue = c:issue_get("owner/repo", 42)
-c:issue_create("owner/repo", "Bug title", "Description", {labels = {"bug"}})
-c:issue_comment("owner/repo", 42, "Fixed in PR #123")
+local issues = c.issues:list("owner/repo", {labels = "bug", state = "open"})
+local issue = c.issues:get("owner/repo", 42)
+c.issues:create("owner/repo", "Bug title", "Description", {labels = {"bug"}})
+c.issues:create_note("owner/repo", 42, "Fixed in PR #123")
 
 -- Repository info
-local repo = c:repo_get("owner/repo")
+local repo = c.repos:get("owner/repo")
 
 -- GitHub Actions
-local runs = c:runs_list("owner/repo", {status = "completed"})
-local run = c:run_get("owner/repo", 12345)
+local runs = c.runs:list("owner/repo", {status = "completed"})
+local run = c.runs:get("owner/repo", 12345)
 
 -- GraphQL queries
 local data = c:graphql("query { viewer { login } }")

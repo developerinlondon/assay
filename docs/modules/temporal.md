@@ -18,26 +18,52 @@ Read-only monitoring client for Temporal's HTTP API. Use for dashboards and stat
 
 Client: `require("assay.temporal").client(url, {namespace?, api_key?})`.
 
+### Top-level
+
 - `c:health()` → bool — Check Temporal health via `/health`
 - `c:system_info()` → info — Get Temporal system information
-- `c:namespaces()` → `{namespaces}` — List all namespaces
-- `c:namespace(name)` → namespace — Get namespace by name
-- `c:workflows(opts?)` → `{executions}` — List workflow executions. `opts`: `{namespace, query, page_size}`
-- `c:workflow(workflow_id, run_id?, opts?)` → workflow — Get workflow execution details
-- `c:workflow_history(workflow_id, run_id?, opts?)` → `{events}` — Get workflow event history. `opts`: `{namespace, maximum_page_size}`
-- `c:signal_workflow(workflow_id, signal_name, input?, opts?)` → result — Signal a running workflow. `opts`: `{namespace, run_id}`
-- `c:terminate_workflow(workflow_id, reason?, opts?)` → result — Terminate a workflow. `opts`: `{namespace, run_id}`
-- `c:cancel_workflow(workflow_id, opts?)` → result — Request workflow cancellation. `opts`: `{namespace, run_id}`
-- `c:task_queue(name, opts?)` → queue — Get task queue info. `opts`: `{namespace, task_queue_type}`
-- `c:schedules(opts?)` → `{schedules}` — List schedules. `opts`: `{namespace, maximum_page_size}`
-- `c:schedule(schedule_id, opts?)` → schedule — Get schedule by ID. `opts`: `{namespace}`
-- `c:search(query, opts?)` → `{executions}` — Search workflows by visibility query. `opts`: `{namespace, page_size}`
-- `c:is_workflow_running(workflow_id, opts?)` → bool — Check if workflow status is RUNNING
-- `c:wait_workflow_complete(workflow_id, timeout_secs, opts?)` → workflow — Wait for workflow completion, errors on timeout
+
+### Namespaces (`c.namespaces`)
+
+- `c.namespaces:list()` → `{namespaces}` — List all namespaces
+- `c.namespaces:get(name)` → namespace — Get namespace by name
+
+### Workflows (`c.workflows`)
+
+- `c.workflows:list(opts?)` → `{executions}` — List workflow executions. `opts`: `{namespace, query, page_size}`
+- `c.workflows:get(workflow_id, run_id?, opts?)` → workflow — Get workflow execution details
+- `c.workflows:history(workflow_id, run_id?, opts?)` → `{events}` — Get workflow event history. `opts`: `{namespace, maximum_page_size}`
+- `c.workflows:signal(workflow_id, signal_name, input?, opts?)` → result — Signal a running workflow. `opts`: `{namespace, run_id}`
+- `c.workflows:terminate(workflow_id, reason?, opts?)` → result — Terminate a workflow. `opts`: `{namespace, run_id}`
+- `c.workflows:cancel(workflow_id, opts?)` → result — Request workflow cancellation. `opts`: `{namespace, run_id}`
+- `c.workflows:search(query, opts?)` → `{executions}` — Search workflows by visibility query. `opts`: `{namespace, page_size}`
+- `c.workflows:is_running(workflow_id, opts?)` → bool — Check if workflow status is RUNNING
+- `c.workflows:wait_complete(workflow_id, timeout_secs, opts?)` → workflow — Wait for workflow completion, errors on timeout
+
+### Task Queues (`c.task_queues`)
+
+- `c.task_queues:get(name, opts?)` → queue — Get task queue info. `opts`: `{namespace, task_queue_type}`
+
+### Schedules (`c.schedules`)
+
+- `c.schedules:list(opts?)` → `{schedules}` — List schedules. `opts`: `{namespace, maximum_page_size}`
+- `c.schedules:get(schedule_id, opts?)` → schedule — Get schedule by ID. `opts`: `{namespace}`
+
+### Backward Compatibility
+
+All legacy colon-style methods (`c:workflows()`, `c:workflow()`, `c:signal_workflow()`, etc.) remain available and delegate to the sub-objects above.
 
 ```lua
 local temporal = require("assay.temporal")
 local c = temporal.client("http://temporal:7233", {namespace = "my-namespace"})
+
+-- New sub-object style
+local running = c.workflows:is_running("my-workflow-id")
+if running then
+  c.workflows:signal("my-workflow-id", "approve", {approved = true})
+end
+
+-- Legacy style still works
 local running = c:is_workflow_running("my-workflow-id")
 if running then
   c:signal_workflow("my-workflow-id", "approve", {approved = true})
@@ -137,8 +163,8 @@ local handle = temporal.worker({
   },
 })
 
--- handle:is_running()  → true while worker is active
--- handle:shutdown()    → graceful shutdown, drains in-flight tasks
+-- handle:is_running()  -> true while worker is active
+-- handle:shutdown()    -> graceful shutdown, drains in-flight tasks
 ```
 
 ### Activities

@@ -31,7 +31,8 @@ async fn test_traefik_overview() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local ov = traefik.overview("{}")
+        local c = traefik.client("{}")
+        local ov = c.info:overview()
         assert.eq(ov.http.routers.total, 10)
         assert.eq(ov.http.routers.warnings, 1)
         assert.eq(ov.http.services.total, 8)
@@ -58,7 +59,8 @@ async fn test_traefik_version() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local ver = traefik.version("{}")
+        local c = traefik.client("{}")
+        local ver = c.info:version()
         assert.eq(ver.Version, "3.2.0")
         assert.eq(ver.Codename, "picodon")
         "#,
@@ -90,7 +92,8 @@ async fn test_traefik_entrypoints() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local eps = traefik.entrypoints("{}")
+        local c = traefik.client("{}")
+        local eps = c.entrypoints:list()
         assert.eq(#eps, 2)
         assert.eq(eps[1].name, "web")
         assert.eq(eps[1].address, ":80")
@@ -130,7 +133,8 @@ async fn test_traefik_http_routers() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local routers = traefik.http_routers("{}")
+        local c = traefik.client("{}")
+        local routers = c.routers:list()
         assert.eq(#routers, 2)
         assert.eq(routers[1].name, "dashboard@internal")
         assert.eq(routers[1].status, "enabled")
@@ -162,7 +166,8 @@ async fn test_traefik_http_router_single() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local router = traefik.http_router("{}", "my-app@docker")
+        local c = traefik.client("{}")
+        local router = c.routers:get("my-app@docker")
         assert.eq(router.name, "my-app@docker")
         assert.eq(router.status, "enabled")
         assert.eq(router.service, "my-app@docker")
@@ -205,7 +210,8 @@ async fn test_traefik_http_services() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local services = traefik.http_services("{}")
+        local c = traefik.client("{}")
+        local services = c.services:list()
         assert.eq(#services, 2)
         assert.eq(services[1].name, "my-app@docker")
         assert.eq(services[1].type, "loadbalancer")
@@ -251,7 +257,8 @@ async fn test_traefik_http_service_single() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local svc = traefik.http_service("{}", "my-app@docker")
+        local c = traefik.client("{}")
+        local svc = c.services:get("my-app@docker")
         assert.eq(svc.name, "my-app@docker")
         assert.eq(svc.status, "enabled")
         assert.eq(#svc.loadBalancer.servers, 3)
@@ -293,7 +300,8 @@ async fn test_traefik_http_middlewares() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local mws = traefik.http_middlewares("{}")
+        local c = traefik.client("{}")
+        local mws = c.middlewares:list()
         assert.eq(#mws, 2)
         assert.eq(mws[1].name, "auth@docker")
         assert.eq(mws[1].type, "forwardauth")
@@ -322,7 +330,8 @@ async fn test_traefik_is_router_enabled_true() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local enabled = traefik.is_router_enabled("{}", "my-app@docker")
+        local c = traefik.client("{}")
+        local enabled = c.routers:is_enabled("my-app@docker")
         assert.eq(enabled, true)
         "#,
         server.uri()
@@ -347,7 +356,8 @@ async fn test_traefik_is_router_enabled_false() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local enabled = traefik.is_router_enabled("{}", "broken@docker")
+        local c = traefik.client("{}")
+        local enabled = c.routers:is_enabled("broken@docker")
         assert.eq(enabled, false)
         "#,
         server.uri()
@@ -373,7 +383,8 @@ async fn test_traefik_router_has_tls_true() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local has_tls = traefik.router_has_tls("{}", "secure@docker")
+        local c = traefik.client("{}")
+        local has_tls = c.routers:has_tls("secure@docker")
         assert.eq(has_tls, true)
         "#,
         server.uri()
@@ -398,7 +409,8 @@ async fn test_traefik_router_has_tls_false() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local has_tls = traefik.router_has_tls("{}", "plain@docker")
+        local c = traefik.client("{}")
+        local has_tls = c.routers:has_tls("plain@docker")
         assert.eq(has_tls, false)
         "#,
         server.uri()
@@ -429,7 +441,8 @@ async fn test_traefik_service_server_count() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local count = traefik.service_server_count("{}", "my-app@docker")
+        local c = traefik.client("{}")
+        local count = c.services:server_count("my-app@docker")
         assert.eq(count, 3)
         "#,
         server.uri()
@@ -455,7 +468,8 @@ async fn test_traefik_healthy_routers() {
     let script = format!(
         r#"
         local traefik = require("assay.traefik")
-        local enabled, errored = traefik.healthy_routers("{}")
+        local c = traefik.client("{}")
+        local enabled, errored = c.routers:healthy()
         assert.eq(enabled, 3)
         assert.eq(errored, 2)
         "#,

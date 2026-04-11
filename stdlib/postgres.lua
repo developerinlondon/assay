@@ -1,43 +1,56 @@
 --- @module assay.postgres
 --- @description PostgreSQL database helpers. User/database management, grants, Vault integration.
 --- @keywords postgres, postgresql, database, users, grants, sql, user, grant, privilege, vault, connection, schema, role
---- @quickref c:query(sql, params?) -> [row] | Execute SQL query, return rows
---- @quickref c:execute(sql, params?) -> number | Execute SQL statement, return affected count
+--- @quickref c.queries:query(sql, params?) -> [row] | Execute SQL query, return rows
+--- @quickref c.queries:execute(sql, params?) -> number | Execute SQL statement, return affected count
 --- @quickref c:close() -> nil | Close database connection
---- @quickref c:user_exists(username) -> bool | Check if PostgreSQL user exists
---- @quickref c:ensure_user(username, password, opts?) -> bool | Create user if not exists
---- @quickref c:database_exists(dbname) -> bool | Check if database exists
---- @quickref c:ensure_database(dbname, owner?) -> bool | Create database if not exists
---- @quickref c:grant(database_name, username, privileges?) -> nil | Grant privileges on database
+--- @quickref c.users:exists(username) -> bool | Check if PostgreSQL user exists
+--- @quickref c.users:ensure(username, password, opts?) -> bool | Create user if not exists
+--- @quickref c.databases:exists(dbname) -> bool | Check if database exists
+--- @quickref c.databases:ensure(dbname, owner?) -> bool | Create database if not exists
+--- @quickref c.databases:grant(database_name, username, privileges?) -> nil | Grant privileges on database
 --- @quickref M.client_from_vault(vault_client, vault_path, host, port?) -> client | Create from Vault creds
 
 local M = {}
 
 function M.client(host, port, username, password, database)
-  local c = {}
   local dsn = "postgres://" .. username .. ":" .. password .. "@" .. host .. ":" .. tostring(port) .. "/" .. (database or "postgres")
   local pool = db.connect(dsn)
 
-  function c:query(sql, params)
+  -- ===== Client =====
+
+  local c = {}
+
+  -- ===== Queries =====
+
+  c.queries = {}
+
+  function c.queries:query(sql, params)
     return db.query(pool, sql, params or {})
   end
 
-  function c:execute(sql, params)
+  function c.queries:execute(sql, params)
     return db.execute(pool, sql, params or {})
   end
+
+  -- ===== Close (top-level) =====
 
   function c:close()
     db.close(pool)
   end
 
-  function c:user_exists(username_check)
+  -- ===== Users =====
+
+  c.users = {}
+
+  function c.users:exists(username_check)
     local rows = db.query(pool, "SELECT 1 FROM pg_roles WHERE rolname = $1", { username_check })
     return #rows > 0
   end
 
-  function c:ensure_user(target_user, target_password, opts)
+  function c.users:ensure(target_user, target_password, opts)
     opts = opts or {}
-    if self:user_exists(target_user) then
+    if c.users:exists(target_user) then
       log.info("PostgreSQL user '" .. target_user .. "' already exists")
       return false
     end
@@ -54,13 +67,17 @@ function M.client(host, port, username, password, database)
     return true
   end
 
-  function c:database_exists(dbname)
+  -- ===== Databases =====
+
+  c.databases = {}
+
+  function c.databases:exists(dbname)
     local rows = db.query(pool, "SELECT 1 FROM pg_database WHERE datname = $1", { dbname })
     return #rows > 0
   end
 
-  function c:ensure_database(dbname, owner)
-    if self:database_exists(dbname) then
+  function c.databases:ensure(dbname, owner)
+    if c.databases:exists(dbname) then
       log.info("PostgreSQL database '" .. dbname .. "' already exists")
       return false
     end
@@ -73,7 +90,7 @@ function M.client(host, port, username, password, database)
     return true
   end
 
-  function c:grant(database_name, target_user, privileges)
+  function c.databases:grant(database_name, target_user, privileges)
     privileges = privileges or "ALL PRIVILEGES"
     local sql = "GRANT " .. privileges .. " ON DATABASE "
       .. M._quote_ident(database_name) .. " TO " .. M._quote_ident(target_user)

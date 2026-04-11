@@ -1,27 +1,27 @@
 --- @module assay.unleash
 --- @description Unleash feature flag management. Projects, features, environments, strategies, API tokens.
 --- @keywords unleash, feature-flags, toggles, projects, environments, strategies, feature, toggle, strategy, environment, token, api-token, archive, flag, gradual-rollout
---- @quickref c:health() -> {health} | Check Unleash health
---- @quickref c:projects() -> [project] | List projects
---- @quickref c:project(id) -> project|nil | Get project by ID
---- @quickref c:create_project(project) -> project | Create a project
---- @quickref c:update_project(id, project) -> project | Update a project
---- @quickref c:delete_project(id) -> nil | Delete a project
---- @quickref c:environments() -> [environment] | List environments
---- @quickref c:enable_environment(project_id, env_name) -> nil | Enable environment on project
---- @quickref c:disable_environment(project_id, env_name) -> nil | Disable environment on project
---- @quickref c:features(project_id) -> [feature] | List features in project
---- @quickref c:feature(project_id, name) -> feature|nil | Get feature by name
---- @quickref c:create_feature(project_id, feature) -> feature | Create a feature
---- @quickref c:update_feature(project_id, name, feature) -> feature | Update a feature
---- @quickref c:archive_feature(project_id, name) -> nil | Archive a feature
---- @quickref c:toggle_on(project_id, name, env) -> nil | Enable feature in environment
---- @quickref c:toggle_off(project_id, name, env) -> nil | Disable feature in environment
---- @quickref c:strategies(project_id, feature_name, env) -> [strategy] | List feature strategies
---- @quickref c:add_strategy(project_id, feature_name, env, strategy) -> strategy | Add strategy to feature
---- @quickref c:tokens() -> [token] | List API tokens
---- @quickref c:create_token(token_config) -> token | Create API token
---- @quickref c:delete_token(secret) -> nil | Delete API token
+--- @quickref c.health:check() -> {health} | Check Unleash health
+--- @quickref c.projects:list() -> [project] | List projects
+--- @quickref c.projects:get(id) -> project|nil | Get project by ID
+--- @quickref c.projects:create(project) -> project | Create a project
+--- @quickref c.projects:update(id, project) -> project | Update a project
+--- @quickref c.projects:delete(id) -> nil | Delete a project
+--- @quickref c.environments:list() -> [environment] | List environments
+--- @quickref c.environments:enable(project_id, env_name) -> nil | Enable environment on project
+--- @quickref c.environments:disable(project_id, env_name) -> nil | Disable environment on project
+--- @quickref c.features:list(project_id) -> [feature] | List features in project
+--- @quickref c.features:get(project_id, name) -> feature|nil | Get feature by name
+--- @quickref c.features:create(project_id, feature) -> feature | Create a feature
+--- @quickref c.features:update(project_id, name, feature) -> feature | Update a feature
+--- @quickref c.features:archive(project_id, name) -> nil | Archive a feature
+--- @quickref c.features:toggle_on(project_id, name, env) -> nil | Enable feature in environment
+--- @quickref c.features:toggle_off(project_id, name, env) -> nil | Disable feature in environment
+--- @quickref c.strategies:list(project_id, feature_name, env) -> [strategy] | List feature strategies
+--- @quickref c.strategies:add(project_id, feature_name, env, strategy) -> strategy | Add strategy to feature
+--- @quickref c.tokens:list() -> [token] | List API tokens
+--- @quickref c.tokens:create(token_config) -> token | Create API token
+--- @quickref c.tokens:delete(secret) -> nil | Delete API token
 --- @quickref M.wait(url, opts?) -> true | Wait for Unleash to become healthy
 --- @quickref M.ensure_project(client, project_id, opts?) -> project | Ensure project exists
 --- @quickref M.ensure_environment(client, project_id, env_name) -> true | Ensure environment enabled
@@ -31,19 +31,19 @@ local M = {}
 
 function M.client(url, opts)
   opts = opts or {}
-  local c = {
-    url = url:gsub("/+$", ""),
-    token = opts.token,
-  }
+  local base_url = url:gsub("/+$", "")
+  local token = opts.token
 
-  local function headers(self)
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
+
+  local function headers()
     local h = { ["Content-Type"] = "application/json" }
-    if self.token then h["Authorization"] = self.token end
+    if token then h["Authorization"] = token end
     return h
   end
 
-  local function api_get(self, path_str)
-    local resp = http.get(self.url .. path_str, { headers = headers(self) })
+  local function api_get(path_str)
+    local resp = http.get(base_url .. path_str, { headers = headers() })
     if resp.status == 404 then return nil end
     if resp.status ~= 200 then
       error("unleash: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
@@ -51,8 +51,8 @@ function M.client(url, opts)
     return json.parse(resp.body)
   end
 
-  local function api_post(self, path_str, payload)
-    local resp = http.post(self.url .. path_str, payload, { headers = headers(self) })
+  local function api_post(path_str, payload)
+    local resp = http.post(base_url .. path_str, payload, { headers = headers() })
     if resp.status ~= 200 and resp.status ~= 201 then
       error("unleash: POST " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
@@ -62,8 +62,8 @@ function M.client(url, opts)
     return nil
   end
 
-  local function api_put(self, path_str, payload)
-    local resp = http.put(self.url .. path_str, payload, { headers = headers(self) })
+  local function api_put(path_str, payload)
+    local resp = http.put(base_url .. path_str, payload, { headers = headers() })
     if resp.status ~= 200 then
       error("unleash: PUT " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
@@ -73,8 +73,8 @@ function M.client(url, opts)
     return nil
   end
 
-  local function api_delete(self, path_str)
-    local resp = http.delete(self.url .. path_str, { headers = headers(self) })
+  local function api_delete(path_str)
+    local resp = http.delete(base_url .. path_str, { headers = headers() })
     if resp.status ~= 200 then
       error("unleash: DELETE " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
@@ -84,117 +84,133 @@ function M.client(url, opts)
     return nil
   end
 
-  -- Health
+  -- ===== Client =====
 
-  function c:health()
-    local resp = http.get(self.url .. "/health", { headers = headers(self) })
+  local c = {}
+
+  -- ===== Health =====
+
+  c.health = {}
+
+  function c.health:check()
+    local resp = http.get(base_url .. "/health", { headers = headers() })
     if resp.status ~= 200 then
       error("unleash: GET /health HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
 
-  -- Projects
+  -- ===== Projects =====
 
-  function c:projects()
-    local data = api_get(self, "/api/admin/projects")
+  c.projects = {}
+
+  function c.projects:list()
+    local data = api_get("/api/admin/projects")
     if not data then return {} end
     return data.projects or {}
   end
 
-  function c:project(id)
-    return api_get(self, "/api/admin/projects/" .. id)
+  function c.projects:get(id)
+    return api_get("/api/admin/projects/" .. id)
   end
 
-  function c:create_project(project)
-    return api_post(self, "/api/admin/projects", project)
+  function c.projects:create(project)
+    return api_post("/api/admin/projects", project)
   end
 
-  function c:update_project(id, project)
-    return api_put(self, "/api/admin/projects/" .. id, project)
+  function c.projects:update(id, project)
+    return api_put("/api/admin/projects/" .. id, project)
   end
 
-  function c:delete_project(id)
-    return api_delete(self, "/api/admin/projects/" .. id)
+  function c.projects:delete(id)
+    return api_delete("/api/admin/projects/" .. id)
   end
 
-  -- Environments
+  -- ===== Environments =====
 
-  function c:environments()
-    local data = api_get(self, "/api/admin/environments")
+  c.environments = {}
+
+  function c.environments:list()
+    local data = api_get("/api/admin/environments")
     if not data then return {} end
     return data.environments or {}
   end
 
-  function c:enable_environment(project_id, env_name)
-    return api_post(self, "/api/admin/projects/" .. project_id .. "/environments", {
+  function c.environments:enable(project_id, env_name)
+    return api_post("/api/admin/projects/" .. project_id .. "/environments", {
       environment = env_name,
     })
   end
 
-  function c:disable_environment(project_id, env_name)
-    return api_delete(self, "/api/admin/projects/" .. project_id .. "/environments/" .. env_name)
+  function c.environments:disable(project_id, env_name)
+    return api_delete("/api/admin/projects/" .. project_id .. "/environments/" .. env_name)
   end
 
-  -- Features
+  -- ===== Features =====
 
-  function c:features(project_id)
-    local data = api_get(self, "/api/admin/projects/" .. project_id .. "/features")
+  c.features = {}
+
+  function c.features:list(project_id)
+    local data = api_get("/api/admin/projects/" .. project_id .. "/features")
     if not data then return {} end
     return data.features or {}
   end
 
-  function c:feature(project_id, name)
-    return api_get(self, "/api/admin/projects/" .. project_id .. "/features/" .. name)
+  function c.features:get(project_id, name)
+    return api_get("/api/admin/projects/" .. project_id .. "/features/" .. name)
   end
 
-  function c:create_feature(project_id, feature)
-    return api_post(self, "/api/admin/projects/" .. project_id .. "/features", feature)
+  function c.features:create(project_id, feature)
+    return api_post("/api/admin/projects/" .. project_id .. "/features", feature)
   end
 
-  function c:update_feature(project_id, name, feature)
-    return api_put(self, "/api/admin/projects/" .. project_id .. "/features/" .. name, feature)
+  function c.features:update(project_id, name, feature)
+    return api_put("/api/admin/projects/" .. project_id .. "/features/" .. name, feature)
   end
 
-  function c:archive_feature(project_id, name)
-    return api_delete(self, "/api/admin/projects/" .. project_id .. "/features/" .. name)
+  function c.features:archive(project_id, name)
+    return api_delete("/api/admin/projects/" .. project_id .. "/features/" .. name)
   end
 
-  function c:toggle_on(project_id, name, env)
-    return api_post(self, "/api/admin/projects/" .. project_id .. "/features/" .. name .. "/environments/" .. env .. "/on", {})
+  function c.features:toggle_on(project_id, name, env)
+    return api_post("/api/admin/projects/" .. project_id .. "/features/" .. name .. "/environments/" .. env .. "/on", {})
   end
 
-  function c:toggle_off(project_id, name, env)
-    return api_post(self, "/api/admin/projects/" .. project_id .. "/features/" .. name .. "/environments/" .. env .. "/off", {})
+  function c.features:toggle_off(project_id, name, env)
+    return api_post("/api/admin/projects/" .. project_id .. "/features/" .. name .. "/environments/" .. env .. "/off", {})
   end
 
-  -- Strategies
+  -- ===== Strategies =====
 
-  function c:strategies(project_id, feature_name, env)
-    local data = api_get(self, "/api/admin/projects/" .. project_id .. "/features/" .. feature_name .. "/environments/" .. env .. "/strategies")
+  c.strategies = {}
+
+  function c.strategies:list(project_id, feature_name, env)
+    local data = api_get("/api/admin/projects/" .. project_id .. "/features/" .. feature_name .. "/environments/" .. env .. "/strategies")
     if not data then return {} end
     if type(data) == "table" and data[1] then return data end
     return data.strategies or data
   end
 
-  function c:add_strategy(project_id, feature_name, env, strategy)
-    return api_post(self, "/api/admin/projects/" .. project_id .. "/features/" .. feature_name .. "/environments/" .. env .. "/strategies", strategy)
+  function c.strategies:add(project_id, feature_name, env, strategy)
+    return api_post("/api/admin/projects/" .. project_id .. "/features/" .. feature_name .. "/environments/" .. env .. "/strategies", strategy)
   end
 
-  -- API Tokens
+  -- ===== API Tokens =====
 
-  function c:tokens()
-    local data = api_get(self, "/api/admin/api-tokens")
+  c.tokens = {}
+
+  function c.tokens:list()
+    local data = api_get("/api/admin/api-tokens")
     if not data then return {} end
     return data.tokens or {}
   end
 
-  function c:create_token(token_config)
-    return api_post(self, "/api/admin/api-tokens", token_config)
+  function c.tokens:create(token_config)
+    return api_post("/api/admin/api-tokens", token_config)
   end
 
-  function c:delete_token(secret)
-    return api_delete(self, "/api/admin/api-tokens/" .. secret)
+  function c.tokens:delete(secret)
+    return api_delete("/api/admin/api-tokens/" .. secret)
   end
 
   return c
@@ -222,7 +238,7 @@ end
 
 function M.ensure_project(client, project_id, opts)
   opts = opts or {}
-  local existing = client:project(project_id)
+  local existing = client.projects:get(project_id)
   if existing then
     log.info("Project already exists: " .. project_id)
     return existing
@@ -236,13 +252,13 @@ function M.ensure_project(client, project_id, opts)
     project.description = opts.description
   end
 
-  local created = client:create_project(project)
+  local created = client.projects:create(project)
   log.info("Created project: " .. project_id)
   return created
 end
 
 function M.ensure_environment(client, project_id, env_name)
-  local ok, err = pcall(client.enable_environment, client, project_id, env_name)
+  local ok, err = pcall(client.environments.enable, client.environments, project_id, env_name)
   if ok then
     log.info("Enabled environment " .. env_name .. " on project " .. project_id)
     return true
@@ -261,7 +277,7 @@ function M.ensure_token(client, opts)
   assert.not_nil(token_name, "unleash.ensure_token: opts.tokenName is required")
   assert.not_nil(opts.type, "unleash.ensure_token: opts.type is required")
 
-  local existing = client:tokens()
+  local existing = client.tokens:list()
   for _, t in ipairs(existing) do
     local match = t.tokenName == token_name and t.type == opts.type
     if match and opts.environment then
@@ -284,7 +300,7 @@ function M.ensure_token(client, opts)
     token_config.projects = opts.projects
   end
 
-  local created = client:create_token(token_config)
+  local created = client.tokens:create(token_config)
   log.info("Created token for " .. token_name .. " (" .. opts.type .. ")")
   return created
 end

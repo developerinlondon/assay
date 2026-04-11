@@ -1,22 +1,22 @@
 --- @module assay.zitadel
 --- @description Zitadel OIDC identity management. Projects, OIDC apps, IdPs, users, login policies.
 --- @keywords zitadel, oidc, identity, projects, applications, idp, users, authentication, domain, app, login-policy, user, password, google, machine-key, jwt, saml
---- @quickref c:ensure_primary_domain(domain) -> bool | Set organization primary domain
---- @quickref c:find_project(name) -> project|nil | Find project by name
---- @quickref c:create_project(name, opts?) -> project | Create a new project
---- @quickref c:ensure_project(name, opts?) -> project | Ensure project exists
---- @quickref c:find_app(project_id, name) -> app|nil | Find OIDC app by name
---- @quickref c:create_oidc_app(project_id, opts) -> app | Create OIDC application
---- @quickref c:ensure_oidc_app(project_id, opts) -> app | Ensure OIDC app exists
---- @quickref c:find_idp(name) -> idp|nil | Find identity provider by name
---- @quickref c:ensure_google_idp(opts) -> idp_id|nil | Ensure Google IdP exists
---- @quickref c:ensure_oidc_idp(opts) -> idp_id|nil | Ensure generic OIDC IdP exists
---- @quickref c:add_idp_to_login_policy(idp_id) -> bool | Add IdP to login policy
---- @quickref c:search_users(query) -> [user] | Search users
---- @quickref c:update_user_email(user_id, email) -> bool | Update user email
---- @quickref c:get_login_policy() -> policy|nil | Get login policy
---- @quickref c:update_login_policy(policy) -> bool | Update login policy
---- @quickref c:disable_password_login() -> bool | Disable password-based login
+--- @quickref c.domains:ensure_primary(domain) -> bool | Set organization primary domain
+--- @quickref c.projects:find(name) -> project|nil | Find project by name
+--- @quickref c.projects:create(name, opts?) -> project | Create a new project
+--- @quickref c.projects:ensure(name, opts?) -> project | Ensure project exists
+--- @quickref c.apps:find(project_id, name) -> app|nil | Find OIDC app by name
+--- @quickref c.apps:create_oidc(project_id, opts) -> app | Create OIDC application
+--- @quickref c.apps:ensure_oidc(project_id, opts) -> app | Ensure OIDC app exists
+--- @quickref c.idps:find(name) -> idp|nil | Find identity provider by name
+--- @quickref c.idps:ensure_google(opts) -> idp_id|nil | Ensure Google IdP exists
+--- @quickref c.idps:ensure_oidc(opts) -> idp_id|nil | Ensure generic OIDC IdP exists
+--- @quickref c.idps:add_to_login_policy(idp_id) -> bool | Add IdP to login policy
+--- @quickref c.users:search(query) -> [user] | Search users
+--- @quickref c.users:update_email(user_id, email) -> bool | Update user email
+--- @quickref c.login_policy:get() -> policy|nil | Get login policy
+--- @quickref c.login_policy:update(policy) -> bool | Update login policy
+--- @quickref c.login_policy:disable_password() -> bool | Disable password-based login
 
 local M = {}
 
@@ -27,21 +27,18 @@ function M.client(opts)
   assert.not_nil(url, "zitadel.client: url required")
   assert.not_nil(domain, "zitadel.client: domain required")
 
-  local c = {
-    url = url:gsub("/+$", ""),
-    domain = domain,
-    host_header = "auth." .. domain,
-    access_token = nil,
-  }
+  local base_url = url:gsub("/+$", "")
+  local host_header = "auth." .. domain
+  local access_token = nil
 
   -- Private: authenticate via machine key JWT
-  local function authenticate(self, key_data)
+  local function authenticate(key_data)
     -- key_data: { userId, key, keyId } -- from machine key JSON
     local now = time()
     local claims = {
       iss = key_data.userId,
       sub = key_data.userId,
-      aud = "https://auth." .. self.domain,
+      aud = "https://auth." .. domain,
       iat = now,
       exp = now + 300,
     }
@@ -50,66 +47,75 @@ function M.client(opts)
     local token_body = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer"
       .. "&scope=openid+urn%3Azitadel%3Aiam%3Aorg%3Aproject%3Aid%3Azitadel%3Aaud"
       .. "&assertion=" .. jwt_token
-    local resp = http.post(self.url .. "/oauth/v2/token", token_body, {
-      headers = { ["Content-Type"] = "application/x-www-form-urlencoded", ["Host"] = self.host_header },
+    local resp = http.post(base_url .. "/oauth/v2/token", token_body, {
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded", ["Host"] = host_header },
     })
     if resp.status ~= 200 then
       error("zitadel: token exchange failed (HTTP " .. resp.status .. "): " .. resp.body)
     end
     local data = json.parse(resp.body)
     assert.not_nil(data.access_token, "zitadel: no access_token in token response")
-    self.access_token = data.access_token
-    return self.access_token
+    access_token = data.access_token
+    return access_token
   end
 
   -- Authenticate from machine key data (table) or file path (string)
   if opts.machine_key then
-    authenticate(c, opts.machine_key)
+    authenticate(opts.machine_key)
   elseif opts.machine_key_file then
     local key_json = fs.read(opts.machine_key_file)
     local key_data = json.parse(key_json)
     assert.not_nil(key_data.userId, "zitadel: machine key missing userId")
     assert.not_nil(key_data.key, "zitadel: machine key missing key")
     assert.not_nil(key_data.keyId, "zitadel: machine key missing keyId")
-    authenticate(c, key_data)
+    authenticate(key_data)
   elseif opts.token then
-    c.access_token = opts.token
+    access_token = opts.token
   else
     error("zitadel.client: one of machine_key, machine_key_file, or token required")
   end
 
-  -- Private: HTTP helpers with auth headers
-  local function headers(self)
+  -- Shared HTTP helpers (captured by all sub-object methods as upvalues)
+
+  local function headers()
     return {
-      ["Authorization"] = "Bearer " .. self.access_token,
+      ["Authorization"] = "Bearer " .. access_token,
       ["Content-Type"] = "application/json",
-      ["Host"] = self.host_header,
+      ["Host"] = host_header,
     }
   end
 
-  local function api_get(self, path)
-    local resp = http.get(self.url .. path, { headers = headers(self) })
+  local function api_get(path)
+    local resp = http.get(base_url .. path, { headers = headers() })
     return resp
   end
 
-  local function api_post(self, path, body)
-    local resp = http.post(self.url .. path, body or "{}", { headers = headers(self) })
+  local function api_post(path, body)
+    local resp = http.post(base_url .. path, body or "{}", { headers = headers() })
     return resp
   end
 
-  local function api_put(self, path, body)
-    local resp = http.put(self.url .. path, body or "{}", { headers = headers(self) })
+  local function api_put(path, body)
+    local resp = http.put(base_url .. path, body or "{}", { headers = headers() })
     return resp
   end
 
-  local function api_delete(self, path)
-    local resp = http.delete(self.url .. path, { headers = headers(self) })
-    return resp
-  end
+  -- ===== Client =====
 
-  -- Domain management
-  function c:ensure_primary_domain(target_domain)
-    local resp = api_get(self, "/admin/v1/orgs/me/domains")
+  -- Expose some fields for test assertions
+  local c = {
+    url = base_url,
+    domain = domain,
+    host_header = host_header,
+    access_token = access_token,
+  }
+
+  -- ===== Domains =====
+
+  c.domains = {}
+
+  function c.domains:ensure_primary(target_domain)
+    local resp = api_get("/admin/v1/orgs/me/domains")
     if resp.status ~= 200 then
       log.warn("zitadel: could not list org domains (HTTP " .. resp.status .. ")")
       return false
@@ -124,12 +130,12 @@ function M.client(opts)
       end
     end
     -- Add domain (may already exist -- 409 is OK)
-    local add_resp = api_post(self, "/admin/v1/orgs/me/domains", { domain = target_domain })
+    local add_resp = api_post("/admin/v1/orgs/me/domains", { domain = target_domain })
     if add_resp.status ~= 200 and add_resp.status ~= 409 then
       log.warn("zitadel: could not add domain (HTTP " .. add_resp.status .. ")")
       return false
     end
-    local primary_resp = api_post(self, "/admin/v1/orgs/me/domains/" .. target_domain .. "/_set_primary", {})
+    local primary_resp = api_post("/admin/v1/orgs/me/domains/" .. target_domain .. "/_set_primary", {})
     if primary_resp.status == 200 then
       log.info("Set org primary domain to " .. target_domain)
       return true
@@ -138,9 +144,12 @@ function M.client(opts)
     return false
   end
 
-  -- Project management
-  function c:find_project(name)
-    local resp = api_post(self, "/management/v1/projects/_search", {
+  -- ===== Projects =====
+
+  c.projects = {}
+
+  function c.projects:find(name)
+    local resp = api_post("/management/v1/projects/_search", {
       queries = { { nameQuery = { name = name, method = "TEXT_QUERY_METHOD_EQUALS" } } },
     })
     if resp.status ~= 200 then return nil end
@@ -151,13 +160,13 @@ function M.client(opts)
     return nil
   end
 
-  function c:create_project(name, opts_proj)
+  function c.projects:create(name, opts_proj)
     opts_proj = opts_proj or {}
     local body = { name = name }
     if opts_proj.projectRoleAssertion ~= nil then
       body.projectRoleAssertion = opts_proj.projectRoleAssertion
     end
-    local resp = api_post(self, "/management/v1/projects", body)
+    local resp = api_post("/management/v1/projects", body)
     if resp.status ~= 200 then
       error("zitadel: failed to create project '" .. name .. "' (HTTP " .. resp.status .. "): " .. resp.body)
     end
@@ -166,25 +175,28 @@ function M.client(opts)
     return data
   end
 
-  function c:ensure_project(name, opts_proj)
-    local existing = self:find_project(name)
+  function c.projects:ensure(name, opts_proj)
+    local existing = c.projects:find(name)
     if existing then
       log.info("Project '" .. name .. "' already exists (id=" .. tostring(existing.id) .. ")")
       return existing
     end
-    return self:create_project(name, opts_proj)
+    return c.projects:create(name, opts_proj)
   end
 
-  -- OIDC application management
-  function c:find_app(project_id, name)
+  -- ===== OIDC Apps =====
+
+  c.apps = {}
+
+  function c.apps:find(project_id, name)
     local body = {
       query = { limit = 100 },
       queries = { { nameQuery = { name = name, method = "TEXT_QUERY_METHOD_EQUALS" } } },
     }
-    local resp = api_post(self, "/management/v1/projects/" .. project_id .. "/apps/_search", body)
+    local resp = api_post("/management/v1/projects/" .. project_id .. "/apps/_search", body)
     if resp.status ~= 200 then
       -- Fallback: try without query filter (older Zitadel versions)
-      resp = api_post(self, "/management/v1/projects/" .. project_id .. "/apps/_search", { query = { limit = 100 } })
+      resp = api_post("/management/v1/projects/" .. project_id .. "/apps/_search", { query = { limit = 100 } })
       if resp.status ~= 200 then return nil end
     end
     local data = json.parse(resp.body)
@@ -196,9 +208,9 @@ function M.client(opts)
     return nil
   end
 
-  function c:create_oidc_app(project_id, opts_app)
-    local redirect_uri = "https://" .. opts_app.subdomain .. "." .. self.domain .. opts_app.callbackPath
-    local logout_uri = "https://" .. opts_app.subdomain .. "." .. self.domain .. "/"
+  function c.apps:create_oidc(project_id, opts_app)
+    local redirect_uri = "https://" .. opts_app.subdomain .. "." .. domain .. opts_app.callbackPath
+    local logout_uri = "https://" .. opts_app.subdomain .. "." .. domain .. "/"
     local body = {
       name = opts_app.name,
       redirectUris = opts_app.redirectUris or { redirect_uri },
@@ -214,10 +226,10 @@ function M.client(opts)
       devMode = opts_app.devMode or false,
       clockSkew = opts_app.clockSkew or "0s",
     }
-    local resp = api_post(self, "/management/v1/projects/" .. project_id .. "/apps/oidc", body)
+    local resp = api_post("/management/v1/projects/" .. project_id .. "/apps/oidc", body)
     if resp.status == 409 then
       log.info("OIDC app '" .. opts_app.name .. "' already exists (409), looking up...")
-      local existing = self:find_app(project_id, opts_app.name)
+      local existing = c.apps:find(project_id, opts_app.name)
       if existing then return existing end
       log.warn("OIDC app '" .. opts_app.name .. "' exists (409) but search did not find it, returning stub")
       return { id = "existing", name = opts_app.name }
@@ -230,18 +242,21 @@ function M.client(opts)
     return data
   end
 
-  function c:ensure_oidc_app(project_id, opts_app)
-    local existing = self:find_app(project_id, opts_app.name)
+  function c.apps:ensure_oidc(project_id, opts_app)
+    local existing = c.apps:find(project_id, opts_app.name)
     if existing then
       log.info("OIDC app '" .. opts_app.name .. "' already exists (id=" .. tostring(existing.id) .. ")")
       return existing
     end
-    return self:create_oidc_app(project_id, opts_app)
+    return c.apps:create_oidc(project_id, opts_app)
   end
 
-  -- IdP management
-  function c:find_idp(name)
-    local resp = api_post(self, "/admin/v1/idps/templates/_search", {
+  -- ===== IdPs =====
+
+  c.idps = {}
+
+  function c.idps:find(name)
+    local resp = api_post("/admin/v1/idps/templates/_search", {
       queries = { { idpNameQuery = { name = name, method = "TEXT_QUERY_METHOD_EQUALS" } } },
     })
     if resp.status ~= 200 then return nil end
@@ -252,8 +267,8 @@ function M.client(opts)
     return nil
   end
 
-  function c:ensure_google_idp(opts_idp)
-    local existing = self:find_idp("Google")
+  function c.idps:ensure_google(opts_idp)
+    local existing = c.idps:find("Google")
     if existing then
       log.info("Google IdP already exists (id=" .. existing.id .. ")")
       return existing.id
@@ -270,7 +285,7 @@ function M.client(opts)
         isAutoUpdate = true,
       },
     }
-    local resp = api_post(self, "/admin/v1/idps/google", body)
+    local resp = api_post("/admin/v1/idps/google", body)
     if resp.status ~= 200 then
       log.warn("zitadel: failed to create Google IdP (HTTP " .. resp.status .. ")")
       return nil
@@ -281,10 +296,10 @@ function M.client(opts)
     return idp_id
   end
 
-  function c:ensure_oidc_idp(opts_idp)
+  function c.idps:ensure_oidc(opts_idp)
     local name = opts_idp.name
     assert.not_nil(name, "zitadel: ensure_oidc_idp requires name")
-    local existing = self:find_idp(name)
+    local existing = c.idps:find(name)
     local provider_options = opts_idp.providerOptions or {
       isLinkingAllowed = true,
       isCreationAllowed = true,
@@ -303,7 +318,7 @@ function M.client(opts)
     }
     if existing then
       log.info(name .. " IdP already exists (id=" .. existing.id .. "), updating...")
-      local resp = api_put(self, "/admin/v1/idps/generic_oidc/" .. existing.id, body)
+      local resp = api_put("/admin/v1/idps/generic_oidc/" .. existing.id, body)
       if resp.status == 200 then
         log.info(name .. " IdP updated")
       else
@@ -311,7 +326,7 @@ function M.client(opts)
       end
       return existing.id
     end
-    local resp = api_post(self, "/admin/v1/idps/generic_oidc", body)
+    local resp = api_post("/admin/v1/idps/generic_oidc", body)
     if resp.status ~= 200 then
       log.warn("zitadel: failed to create " .. name .. " IdP (HTTP " .. resp.status .. "): " .. resp.body)
       return nil
@@ -322,8 +337,8 @@ function M.client(opts)
     return idp_id
   end
 
-  function c:add_idp_to_login_policy(idp_id)
-    local resp = api_post(self, "/admin/v1/policies/login/idps", {
+  function c.idps:add_to_login_policy(idp_id)
+    local resp = api_post("/admin/v1/policies/login/idps", {
       idpId = idp_id,
       ownerType = "IDPOWNERTYPE_SYSTEM",
     })
@@ -338,9 +353,12 @@ function M.client(opts)
     return false
   end
 
-  -- User management
-  function c:search_users(query)
-    local resp = api_post(self, "/management/v1/users/_search", query)
+  -- ===== Users =====
+
+  c.users = {}
+
+  function c.users:search(query)
+    local resp = api_post("/management/v1/users/_search", query)
     if resp.status ~= 200 then
       log.warn("zitadel: user search failed (HTTP " .. resp.status .. ")")
       return {}
@@ -349,8 +367,8 @@ function M.client(opts)
     return data.result or {}
   end
 
-  function c:update_user_email(user_id, email)
-    local resp = api_put(self, "/management/v1/users/" .. user_id .. "/email", {
+  function c.users:update_email(user_id, email)
+    local resp = api_put("/management/v1/users/" .. user_id .. "/email", {
       email = email,
       isEmailVerified = true,
     })
@@ -362,16 +380,19 @@ function M.client(opts)
     return false
   end
 
-  -- Login policy
-  function c:get_login_policy()
-    local resp = api_get(self, "/admin/v1/policies/login")
+  -- ===== Login Policy =====
+
+  c.login_policy = {}
+
+  function c.login_policy:get()
+    local resp = api_get("/admin/v1/policies/login")
     if resp.status ~= 200 then return nil end
     local data = json.parse(resp.body)
     return data.policy
   end
 
-  function c:update_login_policy(policy)
-    local resp = api_put(self, "/admin/v1/policies/login", policy)
+  function c.login_policy:update(policy)
+    local resp = api_put("/admin/v1/policies/login", policy)
     if resp.status == 200 then
       log.info("Login policy updated")
       return true
@@ -380,8 +401,8 @@ function M.client(opts)
     return false
   end
 
-  function c:disable_password_login()
-    local policy = self:get_login_policy()
+  function c.login_policy:disable_password()
+    local policy = c.login_policy:get()
     if not policy then
       log.warn("zitadel: could not read login policy")
       return false
@@ -390,7 +411,7 @@ function M.client(opts)
       log.info("Password login already disabled")
       return true
     end
-    return self:update_login_policy({
+    return c.login_policy:update({
       allowUsernamePassword = false,
       allowExternalIdp = true,
       allowRegister = policy.allowRegister or false,

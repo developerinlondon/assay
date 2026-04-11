@@ -41,7 +41,7 @@ async fn test_openbao_alias_client_works() {
         r#"
         local bao = require("assay.openbao")
         local c = bao.client("{}", "test-token")
-        local data = c:kv_get("secret", "test")
+        local data = c.kv:get("secret", "test")
         assert.eq(data.data.key, "value")
         "#,
         server.uri()

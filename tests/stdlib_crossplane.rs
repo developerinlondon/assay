@@ -49,7 +49,7 @@ async fn test_providers_list() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local list = c:providers()
+        local list = c.providers:list()
         assert.eq(list.kind, "ProviderList")
         assert.eq(#list.items, 2)
         assert.eq(list.items[1].metadata.name, "provider-aws-s3")
@@ -83,7 +83,7 @@ async fn test_provider_single() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local p = c:provider("provider-aws-s3")
+        local p = c.providers:get("provider-aws-s3")
         assert.eq(p.metadata.name, "provider-aws-s3")
         assert.eq(p.status.currentRevision, "provider-aws-s3-abc123")
         "#,
@@ -113,7 +113,7 @@ async fn test_is_provider_healthy_true() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        assert.eq(c:is_provider_healthy("provider-aws-s3"), true)
+        assert.eq(c.providers:is_healthy("provider-aws-s3"), true)
         "#,
         server.uri()
     );
@@ -141,7 +141,7 @@ async fn test_is_provider_healthy_false() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        assert.eq(c:is_provider_healthy("provider-aws-s3"), false)
+        assert.eq(c.providers:is_healthy("provider-aws-s3"), false)
         "#,
         server.uri()
     );
@@ -169,7 +169,7 @@ async fn test_is_provider_installed() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        assert.eq(c:is_provider_installed("provider-aws-s3"), true)
+        assert.eq(c.providers:is_installed("provider-aws-s3"), true)
         "#,
         server.uri()
     );
@@ -198,7 +198,7 @@ async fn test_provider_status() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local s = c:provider_status("provider-aws-s3")
+        local s = c.providers:status("provider-aws-s3")
         assert.eq(s.installed, true)
         assert.eq(s.healthy, true)
         assert.eq(s.current_revision, "provider-aws-s3-rev1")
@@ -235,7 +235,7 @@ async fn test_configurations_list() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local list = c:configurations()
+        local list = c.configurations:list()
         assert.eq(list.kind, "ConfigurationList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "platform-ref-aws")
@@ -268,7 +268,7 @@ async fn test_is_configuration_healthy() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        assert.eq(c:is_configuration_healthy("platform-ref-aws"), true)
+        assert.eq(c.configurations:is_healthy("platform-ref-aws"), true)
         "#,
         server.uri()
     );
@@ -301,7 +301,7 @@ async fn test_functions_list() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local list = c:functions()
+        local list = c.functions:list()
         assert.eq(list.kind, "FunctionList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "function-patch-and-transform")
@@ -334,7 +334,7 @@ async fn test_is_function_healthy() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        assert.eq(c:is_function_healthy("function-patch-and-transform"), true)
+        assert.eq(c.functions:is_healthy("function-patch-and-transform"), true)
         "#,
         server.uri()
     );
@@ -377,7 +377,7 @@ async fn test_xrds_list() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local list = c:xrds()
+        local list = c.xrds:list()
         assert.eq(list.kind, "CompositeResourceDefinitionList")
         assert.eq(#list.items, 2)
         assert.eq(list.items[1].metadata.name, "xpostgresqlinstances.database.example.org")
@@ -410,7 +410,7 @@ async fn test_is_xrd_established() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        assert.eq(c:is_xrd_established("xpostgresqlinstances.database.example.org"), true)
+        assert.eq(c.xrds:is_established("xpostgresqlinstances.database.example.org"), true)
         "#,
         server.uri()
     );
@@ -443,7 +443,7 @@ async fn test_compositions_list() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local list = c:compositions()
+        local list = c.compositions:list()
         assert.eq(list.kind, "CompositionList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].metadata.name, "postgresqlinstance-composition")
@@ -479,7 +479,7 @@ async fn test_managed_resource() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local r = c:managed_resource("s3.aws.upbound.io", "v1beta1", "buckets", "my-bucket")
+        local r = c.managed_resources:get("s3.aws.upbound.io", "v1beta1", "buckets", "my-bucket")
         assert.eq(r.kind, "Bucket")
         assert.eq(r.metadata.name, "my-bucket")
         assert.eq(r.status.atProvider.region, "us-east-1")
@@ -510,7 +510,7 @@ async fn test_is_managed_ready_true() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        assert.eq(c:is_managed_ready("s3.aws.upbound.io", "v1beta1", "buckets", "my-bucket"), true)
+        assert.eq(c.managed_resources:is_ready("s3.aws.upbound.io", "v1beta1", "buckets", "my-bucket"), true)
         "#,
         server.uri()
     );
@@ -538,7 +538,7 @@ async fn test_is_managed_ready_false() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        assert.eq(c:is_managed_ready("s3.aws.upbound.io", "v1beta1", "buckets", "my-bucket"), false)
+        assert.eq(c.managed_resources:is_ready("s3.aws.upbound.io", "v1beta1", "buckets", "my-bucket"), false)
         "#,
         server.uri()
     );
@@ -586,7 +586,7 @@ async fn test_all_providers_healthy() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local result = c:all_providers_healthy()
+        local result = c.providers:all_healthy()
         assert.eq(result.healthy, 2)
         assert.eq(result.unhealthy, 1)
         assert.eq(result.total, 3)
@@ -632,7 +632,7 @@ async fn test_all_xrds_established() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local result = c:all_xrds_established()
+        local result = c.xrds:all_established()
         assert.eq(result.established, 1)
         assert.eq(result.not_established, 1)
         assert.eq(result.total, 2)
@@ -661,7 +661,7 @@ async fn test_managed_resources_list() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local list = c:managed_resources("s3.aws.upbound.io", "v1beta1", "buckets")
+        local list = c.managed_resources:list("s3.aws.upbound.io", "v1beta1", "buckets")
         assert.eq(list.kind, "BucketList")
         assert.eq(#list.items, 2)
         assert.eq(list.items[1].metadata.name, "bucket-a")
@@ -689,7 +689,7 @@ async fn test_trailing_slash_stripped() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}///", "fake-token")
-        assert.eq(c:is_provider_healthy("test-provider"), true)
+        assert.eq(c.providers:is_healthy("test-provider"), true)
         "#,
         server.uri()
     );
@@ -717,7 +717,7 @@ async fn test_provider_revisions_list() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local list = c:provider_revisions()
+        local list = c.provider_revisions:list()
         assert.eq(list.kind, "ProviderRevisionList")
         assert.eq(#list.items, 1)
         assert.eq(list.items[1].spec.desiredState, "Active")
@@ -749,7 +749,7 @@ async fn test_xrd_not_established() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        assert.eq(c:is_xrd_established("xbroken.example.org"), false)
+        assert.eq(c.xrds:is_established("xbroken.example.org"), false)
         "#,
         server.uri()
     );
@@ -781,7 +781,7 @@ async fn test_composition_single() {
         r#"
         local cp = require("assay.crossplane")
         local c = cp.client("{}", "fake-token")
-        local comp = c:composition("my-composition")
+        local comp = c.compositions:get("my-composition")
         assert.eq(comp.kind, "Composition")
         assert.eq(comp.spec.mode, "Pipeline")
         "#,
