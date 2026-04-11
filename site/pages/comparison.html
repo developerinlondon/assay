@@ -8,7 +8,9 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="page-comparison">
-__HEADER__
+  __HEADER__
+
+
   <main>
     <h1>Comparison</h1>
 
@@ -163,23 +165,6 @@ __HEADER__
     </table>
 
   </main>
-__FOOTER__
-
-  <script>
-    function toggleTheme() {
-      const html = document.documentElement;
-      const current = html.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : (current === 'light' ? 'dark' :
-        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark'));
-      html.setAttribute('data-theme', next);
-      localStorage.setItem('theme', next);
-      document.querySelector('.theme-toggle').textContent = next === 'dark' ? '\u2600' : '\u263D';
-    }
-    const saved = localStorage.getItem('theme');
-    if (saved) {
-      document.documentElement.setAttribute('data-theme', saved);
-      document.querySelector('.theme-toggle').textContent = saved === 'dark' ? '\u2600' : '\u263D';
-    }
-  </script>
+  __FOOTER__
 </body>
 </html>

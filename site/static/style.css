@@ -73,79 +73,142 @@ header {
   position: sticky;
   top: 0;
   z-index: 100;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: color-mix(in srgb, var(--bg) 85%, transparent);
 }
 
 nav {
   max-width: 900px;
   margin: 0 auto;
-  padding: 1rem 1.5rem;
+  padding: 0 1.5rem;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
+  height: 2.75rem;
 }
 
-.logo {
-  font-size: 1.5rem;
-  font-weight: 700;
+nav a.logo {
   color: var(--accent);
   text-decoration: none;
-  transition: color 0.2s;
-}
-
-.logo:hover {
-  color: var(--accent-hover);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-right: auto;
 }
 
 nav ul {
   list-style: none;
   display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+}
+
+nav li {
+  display: flex;
   align-items: center;
 }
 
-nav a {
-  color: var(--text);
-  text-decoration: none;
-  transition: color 0.2s;
+nav ul a {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
   font-weight: 500;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: color 0.15s, background-color 0.15s;
 }
 
-nav a:hover {
-  color: var(--accent);
+nav ul a:hover {
+  color: var(--text);
+  background-color: var(--bg-secondary);
 }
 
-/* Active page in nav — driven by a body class set per page.
-   Highlights the link with the accent color, bolder weight,
-   and a clear underline so the current page is unmistakable. */
-body.page-home      nav a[href="index.html"],
-body.page-comparison nav a[href="comparison.html"],
-body.page-agents    nav a[href="agent-guides.html"],
-body.page-modules   nav a[href="modules.html"],
-body.page-changelog nav a[href="changelog.html"] {
+/* Active page — subtle background pill instead of underline.
+   :not(.logo) prevents the logo from getting the active pill on the home page. */
+body.page-home      nav a[href="/index.html"]:not(.logo),
+body.page-comparison nav a[href="/comparison.html"],
+body.page-agents    nav a[href="/agent-guides.html"],
+body.page-modules   nav a[href="/modules.html"],
+body.page-changelog nav a[href="/changelog.html"] {
   color: var(--accent);
-  font-weight: 700;
-  border-bottom: 2px solid var(--accent);
-  padding-bottom: 2px;
+  font-weight: 600;
+  background-color: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 /* Theme toggle */
 .theme-toggle {
   background: none;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 6px;
-  padding: 0.3rem 0.5rem;
+  padding: 0.3rem 0.45rem;
   cursor: pointer;
-  color: var(--text);
-  font-size: 1.1rem;
+  color: var(--text-secondary);
+  font-size: 1rem;
   line-height: 1;
-  transition: border-color 0.2s;
+  transition: color 0.15s, background-color 0.15s;
 }
 
-.theme-toggle:hover {
-  border-color: var(--accent);
+.theme-toggle:hover,
+.search-toggle:hover {
+  color: var(--text);
+  background-color: var(--bg-secondary);
+}
+
+/* Search toggle */
+.search-toggle {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.3rem 0.45rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+/* Search overlay */
+.search-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.search-overlay.active {
+  display: flex;
+  justify-content: center;
+  padding-top: 10vh;
+}
+
+.search-container {
+  width: 100%;
+  max-width: 640px;
+  background: var(--bg);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Pagefind UI theme overrides */
+:root {
+  --pagefind-ui-scale: 0.9;
+  --pagefind-ui-primary: var(--accent);
+  --pagefind-ui-text: var(--text);
+  --pagefind-ui-background: var(--bg);
+  --pagefind-ui-border: var(--border);
+  --pagefind-ui-tag: var(--bg-secondary);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 8px;
+  --pagefind-ui-font: inherit;
 }
 
 /* Main Content */

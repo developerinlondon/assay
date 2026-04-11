@@ -2,6 +2,134 @@
 
 All notable changes to Assay are documented here.
 
+## [0.9.0] - 2026-04-11
+
+### Added
+
+- **Temporal workflow engine** — full workflow execution via Lua coroutines.
+  `temporal.worker()` now supports both activities and workflows. Each
+  workflow runs as a coroutine with a deterministic `ctx` object:
+
+  - `ctx:execute_activity(name, input, opts?)` — schedule activity, block
+    until complete. Supports retry policies, timeouts, heartbeats. On
+    replay, returns cached results without re-executing.
+  - `ctx:wait_signal(name, opts?)` — block until external signal or
+    timeout. Signals are buffered (safe to call after signal arrives).
+  - `ctx:sleep(seconds)` — deterministic timer via Temporal, not wall clock.
+  - `ctx:side_effect(fn)` — run non-deterministic function (IDs, timestamps).
+  - `ctx:workflow_info()` — workflow metadata (id, type, namespace, attempt).
+
+  Activities and workflows can be registered together in one worker:
+  ```lua
+  temporal.worker({
+    url = "temporal-frontend:7233",
+    task_queue = "promotions",
+    activities = { update_gitops = function(input) ... end },
+    workflows = {
+      PromotionWorkflow = function(ctx, input)
+        local approval = ctx:wait_signal("approve", { timeout = 86400 })
+        local commit = ctx:execute_activity("update_gitops", input)
+        return { status = "done", commit_id = commit.id }
+      end,
+    },
+  })
+  ```
+
+- **`markdown.to_html(source)`** — new builtin for Markdown to HTML
+  conversion via pulldown-cmark. Supports tables, strikethrough, and task
+  lists. Zero binary size overhead (pulldown-cmark was already in the
+  dependency tree via temporalio crates).
+
+- **`http.serve()` wildcard routes** — routes ending with `/*` match any
+  path with that prefix. More specific wildcards take priority:
+  ```lua
+  http.serve(8080, {
+    GET = {
+      ["/api/*"] = function(req) ... end,  -- matches /api/users/123
+      ["/*"] = function(req) ... end,      -- catches everything else
+    },
+  })
+  ```
+
+- **Assay builds its own documentation site**. `site/build.lua` replaces
+  the bash/awk/npx pipeline. Module count (54) is computed automatically
+  from `src/lua/builtins/mod.rs` and `stdlib/**/*.lua`. Site source lives
+  under `site/`, build output goes to `build/site/` (gitignored).
+
+- **Per-module documentation pages**. 36 markdown source files under
+  `docs/modules/` are the single source of truth. `build.lua` generates
+  individual HTML pages, a module index, and `llms-full.txt` for LLM agents.
+
+- **`site/serve.lua`** — assay serves its own docs site using wildcard
+  routes. 40 lines of Lua, zero external dependencies.
+
+- **`fs.read_bytes(path)` / `fs.write_bytes(path, data)`** — binary-safe
+  file I/O. Lua strings can hold arbitrary bytes, so these work for images,
+  WASM, protobuf, compressed data, etc.
+
+- **Pagefind search** — full-text search across all docs pages via Ctrl+K
+  modal. Indexed at build time (~100KB client bundle), runs entirely in
+  the browser.
+
+### Changed
+
+- **`http.serve()` binary response body** — response `body` field now
+  preserves raw bytes (read via `mlua::String`) instead of forcing UTF-8
+  conversion. Binary assets (WASM, images) serve correctly.
+
+- Version bump to 0.9.0 (from 0.8.4).
+- Site source consolidated under `site/` (was split across `site/`,
+  `site-partials/`, `site-static/`).
+- Nav redesign: no underlines, subtle active page pill, frosted glass
+  header, theme toggle persistence across pages.
+- `deploy.yml` updated: `cargo build` → `assay site/build.lua` → wrangler
+  deploys `build/site/`.
+
+## [0.8.4] - 2026-04-11
+
+### Added
+
+- **`assay.ory.keto` — OPL permit support and table-style check()**.
+  `k:check()` now accepts a table argument in addition to positional
+  args, making OPL permit checks natural:
+  ```lua
+  k:check({ namespace = "command_center", object = "cc",
+            relation = "trigger", subject_id = "user:uuid" })
+  ```
+  Keto evaluates the OPL rewrite rules and returns true/false — no
+  Lua-side capability mapping needed.
+
+- **`k:batch_check(tuples)`** — check multiple permission tuples in a
+  single call. Returns a list of booleans in the same order. Each
+  entry uses the same table format as `check()`.
+
+- **`assay.ory.kratos` — complete self-service flow coverage**.
+  Three flow families that were missing are now implemented:
+
+  - **Registration**: `c:submit_registration_flow(flow_id, payload, cookie?)`
+    was missing entirely, making the registration API unusable.
+  - **Recovery** (password reset): `c:create_recovery_flow(opts?)`,
+    `c:get_recovery_flow(id, cookie?)`,
+    `c:submit_recovery_flow(flow_id, payload, cookie?)`.
+  - **Settings** (profile/password change): `c:create_settings_flow(cookie)`,
+    `c:get_settings_flow(id, cookie?)`,
+    `c:submit_settings_flow(flow_id, payload, cookie?)`.
+
+### Fixed
+
+- **`assay.ory.keto`**: `k:delete()` now supports subject_set tuples.
+  Previously only `subject_id` was passed to the query string,
+  silently ignoring subject_set-based tuples.
+
+- **`assay.ory.keto`**: `build_query()` now URL-encodes parameter
+  values. Previously special characters in subject IDs (e.g. `@` in
+  email addresses) were passed raw, potentially corrupting the query
+  string.
+
+- **`assay.ory.kratos`**: `public_post()` now handles HTTP 422
+  responses (Kratos returns 422 for browser flows that need a
+  redirect after successful submission).
+
 ## [0.8.3] - 2026-04-07
 
 ### Added

@@ -4,16 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Assay — AI Agent Integration Guides</title>
-  <meta name="description" content="Integration guides for Claude Code, Cursor, Windsurf, Cline, and OpenCode — use Assay's 51 modules in your AI coding agent.">
+  <meta name="description" content="Integration guides for Claude Code, Cursor, Windsurf, Cline, and OpenCode — use Assay's __MODULE_COUNT__ modules in your AI coding agent.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="page-agents">
-__HEADER__
+  __HEADER__
+
 
   <main>
     <h1>AI Agent Integration Guides</h1>
     <p style="font-size: 1.15rem; color: var(--text-secondary); margin-bottom: 2rem;">
-      Use Assay's 51 modules in Claude Code, Cursor, Windsurf, Cline, and OpenCode.
+      Use Assay's __MODULE_COUNT__ modules in Claude Code, Cursor, Windsurf, Cline, and OpenCode.
     </p>
 
     <h2>How It Works</h2>
@@ -161,23 +162,6 @@ assay script.lua</code></pre>
     <p>For LLM agents: <a href="llms.txt">llms.txt</a> &middot; <a href="llms-full.txt">llms-full.txt</a></p>
   </main>
 
-__FOOTER__
-
-  <script>
-    function toggleTheme() {
-      const html = document.documentElement;
-      const current = html.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : (current === 'light' ? 'dark' :
-        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark'));
-      html.setAttribute('data-theme', next);
-      localStorage.setItem('theme', next);
-      document.querySelector('.theme-toggle').textContent = next === 'dark' ? '\u2600' : '\u263D';
-    }
-    const saved = localStorage.getItem('theme');
-    if (saved) {
-      document.documentElement.setAttribute('data-theme', saved);
-      document.querySelector('.theme-toggle').textContent = saved === 'dark' ? '\u2600' : '\u263D';
-    }
-  </script>
+  __FOOTER__
 </body>
 </html>
