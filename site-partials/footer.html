@@ -6,3 +6,16 @@
     </p>
     <p class="text-muted">&copy; 2026 Assay Contributors &middot; deployed <a href="https://github.com/developerinlondon/assay/commit/__GIT_SHA__" style="font-family: monospace; font-size: 0.75rem;">__GIT_SHA__</a></p>
   </footer>
+  <script>
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      document.querySelector('.theme-toggle').textContent = next === 'dark' ? '\u2600' : '\u263D';
+    }
+    const saved = localStorage.getItem('theme');
+    if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    if (saved) document.querySelector('.theme-toggle').textContent = saved === 'dark' ? '\u2600' : '\u263D';
+  </script>

@@ -441,15 +441,47 @@ async fn handle_request(
     };
     let body_str = String::from_utf8_lossy(&body_bytes).to_string();
 
+    // Route matching: try exact match first, then wildcard prefixes.
+    // Wildcard routes end with "/*" and match any path with that prefix.
+    // More specific wildcards match first: "/api/*" beats "/*".
     let key = (method.clone(), path.clone());
-    let handler = match routes.get(&key) {
-        Some(f) => f,
-        None => {
-            return Ok(Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .header("content-type", "text/plain")
-                .body(Either::Left(Full::new(Bytes::from("not found"))))
-                .unwrap());
+    let handler = if let Some(f) = routes.get(&key) {
+        f
+    } else {
+        // Try wildcard routes: "/a/b/c" → try "/a/b/*", "/a/*", "/*"
+        let mut matched = None;
+        let mut search = path.as_str();
+        loop {
+            match search.rfind('/') {
+                Some(pos) => {
+                    let prefix = &search[..pos];
+                    let wildcard_key = (method.clone(), format!("{prefix}/*"));
+                    if let Some(f) = routes.get(&wildcard_key) {
+                        matched = Some(f);
+                        break;
+                    }
+                    // Try the root wildcard
+                    if pos == 0 {
+                        let root_key = (method.clone(), "/*".to_string());
+                        if let Some(f) = routes.get(&root_key) {
+                            matched = Some(f);
+                        }
+                        break;
+                    }
+                    search = prefix;
+                }
+                None => break,
+            }
+        }
+        match matched {
+            Some(f) => f,
+            None => {
+                return Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .header("content-type", "text/plain")
+                    .body(Either::Left(Full::new(Bytes::from("not found"))))
+                    .unwrap());
+            }
         }
     };
 

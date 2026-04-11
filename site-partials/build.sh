@@ -80,11 +80,6 @@ __MODULE_CONTENT__
   </main>
 
 __FOOTER__
-  <script>
-    const saved = localStorage.getItem("theme");
-    if (saved === "dark") document.documentElement.setAttribute("data-theme", "dark");
-    if (saved) document.querySelector(".theme-toggle").textContent = saved === "dark" ? "\u2600" : "\u263D";
-  </script>
 </body>
 </html>'
 
@@ -178,11 +173,6 @@ $(printf '%b' "${INDEX_ENTRIES}" | grep -E '(ai-agents)\.html' || true)
   </main>
 
 __FOOTER__
-  <script>
-    const saved = localStorage.getItem("theme");
-    if (saved === "dark") document.documentElement.setAttribute("data-theme", "dark");
-    if (saved) document.querySelector(".theme-toggle").textContent = saved === "dark" ? "\u2600" : "\u263D";
-  </script>
 </body>
 </html>
 INDEXEOF

@@ -493,3 +493,45 @@ async fn test_http_serve_empty_query_params() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn test_http_serve_wildcard_route() {
+    run_lua_local(
+        r#"
+        local server = async.spawn(function()
+            http.serve(0, {
+                GET = {
+                    ["/exact"] = function(req) return { status = 200, body = "exact" } end,
+                    ["/api/*"] = function(req) return { status = 200, body = "api:" .. req.path } end,
+                    ["/*"] = function(req) return { status = 200, body = "catch:" .. req.path } end,
+                }
+            })
+        end)
+        sleep(0.1)
+        local port = _SERVER_PORT
+        local base = "http://127.0.0.1:" .. port
+
+        -- Exact match takes priority
+        local r1 = http.get(base .. "/exact")
+        assert.eq(r1.body, "exact")
+
+        -- Prefix wildcard matches
+        local r2 = http.get(base .. "/api/users")
+        assert.eq(r2.body, "api:/api/users")
+
+        -- Nested paths match the most specific wildcard
+        local r3 = http.get(base .. "/api/users/123")
+        assert.eq(r3.body, "api:/api/users/123")
+
+        -- Root wildcard catches everything else
+        local r4 = http.get(base .. "/other/page")
+        assert.eq(r4.body, "catch:/other/page")
+
+        -- Root wildcard catches single-segment paths
+        local r5 = http.get(base .. "/hello")
+        assert.eq(r5.body, "catch:/hello")
+    "#,
+    )
+    .await
+    .unwrap();
+}
