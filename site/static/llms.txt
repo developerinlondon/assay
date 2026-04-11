@@ -70,3 +70,4 @@
 - [Docker](https://github.com/developerinlondon/assay/pkgs/container/assay): ghcr.io/developerinlondon/assay:latest (~9MB compressed)
 - [Agent Guides](https://assay.rs/agent-guides.html): Integration guides for Claude Code, Cursor, Windsurf, Cline, OpenCode
 - [Changelog](https://github.com/developerinlondon/assay/releases): Release history
+
