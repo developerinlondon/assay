@@ -18,75 +18,298 @@ deploy a separate Go/TypeScript/Python service as the worker, which:
 
 A native Lua worker keeps everything in one binary and one language.
 
+---
+
+## Full Temporal API Surface in Assay
+
+After this work, assay covers three complementary APIs:
+
+```
++-------------------------------------------------------------------+
+|                        assay.temporal                              |
+|                                                                   |
+|  1. HTTP REST client        require("assay.temporal")             |
+|     Read-only monitoring:   list, query, search, history,         |
+|                             schedules, task queues                |
+|                                                                   |
+|  2. Native gRPC client      temporal.connect(opts)                |
+|     Start + interact:       start_workflow, signal_workflow,      |
+|                             query_workflow, cancel, terminate,    |
+|                             describe, get_result                  |
+|                                                                   |
+|  3. Native gRPC worker      temporal.worker(opts)                 |
+|     Execute:                activities (plain Lua functions),     |
+|                             workflows (Lua functions with         |
+|                             deterministic ctx)                    |
++-------------------------------------------------------------------+
+```
+
+A typical deployment uses (2) to start workflows and (3) to execute them. (1) is for dashboards
+and monitoring tools that don't need gRPC.
+
+---
+
 ## Proposed API
 
 ### Starting a worker
 
 ```lua
-temporal.worker({
+local handle = temporal.worker({
   url = "temporal-frontend:7233",
-  namespace = "my-namespace",
-  task_queue = "my-queue",
+  namespace = "command-center",
+  task_queue = "promotions",
 
-  -- Activities: plain Lua functions that do actual I/O
+  -- Activities: plain Lua functions that do real I/O.
+  -- Each receives a single input value (deserialized from JSON) and returns
+  -- a result (serialized to JSON). Activities are retried by Temporal on failure.
   activities = {
-    send_email = function(input)
-      http.post(input.webhook, { to = input.to, body = input.body })
-      return { sent = true }
+    update_gitops = function(input)
+      -- Call GitLab API to update overlay files
+      local resp = http.request("POST", input.gitlab_url, {
+        body = json.encode(input.commit),
+        headers = { ["PRIVATE-TOKEN"] = input.token },
+      })
+      if resp.status ~= 201 then
+        error("GitLab commit failed: HTTP " .. resp.status)
+      end
+      return json.parse(resp.body)
     end,
-    check_status = function(input)
-      local resp = http.get(input.url)
-      return { status = resp.status }
+
+    poll_argocd = function(input)
+      -- Poll ArgoCD until apps are synced + healthy
+      local resp = http.get(input.argocd_url .. "/api/v1/applications/" .. input.app)
+      local app = json.parse(resp.body)
+      return {
+        synced = app.status.sync.status == "Synced",
+        healthy = app.status.health.status == "Healthy",
+      }
+    end,
+
+    notify = function(input)
+      http.post(input.webhook, { text = input.message })
+      return { sent = true }
     end,
   },
 
-  -- Workflows: orchestration functions that call activities and wait for signals.
-  -- The ctx object provides deterministic primitives.
+  -- Workflows: orchestration functions that coordinate activities.
+  -- The ctx object provides deterministic primitives. Temporal replays
+  -- these functions from history — the ctx methods handle the replay
+  -- transparently so the Lua code reads like normal sequential code.
   workflows = {
-    ApprovalWorkflow = function(ctx, input)
-      -- Wait for a human signal (blocks until signalled or timeout)
+    PromotionWorkflow = function(ctx, input)
+      local info = ctx:workflow_info()
+      log.info("Promotion " .. info.workflow_id .. " started: "
+        .. input.version .. " -> " .. input.target)
+
+      -- Stage 1: Wait for human approval (blocks until signal or timeout)
       local approval = ctx:wait_signal("approve", { timeout = 86400 })
       if not approval then
+        ctx:execute_activity("notify", {
+          webhook = input.webhook,
+          message = "Promotion " .. input.version .. " timed out waiting for approval",
+        })
         return { status = "timed_out" }
       end
 
-      -- Execute activities (retried automatically by Temporal on failure)
-      local result = ctx:execute_activity("send_email", {
-        to = input.requester,
-        body = "Approved!",
-      }, { start_to_close_timeout = 60 })
+      -- Stage 2: Update GitOps overlays
+      local commit = ctx:execute_activity("update_gitops", {
+        gitlab_url = input.gitlab_url,
+        token = input.gitlab_token,
+        commit = input.gitops_commit,
+      }, {
+        start_to_close_timeout = 30,
+        retry_policy = { maximum_attempts = 3 },
+      })
 
-      return { status = "done", result = result }
+      -- Stage 3: Wait for ArgoCD sync (poll with deterministic sleep)
+      local synced = false
+      for i = 1, 30 do
+        local status = ctx:execute_activity("poll_argocd", {
+          argocd_url = input.argocd_url,
+          app = input.app_name,
+        }, { start_to_close_timeout = 10 })
+
+        if status.synced and status.healthy then
+          synced = true
+          break
+        end
+        ctx:sleep(10)  -- deterministic: uses Temporal timer, not wall clock
+      end
+
+      if not synced then
+        ctx:execute_activity("notify", {
+          webhook = input.webhook,
+          message = "Promotion " .. input.version .. " failed: ArgoCD sync timeout",
+        })
+        return { status = "failed", reason = "argocd_sync_timeout" }
+      end
+
+      -- Stage 4: Notify success
+      ctx:execute_activity("notify", {
+        webhook = input.webhook,
+        message = "Promotion " .. input.version .. " deployed to " .. input.target,
+      })
+
+      return {
+        status = "done",
+        version = input.version,
+        target = input.target,
+        commit_id = commit.short_id,
+        approved_by = approval.user,
+      }
     end,
   },
 })
+
+-- The handle lets you inspect and shut down the worker
+print(handle:is_running())  -- true
+-- handle:shutdown()         -- graceful: drains in-flight tasks
 ```
 
-### Workflow context (`ctx`)
-
-The `ctx` object passed to workflow functions provides deterministic primitives:
-
-| Method                                    | Description                                                                     |
-| ----------------------------------------- | ------------------------------------------------------------------------------- |
-| `ctx:execute_activity(name, input, opts)` | Run a registered activity. Blocks until complete.                               |
-| `ctx:wait_signal(name, opts)`             | Block until a signal is received or timeout. Returns signal payload or nil.     |
-| `ctx:sleep(seconds)`                      | Deterministic sleep (uses Temporal timer, not wall clock).                      |
-| `ctx:side_effect(fn)`                     | Run a non-deterministic function once, replay the result on subsequent replays. |
-| `ctx:workflow_info()`                     | Returns `{ workflow_id, run_id, namespace, task_queue, attempt }`.              |
-
-### Activity options
+### Starting a workflow (from another script or the same app)
 
 ```lua
-ctx:execute_activity("name", input, {
-  start_to_close_timeout = 300,   -- max seconds for activity to complete
+temporal.connect({
+  url = "temporal-frontend:7233",
+  namespace = "command-center",
+})
+
+-- Start a promotion workflow
+local run = temporal.start_workflow("PromotionWorkflow", {
+  task_queue = "promotions",
+  workflow_id = "promote-v0.2.0-to-prod",
+  input = {
+    version = "v0.2.0",
+    target = "prod",
+    gitlab_url = "https://gitlab.example.com/api/v4/projects/123/repository/commits",
+    gitlab_token = env.get("GITLAB_TOKEN"),
+    gitops_commit = { ... },
+    argocd_url = "https://argocd.example.com",
+    app_name = "simons-core-api-prod",
+    webhook = "https://hooks.slack.com/...",
+  },
+})
+
+-- Later: approve via signal
+temporal.signal_workflow("promote-v0.2.0-to-prod", "approve", {
+  user = "jane.smith@example.com",
+})
+
+-- Wait for result
+local result = temporal.get_result("promote-v0.2.0-to-prod")
+```
+
+### Monitoring (from a dashboard)
+
+```lua
+local t = require("assay.temporal").client("http://temporal-frontend:8080", {
+  namespace = "command-center",
+})
+
+-- List running promotions
+local running = t:workflows({ query = 'WorkflowType = "PromotionWorkflow"' })
+
+-- Check specific workflow
+local wf = t:workflow("promote-v0.2.0-to-prod")
+print(wf.workflowExecutionInfo.status)
+
+-- Get history for debugging
+local history = t:workflow_history("promote-v0.2.0-to-prod")
+```
+
+---
+
+## Workflow Context (`ctx`) Reference
+
+The `ctx` object is a Lua userdata backed by Temporal's workflow activation mechanism.
+Every method is deterministic — on replay, results come from history instead of re-executing.
+
+### ctx:execute_activity(name, input, opts?)
+
+Schedule a registered activity and block until it completes.
+
+```lua
+local result = ctx:execute_activity("update_gitops", {
+  target = "prod",
+  version = "v0.2.0",
+}, {
+  start_to_close_timeout = 300,   -- seconds (required)
+  schedule_to_close_timeout = 600, -- overall deadline including queue time
+  heartbeat_timeout = 30,          -- activity must heartbeat within this interval
   retry_policy = {
-    initial_interval = 1,          -- seconds
-    backoff_coefficient = 2.0,
-    maximum_interval = 60,
-    maximum_attempts = 3,
+    initial_interval = 1,          -- seconds between retries
+    backoff_coefficient = 2.0,     -- exponential backoff multiplier
+    maximum_interval = 60,         -- cap on retry interval
+    maximum_attempts = 5,          -- 0 = unlimited
+    non_retryable_errors = { "PERMISSION_DENIED" },
   },
 })
 ```
+
+Returns the activity's return value (deserialized from JSON). Throws on activity failure
+after retries are exhausted.
+
+### ctx:wait_signal(name, opts?)
+
+Block until an external signal is received or timeout expires.
+
+```lua
+-- Block indefinitely
+local payload = ctx:wait_signal("approve")
+
+-- Block with timeout (returns nil on timeout)
+local payload = ctx:wait_signal("approve", { timeout = 86400 })
+
+-- The payload is whatever the signaller sent:
+--   temporal.signal_workflow("wf-id", "approve", { user = "jane" })
+-- So payload = { user = "jane" }
+```
+
+Signals are buffered by Temporal — if a signal arrives before `wait_signal` is called,
+it's delivered immediately on the next activation.
+
+### ctx:sleep(seconds)
+
+Deterministic sleep using a Temporal timer. On replay, returns immediately if the timer
+already fired in history.
+
+```lua
+ctx:sleep(60)  -- wait 1 minute (Temporal timer, not wall clock)
+```
+
+### ctx:side_effect(fn)
+
+Run a non-deterministic function exactly once. On replay, the recorded result is returned
+instead of re-executing the function. Use for things like generating UUIDs or reading
+wall-clock time inside a workflow.
+
+```lua
+local id = ctx:side_effect(function()
+  return crypto.random(16)
+end)
+
+local now = ctx:side_effect(function()
+  return os.date("!%Y-%m-%dT%H:%M:%SZ")
+end)
+```
+
+### ctx:workflow_info()
+
+Returns metadata about the current workflow execution.
+
+```lua
+local info = ctx:workflow_info()
+-- {
+--   workflow_id = "promote-v0.2.0-to-prod",
+--   run_id = "abc123-def456",
+--   namespace = "command-center",
+--   task_queue = "promotions",
+--   attempt = 1,
+--   workflow_type = "PromotionWorkflow",
+-- }
+```
+
+---
 
 ## Implementation (Rust side)
 
@@ -126,11 +349,14 @@ temporal.worker(opts)
         |       -> channel -> completer (tokio task)
         |         -> complete_activity_task()
         |
-        +-- Workflow polling loop (TODO — next iteration)
+        +-- Workflow polling loop (tokio task)
         |     poll_workflow_activation()
-        |       -> dispatch activation jobs to Lua coroutine
-        |       -> ctx userdata bridges deterministic primitives
-        |       -> complete_workflow_activation()
+        |       -> channel -> Lua dispatcher (spawn_local)
+        |         -> per-workflow coroutine (created on StartWorkflow job)
+        |         -> resume coroutine with activation jobs
+        |         -> ctx methods yield commands back to Rust
+        |       -> channel -> completer (tokio task)
+        |         -> complete_workflow_activation()
         |
         +-- Handle returned to Lua
               handle:shutdown()   -- initiate graceful shutdown
@@ -154,25 +380,109 @@ Activities are non-deterministic — they're just functions. The Rust bridge:
 The channel-based architecture keeps the poller and completer on regular tokio tasks (Send)
 while the Lua dispatch stays on `spawn_local` (Lua is !Send).
 
-### Workflows (next iteration)
+### Workflows (to implement)
 
-Workflows require a deterministic replay bridge. The Rust side will:
+The workflow bridge is more complex than activities because of Temporal's deterministic replay
+model. Here's the detailed design:
 
-1. Poll `poll_workflow_activation()` for activation jobs
-2. Provide a `ctx` userdata to the Lua workflow function with deterministic primitives:
-   - `ctx:execute_activity()` → schedules a command, blocks until result
-   - `ctx:wait_signal()` → blocks until signal received or timeout
-   - `ctx:sleep()` → Temporal timer (not wall clock)
-   - `ctx:side_effect()` → run once, replay from history
-3. On replay, `ctx` methods short-circuit using history instead of re-executing
-4. Call `complete_workflow_activation()` with the resulting commands
+#### Core concept: activations, not direct execution
 
-This follows the same pattern as the Go and Python SDKs — the workflow function runs "as if"
-executing fresh, but the `ctx` methods are backed by the Temporal replay mechanism.
+Temporal doesn't call a workflow function once. It sends **activations** — batches of **jobs**
+that happened since the last activation. Each activation is a list of events:
 
-The Lua coroutine model maps naturally to this: each workflow activation suspends the coroutine
-at `ctx:execute_activity()` / `ctx:wait_signal()`, and resumes when the next activation arrives
-with the result.
+```
+Activation 1: [StartWorkflow { input }]
+Activation 2: [ResolveActivity { result }]
+Activation 3: [SignalWorkflow { signal_name, payload }]
+Activation 4: [ResolveActivity { result }, FireTimer {}]
+```
+
+The worker must:
+1. Replay the workflow function from the beginning using cached results for completed commands
+2. Execute any new logic that the replay reaches
+3. Return a list of **commands** (ScheduleActivity, StartTimer, etc.) for Temporal to execute
+
+#### Per-workflow coroutine model
+
+Each workflow execution gets a Lua coroutine. The coroutine runs the user's workflow function
+and **yields** whenever it hits a `ctx` method that needs to wait for an external result:
+
+```
+Lua coroutine                          Rust dispatcher
+     |                                      |
+     |  ctx:execute_activity("foo", input)  |
+     |  -------- yield(ScheduleActivity) -->|
+     |                                      | sends command to Temporal
+     |                                      | ... time passes ...
+     |                                      | activation arrives: ResolveActivity
+     |  <-- resume(activity_result) --------|
+     |                                      |
+     |  ctx:wait_signal("approve")          |
+     |  -------- yield(WaitSignal) -------->|
+     |                                      | ... time passes ...
+     |                                      | activation arrives: SignalWorkflow
+     |  <-- resume(signal_payload) ---------|
+     |                                      |
+     |  return { status = "done" }          |
+     |  -------- coroutine finishes ------->|
+     |                                      | sends CompleteWorkflow command
+```
+
+#### Replay handling
+
+On replay (e.g. after worker restart), the Core SDK sends an activation containing ALL
+historical events. The Rust dispatcher:
+
+1. Creates a fresh coroutine for the workflow function
+2. Maintains a **command index** (which `ctx` call we're on)
+3. For each `ctx` yield:
+   - If a matching result exists in the activation's resolved events → resume immediately
+     with the cached result (replay)
+   - If no result exists → this is new work, send the command to Temporal and suspend
+
+This is exactly how the Python SDK's `_WorkflowInstanceImpl` works — it maintains a
+`_next_seq` counter and matches commands to results by sequence number.
+
+#### Workflow state management
+
+```rust
+struct WorkflowInstance {
+    run_id: String,
+    coroutine: RegistryKey,        // Lua coroutine stored in registry
+    pending_commands: Vec<Command>, // commands to send after activation
+    resolved_results: VecDeque<ResolvedResult>, // results from activation
+    signals: HashMap<String, VecDeque<Payload>>, // buffered signals by name
+}
+```
+
+The dispatcher maintains a `HashMap<String, WorkflowInstance>` keyed by run_id.
+
+#### ctx method implementations
+
+Each `ctx` method follows the same pattern:
+
+1. Check if there's a resolved result available (replay) → return immediately
+2. Otherwise, push a command and yield the coroutine
+
+```
+ctx:execute_activity(name, input, opts)
+  → Command::ScheduleActivity { activity_type, input, timeouts, retry }
+  → yields, resumed with activity result or failure
+
+ctx:wait_signal(name, opts)
+  → check signals buffer first (signal may have arrived already)
+  → if buffered: return immediately
+  → if not: yield, resumed when SignalWorkflow job arrives
+  → if timeout: also push Command::StartTimer, return nil on timer fire
+
+ctx:sleep(seconds)
+  → Command::StartTimer { duration }
+  → yields, resumed when FireTimer job arrives
+
+ctx:side_effect(fn)
+  → on first execution: call fn(), record result, push Command::RecordMarker
+  → on replay: read result from marker in history
+```
 
 ## Binary size impact (measured)
 
@@ -193,8 +503,40 @@ Total estimated binary with full worker support: **~10-11MB**.
 - **Activities**: Fully implemented. Lua functions are registered, polled, dispatched, and
   completed via the Core SDK. Error handling returns `Failure` objects to Temporal.
 - **Workflows**: Registered but not yet dispatched. The `ctx` coroutine bridge is the next
-  piece of work. Activities can be used standalone (many Temporal use cases are activity-only).
+  piece of work.
 - **Shutdown**: Graceful via `handle:shutdown()`. Worker drains in-flight tasks.
+
+## Implementation plan
+
+```
+Phase 1: Workflow polling + coroutine lifecycle         [next]
+  - poll_workflow_activation() loop (same pattern as activity loop)
+  - Create Lua coroutine on StartWorkflow job
+  - Store WorkflowInstance per run_id
+  - Complete workflow on coroutine return
+  - Fail workflow on coroutine error
+
+Phase 2: ctx:execute_activity                           [next]
+  - ctx userdata with __index metamethod
+  - yield ScheduleActivity command from Lua
+  - Resume coroutine on ResolveActivity job
+  - Replay: match by sequence number, resume with cached result
+
+Phase 3: ctx:wait_signal + ctx:sleep                    [next]
+  - Signal buffering (signals can arrive before wait_signal is called)
+  - Timer commands for sleep and signal timeouts
+  - Resume on SignalWorkflow / FireTimer jobs
+
+Phase 4: ctx:side_effect + ctx:workflow_info            [next]
+  - RecordMarker for side_effect persistence
+  - workflow_info from activation metadata
+
+Phase 5: Error handling + edge cases
+  - Activity failure propagation (retries exhausted)
+  - Workflow cancellation (CancelWorkflow job → error in coroutine)
+  - Continue-as-new support
+  - Panic handling (non-determinism detected)
+```
 
 ## Alternatives considered
 
