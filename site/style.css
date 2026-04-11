@@ -81,50 +81,58 @@ header {
 nav {
   max-width: 900px;
   margin: 0 auto;
-  padding: 0.5rem 1.5rem;
+  padding: 0 1.5rem;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 0.75rem;
+  height: 2.75rem;
 }
 
-.logo {
-  font-size: 0.95rem;
-  font-weight: 800;
+nav a.logo {
   color: var(--accent);
   text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 800;
   letter-spacing: -0.02em;
+  line-height: 1;
+  margin-right: auto;
 }
 
 nav ul {
   list-style: none;
   display: flex;
-  gap: 0.25rem;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+}
+
+nav li {
+  display: flex;
   align-items: center;
 }
 
-nav a {
+nav ul a {
   color: var(--text-secondary);
-  text-decoration: none;
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   font-weight: 500;
-  padding: 0.35rem 0.65rem;
+  padding: 0.25rem 0.55rem;
   border-radius: 6px;
+  text-decoration: none;
   transition: color 0.15s, background-color 0.15s;
 }
 
-nav a:hover {
+nav ul a:hover {
   color: var(--text);
   background-color: var(--bg-secondary);
 }
 
-/* Active page — subtle background pill instead of underline */
-body.page-home      nav a[href="index.html"],
-body.page-comparison nav a[href="comparison.html"],
-body.page-agents    nav a[href="agent-guides.html"],
-body.page-modules   nav a[href="modules.html"],
-body.page-changelog nav a[href="changelog.html"] {
+/* Active page — subtle background pill instead of underline.
+   :not(.logo) prevents the logo from getting the active pill on the home page. */
+body.page-home      nav a[href="/index.html"]:not(.logo),
+body.page-comparison nav a[href="/comparison.html"],
+body.page-agents    nav a[href="/agent-guides.html"],
+body.page-modules   nav a[href="/modules.html"],
+body.page-changelog nav a[href="/changelog.html"] {
   color: var(--accent);
   font-weight: 600;
   background-color: color-mix(in srgb, var(--accent) 10%, transparent);
