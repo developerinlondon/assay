@@ -28,7 +28,10 @@ local function serve_file(path)
   return {
     status = 200,
     body = content,
-    headers = { ["Content-Type"] = content_types[ext] or "application/octet-stream" },
+    headers = {
+      ["Content-Type"] = content_types[ext] or "application/octet-stream",
+      ["Cache-Control"] = "no-cache",
+    },
   }
 end
 
