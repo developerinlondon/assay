@@ -2,6 +2,18 @@
 
 All notable changes to Assay are documented here.
 
+## [0.9.1] - 2026-04-11
+
+### Added
+
+- **`assay.gitlab`** — GitLab REST API v4 client. Full coverage of projects,
+  repository files, atomic multi-file commits, branches, tags, merge requests,
+  pipelines, jobs, releases, issues, groups, container registry, webhooks,
+  environments, deploy tokens, and user endpoints. Supports both private access
+  token and OAuth2 bearer authentication. Enables GitOps automation scripts to
+  read/write repository content, trigger pipelines, manage merge requests, and
+  interact with container registries without external CLI dependencies.
+
 ## [0.9.0] - 2026-04-11
 
 ### Added
