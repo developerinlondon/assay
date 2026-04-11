@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.8.4"
+version = "0.8.5"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -89,6 +89,9 @@ tokio-tungstenite = { version = "0.28.0", features = ["connect", "rustls-tls-web
 
 # Template engine (Jinja2-compatible)
 minijinja = "2.15.1"
+
+# Markdown to HTML conversion
+pulldown-cmark = "0.13"
 
 # Temporal workflow engine (gRPC client + worker protocol)
 temporalio-client = { version = "0.2.0", optional = true }

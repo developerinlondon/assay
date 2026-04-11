@@ -6,6 +6,7 @@ mod db;
 mod disk;
 mod http;
 mod json;
+mod markdown;
 mod os_info;
 mod process;
 mod serialization;
@@ -34,6 +35,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     db::register_db(lua)?;
     ws::register_ws(lua)?;
     template::register_template(lua)?;
+    markdown::register_markdown(lua)?;
     shell::register_shell(lua)?;
     process::register_process(lua)?;
     disk::register_disk(lua)?;
