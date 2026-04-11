@@ -1,26 +1,19 @@
 -- Site build script for assay.rs — assay builds its own docs.
 --
--- Source layout:
---   site-partials/pages/*.html  — page templates with __PLACEHOLDER__ markers
---   site-partials/header.html   — nav partial
---   site-partials/footer.html   — footer + theme script partial
---   site-static/*               — static assets (CSS, _headers, _redirects, llms.txt)
---   docs/modules/*.md           — module documentation (single source of truth)
---   CHANGELOG.md                — release history
+-- Source (all under site/, tracked in git):
+--   site/pages/*.html          — page templates with __PLACEHOLDER__ markers
+--   site/partials/             — header.html, footer.html
+--   site/static/*              — CSS, _headers, _redirects, llms.txt
+--   docs/modules/*.md          — module documentation (single source of truth)
+--   CHANGELOG.md               — release history
 --
 -- Output (gitignored):
---   site/                       — everything here is generated
+--   build/site/                — ready to deploy to Cloudflare Pages
 --
--- Placeholders: __HEADER__, __FOOTER__, __GIT_SHA__, __MODULE_COUNT__, __CHANGELOG_CONTENT__
---
--- Usage: assay site-partials/build.lua
+-- Usage: assay site/build.lua
 
-local site_dir = "site"
-local partials_dir = "site-partials"
-local pages_dir = partials_dir .. "/pages"
-local static_dir = "site-static"
-local docs_dir = "docs/modules"
-local modules_out = site_dir .. "/modules"
+local out = "build/site"
+local modules_out = out .. "/modules"
 
 -- =====================================================================
 -- Helpers
@@ -55,14 +48,10 @@ local function count_builtins()
   return count
 end
 
-local function count_stdlib()
-  return #fs.glob("stdlib/**/*.lua")
-end
-
 -- =====================================================================
 -- Phase 0: Compute variables
 -- =====================================================================
-local module_count = count_builtins() + count_stdlib()
+local module_count = count_builtins() + #fs.glob("stdlib/**/*.lua")
 
 local git_sha = "local-dev"
 local ok, result = pcall(function()
@@ -76,11 +65,9 @@ if ok then git_sha = result end
 
 log.info("Module count: " .. module_count .. " | Git: " .. git_sha)
 
--- Load partials
-local header_html = fs.read(partials_dir .. "/header.html")
-local footer_html = fs.read(partials_dir .. "/footer.html")
+local header_html = fs.read("site/partials/header.html")
+local footer_html = fs.read("site/partials/footer.html")
 
--- Build changelog HTML from CHANGELOG.md
 local changelog_html = ""
 local cok, cmd = pcall(fs.read, "CHANGELOG.md")
 if cok then
@@ -99,31 +86,27 @@ local function apply_placeholders(html)
 end
 
 -- =====================================================================
--- Phase 1: Copy static assets to site/
+-- Phase 1: Copy static assets
 -- =====================================================================
-local statics = fs.glob(static_dir .. "/*")
+local statics = fs.glob("site/static/*")
 for _, f in ipairs(statics) do
-  local name = f:match("([^/]+)$")
-  fs.write(site_dir .. "/" .. name, fs.read(f))
+  fs.write(out .. "/" .. f:match("([^/]+)$"), fs.read(f))
 end
 log.info("Copied " .. #statics .. " static assets")
 
 -- =====================================================================
--- Phase 2: Build page templates → site/*.html
+-- Phase 2: Build page templates
 -- =====================================================================
-local pages = fs.glob(pages_dir .. "/*.html")
+local pages = fs.glob("site/pages/*.html")
 for _, f in ipairs(pages) do
-  local name = f:match("([^/]+)$")
-  fs.write(site_dir .. "/" .. name, apply_placeholders(fs.read(f)))
+  fs.write(out .. "/" .. f:match("([^/]+)$"), apply_placeholders(fs.read(f)))
 end
 log.info("Built " .. #pages .. " pages")
 
 -- =====================================================================
--- Phase 3: Generate per-module HTML pages from docs/modules/*.md
+-- Phase 3: Generate per-module HTML pages
 -- =====================================================================
-local md_files = fs.glob(docs_dir .. "/*.md")
-
--- Ensure modules output dir exists
+local md_files = fs.glob("docs/modules/*.md")
 fs.write(modules_out .. "/.gitkeep", "")
 
 local module_template = [[<!DOCTYPE html>
@@ -190,11 +173,11 @@ local function modules_in_category(cat_pattern)
   return table.concat(items, "\n")
 end
 
-local index_sections = {}
+local sections = {}
 for _, cat in ipairs(categories) do
   local items = modules_in_category(cat.pattern)
   if #items > 0 then
-    index_sections[#index_sections + 1] = '    <h2>' .. cat.name .. '</h2>\n    <ul>\n' .. items .. '\n    </ul>'
+    sections[#sections + 1] = '    <h2>' .. cat.name .. '</h2>\n    <ul>\n' .. items .. '\n    </ul>'
   end
 end
 
@@ -219,7 +202,7 @@ __HEADER__
     <pre><code>assay modules                    # list all modules
 assay context "grafana health"   # get detailed docs for LLM</code></pre>
 
-]] .. table.concat(index_sections, "\n\n") .. [[
+]] .. table.concat(sections, "\n\n") .. [[
 
   </main>
 
@@ -227,7 +210,7 @@ __FOOTER__
 </body>
 </html>]]
 
-fs.write(site_dir .. "/modules.html", apply_placeholders(index_html))
+fs.write(out .. "/modules.html", apply_placeholders(index_html))
 
 -- =====================================================================
 -- Phase 5: Generate llms-full.txt
@@ -263,6 +246,6 @@ llms[#llms + 1] = [[## Optional
 - [Changelog](https://github.com/developerinlondon/assay/releases): Release history
 ]]
 
-fs.write(site_dir .. "/llms-full.txt", table.concat(llms))
+fs.write(out .. "/llms-full.txt", table.concat(llms))
 
-log.info("Done. Site rendered at " .. site_dir .. "/")
+log.info("Done. Output at " .. out .. "/")

@@ -1,17 +1,10 @@
 # Cloudflare Pages Deploy Workflow
 #
-# PREREQUISITES (must be set up manually before this workflow runs):
-# 1. Cloudflare account with the assay.rs domain added as a Zone
-# 2. Pages project 'assay-rs' already created (done via wrangler CLI)
-# 3. GitHub repository secrets configured:
-#    - CLOUDFLARE_API_TOKEN: API token with Cloudflare Pages:Write permission
-#    - CLOUDFLARE_ACCOUNT_ID: 042f601c488422312a3cc09e3c4bc6ca
-# 4. Custom domain: Pages > assay-rs > Custom domains > Add assay.rs
+# Build pipeline: cargo build → assay site/build.lua → wrangler deploys build/site/
 #
-# Project URL: https://assay-rs.pages.dev
-# Deploy command: wrangler pages deploy site/ --project-name=assay-rs
-#
-# Build pipeline: cargo build → assay builds its own docs → wrangler deploys
+# PREREQUISITES:
+# 1. Cloudflare Pages project 'assay-rs' with custom domain assay.rs
+# 2. GitHub secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
 
 name: Deploy to Cloudflare Pages
 
@@ -21,7 +14,6 @@ on:
       - main
     paths:
       - "site/**"
-      - "site-partials/**"
       - "docs/modules/**"
       - "src/lua/builtins/mod.rs"
       - "stdlib/**"
@@ -61,11 +53,11 @@ jobs:
         run: cargo build --release
 
       - name: Build site (assay builds its own docs)
-        run: ./target/release/assay site-partials/build.lua
+        run: ./target/release/assay site/build.lua
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy site/ --project-name=assay-rs
+          command: pages deploy build/site/ --project-name=assay-rs

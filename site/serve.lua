@@ -1,9 +1,9 @@
 -- Serve the assay.rs site locally using assay's http.serve() builtin.
--- Usage: assay site-partials/serve.lua [port]
+-- Usage: assay site/serve.lua [port]
 -- Then open http://localhost:3000
 
 local port = tonumber(arg and arg[1]) or 3000
-local site_dir = "site"
+local site_dir = "build/site"
 
 local content_types = {
   html = "text/html; charset=utf-8",
@@ -20,7 +20,6 @@ local function serve_file(path)
   local file_path = site_dir .. path
   local ok, content = pcall(fs.read, file_path)
   if not ok then
-    -- Try with .html extension
     ok, content = pcall(fs.read, file_path .. ".html")
   end
   if not ok then return { status = 404, body = "Not found: " .. path } end
