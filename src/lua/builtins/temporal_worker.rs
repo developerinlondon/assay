@@ -969,10 +969,8 @@ fn process_coroutine_result(
                                     if let Ok(errors) =
                                         rp.get::<mlua::Table>("non_retryable_errors")
                                     {
-                                        for entry in errors.sequence_values::<String>() {
-                                            if let Ok(s) = entry {
-                                                policy.non_retryable_error_types.push(s);
-                                            }
+                                        for s in errors.sequence_values::<String>().flatten() {
+                                            policy.non_retryable_error_types.push(s);
                                         }
                                     }
                                     retry = Some(policy);
