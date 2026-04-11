@@ -115,6 +115,14 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     })?;
     fs_table.set("read", read_fn)?;
 
+    // fs.read_bytes(path) → string (binary-safe, Lua strings can hold any bytes)
+    let read_bytes_fn = lua.create_function(|lua, path: String| {
+        let bytes = std::fs::read(&path)
+            .map_err(|e| mlua::Error::runtime(format!("fs.read_bytes: failed to read {path:?}: {e}")))?;
+        lua.create_string(&bytes)
+    })?;
+    fs_table.set("read_bytes", read_bytes_fn)?;
+
     let write_fn = lua.create_function(|_, (path, content): (String, String)| {
         let p = std::path::Path::new(&path);
         if let Some(parent) = p.parent() {
@@ -128,6 +136,21 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
             .map_err(|e| mlua::Error::runtime(format!("fs.write: failed to write {path:?}: {e}")))
     })?;
     fs_table.set("write", write_fn)?;
+
+    // fs.write_bytes(path, data) → write binary data (Lua string with arbitrary bytes)
+    let write_bytes_fn = lua.create_function(|_, (path, data): (String, mlua::String)| {
+        let p = std::path::Path::new(&path);
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                mlua::Error::runtime(format!(
+                    "fs.write_bytes: failed to create directories for {path:?}: {e}"
+                ))
+            })?;
+        }
+        std::fs::write(&path, data.as_bytes())
+            .map_err(|e| mlua::Error::runtime(format!("fs.write_bytes: failed to write {path:?}: {e}")))
+    })?;
+    fs_table.set("write_bytes", write_bytes_fn)?;
 
     let remove_fn = lua.create_function(|_, path: String| {
         let p = std::path::Path::new(&path);

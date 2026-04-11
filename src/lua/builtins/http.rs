@@ -441,15 +441,42 @@ async fn handle_request(
     };
     let body_str = String::from_utf8_lossy(&body_bytes).to_string();
 
+    // Route matching: try exact match first, then wildcard prefixes.
+    // Wildcard routes end with "/*" and match any path with that prefix.
+    // More specific wildcards match first: "/api/*" beats "/*".
     let key = (method.clone(), path.clone());
-    let handler = match routes.get(&key) {
-        Some(f) => f,
-        None => {
-            return Ok(Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .header("content-type", "text/plain")
-                .body(Either::Left(Full::new(Bytes::from("not found"))))
-                .unwrap());
+    let handler = if let Some(f) = routes.get(&key) {
+        f
+    } else {
+        // Try wildcard routes: "/a/b/c" → try "/a/b/*", "/a/*", "/*"
+        let mut matched = None;
+        let mut search = path.as_str();
+        while let Some(pos) = search.rfind('/') {
+            let prefix = &search[..pos];
+            let wildcard_key = (method.clone(), format!("{prefix}/*"));
+            if let Some(f) = routes.get(&wildcard_key) {
+                matched = Some(f);
+                break;
+            }
+            // Try the root wildcard
+            if pos == 0 {
+                let root_key = (method.clone(), "/*".to_string());
+                if let Some(f) = routes.get(&root_key) {
+                    matched = Some(f);
+                }
+                break;
+            }
+            search = prefix;
+        }
+        match matched {
+            Some(f) => f,
+            None => {
+                return Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .header("content-type", "text/plain")
+                    .body(Either::Left(Full::new(Bytes::from("not found"))))
+                    .unwrap());
+            }
         }
     };
 
@@ -649,11 +676,11 @@ fn lua_response_to_http(
             builder = builder.header("content-type", "application/json");
         }
         Bytes::from(serialized)
-    } else if let Ok(Some(body_str)) = resp_table.get::<Option<String>>("body") {
+    } else if let Ok(Some(body_lua)) = resp_table.get::<Option<mlua::String>>("body") {
         if !has_content_type {
             builder = builder.header("content-type", "text/plain");
         }
-        Bytes::from(body_str)
+        Bytes::from(body_lua.as_bytes().to_vec())
     } else {
         if !has_content_type {
             builder = builder.header("content-type", "text/plain");

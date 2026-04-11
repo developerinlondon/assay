@@ -1,15 +1,10 @@
 # Cloudflare Pages Deploy Workflow
 #
-# PREREQUISITES (must be set up manually before this workflow runs):
-# 1. Cloudflare account with the assay.rs domain added as a Zone
-# 2. Pages project 'assay-rs' already created (done via wrangler CLI)
-# 3. GitHub repository secrets configured:
-#    - CLOUDFLARE_API_TOKEN: API token with Cloudflare Pages:Write permission
-#    - CLOUDFLARE_ACCOUNT_ID: 042f601c488422312a3cc09e3c4bc6ca
-# 4. Custom domain: Pages > assay-rs > Custom domains > Add assay.rs
+# Build pipeline: cargo build → assay site/build.lua → wrangler deploys build/site/
 #
-# Project URL: https://assay-rs.pages.dev
-# Deploy command: wrangler pages deploy site/ --project-name=assay-rs
+# PREREQUISITES:
+# 1. Cloudflare Pages project 'assay-rs' with custom domain assay.rs
+# 2. GitHub secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
 
 name: Deploy to Cloudflare Pages
 
@@ -19,7 +14,9 @@ on:
       - main
     paths:
       - "site/**"
-      - "site-partials/**"
+      - "docs/modules/**"
+      - "src/lua/builtins/mod.rs"
+      - "stdlib/**"
       - "CHANGELOG.md"
       - "wrangler.toml"
 
@@ -39,21 +36,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build changelog from CHANGELOG.md
-        run: |
-          npx marked -i CHANGELOG.md -o /tmp/changelog-body.html
-          sed -i '1,/<\/p>/{/<h1>/d;/<\/h1>/d;/^All notable/d;/<p>All notable/,/<\/p>/d}' /tmp/changelog-body.html
-          sed -i '/__CHANGELOG_CONTENT__/{
-            r /tmp/changelog-body.html
-            d
-          }' site/changelog.html
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Render site (inline partials, stamp version)
-        run: ./site-partials/build.sh
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-deploy-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-deploy-
+
+      - name: Build assay
+        run: cargo build --release
+
+      - name: Build site (assay builds its own docs)
+        run: ./target/release/assay site/build.lua
+
+      - name: Index site for search
+        run: npx --yes pagefind --site build/site
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy site/ --project-name=assay-rs
+          command: pages deploy build/site/ --project-name=assay-rs

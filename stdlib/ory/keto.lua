@@ -1,9 +1,11 @@
 --- @module assay.ory.keto
---- @description Ory Keto authorization — relation-tuple CRUD, permission checks, role membership queries. Implements relationship-based access control (ReBAC, Google Zanzibar-style).
---- @keywords keto, ory, authorization, authz, rbac, rebac, permissions, roles, relation-tuples, zanzibar, access-control, members, groups
+--- @description Ory Keto authorization — relation-tuple CRUD, permission checks (including OPL permits), role membership queries. Implements relationship-based access control (ReBAC, Google Zanzibar-style).
+--- @keywords keto, ory, authorization, authz, rbac, rebac, permissions, roles, relation-tuples, zanzibar, access-control, members, groups, opl, permits
 --- @quickref keto.client(read_url, opts?) -> client | Create a Keto client (read endpoint)
 --- @quickref c:list(opts) -> {relation_tuples, next_page_token} | List relation tuples matching filters
---- @quickref c:check(namespace, object, relation, subject) -> bool | Check if a subject has a relation to an object
+--- @quickref c:check(ns, obj, rel, subject) -> bool | Check if a subject has a relation (or OPL permit) on an object
+--- @quickref c:check({namespace, object, relation, subject_id}) -> bool | Check (table form)
+--- @quickref c:batch_check(tuples) -> [bool] | Check multiple tuples in one call
 --- @quickref c:expand(namespace, object, relation, depth?) -> tree | Expand a relation to see all members
 --- @quickref c:get_user_roles(user_id, namespace?) -> [{object, relation}] | Get all role memberships for a user
 --- @quickref c:create(tuple) -> nil | Create a relation tuple (requires write_url)
@@ -24,11 +26,17 @@ function M.client(read_url, opts)
     write_url = opts.write_url and opts.write_url:gsub("/+$", "") or nil,
   }
 
+  local function urlencode(s)
+    return (tostring(s):gsub("([^%w%-%.%_%~])", function(ch)
+      return string.format("%%%02X", string.byte(ch))
+    end))
+  end
+
   local function build_query(params)
     local parts = {}
     for k, v in pairs(params) do
       if v ~= nil and v ~= "" then
-        parts[#parts + 1] = k .. "=" .. v
+        parts[#parts + 1] = urlencode(k) .. "=" .. urlencode(v)
       end
     end
     if #parts == 0 then return "" end
@@ -49,27 +57,57 @@ function M.client(read_url, opts)
     end
   end
 
-  -- List relation tuples. Filters: namespace, object, relation, subject_id, subject_set_namespace, subject_set_object, subject_set_relation, page_size, page_token
+  -- Build check query params from either positional or table-style args.
+  local function build_check_params(namespace_or_table, object, relation, subject)
+    local params
+    if type(namespace_or_table) == "table" then
+      local t = namespace_or_table
+      params = {
+        namespace = t.namespace,
+        object = t.object,
+        relation = t.relation,
+      }
+      local subj = t.subject_id or t.subject
+      if type(subj) == "string" then
+        params.subject_id = subj
+      elseif type(subj) == "table" then
+        params.subject_set_namespace = subj.namespace
+        params.subject_set_object = subj.object
+        params.subject_set_relation = subj.relation
+      end
+    else
+      params = {
+        namespace = namespace_or_table,
+        object = object,
+        relation = relation,
+      }
+      if type(subject) == "string" then
+        params.subject_id = subject
+      elseif type(subject) == "table" then
+        params.subject_set_namespace = subject.namespace
+        params.subject_set_object = subject.object
+        params.subject_set_relation = subject.relation
+      end
+    end
+    return params
+  end
+
+  -- List relation tuples.
+  -- Filters: namespace, object, relation, subject_id, subject_set_namespace,
+  -- subject_set_object, subject_set_relation, page_size, page_token
   function c:list(filters)
     return read_get(self, "/relation-tuples" .. build_query(filters or {}))
   end
 
   -- Check if a subject has a given relation to an object.
-  -- subject can be a string ("user:abc") or a table ({ namespace="...", object="...", relation="..." })
-  -- Returns true if allowed, false otherwise.
-  function c:check(namespace, object, relation, subject)
-    local params = {
-      namespace = namespace,
-      object = object,
-      relation = relation,
-    }
-    if type(subject) == "string" then
-      params.subject_id = subject
-    elseif type(subject) == "table" then
-      params.subject_set_namespace = subject.namespace
-      params.subject_set_object = subject.object
-      params.subject_set_relation = subject.relation
-    end
+  -- Two call styles:
+  --   c:check(namespace, object, relation, subject)             -- positional
+  --   c:check({ namespace=..., object=..., relation=..., subject_id=... })  -- table
+  -- subject (positional) can be a string ("user:abc") or a subject_set table.
+  -- Works with OPL permits: if the relation names a permit, Keto evaluates
+  -- the rewrite rules and returns true/false.
+  function c:check(namespace_or_table, object, relation, subject)
+    local params = build_check_params(namespace_or_table, object, relation, subject)
     local resp = http.get(self.read_url .. "/relation-tuples/check" .. build_query(params))
     if resp.status == 200 then
       local data = json.parse(resp.body)
@@ -80,23 +118,42 @@ function M.client(read_url, opts)
     error("keto: check failed HTTP " .. resp.status .. ": " .. resp.body)
   end
 
+  -- Batch check: check multiple tuples in one call.
+  -- Each entry can be positional-style {namespace, object, relation, subject_id}
+  -- or table-style (same as single check).
+  -- Returns a list of booleans in the same order.
+  function c:batch_check(tuples)
+    local results = {}
+    for _, t in ipairs(tuples) do
+      local params = build_check_params(t)
+      local resp = http.get(self.read_url .. "/relation-tuples/check" .. build_query(params))
+      if resp.status == 200 then
+        local data = json.parse(resp.body)
+        results[#results + 1] = data.allowed == true
+      elseif resp.status == 403 then
+        results[#results + 1] = false
+      else
+        error("keto: batch_check failed HTTP " .. resp.status .. ": " .. resp.body)
+      end
+    end
+    return results
+  end
+
   -- Expand a relation to see all direct and transitive members.
   function c:expand(namespace, object, relation, depth)
     local params = {
       namespace = namespace,
       object = object,
       relation = relation,
-      ["max-depth"] = depth or 3,
+      ["max-depth"] = tostring(depth or 3),
     }
     return read_get(self, "/relation-tuples/expand" .. build_query(params))
   end
 
   -- Helper: get all role memberships for a user.
-  -- By default queries the "Role" namespace, the standard convention for
-  -- modelling RBAC-style memberships in Keto. Pass a different namespace
-  -- if your application uses one.
-  -- Returns a list of { object, relation } entries, e.g.
-  --   { {object="app:role-a", relation="members"}, {object="app:role-b", relation="members"} }
+  -- By default queries the "Role" namespace. Pass a different namespace
+  -- if your application uses a native OPL namespace.
+  -- Returns a list of { object, relation } entries.
   function c:get_user_roles(user_id, namespace)
     local subject = user_id
     if not user_id:match("^user:") then
@@ -126,7 +183,7 @@ function M.client(read_url, opts)
   end
 
   -- Create a relation tuple (requires write_url).
-  -- tuple: { namespace, object, relation, subject_id (or subject_set) }
+  -- tuple: { namespace, object, relation, subject_id } or with subject_set
   function c:create(tuple)
     require_write(self)
     local resp = http.put(self.write_url .. "/admin/relation-tuples", tuple)
@@ -136,14 +193,21 @@ function M.client(read_url, opts)
   end
 
   -- Delete a specific relation tuple (requires write_url).
+  -- Supports both subject_id and subject_set tuples.
   function c:delete(tuple)
     require_write(self)
     local params = {
       namespace = tuple.namespace,
       object = tuple.object,
       relation = tuple.relation,
-      subject_id = tuple.subject_id,
     }
+    if tuple.subject_id then
+      params.subject_id = tuple.subject_id
+    elseif tuple.subject_set then
+      params.subject_set_namespace = tuple.subject_set.namespace
+      params.subject_set_object = tuple.subject_set.object
+      params.subject_set_relation = tuple.subject_set.relation
+    end
     local resp = http.delete(self.write_url .. "/admin/relation-tuples" .. build_query(params))
     if resp.status ~= 204 and resp.status ~= 200 then
       error("keto: delete tuple HTTP " .. resp.status .. ": " .. resp.body)

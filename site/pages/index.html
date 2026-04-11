@@ -4,18 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Assay — Infrastructure Testing &amp; Automation Runtime</title>
-  <meta name="description" content="Assay is a 9 MB Lua runtime for infrastructure testing, Kubernetes automation, HTTP servers, and AI agent integration. 51 modules. Replaces kubectl, Python, Node.js, curl, jq.">
+  <meta name="description" content="Assay is a 9 MB Lua runtime for infrastructure testing, Kubernetes automation, HTTP servers, and AI agent integration. __MODULE_COUNT__ modules. Replaces kubectl, Python, Node.js, curl, jq.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="page-home">
-__HEADER__
+  __HEADER__
+
 
   <main>
     <!-- Hero -->
     <div style="padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem;">
       <div style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem;">Replaces your entire infrastructure scripting toolchain.</div>
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-        <span class="text-muted">One 9 MB binary. 51 modules. Linux, macOS, Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.</span>
+        <span class="text-muted">One 9 MB binary. __MODULE_COUNT__ modules. Linux, macOS, Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.</span>
         <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
           <a href="modules.html" style="display: inline-block; background-color: var(--accent); color: #fff; padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Modules</a>
           <a href="#install" style="display: inline-block; color: var(--accent); border: 1px solid var(--accent); padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Install</a>
@@ -279,24 +280,6 @@ cargo install assay-lua
 
   </main>
 
-__FOOTER__
-
-  <script>
-    function toggleTheme() {
-      const html = document.documentElement;
-      const current = html.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : (current === 'light' ? 'dark' :
-        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark'));
-      html.setAttribute('data-theme', next);
-      localStorage.setItem('theme', next);
-      document.querySelector('.theme-toggle').textContent = next === 'dark' ? '\u2600' : '\u263D';
-    }
-    // Restore saved theme
-    const saved = localStorage.getItem('theme');
-    if (saved) {
-      document.documentElement.setAttribute('data-theme', saved);
-      document.querySelector('.theme-toggle').textContent = saved === 'dark' ? '\u2600' : '\u263D';
-    }
-  </script>
+  __FOOTER__
 </body>
 </html>

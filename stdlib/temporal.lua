@@ -1,6 +1,32 @@
 --- @module assay.temporal
 --- @description Temporal workflow orchestration. Workflows, task queues, schedules, signals.
 --- @keywords temporal, workflows, task-queues, schedules, orchestration, workflow, task-queue, schedule, signal, history, search, namespace, execution
+---
+--- ## Two APIs
+---
+--- **1. HTTP REST client (this module)** — `require("assay.temporal")` — read-only access
+--- to Temporal's HTTP API. List, query, signal, and cancel workflows. Does NOT start
+--- workflows or execute them. Useful for dashboards and monitoring.
+---
+--- **2. Native gRPC client (global)** — `temporal.connect(opts)` — requires the `temporal`
+--- feature flag at compile time. Provides `start_workflow`, `signal_workflow`,
+--- `query_workflow`, `describe_workflow`, `get_result`, `cancel_workflow`,
+--- `terminate_workflow`. This is a **client only** — it can start and interact with
+--- workflows, but cannot execute them.
+---
+--- ## Important: no worker runtime (yet)
+---
+--- Neither API includes a Temporal **worker**. A worker is a process that polls a task
+--- queue and executes workflow/activity code. Without a worker registered on the task
+--- queue, `start_workflow` puts the workflow in the queue but nothing processes it.
+---
+--- To execute workflows today, you need an external worker in Go, TypeScript, Python,
+--- or another language with a Temporal SDK that includes worker support.
+---
+--- A native Lua worker API (`temporal.worker()`) is planned — see the temporal-worker
+--- feature flag proposal. This will allow registering Lua functions as activities and
+--- defining workflows entirely in Lua, with no external services needed.
+---
 --- @quickref c:health() -> bool | Check Temporal health
 --- @quickref c:system_info() -> info | Get system information
 --- @quickref c:namespaces() -> {namespaces} | List namespaces
@@ -17,9 +43,6 @@
 --- @quickref c:search(query, opts?) -> {executions} | Search workflows by query
 --- @quickref c:is_workflow_running(workflow_id, opts?) -> bool | Check if workflow is running
 --- @quickref c:wait_workflow_complete(workflow_id, timeout_secs, opts?) -> workflow | Wait for completion
---- @note The `temporal` global (native gRPC, requires --features temporal) provides start_workflow,
---- @note signal_workflow, query_workflow, describe_workflow, get_result, cancel_workflow, terminate_workflow.
---- @note Use `temporal.connect({url, namespace})` for the gRPC client. This stdlib module uses HTTP REST.
 
 local M = {}
 

@@ -109,7 +109,7 @@ Available as globals in all `.lua` scripts — no `require` needed:
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | HTTP           | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)` — `http.serve` response handlers accept array header values to emit the same header name multiple times (e.g., multiple `Set-Cookie`) |
 | JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str)`, `yaml.encode(tbl)`, `toml.parse(str)`, `toml.encode(tbl)`                                                                                                                                                 |
-| Filesystem     | `fs.read(path)`, `fs.write(path, str)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)`, `fs.copy(src, dst)`, `fs.rename(src, dst)`, `fs.glob(pattern)`, `fs.tempdir()`, `fs.chmod(path, mode)`, `fs.readdir(path, opts?)` |
+| Filesystem     | `fs.read(path)`, `fs.read_bytes(path)`, `fs.write(path, str)`, `fs.write_bytes(path, data)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)`, `fs.copy(src, dst)`, `fs.rename(src, dst)`, `fs.glob(pattern)`, `fs.tempdir()`, `fs.chmod(path, mode)`, `fs.readdir(path, opts?)` |
 | Crypto         | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.jwt_decode(token)` (decode without verifying), `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)`                                                                                |
 | Base64         | `base64.encode(str)`, `base64.decode(str)`                                                                                                                                                                                                                          |
 | Regex          | `regex.match(pat, str)`, `regex.find(pat, str)`, `regex.find_all(pat, str)`, `regex.replace(pat, str, repl)`                                                                                                                                                        |
@@ -124,7 +124,8 @@ Available as globals in all `.lua` scripts — no `require` needed:
 | Process        | `process.list()`, `process.is_running(name)`, `process.kill(pid, signal?)`, `process.wait_idle(names, timeout, interval)`                                                                                                                                           |
 | Disk           | `disk.usage(path)` — returns `{total, used, available, percent}`, `disk.sweep(dir, age_secs)`, `disk.dir_size(path)`                                                                                                                                                |
 | OS             | `os.hostname()`, `os.arch()`, `os.platform()`                                                                                                                                                                                                                       |
-| Temporal (gRPC) | `temporal.connect(opts)`, `temporal.start(opts)` — native gRPC workflow client (requires `temporal` feature) |
+| Markdown       | `markdown.to_html(source)` — convert Markdown to HTML (tables, strikethrough, task lists)                    |
+| Temporal (gRPC) | `temporal.connect(opts)`, `temporal.start(opts)`, `temporal.worker(opts)` — native gRPC workflow client + worker runtime with coroutine-based workflow execution (requires `temporal` feature) |
 
 HTTP responses: `{status, body, headers}`. Options: `{headers = {["X-Key"] = "val"}}`.
 
@@ -394,14 +395,18 @@ async fn test_<name>_health() {
 
 Note: Lua tables in `format!` strings need doubled braces: `{{ key = "value" }}`.
 
-### 3. Update `README.md`
+### 3. Add documentation
 
-Add the module to the stdlib table.
+Add a `docs/modules/<name>.md` file with method signatures and examples.
+This is the single source of truth — `site/build.lua` generates the website
+pages and `llms-full.txt` from these files. No need to manually update
+`README.md`, `SKILL.md`, or the website.
 
 ### 4. Verify
 
 ```bash
 cargo check && cargo clippy -- -D warnings && cargo test
+assay site/build.lua   # verify docs build
 ```
 
 ## Directory Structure
@@ -410,43 +415,47 @@ cargo check && cargo clippy -- -D warnings && cargo test
 assay/
 ├── Cargo.toml
 ├── Cargo.lock
-├── AGENTS.md                 # This file
+├── CHANGELOG.md              # Release notes (manual, rendered to website by build.lua)
+├── AGENTS.md                 # This file — agent instructions
+├── SKILL.md                  # LLM agent integration guide
+├── README.md                 # Human-facing README
 ├── Dockerfile                # Multi-stage: rust builder -> scratch
 ├── src/
 │   ├── main.rs               # CLI entry point (clap)
 │   ├── lib.rs                # Library root (pub mod lua)
-│   ├── config.rs             # YAML config parser (checks.yaml)
-│   ├── runner.rs             # Orchestrator: retries, backoff, timeout
-│   ├── output.rs             # Structured JSON results + exit code
-│   ├── checks/
-│   │   ├── mod.rs            # Check dispatcher
-│   │   ├── http.rs           # HTTP check type (YAML mode)
-│   │   ├── prometheus.rs     # Prometheus check type (YAML mode)
-│   │   └── script.rs         # Lua script check type
 │   └── lua/
 │       ├── mod.rs            # VM setup, sandbox, stdlib loader (include_dir!)
-│       ├── async_bridge.rs   # Async Lua execution, shebang stripping
 │       └── builtins/
 │           ├── mod.rs        # register_all() — wires builtins into Lua globals
-│           ├── http.rs       # http.{get,post,put,patch,delete,serve} + SSE streaming
-│           ├── json.rs       # json.{parse,encode}
-│           ├── serialization.rs  # yaml + toml parse/encode
-│           ├── core.rs       # env, sleep, time, fs, base64, regex, log, async
-│           ├── assert.rs     # assert.{eq,ne,gt,lt,contains,not_nil,matches}
-│           ├── crypto.rs     # crypto.{jwt_sign,hash,hmac,random}
-│           ├── db.rs         # db.{connect,query,execute,close}
-│           ├── ws.rs         # ws.{connect,send,recv,close}
-│           ├── template.rs   # template.{render,render_string}
-│           ├── disk.rs       # disk.{usage} + Lua helpers: disk.sweep, disk.dir_size
-│           ├── os_info.rs    # os.{hostname,arch,platform}
-│           └── temporal.rs   # temporal.{connect,start} + client methods (gRPC, optional)
+│           ├── http.rs       # http.{get,post,put,patch,delete,serve} + wildcard routes
+│           ├── core.rs       # env, sleep, time, fs (read/write + read_bytes/write_bytes), base64, regex, log, async
+│           ├── markdown.rs   # markdown.to_html() via pulldown-cmark
+│           ├── temporal.rs   # temporal.{connect,start} gRPC client
+│           ├── temporal_worker.rs  # temporal.worker() — coroutine-based workflow execution
+│           └── ...           # json, yaml, toml, crypto, db, ws, template, assert, etc.
 ├── stdlib/                   # Embedded Lua modules (auto-discovered)
 │   ├── vault.lua             # Comprehensive reference (330 lines)
 │   ├── grafana.lua           # Simple reference (110 lines)
-│   └── ... (22 modules total)
+│   └── ...                   # 34 modules total
+├── docs/
+│   └── modules/              # Module documentation (single source of truth)
+│       ├── temporal.md       # → generates website page + llms-full.txt entry
+│       ├── ory.md
+│       └── ...               # 36 markdown files
+├── site/                     # Website source (tracked in git)
+│   ├── build.lua             # Assay builds its own docs (replaces bash/npm)
+│   ├── serve.lua             # Dev server using http.serve() with wildcard routes
+│   ├── pages/                # HTML templates with __PLACEHOLDER__ markers
+│   ├── partials/             # header.html, footer.html (nav, theme toggle, search)
+│   └── static/               # style.css, _headers, _redirects, llms.txt
+├── build/                    # Build output (gitignored)
+│   └── site/                 # Generated website, deployed to Cloudflare Pages
 ├── tests/
 │   ├── common/mod.rs         # Test helpers: run_lua(), create_vm(), eval_lua()
 │   ├── stdlib_vault.rs       # One test file per stdlib module
+│   ├── temporal_worker.rs    # Workflow engine tests
+│   ├── http_serve.rs         # HTTP server tests (incl. wildcard routes)
+│   ├── markdown.rs           # Markdown builtin tests
 │   └── ...
 └── examples/                 # Example scripts and check configs
 ```
@@ -462,34 +471,49 @@ assay/
 
 ## Release Process
 
-After merging a feature PR, always create a version bump PR before moving on:
+### When making changes
 
-1. **Bump version** in `Cargo.toml` (triggers `Cargo.lock` update on next build)
-2. **Update CHANGELOG.md** — add new version section at the top with date and changes
-3. **Update AGENTS.md** — if new builtins/functions were added, update the tables
-4. **Update all docs** — README.md, SKILL.md, site/modules.html, site/llms.txt, site/llms-full.txt
-5. **Run checks**: `cargo clippy --tests -- -D warnings && cargo test`
-6. **Create a new branch** (e.g., `chore/bump-0.5.6`), commit, push, open PR
-7. **After merge**: tag the release (`git tag v0.5.6 && git push origin v0.5.6`)
+1. **Code changes** — implement in `src/` or `stdlib/`, add tests in `tests/`
+2. **Document** — add/update `docs/modules/<name>.md` (single source of truth)
+3. **CHANGELOG.md** — add entry under the current version section
+4. **AGENTS.md** — update builtins table if API surface changed
+5. **Verify**: `cargo clippy --tests -- -D warnings && cargo test && assay site/build.lua`
 
-Files to update per release:
+The following are **auto-generated** — do NOT edit manually:
+- `build/site/` — entire website (generated by `assay site/build.lua`)
+- Module count on the website (computed from `src/lua/builtins/mod.rs` + `stdlib/`)
+- `build/site/llms-full.txt` (concatenated from `docs/modules/*.md`)
+- `build/site/modules/*.html` (generated from `docs/modules/*.md`)
+- `build/site/modules.html` (index page)
+- Changelog page (rendered from `CHANGELOG.md`)
 
-- `Cargo.toml` — version field
-- `CHANGELOG.md` — new version entry
-- `AGENTS.md` — if API surface changed
-- `README.md` — if API surface changed
-- `SKILL.md` — if API surface changed
-- `site/modules.html` — if API surface changed
-- `site/llms.txt` — if API surface changed
-- `site/llms-full.txt` — if API surface changed
-- `openclaw-extension/package.json` — version field (auto-synced from git tag by CI, but keep
-  in sync manually for local development)
+### Releasing a version
+
+1. **Bump version** in `Cargo.toml`
+2. **Finalize CHANGELOG.md** — ensure version header has correct date
+3. **Run checks**: `cargo clippy --tests -- -D warnings && cargo test`
+4. **Merge PR** to main
+5. **Tag the release**: `git tag v0.9.0 && git push origin v0.9.0`
 
 The tag push triggers `.github/workflows/release.yml` which publishes:
 - GitHub Release (binaries + checksums)
 - crates.io (`assay-lua` crate)
 - Docker image (`ghcr.io/developerinlondon/assay`)
-- GitHub Packages npm (`@developerinlondon/assay-openclaw-extension`)
+
+The merge to main triggers `.github/workflows/deploy.yml` which:
+- Builds assay (`cargo build --release`)
+- Builds the website (`assay site/build.lua`)
+- Indexes for search (`pagefind --site build/site`)
+- Deploys to Cloudflare Pages (`wrangler pages deploy build/site/`)
+
+### Local development
+
+```bash
+cargo build --release               # build assay
+assay site/build.lua                 # build website
+npx pagefind --site build/site       # index for search (optional)
+assay site/serve.lua                 # serve at http://localhost:3000
+```
 
 ## Commands
 

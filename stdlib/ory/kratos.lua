@@ -1,12 +1,20 @@
 --- @module assay.ory.kratos
---- @description Ory Kratos identity management — login/registration/recovery flows, identity CRUD via admin API, session introspection, schemas.
+--- @description Ory Kratos identity management — login/registration/recovery/settings flows, identity CRUD via admin API, session introspection, schemas.
 --- @keywords kratos, ory, identity, authentication, login, registration, recovery, settings, sessions, identities, schemas, whoami
 --- @quickref kratos.client(opts) -> client | Create a Kratos client. opts: {public_url, admin_url}
 --- @quickref c:whoami(cookie) -> {identity, expires_at, ...} | Check if the current session is valid
---- @quickref c:create_login_flow(opts?) -> {id, ui, return_to, ...} | Create a browser login flow
+--- @quickref c:create_login_flow(opts?) -> flow | Create a browser login flow
 --- @quickref c:get_login_flow(id, cookie?) -> flow | Fetch an existing login flow
 --- @quickref c:submit_login_flow(flow_id, payload, cookie?) -> {session, ...} | Submit a login flow
---- @quickref c:create_registration_flow() -> flow | Create a registration flow
+--- @quickref c:create_registration_flow(opts?) -> flow | Create a registration flow
+--- @quickref c:get_registration_flow(id, cookie?) -> flow | Fetch a registration flow
+--- @quickref c:submit_registration_flow(flow_id, payload, cookie?) -> {identity, session, ...} | Submit a registration flow
+--- @quickref c:create_recovery_flow(opts?) -> flow | Create a recovery flow (password reset)
+--- @quickref c:get_recovery_flow(id, cookie?) -> flow | Fetch a recovery flow
+--- @quickref c:submit_recovery_flow(flow_id, payload, cookie?) -> flow | Submit a recovery flow
+--- @quickref c:create_settings_flow(cookie) -> flow | Create a settings flow (profile/password change)
+--- @quickref c:get_settings_flow(id, cookie?) -> flow | Fetch a settings flow
+--- @quickref c:submit_settings_flow(flow_id, payload, cookie?) -> flow | Submit a settings flow
 --- @quickref c:get_identity(id) -> identity | Get an identity by ID (admin API)
 --- @quickref c:list_identities(opts?) -> [identity] | List all identities (admin API)
 --- @quickref c:create_identity(spec) -> identity | Create an identity (admin API)
@@ -15,6 +23,7 @@
 --- @quickref c:list_sessions(id) -> [session] | List active sessions for an identity
 --- @quickref c:delete_sessions(id) -> nil | Revoke all sessions for an identity
 --- @quickref c:list_schemas() -> [schema] | List identity schemas
+--- @quickref c:get_schema(id) -> schema | Get a specific identity schema
 
 local M = {}
 
@@ -52,6 +61,21 @@ function M.client(opts)
     local resp = http.get(self.public_url .. path_str, { headers = headers })
     if resp.status ~= 200 then
       error("kratos: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
+    end
+    return json.parse(resp.body)
+  end
+
+  local function public_post(self, path_str, payload, cookie)
+    require_public(self)
+    local headers = { ["Content-Type"] = "application/json" }
+    if cookie then headers["Cookie"] = cookie end
+    local resp = http.post(self.public_url .. path_str, payload, { headers = headers })
+    if resp.status ~= 200 and resp.status ~= 201 then
+      -- Kratos returns 422 for browser flows that need a redirect (e.g. after registration)
+      if resp.status == 422 then
+        return json.parse(resp.body)
+      end
+      error("kratos: POST " .. path_str .. " HTTP " .. resp.status .. ": " .. resp.body)
     end
     return json.parse(resp.body)
   end
@@ -121,20 +145,12 @@ function M.client(opts)
   end
 
   function c:submit_login_flow(flow_id, payload, cookie)
-    require_public(self)
-    local headers = { ["Content-Type"] = "application/json" }
-    if cookie then headers["Cookie"] = cookie end
-    local resp = http.post(self.public_url .. "/self-service/login?flow=" .. urlencode(flow_id), payload, {
-      headers = headers,
-    })
-    if resp.status ~= 200 then
-      error("kratos: submit login HTTP " .. resp.status .. ": " .. resp.body)
-    end
-    return json.parse(resp.body)
+    return public_post(self, "/self-service/login?flow=" .. urlencode(flow_id), payload, cookie)
   end
 
   -- ========== Registration Flows ==========
 
+  -- Create a registration flow. opts: { return_to }
   function c:create_registration_flow(opts)
     opts = opts or {}
     local qs = ""
@@ -144,6 +160,50 @@ function M.client(opts)
 
   function c:get_registration_flow(flow_id, cookie)
     return public_get(self, "/self-service/registration/flows?id=" .. urlencode(flow_id), cookie)
+  end
+
+  -- Submit a registration flow. payload should include method and traits, e.g.:
+  --   { method = "password", password = "...", traits = { email = "..." } }
+  function c:submit_registration_flow(flow_id, payload, cookie)
+    return public_post(self, "/self-service/registration?flow=" .. urlencode(flow_id), payload, cookie)
+  end
+
+  -- ========== Recovery Flows (password reset) ==========
+
+  -- Create a recovery flow. opts: { return_to }
+  function c:create_recovery_flow(opts)
+    opts = opts or {}
+    local qs = ""
+    if opts.return_to then qs = "?return_to=" .. urlencode(opts.return_to) end
+    return public_get(self, "/self-service/recovery/browser" .. qs)
+  end
+
+  function c:get_recovery_flow(flow_id, cookie)
+    return public_get(self, "/self-service/recovery/flows?id=" .. urlencode(flow_id), cookie)
+  end
+
+  -- Submit a recovery flow. payload should include method, e.g.:
+  --   { method = "code", email = "user@example.com" }
+  function c:submit_recovery_flow(flow_id, payload, cookie)
+    return public_post(self, "/self-service/recovery?flow=" .. urlencode(flow_id), payload, cookie)
+  end
+
+  -- ========== Settings Flows (profile/password change) ==========
+
+  -- Create a settings flow. Requires an active session (pass cookie).
+  function c:create_settings_flow(cookie)
+    return public_get(self, "/self-service/settings/browser", cookie)
+  end
+
+  function c:get_settings_flow(flow_id, cookie)
+    return public_get(self, "/self-service/settings/flows?id=" .. urlencode(flow_id), cookie)
+  end
+
+  -- Submit a settings flow. payload depends on method, e.g.:
+  --   { method = "password", password = "new-password" }
+  --   { method = "profile", traits = { email = "new@example.com" } }
+  function c:submit_settings_flow(flow_id, payload, cookie)
+    return public_post(self, "/self-service/settings?flow=" .. urlencode(flow_id), payload, cookie)
   end
 
   -- ========== Identity CRUD (Admin API) ==========
