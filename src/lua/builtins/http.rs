@@ -676,11 +676,11 @@ fn lua_response_to_http(
             builder = builder.header("content-type", "application/json");
         }
         Bytes::from(serialized)
-    } else if let Ok(Some(body_str)) = resp_table.get::<Option<String>>("body") {
+    } else if let Ok(Some(body_lua)) = resp_table.get::<Option<mlua::String>>("body") {
         if !has_content_type {
             builder = builder.header("content-type", "text/plain");
         }
-        Bytes::from(body_str)
+        Bytes::from(body_lua.as_bytes().to_vec())
     } else {
         if !has_content_type {
             builder = builder.header("content-type", "text/plain");

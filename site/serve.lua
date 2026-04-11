@@ -20,9 +20,9 @@ local content_types = {
 
 local function serve_file(path)
   local file_path = site_dir .. path
-  local ok, content = pcall(fs.read, file_path)
+  local ok, content = pcall(fs.read_bytes, file_path)
   if not ok then
-    ok, content = pcall(fs.read, file_path .. ".html")
+    ok, content = pcall(fs.read_bytes, file_path .. ".html")
   end
   if not ok then return { status = 404, body = "Not found: " .. path } end
   local ext = path:match("%.([%w_]+)$") or "html"
