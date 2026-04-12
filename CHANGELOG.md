@@ -2,6 +2,16 @@
 
 All notable changes to Assay are documented here.
 
+## [0.10.1] - 2026-04-12
+
+### Fixed
+
+- **Temporal worker identity** — `temporal.worker()` and `temporal.connect()`
+  now set a non-empty `identity` on `ConnectionOptions`. The Temporal SDK v0.2.0
+  requires this field; without it, `init_worker` fails with "Client identity
+  cannot be empty". Identity is set to `assay-worker@{task_queue}` for workers
+  and `assay-client@{namespace}` for clients.
+
 ## [0.10.0] - 2026-04-11
 
 ### Added
