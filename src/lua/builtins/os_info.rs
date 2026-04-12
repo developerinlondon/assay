@@ -62,8 +62,8 @@ pub fn register_os(lua: &Lua) -> mlua::Result<()> {
         };
 
         // "!" prefix forces UTC (offset 0)
-        let (fmt, offset_secs) = if format.starts_with('!') {
-            (&format[1..], 0i64)
+        let (fmt, offset_secs) = if let Some(stripped) = format.strip_prefix('!') {
+            (stripped, 0i64)
         } else {
             (format.as_str(), (tz_offset_hours * 3600.0) as i64)
         };
