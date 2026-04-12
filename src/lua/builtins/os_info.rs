@@ -31,9 +31,11 @@ pub fn register_os(lua: &Lua) -> mlua::Result<()> {
     let clock_fn = lua.create_function(move |_, ()| Ok(start.elapsed().as_secs_f64()))?;
     os_table.set("clock", clock_fn)?;
 
-    // os.date(format?, time?) — format a timestamp (standard Lua)
+    // os.date(format?, time?, tz_offset?) — format a timestamp
     // Supports: "!%Y-%m-%dT%H:%M:%SZ" (ISO 8601), "*t" (table), and strftime patterns.
-    // If format starts with "!", uses UTC; otherwise UTC (no local time in containers).
+    // If format starts with "!", uses UTC (offset 0) regardless of tz_offset.
+    // tz_offset is hours from UTC (e.g. -5 for EST, -4 for EDT, 5.5 for IST).
+    // Defaults to 0 (UTC) if not provided.
     let date_fn = lua.create_function(|lua, args: mlua::MultiValue| {
         let mut args_iter = args.into_iter();
         let format: String = match args_iter.next() {
@@ -52,16 +54,22 @@ pub fn register_os(lua: &Lua) -> mlua::Result<()> {
             }
             _ => return Err(mlua::Error::runtime("os.date: time must be a number")),
         };
-
-        // Strip leading "!" (UTC marker) — we always use UTC
-        let fmt = if format.starts_with('!') {
-            &format[1..]
-        } else {
-            &format
+        let tz_offset_hours: f64 = match args_iter.next() {
+            Some(Value::Number(n)) => n,
+            Some(Value::Integer(n)) => n as f64,
+            Some(Value::Nil) | None => 0.0,
+            _ => return Err(mlua::Error::runtime("os.date: tz_offset must be a number (hours from UTC)")),
         };
 
-        // Break epoch into date components (UTC)
-        let secs = epoch;
+        // "!" prefix forces UTC (offset 0)
+        let (fmt, offset_secs) = if format.starts_with('!') {
+            (&format[1..], 0i64)
+        } else {
+            (format.as_str(), (tz_offset_hours * 3600.0) as i64)
+        };
+
+        // Apply timezone offset to epoch
+        let secs = epoch + offset_secs;
         let mut days = (secs / 86400) as i32;
         let tod = (secs % 86400) as i32;
         let hour = tod / 3600;
