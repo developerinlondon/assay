@@ -211,9 +211,13 @@ return create_workflow_ctx
         // Connect to Temporal
         let parsed_url = url::Url::parse(&format!("http://{url}"))
             .map_err(|e| mlua::Error::runtime(format!("invalid temporal URL: {e}")))?;
-        let connection = Connection::connect(ConnectionOptions::new(parsed_url).build())
-            .await
-            .map_err(|e| mlua::Error::runtime(format!("temporal worker connect: {e}")))?;
+        let connection = Connection::connect(
+            ConnectionOptions::new(parsed_url)
+                .identity(format!("assay-worker@{}", task_queue))
+                .build(),
+        )
+        .await
+        .map_err(|e| mlua::Error::runtime(format!("temporal worker connect: {e}")))?;
 
         // Create core runtime and worker
         let telemetry = temporalio_common::telemetry::TelemetryOptions::builder().build();
