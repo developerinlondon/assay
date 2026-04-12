@@ -2,6 +2,17 @@
 
 All notable changes to Assay are documented here.
 
+## [0.10.4] - 2026-04-12
+
+### Added
+
+- **`os.date(format?, time?)`** — Standard Lua time formatting. Supports
+  strftime patterns (`%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%c`), the `!`
+  prefix for UTC, and `*t` table output. Previously missing from the
+  sandboxed environment.
+- **`os.time()`** — Returns current UTC epoch as integer (standard Lua).
+- **`os.clock()`** — Returns CPU time in seconds (standard Lua).
+
 ## [0.10.3] - 2026-04-12
 
 ### Added
