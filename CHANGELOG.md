@@ -2,9 +2,15 @@
 
 All notable changes to Assay are documented here.
 
-## [0.10.2] - 2026-04-12
+## [0.10.3] - 2026-04-12
 
 ### Added
+
+- **`ctx:register_query(name, handler)`** — Register query handlers in
+  Temporal workflows. The handler function is called when Temporal
+  dispatches a QueryWorkflow activation, and the result is returned as
+  a JSON payload. Enables dashboard-style apps to read workflow state
+  in real-time without signals.
 
 - **`kratos.flows:get_login_admin(flow_id)`** — Fetch a login flow via
   the Kratos admin API (no CSRF cookie required). Server-side components

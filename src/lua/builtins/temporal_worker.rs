@@ -157,6 +157,13 @@ local function create_workflow_ctx(resolved, signals, info)
         return self._info
     end
 
+    -- Query handlers: registered by the workflow, called when Temporal
+    -- dispatches a QueryWorkflow activation job.
+    ctx._query_handlers = {}
+    function ctx:register_query(name, handler)
+        self._query_handlers[name] = handler
+    end
+
     return ctx
 end
 return create_workflow_ctx
@@ -466,6 +473,7 @@ return create_workflow_ctx
                         let mut signal_buffer: HashMap<String, VecDeque<Value>> = HashMap::new();
                         let mut fired_timers: HashSet<u32> = HashSet::new();
                         let mut cancelled = false;
+                        let mut pending_queries: Vec<workflow_activation::QueryWorkflow> = Vec::new();
 
                         for job in &activation.jobs {
                             match &job.variant {
@@ -508,6 +516,9 @@ return create_workflow_ctx
                                 Some(workflow_activation_job::Variant::RemoveFromCache(_)) => {
                                     // Already handled by is_only_eviction() above;
                                     // if combined with other jobs, ignore here.
+                                }
+                                Some(workflow_activation_job::Variant::QueryWorkflow(query)) => {
+                                    pending_queries.push(query.clone());
                                 }
                                 _ => {
                                     tracing::debug!(
@@ -727,6 +738,66 @@ return create_workflow_ctx
                         if !extra_commands.is_empty() {
                             extra_commands.extend(commands);
                             commands = extra_commands;
+                        }
+
+                        // Handle pending queries — call registered Lua handlers and
+                        // add RespondToQuery commands to the completion.
+                        if !pending_queries.is_empty() {
+                            let ctx_for_queries: Table = lua.registry_value(&instance.ctx_key)?;
+                            let query_handlers: Table = ctx_for_queries.get("_query_handlers")?;
+                            let json_mod: Table = lua.globals().get("json")?;
+                            let encode: Function = json_mod.get("encode")?;
+
+                            for query in &pending_queries {
+                                let handler: Option<Function> = query_handlers.get(query.query_type.clone())?;
+                                let query_cmd = if let Some(handler) = handler {
+                                    match handler.call::<Value>(()) {
+                                        Ok(result) => {
+                                            let json_str: String = encode.call(result)?;
+                                            workflow_command::Variant::RespondToQuery(
+                                                workflow_commands::QueryResult {
+                                                    query_id: query.query_id.clone(),
+                                                    variant: Some(
+                                                        workflow_commands::query_result::Variant::Succeeded(
+                                                            workflow_commands::QuerySuccess {
+                                                                response: Some(json_payload(&json_str)),
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                            )
+                                        }
+                                        Err(e) => {
+                                            workflow_command::Variant::RespondToQuery(
+                                                workflow_commands::QueryResult {
+                                                    query_id: query.query_id.clone(),
+                                                    variant: Some(
+                                                        workflow_commands::query_result::Variant::Failed(
+                                                            Failure::application_failure(e.to_string(), false),
+                                                        ),
+                                                    ),
+                                                },
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    // No handler registered for this query type
+                                    workflow_command::Variant::RespondToQuery(
+                                        workflow_commands::QueryResult {
+                                            query_id: query.query_id.clone(),
+                                            variant: Some(
+                                                workflow_commands::query_result::Variant::Failed(
+                                                    Failure::application_failure(
+                                                        format!("no handler registered for query type '{}'", query.query_type),
+                                                        false,
+                                                    ),
+                                                ),
+                                            ),
+                                        },
+                                    )
+                                };
+                                commands.push(query_cmd);
+                            }
                         }
 
                         Ok(WorkflowActivationCompletion::from_cmds(run_id, commands))
