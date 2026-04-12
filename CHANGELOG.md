@@ -2,6 +2,15 @@
 
 All notable changes to Assay are documented here.
 
+## [0.10.2] - 2026-04-12
+
+### Added
+
+- **`kratos.flows:get_login_admin(flow_id)`** — Fetch a login flow via
+  the Kratos admin API (no CSRF cookie required). Server-side components
+  like hydra-auth should use this instead of `get_login()` which requires
+  browser cookies that may not be available across different cookie domains.
+
 ## [0.10.1] - 2026-04-12
 
 ### Fixed
