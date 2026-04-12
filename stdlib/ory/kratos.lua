@@ -6,7 +6,8 @@
 --- @quickref c.sessions:list(identity_id) -> [session] | List active sessions for an identity
 --- @quickref c.sessions:revoke(identity_id) -> nil | Revoke all sessions for an identity
 --- @quickref c.flows:create_login(opts?) -> flow | Create a browser login flow
---- @quickref c.flows:get_login(id, cookie?) -> flow | Fetch an existing login flow
+--- @quickref c.flows:get_login(id, cookie?) -> flow | Fetch an existing login flow (public API, needs CSRF cookie)
+--- @quickref c.flows:get_login_admin(id) -> flow | Fetch a login flow via admin API (no cookies needed)
 --- @quickref c.flows:submit_login(flow_id, payload, cookie?) -> {session, ...} | Submit a login flow
 --- @quickref c.flows:create_registration(opts?) -> flow | Create a registration flow
 --- @quickref c.flows:get_registration(id, cookie?) -> flow | Fetch a registration flow
@@ -162,6 +163,10 @@ function M.client(opts)
 
   function c.flows:get_login(flow_id, cookie)
     return public_get("/self-service/login/flows?id=" .. urlencode(flow_id), cookie)
+  end
+
+  function c.flows:get_login_admin(flow_id)
+    return admin_get("/admin/self-service/login/flows?id=" .. urlencode(flow_id))
   end
 
   function c.flows:submit_login(flow_id, payload, cookie)
