@@ -290,9 +290,13 @@ pub fn register_temporal(lua: &mlua::Lua) -> mlua::Result<()> {
     async fn connect_client(url_str: &str, namespace: &str) -> Result<Client, mlua::Error> {
         let parsed_url = url::Url::parse(&format!("http://{url_str}"))
             .map_err(|e| mlua::Error::runtime(format!("invalid temporal URL: {e}")))?;
-        let connection = Connection::connect(ConnectionOptions::new(parsed_url).build())
-            .await
-            .map_err(|e| mlua::Error::runtime(format!("temporal connect: {e}")))?;
+        let connection = Connection::connect(
+            ConnectionOptions::new(parsed_url)
+                .identity(format!("assay-client@{namespace}"))
+                .build(),
+        )
+        .await
+        .map_err(|e| mlua::Error::runtime(format!("temporal connect: {e}")))?;
         Client::new(connection, ClientOptions::new(namespace).build())
             .map_err(|e| mlua::Error::runtime(format!("temporal client: {e}")))
     }
