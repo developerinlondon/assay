@@ -85,6 +85,98 @@ enum Commands {
         #[arg(long, default_value = "3600")]
         resume_ttl: Option<u64>,
     },
+    /// Start the assay workflow engine server
+    Serve {
+        /// Database backend URL (sqlite:// or postgres://)
+        #[arg(long, default_value = "sqlite://assay-workflow.db?mode=rwc")]
+        backend: String,
+        /// Port to listen on
+        #[arg(long, default_value = "8080")]
+        port: u16,
+    },
+    /// Manage workflows
+    Workflow {
+        #[command(subcommand)]
+        command: WorkflowCommands,
+    },
+    /// Manage schedules
+    Schedule {
+        #[command(subcommand)]
+        command: ScheduleCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum WorkflowCommands {
+    /// List workflows
+    List {
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long, name = "type")]
+        workflow_type: Option<String>,
+        #[arg(long, default_value = "20")]
+        limit: i64,
+    },
+    /// Describe a workflow
+    Describe {
+        /// Workflow ID
+        id: String,
+    },
+    /// Send a signal to a workflow
+    Signal {
+        /// Workflow ID
+        id: String,
+        /// Signal name
+        name: String,
+        /// JSON payload
+        payload: Option<String>,
+    },
+    /// Cancel a workflow
+    Cancel {
+        /// Workflow ID
+        id: String,
+    },
+    /// Terminate a workflow
+    Terminate {
+        /// Workflow ID
+        id: String,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ScheduleCommands {
+    /// List schedules
+    List,
+    /// Create a schedule
+    Create {
+        /// Schedule name
+        name: String,
+        #[arg(long, name = "type")]
+        workflow_type: String,
+        #[arg(long)]
+        cron: String,
+        #[arg(long)]
+        input: Option<String>,
+        #[arg(long, default_value = "default")]
+        queue: String,
+    },
+    /// Pause a schedule
+    Pause {
+        /// Schedule name
+        name: String,
+    },
+    /// Resume a schedule
+    Resume {
+        /// Schedule name
+        name: String,
+    },
+    /// Delete a schedule
+    Delete {
+        /// Schedule name
+        name: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -187,6 +279,23 @@ async fn main() -> ExitCode {
             approve,
             resume_ttl,
         }) => resume_tool_execution(&token, &approve, resume_ttl).await,
+        Some(Commands::Serve { backend, port }) => {
+            info!("Starting assay workflow engine on port {port} with backend {backend}");
+            eprintln!("assay serve: workflow engine not yet implemented (v0.11.1)");
+            eprintln!("  backend: {backend}");
+            eprintln!("  port: {port}");
+            ExitCode::from(1)
+        }
+        Some(Commands::Workflow { command }) => {
+            eprintln!("assay workflow: {command:?}");
+            eprintln!("workflow management not yet implemented (v0.11.1)");
+            ExitCode::from(1)
+        }
+        Some(Commands::Schedule { command }) => {
+            eprintln!("assay schedule: {command:?}");
+            eprintln!("schedule management not yet implemented (v0.11.1)");
+            ExitCode::from(1)
+        }
         None => {
             if let Some(ref file) = cli.file {
                 dispatch_file(file, RunOptions::default()).await
