@@ -1,5 +1,7 @@
 pub mod sqlite;
 
+use std::future::Future;
+
 use crate::workflow::types::*;
 
 /// Core storage trait for the workflow engine.
@@ -7,84 +9,161 @@ use crate::workflow::types::*;
 /// All database access goes through this trait. The engine, API, scheduler,
 /// and health monitor depend only on `WorkflowStore`, never on a concrete
 /// database implementation.
-#[allow(async_fn_in_trait)]
+///
+/// All methods return `Send` futures so they can be used from `tokio::spawn`.
 pub trait WorkflowStore: Send + Sync + 'static {
     // ── Workflows ──────────────────────────────────────────
 
-    async fn create_workflow(&self, workflow: &WorkflowRecord) -> anyhow::Result<()>;
-    async fn get_workflow(&self, id: &str) -> anyhow::Result<Option<WorkflowRecord>>;
-    async fn list_workflows(
+    fn create_workflow(
+        &self,
+        workflow: &WorkflowRecord,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn get_workflow(
+        &self,
+        id: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowRecord>>> + Send;
+
+    fn list_workflows(
         &self,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
         limit: i64,
         offset: i64,
-    ) -> anyhow::Result<Vec<WorkflowRecord>>;
-    async fn update_workflow_status(
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send;
+
+    fn update_workflow_status(
         &self,
         id: &str,
         status: WorkflowStatus,
         result: Option<&str>,
         error: Option<&str>,
-    ) -> anyhow::Result<()>;
-    async fn claim_workflow(&self, id: &str, worker_id: &str) -> anyhow::Result<bool>;
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn claim_workflow(
+        &self,
+        id: &str,
+        worker_id: &str,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
     // ── Events ─────────────────────────────────────────────
 
-    async fn append_event(&self, event: &WorkflowEvent) -> anyhow::Result<i64>;
-    async fn list_events(&self, workflow_id: &str) -> anyhow::Result<Vec<WorkflowEvent>>;
-    async fn get_event_count(&self, workflow_id: &str) -> anyhow::Result<i64>;
+    fn append_event(
+        &self,
+        event: &WorkflowEvent,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send;
+
+    fn list_events(
+        &self,
+        workflow_id: &str,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowEvent>>> + Send;
+
+    fn get_event_count(
+        &self,
+        workflow_id: &str,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send;
 
     // ── Activities ──────────────────────────────────────────
 
-    async fn create_activity(&self, activity: &WorkflowActivity) -> anyhow::Result<i64>;
-    async fn claim_activity(
+    fn create_activity(
+        &self,
+        activity: &WorkflowActivity,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send;
+
+    fn claim_activity(
         &self,
         task_queue: &str,
         worker_id: &str,
-    ) -> anyhow::Result<Option<WorkflowActivity>>;
-    async fn complete_activity(
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send;
+
+    fn complete_activity(
         &self,
         id: i64,
         result: Option<&str>,
         error: Option<&str>,
         failed: bool,
-    ) -> anyhow::Result<()>;
-    async fn heartbeat_activity(&self, id: i64, details: Option<&str>) -> anyhow::Result<()>;
-    async fn get_timed_out_activities(&self, now: f64) -> anyhow::Result<Vec<WorkflowActivity>>;
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn heartbeat_activity(
+        &self,
+        id: i64,
+        details: Option<&str>,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn get_timed_out_activities(
+        &self,
+        now: f64,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowActivity>>> + Send;
 
     // ── Timers ──────────────────────────────────────────────
 
-    async fn create_timer(&self, timer: &WorkflowTimer) -> anyhow::Result<i64>;
-    async fn fire_due_timers(&self, now: f64) -> anyhow::Result<Vec<WorkflowTimer>>;
+    fn create_timer(
+        &self,
+        timer: &WorkflowTimer,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send;
+
+    fn fire_due_timers(
+        &self,
+        now: f64,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowTimer>>> + Send;
 
     // ── Signals ─────────────────────────────────────────────
 
-    async fn send_signal(&self, signal: &WorkflowSignal) -> anyhow::Result<i64>;
-    async fn consume_signals(
+    fn send_signal(
+        &self,
+        signal: &WorkflowSignal,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send;
+
+    fn consume_signals(
         &self,
         workflow_id: &str,
         name: &str,
-    ) -> anyhow::Result<Vec<WorkflowSignal>>;
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowSignal>>> + Send;
 
     // ── Schedules ───────────────────────────────────────────
 
-    async fn create_schedule(&self, schedule: &WorkflowSchedule) -> anyhow::Result<()>;
-    async fn get_schedule(&self, name: &str) -> anyhow::Result<Option<WorkflowSchedule>>;
-    async fn list_schedules(&self) -> anyhow::Result<Vec<WorkflowSchedule>>;
-    async fn update_schedule_last_run(
+    fn create_schedule(
+        &self,
+        schedule: &WorkflowSchedule,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn get_schedule(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send;
+
+    fn list_schedules(&self) -> impl Future<Output = anyhow::Result<Vec<WorkflowSchedule>>> + Send;
+
+    fn update_schedule_last_run(
         &self,
         name: &str,
         last_run_at: f64,
         next_run_at: f64,
         workflow_id: &str,
-    ) -> anyhow::Result<()>;
-    async fn delete_schedule(&self, name: &str) -> anyhow::Result<bool>;
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn delete_schedule(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
     // ── Workers ─────────────────────────────────────────────
 
-    async fn register_worker(&self, worker: &WorkflowWorker) -> anyhow::Result<()>;
-    async fn heartbeat_worker(&self, id: &str, now: f64) -> anyhow::Result<()>;
-    async fn list_workers(&self) -> anyhow::Result<Vec<WorkflowWorker>>;
-    async fn remove_dead_workers(&self, cutoff: f64) -> anyhow::Result<Vec<String>>;
+    fn register_worker(
+        &self,
+        worker: &WorkflowWorker,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn heartbeat_worker(
+        &self,
+        id: &str,
+        now: f64,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn list_workers(&self) -> impl Future<Output = anyhow::Result<Vec<WorkflowWorker>>> + Send;
+
+    fn remove_dead_workers(
+        &self,
+        cutoff: f64,
+    ) -> impl Future<Output = anyhow::Result<Vec<String>>> + Send;
 }
