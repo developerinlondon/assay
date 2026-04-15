@@ -12,8 +12,6 @@ mod process;
 mod serialization;
 mod shell;
 mod template;
-mod temporal;
-mod temporal_worker;
 mod ws;
 
 pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()> {
@@ -40,7 +38,5 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     process::register_process(lua)?;
     disk::register_disk(lua)?;
     os_info::register_os(lua)?;
-    temporal::register_temporal(lua)?;
-    temporal_worker::register_temporal_worker(lua)?;
     Ok(())
 }
