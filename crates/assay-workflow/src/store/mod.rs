@@ -166,4 +166,36 @@ pub trait WorkflowStore: Send + Sync + 'static {
         &self,
         cutoff: f64,
     ) -> impl Future<Output = anyhow::Result<Vec<String>>> + Send;
+
+    // ── API Keys ────────────────────────────────────────────
+
+    fn create_api_key(
+        &self,
+        key_hash: &str,
+        prefix: &str,
+        label: Option<&str>,
+        created_at: f64,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn validate_api_key(
+        &self,
+        key_hash: &str,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+
+    fn list_api_keys(
+        &self,
+    ) -> impl Future<Output = anyhow::Result<Vec<ApiKeyRecord>>> + Send;
+
+    fn revoke_api_key(
+        &self,
+        prefix: &str,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+}
+
+/// API key metadata (hash is never exposed).
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ApiKeyRecord {
+    pub prefix: String,
+    pub label: Option<String>,
+    pub created_at: f64,
 }

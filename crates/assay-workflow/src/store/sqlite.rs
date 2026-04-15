@@ -109,6 +109,14 @@ CREATE TABLE IF NOT EXISTS workflow_snapshots (
     created_at      REAL NOT NULL,
     PRIMARY KEY (workflow_id, event_seq)
 );
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    key_hash        TEXT PRIMARY KEY,
+    prefix          TEXT NOT NULL,
+    label           TEXT,
+    created_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
 "#;
 
 pub struct SqliteStore {
@@ -541,6 +549,60 @@ impl WorkflowStore for SqliteStore {
                 .await?;
         }
         Ok(ids)
+    }
+
+    // ── API Keys ────────────────────────────────────────────
+
+    async fn create_api_key(
+        &self,
+        key_hash: &str,
+        prefix: &str,
+        label: Option<&str>,
+        created_at: f64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO api_keys (key_hash, prefix, label, created_at) VALUES (?, ?, ?, ?)",
+        )
+        .bind(key_hash)
+        .bind(prefix)
+        .bind(label)
+        .bind(created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn validate_api_key(&self, key_hash: &str) -> Result<bool> {
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM api_keys WHERE key_hash = ?")
+                .bind(key_hash)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.is_some())
+    }
+
+    async fn list_api_keys(&self) -> Result<Vec<crate::store::ApiKeyRecord>> {
+        let rows = sqlx::query_as::<_, (String, Option<String>, f64)>(
+            "SELECT prefix, label, created_at FROM api_keys ORDER BY created_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(prefix, label, created_at)| crate::store::ApiKeyRecord {
+                prefix,
+                label,
+                created_at,
+            })
+            .collect())
+    }
+
+    async fn revoke_api_key(&self, prefix: &str) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM api_keys WHERE prefix = ?")
+            .bind(prefix)
+            .execute(&self.pool)
+            .await?;
+        Ok(res.rows_affected() > 0)
     }
 }
 

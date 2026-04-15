@@ -11,6 +11,7 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
     let state = Arc::new(assay_workflow::api::AppState {
         engine: Arc::new(engine),
         event_tx,
+        auth_mode: assay_workflow::api::auth::AuthMode::NoAuth,
     });
 
     let app = assay_workflow::api::router(state);

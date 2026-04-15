@@ -4,6 +4,8 @@ mod lua;
 mod output;
 mod runner;
 
+use assay_workflow::WorkflowStore as _;
+
 use clap::{Parser, Subcommand};
 use mlua::LuaSerdeExt;
 use serde::{Deserialize, Serialize};
@@ -93,6 +95,24 @@ enum Commands {
         /// Port to listen on
         #[arg(long, default_value = "8080")]
         port: u16,
+        /// Disable authentication (open access, default)
+        #[arg(long)]
+        no_auth: bool,
+        /// OIDC issuer URL for JWT validation
+        #[arg(long)]
+        auth_issuer: Option<String>,
+        /// Expected JWT audience
+        #[arg(long)]
+        auth_audience: Option<String>,
+        /// Enable API key authentication mode
+        #[arg(long)]
+        auth_api_key: bool,
+        /// Generate a new API key and exit
+        #[arg(long)]
+        generate_api_key: bool,
+        /// List existing API keys and exit
+        #[arg(long)]
+        list_api_keys: bool,
     },
     /// Manage workflows
     Workflow {
@@ -279,8 +299,16 @@ async fn main() -> ExitCode {
             approve,
             resume_ttl,
         }) => resume_tool_execution(&token, &approve, resume_ttl).await,
-        Some(Commands::Serve { backend, port }) => {
-            info!("Starting assay workflow engine on port {port} with backend {backend}");
+        Some(Commands::Serve {
+            backend,
+            port,
+            no_auth,
+            auth_issuer,
+            auth_audience,
+            auth_api_key,
+            generate_api_key,
+            list_api_keys,
+        }) => {
             let store = match assay_workflow::SqliteStore::new(&backend).await {
                 Ok(s) => s,
                 Err(e) => {
@@ -288,8 +316,64 @@ async fn main() -> ExitCode {
                     return ExitCode::from(1);
                 }
             };
+
+            // Handle key management subcommands (run and exit)
+            if generate_api_key {
+                let key = assay_workflow::api::auth::generate_api_key();
+                let hash = assay_workflow::api::auth::hash_api_key(&key);
+                let prefix = assay_workflow::api::auth::key_prefix(&key);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs_f64();
+                if let Err(e) = store.create_api_key(&hash, &prefix, None, now).await {
+                    error!("Failed to store API key: {e}");
+                    return ExitCode::from(1);
+                }
+                println!("{key}");
+                eprintln!("API key created (prefix: {prefix}). Store it securely — it cannot be recovered.");
+                return ExitCode::SUCCESS;
+            }
+
+            if list_api_keys {
+                match store.list_api_keys().await {
+                    Ok(keys) => {
+                        if keys.is_empty() {
+                            println!("No API keys configured.");
+                        } else {
+                            for k in keys {
+                                let label = k.label.unwrap_or_default();
+                                println!("  {} {label}", k.prefix);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to list API keys: {e}");
+                        return ExitCode::from(1);
+                    }
+                }
+                return ExitCode::SUCCESS;
+            }
+
+            // Determine auth mode
+            let auth_mode = if let Some(issuer) = auth_issuer {
+                assay_workflow::api::auth::AuthMode::Jwt {
+                    issuer,
+                    audience: auth_audience,
+                }
+            } else if auth_api_key {
+                assay_workflow::api::auth::AuthMode::ApiKey
+            } else {
+                assay_workflow::api::auth::AuthMode::NoAuth
+            };
+
+            if no_auth && !matches!(auth_mode, assay_workflow::api::auth::AuthMode::NoAuth) {
+                eprintln!("Warning: --no-auth is redundant when --auth-issuer or --auth-api-key is set");
+            }
+
+            info!("Starting assay workflow engine on port {port} with backend {backend}");
             let engine = assay_workflow::Engine::start(store);
-            if let Err(e) = assay_workflow::api::serve(engine, port).await {
+            if let Err(e) = assay_workflow::api::serve(engine, port, auth_mode).await {
                 error!("Engine server error: {e}");
                 return ExitCode::from(1);
             }
