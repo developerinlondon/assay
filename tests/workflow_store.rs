@@ -1,5 +1,3 @@
-#![cfg(feature = "db")]
-
 use assay::workflow::store::sqlite::SqliteStore;
 use assay::workflow::store::WorkflowStore;
 use assay::workflow::types::*;

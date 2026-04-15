@@ -2,7 +2,7 @@ pub mod sqlite;
 
 use std::future::Future;
 
-use crate::workflow::types::*;
+use crate::types::*;
 
 /// Core storage trait for the workflow engine.
 ///

@@ -4,11 +4,11 @@ use anyhow::Result;
 use tokio::task::JoinHandle;
 use tracing::info;
 
-use crate::workflow::health;
-use crate::workflow::scheduler;
-use crate::workflow::store::WorkflowStore;
-use crate::workflow::timers;
-use crate::workflow::types::*;
+use crate::health;
+use crate::scheduler;
+use crate::store::WorkflowStore;
+use crate::timers;
+use crate::types::*;
 
 /// The workflow engine. Owns the store and manages background tasks
 /// (scheduler, timer poller, health monitor).

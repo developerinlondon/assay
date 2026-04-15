@@ -1,0 +1,33 @@
+[package]
+name = "assay-workflow"
+version = "0.1.0"
+categories = ["asynchronous", "database"]
+edition = "2024"
+keywords = ["workflow", "durable-execution", "orchestration", "task-queue"]
+license = "Apache-2.0"
+repository = "https://github.com/developerinlondon/assay"
+description = "Durable workflow engine with REST+SSE API, PostgreSQL/SQLite backends. Embeddable library or standalone server."
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["rt", "time", "macros"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite", "any"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Cron expression parsing
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+cron = "0.16"
+
+# Error handling
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }

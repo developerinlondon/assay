@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "crates/assay-workflow"]
+
 [package]
 name = "assay-lua"
 version = "0.11.0"
@@ -92,9 +95,8 @@ minijinja = "2.15.1"
 # Markdown to HTML conversion
 pulldown-cmark = "0.13"
 
-# Cron expression parsing (workflow scheduler)
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
-cron = "0.16"
+# Workflow engine (separate crate, same workspace)
+assay-workflow = { path = "crates/assay-workflow" }
 
 # URL parsing/encoding (used by http server query string decoding)
 url = "2"

@@ -87,10 +87,9 @@ name = "assay-lua"
 version = "0.11.0"
 dependencies = [
  "anyhow",
+ "assay-workflow",
  "axum",
- "chrono",
  "clap",
- "cron",
  "data-encoding",
  "digest",
  "futures-util",
@@ -123,6 +122,20 @@ dependencies = [
  "url",
  "wiremock",
  "zeroize",
+]
+
+[[package]]
+name = "assay-workflow"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "cron",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

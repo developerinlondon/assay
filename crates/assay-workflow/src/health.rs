@@ -4,8 +4,8 @@ use anyhow::Result;
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
-use crate::workflow::store::WorkflowStore;
-use crate::workflow::types::WorkflowStatus;
+use crate::store::WorkflowStore;
+use crate::types::WorkflowStatus;
 
 const HEALTH_CHECK_SECS: u64 = 30;
 const WORKER_TIMEOUT_SECS: f64 = 90.0;

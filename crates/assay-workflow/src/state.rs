@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::workflow::types::WorkflowStatus;
+use crate::types::WorkflowStatus;
 
 /// Commands yielded by a workflow execution turn.
 /// The engine processes these to advance workflow state.

@@ -4,8 +4,8 @@ use anyhow::Result;
 use tokio::time::{interval, Duration};
 use tracing::{debug, error, info};
 
-use crate::workflow::store::WorkflowStore;
-use crate::workflow::types::WorkflowEvent;
+use crate::store::WorkflowStore;
+use crate::types::WorkflowEvent;
 
 const TIMER_POLL_SECS: u64 = 1;
 

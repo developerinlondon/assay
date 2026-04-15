@@ -6,8 +6,8 @@ use cron::Schedule;
 use tokio::time::{interval, Duration};
 use tracing::{debug, error, info, warn};
 
-use crate::workflow::store::WorkflowStore;
-use crate::workflow::types::{WorkflowEvent, WorkflowRecord};
+use crate::store::WorkflowStore;
+use crate::types::{WorkflowEvent, WorkflowRecord};
 
 const SCHEDULER_POLL_SECS: u64 = 15;
 
@@ -57,7 +57,7 @@ async fn evaluate_schedules<S: WorkflowStore>(store: &S) -> Result<()> {
         if sched.overlap_policy == "skip"
             && let Some(ref last_wf_id) = sched.last_workflow_id
             && let Some(wf) = store.get_workflow(last_wf_id).await?
-            && !crate::workflow::types::WorkflowStatus::from_str(&wf.status)
+            && !crate::types::WorkflowStatus::from_str(&wf.status)
                 .map(|s| s.is_terminal())
                 .unwrap_or(true)
         {

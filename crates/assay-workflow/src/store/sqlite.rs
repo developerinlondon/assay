@@ -1,8 +1,8 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
 
-use crate::workflow::store::WorkflowStore;
-use crate::workflow::types::*;
+use crate::store::WorkflowStore;
+use crate::types::*;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS workflows (
