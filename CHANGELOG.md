@@ -2,6 +2,58 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.1] - 2026-04-15
+
+### Added
+
+- **`assay serve`** — Native durable workflow engine built into assay. Start the engine with
+  `assay serve --backend sqlite://workflows.db` and connect from any HTTP client. Replaces the need
+  for external workflow infrastructure like Temporal, Celery, or Inngest.
+
+- **`assay-workflow` crate** — The workflow engine is also available as an independent Rust crate
+  (`cargo install assay-workflow`) for embedding in other Rust applications. Zero Lua dependency.
+
+- **REST API** (21 endpoints) — Full workflow lifecycle management: start, list, describe, signal,
+  cancel, terminate, continue-as-new. Worker registration, task polling, activity heartbeat.
+  Schedule CRUD. All documented via OpenAPI spec at `/api/v1/openapi.json`.
+
+- **OpenAPI spec** — Machine-readable API specification served at `/api/v1/openapi.json`.
+  Interactive docs at `/api/v1/docs` (Scalar). Enables auto-generation of typed client SDKs in any
+  language via `openapi-generator`.
+
+- **Built-in dashboard** — Real-time workflow monitoring at `/workflow/`. Dark theme, workflow list
+  with status filters, detail panel with event timeline, schedule management, worker status. Live
+  updates via SSE.
+
+- **Provider-agnostic auth** — Three modes: no-auth (default), API keys (SHA256 hashed, stored in
+  DB), JWT/OIDC (validates against any OIDC provider via JWKS with caching). CLI:
+  `--generate-api-key`, `--auth-issuer`, `--auth-api-key`.
+
+- **SSE client in `http.get`** — Auto-detects `text/event-stream` responses and streams events to an
+  `on_event` callback. Backwards compatible with existing `http.get` usage.
+
+- **`assay.workflow` stdlib module** — Lua client library for the workflow engine.
+  `workflow.connect()`, `workflow.define()`, `workflow.activity()`, `workflow.listen()`. Any assay
+  Lua app can become a workflow worker.
+
+- **Child workflows** — Start nested workflows with parent-child linkage. Cancellation propagates
+  from parent to all children recursively.
+
+- **Continue-as-new** — Complete a workflow and start a fresh run with the same type, preserving
+  lineage. Useful for long-running workflows that accumulate event history.
+
+- **State snapshots** — Checkpoint workflow state for fast replay. Avoids replaying the full event
+  history on recovery.
+
+- **Side effects** — Record non-deterministic values (random numbers, timestamps, UUIDs) so replay
+  produces identical results.
+
+- **Cron scheduler** — Schedule workflows with cron expressions. Overlap policies: skip, queue,
+  cancel_old, allow_all.
+
+- **Health monitor** — Detects dead workers, releases their claimed tasks. Times out stale
+  activities with configurable retry.
+
 ## [0.11.0] - 2026-04-15
 
 ### Removed

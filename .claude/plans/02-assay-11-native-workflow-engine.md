@@ -994,7 +994,7 @@ assay/                                 ← workspace root (Cargo.toml)
 | 2.4  | Health monitor (dead worker detection, task reassignment) | `health.rs`    | ✅     |
 | 2.5  | Engine orchestrator (wires everything together)           | `engine.rs`    | ✅     |
 
-### Phase 3: REST API + SSE — ~800 lines Rust
+### Phase 3: REST API + SSE — ~800 lines Rust ✅
 
 **Goal**: Complete HTTP API. All endpoints, SSE streams.
 
@@ -1009,7 +1009,7 @@ assay/                                 ← workspace root (Cargo.toml)
 | 3.7  | CLI management commands (`assay workflow list`, etc.)                  | `main.rs`          |
 | 3.8  | Integration tests                                                      | tests              |
 
-### Phase 4: Authentication — ~400 lines Rust
+### Phase 4: Authentication — ~400 lines Rust ✅
 
 **Goal**: Provider-agnostic auth — no auth, API keys, or JWT/OIDC (any provider).
 
@@ -1024,7 +1024,7 @@ assay/                                 ← workspace root (Cargo.toml)
 | 4.7  | API key CLI (`--generate-api-key`, `--revoke-api-key`)           | `main.rs`     |
 | 4.8  | Tests (self-signed JWTs via crypto.jwt_sign, no external server) | tests         |
 
-### Phase 5: Dashboard — ~500 lines HTML/JS/CSS + ~200 lines Rust
+### Phase 5: Dashboard — ~500 lines HTML/JS/CSS + ~200 lines Rust ✅
 
 **Goal**: Built-in web UI with real-time updates.
 
@@ -1037,7 +1037,7 @@ assay/                                 ← workspace root (Cargo.toml)
 | 5.5  | Worker status view                                   | `dashboard/`       |
 | 5.6  | Static file serving                                  | `api/dashboard.rs` |
 
-### Phase 6: Assay Integration — ~200 lines Rust + ~400 lines Lua
+### Phase 6: Assay Integration — ~200 lines Rust + ~400 lines Lua ✅
 
 **Goal**: SSE client support in assay, pure Lua workflow client library.
 
@@ -1048,17 +1048,17 @@ assay/                                 ← workspace root (Cargo.toml)
 |      | listen — uses `http.*`, `json.*`, Lua coroutines for replay)         |                            |
 | 6.3  | End-to-end tests (Lua → engine → back)                               | tests                      |
 
-### Phase 7: Child Workflows + Advanced — ~400 lines Rust
+### Phase 7: Child Workflows + Advanced — ~400 lines Rust ✅
 
 **Goal**: Nested workflows, cancellation, snapshots.
 
-| Step | Description                                  | Files  |
-| ---- | -------------------------------------------- | ------ |
-| 7.1  | Child workflow execution                     | engine |
-| 7.2  | Cancellation propagation (parent → children) | engine |
-| 7.3  | Continue-as-new                              | engine |
-| 7.4  | State snapshots (fast replay optimization)   | store  |
-| 7.5  | `ctx:side_effect()`                          | engine |
+| Step | Description                                  | Files  | Status |
+| ---- | -------------------------------------------- | ------ | ------ |
+| 7.1  | Child workflow execution                     | engine | ✅     |
+| 7.2  | Cancellation propagation (parent → children) | engine | ✅     |
+| 7.3  | Continue-as-new                              | engine | ✅     |
+| 7.4  | State snapshots (fast replay optimization)   | store  | ✅     |
+| 7.5  | `ctx:side_effect()`                          | engine | ✅     |
 
 ## Estimated Effort
 
