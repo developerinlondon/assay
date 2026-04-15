@@ -486,73 +486,97 @@ The most architecturally relevant project. Study these specific patterns:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Authentication (Ory Stack)
+### Authentication (Provider-Agnostic)
+
+Three auth modes, simplest to most secure. The engine doesn't care who issued the token — it works
+with any OIDC-compliant provider.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                                                                     │
+│  THREE AUTH MODES                                                   │
+│  ════════════════                                                   │
+│                                                                     │
+│  1. NO AUTH (default in dev)                                        │
+│     assay serve --no-auth                                           │
+│     All endpoints open. For local dev and trusted networks.         │
+│                                                                     │
+│  2. API KEYS (simple machine-to-machine)                            │
+│     assay serve --auth api-key                                      │
+│     Keys stored hashed in workflow DB. No OAuth2 needed.            │
+│                                                                     │
+│     Worker App                              Engine                  │
+│      │                                        │                     │
+│      │ Authorization: Bearer <api-key>        │                     │
+│      │───────────────────────────────────────→│                     │
+│      │                                        │  SHA256(key)        │
+│      │                                        │  matches DB? ✓     │
+│                                                                     │
+│     CLI management:                                                 │
+│     assay serve --generate-api-key            (prints key once)     │
+│     assay serve --list-api-keys               (shows hashed keys)   │
+│     assay serve --revoke-api-key <prefix>     (deletes by prefix)   │
+│                                                                     │
+│  3. JWT/OIDC (any provider)                                         │
+│     assay serve --auth-issuer https://your-provider.com             │
+│     Engine fetches JWKS from {issuer}/.well-known/openid-config.    │
+│     Validates signature, expiry, issuer, audience.                  │
+│     Works with Ory Hydra, Keycloak, Auth0, Azure AD, Google, etc.  │
+│                                                                     │
+│     Worker App        Any OIDC Provider          Engine             │
+│      │                      │                      │                │
+│      │ POST /oauth2/token   │                      │                │
+│      │ (client_credentials) │                      │                │
+│      │─────────────────────→│                      │                │
+│      │                      │                      │                │
+│      │ { access_token: jwt }│                      │                │
+│      │←─────────────────────│                      │                │
+│      │                                             │                │
+│      │ Authorization: Bearer <jwt>                 │                │
+│      │────────────────────────────────────────────→│                │
+│      │                                             │                │
+│      │                         Validate JWT via JWKS (cached)       │
+│      │                         Check exp, iss, aud                  │
+│                                                                     │
+│                                                                     │
 │  DASHBOARD (humans) — OAuth2 Authorization Code Flow                │
 │  ═══════════════════════════════════════════════════                 │
+│  Only when --auth-issuer is set. Engine acts as an OAuth2 client.   │
 │                                                                     │
-│  Browser          Engine                  Hydra         Kratos      │
-│   │                 │                       │              │        │
-│   │ GET /workflow/  │                       │              │        │
-│   │ (no session)    │                       │              │        │
-│   │────────────────→│                       │              │        │
-│   │                 │                       │              │        │
-│   │ 302 → Hydra /oauth2/auth               │              │        │
-│   │←────────────────│                       │              │        │
-│   │                                         │              │        │
-│   │ User logs in via Kratos                 │              │        │
-│   │────────────────────────────────────────→│─────────────→│        │
-│   │                                         │              │        │
-│   │ Auth code redirect                      │              │        │
-│   │←────────────────────────────────────────│              │        │
-│   │                                         │              │        │
-│   │ GET /auth/callback?code=xxx             │              │        │
-│   │────────────────→│                       │              │        │
-│   │                 │ Exchange code → token  │              │        │
-│   │                 │──────────────────────→│              │        │
-│   │                 │←──────────────────────│              │        │
-│   │                 │                       │              │        │
-│   │ Set-Cookie: session=jwt                 │              │        │
-│   │ 302 → /workflow/                        │              │        │
-│   │←────────────────│                       │              │        │
-│                                                                     │
-│                                                                     │
-│  WORKER APPS + API CLIENTS — OAuth2 Client Credentials              │
-│  ════════════════════════════════════════════════════                │
-│                                                                     │
-│  Each app is registered as an OAuth2 client in Hydra.               │
-│  Machine-to-machine auth, no human login needed.                    │
-│                                                                     │
-│  Worker App             Hydra                     Engine            │
-│   │                       │                         │               │
-│   │ POST /oauth2/token    │                         │               │
-│   │ grant_type=           │                         │               │
-│   │  client_credentials   │                         │               │
-│   │──────────────────────→│                         │               │
-│   │                       │                         │               │
-│   │ { access_token: jwt } │                         │               │
-│   │←──────────────────────│                         │               │
-│   │                                                 │               │
-│   │ All API calls with:                             │               │
-│   │ Authorization: Bearer <jwt>                     │               │
-│   │────────────────────────────────────────────────→│               │
-│   │                                                 │               │
-│   │ Engine validates JWT against Hydra JWKS,        │               │
-│   │ checks permissions via Keto.                    │               │
+│  Browser          Engine               OIDC Provider                │
+│   │                 │                       │                       │
+│   │ GET /workflow/  │                       │                       │
+│   │ (no session)    │                       │                       │
+│   │────────────────→│                       │                       │
+│   │                 │                       │                       │
+│   │ 302 → provider /authorize              │                       │
+│   │←────────────────│                       │                       │
+│   │                                         │                       │
+│   │ User logs in at provider                │                       │
+│   │────────────────────────────────────────→│                       │
+│   │                                         │                       │
+│   │ Auth code redirect                      │                       │
+│   │←────────────────────────────────────────│                       │
+│   │                                         │                       │
+│   │ GET /auth/callback?code=xxx             │                       │
+│   │────────────────→│                       │                       │
+│   │                 │ Exchange code → token  │                       │
+│   │                 │──────────────────────→│                       │
+│   │                 │←──────────────────────│                       │
+│   │                 │                       │                       │
+│   │ Set-Cookie: session=jwt                 │                       │
+│   │ 302 → /workflow/                        │                       │
+│   │←────────────────│                       │                       │
 │                                                                     │
 │                                                                     │
-│  PERMISSION MODEL (Keto RBAC)                                       │
-│  ════════════════════════════                                       │
+│  TESTING                                                            │
+│  ═══════                                                            │
 │                                                                     │
-│  workflow:queue:data#worker@client:my-cool-pipeline                 │
-│  workflow:queue:deploy#worker@client:deploy-bot                     │
-│  workflow:global#start@client:order-processor                       │
-│  workflow:global#admin@group:engineering                            │
-│                                                                     │
-│  Auth is optional. Disabled in dev mode.                            │
+│  No auth:  trivial — no headers needed                              │
+│  API keys: generate key, pass as Bearer token                       │
+│  JWT:      self-signed JWTs via crypto.jwt_sign (already in assay)  │
+│            Tests generate RSA keypair, sign tokens, engine validates │
+│            against in-memory JWKS. No running OAuth2 server needed. │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -991,15 +1015,18 @@ assay/                                 ← single binary
 
 ### Phase 4: Authentication — ~400 lines Rust
 
-**Goal**: OAuth2 via Ory Hydra/Kratos/Keto.
+**Goal**: Provider-agnostic auth — no auth, API keys, or JWT/OIDC (any provider).
 
-| Step | Description                                      | Files         |
-| ---- | ------------------------------------------------ | ------------- |
-| 4.1  | JWT validation middleware (Hydra JWKS)           | `api/auth.rs` |
-| 4.2  | OAuth2 authorization code flow (dashboard login) | `api/auth.rs` |
-| 4.3  | Keto permission checks (per-endpoint)            | `api/auth.rs` |
-| 4.4  | Session management (cookies for dashboard)       | `api/auth.rs` |
-| 4.5  | Optional auth (disabled in dev mode)             | `api/auth.rs` |
+| Step | Description                                                      | Files         |
+| ---- | ---------------------------------------------------------------- | ------------- |
+| 4.1  | Auth middleware (extracts Bearer token, routes to mode)          | `api/auth.rs` |
+| 4.2  | API key mode (SHA256 hash lookup in workflow DB)                 | `api/auth.rs` |
+| 4.3  | JWT/OIDC mode (JWKS fetch + cache, validate sig/exp/iss/aud)     | `api/auth.rs` |
+| 4.4  | OAuth2 authorization code flow (dashboard login, any provider)   | `api/auth.rs` |
+| 4.5  | Session management (cookies for dashboard)                       | `api/auth.rs` |
+| 4.6  | No-auth mode (default in dev, `--no-auth` flag)                  | `api/auth.rs` |
+| 4.7  | API key CLI (`--generate-api-key`, `--revoke-api-key`)           | `main.rs`     |
+| 4.8  | Tests (self-signed JWTs via crypto.jwt_sign, no external server) | tests         |
 
 ### Phase 5: Dashboard — ~500 lines HTML/JS/CSS + ~200 lines Rust
 
