@@ -175,6 +175,7 @@ impl FromStr for OverlapPolicy {
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowRecord {
     pub id: String,
+    pub namespace: String,
     pub run_id: String,
     pub workflow_type: String,
     pub task_queue: String,
@@ -245,6 +246,7 @@ pub struct WorkflowSignal {
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowSchedule {
     pub name: String,
+    pub namespace: String,
     pub workflow_type: String,
     pub cron_expr: String,
     pub input: Option<String>,
@@ -260,6 +262,7 @@ pub struct WorkflowSchedule {
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowWorker {
     pub id: String,
+    pub namespace: String,
     pub identity: String,
     pub task_queue: String,
     pub workflows: Option<String>,

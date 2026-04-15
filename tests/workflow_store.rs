@@ -17,9 +17,10 @@ fn make_workflow(id: &str, wf_type: &str) -> WorkflowRecord {
     let ts = now();
     WorkflowRecord {
         id: id.to_string(),
+        namespace: "main".to_string(),
         run_id: format!("run-{id}"),
         workflow_type: wf_type.to_string(),
-        task_queue: "default".to_string(),
+        task_queue: "main".to_string(),
         status: "PENDING".to_string(),
         input: Some(r#"{"key":"value"}"#.to_string()),
         result: None,
@@ -71,20 +72,20 @@ async fn workflow_list_filter_by_status() {
         .unwrap();
 
     let running = store
-        .list_workflows(Some(WorkflowStatus::Running), None, 100, 0)
+        .list_workflows("main", Some(WorkflowStatus::Running), None, 100, 0)
         .await
         .unwrap();
     assert_eq!(running.len(), 1);
     assert_eq!(running[0].id, "wf-1");
 
     let pending = store
-        .list_workflows(Some(WorkflowStatus::Pending), None, 100, 0)
+        .list_workflows("main", Some(WorkflowStatus::Pending), None, 100, 0)
         .await
         .unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].id, "wf-2");
 
-    let all = store.list_workflows(None, None, 100, 0).await.unwrap();
+    let all = store.list_workflows("main", None, None, 100, 0).await.unwrap();
     assert_eq!(all.len(), 2);
 }
 
@@ -319,10 +320,11 @@ async fn schedule_crud() {
     store
         .create_schedule(&WorkflowSchedule {
             name: "hourly-ingest".to_string(),
+            namespace: "main".to_string(),
             workflow_type: "IngestData".to_string(),
             cron_expr: "0 * * * *".to_string(),
             input: None,
-            task_queue: "default".to_string(),
+            task_queue: "main".to_string(),
             overlap_policy: "skip".to_string(),
             paused: false,
             last_run_at: None,
@@ -333,26 +335,26 @@ async fn schedule_crud() {
         .await
         .unwrap();
 
-    let sched = store.get_schedule("hourly-ingest").await.unwrap().unwrap();
+    let sched = store.get_schedule("main", "hourly-ingest").await.unwrap().unwrap();
     assert_eq!(sched.workflow_type, "IngestData");
     assert_eq!(sched.cron_expr, "0 * * * *");
 
-    let all = store.list_schedules().await.unwrap();
+    let all = store.list_schedules("main").await.unwrap();
     assert_eq!(all.len(), 1);
 
     store
-        .update_schedule_last_run("hourly-ingest", now(), now() + 3600.0, "wf-run-1")
+        .update_schedule_last_run("main", "hourly-ingest", now(), now() + 3600.0, "wf-run-1")
         .await
         .unwrap();
 
-    let updated = store.get_schedule("hourly-ingest").await.unwrap().unwrap();
+    let updated = store.get_schedule("main", "hourly-ingest").await.unwrap().unwrap();
     assert!(updated.last_run_at.is_some());
     assert_eq!(updated.last_workflow_id.as_deref(), Some("wf-run-1"));
 
-    let deleted = store.delete_schedule("hourly-ingest").await.unwrap();
+    let deleted = store.delete_schedule("main", "hourly-ingest").await.unwrap();
     assert!(deleted);
 
-    let gone = store.get_schedule("hourly-ingest").await.unwrap();
+    let gone = store.get_schedule("main", "hourly-ingest").await.unwrap();
     assert!(gone.is_none());
 }
 
@@ -364,8 +366,9 @@ async fn worker_register_heartbeat_remove() {
     store
         .register_worker(&WorkflowWorker {
             id: "w-1".to_string(),
+            namespace: "main".to_string(),
             identity: "pipeline-pod-1".to_string(),
-            task_queue: "default".to_string(),
+            task_queue: "main".to_string(),
             workflows: Some(r#"["IngestData"]"#.to_string()),
             activities: Some(r#"["fetch_data"]"#.to_string()),
             max_concurrent_workflows: 10,
@@ -377,7 +380,7 @@ async fn worker_register_heartbeat_remove() {
         .await
         .unwrap();
 
-    let workers = store.list_workers().await.unwrap();
+    let workers = store.list_workers("main").await.unwrap();
     assert_eq!(workers.len(), 1);
     assert_eq!(workers[0].identity, "pipeline-pod-1");
 
@@ -393,6 +396,6 @@ async fn worker_register_heartbeat_remove() {
     assert_eq!(removed.len(), 1);
     assert_eq!(removed[0], "w-1");
 
-    let workers = store.list_workers().await.unwrap();
+    let workers = store.list_workers("main").await.unwrap();
     assert!(workers.is_empty());
 }

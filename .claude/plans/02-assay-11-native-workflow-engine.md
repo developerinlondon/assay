@@ -1060,6 +1060,40 @@ assay/                                 ← workspace root (Cargo.toml)
 | 7.4  | State snapshots (fast replay optimization)   | store  | ✅     |
 | 7.5  | `ctx:side_effect()`                          | engine | ✅     |
 
+### Phase 8: Namespaces + Dashboard Redesign
+
+**Goal**: Multi-namespace isolation + production-grade admin dashboard.
+
+**8A: Namespace support**
+
+| Step  | Description                                                                | Files               |
+| ----- | -------------------------------------------------------------------------- | ------------------- |
+| 8A.1  | Add `namespaces` table + `namespace` column to workflows/schedules/workers | `store/sqlite.rs`   |
+| 8A.2  | Update `WorkflowStore` trait — all queries scoped by namespace             | `store/mod.rs`      |
+| 8A.3  | Update `SqliteStore` — migrate schema, update all SQL queries              | `store/sqlite.rs`   |
+| 8A.4  | Namespace CRUD endpoints (POST/GET/DELETE /api/v1/namespaces)              | `api/namespaces.rs` |
+| 8A.5  | Add `?namespace=` param to all existing API endpoints                      | `api/*.rs`          |
+| 8A.6  | Task queue stats endpoint (GET /api/v1/queues)                             | `api/queues.rs`     |
+| 8A.7  | Per-workflow SSE stream (GET /api/v1/workflows/:id/events/stream)          | `api/events.rs`     |
+| 8A.8  | Namespace filter on global SSE stream                                      | `api/events.rs`     |
+| 8A.9  | Update Engine to pass namespace through all operations                     | `engine.rs`         |
+| 8A.10 | Update CLI: `assay serve --namespace`, `assay workflow --namespace`        | `src/main.rs`       |
+| 8A.11 | Update OpenAPI spec with namespace params + new endpoints                  | `api/openapi.rs`    |
+| 8A.12 | Tests: namespace isolation, cross-namespace visibility                     | tests               |
+
+**8B: Dashboard redesign**
+
+| Step | Description                                                   | Files        |
+| ---- | ------------------------------------------------------------- | ------------ |
+| 8B.1 | Left sidebar layout with namespace switcher                   | `dashboard/` |
+| 8B.2 | Workflow list: search, advanced filters, pagination, live SSE | `dashboard/` |
+| 8B.3 | Workflow detail: expandable JSON, event timeline, child tree  | `dashboard/` |
+| 8B.4 | Schedule view: list + create form                             | `dashboard/` |
+| 8B.5 | Worker view: live status, queue assignment                    | `dashboard/` |
+| 8B.6 | Queue stats view: depth, poll rate, worker count              | `dashboard/` |
+| 8B.7 | Settings view: namespace management, engine info              | `dashboard/` |
+| 8B.8 | Status bar: engine info, namespace, worker count, version     | `dashboard/` |
+
 ## Estimated Effort
 
 | Phase                               | Lines         | Sessions  |

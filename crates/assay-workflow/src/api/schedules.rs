@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
@@ -24,13 +24,16 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
 pub struct CreateScheduleRequest {
     /// Unique schedule name
     pub name: String,
+    /// Namespace (default: "main")
+    #[serde(default = "default_namespace")]
+    pub namespace: String,
     /// Workflow type to start on each trigger
     pub workflow_type: String,
     /// Cron expression (e.g. "0 * * * *" for hourly)
     pub cron_expr: String,
     /// Optional JSON input passed to each workflow run
     pub input: Option<serde_json::Value>,
-    /// Task queue for created workflows (default: "default")
+    /// Task queue for created workflows (default: "main")
     #[serde(default = "default_queue")]
     pub task_queue: String,
     /// Overlap policy: skip, queue, cancel_old, allow_all (default: "skip")
@@ -39,7 +42,11 @@ pub struct CreateScheduleRequest {
 }
 
 fn default_queue() -> String {
-    "default".to_string()
+    "main".to_string()
+}
+
+fn default_namespace() -> String {
+    "main".to_string()
 }
 
 fn default_overlap() -> String {
@@ -63,6 +70,7 @@ pub async fn create_schedule<S: WorkflowStore>(
 
     let schedule = WorkflowSchedule {
         name: req.name.clone(),
+        namespace: req.namespace.clone(),
         workflow_type: req.workflow_type,
         cron_expr: req.cron_expr,
         input: req.input.map(|v| v.to_string()),
@@ -83,15 +91,23 @@ pub async fn create_schedule<S: WorkflowStore>(
     ))
 }
 
+#[derive(Deserialize)]
+pub struct NsQuery {
+    #[serde(default = "default_namespace")]
+    namespace: String,
+}
+
 #[utoipa::path(
     get, path = "/api/v1/schedules",
     tag = "schedules",
+    params(("namespace" = Option<String>, Query, description = "Namespace (default: main)")),
     responses((status = 200, description = "List of schedules", body = Vec<WorkflowSchedule>)),
 )]
 pub async fn list_schedules<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
+    Query(q): Query<NsQuery>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let schedules = state.engine.list_schedules().await?;
+    let schedules = state.engine.list_schedules(&q.namespace).await?;
     let json: Vec<serde_json::Value> = schedules
         .into_iter()
         .map(|s| serde_json::to_value(s).unwrap_or_default())
@@ -111,10 +127,11 @@ pub async fn list_schedules<S: WorkflowStore>(
 pub async fn get_schedule<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(name): Path<String>,
+    Query(q): Query<NsQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let schedule = state
         .engine
-        .get_schedule(&name)
+        .get_schedule(&q.namespace, &name)
         .await?
         .ok_or(AppError::NotFound(format!("schedule {name}")))?;
 
@@ -133,8 +150,9 @@ pub async fn get_schedule<S: WorkflowStore>(
 pub async fn delete_schedule<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(name): Path<String>,
+    Query(q): Query<NsQuery>,
 ) -> Result<axum::http::StatusCode, AppError> {
-    let deleted = state.engine.delete_schedule(&name).await?;
+    let deleted = state.engine.delete_schedule(&q.namespace, &name).await?;
     if deleted {
         Ok(axum::http::StatusCode::OK)
     } else {

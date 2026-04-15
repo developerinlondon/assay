@@ -24,19 +24,21 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
 
 #[derive(Deserialize, ToSchema)]
 pub struct StartWorkflowRequest {
+    /// Namespace (default: "main")
+    pub namespace: Option<String>,
     /// Workflow type name (e.g. "IngestData", "DeployService")
     pub workflow_type: String,
     /// Unique workflow ID (caller-provided for idempotency)
     pub workflow_id: String,
     /// Optional JSON input passed to the workflow
     pub input: Option<serde_json::Value>,
-    /// Task queue to route the workflow to (default: "default")
+    /// Task queue to route the workflow to (default: "main")
     #[serde(default = "default_queue")]
     pub task_queue: String,
 }
 
 fn default_queue() -> String {
-    "default".to_string()
+    "main".to_string()
 }
 
 #[derive(Serialize, ToSchema)]
@@ -60,9 +62,11 @@ pub async fn start_workflow<S: WorkflowStore>(
     Json(req): Json<StartWorkflowRequest>,
 ) -> Result<(axum::http::StatusCode, Json<WorkflowResponse>), AppError> {
     let input = req.input.map(|v| v.to_string());
+    let namespace = req.namespace.as_deref().unwrap_or("main");
     let wf = state
         .engine
         .start_workflow(
+            namespace,
             &req.workflow_type,
             &req.workflow_id,
             input.as_deref(),
@@ -82,6 +86,8 @@ pub async fn start_workflow<S: WorkflowStore>(
 
 #[derive(Deserialize)]
 pub struct ListQuery {
+    #[serde(default = "default_namespace")]
+    pub namespace: String,
     pub status: Option<String>,
     #[serde(rename = "type")]
     pub workflow_type: Option<String>,
@@ -89,6 +95,10 @@ pub struct ListQuery {
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
+}
+
+fn default_namespace() -> String {
+    "main".to_string()
 }
 
 fn default_limit() -> i64 {
@@ -119,7 +129,7 @@ pub async fn list_workflows<S: WorkflowStore>(
 
     let workflows = state
         .engine
-        .list_workflows(status, q.workflow_type.as_deref(), q.limit, q.offset)
+        .list_workflows(&q.namespace, status, q.workflow_type.as_deref(), q.limit, q.offset)
         .await?;
 
     let json: Vec<serde_json::Value> = workflows

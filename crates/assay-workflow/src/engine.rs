@@ -49,6 +49,7 @@ impl<S: WorkflowStore> Engine<S> {
 
     pub async fn start_workflow(
         &self,
+        namespace: &str,
         workflow_type: &str,
         workflow_id: &str,
         input: Option<&str>,
@@ -59,6 +60,7 @@ impl<S: WorkflowStore> Engine<S> {
 
         let wf = WorkflowRecord {
             id: workflow_id.to_string(),
+            namespace: namespace.to_string(),
             run_id,
             workflow_type: workflow_type.to_string(),
             task_queue: task_queue.to_string(),
@@ -95,13 +97,14 @@ impl<S: WorkflowStore> Engine<S> {
 
     pub async fn list_workflows(
         &self,
+        namespace: &str,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<WorkflowRecord>> {
         self.store
-            .list_workflows(status, workflow_type, limit, offset)
+            .list_workflows(namespace, status, workflow_type, limit, offset)
             .await
     }
 
@@ -223,8 +226,8 @@ impl<S: WorkflowStore> Engine<S> {
         self.store.heartbeat_worker(id, timestamp_now()).await
     }
 
-    pub async fn list_workers(&self) -> Result<Vec<WorkflowWorker>> {
-        self.store.list_workers().await
+    pub async fn list_workers(&self, namespace: &str) -> Result<Vec<WorkflowWorker>> {
+        self.store.list_workers(namespace).await
     }
 
     // ── Task Operations (for worker polling) ────────────────
@@ -257,22 +260,45 @@ impl<S: WorkflowStore> Engine<S> {
         self.store.create_schedule(schedule).await
     }
 
-    pub async fn list_schedules(&self) -> Result<Vec<WorkflowSchedule>> {
-        self.store.list_schedules().await
+    pub async fn list_schedules(&self, namespace: &str) -> Result<Vec<WorkflowSchedule>> {
+        self.store.list_schedules(namespace).await
     }
 
-    pub async fn get_schedule(&self, name: &str) -> Result<Option<WorkflowSchedule>> {
-        self.store.get_schedule(name).await
+    pub async fn get_schedule(&self, namespace: &str, name: &str) -> Result<Option<WorkflowSchedule>> {
+        self.store.get_schedule(namespace, name).await
     }
 
-    pub async fn delete_schedule(&self, name: &str) -> Result<bool> {
-        self.store.delete_schedule(name).await
+    pub async fn delete_schedule(&self, namespace: &str, name: &str) -> Result<bool> {
+        self.store.delete_schedule(namespace, name).await
+    }
+
+    // ── Namespace Operations ────────────────────────────────
+
+    pub async fn create_namespace(&self, name: &str) -> Result<()> {
+        self.store.create_namespace(name).await
+    }
+
+    pub async fn list_namespaces(&self) -> Result<Vec<crate::store::NamespaceRecord>> {
+        self.store.list_namespaces().await
+    }
+
+    pub async fn delete_namespace(&self, name: &str) -> Result<bool> {
+        self.store.delete_namespace(name).await
+    }
+
+    pub async fn get_namespace_stats(&self, namespace: &str) -> Result<crate::store::NamespaceStats> {
+        self.store.get_namespace_stats(namespace).await
+    }
+
+    pub async fn get_queue_stats(&self, namespace: &str) -> Result<Vec<crate::store::QueueStats>> {
+        self.store.get_queue_stats(namespace).await
     }
 
     // ── Child Workflow Operations ───────────────────────────
 
     pub async fn start_child_workflow(
         &self,
+        namespace: &str,
         parent_id: &str,
         workflow_type: &str,
         workflow_id: &str,
@@ -284,6 +310,7 @@ impl<S: WorkflowStore> Engine<S> {
 
         let wf = WorkflowRecord {
             id: workflow_id.to_string(),
+            namespace: namespace.to_string(),
             run_id,
             workflow_type: workflow_type.to_string(),
             task_queue: task_queue.to_string(),
@@ -358,9 +385,10 @@ impl<S: WorkflowStore> Engine<S> {
             .update_workflow_status(workflow_id, WorkflowStatus::Completed, None, None)
             .await?;
 
-        // Start a new run with the same type and queue
+        // Start a new run with the same type, namespace, and queue
         let new_id = format!("{workflow_id}-continued-{}", timestamp_now() as u64);
         self.start_workflow(
+            &old_wf.namespace,
             &old_wf.workflow_type,
             &new_id,
             input,

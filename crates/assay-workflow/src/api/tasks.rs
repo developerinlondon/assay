@@ -23,6 +23,9 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
 
 #[derive(Deserialize, ToSchema)]
 pub struct RegisterWorkerRequest {
+    /// Namespace (default: "main")
+    #[serde(default = "default_namespace")]
+    pub namespace: String,
     /// Human-readable worker identity (e.g. "pipeline-pod-1")
     pub identity: String,
     /// Task queue this worker listens on
@@ -35,6 +38,10 @@ pub struct RegisterWorkerRequest {
     pub max_concurrent_workflows: i32,
     #[serde(default = "default_concurrent")]
     pub max_concurrent_activities: i32,
+}
+
+fn default_namespace() -> String {
+    "main".to_string()
 }
 
 fn default_concurrent() -> i32 {
@@ -64,6 +71,7 @@ pub async fn register_worker<S: WorkflowStore>(
 
     let worker = WorkflowWorker {
         id: worker_id.clone(),
+        namespace: req.namespace,
         identity: req.identity,
         task_queue: req.queue,
         workflows: req.workflows.map(|v| serde_json::to_string(&v).unwrap()),

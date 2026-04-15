@@ -26,8 +26,19 @@ pub async fn run_scheduler<S: WorkflowStore>(store: Arc<S>) {
 }
 
 async fn evaluate_schedules<S: WorkflowStore>(store: &S) -> Result<()> {
-    let schedules = store.list_schedules().await?;
+    let namespaces = store.list_namespaces().await?;
     let now = timestamp_now();
+
+    for ns in &namespaces {
+        if let Err(e) = evaluate_namespace_schedules(store, &ns.name, now).await {
+            error!("Scheduler error in namespace '{}': {e}", ns.name);
+        }
+    }
+    Ok(())
+}
+
+async fn evaluate_namespace_schedules<S: WorkflowStore>(store: &S, namespace: &str, now: f64) -> Result<()> {
+    let schedules = store.list_schedules(namespace).await?;
 
     for sched in schedules {
         if sched.paused {
@@ -67,7 +78,7 @@ async fn evaluate_schedules<S: WorkflowStore>(store: &S) -> Result<()> {
             );
             // Still update next_run_at so we don't re-evaluate every tick
             store
-                .update_schedule_last_run(&sched.name, now, next_run, last_wf_id)
+                .update_schedule_last_run(namespace, &sched.name, now, next_run, last_wf_id)
                 .await?;
             continue;
         }
@@ -78,6 +89,7 @@ async fn evaluate_schedules<S: WorkflowStore>(store: &S) -> Result<()> {
 
         let wf = WorkflowRecord {
             id: workflow_id.clone(),
+            namespace: namespace.to_string(),
             run_id,
             workflow_type: sched.workflow_type.clone(),
             task_queue: sched.task_queue.clone(),
@@ -105,7 +117,7 @@ async fn evaluate_schedules<S: WorkflowStore>(store: &S) -> Result<()> {
             .await?;
 
         store
-            .update_schedule_last_run(&sched.name, now, next_run, &workflow_id)
+            .update_schedule_last_run(namespace, &sched.name, now, next_run, &workflow_id)
             .await?;
 
         info!(

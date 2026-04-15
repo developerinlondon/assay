@@ -6,12 +6,33 @@ use crate::types::*;
 
 /// Core storage trait for the workflow engine.
 ///
-/// All database access goes through this trait. The engine, API, scheduler,
-/// and health monitor depend only on `WorkflowStore`, never on a concrete
-/// database implementation.
+/// All database access goes through this trait. Methods that operate on
+/// namespace-scoped data take a `namespace` parameter. The "main"
+/// namespace is always available.
 ///
 /// All methods return `Send` futures so they can be used from `tokio::spawn`.
 pub trait WorkflowStore: Send + Sync + 'static {
+    // ── Namespaces ─────────────────────────────────────────
+
+    fn create_namespace(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn list_namespaces(
+        &self,
+    ) -> impl Future<Output = anyhow::Result<Vec<NamespaceRecord>>> + Send;
+
+    fn delete_namespace(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+
+    fn get_namespace_stats(
+        &self,
+        namespace: &str,
+    ) -> impl Future<Output = anyhow::Result<NamespaceStats>> + Send;
+
     // ── Workflows ──────────────────────────────────────────
 
     fn create_workflow(
@@ -26,6 +47,7 @@ pub trait WorkflowStore: Send + Sync + 'static {
 
     fn list_workflows(
         &self,
+        namespace: &str,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
         limit: i64,
@@ -129,13 +151,18 @@ pub trait WorkflowStore: Send + Sync + 'static {
 
     fn get_schedule(
         &self,
+        namespace: &str,
         name: &str,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send;
 
-    fn list_schedules(&self) -> impl Future<Output = anyhow::Result<Vec<WorkflowSchedule>>> + Send;
+    fn list_schedules(
+        &self,
+        namespace: &str,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowSchedule>>> + Send;
 
     fn update_schedule_last_run(
         &self,
+        namespace: &str,
         name: &str,
         last_run_at: f64,
         next_run_at: f64,
@@ -144,6 +171,7 @@ pub trait WorkflowStore: Send + Sync + 'static {
 
     fn delete_schedule(
         &self,
+        namespace: &str,
         name: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
@@ -160,7 +188,10 @@ pub trait WorkflowStore: Send + Sync + 'static {
         now: f64,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
-    fn list_workers(&self) -> impl Future<Output = anyhow::Result<Vec<WorkflowWorker>>> + Send;
+    fn list_workers(
+        &self,
+        namespace: &str,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowWorker>>> + Send;
 
     fn remove_dead_workers(
         &self,
@@ -211,6 +242,13 @@ pub trait WorkflowStore: Send + Sync + 'static {
         &self,
         workflow_id: &str,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowSnapshot>>> + Send;
+
+    // ── Queue Stats ─────────────────────────────────────────
+
+    fn get_queue_stats(
+        &self,
+        namespace: &str,
+    ) -> impl Future<Output = anyhow::Result<Vec<QueueStats>>> + Send;
 }
 
 /// API key metadata (hash is never exposed).
@@ -219,4 +257,33 @@ pub struct ApiKeyRecord {
     pub prefix: String,
     pub label: Option<String>,
     pub created_at: f64,
+}
+
+/// Namespace record.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct NamespaceRecord {
+    pub name: String,
+    pub created_at: f64,
+}
+
+/// Namespace-level statistics.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct NamespaceStats {
+    pub namespace: String,
+    pub total_workflows: i64,
+    pub running: i64,
+    pub pending: i64,
+    pub completed: i64,
+    pub failed: i64,
+    pub schedules: i64,
+    pub workers: i64,
+}
+
+/// Task queue statistics.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct QueueStats {
+    pub queue: String,
+    pub pending_activities: i64,
+    pub running_activities: i64,
+    pub workers: i64,
 }
