@@ -44,4 +44,5 @@ tracing = "0.1"
 
 [dev-dependencies]
 reqwest = { version = "0.13", features = ["json"], default-features = false }
+rsa = "0.9"
 tokio = { version = "1", features = ["full"] }

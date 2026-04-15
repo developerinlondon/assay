@@ -357,10 +357,7 @@ async fn main() -> ExitCode {
 
             // Determine auth mode
             let auth_mode = if let Some(issuer) = auth_issuer {
-                assay_workflow::api::auth::AuthMode::Jwt {
-                    issuer,
-                    audience: auth_audience,
-                }
+                assay_workflow::api::auth::AuthMode::jwt(issuer, auth_audience)
             } else if auth_api_key {
                 assay_workflow::api::auth::AuthMode::ApiKey
             } else {
