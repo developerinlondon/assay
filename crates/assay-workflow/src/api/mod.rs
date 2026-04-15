@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod dashboard;
 pub mod events;
 pub mod schedules;
 pub mod tasks;
@@ -40,7 +41,10 @@ pub fn router<S: WorkflowStore + 'static>(state: Arc<AppState<S>>) -> Router {
         api
     };
 
-    api.with_state(state)
+    // Dashboard routes (no auth — static assets + SPA)
+    let app = api.merge(dashboard::router());
+
+    app.with_state(state)
 }
 
 fn api_v1_router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
