@@ -2,14 +2,31 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.0] - 2026-04-15
+
+### Removed
+
+- **Temporal integration** — The `temporal` feature flag and all Temporal SDK dependencies
+  (`temporalio-client`, `temporalio-sdk`, `temporalio-sdk-core`, `temporalio-common`,
+  `prost-wkt-types`) have been removed. The gRPC client (`temporal.connect()`, `temporal.start()`),
+  worker runtime (`temporal.worker()`), and HTTP REST stdlib module (`require("assay.temporal")`)
+  are no longer available. The Temporal integration never reached production stability and required
+  an external Temporal cluster plus `protoc` at build time. A native workflow engine (`assay serve`)
+  is planned for v0.11.1.
+
+### Changed
+
+- **Binary size** — 16MB → 11MB (-5MB) with Temporal dependencies removed.
+- **Build time** — ~90s → ~34s. `protoc` is no longer required at build time.
+- **Stdlib module count** — 35 → 34 (temporal module removed).
+
 ## [0.10.4] - 2026-04-12
 
 ### Added
 
-- **`os.date(format?, time?)`** — Standard Lua time formatting. Supports
-  strftime patterns (`%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%c`), the `!`
-  prefix for UTC, and `*t` table output. Previously missing from the
-  sandboxed environment.
+- **`os.date(format?, time?)`** — Standard Lua time formatting. Supports strftime patterns (`%Y`,
+  `%m`, `%d`, `%H`, `%M`, `%S`, `%c`), the `!` prefix for UTC, and `*t` table output. Previously
+  missing from the sandboxed environment.
 - **`os.time()`** — Returns current UTC epoch as integer (standard Lua).
 - **`os.clock()`** — Returns CPU time in seconds (standard Lua).
 
@@ -17,43 +34,39 @@ All notable changes to Assay are documented here.
 
 ### Added
 
-- **`ctx:register_query(name, handler)`** — Register query handlers in
-  Temporal workflows. The handler function is called when Temporal
-  dispatches a QueryWorkflow activation, and the result is returned as
-  a JSON payload. Enables dashboard-style apps to read workflow state
-  in real-time without signals.
+- **`ctx:register_query(name, handler)`** — Register query handlers in Temporal workflows. The
+  handler function is called when Temporal dispatches a QueryWorkflow activation, and the result is
+  returned as a JSON payload. Enables dashboard-style apps to read workflow state in real-time
+  without signals.
 
-- **`kratos.flows:get_login_admin(flow_id)`** — Fetch a login flow via
-  the Kratos admin API (no CSRF cookie required). Server-side components
-  like hydra-auth should use this instead of `get_login()` which requires
-  browser cookies that may not be available across different cookie domains.
+- **`kratos.flows:get_login_admin(flow_id)`** — Fetch a login flow via the Kratos admin API (no CSRF
+  cookie required). Server-side components like hydra-auth should use this instead of `get_login()`
+  which requires browser cookies that may not be available across different cookie domains.
 
 ## [0.10.1] - 2026-04-12
 
 ### Fixed
 
-- **Temporal worker identity** — `temporal.worker()` and `temporal.connect()`
-  now set a non-empty `identity` on `ConnectionOptions`. The Temporal SDK v0.2.0
-  requires this field; without it, `init_worker` fails with "Client identity
-  cannot be empty". Identity is set to `assay-worker@{task_queue}` for workers
-  and `assay-client@{namespace}` for clients.
+- **Temporal worker identity** — `temporal.worker()` and `temporal.connect()` now set a non-empty
+  `identity` on `ConnectionOptions`. The Temporal SDK v0.2.0 requires this field; without it,
+  `init_worker` fails with "Client identity cannot be empty". Identity is set to
+  `assay-worker@{task_queue}` for workers and `assay-client@{namespace}` for clients.
 
 ## [0.10.0] - 2026-04-11
 
 ### Added
 
-- **`assay.gitlab`** — GitLab REST API v4 client. Full coverage of projects,
-  repository files, atomic multi-file commits, branches, tags, merge requests,
-  pipelines, jobs, releases, issues, groups, container registry, webhooks,
-  environments, deploy tokens, and user endpoints. Supports both private access
-  token and OAuth2 bearer authentication. Enables GitOps automation scripts to
-  read/write repository content, trigger pipelines, manage merge requests, and
-  interact with container registries without external CLI dependencies.
+- **`assay.gitlab`** — GitLab REST API v4 client. Full coverage of projects, repository files,
+  atomic multi-file commits, branches, tags, merge requests, pipelines, jobs, releases, issues,
+  groups, container registry, webhooks, environments, deploy tokens, and user endpoints. Supports
+  both private access token and OAuth2 bearer authentication. Enables GitOps automation scripts to
+  read/write repository content, trigger pipelines, manage merge requests, and interact with
+  container registries without external CLI dependencies.
 
 ### Changed
 
-- **Sub-object OO convention** across all 35 stdlib modules. Methods are now
-  grouped by resource into sub-objects instead of flat on the client:
+- **Sub-object OO convention** across all 35 stdlib modules. Methods are now grouped by resource
+  into sub-objects instead of flat on the client:
 
   ```lua
   -- Before (flat)
@@ -65,28 +78,25 @@ All notable changes to Assay are documented here.
   c.merge_requests:create(project, opts)
   ```
 
-  Standard CRUD verbs (`list`, `get`, `create`, `update`, `delete`) are
-  consistent across all resources. This makes the API more intuitive and
-  self-documenting. Modules refactored: gitlab, github, argocd, vault, s3,
-  unleash, grafana, keto, kratos, hydra, rbac, prometheus, alertmanager,
-  traefik, loki, k8s, harbor, temporal, dex, flux, certmanager, eso,
-  crossplane, velero, kargo, gcal, gmail, openclaw, zitadel, postgres.
-  Modules unchanged (no client pattern): healthcheck, oauth2, email_triage,
-  openbao (alias).
+  Standard CRUD verbs (`list`, `get`, `create`, `update`, `delete`) are consistent across all
+  resources. This makes the API more intuitive and self-documenting. Modules refactored: gitlab,
+  github, argocd, vault, s3, unleash, grafana, keto, kratos, hydra, rbac, prometheus, alertmanager,
+  traefik, loki, k8s, harbor, temporal, dex, flux, certmanager, eso, crossplane, velero, kargo,
+  gcal, gmail, openclaw, zitadel, postgres. Modules unchanged (no client pattern): healthcheck,
+  oauth2, email_triage, openbao (alias).
 
 ## [0.9.0] - 2026-04-11
 
 ### Added
 
-- **Temporal workflow engine** — full workflow execution via Lua coroutines.
-  `temporal.worker()` now supports both activities and workflows. Each
-  workflow runs as a coroutine with a deterministic `ctx` object:
+- **Temporal workflow engine** — full workflow execution via Lua coroutines. `temporal.worker()` now
+  supports both activities and workflows. Each workflow runs as a coroutine with a deterministic
+  `ctx` object:
 
-  - `ctx:execute_activity(name, input, opts?)` — schedule activity, block
-    until complete. Supports retry policies, timeouts, heartbeats. On
-    replay, returns cached results without re-executing.
-  - `ctx:wait_signal(name, opts?)` — block until external signal or
-    timeout. Signals are buffered (safe to call after signal arrives).
+  - `ctx:execute_activity(name, input, opts?)` — schedule activity, block until complete. Supports
+    retry policies, timeouts, heartbeats. On replay, returns cached results without re-executing.
+  - `ctx:wait_signal(name, opts?)` — block until external signal or timeout. Signals are buffered
+    (safe to call after signal arrives).
   - `ctx:sleep(seconds)` — deterministic timer via Temporal, not wall clock.
   - `ctx:side_effect(fn)` — run non-deterministic function (IDs, timestamps).
   - `ctx:workflow_info()` — workflow metadata (id, type, namespace, attempt).
@@ -107,13 +117,12 @@ All notable changes to Assay are documented here.
   })
   ```
 
-- **`markdown.to_html(source)`** — new builtin for Markdown to HTML
-  conversion via pulldown-cmark. Supports tables, strikethrough, and task
-  lists. Zero binary size overhead (pulldown-cmark was already in the
-  dependency tree via temporalio crates).
+- **`markdown.to_html(source)`** — new builtin for Markdown to HTML conversion via pulldown-cmark.
+  Supports tables, strikethrough, and task lists. Zero binary size overhead (pulldown-cmark was
+  already in the dependency tree via temporalio crates).
 
-- **`http.serve()` wildcard routes** — routes ending with `/*` match any
-  path with that prefix. More specific wildcards take priority:
+- **`http.serve()` wildcard routes** — routes ending with `/*` match any path with that prefix. More
+  specific wildcards take priority:
   ```lua
   http.serve(8080, {
     GET = {
@@ -123,158 +132,134 @@ All notable changes to Assay are documented here.
   })
   ```
 
-- **Assay builds its own documentation site**. `site/build.lua` replaces
-  the bash/awk/npx pipeline. Module count (54) is computed automatically
-  from `src/lua/builtins/mod.rs` and `stdlib/**/*.lua`. Site source lives
-  under `site/`, build output goes to `build/site/` (gitignored).
+- **Assay builds its own documentation site**. `site/build.lua` replaces the bash/awk/npx pipeline.
+  Module count (54) is computed automatically from `src/lua/builtins/mod.rs` and `stdlib/**/*.lua`.
+  Site source lives under `site/`, build output goes to `build/site/` (gitignored).
 
-- **Per-module documentation pages**. 36 markdown source files under
-  `docs/modules/` are the single source of truth. `build.lua` generates
-  individual HTML pages, a module index, and `llms-full.txt` for LLM agents.
+- **Per-module documentation pages**. 36 markdown source files under `docs/modules/` are the single
+  source of truth. `build.lua` generates individual HTML pages, a module index, and `llms-full.txt`
+  for LLM agents.
 
-- **`site/serve.lua`** — assay serves its own docs site using wildcard
-  routes. 40 lines of Lua, zero external dependencies.
+- **`site/serve.lua`** — assay serves its own docs site using wildcard routes. 40 lines of Lua, zero
+  external dependencies.
 
-- **`fs.read_bytes(path)` / `fs.write_bytes(path, data)`** — binary-safe
-  file I/O. Lua strings can hold arbitrary bytes, so these work for images,
-  WASM, protobuf, compressed data, etc.
+- **`fs.read_bytes(path)` / `fs.write_bytes(path, data)`** — binary-safe file I/O. Lua strings can
+  hold arbitrary bytes, so these work for images, WASM, protobuf, compressed data, etc.
 
-- **Pagefind search** — full-text search across all docs pages via Ctrl+K
-  modal. Indexed at build time (~100KB client bundle), runs entirely in
-  the browser.
+- **Pagefind search** — full-text search across all docs pages via Ctrl+K modal. Indexed at build
+  time (~100KB client bundle), runs entirely in the browser.
 
 ### Changed
 
-- **`http.serve()` binary response body** — response `body` field now
-  preserves raw bytes (read via `mlua::String`) instead of forcing UTF-8
-  conversion. Binary assets (WASM, images) serve correctly.
+- **`http.serve()` binary response body** — response `body` field now preserves raw bytes (read via
+  `mlua::String`) instead of forcing UTF-8 conversion. Binary assets (WASM, images) serve correctly.
 
 - Version bump to 0.9.0 (from 0.8.4).
-- Site source consolidated under `site/` (was split across `site/`,
-  `site-partials/`, `site-static/`).
-- Nav redesign: no underlines, subtle active page pill, frosted glass
-  header, theme toggle persistence across pages.
-- `deploy.yml` updated: `cargo build` → `assay site/build.lua` → wrangler
-  deploys `build/site/`.
+- Site source consolidated under `site/` (was split across `site/`, `site-partials/`,
+  `site-static/`).
+- Nav redesign: no underlines, subtle active page pill, frosted glass header, theme toggle
+  persistence across pages.
+- `deploy.yml` updated: `cargo build` → `assay site/build.lua` → wrangler deploys `build/site/`.
 
 ## [0.8.4] - 2026-04-11
 
 ### Added
 
-- **`assay.ory.keto` — OPL permit support and table-style check()**.
-  `k:check()` now accepts a table argument in addition to positional
-  args, making OPL permit checks natural:
+- **`assay.ory.keto` — OPL permit support and table-style check()**. `k:check()` now accepts a table
+  argument in addition to positional args, making OPL permit checks natural:
   ```lua
   k:check({ namespace = "command_center", object = "cc",
             relation = "trigger", subject_id = "user:uuid" })
   ```
-  Keto evaluates the OPL rewrite rules and returns true/false — no
-  Lua-side capability mapping needed.
+  Keto evaluates the OPL rewrite rules and returns true/false — no Lua-side capability mapping
+  needed.
 
-- **`k:batch_check(tuples)`** — check multiple permission tuples in a
-  single call. Returns a list of booleans in the same order. Each
-  entry uses the same table format as `check()`.
+- **`k:batch_check(tuples)`** — check multiple permission tuples in a single call. Returns a list of
+  booleans in the same order. Each entry uses the same table format as `check()`.
 
-- **`assay.ory.kratos` — complete self-service flow coverage**.
-  Three flow families that were missing are now implemented:
+- **`assay.ory.kratos` — complete self-service flow coverage**. Three flow families that were
+  missing are now implemented:
 
-  - **Registration**: `c:submit_registration_flow(flow_id, payload, cookie?)`
-    was missing entirely, making the registration API unusable.
+  - **Registration**: `c:submit_registration_flow(flow_id, payload, cookie?)` was missing entirely,
+    making the registration API unusable.
   - **Recovery** (password reset): `c:create_recovery_flow(opts?)`,
-    `c:get_recovery_flow(id, cookie?)`,
-    `c:submit_recovery_flow(flow_id, payload, cookie?)`.
+    `c:get_recovery_flow(id, cookie?)`, `c:submit_recovery_flow(flow_id, payload, cookie?)`.
   - **Settings** (profile/password change): `c:create_settings_flow(cookie)`,
-    `c:get_settings_flow(id, cookie?)`,
-    `c:submit_settings_flow(flow_id, payload, cookie?)`.
+    `c:get_settings_flow(id, cookie?)`, `c:submit_settings_flow(flow_id, payload, cookie?)`.
 
 ### Fixed
 
-- **`assay.ory.keto`**: `k:delete()` now supports subject_set tuples.
-  Previously only `subject_id` was passed to the query string,
-  silently ignoring subject_set-based tuples.
+- **`assay.ory.keto`**: `k:delete()` now supports subject_set tuples. Previously only `subject_id`
+  was passed to the query string, silently ignoring subject_set-based tuples.
 
-- **`assay.ory.keto`**: `build_query()` now URL-encodes parameter
-  values. Previously special characters in subject IDs (e.g. `@` in
-  email addresses) were passed raw, potentially corrupting the query
-  string.
+- **`assay.ory.keto`**: `build_query()` now URL-encodes parameter values. Previously special
+  characters in subject IDs (e.g. `@` in email addresses) were passed raw, potentially corrupting
+  the query string.
 
-- **`assay.ory.kratos`**: `public_post()` now handles HTTP 422
-  responses (Kratos returns 422 for browser flows that need a
-  redirect after successful submission).
+- **`assay.ory.kratos`**: `public_post()` now handles HTTP 422 responses (Kratos returns 422 for
+  browser flows that need a redirect after successful submission).
 
 ## [0.8.3] - 2026-04-07
 
 ### Added
 
-- **`assay.ory.rbac`** — capability-based RBAC engine layered on top of
-  Ory Keto. Define a policy once (role → capability set) and get user
-  lookups, capability checks, and membership management for free.
-  Users can hold multiple roles and the effective capability set is
-  the union, which means proper separation of duties is enforceable
-  at the authorization layer (e.g. an "approver" role can have
-  `approve` without also getting `trigger`, even if it's listed
-  above an "operator" role with `trigger`).
+- **`assay.ory.rbac`** — capability-based RBAC engine layered on top of Ory Keto. Define a policy
+  once (role → capability set) and get user lookups, capability checks, and membership management
+  for free. Users can hold multiple roles and the effective capability set is the union, which means
+  proper separation of duties is enforceable at the authorization layer (e.g. an "approver" role can
+  have `approve` without also getting `trigger`, even if it's listed above an "operator" role with
+  `trigger`).
 
   Public surface:
-    - `rbac.policy({namespace, keto, roles, default_role?})`
-    - `p:user_roles(user_id)` — sorted by rank, highest first
-    - `p:user_primary_role(user_id)` — for compact UI badges
-    - `p:user_capabilities(user_id)` — union set
-    - `p:user_has_capability(user_id, cap)` — single check
-    - `p:add(user_id, role)` / `p:remove(user_id, role)` — idempotent
-    - `p:list_members(role)` / `p:list_all_memberships()`
-    - `p:reset_role(role)` — for bootstrap/seed scripts
-    - `p:require_capability(cap, handler)` — http.serve middleware
+  - `rbac.policy({namespace, keto, roles, default_role?})`
+  - `p:user_roles(user_id)` — sorted by rank, highest first
+  - `p:user_primary_role(user_id)` — for compact UI badges
+  - `p:user_capabilities(user_id)` — union set
+  - `p:user_has_capability(user_id, cap)` — single check
+  - `p:add(user_id, role)` / `p:remove(user_id, role)` — idempotent
+  - `p:list_members(role)` / `p:list_all_memberships()`
+  - `p:reset_role(role)` — for bootstrap/seed scripts
+  - `p:require_capability(cap, handler)` — http.serve middleware
 
-- **`crypto.jwt_decode(token)`** — decode a JWT WITHOUT verifying its
-  signature. Returns `{header, claims}` parsed from the base64url
-  segments. Useful when the JWT travels through a trusted channel
-  (your own session cookie set over TLS) and you just need to read
-  the claims rather than verify them. For untrusted JWTs, verify the
-  signature with a JWKS-aware verifier instead.
+- **`crypto.jwt_decode(token)`** — decode a JWT WITHOUT verifying its signature. Returns
+  `{header, claims}` parsed from the base64url segments. Useful when the JWT travels through a
+  trusted channel (your own session cookie set over TLS) and you just need to read the claims rather
+  than verify them. For untrusted JWTs, verify the signature with a JWKS-aware verifier instead.
 
-- **Nested stdlib module loading**: `require("assay.ory.kratos")` now
-  resolves to `stdlib/ory/kratos.lua`. The stdlib and filesystem
-  loaders translate dotted module paths into directory paths and try
-  both `<path>.lua` and `<path>/init.lua`, matching standard Lua
-  package loading conventions.
+- **Nested stdlib module loading**: `require("assay.ory.kratos")` now resolves to
+  `stdlib/ory/kratos.lua`. The stdlib and filesystem loaders translate dotted module paths into
+  directory paths and try both `<path>.lua` and `<path>/init.lua`, matching standard Lua package
+  loading conventions.
 
 ### Changed
 
-- **BREAKING: Ory stack modules moved under `assay.ory.*`**. The flat
-  top-level `assay.kratos`, `assay.hydra`, and `assay.keto` modules
-  are now `assay.ory.kratos`, `assay.ory.hydra`, and `assay.ory.keto`.
-  The convenience wrapper `require("assay.ory")` is unchanged and
-  still returns `{kratos, hydra, keto, rbac}`.
+- **BREAKING: Ory stack modules moved under `assay.ory.*`**. The flat top-level `assay.kratos`,
+  `assay.hydra`, and `assay.keto` modules are now `assay.ory.kratos`, `assay.ory.hydra`, and
+  `assay.ory.keto`. The convenience wrapper `require("assay.ory")` is unchanged and still returns
+  `{kratos, hydra, keto, rbac}`.
 
-  Migration: replace
-    `require("assay.kratos")` → `require("assay.ory.kratos")`
-    `require("assay.hydra")`  → `require("assay.ory.hydra")`
-    `require("assay.keto")`   → `require("assay.ory.keto")`
+  Migration: replace `require("assay.kratos")` → `require("assay.ory.kratos")`
+  `require("assay.hydra")` → `require("assay.ory.hydra")` `require("assay.keto")` →
+  `require("assay.ory.keto")`
 
-  This is the right architectural shape: Ory-specific modules sit
-  under the `assay.ory.*` umbrella alongside the new
-  `assay.ory.rbac`, leaving room for `assay.<other-vendor>.*` later
-  without polluting the top-level namespace.
+  This is the right architectural shape: Ory-specific modules sit under the `assay.ory.*` umbrella
+  alongside the new `assay.ory.rbac`, leaving room for `assay.<other-vendor>.*` later without
+  polluting the top-level namespace.
 
 ## [0.8.2] - 2026-04-07
 
 ### Added
 
-- **`assay.hydra` logout challenge methods**: completes the OIDC challenge
-  trio (login, consent, logout). When an app calls Hydra's
-  `/oauth2/sessions/logout` endpoint with `id_token_hint` and
-  `post_logout_redirect_uri`, Hydra creates a logout request and redirects
-  the browser to the configured `urls.logout` endpoint with a
-  `logout_challenge` query param. The handler now has SDK methods to
-  process these requests:
-  - `c:get_logout_request(challenge)` — fetch the pending logout request
-    (subject, sid, client, rp_initiated flag)
-  - `c:accept_logout(challenge)` — invalidate the Hydra and Kratos sessions
-    and get back the `redirect_to` URL pointing at the app's
-    `post_logout_redirect_uri`
-  - `c:reject_logout(challenge)` — for "stay signed in" UIs that let the
-    user cancel the logout
+- **`assay.hydra` logout challenge methods**: completes the OIDC challenge trio (login, consent,
+  logout). When an app calls Hydra's `/oauth2/sessions/logout` endpoint with `id_token_hint` and
+  `post_logout_redirect_uri`, Hydra creates a logout request and redirects the browser to the
+  configured `urls.logout` endpoint with a `logout_challenge` query param. The handler now has SDK
+  methods to process these requests:
+  - `c:get_logout_request(challenge)` — fetch the pending logout request (subject, sid, client,
+    rp_initiated flag)
+  - `c:accept_logout(challenge)` — invalidate the Hydra and Kratos sessions and get back the
+    `redirect_to` URL pointing at the app's `post_logout_redirect_uri`
+  - `c:reject_logout(challenge)` — for "stay signed in" UIs that let the user cancel the logout
 
   Symmetric with the existing login/consent challenge methods.
 
@@ -283,11 +268,10 @@ All notable changes to Assay are documented here.
 ### Fixed
 
 - **`req.params` now URL-decodes query string values** in `http.serve`. Previously
-  `?challenge=abc%3D` produced `req.params.challenge == "abc%3D"`, so consumers
-  that re-encoded the value (such as `assay.hydra:get_login_request`) ended up
-  double-encoding it to `abc%253D` and getting a 404 from the upstream service.
-  Values are now decoded with `form_urlencoded::parse`, so `+` becomes a space
-  and percent-escapes are decoded correctly. The raw query string remains
+  `?challenge=abc%3D` produced `req.params.challenge == "abc%3D"`, so consumers that re-encoded the
+  value (such as `assay.hydra:get_login_request`) ended up double-encoding it to `abc%253D` and
+  getting a 404 from the upstream service. Values are now decoded with `form_urlencoded::parse`, so
+  `+` becomes a space and percent-escapes are decoded correctly. The raw query string remains
   available as `req.query` for handlers that need the verbatim form.
 
 ## [0.8.0] - 2026-04-07
@@ -295,24 +279,24 @@ All notable changes to Assay are documented here.
 ### Added
 
 - **Ory stack stdlib modules** — full Lua SDK for the Ory identity/authorization stack:
-  - **`assay.kratos`** — Identity management. Login/registration/recovery/settings flows,
-    identity CRUD via admin API, session introspection (`whoami`), schema management.
-  - **`assay.hydra`** — OAuth2 and OpenID Connect. Client CRUD, authorize URL builder,
-    token exchange (authorization_code grant), accept/reject login and consent challenges,
-    token introspection, JWK endpoint.
-  - **`assay.keto`** — Relationship-based access control. Relation-tuple CRUD, permission
-    checks (Zanzibar-style), role/group membership queries, expand API for role inheritance.
+  - **`assay.kratos`** — Identity management. Login/registration/recovery/settings flows, identity
+    CRUD via admin API, session introspection (`whoami`), schema management.
+  - **`assay.hydra`** — OAuth2 and OpenID Connect. Client CRUD, authorize URL builder, token
+    exchange (authorization_code grant), accept/reject login and consent challenges, token
+    introspection, JWK endpoint.
+  - **`assay.keto`** — Relationship-based access control. Relation-tuple CRUD, permission checks
+    (Zanzibar-style), role/group membership queries, expand API for role inheritance.
   - **`assay.ory`** — Convenience wrapper that re-exports all three modules, with
     `ory.connect(opts)` to build all three clients from one options table.
 
-  Pure Lua wrappers over the Ory REST APIs. Zero new Rust dependencies — binary size
-  unchanged. Each module follows the standard `M.client(url, opts)` pattern with
-  comprehensive `@quickref` metadata for `assay context` discovery.
+  Pure Lua wrappers over the Ory REST APIs. Zero new Rust dependencies — binary size unchanged. Each
+  module follows the standard `M.client(url, opts)` pattern with comprehensive `@quickref` metadata
+  for `assay context` discovery.
 
-- **Multi-value response headers in `http.serve`**: Header values can now be a Lua
-  array of strings, emitting the same header name multiple times. Required for
-  `Set-Cookie` when setting multiple cookies in one response, and for other headers
-  that legitimately repeat (e.g., `Link`, `Vary`, `Cache-Control`).
+- **Multi-value response headers in `http.serve`**: Header values can now be a Lua array of strings,
+  emitting the same header name multiple times. Required for `Set-Cookie` when setting multiple
+  cookies in one response, and for other headers that legitimately repeat (e.g., `Link`, `Vary`,
+  `Cache-Control`).
 
   ```lua
   return {
@@ -330,28 +314,28 @@ All notable changes to Assay are documented here.
 
 ### Theme
 
-This is the **identity and auth stack** release. Assay now ships with a complete SDK
-for building OIDC-integrated apps on Ory: one app can handle Hydra login/consent
-challenges, query Keto permissions, and manage Kratos identities — all in idiomatic
-Lua with zero external dependencies beyond the existing assay binary.
+This is the **identity and auth stack** release. Assay now ships with a complete SDK for building
+OIDC-integrated apps on Ory: one app can handle Hydra login/consent challenges, query Keto
+permissions, and manage Kratos identities — all in idiomatic Lua with zero external dependencies
+beyond the existing assay binary.
 
 ## [0.7.2] - 2026-04-07
 
 ### Added
 
-- **`req.params` in `http.serve`**: Query string parameters are now automatically parsed
-  into a `params` table on incoming requests. For example, `?login_challenge=abc&foo=bar`
-  becomes `req.params.login_challenge == "abc"` and `req.params.foo == "bar"`. The raw
-  query string remains available as `req.query`.
+- **`req.params` in `http.serve`**: Query string parameters are now automatically parsed into a
+  `params` table on incoming requests. For example, `?login_challenge=abc&foo=bar` becomes
+  `req.params.login_challenge == "abc"` and `req.params.foo == "bar"`. The raw query string remains
+  available as `req.query`.
 
 ## [0.7.1] - 2026-04-06
 
 ### Changed
 
-- **Temporal included by default**: The `temporal` feature is now part of the default build.
-  The standard Docker image and binary include native gRPC workflow support out of the box.
-- **CI/Release/Docker**: Added `protoc` installation to all build environments for gRPC
-  proto compilation.
+- **Temporal included by default**: The `temporal` feature is now part of the default build. The
+  standard Docker image and binary include native gRPC workflow support out of the box.
+- **CI/Release/Docker**: Added `protoc` installation to all build environments for gRPC proto
+  compilation.
 
 ## [0.7.0] - 2026-04-06
 
@@ -376,26 +360,26 @@ Lua with zero external dependencies beyond the existing assay binary.
 
 ### Fixed
 
-- **http.serve async handlers**: Route handlers are now async (`call_async`), allowing
-  them to call `http.get`, `sleep`, and any other async builtins. Previously, calling
-  an async function from a route handler would crash with "attempt to yield from outside
-  a coroutine". This was the only remaining sync call site for user Lua functions.
+- **http.serve async handlers**: Route handlers are now async (`call_async`), allowing them to call
+  `http.get`, `sleep`, and any other async builtins. Previously, calling an async function from a
+  route handler would crash with "attempt to yield from outside a coroutine". This was the only
+  remaining sync call site for user Lua functions.
 
 ### Added
 
-- **`npx skills add developerinlondon/assay`** — install Assay's SKILL.md into your
-  AI agent project via the skills CLI.
+- **`npx skills add developerinlondon/assay`** — install Assay's SKILL.md into your AI agent project
+  via the skills CLI.
 - **Dark/light theme toggle** on assay.rs with localStorage persistence.
 - **Version stamp in site footer** — shows git tag or SHA from deploy pipeline.
 - **Infrastructure Testing** highlighted as core capability on the homepage.
 
 ### Changed
 
-- **Site overhaul** — compact hero, service grid above the fold with SVG icons,
-  side-by-side size & speed comparison charts, consistent nav across all pages,
-  accurate module coverage (removed misleading "Coming Soon" features).
-- **Comparison page** — renamed from "MCP Comparison", removed out-of-scope entries,
-  shows only domains Assay actually covers.
+- **Site overhaul** — compact hero, service grid above the fold with SVG icons, side-by-side size &
+  speed comparison charts, consistent nav across all pages, accurate module coverage (removed
+  misleading "Coming Soon" features).
+- **Comparison page** — renamed from "MCP Comparison", removed out-of-scope entries, shows only
+  domains Assay actually covers.
 - **README** — full size & speed comparison table with all 10 runtimes and cold start times.
 
 ## [0.6.0] - 2026-04-05
@@ -403,9 +387,9 @@ Lua with zero external dependencies beyond the existing assay binary.
 ### Added
 
 - **6 new stdlib modules** (23 -> 29 total):
-  - **assay.openclaw** — OpenClaw AI agent platform integration. Invoke tools, send messages,
-    manage persistent state with JSON files, diff detection, approval gates, cron jobs, sub-agent
-    spawning, and LLM task execution. Auto-discovers `$OPENCLAW_URL`/`$CLAWD_URL`.
+  - **assay.openclaw** — OpenClaw AI agent platform integration. Invoke tools, send messages, manage
+    persistent state with JSON files, diff detection, approval gates, cron jobs, sub-agent spawning,
+    and LLM task execution. Auto-discovers `$OPENCLAW_URL`/`$CLAWD_URL`.
   - **assay.github** — GitHub REST API client (no `gh` CLI dependency). Pull requests (view, list,
     reviews, merge), issues (list, get, create, comment), repositories, Actions workflow runs, and
     GraphQL queries. Bearer token auth via `$GITHUB_TOKEN`.
@@ -415,25 +399,25 @@ Lua with zero external dependencies beyond the existing assay binary.
     (list, get, create, update, delete) and calendar list. Same auth pattern as gmail.
   - **assay.oauth2** — Google OAuth2 token management. File-based credentials loading, automatic
     access token refresh via refresh_token grant, token persistence, and auth header generation.
-    Used internally by gmail and gcal modules. Default paths: `~/.config/gog/credentials.json`
-    and `~/.config/gog/token.json`.
+    Used internally by gmail and gcal modules. Default paths: `~/.config/gog/credentials.json` and
+    `~/.config/gog/token.json`.
   - **assay.email_triage** — Email classification and triage. Deterministic rule-based
-    categorization of emails into needs_reply, needs_action, and fyi buckets. Optional
-    LLM-assisted triage via OpenClaw for smarter classification. Subject and sender pattern
-    matching for automated mail detection.
-- **Tool mode**: `assay run --mode tool` for OpenClaw integration. Runs Lua scripts as
-  deterministic tools invoked by AI agents, with structured JSON output.
+    categorization of emails into needs_reply, needs_action, and fyi buckets. Optional LLM-assisted
+    triage via OpenClaw for smarter classification. Subject and sender pattern matching for
+    automated mail detection.
+- **Tool mode**: `assay run --mode tool` for OpenClaw integration. Runs Lua scripts as deterministic
+  tools invoked by AI agents, with structured JSON output.
 - **Resume mechanism**: `assay resume --token <token> --approve yes|no` for resuming paused
   workflows after human approval gates.
 - **OpenClaw extension**: `@developerinlondon/assay-openclaw-extension` package (GitHub Packages).
-  Registers Assay as an OpenClaw agent tool with configurable script directory, timeout, output
-  size limits, and approval-based resume flow.
-  Install via `openclaw plugins install @developerinlondon/assay-openclaw-extension`.
+  Registers Assay as an OpenClaw agent tool with configurable script directory, timeout, output size
+  limits, and approval-based resume flow. Install via
+  `openclaw plugins install @developerinlondon/assay-openclaw-extension`.
 
 ### Architecture
 
-- **Shell-free design**: All 6 new modules use native HTTP APIs exclusively. No shell commands,
-  no CLI dependencies (no `gh`, no `gcloud`, no `oauth2l`). Pure Lua over Assay HTTP builtins.
+- **Shell-free design**: All 6 new modules use native HTTP APIs exclusively. No shell commands, no
+  CLI dependencies (no `gh`, no `gcloud`, no `oauth2l`). Pure Lua over Assay HTTP builtins.
 
 ## [0.5.6] - 2026-04-03
 

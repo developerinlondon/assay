@@ -52,11 +52,6 @@ jobs:
           # Save cache even if tests fail, so next run has partial builds
           save-if: "true"
 
-      - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Clippy (warnings = errors)
         timeout-minutes: 10
         run: cargo clippy --tests --target ${{ matrix.target }} -- -D warnings

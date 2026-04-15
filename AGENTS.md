@@ -9,17 +9,16 @@ Key coding practices for this project:
 
 ## Library hygiene: no application-domain leakage
 
-**Assay is a general-purpose library. It must have zero knowledge of any
-specific application that uses it.** When writing or modifying any code,
-test, comment, doc, changelog entry, commit message, or PR description in
-this repo, never reference:
+**Assay is a general-purpose library. It must have zero knowledge of any specific application that
+uses it.** When writing or modifying any code, test, comment, doc, changelog entry, commit message,
+or PR description in this repo, never reference:
 
-- Specific consumer applications by name (e.g. "Command Center",
-  "hydra-login", or any internal product)
-- Specific deployments, environments, or company-specific URLs
-  (e.g. `*.dev.simons.disw.siemens.com`, internal cluster names)
-- Company- or project-specific role names, namespaces, client IDs, or
-  resource names that only make sense in one consumer's context
+- Specific consumer applications by name (e.g. "Command Center", "hydra-login", or any internal
+  product)
+- Specific deployments, environments, or company-specific URLs (e.g.
+  `*.dev.simons.disw.siemens.com`, internal cluster names)
+- Company- or project-specific role names, namespaces, client IDs, or resource names that only make
+  sense in one consumer's context
 - The user's organisation, team, or internal project naming conventions
 
 Use generic placeholder names instead:
@@ -30,21 +29,20 @@ Use generic placeholder names instead:
 - Project IDs: `demo-project`, `project-1`
 - Workflow names: `MyWorkflow`, `my-queue`
 
-When motivating a new feature in a CHANGELOG entry, commit message, or PR
-description, describe **the OIDC/Kubernetes/HTTP scenario it enables**, not
-**the specific consumer that asked for it**. The library should read the
-same to a stranger who has never heard of any of assay's consumers as it
+When motivating a new feature in a CHANGELOG entry, commit message, or PR description, describe
+**the OIDC/Kubernetes/HTTP scenario it enables**, not **the specific consumer that asked for it**.
+The library should read the same to a stranger who has never heard of any of assay's consumers as it
 does to someone who works on one of them every day.
 
-This applies to all files in the repo: `stdlib/`, `src/`, `tests/`, `*.md`,
-`*.html`, `CHANGELOG.md`, and any commit/PR text. The only legitimate
-exception is the copyright holder's name in `LICENSE`/`NOTICE`/`CLA.md`.
+This applies to all files in the repo: `stdlib/`, `src/`, `tests/`, `*.md`, `*.html`,
+`CHANGELOG.md`, and any commit/PR text. The only legitimate exception is the copyright holder's name
+in `LICENSE`/`NOTICE`/`CLA.md`.
 
 ## What is Assay
 
-General-purpose enhanced Lua runtime. Single ~9 MB static binary with batteries included: HTTP
+General-purpose enhanced Lua runtime. Single ~11 MB static binary with batteries included: HTTP
 client/server, JSON/YAML/TOML, crypto, database, WebSocket, filesystem, shell execution, process
-management, async, and 35 embedded stdlib modules for infrastructure services (Kubernetes,
+management, async, and 34 embedded stdlib modules for infrastructure services (Kubernetes,
 Prometheus, Vault, ArgoCD, etc.) and AI agent integrations (OpenClaw, GitHub, Gmail, Google
 Calendar).
 
@@ -52,11 +50,11 @@ Use cases:
 
 - **Standalone scripting** — system automation, CI/CD tasks, file processing
 - **Embedded runtime** — other Rust services embed assay as a library (`pub mod lua`)
-- **Kubernetes Jobs** — replaces 50–250 MB Python/Node/kubectl containers (~9 MB image)
+- **Kubernetes Jobs** — replaces 50–250 MB Python/Node/kubectl containers (~11 MB image)
 - **Infrastructure automation** — GitOps hooks, health checks, service configuration
 
 - **Repo**: [github.com/developerinlondon/assay](https://github.com/developerinlondon/assay)
-- **Image**: `ghcr.io/developerinlondon/assay:latest` (~9 MB compressed)
+- **Image**: `ghcr.io/developerinlondon/assay:latest` (~11 MB compressed)
 - **Crate**: [crates.io/crates/assay-lua](https://crates.io/crates/assay-lua)
 - **Stack**: Rust (2024 edition), Tokio, Lua 5.5 (mlua), reqwest, clap, axum
 
@@ -105,27 +103,26 @@ spec:
 
 Available as globals in all `.lua` scripts — no `require` needed:
 
-| Category       | Functions                                                                                                                                                                                                                                                           |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HTTP           | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)` — `http.serve` response handlers accept array header values to emit the same header name multiple times (e.g., multiple `Set-Cookie`) |
-| JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str)`, `yaml.encode(tbl)`, `toml.parse(str)`, `toml.encode(tbl)`                                                                                                                                                 |
+| Category       | Functions                                                                                                                                                                                                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| HTTP           | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)` — `http.serve` response handlers accept array header values to emit the same header name multiple times (e.g., multiple `Set-Cookie`)         |
+| JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str)`, `yaml.encode(tbl)`, `toml.parse(str)`, `toml.encode(tbl)`                                                                                                                                                                                                      |
 | Filesystem     | `fs.read(path)`, `fs.read_bytes(path)`, `fs.write(path, str)`, `fs.write_bytes(path, data)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)`, `fs.copy(src, dst)`, `fs.rename(src, dst)`, `fs.glob(pattern)`, `fs.tempdir()`, `fs.chmod(path, mode)`, `fs.readdir(path, opts?)` |
-| Crypto         | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.jwt_decode(token)` (decode without verifying), `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)`                                                                                |
-| Base64         | `base64.encode(str)`, `base64.decode(str)`                                                                                                                                                                                                                          |
-| Regex          | `regex.match(pat, str)`, `regex.find(pat, str)`, `regex.find_all(pat, str)`, `regex.replace(pat, str, repl)`                                                                                                                                                        |
-| Database       | `db.connect(url)`, `db.query(conn, sql, params?)`, `db.execute(conn, sql, params?)`, `db.close(conn)`                                                                                                                                                               |
-| WebSocket      | `ws.connect(url)`, `ws.send(conn, msg)`, `ws.recv(conn)`, `ws.close(conn)`                                                                                                                                                                                          |
-| Templates      | `template.render(path, vars)`, `template.render_string(tmpl, vars)`                                                                                                                                                                                                 |
-| Async          | `async.spawn(fn)`, `async.spawn_interval(fn, ms)`, `handle:await()`, `handle:cancel()`                                                                                                                                                                              |
-| Assert         | `assert.eq(a, b, msg?)`, `assert.ne(a, b, msg?)`, `assert.gt(a, b, msg?)`, `assert.lt(a, b, msg?)`, `assert.contains(str, sub, msg?)`, `assert.not_nil(val, msg?)`, `assert.matches(str, pat, msg?)`                                                                |
-| Logging        | `log.info(msg)`, `log.warn(msg)`, `log.error(msg)`                                                                                                                                                                                                                  |
-| Utilities      | `env.get(key)`, `env.set(key, value)`, `env.list()`, `sleep(secs)`, `time()`                                                                                                                                                                                        |
-| Shell          | `shell.exec(cmd, opts?)` — execute commands with timeout, working dir, env                                                                                                                                                                                          |
-| Process        | `process.list()`, `process.is_running(name)`, `process.kill(pid, signal?)`, `process.wait_idle(names, timeout, interval)`                                                                                                                                           |
-| Disk           | `disk.usage(path)` — returns `{total, used, available, percent}`, `disk.sweep(dir, age_secs)`, `disk.dir_size(path)`                                                                                                                                                |
-| OS             | `os.hostname()`, `os.arch()`, `os.platform()`                                                                                                                                                                                                                       |
-| Markdown       | `markdown.to_html(source)` — convert Markdown to HTML (tables, strikethrough, task lists)                    |
-| Temporal (gRPC) | `temporal.connect(opts)`, `temporal.start(opts)`, `temporal.worker(opts)` — native gRPC workflow client + worker runtime with coroutine-based workflow execution (requires `temporal` feature) |
+| Crypto         | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.jwt_decode(token)` (decode without verifying), `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)`                                                                                                                                   |
+| Base64         | `base64.encode(str)`, `base64.decode(str)`                                                                                                                                                                                                                                                                               |
+| Regex          | `regex.match(pat, str)`, `regex.find(pat, str)`, `regex.find_all(pat, str)`, `regex.replace(pat, str, repl)`                                                                                                                                                                                                             |
+| Database       | `db.connect(url)`, `db.query(conn, sql, params?)`, `db.execute(conn, sql, params?)`, `db.close(conn)`                                                                                                                                                                                                                    |
+| WebSocket      | `ws.connect(url)`, `ws.send(conn, msg)`, `ws.recv(conn)`, `ws.close(conn)`                                                                                                                                                                                                                                               |
+| Templates      | `template.render(path, vars)`, `template.render_string(tmpl, vars)`                                                                                                                                                                                                                                                      |
+| Async          | `async.spawn(fn)`, `async.spawn_interval(fn, ms)`, `handle:await()`, `handle:cancel()`                                                                                                                                                                                                                                   |
+| Assert         | `assert.eq(a, b, msg?)`, `assert.ne(a, b, msg?)`, `assert.gt(a, b, msg?)`, `assert.lt(a, b, msg?)`, `assert.contains(str, sub, msg?)`, `assert.not_nil(val, msg?)`, `assert.matches(str, pat, msg?)`                                                                                                                     |
+| Logging        | `log.info(msg)`, `log.warn(msg)`, `log.error(msg)`                                                                                                                                                                                                                                                                       |
+| Utilities      | `env.get(key)`, `env.set(key, value)`, `env.list()`, `sleep(secs)`, `time()`                                                                                                                                                                                                                                             |
+| Shell          | `shell.exec(cmd, opts?)` — execute commands with timeout, working dir, env                                                                                                                                                                                                                                               |
+| Process        | `process.list()`, `process.is_running(name)`, `process.kill(pid, signal?)`, `process.wait_idle(names, timeout, interval)`                                                                                                                                                                                                |
+| Disk           | `disk.usage(path)` — returns `{total, used, available, percent}`, `disk.sweep(dir, age_secs)`, `disk.dir_size(path)`                                                                                                                                                                                                     |
+| OS             | `os.hostname()`, `os.arch()`, `os.platform()`                                                                                                                                                                                                                                                                            |
+| Markdown       | `markdown.to_html(source)` — convert Markdown to HTML (tables, strikethrough, task lists)                                                                                                                                                                                                                                |
 
 HTTP responses: `{status, body, headers}`. Options: `{headers = {["X-Key"] = "val"}}`.
 
@@ -154,9 +151,9 @@ return {
 
 Custom headers override defaults: `headers = { ["content-type"] = "text/html" }`.
 
-Header values can be either a string or an array of strings. Array values emit the same header
-name multiple times — required for `Set-Cookie` with multiple cookies and useful for `Link`,
-`Vary`, `Cache-Control`, etc.:
+Header values can be either a string or an array of strings. Array values emit the same header name
+multiple times — required for `Set-Cookie` with multiple cookies and useful for `Link`, `Vary`,
+`Cache-Control`, etc.:
 
 ```lua
 return {
@@ -176,45 +173,44 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 
 ## Stdlib Modules
 
-35 embedded Lua modules loaded via `require("assay.<name>")`:
+34 embedded Lua modules loaded via `require("assay.<name>")`:
 
-| Module                | Description                                                                       |
-| --------------------- | --------------------------------------------------------------------------------- |
-| `assay.prometheus`    | Query metrics, alerts, targets, rules, label values, series                       |
-| `assay.alertmanager`  | Manage alerts, silences, receivers, config                                        |
-| `assay.loki`          | Push logs, query, labels, series                                                  |
-| `assay.grafana`       | Health, dashboards, datasources, annotations                                      |
-| `assay.k8s`           | 30+ resource types, CRDs, readiness checks                                        |
-| `assay.argocd`        | Apps, sync, health, projects, repositories                                        |
-| `assay.kargo`         | Stages, freight, promotions, verification                                         |
-| `assay.flux`          | GitRepositories, Kustomizations, HelmReleases                                     |
-| `assay.traefik`       | Routers, services, middlewares, entrypoints                                       |
-| `assay.vault`         | KV secrets, policies, auth, transit, PKI                                          |
-| `assay.openbao`       | Alias for vault (API-compatible)                                                  |
-| `assay.certmanager`   | Certificates, issuers, ACME challenges                                            |
-| `assay.eso`           | ExternalSecrets, SecretStores, ClusterSecretStores                                |
-| `assay.dex`           | OIDC discovery, JWKS, health                                                      |
-| `assay.zitadel`       | OIDC identity management with JWT machine auth                                    |
-| `assay.ory.kratos`        | Ory Kratos identity — login/registration/recovery/settings flows, identities, sessions, schemas |
-| `assay.ory.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs |
-| `assay.ory.keto`          | Ory Keto ReBAC — relation tuples, permission checks, role/group membership, expand |
-| `assay.ory.rbac`          | Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships, separation of duties |
-| `assay.ory`           | Convenience wrapper re-exporting kratos/hydra/keto/rbac with `ory.connect(opts)`  |
-| `assay.crossplane`    | Providers, XRDs, compositions, managed resources                                  |
-| `assay.velero`        | Backups, restores, schedules, storage locations                                   |
-| `assay.temporal`      | Workflows, task queues, schedules, signals + native gRPC client (temporal feature) |
-| `assay.harbor`        | Projects, repositories, artifacts, vulnerability scanning                         |
-| `assay.healthcheck`   | HTTP checks, JSON path, body matching, latency, multi-check                       |
-| `assay.s3`            | S3-compatible storage (AWS, R2, MinIO) with Sig V4                                |
-| `assay.postgres`      | Postgres-specific helpers                                                         |
-| `assay.unleash`       | Feature flags: projects, environments, features, strategies, API tokens           |
-| `assay.openclaw`      | OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks        |
-| `assay.gitlab`        | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, issues, registry   |
-| `assay.github`        | GitHub REST API — PRs, issues, actions, repos, GraphQL                            |
-| `assay.gmail`         | Gmail REST API with OAuth2 — search, read, reply, send, labels                    |
-| `assay.gcal`          | Google Calendar REST API with OAuth2 — events CRUD, calendar list                 |
-| `assay.oauth2`        | Google OAuth2 token management — file-based credentials, auto-refresh, persistence |
-| `assay.email_triage`  | Email classification — deterministic rules + optional LLM-assisted triage via OpenClaw |
+| Module               | Description                                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `assay.prometheus`   | Query metrics, alerts, targets, rules, label values, series                                                                 |
+| `assay.alertmanager` | Manage alerts, silences, receivers, config                                                                                  |
+| `assay.loki`         | Push logs, query, labels, series                                                                                            |
+| `assay.grafana`      | Health, dashboards, datasources, annotations                                                                                |
+| `assay.k8s`          | 30+ resource types, CRDs, readiness checks                                                                                  |
+| `assay.argocd`       | Apps, sync, health, projects, repositories                                                                                  |
+| `assay.kargo`        | Stages, freight, promotions, verification                                                                                   |
+| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases                                                                               |
+| `assay.traefik`      | Routers, services, middlewares, entrypoints                                                                                 |
+| `assay.vault`        | KV secrets, policies, auth, transit, PKI                                                                                    |
+| `assay.openbao`      | Alias for vault (API-compatible)                                                                                            |
+| `assay.certmanager`  | Certificates, issuers, ACME challenges                                                                                      |
+| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores                                                                          |
+| `assay.dex`          | OIDC discovery, JWKS, health                                                                                                |
+| `assay.zitadel`      | OIDC identity management with JWT machine auth                                                                              |
+| `assay.ory.kratos`   | Ory Kratos identity — login/registration/recovery/settings flows, identities, sessions, schemas                             |
+| `assay.ory.hydra`    | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs                                 |
+| `assay.ory.keto`     | Ory Keto ReBAC — relation tuples, permission checks, role/group membership, expand                                          |
+| `assay.ory.rbac`     | Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships, separation of duties |
+| `assay.ory`          | Convenience wrapper re-exporting kratos/hydra/keto/rbac with `ory.connect(opts)`                                            |
+| `assay.crossplane`   | Providers, XRDs, compositions, managed resources                                                                            |
+| `assay.velero`       | Backups, restores, schedules, storage locations                                                                             |
+| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                                                   |
+| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                                                 |
+| `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4                                                                          |
+| `assay.postgres`     | Postgres-specific helpers                                                                                                   |
+| `assay.unleash`      | Feature flags: projects, environments, features, strategies, API tokens                                                     |
+| `assay.openclaw`     | OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks                                                  |
+| `assay.gitlab`       | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, issues, registry                                             |
+| `assay.github`       | GitHub REST API — PRs, issues, actions, repos, GraphQL                                                                      |
+| `assay.gmail`        | Gmail REST API with OAuth2 — search, read, reply, send, labels                                                              |
+| `assay.gcal`         | Google Calendar REST API with OAuth2 — events CRUD, calendar list                                                           |
+| `assay.oauth2`       | Google OAuth2 token management — file-based credentials, auto-refresh, persistence                                          |
+| `assay.email_triage` | Email classification — deterministic rules + optional LLM-assisted triage via OpenClaw                                      |
 
 ### Client Pattern
 
@@ -279,12 +275,12 @@ openclaw plugins install @developerinlondon/assay-openclaw-extension
 
 Configuration in OpenClaw plugin config:
 
-| Key              | Default        | Description                              |
-| ---------------- | -------------- | ---------------------------------------- |
-| `binaryPath`     | PATH lookup    | Explicit path to the `assay` binary      |
-| `timeout`        | `20`           | Execution timeout in seconds             |
-| `maxOutputSize`  | `524288`       | Maximum stdout collected from Assay      |
-| `scriptsDir`     | workspace root | Root directory for Lua scripts           |
+| Key             | Default        | Description                         |
+| --------------- | -------------- | ----------------------------------- |
+| `binaryPath`    | PATH lookup    | Explicit path to the `assay` binary |
+| `timeout`       | `20`           | Execution timeout in seconds        |
+| `maxOutputSize` | `524288`       | Maximum stdout collected from Assay |
+| `scriptsDir`    | workspace root | Root directory for Lua scripts      |
 
 See [openclaw-extension/README.md](openclaw-extension/README.md) for full details.
 
@@ -398,10 +394,9 @@ Note: Lua tables in `format!` strings need doubled braces: `{{ key = "value" }}`
 
 ### 3. Add documentation
 
-Add a `docs/modules/<name>.md` file with method signatures and examples.
-This is the single source of truth — `site/build.lua` generates the website
-pages and `llms-full.txt` from these files. No need to manually update
-`README.md`, `SKILL.md`, or the website.
+Add a `docs/modules/<name>.md` file with method signatures and examples. This is the single source
+of truth — `site/build.lua` generates the website pages and `llms-full.txt` from these files. No
+need to manually update `README.md`, `SKILL.md`, or the website.
 
 ### 4. Verify
 
@@ -431,18 +426,15 @@ assay/
 │           ├── http.rs       # http.{get,post,put,patch,delete,serve} + wildcard routes
 │           ├── core.rs       # env, sleep, time, fs (read/write + read_bytes/write_bytes), base64, regex, log, async
 │           ├── markdown.rs   # markdown.to_html() via pulldown-cmark
-│           ├── temporal.rs   # temporal.{connect,start} gRPC client
-│           ├── temporal_worker.rs  # temporal.worker() — coroutine-based workflow execution
 │           └── ...           # json, yaml, toml, crypto, db, ws, template, assert, etc.
 ├── stdlib/                   # Embedded Lua modules (auto-discovered)
 │   ├── vault.lua             # Comprehensive reference (330 lines)
 │   ├── grafana.lua           # Simple reference (110 lines)
-│   └── ...                   # 35 modules total
+│   └── ...                   # 34 modules total
 ├── docs/
 │   └── modules/              # Module documentation (single source of truth)
-│       ├── temporal.md       # → generates website page + llms-full.txt entry
 │       ├── ory.md
-│       └── ...               # 36 markdown files
+│       └── ...               # 35 markdown files
 ├── site/                     # Website source (tracked in git)
 │   ├── build.lua             # Assay builds its own docs (replaces bash/npm)
 │   ├── serve.lua             # Dev server using http.serve() with wildcard routes
@@ -454,7 +446,6 @@ assay/
 ├── tests/
 │   ├── common/mod.rs         # Test helpers: run_lua(), create_vm(), eval_lua()
 │   ├── stdlib_vault.rs       # One test file per stdlib module
-│   ├── temporal_worker.rs    # Workflow engine tests
 │   ├── http_serve.rs         # HTTP server tests (incl. wildcard routes)
 │   ├── markdown.rs           # Markdown builtin tests
 │   └── ...
@@ -481,6 +472,7 @@ assay/
 5. **Verify**: `cargo clippy --tests -- -D warnings && cargo test && assay site/build.lua`
 
 The following are **auto-generated** — do NOT edit manually:
+
 - `build/site/` — entire website (generated by `assay site/build.lua`)
 - Module count on the website (computed from `src/lua/builtins/mod.rs` + `stdlib/`)
 - `build/site/llms-full.txt` (concatenated from `docs/modules/*.md`)
@@ -497,11 +489,13 @@ The following are **auto-generated** — do NOT edit manually:
 5. **Tag the release**: `git tag v0.9.0 && git push origin v0.9.0`
 
 The tag push triggers `.github/workflows/release.yml` which publishes:
+
 - GitHub Release (binaries + checksums)
 - crates.io (`assay-lua` crate)
 - Docker image (`ghcr.io/developerinlondon/assay`)
 
 The merge to main triggers `.github/workflows/deploy.yml` which:
+
 - Builds assay (`cargo build --release`)
 - Builds the website (`assay site/build.lua`)
 - Indexes for search (`pagefind --site build/site`)
@@ -522,5 +516,5 @@ assay site/serve.lua                 # serve at http://localhost:3000
 cargo check                        # Type check
 cargo clippy -- -D warnings        # Lint (warnings = errors)
 cargo test                         # Run all tests
-cargo build --release              # Release build (~9 MB)
+cargo build --release              # Release build (~11 MB)
 ```
