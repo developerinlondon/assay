@@ -190,6 +190,27 @@ pub trait WorkflowStore: Send + Sync + 'static {
         &self,
         prefix: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+
+    // ── Child Workflows ─────────────────────────────────────
+
+    fn list_child_workflows(
+        &self,
+        parent_id: &str,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send;
+
+    // ── Snapshots ───────────────────────────────────────────
+
+    fn create_snapshot(
+        &self,
+        workflow_id: &str,
+        event_seq: i32,
+        state_json: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    fn get_latest_snapshot(
+        &self,
+        workflow_id: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSnapshot>>> + Send;
 }
 
 /// API key metadata (hash is never exposed).

@@ -604,6 +604,61 @@ impl WorkflowStore for SqliteStore {
             .await?;
         Ok(res.rows_affected() > 0)
     }
+
+    // ── Child Workflows ─────────────────────────────────────
+
+    async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {
+        let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
+            "SELECT id, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at
+             FROM workflows WHERE parent_id = ? ORDER BY created_at ASC",
+        )
+        .bind(parent_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    // ── Snapshots ───────────────────────────────────────────
+
+    async fn create_snapshot(
+        &self,
+        workflow_id: &str,
+        event_seq: i32,
+        state_json: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT OR REPLACE INTO workflow_snapshots (workflow_id, event_seq, state_json, created_at)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(workflow_id)
+        .bind(event_seq)
+        .bind(state_json)
+        .bind(timestamp_now())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn get_latest_snapshot(
+        &self,
+        workflow_id: &str,
+    ) -> Result<Option<WorkflowSnapshot>> {
+        let row = sqlx::query_as::<_, (String, i32, String, f64)>(
+            "SELECT workflow_id, event_seq, state_json, created_at
+             FROM workflow_snapshots WHERE workflow_id = ?
+             ORDER BY event_seq DESC LIMIT 1",
+        )
+        .bind(workflow_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|(workflow_id, event_seq, state_json, created_at)| WorkflowSnapshot {
+            workflow_id,
+            event_seq,
+            state_json,
+            created_at,
+        }))
+    }
 }
 
 fn timestamp_now() -> f64 {

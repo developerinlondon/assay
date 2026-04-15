@@ -35,6 +35,8 @@ use crate::store::WorkflowStore;
         crate::api::schedules::list_schedules,
         crate::api::schedules::get_schedule,
         crate::api::schedules::delete_schedule,
+        crate::api::workflows::list_children,
+        crate::api::workflows::continue_as_new,
         crate::api::workers::list_workers,
         crate::api::workers::health_check,
     ),
@@ -56,6 +58,7 @@ use crate::store::WorkflowStore;
         crate::api::tasks::CompleteTaskBody,
         crate::api::tasks::FailTaskBody,
         crate::api::schedules::CreateScheduleRequest,
+        crate::api::workflows::ContinueAsNewBody,
     )),
     tags(
         (name = "workflows", description = "Workflow lifecycle management"),

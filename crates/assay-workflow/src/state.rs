@@ -36,6 +36,12 @@ pub enum WorkflowCommand {
         input: Option<String>,
         task_queue: Option<String>,
     },
+    ContinueAsNew {
+        input: Option<String>,
+    },
+    SideEffect {
+        value: String,
+    },
 }
 
 fn default_max_attempts() -> i32 {

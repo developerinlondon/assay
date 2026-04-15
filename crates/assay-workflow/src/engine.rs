@@ -132,6 +132,13 @@ impl<S: WorkflowStore> Engine<S> {
                     })
                     .await?;
 
+                // Propagate cancellation to all child workflows
+                let children = self.store.list_child_workflows(id).await?;
+                for child in children {
+                    // Recursive cancellation — Box::pin for async recursion
+                    Box::pin(self.cancel_workflow(&child.id)).await?;
+                }
+
                 Ok(true)
             }
         }
@@ -260,6 +267,148 @@ impl<S: WorkflowStore> Engine<S> {
 
     pub async fn delete_schedule(&self, name: &str) -> Result<bool> {
         self.store.delete_schedule(name).await
+    }
+
+    // ── Child Workflow Operations ───────────────────────────
+
+    pub async fn start_child_workflow(
+        &self,
+        parent_id: &str,
+        workflow_type: &str,
+        workflow_id: &str,
+        input: Option<&str>,
+        task_queue: &str,
+    ) -> Result<WorkflowRecord> {
+        let now = timestamp_now();
+        let run_id = format!("run-{workflow_id}-{}", now as u64);
+
+        let wf = WorkflowRecord {
+            id: workflow_id.to_string(),
+            run_id,
+            workflow_type: workflow_type.to_string(),
+            task_queue: task_queue.to_string(),
+            status: "PENDING".to_string(),
+            input: input.map(String::from),
+            result: None,
+            error: None,
+            parent_id: Some(parent_id.to_string()),
+            claimed_by: None,
+            created_at: now,
+            updated_at: now,
+            completed_at: None,
+        };
+
+        self.store.create_workflow(&wf).await?;
+
+        // Record events on both parent and child
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: workflow_id.to_string(),
+                seq: 1,
+                event_type: "WorkflowStarted".to_string(),
+                payload: input.map(String::from),
+                timestamp: now,
+            })
+            .await?;
+
+        let parent_seq = self.store.get_event_count(parent_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: parent_id.to_string(),
+                seq: parent_seq,
+                event_type: "ChildWorkflowStarted".to_string(),
+                payload: Some(
+                    serde_json::json!({
+                        "child_workflow_id": workflow_id,
+                        "workflow_type": workflow_type,
+                    })
+                    .to_string(),
+                ),
+                timestamp: now,
+            })
+            .await?;
+
+        Ok(wf)
+    }
+
+    pub async fn list_child_workflows(
+        &self,
+        parent_id: &str,
+    ) -> Result<Vec<WorkflowRecord>> {
+        self.store.list_child_workflows(parent_id).await
+    }
+
+    // ── Continue-as-New ─────────────────────────────────────
+
+    pub async fn continue_as_new(
+        &self,
+        workflow_id: &str,
+        input: Option<&str>,
+    ) -> Result<WorkflowRecord> {
+        let old_wf = self
+            .store
+            .get_workflow(workflow_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("workflow not found: {workflow_id}"))?;
+
+        // Complete the old workflow
+        self.store
+            .update_workflow_status(workflow_id, WorkflowStatus::Completed, None, None)
+            .await?;
+
+        // Start a new run with the same type and queue
+        let new_id = format!("{workflow_id}-continued-{}", timestamp_now() as u64);
+        self.start_workflow(
+            &old_wf.workflow_type,
+            &new_id,
+            input,
+            &old_wf.task_queue,
+        )
+        .await
+    }
+
+    // ── Snapshots ───────────────────────────────────────────
+
+    pub async fn create_snapshot(
+        &self,
+        workflow_id: &str,
+        event_seq: i32,
+        state_json: &str,
+    ) -> Result<()> {
+        self.store
+            .create_snapshot(workflow_id, event_seq, state_json)
+            .await
+    }
+
+    pub async fn get_latest_snapshot(
+        &self,
+        workflow_id: &str,
+    ) -> Result<Option<WorkflowSnapshot>> {
+        self.store.get_latest_snapshot(workflow_id).await
+    }
+
+    // ── Side Effects ────────────────────────────────────────
+
+    pub async fn record_side_effect(
+        &self,
+        workflow_id: &str,
+        value: &str,
+    ) -> Result<()> {
+        let now = timestamp_now();
+        let seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: workflow_id.to_string(),
+                seq,
+                event_type: "SideEffectRecorded".to_string(),
+                payload: Some(value.to_string()),
+                timestamp: now,
+            })
+            .await?;
+        Ok(())
     }
 }
 

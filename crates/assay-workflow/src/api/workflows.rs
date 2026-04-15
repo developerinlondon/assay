@@ -18,6 +18,8 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .route("/workflows/{id}/signal/{name}", post(send_signal))
         .route("/workflows/{id}/cancel", post(cancel_workflow))
         .route("/workflows/{id}/terminate", post(terminate_workflow))
+        .route("/workflows/{id}/children", get(list_children))
+        .route("/workflows/{id}/continue-as-new", post(continue_as_new))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -253,6 +255,62 @@ pub async fn terminate_workflow<S: WorkflowStore>(
             "workflow {id} not found or already terminal"
         )))
     }
+}
+
+#[utoipa::path(
+    get, path = "/api/v1/workflows/{id}/children",
+    tag = "workflows",
+    params(("id" = String, Path, description = "Parent workflow ID")),
+    responses(
+        (status = 200, description = "Child workflows", body = Vec<WorkflowRecord>),
+    ),
+)]
+pub async fn list_children<S: WorkflowStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    let children = state.engine.list_child_workflows(&id).await?;
+    let json: Vec<serde_json::Value> = children
+        .into_iter()
+        .map(|w| serde_json::to_value(w).unwrap_or_default())
+        .collect();
+    Ok(Json(json))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ContinueAsNewBody {
+    /// New input for the continued workflow run
+    pub input: Option<serde_json::Value>,
+}
+
+#[utoipa::path(
+    post, path = "/api/v1/workflows/{id}/continue-as-new",
+    tag = "workflows",
+    params(("id" = String, Path, description = "Workflow ID to continue")),
+    request_body = ContinueAsNewBody,
+    responses(
+        (status = 201, description = "New workflow run started", body = WorkflowResponse),
+    ),
+)]
+pub async fn continue_as_new<S: WorkflowStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Path(id): Path<String>,
+    Json(body): Json<ContinueAsNewBody>,
+) -> Result<(axum::http::StatusCode, Json<WorkflowResponse>), AppError> {
+    let input = body.input.map(|v| v.to_string());
+    let wf = state
+        .engine
+        .continue_as_new(&id, input.as_deref())
+        .await?;
+
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(WorkflowResponse {
+            workflow_id: wf.id,
+            run_id: wf.run_id,
+            status: wf.status,
+        }),
+    ))
 }
 
 // ── Error type ──────────────────────────────────────────────
