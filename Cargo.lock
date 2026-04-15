@@ -129,12 +129,15 @@ name = "assay-workflow"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "chrono",
  "cron",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 
@@ -3102,6 +3105,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

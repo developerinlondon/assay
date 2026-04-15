@@ -281,10 +281,19 @@ async fn main() -> ExitCode {
         }) => resume_tool_execution(&token, &approve, resume_ttl).await,
         Some(Commands::Serve { backend, port }) => {
             info!("Starting assay workflow engine on port {port} with backend {backend}");
-            eprintln!("assay serve: workflow engine not yet implemented (v0.11.1)");
-            eprintln!("  backend: {backend}");
-            eprintln!("  port: {port}");
-            ExitCode::from(1)
+            let store = match assay_workflow::SqliteStore::new(&backend).await {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to connect to backend: {e}");
+                    return ExitCode::from(1);
+                }
+            };
+            let engine = assay_workflow::Engine::start(store);
+            if let Err(e) = assay_workflow::api::serve(engine, port).await {
+                error!("Engine server error: {e}");
+                return ExitCode::from(1);
+            }
+            ExitCode::SUCCESS
         }
         Some(Commands::Workflow { command }) => {
             eprintln!("assay workflow: {command:?}");
