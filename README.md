@@ -8,10 +8,9 @@ Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 51 mod
 
 ## What is Assay?
 
-A single ~9 MB static binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes.
-Full-featured Lua 5.5 runtime with HTTP client/server, database, WebSocket, JWT, templates, native
-Temporal gRPC workflows, and 35 embedded stdlib modules for Kubernetes, monitoring, security, and
-AI agent integrations.
+A single ~11 MB static binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes.
+Full-featured Lua 5.5 runtime with HTTP client/server, database, WebSocket, JWT, templates, and 34
+embedded stdlib modules for Kubernetes, monitoring, security, and AI agent integrations.
 
 ```bash
 assay script.lua     # Run Lua with all builtins
@@ -60,123 +59,108 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 
 ### HTTP & Networking
 
-| Function | Description |
-| --- | --- |
-| `http.get(url, opts?)` | GET request, returns `{status, body, headers}` |
-| `http.post(url, body, opts?)` | POST (auto-JSON if body is table) |
-| `http.put/patch/delete(url, ...)` | PUT, PATCH, DELETE |
-| `http.serve(port, routes)` | HTTP server with async handlers + SSE streaming (header values can be strings or arrays — array values emit the header multiple times for `Set-Cookie`, `Link`, `Vary`, etc.) |
-| `ws.connect(url)` | WebSocket client (`send`, `recv`, `close`) |
+| Function                          | Description                                                                                                                                                                   |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.get(url, opts?)`            | GET request, returns `{status, body, headers}`                                                                                                                                |
+| `http.post(url, body, opts?)`     | POST (auto-JSON if body is table)                                                                                                                                             |
+| `http.put/patch/delete(url, ...)` | PUT, PATCH, DELETE                                                                                                                                                            |
+| `http.serve(port, routes)`        | HTTP server with async handlers + SSE streaming (header values can be strings or arrays — array values emit the header multiple times for `Set-Cookie`, `Link`, `Vary`, etc.) |
+| `ws.connect(url)`                 | WebSocket client (`send`, `recv`, `close`)                                                                                                                                    |
 
 ### Serialization
 
-| Function | Description |
-| --- | --- |
-| `json.parse(str)` / `json.encode(tbl)` | JSON |
-| `yaml.parse(str)` / `yaml.encode(tbl)` | YAML |
-| `toml.parse(str)` / `toml.encode(tbl)` | TOML |
-| `base64.encode(str)` / `base64.decode(str)` | Base64 |
+| Function                                    | Description |
+| ------------------------------------------- | ----------- |
+| `json.parse(str)` / `json.encode(tbl)`      | JSON        |
+| `yaml.parse(str)` / `yaml.encode(tbl)`      | YAML        |
+| `toml.parse(str)` / `toml.encode(tbl)`      | TOML        |
+| `base64.encode(str)` / `base64.decode(str)` | Base64      |
 
 ### Filesystem & System
 
-| Function | Description |
-| --- | --- |
-| `fs.read(path)` / `fs.write(path, s)` | Read/write files |
-| `fs.exists(path)` / `fs.mkdir(path)` / `fs.glob(pattern)` | File operations |
-| `shell.exec(cmd, opts?)` | Execute shell commands |
-| `process.list()` / `process.kill(pid)` | Process management |
-| `disk.usage(path)` / `disk.sweep(dir, age)` | Disk info and cleanup |
-| `os.hostname()` / `os.arch()` / `os.platform()` | OS information |
-| `env.get(key)` / `env.set(key, val)` | Environment variables |
-| `sleep(secs)` / `time()` | Pause execution, Unix timestamp |
+| Function                                                  | Description                     |
+| --------------------------------------------------------- | ------------------------------- |
+| `fs.read(path)` / `fs.write(path, s)`                     | Read/write files                |
+| `fs.exists(path)` / `fs.mkdir(path)` / `fs.glob(pattern)` | File operations                 |
+| `shell.exec(cmd, opts?)`                                  | Execute shell commands          |
+| `process.list()` / `process.kill(pid)`                    | Process management              |
+| `disk.usage(path)` / `disk.sweep(dir, age)`               | Disk info and cleanup           |
+| `os.hostname()` / `os.arch()` / `os.platform()`           | OS information                  |
+| `env.get(key)` / `env.set(key, val)`                      | Environment variables           |
+| `sleep(secs)` / `time()`                                  | Pause execution, Unix timestamp |
 
 ### Cryptography & Regex
 
-| Function | Description |
-| --- | --- |
+| Function                                   | Description                                |
+| ------------------------------------------ | ------------------------------------------ |
 | `crypto.jwt_sign(claims, key, alg, opts?)` | Sign JWT (HS256, RS256/384/512, ES256/384) |
-| `crypto.hash(str, alg)` | SHA-256, SHA-384, SHA-512, SHA3 |
-| `crypto.hmac(key, data, alg?, raw?)` | HMAC (all 8 hash algorithms) |
-| `crypto.random(len)` | Secure random hex string |
-| `regex.match/find/find_all/replace` | Regular expressions |
+| `crypto.hash(str, alg)`                    | SHA-256, SHA-384, SHA-512, SHA3            |
+| `crypto.hmac(key, data, alg?, raw?)`       | HMAC (all 8 hash algorithms)               |
+| `crypto.random(len)`                       | Secure random hex string                   |
+| `regex.match/find/find_all/replace`        | Regular expressions                        |
 
 ### Database, Templates & Async
 
-| Function | Description |
-| --- | --- |
-| `db.connect(url)` | Postgres, MySQL, SQLite |
-| `db.query(conn, sql, params?)` | Execute query, return rows |
-| `template.render(path, vars)` | Jinja2-compatible templates |
-| `async.spawn(fn)` / `async.spawn_interval(secs, fn)` | Async tasks with handles |
+| Function                                             | Description                 |
+| ---------------------------------------------------- | --------------------------- |
+| `db.connect(url)`                                    | Postgres, MySQL, SQLite     |
+| `db.query(conn, sql, params?)`                       | Execute query, return rows  |
+| `template.render(path, vars)`                        | Jinja2-compatible templates |
+| `async.spawn(fn)` / `async.spawn_interval(secs, fn)` | Async tasks with handles    |
 
 ### Assertions & Logging
 
-| Function | Description |
-| --- | --- |
-| `assert.eq/ne/gt/lt/contains/not_nil/matches` | Test assertions |
-| `log.info/warn/error(msg)` | Structured logging |
-
-### Temporal Workflow Engine (native gRPC)
-
-| Function | Description |
-| --- | --- |
-| `temporal.connect({ url, namespace? })` | Connect to Temporal gRPC frontend |
-| `temporal.start({ url, ..., workflow_type, workflow_id, input? })` | One-shot: connect + start |
-| `client:start_workflow(opts)` | Start a workflow execution |
-| `client:signal_workflow(opts)` | Signal a running workflow |
-| `client:query_workflow(opts)` | Query workflow state |
-| `client:describe_workflow(id)` | Get status, timestamps, history length |
-| `client:get_result({ workflow_id })` | Block until workflow completes |
-| `client:cancel_workflow(id)` | Graceful cancellation |
-| `client:terminate_workflow(id)` | Force terminate |
+| Function                                      | Description        |
+| --------------------------------------------- | ------------------ |
+| `assert.eq/ne/gt/lt/contains/not_nil/matches` | Test assertions    |
+| `log.info/warn/error(msg)`                    | Structured logging |
 
 ## Stdlib Modules
 
 34 embedded Lua modules loaded via `require("assay.<name>")`. All follow the client pattern:
 `M.client(url, opts)` then `c:method()`.
 
-| Module | Description |
-| --- | --- |
-| **Monitoring** | |
-| `assay.prometheus` | PromQL queries, alerts, targets, rules, series |
-| `assay.alertmanager` | Alerts, silences, receivers |
-| `assay.loki` | Log push, query (LogQL), labels, series |
-| `assay.grafana` | Health, dashboards, datasources, annotations |
-| **Kubernetes & GitOps** | |
-| `assay.k8s` | 30+ resource types, CRDs, readiness, pod logs |
-| `assay.argocd` | Apps, sync, health, projects, repositories |
-| `assay.kargo` | Stages, freight, promotions, pipelines |
-| `assay.flux` | GitRepositories, Kustomizations, HelmReleases |
-| `assay.traefik` | Routers, services, middlewares |
-| **Security & Identity** | |
-| `assay.vault` / `assay.openbao` | KV secrets, transit, PKI, policies |
-| `assay.certmanager` | Certificates, issuers, ACME |
-| `assay.eso` | ExternalSecrets, SecretStores |
-| `assay.dex` | OIDC discovery, JWKS |
-| `assay.zitadel` | OIDC identity, JWT machine auth |
-| `assay.ory.kratos` | Ory Kratos — login/registration/recovery flows, identities, sessions |
-| `assay.ory.hydra` | Ory Hydra — OAuth2/OIDC clients, authorize, tokens, login/consent/logout |
-| `assay.ory.keto` | Ory Keto — ReBAC relation tuples, permission checks, expand |
-| `assay.ory.rbac` | Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships |
-| `assay.ory` | Ory stack umbrella — `ory.connect()` builds kratos/hydra/keto in one call; also re-exports `rbac` |
-| **Infrastructure** | |
-| `assay.crossplane` | Providers, XRDs, compositions |
-| `assay.velero` | Backups, restores, schedules |
-| `assay.harbor` | Projects, repos, vulnerability scanning |
-| `assay.temporal` | Workflows, task queues, schedules (HTTP REST) |
-| **Data & Storage** | |
-| `assay.postgres` | User/database management, grants |
-| `assay.s3` | S3-compatible storage with Sig V4 auth |
-| `assay.unleash` | Feature flags, environments, strategies |
-| `assay.healthcheck` | HTTP checks, JSON path, latency |
-| **AI Agent** | |
-| `assay.openclaw` | Agent tools, state, diff, approve, LLM tasks |
-| `assay.gitlab` | Projects, repos, commits, MRs, pipelines, registry |
-| `assay.github` | PRs, issues, actions, repos, GraphQL |
-| `assay.gmail` | Search, read, reply, send (OAuth2) |
-| `assay.gcal` | Calendar events CRUD (OAuth2) |
-| `assay.oauth2` | Google OAuth2 token management |
-| `assay.email_triage` | Email classification and triage |
+| Module                          | Description                                                                                           |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Monitoring**                  |                                                                                                       |
+| `assay.prometheus`              | PromQL queries, alerts, targets, rules, series                                                        |
+| `assay.alertmanager`            | Alerts, silences, receivers                                                                           |
+| `assay.loki`                    | Log push, query (LogQL), labels, series                                                               |
+| `assay.grafana`                 | Health, dashboards, datasources, annotations                                                          |
+| **Kubernetes & GitOps**         |                                                                                                       |
+| `assay.k8s`                     | 30+ resource types, CRDs, readiness, pod logs                                                         |
+| `assay.argocd`                  | Apps, sync, health, projects, repositories                                                            |
+| `assay.kargo`                   | Stages, freight, promotions, pipelines                                                                |
+| `assay.flux`                    | GitRepositories, Kustomizations, HelmReleases                                                         |
+| `assay.traefik`                 | Routers, services, middlewares                                                                        |
+| **Security & Identity**         |                                                                                                       |
+| `assay.vault` / `assay.openbao` | KV secrets, transit, PKI, policies                                                                    |
+| `assay.certmanager`             | Certificates, issuers, ACME                                                                           |
+| `assay.eso`                     | ExternalSecrets, SecretStores                                                                         |
+| `assay.dex`                     | OIDC discovery, JWKS                                                                                  |
+| `assay.zitadel`                 | OIDC identity, JWT machine auth                                                                       |
+| `assay.ory.kratos`              | Ory Kratos — login/registration/recovery flows, identities, sessions                                  |
+| `assay.ory.hydra`               | Ory Hydra — OAuth2/OIDC clients, authorize, tokens, login/consent/logout                              |
+| `assay.ory.keto`                | Ory Keto — ReBAC relation tuples, permission checks, expand                                           |
+| `assay.ory.rbac`                | Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships |
+| `assay.ory`                     | Ory stack umbrella — `ory.connect()` builds kratos/hydra/keto in one call; also re-exports `rbac`     |
+| **Infrastructure**              |                                                                                                       |
+| `assay.crossplane`              | Providers, XRDs, compositions                                                                         |
+| `assay.velero`                  | Backups, restores, schedules                                                                          |
+| `assay.harbor`                  | Projects, repos, vulnerability scanning                                                               |
+| **Data & Storage**              |                                                                                                       |
+| `assay.postgres`                | User/database management, grants                                                                      |
+| `assay.s3`                      | S3-compatible storage with Sig V4 auth                                                                |
+| `assay.unleash`                 | Feature flags, environments, strategies                                                               |
+| `assay.healthcheck`             | HTTP checks, JSON path, latency                                                                       |
+| **AI Agent**                    |                                                                                                       |
+| `assay.openclaw`                | Agent tools, state, diff, approve, LLM tasks                                                          |
+| `assay.gitlab`                  | Projects, repos, commits, MRs, pipelines, registry                                                    |
+| `assay.github`                  | PRs, issues, actions, repos, GraphQL                                                                  |
+| `assay.gmail`                   | Search, read, reply, send (OAuth2)                                                                    |
+| `assay.gcal`                    | Calendar events CRUD (OAuth2)                                                                         |
+| `assay.oauth2`                  | Google OAuth2 token management                                                                        |
+| `assay.email_triage`            | Email classification and triage                                                                       |
 
 ## Examples
 
@@ -230,27 +214,6 @@ http.serve(8080, {
     end
   }
 })
-```
-
-### Temporal Workflow
-
-```lua
-#!/usr/bin/assay
-local client = temporal.connect({
-  url = "temporal-frontend:7233",
-  namespace = "production",
-})
-
-local handle = client:start_workflow({
-  task_queue = "promotions",
-  workflow_type = "PromoteToEnv",
-  workflow_id = "promote-prod-v1.2.0",
-  input = { version = "v1.2.0", target = "prod" },
-})
-log.info("Started: " .. handle.run_id)
-
-local info = client:describe_workflow("promote-prod-v1.2.0")
-log.info("Status: " .. info.status)
 ```
 
 ### YAML Check Mode
@@ -314,17 +277,16 @@ dprint fmt                # Format (Rust, Markdown, YAML, JSON, TOML)
 
 ## License
 
-Assay is licensed under the [Apache License, Version 2.0](LICENSE). You can use,
-modify, and redistribute it freely — including in commercial and proprietary
-products — as long as you preserve the copyright notice and the license text.
+Assay is licensed under the [Apache License, Version 2.0](LICENSE). You can use, modify, and
+redistribute it freely — including in commercial and proprietary products — as long as you preserve
+the copyright notice and the license text.
 
 ## Contributing
 
-Pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
-workflow and [CLA.md](CLA.md) for the Contributor License Agreement that all
-contributors are required to sign (it lets the project owner relicense or
-incorporate contributions into commercial editions in the future, while you
-keep the copyright on your contribution).
+Pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and
+[CLA.md](CLA.md) for the Contributor License Agreement that all contributors are required to sign
+(it lets the project owner relicense or incorporate contributions into commercial editions in the
+future, while you keep the copyright on your contribution).
 
 ## Links
 
