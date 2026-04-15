@@ -14,7 +14,14 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .route("/health", get(health_check))
 }
 
-async fn list_workers<S: WorkflowStore>(
+#[utoipa::path(
+    get, path = "/api/v1/workers",
+    tag = "workers",
+    responses(
+        (status = 200, description = "List of active workers", body = Vec<WorkflowWorker>),
+    ),
+)]
+pub async fn list_workers<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
     let workers = state.engine.list_workers().await?;
@@ -25,9 +32,18 @@ async fn list_workers<S: WorkflowStore>(
     Ok(Json(json))
 }
 
-async fn health_check() -> Json<serde_json::Value> {
+#[utoipa::path(
+    get, path = "/api/v1/health",
+    tag = "workers",
+    responses(
+        (status = 200, description = "Engine health status"),
+    ),
+)]
+pub async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "ok",
         "service": "assay-workflow",
     }))
 }
+
+use crate::types::WorkflowWorker;

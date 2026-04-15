@@ -27,6 +27,9 @@ cron = "0.16"
 axum = "0.8"
 tokio-stream = { version = "0.1", features = ["sync"] }
 
+# OpenAPI spec generation (compile-time only, zero runtime cost)
+utoipa = { version = "5", features = ["axum_extras"] }
+
 # Auth — JWT validation + API key hashing
 data-encoding = "2"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }

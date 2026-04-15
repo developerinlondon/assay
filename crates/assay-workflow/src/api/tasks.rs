@@ -4,6 +4,7 @@ use axum::extract::{Path, State};
 use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::api::workflows::AppError;
 use crate::api::AppState;
@@ -20,28 +21,41 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .route("/tasks/{id}/heartbeat", post(heartbeat_task))
 }
 
-#[derive(Deserialize)]
-struct RegisterWorkerRequest {
-    identity: String,
-    queue: String,
-    workflows: Option<Vec<String>>,
-    activities: Option<Vec<String>>,
+#[derive(Deserialize, ToSchema)]
+pub struct RegisterWorkerRequest {
+    /// Human-readable worker identity (e.g. "pipeline-pod-1")
+    pub identity: String,
+    /// Task queue this worker listens on
+    pub queue: String,
+    /// Workflow types this worker can execute
+    pub workflows: Option<Vec<String>>,
+    /// Activity types this worker can execute
+    pub activities: Option<Vec<String>>,
     #[serde(default = "default_concurrent")]
-    max_concurrent_workflows: i32,
+    pub max_concurrent_workflows: i32,
     #[serde(default = "default_concurrent")]
-    max_concurrent_activities: i32,
+    pub max_concurrent_activities: i32,
 }
 
 fn default_concurrent() -> i32 {
     10
 }
 
-#[derive(Serialize)]
-struct RegisterWorkerResponse {
-    worker_id: String,
+#[derive(Serialize, ToSchema)]
+pub struct RegisterWorkerResponse {
+    /// Server-assigned worker ID
+    pub worker_id: String,
 }
 
-async fn register_worker<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/workers/register",
+    tag = "tasks",
+    request_body = RegisterWorkerRequest,
+    responses(
+        (status = 200, description = "Worker registered", body = RegisterWorkerResponse),
+    ),
+)]
+pub async fn register_worker<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(req): Json<RegisterWorkerRequest>,
 ) -> Result<Json<RegisterWorkerResponse>, AppError> {
@@ -65,12 +79,17 @@ async fn register_worker<S: WorkflowStore>(
     Ok(Json(RegisterWorkerResponse { worker_id }))
 }
 
-#[derive(Deserialize)]
-struct HeartbeatRequest {
-    worker_id: String,
+#[derive(Deserialize, ToSchema)]
+pub struct HeartbeatRequest {
+    pub worker_id: String,
 }
 
-async fn worker_heartbeat<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/workers/heartbeat",
+    tag = "tasks",
+    responses((status = 200, description = "Heartbeat recorded")),
+)]
+pub async fn worker_heartbeat<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(req): Json<HeartbeatRequest>,
 ) -> Result<axum::http::StatusCode, AppError> {
@@ -78,15 +97,25 @@ async fn worker_heartbeat<S: WorkflowStore>(
     Ok(axum::http::StatusCode::OK)
 }
 
-#[derive(Deserialize)]
-struct PollQuery {
-    queue: String,
-    worker_id: String,
+#[derive(Deserialize, ToSchema)]
+pub struct PollRequest {
+    /// Task queue to poll from
+    pub queue: String,
+    /// Worker ID (from register response)
+    pub worker_id: String,
 }
 
-async fn poll_task<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/tasks/poll",
+    tag = "tasks",
+    request_body = PollRequest,
+    responses(
+        (status = 200, description = "Activity task (or null if none available)", body = WorkflowActivity),
+    ),
+)]
+pub async fn poll_task<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
-    Json(req): Json<PollQuery>,
+    Json(req): Json<PollRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let activity = state
         .engine
@@ -99,12 +128,20 @@ async fn poll_task<S: WorkflowStore>(
     }
 }
 
-#[derive(Deserialize)]
-struct CompleteTaskBody {
-    result: Option<serde_json::Value>,
+#[derive(Deserialize, ToSchema)]
+pub struct CompleteTaskBody {
+    /// JSON result from the completed activity
+    pub result: Option<serde_json::Value>,
 }
 
-async fn complete_task<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/tasks/{id}/complete",
+    tag = "tasks",
+    params(("id" = i64, Path, description = "Activity task ID")),
+    request_body = CompleteTaskBody,
+    responses((status = 200, description = "Task completed")),
+)]
+pub async fn complete_task<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(id): Path<i64>,
     Json(body): Json<CompleteTaskBody>,
@@ -117,12 +154,20 @@ async fn complete_task<S: WorkflowStore>(
     Ok(axum::http::StatusCode::OK)
 }
 
-#[derive(Deserialize)]
-struct FailTaskBody {
-    error: String,
+#[derive(Deserialize, ToSchema)]
+pub struct FailTaskBody {
+    /// Error message describing why the task failed
+    pub error: String,
 }
 
-async fn fail_task<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/tasks/{id}/fail",
+    tag = "tasks",
+    params(("id" = i64, Path, description = "Activity task ID")),
+    request_body = FailTaskBody,
+    responses((status = 200, description = "Task marked as failed")),
+)]
+pub async fn fail_task<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(id): Path<i64>,
     Json(body): Json<FailTaskBody>,
@@ -134,12 +179,18 @@ async fn fail_task<S: WorkflowStore>(
     Ok(axum::http::StatusCode::OK)
 }
 
-#[derive(Deserialize)]
-struct HeartbeatTaskBody {
-    details: Option<String>,
+#[derive(Deserialize, ToSchema)]
+pub struct HeartbeatTaskBody {
+    pub details: Option<String>,
 }
 
-async fn heartbeat_task<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/tasks/{id}/heartbeat",
+    tag = "tasks",
+    params(("id" = i64, Path, description = "Activity task ID")),
+    responses((status = 200, description = "Heartbeat recorded")),
+)]
+pub async fn heartbeat_task<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(id): Path<i64>,
     Json(body): Json<HeartbeatTaskBody>,
@@ -166,3 +217,5 @@ fn uuid_short() -> String {
     std::thread::current().id().hash(&mut h);
     format!("{:016x}", h.finish())
 }
+
+use crate::types::WorkflowActivity;

@@ -4,6 +4,7 @@ use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::api::AppState;
 use crate::store::WorkflowStore;
@@ -19,27 +20,40 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .route("/workflows/{id}/terminate", post(terminate_workflow))
 }
 
-#[derive(Deserialize)]
-struct StartWorkflowRequest {
-    workflow_type: String,
-    workflow_id: String,
-    input: Option<serde_json::Value>,
+#[derive(Deserialize, ToSchema)]
+pub struct StartWorkflowRequest {
+    /// Workflow type name (e.g. "IngestData", "DeployService")
+    pub workflow_type: String,
+    /// Unique workflow ID (caller-provided for idempotency)
+    pub workflow_id: String,
+    /// Optional JSON input passed to the workflow
+    pub input: Option<serde_json::Value>,
+    /// Task queue to route the workflow to (default: "default")
     #[serde(default = "default_queue")]
-    task_queue: String,
+    pub task_queue: String,
 }
 
 fn default_queue() -> String {
     "default".to_string()
 }
 
-#[derive(Serialize)]
-struct WorkflowResponse {
-    workflow_id: String,
-    run_id: String,
-    status: String,
+#[derive(Serialize, ToSchema)]
+pub struct WorkflowResponse {
+    pub workflow_id: String,
+    pub run_id: String,
+    pub status: String,
 }
 
-async fn start_workflow<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/workflows",
+    tag = "workflows",
+    request_body = StartWorkflowRequest,
+    responses(
+        (status = 201, description = "Workflow started", body = WorkflowResponse),
+        (status = 500, description = "Internal error"),
+    ),
+)]
+pub async fn start_workflow<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(req): Json<StartWorkflowRequest>,
 ) -> Result<(axum::http::StatusCode, Json<WorkflowResponse>), AppError> {
@@ -65,21 +79,34 @@ async fn start_workflow<S: WorkflowStore>(
 }
 
 #[derive(Deserialize)]
-struct ListQuery {
-    status: Option<String>,
+pub struct ListQuery {
+    pub status: Option<String>,
     #[serde(rename = "type")]
-    workflow_type: Option<String>,
+    pub workflow_type: Option<String>,
     #[serde(default = "default_limit")]
-    limit: i64,
+    pub limit: i64,
     #[serde(default)]
-    offset: i64,
+    pub offset: i64,
 }
 
 fn default_limit() -> i64 {
     50
 }
 
-async fn list_workflows<S: WorkflowStore>(
+#[utoipa::path(
+    get, path = "/api/v1/workflows",
+    tag = "workflows",
+    params(
+        ("status" = Option<String>, Query, description = "Filter by status"),
+        ("type" = Option<String>, Query, description = "Filter by workflow type"),
+        ("limit" = Option<i64>, Query, description = "Max results (default 50)"),
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+    ),
+    responses(
+        (status = 200, description = "List of workflows", body = Vec<WorkflowRecord>),
+    ),
+)]
+pub async fn list_workflows<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
@@ -101,7 +128,16 @@ async fn list_workflows<S: WorkflowStore>(
     Ok(Json(json))
 }
 
-async fn describe_workflow<S: WorkflowStore>(
+#[utoipa::path(
+    get, path = "/api/v1/workflows/{id}",
+    tag = "workflows",
+    params(("id" = String, Path, description = "Workflow ID")),
+    responses(
+        (status = 200, description = "Workflow details", body = WorkflowRecord),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
+pub async fn describe_workflow<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -114,7 +150,15 @@ async fn describe_workflow<S: WorkflowStore>(
     Ok(Json(serde_json::to_value(wf)?))
 }
 
-async fn get_events<S: WorkflowStore>(
+#[utoipa::path(
+    get, path = "/api/v1/workflows/{id}/events",
+    tag = "workflows",
+    params(("id" = String, Path, description = "Workflow ID")),
+    responses(
+        (status = 200, description = "Event history", body = Vec<WorkflowEvent>),
+    ),
+)]
+pub async fn get_events<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
@@ -126,12 +170,23 @@ async fn get_events<S: WorkflowStore>(
     Ok(Json(json))
 }
 
-#[derive(Deserialize)]
-struct SignalBody {
-    payload: Option<serde_json::Value>,
+#[derive(Deserialize, ToSchema)]
+pub struct SignalBody {
+    pub payload: Option<serde_json::Value>,
 }
 
-async fn send_signal<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/workflows/{id}/signal/{name}",
+    tag = "workflows",
+    params(
+        ("id" = String, Path, description = "Workflow ID"),
+        ("name" = String, Path, description = "Signal name"),
+    ),
+    responses(
+        (status = 200, description = "Signal sent"),
+    ),
+)]
+pub async fn send_signal<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path((id, name)): Path<(String, String)>,
     Json(body): Json<Option<SignalBody>>,
@@ -144,7 +199,16 @@ async fn send_signal<S: WorkflowStore>(
     Ok(axum::http::StatusCode::OK)
 }
 
-async fn cancel_workflow<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/workflows/{id}/cancel",
+    tag = "workflows",
+    params(("id" = String, Path, description = "Workflow ID")),
+    responses(
+        (status = 200, description = "Workflow cancelled"),
+        (status = 404, description = "Workflow not found or already terminal"),
+    ),
+)]
+pub async fn cancel_workflow<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(id): Path<String>,
 ) -> Result<axum::http::StatusCode, AppError> {
@@ -158,12 +222,21 @@ async fn cancel_workflow<S: WorkflowStore>(
     }
 }
 
-#[derive(Deserialize)]
-struct TerminateBody {
-    reason: Option<String>,
+#[derive(Deserialize, ToSchema)]
+pub struct TerminateBody {
+    pub reason: Option<String>,
 }
 
-async fn terminate_workflow<S: WorkflowStore>(
+#[utoipa::path(
+    post, path = "/api/v1/workflows/{id}/terminate",
+    tag = "workflows",
+    params(("id" = String, Path, description = "Workflow ID")),
+    responses(
+        (status = 200, description = "Workflow terminated"),
+        (status = 404, description = "Workflow not found or already terminal"),
+    ),
+)]
+pub async fn terminate_workflow<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(id): Path<String>,
     Json(body): Json<Option<TerminateBody>>,
@@ -220,3 +293,6 @@ impl axum::response::IntoResponse for AppError {
         }
     }
 }
+
+// Type alias for utoipa references (the actual type is WorkflowRecord from types.rs)
+use crate::types::{WorkflowEvent, WorkflowRecord};

@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+use utoipa::ToSchema;
 
 // ── Workflow Status ─────────────────────────────────────────
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum WorkflowStatus {
     Pending,
@@ -58,7 +59,7 @@ impl WorkflowStatus {
 
 // ── Activity Status ─────────────────────────────────────────
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ActivityStatus {
     Pending,
@@ -171,7 +172,7 @@ impl FromStr for OverlapPolicy {
 
 // ── Records ─────────────────────────────────────────────────
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowRecord {
     pub id: String,
     pub run_id: String,
@@ -188,7 +189,7 @@ pub struct WorkflowRecord {
     pub completed_at: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowEvent {
     pub id: Option<i64>,
     pub workflow_id: String,
@@ -198,7 +199,7 @@ pub struct WorkflowEvent {
     pub timestamp: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowActivity {
     pub id: Option<i64>,
     pub workflow_id: String,
@@ -222,7 +223,7 @@ pub struct WorkflowActivity {
     pub last_heartbeat: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowTimer {
     pub id: Option<i64>,
     pub workflow_id: String,
@@ -231,7 +232,7 @@ pub struct WorkflowTimer {
     pub fired: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowSignal {
     pub id: Option<i64>,
     pub workflow_id: String,
@@ -241,7 +242,7 @@ pub struct WorkflowSignal {
     pub received_at: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowSchedule {
     pub name: String,
     pub workflow_type: String,
@@ -256,7 +257,7 @@ pub struct WorkflowSchedule {
     pub created_at: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowWorker {
     pub id: String,
     pub identity: String,
