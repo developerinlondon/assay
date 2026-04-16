@@ -130,18 +130,131 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at      REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
+
+CREATE TABLE IF NOT EXISTS engine_lock (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    instance_id     TEXT NOT NULL,
+    started_at      REAL NOT NULL,
+    last_heartbeat  REAL NOT NULL
+);
 "#;
+
+/// Stale lock timeout — if the lock holder hasn't heartbeated in this
+/// many seconds, assume it's dead and allow takeover.
+const LOCK_STALE_SECS: f64 = 60.0;
+/// How often to refresh the lock heartbeat.
+const LOCK_HEARTBEAT_SECS: u64 = 15;
 
 pub struct SqliteStore {
     pool: SqlitePool,
+    instance_id: String,
 }
 
 impl SqliteStore {
     pub async fn new(url: &str) -> Result<Self> {
         let pool = SqlitePool::connect(url).await?;
-        let store = Self { pool };
+        let instance_id = format!("assay-{:016x}", {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut h = DefaultHasher::new();
+            std::time::SystemTime::now().hash(&mut h);
+            std::process::id().hash(&mut h);
+            h.finish()
+        });
+        let store = Self { pool, instance_id };
         store.migrate().await?;
         Ok(store)
+    }
+
+    /// Acquire the single-instance engine lock.
+    /// Returns an error if another instance is already running.
+    pub async fn acquire_engine_lock(&self) -> Result<()> {
+        let now = timestamp_now();
+
+        // Try to insert the lock
+        let result = sqlx::query(
+            "INSERT INTO engine_lock (id, instance_id, started_at, last_heartbeat) VALUES (1, ?, ?, ?)",
+        )
+        .bind(&self.instance_id)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                // Lock exists — check if it's stale
+                let row: Option<(String, f64)> = sqlx::query_as(
+                    "SELECT instance_id, last_heartbeat FROM engine_lock WHERE id = 1",
+                )
+                .fetch_optional(&self.pool)
+                .await?;
+
+                if let Some((existing_id, last_hb)) = row {
+                    if now - last_hb > LOCK_STALE_SECS {
+                        // Stale lock — take over
+                        sqlx::query(
+                            "UPDATE engine_lock SET instance_id = ?, started_at = ?, last_heartbeat = ? WHERE id = 1",
+                        )
+                        .bind(&self.instance_id)
+                        .bind(now)
+                        .bind(now)
+                        .execute(&self.pool)
+                        .await?;
+                        tracing::warn!(
+                            "Took over stale engine lock from {existing_id} (last heartbeat {:.0}s ago)",
+                            now - last_hb
+                        );
+                        Ok(())
+                    } else {
+                        let age = now - last_hb;
+                        anyhow::bail!(
+                            "Another assay engine instance is already running (id: {existing_id}, \
+                             last heartbeat {age:.0}s ago).\n\n\
+                             SQLite only supports a single engine instance. For multi-instance \
+                             deployment (Kubernetes, Docker Swarm), use PostgreSQL:\n\n\
+                             \x20 assay serve --backend postgres://user:pass@host:5432/dbname"
+                        );
+                    }
+                } else {
+                    anyhow::bail!("Unexpected engine lock state");
+                }
+            }
+        }
+    }
+
+    /// Refresh the engine lock heartbeat. Called periodically by the engine.
+    pub async fn refresh_engine_lock(&self) -> Result<()> {
+        sqlx::query("UPDATE engine_lock SET last_heartbeat = ? WHERE id = 1 AND instance_id = ?")
+            .bind(timestamp_now())
+            .bind(&self.instance_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Release the engine lock on shutdown.
+    pub async fn release_engine_lock(&self) -> Result<()> {
+        sqlx::query("DELETE FROM engine_lock WHERE id = 1 AND instance_id = ?")
+            .bind(&self.instance_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Start background task to keep the lock alive.
+    pub fn spawn_lock_heartbeat(self: &std::sync::Arc<Self>) {
+        let store = std::sync::Arc::clone(self);
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(LOCK_HEARTBEAT_SECS));
+            loop {
+                tick.tick().await;
+                if let Err(e) = store.refresh_engine_lock().await {
+                    tracing::error!("Engine lock heartbeat failed: {e}");
+                }
+            }
+        });
     }
 
     async fn migrate(&self) -> Result<()> {
@@ -829,7 +942,9 @@ impl WorkflowStore for SqliteStore {
     // ── Leader Election ─────────────────────────────────────
 
     async fn try_acquire_scheduler_lock(&self) -> Result<bool> {
-        // SQLite is single-instance — always the leader
+        // SQLite is single-instance — always the leader.
+        // Also refresh the engine lock heartbeat on each scheduler tick.
+        self.refresh_engine_lock().await.ok();
         Ok(true)
     }
 }

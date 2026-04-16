@@ -423,6 +423,8 @@ async fn serve_with_sqlite(
     list_api_keys: bool,
 ) -> ExitCode {
     info!("Starting assay workflow engine on port {port} with SQLite backend");
+    eprintln!("Note: SQLite supports a single engine instance only.");
+    eprintln!("      For multi-instance (Kubernetes), use: --backend postgres://...");
     let store = match assay_workflow::SqliteStore::new(backend).await {
         Ok(s) => s,
         Err(e) => {
@@ -430,6 +432,16 @@ async fn serve_with_sqlite(
             return ExitCode::from(1);
         }
     };
+
+    // Acquire single-instance lock (prevents duplicate engines on same DB)
+    if !generate_api_key
+        && !list_api_keys
+        && let Err(e) = store.acquire_engine_lock().await
+    {
+        error!("{e}");
+        return ExitCode::from(1);
+    }
+
     serve_with_store(store, port, auth_mode, generate_api_key, list_api_keys).await
 }
 
