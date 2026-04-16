@@ -1,32 +1,40 @@
 /* Assay Workflow Dashboard - Theme Variables */
 
+/*
+ * Color palette mirrors the assay.rs marketing site (site/static/style.css).
+ * The brand accent — `#e6662a` orange — is the same in both light and dark
+ * themes so the dashboard reads as part of the same product, not a separate
+ * tool. Surface/text/border tokens mirror site values; status colors
+ * (green/red/yellow) are dashboard-specific and intentionally semantic.
+ */
+
 :root,
 [data-theme="dark"] {
   --bg: #0d1117;
   --surface: #161b22;
   --surface-hover: #1c2129;
   --border: #30363d;
-  --text: #e6edf3;
+  --text: #c9d1d9;
   --text-muted: #8b949e;
-  --accent: #58a6ff;
-  --accent-hover: #79b8ff;
+  --accent: #e6662a;
+  --accent-hover: #ff7a3d;
   --green: #3fb950;
   --red: #f85149;
   --yellow: #d29922;
   --orange: #db6d28;
   --shadow: rgba(0, 0, 0, 0.4);
-  --code-bg: #0d1117;
+  --code-bg: #161b22;
 }
 
 [data-theme="light"] {
   --bg: #ffffff;
   --surface: #f6f8fa;
   --surface-hover: #eef1f4;
-  --border: #d1d9e0;
-  --text: #1f2328;
-  --text-muted: #656d76;
-  --accent: #0969da;
-  --accent-hover: #0550ae;
+  --border: #d0d7de;
+  --text: #24292f;
+  --text-muted: #57606a;
+  --accent: #e6662a;
+  --accent-hover: #ff7a3d;
   --green: #1a7f37;
   --red: #cf222e;
   --yellow: #9a6700;
@@ -40,11 +48,11 @@
     --bg: #ffffff;
     --surface: #f6f8fa;
     --surface-hover: #eef1f4;
-    --border: #d1d9e0;
-    --text: #1f2328;
-    --text-muted: #656d76;
-    --accent: #0969da;
-    --accent-hover: #0550ae;
+    --border: #d0d7de;
+    --text: #24292f;
+    --text-muted: #57606a;
+    --accent: #e6662a;
+    --accent-hover: #ff7a3d;
     --green: #1a7f37;
     --red: #cf222e;
     --yellow: #9a6700;

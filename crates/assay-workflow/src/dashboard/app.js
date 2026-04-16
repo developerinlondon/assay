@@ -197,10 +197,12 @@
   // ── Theme Toggle ───────────────────────────────────────
 
   function initTheme() {
+    // Mirror the assay.rs site: explicit user choice overrides OS preference.
+    // If no saved choice, follow `prefers-color-scheme`.
     const saved = localStorage.getItem('assay-theme');
-    if (saved) {
-      document.documentElement.setAttribute('data-theme', saved);
-    }
+    const theme = saved
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
   }
 
   function toggleTheme() {
@@ -217,10 +219,25 @@
     document.getElementById('sidebar').classList.toggle('open');
   }
 
+  // ── Desktop Sidebar Collapse ──────────────────────────
+
+  function initSidebarCollapsed() {
+    if (localStorage.getItem('assay-sidebar-collapsed') === '1') {
+      document.getElementById('sidebar').classList.add('collapsed');
+    }
+  }
+
+  function toggleSidebarCollapsed() {
+    const sidebar = document.getElementById('sidebar');
+    const isNow = sidebar.classList.toggle('collapsed');
+    localStorage.setItem('assay-sidebar-collapsed', isNow ? '1' : '0');
+  }
+
   // ── Initialization ─────────────────────────────────────
 
   function init() {
     initTheme();
+    initSidebarCollapsed();
 
     // Re-resolve view references after all scripts load
     views.workflows = typeof AssayWorkflows !== 'undefined' ? AssayWorkflows : null;
@@ -234,6 +251,9 @@
 
     // Mobile sidebar
     document.getElementById('sidebar-toggle').addEventListener('click', toggleSidebar);
+
+    // Desktop sidebar collapse
+    document.getElementById('sidebar-collapse').addEventListener('click', toggleSidebarCollapsed);
 
     // Nav links (event delegation on sidebar)
     document.querySelector('.sidebar-nav').addEventListener('click', function (e) {
