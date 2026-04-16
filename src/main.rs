@@ -298,6 +298,7 @@ async fn main() -> ExitCode {
             approve,
             resume_ttl,
         }) => resume_tool_execution(&token, &approve, resume_ttl).await,
+        #[cfg(feature = "workflow")]
         Some(Commands::Serve {
             backend,
             port,
@@ -308,7 +309,6 @@ async fn main() -> ExitCode {
             generate_api_key,
             list_api_keys,
         }) => {
-            // Determine auth mode
             let auth_mode = if let Some(issuer) = auth_issuer {
                 assay_workflow::api::auth::AuthMode::jwt(issuer, auth_audience)
             } else if auth_api_key {
@@ -321,7 +321,6 @@ async fn main() -> ExitCode {
                 eprintln!("Warning: --no-auth is redundant when --auth-issuer or --auth-api-key is set");
             }
 
-            // Auto-detect backend type and start engine
             if backend.starts_with("postgres://") || backend.starts_with("postgresql://") {
                 serve_with_postgres(
                     &backend, port, auth_mode, generate_api_key, list_api_keys,
@@ -333,6 +332,11 @@ async fn main() -> ExitCode {
                 )
                 .await
             }
+        }
+        #[cfg(not(feature = "workflow"))]
+        Some(Commands::Serve { .. }) => {
+            eprintln!("assay serve: workflow engine not compiled (enable 'workflow' feature)");
+            ExitCode::from(1)
         }
         Some(Commands::Workflow { command }) => {
             eprintln!("assay workflow: {command:?}");
@@ -357,6 +361,7 @@ async fn main() -> ExitCode {
     }
 }
 
+#[cfg(feature = "workflow")]
 async fn serve_with_store<S: assay_workflow::WorkflowStore>(
     store: S,
     port: u16,
@@ -409,6 +414,7 @@ async fn serve_with_store<S: assay_workflow::WorkflowStore>(
     ExitCode::SUCCESS
 }
 
+#[cfg(feature = "workflow")]
 async fn serve_with_sqlite(
     backend: &str,
     port: u16,
@@ -427,6 +433,7 @@ async fn serve_with_sqlite(
     serve_with_store(store, port, auth_mode, generate_api_key, list_api_keys).await
 }
 
+#[cfg(feature = "workflow")]
 async fn serve_with_postgres(
     backend: &str,
     port: u16,

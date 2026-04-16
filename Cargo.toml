@@ -22,10 +22,11 @@ name = "assay"
 path = "src/lib.rs"
 
 [features]
-default = ["db", "server", "cli"]
+default = ["db", "server", "cli", "workflow"]
 db = ["dep:sqlx"]
 server = ["dep:http-body-util", "dep:hyper", "dep:hyper-util"]
 cli = ["dep:clap", "dep:tracing-subscriber"]
+workflow = ["dep:assay-workflow"]
 
 [dependencies]
 # Lua scripting engine
@@ -96,7 +97,7 @@ minijinja = "2.15.1"
 pulldown-cmark = "0.13"
 
 # Workflow engine (separate crate, same workspace)
-assay-workflow = { path = "crates/assay-workflow" }
+assay-workflow = { path = "crates/assay-workflow", optional = true }
 
 # URL parsing/encoding (used by http server query string decoding)
 url = "2"
