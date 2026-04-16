@@ -123,9 +123,19 @@ impl<S: WorkflowStore> Engine<S> {
                     return Ok(false);
                 }
 
-                self.store
-                    .update_workflow_status(id, WorkflowStatus::Cancelled, None, None)
-                    .await?;
+                // Two-phase cancel:
+                //   1. Append WorkflowCancelRequested + mark dispatchable.
+                //      The next worker replay sees the request, raises a
+                //      cancellation error inside the handler, and submits
+                //      a CancelWorkflow command.
+                //   2. CancelWorkflow command flips status to CANCELLED,
+                //      cancels pending activities/timers, appends
+                //      WorkflowCancelled.
+                //
+                // We cancel pending activities + timers up-front too so a
+                // worker that's about to claim them sees CANCELLED instead.
+                self.store.cancel_pending_activities(id).await?;
+                self.store.cancel_pending_timers(id).await?;
 
                 let seq = self.store.get_event_count(id).await? as i32 + 1;
                 self.store
@@ -133,17 +143,27 @@ impl<S: WorkflowStore> Engine<S> {
                         id: None,
                         workflow_id: id.to_string(),
                         seq,
-                        event_type: "WorkflowCancelled".to_string(),
+                        event_type: "WorkflowCancelRequested".to_string(),
                         payload: None,
                         timestamp: timestamp_now(),
                     })
                     .await?;
 
+                self.store.mark_workflow_dispatchable(id).await?;
+
                 // Propagate cancellation to all child workflows
                 let children = self.store.list_child_workflows(id).await?;
                 for child in children {
-                    // Recursive cancellation — Box::pin for async recursion
                     Box::pin(self.cancel_workflow(&child.id)).await?;
+                }
+
+                // For workflows that have NO worker registered (or no
+                // handler running), cancellation would never complete.
+                // Fall back: if the workflow has no events past
+                // WorkflowStarted (handler hasn't actually run yet, e.g.
+                // PENDING with no claim), finalise immediately.
+                if matches!(status, WorkflowStatus::Pending) {
+                    self.finalise_cancellation(id).await?;
                 }
 
                 Ok(true)
@@ -544,6 +564,10 @@ impl<S: WorkflowStore> Engine<S> {
                     )
                     .await?;
                 }
+                "CancelWorkflow" => {
+                    // Worker acknowledged a cancellation — finalise.
+                    self.finalise_cancellation(workflow_id).await?;
+                }
                 "WaitForSignal" => {
                     // No engine-side state to write — the workflow has paused
                     // and will be re-dispatched when a matching signal arrives.
@@ -654,6 +678,34 @@ impl<S: WorkflowStore> Engine<S> {
             .await?;
 
         Ok(timer)
+    }
+
+    /// Finalise a cancellation: flips status to CANCELLED and appends the
+    /// terminal WorkflowCancelled event. Called by the CancelWorkflow
+    /// command handler (worker acknowledged cancel) and by cancel_workflow
+    /// directly when the workflow has no worker yet.
+    pub async fn finalise_cancellation(&self, workflow_id: &str) -> Result<()> {
+        // Avoid double-finalising
+        if let Some(wf) = self.store.get_workflow(workflow_id).await? {
+            if wf.status == "CANCELLED" {
+                return Ok(());
+            }
+        }
+        self.store
+            .update_workflow_status(workflow_id, WorkflowStatus::Cancelled, None, None)
+            .await?;
+        let event_seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: workflow_id.to_string(),
+                seq: event_seq,
+                event_type: "WorkflowCancelled".to_string(),
+                payload: None,
+                timestamp: timestamp_now(),
+            })
+            .await?;
+        Ok(())
     }
 
     /// Mark a workflow COMPLETED with a result + append WorkflowCompleted event.

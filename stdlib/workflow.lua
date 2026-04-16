@@ -229,7 +229,14 @@ function M._handle_workflow_task(task)
 
     local ok, yielded_or_returned = coroutine.resume(co)
     if not ok then
-        return {{ type = "FailWorkflow", error = tostring(yielded_or_returned) }}
+        local err = tostring(yielded_or_returned)
+        -- Cancellation is a clean exit, not a failure — translate the
+        -- sentinel raised by ctx:check_cancel back into a CancelWorkflow
+        -- command so the engine flips status to CANCELLED (not FAILED).
+        if err:find("__ASSAY_WORKFLOW_CANCELLED__", 1, true) then
+            return {{ type = "CancelWorkflow" }}
+        end
+        return {{ type = "FailWorkflow", error = err }}
     end
     if coroutine.status(co) == "dead" then
         return {{ type = "CompleteWorkflow", result = yielded_or_returned }}
@@ -250,6 +257,7 @@ function M._make_workflow_ctx(workflow_id, history)
     -- in turn.
     local activity_results, fired_timers = {}, {}
     local signals_by_name = {} -- [name] = list of payloads in arrival order
+    local cancel_requested = false
     for _, event in ipairs(history) do
         local p = event.payload
         if event.event_type == "ActivityCompleted" and p and p.activity_seq then
@@ -261,6 +269,8 @@ function M._make_workflow_ctx(workflow_id, history)
         elseif event.event_type == "SignalReceived" and p and p.signal then
             signals_by_name[p.signal] = signals_by_name[p.signal] or {}
             table.insert(signals_by_name[p.signal], p.payload)
+        elseif event.event_type == "WorkflowCancelRequested" then
+            cancel_requested = true
         end
     end
 
@@ -272,12 +282,22 @@ function M._make_workflow_ctx(workflow_id, history)
     local activity_seq, timer_seq = 0, 0
     local ctx = { workflow_id = workflow_id }
 
+    -- Helper: any ctx method bails out via this if the workflow has been
+    -- requested to cancel. The runner catches the sentinel and emits a
+    -- CancelWorkflow command, which finalises the workflow state.
+    local function check_cancel()
+        if cancel_requested then
+            error("__ASSAY_WORKFLOW_CANCELLED__")
+        end
+    end
+
     --- Schedule an activity and (synchronously, for the workflow author)
     --- return its result. On replay, returns the cached result from
     --- history; on first execution at this seq, yields a ScheduleActivity
     --- command and the workflow run ends until the activity completes
     --- and the workflow becomes dispatchable again.
     function ctx:execute_activity(name, input, opts)
+        check_cancel()
         activity_seq = activity_seq + 1
         local r = activity_results[activity_seq]
         if r then
@@ -305,6 +325,7 @@ function M._make_workflow_ctx(workflow_id, history)
     --- another worker picks up the workflow. On replay, returns immediately
     --- once the matching TimerFired event is in history.
     function ctx:sleep(seconds)
+        check_cancel()
         timer_seq = timer_seq + 1
         if fired_timers[timer_seq] then return end
         coroutine.yield({
@@ -322,6 +343,7 @@ function M._make_workflow_ctx(workflow_id, history)
     --- workflow back up via mark_workflow_dispatchable. Multiple waits for
     --- the same signal name consume signals in arrival order.
     function ctx:wait_for_signal(name)
+        check_cancel()
         local consumed = signal_cursor[name] or 0
         local arrivals = signals_by_name[name] or {}
         if consumed < #arrivals then

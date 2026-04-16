@@ -705,6 +705,29 @@ impl WorkflowStore for SqliteStore {
         Ok(res.last_insert_rowid())
     }
 
+    async fn cancel_pending_activities(&self, workflow_id: &str) -> Result<u64> {
+        let res = sqlx::query(
+            "UPDATE workflow_activities SET status = 'CANCELLED', completed_at = ?
+             WHERE workflow_id = ? AND status = 'PENDING'",
+        )
+        .bind(timestamp_now())
+        .bind(workflow_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected())
+    }
+
+    async fn cancel_pending_timers(&self, workflow_id: &str) -> Result<u64> {
+        let res = sqlx::query(
+            "UPDATE workflow_timers SET fired = 1
+             WHERE workflow_id = ? AND fired = 0",
+        )
+        .bind(workflow_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected())
+    }
+
     async fn get_timer_by_workflow_seq(
         &self,
         workflow_id: &str,

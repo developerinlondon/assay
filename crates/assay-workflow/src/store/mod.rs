@@ -174,6 +174,23 @@ pub trait WorkflowStore: Send + Sync + 'static {
 
     // ── Timers ──────────────────────────────────────────────
 
+    /// Mark all PENDING activities of a workflow as CANCELLED so workers
+    /// that haven't claimed them yet won't pick them up. Returns the
+    /// number of rows affected. Does NOT touch RUNNING activities — those
+    /// will see the cancellation when they next heartbeat or complete.
+    fn cancel_pending_activities(
+        &self,
+        workflow_id: &str,
+    ) -> impl Future<Output = anyhow::Result<u64>> + Send;
+
+    /// Mark all unfired timers of a workflow as fired without firing
+    /// (effectively removing them from the timer poller). Returns the
+    /// number of rows affected.
+    fn cancel_pending_timers(
+        &self,
+        workflow_id: &str,
+    ) -> impl Future<Output = anyhow::Result<u64>> + Send;
+
     fn create_timer(
         &self,
         timer: &WorkflowTimer,

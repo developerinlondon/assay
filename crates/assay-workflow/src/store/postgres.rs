@@ -601,6 +601,29 @@ impl WorkflowStore for PostgresStore {
         Ok(row.0)
     }
 
+    async fn cancel_pending_activities(&self, workflow_id: &str) -> Result<u64> {
+        let res = sqlx::query(
+            "UPDATE workflow_activities SET status = 'CANCELLED', completed_at = $1
+             WHERE workflow_id = $2 AND status = 'PENDING'",
+        )
+        .bind(timestamp_now())
+        .bind(workflow_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected())
+    }
+
+    async fn cancel_pending_timers(&self, workflow_id: &str) -> Result<u64> {
+        let res = sqlx::query(
+            "UPDATE workflow_timers SET fired = TRUE
+             WHERE workflow_id = $1 AND fired = FALSE",
+        )
+        .bind(workflow_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected())
+    }
+
     async fn get_timer_by_workflow_seq(
         &self,
         workflow_id: &str,
