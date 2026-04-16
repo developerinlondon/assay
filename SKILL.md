@@ -235,63 +235,85 @@ URLs: `postgres://user:pass@host:5432/db`, `mysql://...`, `sqlite:///path/to/fil
 | `sleep(secs)`    | Sleep for N seconds      |
 | `time()`         | Unix timestamp (integer) |
 
-### Temporal gRPC (optional feature)
+### Workflow engine — `assay serve` and `require("assay.workflow")`
 
-Available when built with `--features temporal`. Native gRPC client for Temporal workflow engine.
+Native durable workflow engine built into the `assay` binary (default-on `workflow` feature).
+`assay serve` runs the engine; `assay run worker.lua` where the script registers handlers via
+`require("assay.workflow")` makes that process a worker. Workflow code runs deterministically and
+replays from a persisted event log — worker crashes don't lose work and side effects don't
+duplicate.
 
-| Function                                                                    | Description                                 |
-| --------------------------------------------------------------------------- | ------------------------------------------- |
-| `temporal.connect({ url, namespace? })`                                     | Connect to Temporal server, returns client  |
-| `temporal.start({ url, namespace?, ... })`                                  | One-shot: connect + start workflow          |
-| `client:start_workflow({ task_queue, workflow_type, workflow_id, input? })` | Start a workflow execution                  |
-| `client:signal_workflow({ workflow_id, signal_name, input? })`              | Signal a running workflow                   |
-| `client:query_workflow({ workflow_id, query_type, input? })`                | Query workflow state                        |
-| `client:describe_workflow(workflow_id)`                                     | Get workflow status and metadata            |
-| `client:get_result({ workflow_id })`                                        | Wait for workflow completion and get result |
-| `client:cancel_workflow(workflow_id)`                                       | Request workflow cancellation               |
-| `client:terminate_workflow(workflow_id)`                                    | Forcefully terminate a workflow             |
+CLI:
+
+| Command                                                | Description                                                    |
+| ------------------------------------------------------ | -------------------------------------------------------------- |
+| `assay serve [--port N] [--backend ...]`               | Start the engine (SQLite default; Postgres for multi-instance) |
+| `assay workflow list/describe/signal/cancel/terminate` | Drive an existing engine                                       |
+| `assay schedule list/create/pause/resume/delete`       | Cron schedules (6/7-field crons)                               |
+
+Lua client (`require("assay.workflow")`):
+
+| Function                                                            | Description                                          |
+| ------------------------------------------------------------------- | ---------------------------------------------------- |
+| `workflow.connect(url, opts?)`                                      | Verify reachability; opts = `{ token = "Bearer …" }` |
+| `workflow.define(name, function(ctx, input) … end)`                 | Register a workflow handler (runs as a coroutine)    |
+| `workflow.activity(name, function(ctx, input) … end)`               | Register an activity implementation                  |
+| `workflow.listen({queue, identity?})`                               | Block; poll workflow tasks AND activity tasks        |
+| `workflow.start({workflow_type, workflow_id, input?, task_queue?})` | Start a workflow from any client                     |
+| `workflow.signal(id, name, payload?)`                               | Send a signal to a running workflow                  |
+| `workflow.describe(id)` / `workflow.cancel(id)`                     | Inspect / cancel                                     |
+
+Workflow handler `ctx`:
+
+| Method                                     | Returns         | Notes                                                                                          |
+| ------------------------------------------ | --------------- | ---------------------------------------------------------------------------------------------- |
+| `ctx:execute_activity(name, input, opts?)` | activity result | Sync; raises after retries exhausted                                                           |
+| `ctx:sleep(seconds)`                       | nil             | Durable timer; survives worker restart                                                         |
+| `ctx:wait_for_signal(name)`                | signal payload  | Block until matching signal arrives                                                            |
+| `ctx:start_child_workflow(type, opts)`     | child result    | `opts.workflow_id` required and deterministic                                                  |
+| `ctx:side_effect(name, fn)`                | value of fn()   | Run once, cache in event log; use for `crypto.uuid()`, `os.time()`, anything non-deterministic |
 
 ## Stdlib Modules Quick Reference
 
 All 35 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
-| Module               | Description                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------- |
-| `assay.prometheus`   | PromQL queries, alerts, targets, rules, label values, series                                            |
-| `assay.alertmanager` | Manage alerts, silences, receivers, config                                                              |
-| `assay.loki`         | Push logs, query with LogQL, labels, series, tail                                                       |
-| `assay.grafana`      | Health, dashboards, datasources, annotations, alert rules, folders                                      |
-| `assay.k8s`          | 30+ resource types, CRDs, readiness checks, pod logs, rollouts                                          |
-| `assay.argocd`       | Apps, sync, health, projects, repositories, clusters                                                    |
-| `assay.kargo`        | Stages, freight, promotions, warehouses, pipeline status                                                |
-| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases, notifications                                            |
-| `assay.traefik`      | Routers, services, middlewares, entrypoints, TLS status                                                 |
-| `assay.vault`        | KV secrets, policies, auth, transit, PKI, token management                                              |
-| `assay.openbao`      | Alias for vault (OpenBao API-compatible)                                                                |
-| `assay.certmanager`  | Certificates, issuers, ACME orders and challenges                                                       |
-| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores sync status                                          |
-| `assay.dex`          | OIDC discovery, JWKS, health, configuration validation                                                  |
-| `assay.zitadel`      | OIDC identity management with JWT machine auth                                                          |
-| `assay.ory.kratos`   | Ory Kratos — login/registration/recovery/settings flows, identities, sessions                           |
-| `assay.ory.hydra`    | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs                            |
-| `assay.ory.keto`     | Ory Keto ReBAC — relation tuples, permission checks, expand                                             |
-| `assay.ory.rbac`     | Capability-based RBAC engine over Keto — roles + capabilities, separation of duties                     |
-| `assay.ory`          | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together; also re-exports `rbac` |
-| `assay.crossplane`   | Providers, XRDs, compositions, managed resources                                                        |
-| `assay.velero`       | Backups, restores, schedules, storage locations                                                         |
-| `assay.temporal`     | Workflows, task queues, schedules, signals + native gRPC (temporal feature)                             |
-| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                               |
-| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                             |
-| `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                                                 |
-| `assay.postgres`     | Postgres helpers: users, databases, grants, Vault integration                                           |
-| `assay.unleash`      | Feature flags: projects, environments, features, strategies, tokens                                     |
-| `assay.openclaw`     | OpenClaw AI agent — invoke tools, state, diff, approve, LLM tasks                                       |
-| `assay.gitlab`       | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, registry                                 |
-| `assay.github`       | GitHub REST API — PRs, issues, actions, repos, GraphQL                                                  |
-| `assay.gmail`        | Gmail REST API with OAuth2 — search, read, reply, send, labels                                          |
-| `assay.gcal`         | Google Calendar REST API with OAuth2 — events CRUD, calendar list                                       |
-| `assay.oauth2`       | Google OAuth2 token management — credentials, auto-refresh, persistence                                 |
-| `assay.email_triage` | Email classification — deterministic rules + LLM-assisted triage                                        |
+| Module               | Description                                                                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assay.prometheus`   | PromQL queries, alerts, targets, rules, label values, series                                                                                                     |
+| `assay.alertmanager` | Manage alerts, silences, receivers, config                                                                                                                       |
+| `assay.loki`         | Push logs, query with LogQL, labels, series, tail                                                                                                                |
+| `assay.grafana`      | Health, dashboards, datasources, annotations, alert rules, folders                                                                                               |
+| `assay.k8s`          | 30+ resource types, CRDs, readiness checks, pod logs, rollouts                                                                                                   |
+| `assay.argocd`       | Apps, sync, health, projects, repositories, clusters                                                                                                             |
+| `assay.kargo`        | Stages, freight, promotions, warehouses, pipeline status                                                                                                         |
+| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases, notifications                                                                                                     |
+| `assay.traefik`      | Routers, services, middlewares, entrypoints, TLS status                                                                                                          |
+| `assay.vault`        | KV secrets, policies, auth, transit, PKI, token management                                                                                                       |
+| `assay.openbao`      | Alias for vault (OpenBao API-compatible)                                                                                                                         |
+| `assay.certmanager`  | Certificates, issuers, ACME orders and challenges                                                                                                                |
+| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores sync status                                                                                                   |
+| `assay.dex`          | OIDC discovery, JWKS, health, configuration validation                                                                                                           |
+| `assay.zitadel`      | OIDC identity management with JWT machine auth                                                                                                                   |
+| `assay.ory.kratos`   | Ory Kratos — login/registration/recovery/settings flows, identities, sessions                                                                                    |
+| `assay.ory.hydra`    | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs                                                                                     |
+| `assay.ory.keto`     | Ory Keto ReBAC — relation tuples, permission checks, expand                                                                                                      |
+| `assay.ory.rbac`     | Capability-based RBAC engine over Keto — roles + capabilities, separation of duties                                                                              |
+| `assay.ory`          | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together; also re-exports `rbac`                                                          |
+| `assay.crossplane`   | Providers, XRDs, compositions, managed resources                                                                                                                 |
+| `assay.velero`       | Backups, restores, schedules, storage locations                                                                                                                  |
+| `assay.workflow`     | Native durable workflow engine client — connect, define workflows + activities, listen as worker, start/signal/cancel from any client. Pairs with `assay serve`. |
+| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                                                                                        |
+| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                                                                                      |
+| `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                                                                                                          |
+| `assay.postgres`     | Postgres helpers: users, databases, grants, Vault integration                                                                                                    |
+| `assay.unleash`      | Feature flags: projects, environments, features, strategies, tokens                                                                                              |
+| `assay.openclaw`     | OpenClaw AI agent — invoke tools, state, diff, approve, LLM tasks                                                                                                |
+| `assay.gitlab`       | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, registry                                                                                          |
+| `assay.github`       | GitHub REST API — PRs, issues, actions, repos, GraphQL                                                                                                           |
+| `assay.gmail`        | Gmail REST API with OAuth2 — search, read, reply, send, labels                                                                                                   |
+| `assay.gcal`         | Google Calendar REST API with OAuth2 — events CRUD, calendar list                                                                                                |
+| `assay.oauth2`       | Google OAuth2 token management — credentials, auto-refresh, persistence                                                                                          |
+| `assay.email_triage` | Email classification — deterministic rules + LLM-assisted triage                                                                                                 |
 
 ## Common Patterns
 
@@ -383,36 +405,57 @@ assert.gt(up_count, 0, "No Prometheus targets are up")
 log.info("Active targets: " .. up_count .. ", up query: " .. tostring(c.queries:instant("up")))
 ```
 
-### Temporal Workflow (gRPC)
+### Workflow with signal (assay serve + Lua client)
 
 ```lua
 #!/usr/bin/assay
--- Native gRPC client (requires --features temporal)
-local client = temporal.connect({
-  url = "temporal-frontend.infra:7233",
-  namespace = "my-namespace",
-})
+-- Worker: registers handlers and listens. Run alongside `assay serve`.
+local workflow = require("assay.workflow")
+workflow.connect("http://localhost:8080")
 
--- Start a workflow
-local handle = client:start_workflow({
-  task_queue = "my-queue",
-  workflow_type = "ProcessOrder",
-  workflow_id = "order-12345",
-  input = { item = "widget", quantity = 3 },
-})
-log.info("Started workflow: " .. handle.run_id)
+workflow.define("ProcessOrder", function(ctx, input)
+  local stock = ctx:execute_activity("reserve_stock", input)
+  -- Pause until a human approves; survives worker restart.
+  local approval = ctx:wait_for_signal("approve")
+  return ctx:execute_activity("ship", {
+    item = input.item,
+    qty = input.quantity,
+    approver = approval.by,
+  })
+end)
 
--- Check status
-local info = client:describe_workflow("order-12345")
-log.info("Status: " .. info.status)
+workflow.activity("reserve_stock", function(ctx, input)
+  -- real impl would hit the inventory service
+  return { reserved = input.quantity }
+end)
 
--- Signal a running workflow
-client:signal_workflow({
-  workflow_id = "order-12345",
-  signal_name = "approve",
-  input = { approved_by = "admin" },
-})
+workflow.activity("ship", function(ctx, input)
+  return { tracking = "TRK-" .. input.item, approver = input.approver }
+end)
+
+workflow.listen({ queue = "orders" })
 ```
+
+Drive it from any HTTP client:
+
+```sh
+# Start
+curl -X POST http://localhost:8080/api/v1/workflows -d \
+  '{"workflow_type":"ProcessOrder","workflow_id":"order-12345",
+    "task_queue":"orders","input":{"item":"widget","quantity":3}}'
+
+# Approve (workflow resumes)
+assay workflow signal order-12345 approve '{"by":"alice"}'
+
+# Inspect
+assay workflow describe order-12345
+```
+
+Crash-safety: if the worker dies between `reserve_stock` completing and the `approve` signal
+arriving, the engine reassigns the workflow task to another worker after
+`ASSAY_WF_DISPATCH_TIMEOUT_SECS` (default 30s); that worker replays from the event log, sees
+`reserve_stock`'s result in history, and resumes waiting on the signal. No duplicate stock
+reservations. See `docs/modules/workflow.md` for the full replay model.
 
 ## Error Handling
 
@@ -504,9 +547,10 @@ fails, run `assay modules` to see the exact module names.
 **Debugging**: Add `log.info(json.encode(some_table))` to inspect table contents. The `json.encode`
 builtin handles nested tables.
 
-**Temporal gRPC vs HTTP**: The `temporal` builtin (gRPC) and `assay.temporal` stdlib (HTTP) are
-complementary. Use `temporal.connect()` for starting/signaling workflows (gRPC, more reliable). Use
-`require("assay.temporal").client()` for querying the Temporal Web UI (HTTP REST API).
+**Workflow engine**: Use `assay serve` + `require("assay.workflow")` for durable workflows with
+deterministic-replay crash safety. See the "Workflow engine" section above for the API and
+`docs/modules/workflow.md` for the full replay model. Note: 0.11.0 removed the externally-hosted
+Temporal integration in favour of this built-in engine.
 
 ## MCP Replacement
 

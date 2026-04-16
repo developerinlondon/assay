@@ -213,6 +213,130 @@ __FOOTER__
 fs.write(out .. "/modules.html", apply_placeholders(index_html))
 
 -- =====================================================================
+-- Phase 4b: Generate per-example HTML pages + examples.html index
+-- =====================================================================
+-- Each subdirectory of examples/workflows/ ships a README.md and one or
+-- more *.lua files. We render the README + a syntax-highlighted view of
+-- each lua file so a visitor can see exactly what the example does
+-- without having to clone the repo.
+
+local examples_out = out .. "/examples"
+local example_dirs = fs.glob("examples/workflows/*/")
+fs.write(examples_out .. "/.gitkeep", "")
+
+local example_template = [[<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — Example: {{title}}</title>
+  <meta name="description" content="Runnable assay workflow example: {{title}}">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="page-modules">
+__HEADER__
+
+  <main>
+    <p><a href="/examples.html">&larr; All Examples</a></p>
+{{content}}
+{{lua_files}}
+  </main>
+
+__FOOTER__
+</body>
+</html>]]
+
+local examples_index_entries = {}
+
+for _, dir in ipairs(example_dirs) do
+  local slug = dir:match("examples/workflows/([^/]+)/?$")
+  if slug then
+    local readme_path = "examples/workflows/" .. slug .. "/README.md"
+    local readme_ok, readme_md = pcall(fs.read, readme_path)
+    if readme_ok then
+      local title = readme_md:match("^# ([^\n]+)") or slug
+      local content_html = markdown.to_html(readme_md)
+      -- Strip the leading <h1> since we render it differently
+      content_html = content_html:gsub("^<h1>.-</h1>%s*", "<h1>" .. title .. "</h1>")
+
+      -- Inline each .lua file in the example directory so visitors can
+      -- read the worker source without leaving the page.
+      local lua_files_html = ""
+      local lua_files = fs.glob("examples/workflows/" .. slug .. "/*.lua")
+      if #lua_files > 0 then
+        lua_files_html = "<h2>Source</h2>"
+        for _, lua_path in ipairs(lua_files) do
+          local lua_name = lua_path:match("([^/]+)$")
+          local lua_src = fs.read(lua_path)
+          -- Basic HTML-escape for the code block
+          lua_src = lua_src:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+          lua_files_html = lua_files_html
+            .. '<h3><code>' .. lua_name .. '</code></h3>'
+            .. '<pre><code>' .. lua_src .. '</code></pre>'
+        end
+      end
+
+      local page = example_template
+      page = substitute(page, "{{title}}", title)
+      page = substitute(page, "{{content}}", content_html)
+      page = substitute(page, "{{lua_files}}", lua_files_html)
+      page = apply_placeholders(page)
+
+      fs.write(examples_out .. "/" .. slug .. ".html", page)
+
+      -- Pull the first paragraph of the README for the index summary
+      local summary = readme_md:match("# [^\n]+\n+## What it does\n+([^#]+)")
+        or readme_md:match("# [^\n]+\n+([^\n#]+)")
+        or ""
+      summary = summary:gsub("^%s+", ""):gsub("%s+$", "")
+      examples_index_entries[#examples_index_entries + 1] = {
+        slug = slug, title = title, summary = summary,
+      }
+    end
+  end
+end
+log.info("Generated " .. #examples_index_entries .. " example pages")
+
+-- examples.html index page
+local index_items = {}
+for _, e in ipairs(examples_index_entries) do
+  index_items[#index_items + 1] = string.format([[
+      <a href="/examples/%s.html" class="card" style="display: block; text-decoration: none; color: var(--text); margin-bottom: 1rem;">
+        <h3 style="margin-top: 0; color: var(--accent);">%s</h3>
+        <p class="text-muted" style="margin-bottom: 0;">%s</p>
+      </a>]], e.slug, e.title, e.summary)
+end
+
+local examples_index_html = [[<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — Workflow Examples</title>
+  <meta name="description" content="Runnable assay workflow engine examples: hello, signals, cron, child workflows.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-modules">
+__HEADER__
+
+  <main>
+    <h1>Workflow Examples</h1>
+    <p style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+      Runnable examples of the <code>assay serve</code> workflow engine.
+      Each links to its README and source. Clone the repo and run
+      <code>assay run examples/workflows/&lt;name&gt;/worker.lua</code>
+      with <code>assay serve</code> on :8080 to try them.
+    </p>
+]] .. table.concat(index_items, "\n") .. [[
+
+  </main>
+
+__FOOTER__
+</body>
+</html>]]
+fs.write(out .. "/examples.html", apply_placeholders(examples_index_html))
+
+-- =====================================================================
 -- Phase 5: Generate llms-full.txt
 -- =====================================================================
 local llms = { [[# Assay
@@ -237,6 +361,27 @@ local llms = { [[# Assay
 for _, md_file in ipairs(md_files) do
   llms[#llms + 1] = fs.read(md_file)
   llms[#llms + 1] = "\n\n"
+end
+
+-- Workflow engine examples — show real runnable code so agents can
+-- pattern-match what a worker script + handler looks like.
+if #example_dirs > 0 then
+  llms[#llms + 1] = "## Workflow examples\n\n"
+  for _, e in ipairs(examples_index_entries) do
+    llms[#llms + 1] = "### " .. e.title .. "\n\n"
+    local readme_path = "examples/workflows/" .. e.slug .. "/README.md"
+    local rok, rmd = pcall(fs.read, readme_path)
+    if rok then
+      llms[#llms + 1] = rmd .. "\n\n"
+    end
+    local lua_files = fs.glob("examples/workflows/" .. e.slug .. "/*.lua")
+    for _, lua_path in ipairs(lua_files) do
+      local lua_name = lua_path:match("([^/]+)$")
+      llms[#llms + 1] = "**`" .. lua_name .. "`**\n\n```lua\n"
+      llms[#llms + 1] = fs.read(lua_path)
+      llms[#llms + 1] = "\n```\n\n"
+    end
+  end
 end
 
 llms[#llms + 1] = [[## Optional
