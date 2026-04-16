@@ -44,7 +44,7 @@ serde_json = "1.0.149"
 serde_yml = "0.0.12"
 
 # CLI (optional — only needed for the assay binary)
-clap = { version = "4.5.57", features = ["derive"], optional = true }
+clap = { version = "4.5.57", features = ["derive", "env"], optional = true }
 
 # Error handling
 anyhow = "1"

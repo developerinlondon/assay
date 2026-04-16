@@ -88,8 +88,9 @@ enum Commands {
     },
     /// Start the assay workflow engine server
     Serve {
-        /// Database backend URL (sqlite:// or postgres://)
-        #[arg(long, default_value = "sqlite://assay-workflow.db?mode=rwc")]
+        /// Database backend URL (sqlite:// or postgres://).
+        /// Can also be set via DATABASE_URL env var to avoid exposing credentials.
+        #[arg(long, env = "DATABASE_URL", default_value = "sqlite://assay-workflow.db?mode=rwc")]
         backend: String,
         /// Port to listen on
         #[arg(long, default_value = "8080")]
