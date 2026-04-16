@@ -232,12 +232,108 @@ impl<S: WorkflowStore> Engine<S> {
 
     // ── Task Operations (for worker polling) ────────────────
 
+    /// Schedule an activity within a workflow.
+    ///
+    /// Idempotent on `(workflow_id, seq)` — if an activity with this sequence
+    /// number already exists for the workflow, returns its id without
+    /// creating a duplicate row or duplicate `ActivityScheduled` event. This
+    /// is essential for deterministic replay: a worker can re-run the
+    /// workflow function and call `schedule_activity(seq=1, ...)` repeatedly
+    /// without producing side effects.
+    ///
+    /// On the first call for a `seq`:
+    /// - inserts a row in `workflow_activities` with status `PENDING`
+    /// - appends an `ActivityScheduled` event to the workflow event log
+    /// - if the workflow is still `PENDING`, transitions it to `RUNNING`
+    pub async fn schedule_activity(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+        name: &str,
+        input: Option<&str>,
+        task_queue: &str,
+        opts: ScheduleActivityOpts,
+    ) -> Result<WorkflowActivity> {
+        // Idempotency: short-circuit if (workflow_id, seq) already exists.
+        if let Some(existing) = self
+            .store
+            .get_activity_by_workflow_seq(workflow_id, seq)
+            .await?
+        {
+            return Ok(existing);
+        }
+
+        let now = timestamp_now();
+        let mut act = WorkflowActivity {
+            id: None,
+            workflow_id: workflow_id.to_string(),
+            seq,
+            name: name.to_string(),
+            task_queue: task_queue.to_string(),
+            input: input.map(String::from),
+            status: "PENDING".to_string(),
+            result: None,
+            error: None,
+            attempt: 1,
+            max_attempts: opts.max_attempts.unwrap_or(3),
+            initial_interval_secs: opts.initial_interval_secs.unwrap_or(1.0),
+            backoff_coefficient: opts.backoff_coefficient.unwrap_or(2.0),
+            start_to_close_secs: opts.start_to_close_secs.unwrap_or(300.0),
+            heartbeat_timeout_secs: opts.heartbeat_timeout_secs,
+            claimed_by: None,
+            scheduled_at: now,
+            started_at: None,
+            completed_at: None,
+            last_heartbeat: None,
+        };
+
+        let id = self.store.create_activity(&act).await?;
+        act.id = Some(id);
+
+        // Append ActivityScheduled event with the activity's seq
+        let event_seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: workflow_id.to_string(),
+                seq: event_seq,
+                event_type: "ActivityScheduled".to_string(),
+                payload: Some(
+                    serde_json::json!({
+                        "activity_id": id,
+                        "activity_seq": seq,
+                        "name": name,
+                        "task_queue": task_queue,
+                        "input": input,
+                    })
+                    .to_string(),
+                ),
+                timestamp: now,
+            })
+            .await?;
+
+        // Transition workflow from PENDING to RUNNING on first scheduled activity
+        if let Some(wf) = self.store.get_workflow(workflow_id).await? {
+            if wf.status == "PENDING" {
+                self.store
+                    .update_workflow_status(workflow_id, WorkflowStatus::Running, None, None)
+                    .await?;
+            }
+        }
+
+        Ok(act)
+    }
+
     pub async fn claim_activity(
         &self,
         task_queue: &str,
         worker_id: &str,
     ) -> Result<Option<WorkflowActivity>> {
         self.store.claim_activity(task_queue, worker_id).await
+    }
+
+    pub async fn get_activity(&self, id: i64) -> Result<Option<WorkflowActivity>> {
+        self.store.get_activity(id).await
     }
 
     pub async fn complete_activity(

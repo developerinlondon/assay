@@ -200,6 +200,18 @@ pub struct WorkflowEvent {
     pub timestamp: f64,
 }
 
+/// Options for scheduling an activity. All fields default to sensible values
+/// when not provided by the caller; this keeps the per-call API short while
+/// still letting workflows tune retry/timeout policy when they need to.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
+pub struct ScheduleActivityOpts {
+    pub max_attempts: Option<i32>,
+    pub initial_interval_secs: Option<f64>,
+    pub backoff_coefficient: Option<f64>,
+    pub start_to_close_secs: Option<f64>,
+    pub heartbeat_timeout_secs: Option<f64>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowActivity {
     pub id: Option<i64>,

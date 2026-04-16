@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS workflow_activities (
     scheduled_at    DOUBLE PRECISION NOT NULL,
     started_at      DOUBLE PRECISION,
     completed_at    DOUBLE PRECISION,
-    last_heartbeat  DOUBLE PRECISION
+    last_heartbeat  DOUBLE PRECISION,
+    UNIQUE (workflow_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_wf_act_pending ON workflow_activities(task_queue, status, scheduled_at);
 
@@ -406,6 +407,33 @@ impl WorkflowStore for PostgresStore {
         .fetch_one(&self.pool)
         .await?;
         Ok(row.0)
+    }
+
+    async fn get_activity(&self, id: i64) -> Result<Option<WorkflowActivity>> {
+        let row = sqlx::query_as::<_, PgActivityRow>(
+            "SELECT id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat
+             FROM workflow_activities WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
+    }
+
+    async fn get_activity_by_workflow_seq(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+    ) -> Result<Option<WorkflowActivity>> {
+        let row = sqlx::query_as::<_, PgActivityRow>(
+            "SELECT id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat
+             FROM workflow_activities WHERE workflow_id = $1 AND seq = $2",
+        )
+        .bind(workflow_id)
+        .bind(seq)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
     }
 
     async fn claim_activity(

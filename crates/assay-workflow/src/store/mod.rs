@@ -93,6 +93,21 @@ pub trait WorkflowStore: Send + Sync + 'static {
         activity: &WorkflowActivity,
     ) -> impl Future<Output = anyhow::Result<i64>> + Send;
 
+    /// Look up an activity by its primary key.
+    fn get_activity(
+        &self,
+        id: i64,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send;
+
+    /// Look up an activity by its workflow-relative sequence number.
+    /// Used for idempotent scheduling: the engine checks if (workflow_id, seq)
+    /// already exists before creating a new row.
+    fn get_activity_by_workflow_seq(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send;
+
     fn claim_activity(
         &self,
         task_queue: &str,

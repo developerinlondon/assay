@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS workflow_activities (
     scheduled_at    REAL NOT NULL,
     started_at      REAL,
     completed_at    REAL,
-    last_heartbeat  REAL
+    last_heartbeat  REAL,
+    UNIQUE (workflow_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_wf_act_pending ON workflow_activities(task_queue, status, scheduled_at);
 
@@ -512,6 +513,33 @@ impl WorkflowStore for SqliteStore {
         .execute(&self.pool)
         .await?;
         Ok(res.last_insert_rowid())
+    }
+
+    async fn get_activity(&self, id: i64) -> Result<Option<WorkflowActivity>> {
+        let row = sqlx::query_as::<_, SqliteActivityRow>(
+            "SELECT id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat
+             FROM workflow_activities WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
+    }
+
+    async fn get_activity_by_workflow_seq(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+    ) -> Result<Option<WorkflowActivity>> {
+        let row = sqlx::query_as::<_, SqliteActivityRow>(
+            "SELECT id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat
+             FROM workflow_activities WHERE workflow_id = ? AND seq = ?",
+        )
+        .bind(workflow_id)
+        .bind(seq)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
     }
 
     async fn claim_activity(

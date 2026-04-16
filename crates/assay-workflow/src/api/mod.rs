@@ -1,3 +1,4 @@
+pub mod activities;
 pub mod auth;
 pub mod dashboard;
 pub mod events;
@@ -55,6 +56,7 @@ pub fn router<S: WorkflowStore + 'static>(state: Arc<AppState<S>>) -> Router {
 fn api_v1_router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
     Router::new()
         .merge(workflows::router())
+        .merge(activities::router())
         .merge(tasks::router())
         .merge(schedules::router())
         .merge(workers::router())
