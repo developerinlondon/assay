@@ -6,6 +6,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
 COPY stdlib/ stdlib/
+COPY crates/ crates/
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Runtime
