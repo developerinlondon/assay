@@ -1,0 +1,72 @@
+/* Assay Workflow Dashboard - Theme Variables */
+
+:root,
+[data-theme="dark"] {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-hover: #1c2129;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-hover: #79b8ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+  --orange: #db6d28;
+  --shadow: rgba(0, 0, 0, 0.4);
+  --code-bg: #0d1117;
+}
+
+[data-theme="light"] {
+  --bg: #ffffff;
+  --surface: #f6f8fa;
+  --surface-hover: #eef1f4;
+  --border: #d1d9e0;
+  --text: #1f2328;
+  --text-muted: #656d76;
+  --accent: #0969da;
+  --accent-hover: #0550ae;
+  --green: #1a7f37;
+  --red: #cf222e;
+  --yellow: #9a6700;
+  --orange: #bc4c00;
+  --shadow: rgba(0, 0, 0, 0.12);
+  --code-bg: #f6f8fa;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #ffffff;
+    --surface: #f6f8fa;
+    --surface-hover: #eef1f4;
+    --border: #d1d9e0;
+    --text: #1f2328;
+    --text-muted: #656d76;
+    --accent: #0969da;
+    --accent-hover: #0550ae;
+    --green: #1a7f37;
+    --red: #cf222e;
+    --yellow: #9a6700;
+    --orange: #bc4c00;
+    --shadow: rgba(0, 0, 0, 0.12);
+    --code-bg: #f6f8fa;
+  }
+}
+
+/* Theme toggle icon visibility */
+[data-theme="dark"] .icon-sun { display: inline; }
+[data-theme="dark"] .icon-moon { display: none; }
+[data-theme="light"] .icon-sun { display: none; }
+[data-theme="light"] .icon-moon { display: inline; }
+
+/* Smooth transition on theme switch */
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+body, .sidebar, .main-content, .status-bar, .detail-panel,
+.data-table, .card, .form-input, .form-select, .btn {
+  transition: background-color 0.2s ease, color 0.2s ease,
+              border-color 0.2s ease;
+}
