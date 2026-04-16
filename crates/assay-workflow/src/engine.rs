@@ -354,12 +354,12 @@ impl<S: WorkflowStore> Engine<S> {
             .await?;
 
         // Transition workflow from PENDING to RUNNING on first scheduled activity
-        if let Some(wf) = self.store.get_workflow(workflow_id).await? {
-            if wf.status == "PENDING" {
-                self.store
-                    .update_workflow_status(workflow_id, WorkflowStatus::Running, None, None)
-                    .await?;
-            }
+        if let Some(wf) = self.store.get_workflow(workflow_id).await?
+            && wf.status == "PENDING"
+        {
+            self.store
+                .update_workflow_status(workflow_id, WorkflowStatus::Running, None, None)
+                .await?;
         }
 
         Ok(act)
@@ -760,10 +760,10 @@ impl<S: WorkflowStore> Engine<S> {
     /// directly when the workflow has no worker yet.
     pub async fn finalise_cancellation(&self, workflow_id: &str) -> Result<()> {
         // Avoid double-finalising
-        if let Some(wf) = self.store.get_workflow(workflow_id).await? {
-            if wf.status == "CANCELLED" {
-                return Ok(());
-            }
+        if let Some(wf) = self.store.get_workflow(workflow_id).await?
+            && wf.status == "CANCELLED"
+        {
+            return Ok(());
         }
         self.store
             .update_workflow_status(workflow_id, WorkflowStatus::Cancelled, None, None)
