@@ -83,10 +83,25 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Publish to crates.io
+      - name: Publish assay-workflow to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --allow-dirty
+        # The root assay-lua crate has an optional dep on assay-workflow,
+        # so the engine crate must be published first. --allow-dirty
+        # because release.yml runs against a tagged commit (clean working
+        # tree, but some CI dirs may exist from prior steps).
+        run: cargo publish --allow-dirty -p assay-workflow
+
+      - name: Wait for crates.io indexing
+        # Newly-published versions take a few seconds to be discoverable
+        # by `cargo publish`. Without this, the assay-lua publish below
+        # may fail to resolve assay-workflow = "0.1".
+        run: sleep 30
+
+      - name: Publish assay-lua to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --allow-dirty -p assay-lua
 
   docker:
     runs-on: ubuntu-latest

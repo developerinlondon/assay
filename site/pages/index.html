@@ -12,17 +12,27 @@
 
 
   <main>
+    <!-- v0.11.1 release banner -->
+    <a href="changelog.html" class="release-banner">
+      <span class="release-banner-tag">v0.11.1</span>
+      <span class="release-banner-text">Native durable workflow engine — deterministic-replay runtime, signals, durable timers, child workflows, crash recovery</span>
+      <span class="release-banner-arrow">&rarr;</span>
+    </a>
+
     <!-- Hero -->
-    <div style="padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem;">
-      <div style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem;">Replaces your entire infrastructure scripting toolchain.</div>
-      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-        <span class="text-muted">One 9 MB binary. __MODULE_COUNT__ modules. Linux, macOS, Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.</span>
-        <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
-          <a href="modules.html" style="display: inline-block; background-color: var(--accent); color: #fff; padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Modules</a>
-          <a href="#install" style="display: inline-block; color: var(--accent); border: 1px solid var(--accent); padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; text-decoration: none;">Install</a>
-        </div>
+    <section class="hero">
+      <h1 class="hero-title">A 9 MB Lua runtime for everything that boring containers used to do.</h1>
+      <p class="hero-sub">
+        Kubernetes scripts, HTTP servers, infra checks, AI agents — and now a
+        durable workflow engine — in one static binary. Linux, macOS,
+        Docker, <a href="https://crates.io/crates/assay-lua">Rust crate</a>.
+      </p>
+      <div class="hero-cta">
+        <a href="#install" class="btn btn-primary">Install</a>
+        <a href="examples.html" class="btn btn-ghost">Workflow examples</a>
+        <a href="modules.html" class="btn btn-ghost">__MODULE_COUNT__ modules</a>
       </div>
-    </div>
+    </section>
 
     <!-- Service Grid — the headline -->
     <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem; padding: 1rem 0 2rem;">
@@ -86,10 +96,10 @@
         <div style="font-weight: 600; font-size: 0.8rem;">S3</div>
         <div style="font-size: 0.7rem;" class="text-muted">Object storage</div>
       </a>
-      <a href="modules.html#temporal" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
+      <a href="modules.html#workflow" class="card card-highlight" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
         <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg></div>
-        <div style="font-weight: 600; font-size: 0.8rem;">Temporal</div>
-        <div style="font-size: 0.7rem;" class="text-muted">Workflows</div>
+        <div style="font-weight: 600; font-size: 0.8rem;">Workflow Engine</div>
+        <div style="font-size: 0.7rem;" class="text-muted">assay serve</div>
       </a>
       <a href="modules.html#certmanager" class="card" style="text-align: center; text-decoration: none; color: var(--text); padding: 1rem 0.5rem;">
         <div style="margin-bottom: 0.3rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent)"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg></div>
@@ -136,6 +146,16 @@
     <!-- Core Capabilities -->
     <h2>Core Capabilities</h2>
     <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+      <div class="card card-highlight">
+        <h3 style="margin-top: 0;">Workflow Engine <span style="color: var(--accent); font-size: 0.7rem; font-weight: 700; vertical-align: middle; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px;">NEW v0.11.1</span></h3>
+        <p class="text-muted">Native durable workflow engine with deterministic-replay runtime. Activities, signals, durable timers, child workflows, side effects. Crash-safe by replay — workers can die mid-flight without losing work or duplicating side effects.</p>
+        <pre style="margin-bottom: 0;"><code>workflow.define("Deploy", function(ctx, in)
+  local img = ctx:execute_activity("build", in)
+  ctx:wait_for_signal("approve")
+  return ctx:execute_activity("deploy", img)
+end)
+workflow.listen({ queue = "deploys" })</code></pre>
+      </div>
       <div class="card">
         <h3 style="margin-top: 0;">HTTP Server &amp; SSE</h3>
         <p class="text-muted">Build web services with async route handlers. Handlers can call http.get, sleep, and any async builtin. SSE streaming built in. Header values can be arrays for multiple <code>Set-Cookie</code>, <code>Link</code>, etc.</p>
@@ -268,15 +288,18 @@ chmod +x assay && sudo mv assay /usr/local/bin/</code></pre>
     <pre><code>docker pull ghcr.io/developerinlondon/assay:latest</code></pre>
 
     <h3>Cargo / Rust Library</h3>
-    <pre><code># CLI tool
+    <pre><code># CLI tool (includes the workflow engine by default)
 cargo install assay-lua
 
 # As a Rust dependency
-# Cargo.toml: assay-lua = "0.6"</code></pre>
+# Cargo.toml: assay-lua = "0.11"
+
+# Workflow engine alone (for embedding in other Rust projects)
+# Cargo.toml: assay-workflow = "0.1"</code></pre>
 
     <h3>mise</h3>
     <pre><code># .mise.toml
-"github:developerinlondon/assay" = "v0.6.1"</code></pre>
+"github:developerinlondon/assay" = "v0.11.1"</code></pre>
 
   </main>
 

@@ -6,3 +6,7 @@ pub mod context;
 pub mod discovery;
 #[cfg(feature = "db")]
 pub mod search_fts5;
+
+// Re-export the workflow engine crate for convenience
+#[cfg(feature = "workflow")]
+pub use assay_workflow as workflow;

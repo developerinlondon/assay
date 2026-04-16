@@ -1,8 +1,10 @@
 # Assay OpenClaw Extension
 
-Adds the `assay` agent tool to OpenClaw so agents can run checked-in Assay Lua workflows with resumable approvals.
+Adds the `assay` agent tool to OpenClaw so agents can run checked-in Assay Lua workflows with
+resumable approvals.
 
-Published to [GitHub Packages](https://github.com/developerinlondon/assay/pkgs/npm/assay-openclaw-extension).
+Published to
+[GitHub Packages](https://github.com/developerinlondon/assay/pkgs/npm/assay-openclaw-extension).
 
 ## Installation
 
@@ -33,12 +35,12 @@ openclaw plugins install -l ./openclaw-extension
 
 Set plugin config under `plugins.entries.assay.config`.
 
-| Key | Type | Default | Description |
-| --- | --- | --- | --- |
-| `binaryPath` | string | PATH lookup | Explicit path to the `assay` binary |
-| `timeout` | number | `20` | Execution timeout in seconds |
-| `maxOutputSize` | number | `524288` | Maximum stdout collected from Assay |
-| `scriptsDir` | string | workspace root | Root directory for Lua scripts |
+| Key             | Type   | Default        | Description                         |
+| --------------- | ------ | -------------- | ----------------------------------- |
+| `binaryPath`    | string | PATH lookup    | Explicit path to the `assay` binary |
+| `timeout`       | number | `20`           | Execution timeout in seconds        |
+| `maxOutputSize` | number | `524288`       | Maximum stdout collected from Assay |
+| `scriptsDir`    | string | workspace root | Root directory for Lua scripts      |
 
 Example:
 
@@ -101,4 +103,5 @@ Resume after approval:
 
 ## Recommended agent policy
 
-Because Assay scripts can perform side effects, enable this tool only for agents that should run infrastructure or workflow automation.
+Because Assay scripts can perform side effects, enable this tool only for agents that should run
+infrastructure or workflow automation.

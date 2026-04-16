@@ -1,11 +1,12 @@
 ## assay.dex
 
-Dex OIDC identity provider. Discovery, JWKS, health, and configuration validation.
-Client: `dex.client(url)`. Module-level functions also available for backward compatibility.
+Dex OIDC identity provider. Discovery, JWKS, health, and configuration validation. Client:
+`dex.client(url)`. Module-level functions also available for backward compatibility.
 
 ### Discovery (`c.discovery`)
 
-- `c.discovery:config()` → `{issuer, authorization_endpoint, token_endpoint, jwks_uri, ...}` — Get OIDC discovery configuration
+- `c.discovery:config()` → `{issuer, authorization_endpoint, token_endpoint, jwks_uri, ...}` — Get
+  OIDC discovery configuration
 - `c.discovery:jwks()` → `{keys}` — Get JSON Web Key Set (fetches jwks_uri from discovery)
 - `c.discovery:issuer()` → string — Get issuer URL from discovery
 - `c.discovery:has_endpoint(endpoint_name)` → bool — Check if endpoint exists in discovery doc
@@ -28,14 +29,17 @@ Client: `dex.client(url)`. Module-level functions also available for backward co
 
 ### Top-level
 
-- `c:validate_config()` → `{ok, errors}` — Validate OIDC configuration completeness (checks issuer, endpoints, jwks_uri)
+- `c:validate_config()` → `{ok, errors}` — Validate OIDC configuration completeness (checks issuer,
+  endpoints, jwks_uri)
 - `c:admin_version()` → version|nil — Get Dex admin API version (nil if unavailable)
 
 ### Backward Compatibility
 
-All legacy module-level functions (`M.discovery(url)`, `M.health(url)`, `M.supported_scopes(url)`, etc.) remain available and delegate to the client sub-objects.
+All legacy module-level functions (`M.discovery(url)`, `M.health(url)`, `M.supported_scopes(url)`,
+etc.) remain available and delegate to the client sub-objects.
 
 Example:
+
 ```lua
 local dex = require("assay.dex")
 

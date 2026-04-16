@@ -2,6 +2,118 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.1] - 2026-04-16
+
+### Added
+
+- **`assay serve`** — Native durable workflow engine built into assay. One binary, multiple modes:
+  `assay serve` runs the engine; `assay run worker.lua` runs a worker; `assay workflow` /
+  `assay schedule` manage from the shell. Replaces the need for external workflow infrastructure
+  (Temporal, Celery, Inngest).
+
+- **Deterministic-replay runtime** — Workflow code is plain Lua run as a coroutine; each `ctx:` call
+  gets a per-execution sequence number and the engine persists every completed command
+  (`ActivityCompleted`, `TimerFired`, `SignalReceived`, `SideEffectRecorded`,
+  `ChildWorkflowCompleted`, …). On replay, `ctx:` calls short-circuit to cached values for
+  everything in history; only the next unfulfilled step actually runs. This is how worker crashes
+  don't lose work and side effects don't duplicate.
+
+- **Crash safety** — Three independent recovery layers:
+  - Activity worker dies → `last_heartbeat` ages out per-activity; engine re-queues per retry
+    policy.
+  - Workflow worker dies → `dispatch_last_heartbeat` ages out (`ASSAY_WF_DISPATCH_TIMEOUT_SECS`,
+    default 30s); any worker on the queue picks up and replays from the event log.
+  - Engine dies → all state is in the DB; in-flight tasks become claimable again as heartbeats age
+    out. Verified by an end-to-end SIGKILL test in the orchestration suite.
+
+- **Workflow handler context (`ctx`)** — `ctx:execute_activity` (sync, returns result, raises on
+  failure after retries), `ctx:sleep(seconds)` (durable timer; survives worker bouncing),
+  `ctx:wait_for_signal(name)` (block until matching signal arrives, returns its payload),
+  `ctx:start_child_workflow(type, opts)` (sync, parent waits for child), `ctx:side_effect(name, fn)`
+  (run non-deterministic op exactly once, cache in event log).
+
+- **REST API** (~25 endpoints) — Workflow lifecycle (`start`, `list`, `describe`, `signal`,
+  `cancel`, `terminate`, `continue-as-new`, `events`, `children`); workflow-task dispatch
+  (`/workflow-tasks/poll`, `/workflow-tasks/:id/commands`); activity scheduling
+  (`/workflows/:id/activities`, `/activities/:id`); worker registration & polling; schedule CRUD;
+  namespace CRUD; queue stats. All documented in the served OpenAPI spec.
+
+- **OpenAPI spec** — Machine-readable spec at `/api/v1/openapi.json`. Interactive docs at
+  `/api/v1/docs` (Scalar). Enables auto-generation of typed client SDKs in any language via
+  `openapi-generator`.
+
+- **Built-in dashboard** — Real-time workflow monitoring at `/workflow/`, brand-aligned with
+  [assay.rs](https://assay.rs). Light/dark theme, foldable sidebar, favicon. Six views: Workflows
+  (list with status filter, drill-in to event timeline + children), Schedules (list + create),
+  Workers (live status + active task count), Queues (pending/running stats
+  - warnings when no worker is registered), Namespaces, Settings. Live updates via SSE. Cache-busted
+    asset URLs (per-process startup stamp) so a deploy is reflected immediately.
+
+- **Provider-agnostic auth** — Three modes: no-auth (default), API keys (SHA256-hashed in DB),
+  JWT/OIDC (validates against any OIDC provider via JWKS with caching, e.g. Cloudflare Access,
+  Auth0, Okta, Dex, Keycloak). CLI: `--generate-api-key`, `--list-api-keys`, `--auth-issuer`,
+  `--auth-audience`, `--auth-api-key`.
+
+- **Multi-namespace** — Logical-tenant isolation. Workflows / schedules / workers in one namespace
+  are invisible to others. Default `main`. CRUD via REST + dashboard.
+
+- **Postgres + multi-instance** — Same engine, swap the backend with `--backend postgres://...` or
+  `DATABASE_URL=...`. Cron scheduler uses `pg_try_advisory_lock` for leader election so only one
+  instance fires schedules. Activity
+  - workflow-task claiming uses `FOR UPDATE SKIP LOCKED` so multiple engine instances don't race.
+    SQLite is single-instance only (engine takes an `engine_lock` row at startup).
+
+- **`assay.workflow` Lua stdlib module** — `workflow.connect()`, `workflow.define()`,
+  `workflow.activity()`, `workflow.listen()`, plus `workflow.start()` / `signal()` / `describe()` /
+  `cancel()` for client-side control. The same `listen()` loop drives both workflow handlers and
+  activity handlers — one process, both roles.
+
+- **`examples/workflows/`** — Three runnable examples with READMEs: `hello-workflow/` (smallest
+  case), `approval-pipeline/` (signal-based pause/resume), `nightly-report/` (cron + side_effect +
+  child workflows).
+
+- **`assay-workflow` crate** — The workflow engine is also publishable as a standalone Rust crate
+  (`assay-workflow = "0.1"`) for embedding in non-Lua Rust applications. Zero Lua dependency.
+
+- **SSE client in `http.get`** — Auto-detects `text/event-stream` responses and streams events to an
+  `on_event` callback. Backwards compatible with existing `http.get` usage.
+
+### Tests
+
+- **17 end-to-end orchestration tests** (`crates/assay-workflow/tests/orchestration.rs`) including 9
+  that boot a real assay subprocess and verify a full workflow runs to a real result. Highlights:
+  - `lua_workflow_runs_to_completion` — two sequential activities, real result.
+  - `lua_workflow_with_durable_timer` — `ctx:sleep(1)` actually pauses ~1s and resumes.
+  - `lua_workflow_with_signal` — workflow blocks, test sends signal, workflow completes with the
+    payload bubbled into the result.
+  - `lua_workflow_cancellation_stops_work` — cancel mid-sleep; activity that was about to run is
+    never scheduled.
+  - `lua_workflow_side_effect_is_recorded_once` — side-effect counter file shows fn ran exactly once
+    across all replays.
+  - `lua_child_workflow_completes_before_parent` — parent + child each run as proper workflows,
+    parent picks up child's result.
+  - `lua_cron_schedule_fires_real_workflow` — schedule fires within the scheduler tick, workflow
+    completes, result lands in DB.
+  - `lua_worker_crash_resumes_workflow` — SIGKILL worker A mid-flight; worker B takes over via
+    heartbeat-timeout release; workflow completes; side-effect counter still shows exactly one
+    execution.
+
+- **11 REST-level tests** (no Lua subprocess) covering scheduling, completion, retries,
+  workflow-task dispatch, command processing.
+
+- **10 Postgres tests** (testcontainers-backed) verifying store CRUD parity against a real Postgres
+  instance.
+
+### Notes
+
+- The cron crate (`cron = "0.16"`) requires 6- or 7-field cron expressions (with seconds). The
+  5-field form fails to parse — use `0 * * * * *` for "every minute on the zero second" or
+  `* * * * * *` for "every second."
+- The whole engine is gated behind the `workflow` cargo feature (default-on). To build assay without
+  it: `cargo install assay-lua --no-default-features --features cli,db,server`.
+- Parallel activities (Promise.all-style) are not yet supported; tracked as a follow-up. Sequential
+  `ctx:execute_activity` calls and child workflows cover most patterns today.
+
 ## [0.11.0] - 2026-04-15
 
 ### Removed

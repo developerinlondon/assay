@@ -1,8 +1,8 @@
 ## assay.unleash
 
-Unleash feature flag management. Projects, features, environments, strategies, API tokens.
-Client: `unleash.client(url, {token="..."})`.
-Module helpers: `M.wait()`, `M.ensure_project()`, `M.ensure_environment()`, `M.ensure_token()`.
+Unleash feature flag management. Projects, features, environments, strategies, API tokens. Client:
+`unleash.client(url, {token="..."})`. Module helpers: `M.wait()`, `M.ensure_project()`,
+`M.ensure_environment()`, `M.ensure_token()`.
 
 ### Health
 
@@ -26,7 +26,8 @@ Module helpers: `M.wait()`, `M.ensure_project()`, `M.ensure_environment()`, `M.e
 
 - `c:features(project_id)` → [feature] — List features in project
 - `c:feature(project_id, name)` → feature|nil — Get feature by name
-- `c:create_feature(project_id, feature)` → feature — Create feature. `feature`: `{name, type?, description?}`
+- `c:create_feature(project_id, feature)` → feature — Create feature. `feature`:
+  `{name, type?, description?}`
 - `c:update_feature(project_id, name, feature)` → feature — Update feature
 - `c:archive_feature(project_id, name)` → nil — Archive (soft-delete) a feature
 - `c:toggle_on(project_id, name, env)` → nil — Enable feature in environment
@@ -34,23 +35,31 @@ Module helpers: `M.wait()`, `M.ensure_project()`, `M.ensure_environment()`, `M.e
 
 ### Strategies
 
-- `c:strategies(project_id, feature_name, env)` → [strategy] — List strategies for feature in environment
-- `c:add_strategy(project_id, feature_name, env, strategy)` → strategy — Add strategy. `strategy`: `{name, parameters?}`
+- `c:strategies(project_id, feature_name, env)` → [strategy] — List strategies for feature in
+  environment
+- `c:add_strategy(project_id, feature_name, env, strategy)` → strategy — Add strategy. `strategy`:
+  `{name, parameters?}`
 
 ### API Tokens
 
 - `c:tokens()` → [token] — List API tokens
-- `c:create_token(token_config)` → token — Create token. `token_config`: `{username, type, environment?, projects?}`
+- `c:create_token(token_config)` → token — Create token. `token_config`:
+  `{username, type, environment?, projects?}`
 - `c:delete_token(secret)` → nil — Delete API token by secret
 
 ### Module Helpers
 
-- `M.wait(url, opts?)` → true — Wait for Unleash healthy. `opts`: `{timeout, interval}`. Default 60s.
-- `M.ensure_project(client, project_id, opts?)` → project — Ensure project exists. `opts`: `{name, description}`
-- `M.ensure_environment(client, project_id, env_name)` → true — Ensure environment enabled on project
-- `M.ensure_token(client, opts)` → token — Ensure API token exists. `opts`: `{username, type, environment?, projects?}`
+- `M.wait(url, opts?)` → true — Wait for Unleash healthy. `opts`: `{timeout, interval}`. Default
+  60s.
+- `M.ensure_project(client, project_id, opts?)` → project — Ensure project exists. `opts`:
+  `{name, description}`
+- `M.ensure_environment(client, project_id, env_name)` → true — Ensure environment enabled on
+  project
+- `M.ensure_token(client, opts)` → token — Ensure API token exists. `opts`:
+  `{username, type, environment?, projects?}`
 
 Example:
+
 ```lua
 local unleash = require("assay.unleash")
 unleash.wait("http://unleash:4242")
