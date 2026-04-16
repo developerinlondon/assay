@@ -910,6 +910,176 @@ workflow.listen({ queue = "default" })
     let _ = worker.kill().await;
 }
 
+/// 9.9 — Worker crash recovery: a workflow uses ctx:side_effect (so we can
+/// verify it doesn't run twice across the crash) followed by a sleep + an
+/// activity. The first worker is SIGKILL'd mid-flight; a second worker
+/// picks up the workflow after the dispatch lease ages out, replays from
+/// history (cached side_effect, sees TimerScheduled, runs the activity),
+/// and the workflow completes.
+///
+/// The test sets ASSAY_WF_DISPATCH_TIMEOUT_SECS=2 on the in-process engine
+/// so the recovery happens quickly.
+#[tokio::test]
+async fn lua_worker_crash_resumes_workflow() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_worker_crash_resumes_workflow — no assay binary");
+        return;
+    };
+
+    // Short dispatch-recovery timeout. Env vars are process-global, so all
+    // tests in this binary share the value. The dispatch poller reads it
+    // each tick, so other tests still get correct behaviour — just with
+    // a 2s recovery budget. Their workflows submit commands well before
+    // that, so they're unaffected.
+    //
+    // SAFETY: set_var is unsafe in Rust 2024 because it can race with
+    // multi-threaded readers. Acceptable here: tests in this binary all
+    // tolerate any value of this var, and we set it before any workflow
+    // runs in parallel.
+    unsafe { std::env::set_var("ASSAY_WF_DISPATCH_TIMEOUT_SECS", "2") };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let counter_path = tmp.path().join("counter.txt");
+    std::fs::write(&counter_path, "0").expect("init counter");
+
+    let worker_path = tmp.path().join("worker.lua");
+    let worker_src = r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+local COUNTER = "__COUNTER_PATH__"
+
+local function bump_and_token()
+    local cur = tonumber(fs.read(COUNTER)) or 0
+    fs.write(COUNTER, tostring(cur + 1))
+    return { token = "tok-" .. tostring(cur + 1) }
+end
+
+workflow.define("CrashSafeWorkflow", function(ctx, input)
+    local t = ctx:side_effect("issue", bump_and_token)
+    ctx:sleep(2)
+    local r = ctx:execute_activity("step", { token = t.token })
+    return { token = t, step = r }
+end)
+
+workflow.activity("step", function(ctx, input)
+    return { saw = input.token }
+end)
+
+workflow.listen({ queue = "default" })
+"#
+    .replace("__COUNTER_PATH__", counter_path.to_str().unwrap());
+    std::fs::write(&worker_path, &worker_src).expect("write worker.lua");
+
+    // Spawn worker A
+    let mut worker_a = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker A");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "CrashSafeWorkflow",
+            "workflow_id": "wf-crash-1",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Wait until worker A has at minimum recorded the side_effect — that
+    // means the workflow has progressed past the bump_and_token() call and
+    // its result is durable in history. We can verify this by polling the
+    // event log.
+    let recorded = wait_for_event(&c, &url, "wf-crash-1", "SideEffectRecorded",
+        std::time::Duration::from_secs(5)).await;
+    assert!(recorded, "worker A should have recorded the side effect before we kill it");
+
+    // SIGKILL worker A
+    if let Some(pid) = worker_a.id() {
+        // Use kill -KILL to bypass any SIGTERM cleanup
+        std::process::Command::new("kill")
+            .args(["-KILL", &pid.to_string()])
+            .status()
+            .expect("kill worker A");
+    }
+    let _ = worker_a.wait().await;
+
+    // Spawn worker B
+    let mut worker_b = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker B");
+
+    // Wait for workflow to complete via worker B (after dispatch lease
+    // ages out and worker B replays from history). 15s budget covers
+    // the 2s lease timeout + 2s sleep + replay overhead.
+    let final_wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-crash-1",
+        "COMPLETED",
+        std::time::Duration::from_secs(15),
+    )
+    .await;
+
+    let result_str = final_wf["result"].as_str().expect("result");
+    let result: serde_json::Value = serde_json::from_str(result_str).unwrap();
+    assert_eq!(result["token"]["token"], "tok-1");
+    assert_eq!(result["step"]["saw"], "tok-1");
+
+    // Critical: the side_effect function ran exactly ONCE total despite
+    // the worker crash. Worker B should have read the cached value from
+    // history rather than calling bump_and_token again.
+    let counter = std::fs::read_to_string(&counter_path).expect("counter").trim().to_string();
+    assert_eq!(
+        counter, "1",
+        "side_effect must run exactly once across worker crash (got {counter} runs)"
+    );
+
+    let _ = worker_b.kill().await;
+}
+
+/// Helper: poll the event log until we see a particular event_type, or time out.
+async fn wait_for_event(
+    c: &reqwest::Client,
+    base_url: &str,
+    workflow_id: &str,
+    event_type: &str,
+    timeout: std::time::Duration,
+) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        let events: Vec<serde_json::Value> = c
+            .get(format!("{base_url}/api/v1/workflows/{workflow_id}/events"))
+            .send()
+            .await
+            .ok()
+            .map(|r| r)
+            .unwrap()
+            .json()
+            .await
+            .unwrap_or_default();
+        if events.iter().any(|e| e["event_type"] == event_type) {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    false
+}
+
 /// 9.8a — side_effect: a workflow needs a non-deterministic value (e.g.
 /// random ID, current time). ctx:side_effect runs the function once,
 /// records the result in history, and on replay returns the cached value

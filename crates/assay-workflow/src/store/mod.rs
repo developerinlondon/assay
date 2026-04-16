@@ -97,6 +97,16 @@ pub trait WorkflowStore: Send + Sync + 'static {
         worker_id: &str,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
+    /// Forcibly release dispatch leases whose worker hasn't heartbeat'd
+    /// within `timeout_secs`. Used by the engine's background poller to
+    /// recover from worker crashes. Returns how many leases were released
+    /// (each becomes claimable again, with `needs_dispatch=true`).
+    fn release_stale_dispatch_leases(
+        &self,
+        now: f64,
+        timeout_secs: f64,
+    ) -> impl Future<Output = anyhow::Result<u64>> + Send;
+
     // ── Events ─────────────────────────────────────────────
 
     fn append_event(

@@ -1,4 +1,5 @@
 pub mod api;
+pub mod dispatch_recovery;
 pub mod engine;
 pub mod health;
 pub mod scheduler;

@@ -4,6 +4,7 @@ use anyhow::Result;
 use tokio::task::JoinHandle;
 use tracing::info;
 
+use crate::dispatch_recovery;
 use crate::health;
 use crate::scheduler;
 use crate::store::WorkflowStore;
@@ -19,6 +20,7 @@ pub struct Engine<S: WorkflowStore> {
     _scheduler: JoinHandle<()>,
     _timer_poller: JoinHandle<()>,
     _health_monitor: JoinHandle<()>,
+    _dispatch_recovery: JoinHandle<()>,
 }
 
 impl<S: WorkflowStore> Engine<S> {
@@ -29,6 +31,9 @@ impl<S: WorkflowStore> Engine<S> {
         let _scheduler = tokio::spawn(scheduler::run_scheduler(Arc::clone(&store)));
         let _timer_poller = tokio::spawn(timers::run_timer_poller(Arc::clone(&store)));
         let _health_monitor = tokio::spawn(health::run_health_monitor(Arc::clone(&store)));
+        let _dispatch_recovery = tokio::spawn(dispatch_recovery::run_dispatch_recovery(
+            Arc::clone(&store),
+        ));
 
         info!("Workflow engine started");
 
@@ -37,6 +42,7 @@ impl<S: WorkflowStore> Engine<S> {
             _scheduler,
             _timer_poller,
             _health_monitor,
+            _dispatch_recovery,
         }
     }
 

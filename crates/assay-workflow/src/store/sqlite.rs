@@ -514,6 +514,30 @@ impl WorkflowStore for SqliteStore {
         Ok(())
     }
 
+    async fn release_stale_dispatch_leases(
+        &self,
+        now: f64,
+        timeout_secs: f64,
+    ) -> Result<u64> {
+        // Re-arm needs_dispatch so the work goes back into the pool. Don't
+        // touch workflows that have reached a terminal state — those should
+        // never be re-dispatched.
+        let res = sqlx::query(
+            "UPDATE workflows
+             SET dispatch_claimed_by = NULL,
+                 dispatch_last_heartbeat = NULL,
+                 needs_dispatch = 1
+             WHERE dispatch_claimed_by IS NOT NULL
+               AND (? - dispatch_last_heartbeat) > ?
+               AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT')",
+        )
+        .bind(now)
+        .bind(timeout_secs)
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected())
+    }
+
     // ── Events ─────────────────────────────────────────────
 
     async fn append_event(&self, ev: &WorkflowEvent) -> Result<i64> {

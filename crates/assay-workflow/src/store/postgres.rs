@@ -407,6 +407,27 @@ impl WorkflowStore for PostgresStore {
         Ok(())
     }
 
+    async fn release_stale_dispatch_leases(
+        &self,
+        now: f64,
+        timeout_secs: f64,
+    ) -> Result<u64> {
+        let res = sqlx::query(
+            "UPDATE workflows
+             SET dispatch_claimed_by = NULL,
+                 dispatch_last_heartbeat = NULL,
+                 needs_dispatch = TRUE
+             WHERE dispatch_claimed_by IS NOT NULL
+               AND ($1 - dispatch_last_heartbeat) > $2
+               AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT')",
+        )
+        .bind(now)
+        .bind(timeout_secs)
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected())
+    }
+
     // ── Events ─────────────────────────────────────────────
 
     async fn append_event(&self, ev: &WorkflowEvent) -> Result<i64> {
