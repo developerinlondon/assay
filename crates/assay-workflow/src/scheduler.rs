@@ -130,6 +130,10 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(store: &S, namespace: &s
             })
             .await?;
 
+        // Phase 9: scheduled workflows must enter the dispatch pool so a
+        // worker can pick them up. Without this they'd sit PENDING forever.
+        store.mark_workflow_dispatchable(&workflow_id).await?;
+
         store
             .update_schedule_last_run(namespace, &sched.name, now, next_run, &workflow_id)
             .await?;

@@ -910,6 +910,109 @@ workflow.listen({ queue = "default" })
     let _ = worker.kill().await;
 }
 
+/// 9.10 — Cron schedule fires a real workflow that runs to completion.
+/// Creates a schedule with a never-run-before `next_run_at`, the scheduler
+/// fires it on its next tick, the worker claims and completes it.
+#[tokio::test]
+async fn lua_cron_schedule_fires_real_workflow() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_cron_schedule_fires_real_workflow — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    // Worker that runs a trivial activity-driven workflow.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("CronTriggered", function(ctx, input)
+    local r = ctx:execute_activity("greet", { who = "world" })
+    return { greeting = r.message }
+end)
+
+workflow.activity("greet", function(ctx, input)
+    return { message = "hello, " .. input.who }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    // Create a schedule. next_run_at is None → scheduler treats as
+    // never-run-before → fires on next 15s tick.
+    let resp = c
+        .post(format!("{url}/api/v1/schedules"))
+        .json(&serde_json::json!({
+            "namespace": "main",
+            "name": "test-cron-1",
+            "workflow_type": "CronTriggered",
+            "cron_expr": "* * * * * *",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        resp.status().is_success(),
+        "schedule create failed: {}",
+        resp.status()
+    );
+
+    // Wait up to 25s for: scheduler tick (≤15s) + workflow execution (~1s)
+    let started_at = std::time::Instant::now();
+    let mut found_workflow_id: Option<String> = None;
+    while started_at.elapsed() < std::time::Duration::from_secs(25) {
+        let resp = c
+            .get(format!("{url}/api/v1/workflows?namespace=main"))
+            .send()
+            .await
+            .unwrap();
+        let workflows: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
+        if let Some(wf) = workflows
+            .iter()
+            .find(|w| w["workflow_type"] == "CronTriggered")
+        {
+            found_workflow_id = wf["id"].as_str().map(String::from);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    let workflow_id = found_workflow_id
+        .expect("scheduler should have started a CronTriggered workflow within 25s");
+
+    let final_wf = wait_for_workflow_status(
+        &c,
+        &url,
+        &workflow_id,
+        "COMPLETED",
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+    let result_str = final_wf["result"].as_str().expect("result");
+    let result: serde_json::Value = serde_json::from_str(result_str).unwrap();
+    assert_eq!(result["greeting"], "hello, world");
+
+    let _ = worker.kill().await;
+}
+
 /// 9.9 — Worker crash recovery: a workflow uses ctx:side_effect (so we can
 /// verify it doesn't run twice across the crash) followed by a sleep + an
 /// activity. The first worker is SIGKILL'd mid-flight; a second worker
