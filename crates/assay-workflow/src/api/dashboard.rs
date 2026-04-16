@@ -1,5 +1,5 @@
 use axum::http::{header, StatusCode};
-use axum::response::{Html, IntoResponse};
+use axum::response::{Html, IntoResponse, Redirect};
 use axum::routing::get;
 use axum::Router;
 use std::sync::Arc;
@@ -20,6 +20,8 @@ const SETTINGS_JS: &str = include_str!("../dashboard/components/settings.js");
 
 pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
     Router::new()
+        .route("/", get(redirect_to_dashboard))
+        .route("/workflow", get(redirect_to_dashboard))
         .route("/workflow/", get(index))
         .route("/workflow/schedules", get(index))
         .route("/workflow/workers", get(index))
@@ -38,6 +40,10 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
 
 async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
+}
+
+async fn redirect_to_dashboard() -> Redirect {
+    Redirect::permanent("/workflow/")
 }
 
 async fn theme_css() -> impl IntoResponse {
