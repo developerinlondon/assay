@@ -97,7 +97,7 @@ minijinja = "2.15.1"
 pulldown-cmark = "0.13"
 
 # Workflow engine (separate crate, same workspace)
-assay-workflow = { path = "crates/assay-workflow", optional = true }
+assay-workflow = { path = "crates/assay-workflow", version = "0.1", optional = true }
 
 # URL parsing/encoding (used by http server query string decoding)
 url = "2"
