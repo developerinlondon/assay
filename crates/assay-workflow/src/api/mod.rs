@@ -1,7 +1,9 @@
 pub mod auth;
 pub mod dashboard;
 pub mod events;
+pub mod namespaces;
 pub mod openapi;
+pub mod queues;
 pub mod schedules;
 pub mod tasks;
 pub mod workers;
@@ -56,6 +58,8 @@ fn api_v1_router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .merge(tasks::router())
         .merge(schedules::router())
         .merge(workers::router())
+        .merge(namespaces::router())
+        .merge(queues::router())
 }
 
 /// Start the HTTP server on the given port.
