@@ -4,7 +4,6 @@ mod lua;
 mod output;
 mod runner;
 
-use assay_workflow::WorkflowStore as _;
 
 use clap::{Parser, Subcommand};
 use mlua::LuaSerdeExt;
@@ -309,52 +308,6 @@ async fn main() -> ExitCode {
             generate_api_key,
             list_api_keys,
         }) => {
-            let store = match assay_workflow::SqliteStore::new(&backend).await {
-                Ok(s) => s,
-                Err(e) => {
-                    error!("Failed to connect to backend: {e}");
-                    return ExitCode::from(1);
-                }
-            };
-
-            // Handle key management subcommands (run and exit)
-            if generate_api_key {
-                let key = assay_workflow::api::auth::generate_api_key();
-                let hash = assay_workflow::api::auth::hash_api_key(&key);
-                let prefix = assay_workflow::api::auth::key_prefix(&key);
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs_f64();
-                if let Err(e) = store.create_api_key(&hash, &prefix, None, now).await {
-                    error!("Failed to store API key: {e}");
-                    return ExitCode::from(1);
-                }
-                println!("{key}");
-                eprintln!("API key created (prefix: {prefix}). Store it securely — it cannot be recovered.");
-                return ExitCode::SUCCESS;
-            }
-
-            if list_api_keys {
-                match store.list_api_keys().await {
-                    Ok(keys) => {
-                        if keys.is_empty() {
-                            println!("No API keys configured.");
-                        } else {
-                            for k in keys {
-                                let label = k.label.unwrap_or_default();
-                                println!("  {} {label}", k.prefix);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to list API keys: {e}");
-                        return ExitCode::from(1);
-                    }
-                }
-                return ExitCode::SUCCESS;
-            }
-
             // Determine auth mode
             let auth_mode = if let Some(issuer) = auth_issuer {
                 assay_workflow::api::auth::AuthMode::jwt(issuer, auth_audience)
@@ -368,13 +321,18 @@ async fn main() -> ExitCode {
                 eprintln!("Warning: --no-auth is redundant when --auth-issuer or --auth-api-key is set");
             }
 
-            info!("Starting assay workflow engine on port {port} with backend {backend}");
-            let engine = assay_workflow::Engine::start(store);
-            if let Err(e) = assay_workflow::api::serve(engine, port, auth_mode).await {
-                error!("Engine server error: {e}");
-                return ExitCode::from(1);
+            // Auto-detect backend type and start engine
+            if backend.starts_with("postgres://") || backend.starts_with("postgresql://") {
+                serve_with_postgres(
+                    &backend, port, auth_mode, generate_api_key, list_api_keys,
+                )
+                .await
+            } else {
+                serve_with_sqlite(
+                    &backend, port, auth_mode, generate_api_key, list_api_keys,
+                )
+                .await
             }
-            ExitCode::SUCCESS
         }
         Some(Commands::Workflow { command }) => {
             eprintln!("assay workflow: {command:?}");
@@ -397,6 +355,94 @@ async fn main() -> ExitCode {
             }
         }
     }
+}
+
+async fn serve_with_store<S: assay_workflow::WorkflowStore>(
+    store: S,
+    port: u16,
+    auth_mode: assay_workflow::api::auth::AuthMode,
+    generate_api_key: bool,
+    list_api_keys: bool,
+) -> ExitCode {
+    if generate_api_key {
+        let key = assay_workflow::api::auth::generate_api_key();
+        let hash = assay_workflow::api::auth::hash_api_key(&key);
+        let prefix = assay_workflow::api::auth::key_prefix(&key);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        if let Err(e) = store.create_api_key(&hash, &prefix, None, now).await {
+            error!("Failed to store API key: {e}");
+            return ExitCode::from(1);
+        }
+        println!("{key}");
+        eprintln!("API key created (prefix: {prefix}). Store it securely — it cannot be recovered.");
+        return ExitCode::SUCCESS;
+    }
+
+    if list_api_keys {
+        match store.list_api_keys().await {
+            Ok(keys) => {
+                if keys.is_empty() {
+                    println!("No API keys configured.");
+                } else {
+                    for k in keys {
+                        let label = k.label.unwrap_or_default();
+                        println!("  {} {label}", k.prefix);
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to list API keys: {e}");
+                return ExitCode::from(1);
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    let engine = assay_workflow::Engine::start(store);
+    if let Err(e) = assay_workflow::api::serve(engine, port, auth_mode).await {
+        error!("Engine server error: {e}");
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
+async fn serve_with_sqlite(
+    backend: &str,
+    port: u16,
+    auth_mode: assay_workflow::api::auth::AuthMode,
+    generate_api_key: bool,
+    list_api_keys: bool,
+) -> ExitCode {
+    info!("Starting assay workflow engine on port {port} with SQLite backend");
+    let store = match assay_workflow::SqliteStore::new(backend).await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to connect to SQLite backend: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    serve_with_store(store, port, auth_mode, generate_api_key, list_api_keys).await
+}
+
+async fn serve_with_postgres(
+    backend: &str,
+    port: u16,
+    auth_mode: assay_workflow::api::auth::AuthMode,
+    generate_api_key: bool,
+    list_api_keys: bool,
+) -> ExitCode {
+    info!("Starting assay workflow engine on port {port} with PostgreSQL backend");
+    let store = match assay_workflow::PostgresStore::new(backend).await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to connect to PostgreSQL backend: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    serve_with_store(store, port, auth_mode, generate_api_key, list_api_keys).await
 }
 
 fn resolve_script_mode(cli_mode: Option<&str>) -> ScriptMode {

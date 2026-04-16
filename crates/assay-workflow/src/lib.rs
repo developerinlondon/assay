@@ -8,5 +8,6 @@ pub mod timers;
 pub mod types;
 
 pub use engine::Engine;
+pub use store::postgres::PostgresStore;
 pub use store::sqlite::SqliteStore;
 pub use store::WorkflowStore;
