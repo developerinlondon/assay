@@ -25,12 +25,20 @@ CREATE TABLE IF NOT EXISTS workflows (
     error           TEXT,
     parent_id       TEXT,
     claimed_by      TEXT,
+    -- Workflow-task dispatch (Phase 9): a workflow is "dispatchable" when
+    -- it has new events a worker needs to replay against. Set true on
+    -- start, on activity completion, on timer fire, on signal arrival.
+    -- Cleared when a worker claims the dispatch lease.
+    needs_dispatch  INTEGER NOT NULL DEFAULT 0,
+    dispatch_claimed_by    TEXT,
+    dispatch_last_heartbeat REAL,
     created_at      REAL NOT NULL,
     updated_at      REAL NOT NULL,
     completed_at    REAL
 );
 CREATE INDEX IF NOT EXISTS idx_wf_status_queue ON workflows(status, task_queue);
 CREATE INDEX IF NOT EXISTS idx_wf_namespace ON workflows(namespace);
+CREATE INDEX IF NOT EXISTS idx_wf_dispatch ON workflows(task_queue, needs_dispatch, dispatch_claimed_by);
 
 CREATE TABLE IF NOT EXISTS workflow_events (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -453,6 +461,56 @@ impl WorkflowStore for SqliteStore {
         .execute(&self.pool)
         .await?;
         Ok(res.rows_affected() > 0)
+    }
+
+    async fn mark_workflow_dispatchable(&self, workflow_id: &str) -> Result<()> {
+        sqlx::query("UPDATE workflows SET needs_dispatch = 1 WHERE id = ?")
+            .bind(workflow_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn claim_workflow_task(
+        &self,
+        task_queue: &str,
+        worker_id: &str,
+    ) -> Result<Option<WorkflowRecord>> {
+        let now = timestamp_now();
+        // Atomic: pick the oldest dispatchable + unclaimed workflow on the queue
+        let row = sqlx::query_as::<_, SqliteWorkflowRow>(
+            "UPDATE workflows
+             SET dispatch_claimed_by = ?, dispatch_last_heartbeat = ?, needs_dispatch = 0
+             WHERE id = (
+                SELECT id FROM workflows
+                WHERE task_queue = ?
+                  AND needs_dispatch = 1
+                  AND dispatch_claimed_by IS NULL
+                  AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT')
+                ORDER BY updated_at ASC
+                LIMIT 1
+             )
+             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at",
+        )
+        .bind(worker_id)
+        .bind(now)
+        .bind(task_queue)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
+    }
+
+    async fn release_workflow_task(&self, workflow_id: &str, worker_id: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE workflows
+             SET dispatch_claimed_by = NULL, dispatch_last_heartbeat = NULL
+             WHERE id = ? AND dispatch_claimed_by = ?",
+        )
+        .bind(workflow_id)
+        .bind(worker_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     // ── Events ─────────────────────────────────────────────

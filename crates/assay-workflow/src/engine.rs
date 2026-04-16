@@ -88,6 +88,10 @@ impl<S: WorkflowStore> Engine<S> {
             })
             .await?;
 
+        // Phase 9: a freshly-started workflow has new events (WorkflowStarted)
+        // that need a worker to replay against — make it dispatchable.
+        self.store.mark_workflow_dispatchable(workflow_id).await?;
+
         Ok(wf)
     }
 
@@ -371,6 +375,7 @@ impl<S: WorkflowStore> Engine<S> {
             "error": error,
         });
         let event_seq = self.store.get_event_count(&act.workflow_id).await? as i32 + 1;
+        let workflow_id = act.workflow_id.clone();
         self.store
             .append_event(&WorkflowEvent {
                 id: None,
@@ -381,6 +386,9 @@ impl<S: WorkflowStore> Engine<S> {
                 timestamp: timestamp_now(),
             })
             .await?;
+        // Phase 9: the workflow has a new event the handler needs to see —
+        // wake the workflow task back up.
+        self.store.mark_workflow_dispatchable(&workflow_id).await?;
         Ok(())
     }
 
@@ -416,6 +424,7 @@ impl<S: WorkflowStore> Engine<S> {
             .await?;
 
         let event_seq = self.store.get_event_count(&act.workflow_id).await? as i32 + 1;
+        let workflow_id = act.workflow_id.clone();
         self.store
             .append_event(&WorkflowEvent {
                 id: None,
@@ -432,6 +441,144 @@ impl<S: WorkflowStore> Engine<S> {
                     })
                     .to_string(),
                 ),
+                timestamp: timestamp_now(),
+            })
+            .await?;
+        // Wake the workflow task — handler needs to see the failure.
+        self.store.mark_workflow_dispatchable(&workflow_id).await?;
+        Ok(())
+    }
+
+    // ── Workflow-task dispatch (Phase 9) ────────────────────
+
+    /// Claim a dispatchable workflow task on a queue. Returns the workflow
+    /// record + full event history so the worker can replay the handler
+    /// deterministically. Atomic — multiple workers polling the same queue
+    /// will each get a different task or None.
+    pub async fn claim_workflow_task(
+        &self,
+        task_queue: &str,
+        worker_id: &str,
+    ) -> Result<Option<(WorkflowRecord, Vec<WorkflowEvent>)>> {
+        let Some(wf) = self
+            .store
+            .claim_workflow_task(task_queue, worker_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let history = self.store.list_events(&wf.id).await?;
+        Ok(Some((wf, history)))
+    }
+
+    /// Submit a worker's batch of commands for a workflow it claimed.
+    /// Each command produces durable events / rows transactionally and
+    /// the dispatch lease is released on return.
+    ///
+    /// Supported command types:
+    /// - `ScheduleActivity` { seq, name, task_queue, input?, max_attempts?, ... }
+    /// - `CompleteWorkflow` { result }
+    /// - `FailWorkflow`     { error }
+    pub async fn submit_workflow_commands(
+        &self,
+        workflow_id: &str,
+        worker_id: &str,
+        commands: &[serde_json::Value],
+    ) -> Result<()> {
+        for cmd in commands {
+            let cmd_type = cmd.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            match cmd_type {
+                "ScheduleActivity" => {
+                    let seq = cmd.get("seq").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    let name = cmd.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let queue = cmd
+                        .get("task_queue")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("default");
+                    let input = cmd.get("input").map(|v| v.to_string());
+                    let opts = ScheduleActivityOpts {
+                        max_attempts: cmd
+                            .get("max_attempts")
+                            .and_then(|v| v.as_i64())
+                            .map(|n| n as i32),
+                        initial_interval_secs: cmd
+                            .get("initial_interval_secs")
+                            .and_then(|v| v.as_f64()),
+                        backoff_coefficient: cmd
+                            .get("backoff_coefficient")
+                            .and_then(|v| v.as_f64()),
+                        start_to_close_secs: cmd
+                            .get("start_to_close_secs")
+                            .and_then(|v| v.as_f64()),
+                        heartbeat_timeout_secs: cmd
+                            .get("heartbeat_timeout_secs")
+                            .and_then(|v| v.as_f64()),
+                    };
+                    self.schedule_activity(
+                        workflow_id,
+                        seq,
+                        name,
+                        input.as_deref(),
+                        queue,
+                        opts,
+                    )
+                    .await?;
+                }
+                "CompleteWorkflow" => {
+                    let result = cmd.get("result").map(|v| v.to_string());
+                    self.complete_workflow(workflow_id, result.as_deref()).await?;
+                }
+                "FailWorkflow" => {
+                    let error = cmd
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("workflow handler raised an error");
+                    self.fail_workflow(workflow_id, error).await?;
+                }
+                other => {
+                    tracing::warn!("submit_workflow_commands: unknown command type {other:?}");
+                }
+            }
+        }
+
+        self.store
+            .release_workflow_task(workflow_id, worker_id)
+            .await?;
+        Ok(())
+    }
+
+    /// Mark a workflow COMPLETED with a result + append WorkflowCompleted event.
+    pub async fn complete_workflow(&self, workflow_id: &str, result: Option<&str>) -> Result<()> {
+        self.store
+            .update_workflow_status(workflow_id, WorkflowStatus::Completed, result, None)
+            .await?;
+        let event_seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: workflow_id.to_string(),
+                seq: event_seq,
+                event_type: "WorkflowCompleted".to_string(),
+                payload: result.map(String::from),
+                timestamp: timestamp_now(),
+            })
+            .await?;
+        Ok(())
+    }
+
+    /// Mark a workflow FAILED with an error + append WorkflowFailed event.
+    pub async fn fail_workflow(&self, workflow_id: &str, error: &str) -> Result<()> {
+        self.store
+            .update_workflow_status(workflow_id, WorkflowStatus::Failed, None, Some(error))
+            .await?;
+        let event_seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: workflow_id.to_string(),
+                seq: event_seq,
+                event_type: "WorkflowFailed".to_string(),
+                payload: Some(serde_json::json!({"error": error}).to_string()),
                 timestamp: timestamp_now(),
             })
             .await?;

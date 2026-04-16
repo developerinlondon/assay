@@ -8,6 +8,7 @@ pub mod queues;
 pub mod schedules;
 pub mod tasks;
 pub mod workers;
+pub mod workflow_tasks;
 pub mod workflows;
 
 use std::sync::Arc;
@@ -57,6 +58,7 @@ fn api_v1_router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
     Router::new()
         .merge(workflows::router())
         .merge(activities::router())
+        .merge(workflow_tasks::router())
         .merge(tasks::router())
         .merge(schedules::router())
         .merge(workers::router())

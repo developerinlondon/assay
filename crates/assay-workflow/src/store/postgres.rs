@@ -25,12 +25,17 @@ CREATE TABLE IF NOT EXISTS workflows (
     error           TEXT,
     parent_id       TEXT,
     claimed_by      TEXT,
+    -- Workflow-task dispatch (Phase 9): see sqlite.rs for the full comment.
+    needs_dispatch  BOOLEAN NOT NULL DEFAULT FALSE,
+    dispatch_claimed_by    TEXT,
+    dispatch_last_heartbeat DOUBLE PRECISION,
     created_at      DOUBLE PRECISION NOT NULL,
     updated_at      DOUBLE PRECISION NOT NULL,
     completed_at    DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS idx_wf_status_queue ON workflows(status, task_queue);
 CREATE INDEX IF NOT EXISTS idx_wf_namespace ON workflows(namespace);
+CREATE INDEX IF NOT EXISTS idx_wf_dispatch ON workflows(task_queue, needs_dispatch, dispatch_claimed_by);
 
 CREATE TABLE IF NOT EXISTS workflow_events (
     id              BIGSERIAL PRIMARY KEY,
@@ -347,6 +352,58 @@ impl WorkflowStore for PostgresStore {
         .execute(&self.pool)
         .await?;
         Ok(res.rows_affected() > 0)
+    }
+
+    async fn mark_workflow_dispatchable(&self, workflow_id: &str) -> Result<()> {
+        sqlx::query("UPDATE workflows SET needs_dispatch = TRUE WHERE id = $1")
+            .bind(workflow_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn claim_workflow_task(
+        &self,
+        task_queue: &str,
+        worker_id: &str,
+    ) -> Result<Option<WorkflowRecord>> {
+        let now = timestamp_now();
+        // Atomic claim with FOR UPDATE SKIP LOCKED so multiple engine
+        // replicas don't fight over the same workflow task.
+        let row = sqlx::query_as::<_, PgWorkflowRow>(
+            "UPDATE workflows
+             SET dispatch_claimed_by = $1, dispatch_last_heartbeat = $2, needs_dispatch = FALSE
+             WHERE id = (
+                SELECT id FROM workflows
+                WHERE task_queue = $3
+                  AND needs_dispatch = TRUE
+                  AND dispatch_claimed_by IS NULL
+                  AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT')
+                ORDER BY updated_at ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+             )
+             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at",
+        )
+        .bind(worker_id)
+        .bind(now)
+        .bind(task_queue)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
+    }
+
+    async fn release_workflow_task(&self, workflow_id: &str, worker_id: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE workflows
+             SET dispatch_claimed_by = NULL, dispatch_last_heartbeat = NULL
+             WHERE id = $1 AND dispatch_claimed_by = $2",
+        )
+        .bind(workflow_id)
+        .bind(worker_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     // ── Events ─────────────────────────────────────────────

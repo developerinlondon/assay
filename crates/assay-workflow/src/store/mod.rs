@@ -69,6 +69,34 @@ pub trait WorkflowStore: Send + Sync + 'static {
         worker_id: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
+    // ── Workflow-task dispatch (Phase 9) ────────────────────
+
+    /// Mark a workflow as having new events that need a worker to replay it.
+    /// Idempotent — calling repeatedly is fine. Cleared by `claim_workflow_task`.
+    fn mark_workflow_dispatchable(
+        &self,
+        workflow_id: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    /// Atomically claim the oldest dispatchable workflow on a queue. Sets
+    /// `dispatch_claimed_by` and `dispatch_last_heartbeat`, clears
+    /// `needs_dispatch`. Returns the workflow record or None if nothing
+    /// is available.
+    fn claim_workflow_task(
+        &self,
+        task_queue: &str,
+        worker_id: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowRecord>>> + Send;
+
+    /// Release a workflow task's dispatch lease (called when the worker
+    /// submits its commands batch). Only succeeds if `dispatch_claimed_by`
+    /// matches the calling worker.
+    fn release_workflow_task(
+        &self,
+        workflow_id: &str,
+        worker_id: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
     // ── Events ─────────────────────────────────────────────
 
     fn append_event(

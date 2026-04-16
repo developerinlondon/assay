@@ -388,3 +388,257 @@ async fn fail_activity_retries_until_max_attempts() {
         .count();
     assert_eq!(failed_count, 1, "exactly one ActivityFailed event after exhausting retries");
 }
+
+// ─── 9.3 — Workflow task dispatch loop ────────────────────────────────────
+//
+// A "workflow task" represents "this workflow has new events that need a
+// worker to run the workflow handler against." It's distinct from an
+// "activity task" which runs the concrete activity code. Dispatch is the
+// loop: start_workflow / activity-complete / timer-fire / signal-arrive
+// each set the workflow's needs_dispatch flag, a worker polls
+// /workflow-tasks/poll, runs the handler, posts new commands, releases.
+
+/// Helper: poll a workflow task and return the JSON response body, or null
+/// when nothing's available.
+async fn poll_workflow_task(
+    c: &reqwest::Client,
+    url: &str,
+    queue: &str,
+    worker_id: &str,
+) -> serde_json::Value {
+    c.post(format!("{url}/api/v1/workflow-tasks/poll"))
+        .json(&serde_json::json!({"queue": queue, "worker_id": worker_id}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+/// 9.3 — A freshly-started workflow becomes immediately dispatchable, and
+/// the poll response carries the workflow id, type, input, and full event
+/// history so a worker can replay deterministically.
+#[tokio::test]
+async fn start_workflow_makes_it_dispatchable() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "TestWorkflow",
+            "workflow_id": "wf-disp-1",
+            "task_queue": "default",
+            "input": {"hello": "world"},
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let task = poll_workflow_task(&c, &url, "default", "worker-A").await;
+    assert_eq!(task["workflow_id"], "wf-disp-1");
+    assert_eq!(task["workflow_type"], "TestWorkflow");
+    assert_eq!(task["input"]["hello"], "world");
+    let history = task["history"].as_array().expect("history is an array");
+    assert!(
+        history.iter().any(|e| e["event_type"] == "WorkflowStarted"),
+        "history should include WorkflowStarted, got {history:?}"
+    );
+}
+
+/// 9.3 — A workflow task is claimable only once until the worker
+/// releases it (commits commands or its lease ages out). The second
+/// poller from the same queue must get null.
+#[tokio::test]
+async fn workflow_task_claim_is_exclusive() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "TestWorkflow",
+            "workflow_id": "wf-disp-2",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let first = poll_workflow_task(&c, &url, "default", "worker-A").await;
+    assert_eq!(first["workflow_id"], "wf-disp-2", "worker-A should claim it");
+
+    let second = poll_workflow_task(&c, &url, "default", "worker-B").await;
+    assert!(second.is_null(), "worker-B must get nothing while worker-A holds it");
+}
+
+/// 9.3 — Submitting commands releases the claim. The worker submits a
+/// `ScheduleActivity` command; the engine schedules the activity and
+/// removes the workflow from the dispatchable pool until the activity
+/// completes.
+#[tokio::test]
+async fn submit_commands_schedules_activities_and_releases_claim() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "TestWorkflow",
+            "workflow_id": "wf-disp-3",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let _claim = poll_workflow_task(&c, &url, "default", "worker-A").await;
+
+    // Worker submits a ScheduleActivity command at seq 1
+    let resp = c
+        .post(format!("{url}/api/v1/workflow-tasks/wf-disp-3/commands"))
+        .json(&serde_json::json!({
+            "worker_id": "worker-A",
+            "commands": [
+                {"type": "ScheduleActivity", "seq": 1, "name": "fetch",
+                 "task_queue": "default", "input": {"k": "v"}}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Activity should now exist with seq 1
+    let events: Vec<serde_json::Value> = c
+        .get(format!("{url}/api/v1/workflows/wf-disp-3/events"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        events.iter().any(|e| e["event_type"] == "ActivityScheduled"),
+        "command should have produced ActivityScheduled"
+    );
+
+    // Workflow is no longer dispatchable (it's waiting on the activity)
+    let next = poll_workflow_task(&c, &url, "default", "worker-A").await;
+    assert!(
+        next.is_null(),
+        "workflow should not be re-dispatchable until something new happens"
+    );
+}
+
+/// 9.3 — When an activity completes, the workflow becomes dispatchable
+/// again so the worker can replay and decide what to do next.
+#[tokio::test]
+async fn activity_completion_redispatches_workflow() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "TestWorkflow",
+            "workflow_id": "wf-disp-4",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+    poll_workflow_task(&c, &url, "default", "worker-A").await;
+
+    // Schedule + claim + complete an activity (mirrors a real worker loop)
+    let scheduled: serde_json::Value = c
+        .post(format!("{url}/api/v1/workflows/wf-disp-4/activities"))
+        .json(&serde_json::json!({
+            "name": "fetch", "seq": 1, "task_queue": "default", "input": {}
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let activity_id = scheduled["id"].as_i64().unwrap();
+    c.post(format!("{url}/api/v1/workers/register"))
+        .json(&serde_json::json!({
+            "identity": "act-worker", "queue": "default", "activities": ["fetch"],
+        }))
+        .send()
+        .await
+        .unwrap();
+    c.post(format!("{url}/api/v1/tasks/poll"))
+        .json(&serde_json::json!({"queue": "default", "worker_id": "act-worker"}))
+        .send()
+        .await
+        .unwrap();
+    c.post(format!("{url}/api/v1/tasks/{activity_id}/complete"))
+        .json(&serde_json::json!({"result": {"ok": true}}))
+        .send()
+        .await
+        .unwrap();
+
+    // The workflow should now be claimable again — the worker (which had
+    // submitted commands and released its claim) needs to replay.
+    // First release worker-A's claim by submitting an empty commands batch:
+    c.post(format!("{url}/api/v1/workflow-tasks/wf-disp-4/commands"))
+        .json(&serde_json::json!({"worker_id": "worker-A", "commands": []}))
+        .send()
+        .await
+        .unwrap();
+
+    let next = poll_workflow_task(&c, &url, "default", "worker-A").await;
+    assert_eq!(
+        next["workflow_id"], "wf-disp-4",
+        "ActivityCompleted should make the workflow dispatchable again, got {next}"
+    );
+}
+
+/// 9.3 — A CompleteWorkflow command marks the workflow COMPLETED, writes
+/// the result, and removes it from the dispatchable pool permanently.
+#[tokio::test]
+async fn complete_workflow_command_marks_terminal() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "TestWorkflow",
+            "workflow_id": "wf-disp-5",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+    poll_workflow_task(&c, &url, "default", "worker-A").await;
+
+    let resp = c
+        .post(format!("{url}/api/v1/workflow-tasks/wf-disp-5/commands"))
+        .json(&serde_json::json!({
+            "worker_id": "worker-A",
+            "commands": [
+                {"type": "CompleteWorkflow", "result": {"steps": 0}}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let wf: serde_json::Value = c
+        .get(format!("{url}/api/v1/workflows/wf-disp-5"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(wf["status"], "COMPLETED");
+    let result_str = wf["result"].as_str().expect("result string");
+    let result: serde_json::Value = serde_json::from_str(result_str).unwrap();
+    assert_eq!(result["steps"], 0);
+
+    // No longer dispatchable
+    let next = poll_workflow_task(&c, &url, "default", "worker-A").await;
+    assert!(next.is_null(), "completed workflow must not poll");
+}
