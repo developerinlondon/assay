@@ -818,6 +818,98 @@ workflow.listen({ queue = "default" })
     let _ = worker.kill().await;
 }
 
+/// 9.6 — End-to-end with a signal: the workflow blocks on
+/// `ctx:wait_for_signal("approve")`, the test sends the signal after a
+/// pause, and the workflow completes with the signal payload.
+#[tokio::test]
+async fn lua_workflow_with_signal() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_with_signal — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("WaitForApproval", function(ctx, input)
+    local approval = ctx:wait_for_signal("approve")
+    return { approved = true, by = approval and approval.by }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "WaitForApproval",
+            "workflow_id": "wf-sig-1",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Give the worker time to claim, replay, hit wait_for_signal, and yield
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    // Workflow should be sitting in RUNNING with WorkflowAwaitingSignal in events
+    let wf: serde_json::Value = c
+        .get(format!("{url}/api/v1/workflows/wf-sig-1"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(wf["status"], "RUNNING", "workflow should be waiting, not done");
+
+    // Send the signal with a payload
+    let resp = c
+        .post(format!("{url}/api/v1/workflows/wf-sig-1/signal/approve"))
+        .json(&serde_json::json!({"payload": {"by": "alice"}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Workflow should now wake up and complete
+    let final_wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-sig-1",
+        "COMPLETED",
+        std::time::Duration::from_secs(5),
+    )
+    .await;
+
+    let result_str = final_wf["result"].as_str().expect("result");
+    let result: serde_json::Value = serde_json::from_str(result_str).unwrap();
+    assert_eq!(result["approved"], true);
+    assert_eq!(result["by"], "alice");
+
+    let _ = worker.kill().await;
+}
+
 /// 9.5 — End-to-end with a durable timer: workflow sleeps for ~1 second
 /// (durably — the timer survives a worker bouncing) then completes.
 #[tokio::test]

@@ -198,6 +198,13 @@ impl<S: WorkflowStore> Engine<S> {
             .await?;
 
         let seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
+        // Parse the incoming payload string back to a JSON value so the
+        // event payload nests cleanly (otherwise the recorded payload is
+        // a stringified JSON-inside-JSON and Lua workers would have to
+        // double-decode).
+        let payload_value: serde_json::Value = payload
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or(serde_json::Value::Null);
         self.store
             .append_event(&WorkflowEvent {
                 id: None,
@@ -205,11 +212,15 @@ impl<S: WorkflowStore> Engine<S> {
                 seq,
                 event_type: "SignalReceived".to_string(),
                 payload: Some(
-                    serde_json::json!({ "signal": name, "payload": payload }).to_string(),
+                    serde_json::json!({ "signal": name, "payload": payload_value }).to_string(),
                 ),
                 timestamp: now,
             })
             .await?;
+
+        // Phase 9: a workflow waiting on this signal needs to be re-dispatched
+        // so the worker can replay and notice the signal in history.
+        self.store.mark_workflow_dispatchable(workflow_id).await?;
 
         Ok(())
     }
@@ -460,13 +471,22 @@ impl<S: WorkflowStore> Engine<S> {
         task_queue: &str,
         worker_id: &str,
     ) -> Result<Option<(WorkflowRecord, Vec<WorkflowEvent>)>> {
-        let Some(wf) = self
+        let Some(mut wf) = self
             .store
             .claim_workflow_task(task_queue, worker_id)
             .await?
         else {
             return Ok(None);
         };
+        // Once a worker is processing the workflow it's RUNNING — even if
+        // it ultimately just yields and pauses on a signal/timer. PENDING
+        // means "no worker has touched this yet."
+        if wf.status == "PENDING" {
+            self.store
+                .update_workflow_status(&wf.id, WorkflowStatus::Running, None, None)
+                .await?;
+            wf.status = "RUNNING".to_string();
+        }
         let history = self.store.list_events(&wf.id).await?;
         Ok(Some((wf, history)))
     }
@@ -523,6 +543,28 @@ impl<S: WorkflowStore> Engine<S> {
                         opts,
                     )
                     .await?;
+                }
+                "WaitForSignal" => {
+                    // No engine-side state to write — the workflow has paused
+                    // and will be re-dispatched when a matching signal arrives.
+                    // Releasing the lease (below) is enough; record the wait
+                    // intent for the dashboard / debugging.
+                    let signal_name =
+                        cmd.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                    let event_seq =
+                        self.store.get_event_count(workflow_id).await? as i32 + 1;
+                    self.store
+                        .append_event(&WorkflowEvent {
+                            id: None,
+                            workflow_id: workflow_id.to_string(),
+                            seq: event_seq,
+                            event_type: "WorkflowAwaitingSignal".to_string(),
+                            payload: Some(
+                                serde_json::json!({ "signal": signal_name }).to_string(),
+                            ),
+                            timestamp: timestamp_now(),
+                        })
+                        .await?;
                 }
                 "ScheduleTimer" => {
                     let seq = cmd.get("seq").and_then(|v| v.as_i64()).unwrap_or(0) as i32;

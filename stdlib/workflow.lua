@@ -243,10 +243,13 @@ end
 --- value from history (replay) or yields a command (first time through).
 function M._make_workflow_ctx(workflow_id, history)
     -- Pre-index history by per-command seq for O(1) lookups during replay.
-    -- Each command type has its own seq space — activity, timer, etc. are
-    -- independent counters, so a workflow with one timer and one activity
-    -- emits ScheduleTimer{seq=1} and ScheduleActivity{seq=1} both at seq=1.
+    -- Each command type has its own seq space — activity, timer, signal
+    -- counters are independent. Signals are matched by name (workflows
+    -- typically wait on a specific signal name), and the signal queue
+    -- preserves arrival order so multiple of the same name are consumed
+    -- in turn.
     local activity_results, fired_timers = {}, {}
+    local signals_by_name = {} -- [name] = list of payloads in arrival order
     for _, event in ipairs(history) do
         local p = event.payload
         if event.event_type == "ActivityCompleted" and p and p.activity_seq then
@@ -255,9 +258,17 @@ function M._make_workflow_ctx(workflow_id, history)
             activity_results[p.activity_seq] = { ok = false, err = p.error }
         elseif event.event_type == "TimerFired" and p and p.timer_seq then
             fired_timers[p.timer_seq] = true
+        elseif event.event_type == "SignalReceived" and p and p.signal then
+            signals_by_name[p.signal] = signals_by_name[p.signal] or {}
+            table.insert(signals_by_name[p.signal], p.payload)
         end
     end
 
+    -- Per-workflow-execution signal cursors track how many signals of each
+    -- name have already been consumed by ctx:wait_for_signal calls in
+    -- this replay, so a workflow that waits twice for "approve" gets the
+    -- first arrival on the first call, the second on the second call.
+    local signal_cursor = {}
     local activity_seq, timer_seq = 0, 0
     local ctx = { workflow_id = workflow_id }
 
@@ -300,6 +311,27 @@ function M._make_workflow_ctx(workflow_id, history)
             type = "ScheduleTimer",
             seq = timer_seq,
             duration_secs = seconds,
+        })
+        error("workflow ctx: yielded but resumed unexpectedly")
+    end
+
+    --- Block until a signal with the given name arrives. Returns the
+    --- signal's JSON payload (or nil if signaled with no payload).
+    --- The "wait" is purely declarative — the workflow yields, the worker
+    --- releases its lease, and a future call to send_signal wakes the
+    --- workflow back up via mark_workflow_dispatchable. Multiple waits for
+    --- the same signal name consume signals in arrival order.
+    function ctx:wait_for_signal(name)
+        local consumed = signal_cursor[name] or 0
+        local arrivals = signals_by_name[name] or {}
+        if consumed < #arrivals then
+            consumed = consumed + 1
+            signal_cursor[name] = consumed
+            return arrivals[consumed]
+        end
+        coroutine.yield({
+            type = "WaitForSignal",
+            name = name,
         })
         error("workflow ctx: yielded but resumed unexpectedly")
     end
