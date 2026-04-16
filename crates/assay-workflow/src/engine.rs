@@ -590,6 +590,74 @@ impl<S: WorkflowStore> Engine<S> {
                         })
                         .await?;
                 }
+                "StartChildWorkflow" => {
+                    let workflow_type = cmd
+                        .get("workflow_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let child_id =
+                        cmd.get("workflow_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let task_queue = cmd
+                        .get("task_queue")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("default");
+                    let input = cmd.get("input").map(|v| v.to_string());
+                    // Determine the namespace from the parent workflow
+                    let namespace = self
+                        .store
+                        .get_workflow(workflow_id)
+                        .await?
+                        .map(|wf| wf.namespace)
+                        .unwrap_or_else(|| "main".to_string());
+
+                    // Idempotent: if a workflow with this id already exists,
+                    // skip creation (deterministic replay calls this command
+                    // for the same child id on every re-run until the parent
+                    // has the ChildWorkflowCompleted event).
+                    if self.store.get_workflow(child_id).await?.is_none() {
+                        self.start_child_workflow(
+                            &namespace,
+                            workflow_id,
+                            workflow_type,
+                            child_id,
+                            input.as_deref(),
+                            task_queue,
+                        )
+                        .await?;
+                        // Make the child immediately dispatchable so a worker
+                        // picks it up.
+                        self.store.mark_workflow_dispatchable(child_id).await?;
+                    }
+                }
+                "RecordSideEffect" => {
+                    let seq = cmd.get("seq").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    let name = cmd.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let value =
+                        cmd.get("value").cloned().unwrap_or(serde_json::Value::Null);
+                    let event_seq =
+                        self.store.get_event_count(workflow_id).await? as i32 + 1;
+                    self.store
+                        .append_event(&WorkflowEvent {
+                            id: None,
+                            workflow_id: workflow_id.to_string(),
+                            seq: event_seq,
+                            event_type: "SideEffectRecorded".to_string(),
+                            payload: Some(
+                                serde_json::json!({
+                                    "side_effect_seq": seq,
+                                    "name": name,
+                                    "value": value,
+                                })
+                                .to_string(),
+                            ),
+                            timestamp: timestamp_now(),
+                        })
+                        .await?;
+                    // Side effects don't trigger anything external — the
+                    // workflow needs to immediately continue so it picks
+                    // up the cached value on next replay.
+                    self.store.mark_workflow_dispatchable(workflow_id).await?;
+                }
                 "ScheduleTimer" => {
                     let seq = cmd.get("seq").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                     let duration = cmd
@@ -709,6 +777,9 @@ impl<S: WorkflowStore> Engine<S> {
     }
 
     /// Mark a workflow COMPLETED with a result + append WorkflowCompleted event.
+    /// If the workflow has a parent, also notifies the parent with a
+    /// ChildWorkflowCompleted event and marks it dispatchable so it can
+    /// replay past `ctx:start_child_workflow` and pick up the child's result.
     pub async fn complete_workflow(&self, workflow_id: &str, result: Option<&str>) -> Result<()> {
         self.store
             .update_workflow_status(workflow_id, WorkflowStatus::Completed, result, None)
@@ -724,10 +795,20 @@ impl<S: WorkflowStore> Engine<S> {
                 timestamp: timestamp_now(),
             })
             .await?;
+        self.notify_parent_of_child_outcome(
+            workflow_id,
+            "ChildWorkflowCompleted",
+            serde_json::json!({
+                "child_workflow_id": workflow_id,
+                "result": result.and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()),
+            }),
+        )
+        .await?;
         Ok(())
     }
 
     /// Mark a workflow FAILED with an error + append WorkflowFailed event.
+    /// Notifies the parent if any (ChildWorkflowFailed).
     pub async fn fail_workflow(&self, workflow_id: &str, error: &str) -> Result<()> {
         self.store
             .update_workflow_status(workflow_id, WorkflowStatus::Failed, None, Some(error))
@@ -743,6 +824,45 @@ impl<S: WorkflowStore> Engine<S> {
                 timestamp: timestamp_now(),
             })
             .await?;
+        self.notify_parent_of_child_outcome(
+            workflow_id,
+            "ChildWorkflowFailed",
+            serde_json::json!({
+                "child_workflow_id": workflow_id,
+                "error": error,
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Append a parent-side event when a child reaches a terminal state and
+    /// re-dispatch the parent so it can replay past its `start_child_workflow`
+    /// call. No-op for top-level workflows (no parent_id).
+    async fn notify_parent_of_child_outcome(
+        &self,
+        child_workflow_id: &str,
+        event_type: &str,
+        payload: serde_json::Value,
+    ) -> Result<()> {
+        let Some(child) = self.store.get_workflow(child_workflow_id).await? else {
+            return Ok(());
+        };
+        let Some(parent_id) = child.parent_id else {
+            return Ok(());
+        };
+        let event_seq = self.store.get_event_count(&parent_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: parent_id.clone(),
+                seq: event_seq,
+                event_type: event_type.to_string(),
+                payload: Some(payload.to_string()),
+                timestamp: timestamp_now(),
+            })
+            .await?;
+        self.store.mark_workflow_dispatchable(&parent_id).await?;
         Ok(())
     }
 

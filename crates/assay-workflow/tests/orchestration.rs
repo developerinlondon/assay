@@ -910,6 +910,197 @@ workflow.listen({ queue = "default" })
     let _ = worker.kill().await;
 }
 
+/// 9.8a — side_effect: a workflow needs a non-deterministic value (e.g.
+/// random ID, current time). ctx:side_effect runs the function once,
+/// records the result in history, and on replay returns the cached value
+/// without re-running the function. Verified by counting function calls.
+#[tokio::test]
+async fn lua_workflow_side_effect_is_recorded_once() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_side_effect_is_recorded_once — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let counter_path = tmp.path().join("counter.txt");
+    std::fs::write(&counter_path, "0").expect("init counter");
+
+    let worker_path = tmp.path().join("worker.lua");
+    let worker_src = r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+local COUNTER = "__COUNTER_PATH__"
+
+-- Counter file lets the test see how many times the side_effect
+-- function actually ran. Side effects must be recorded once and
+-- cached for all subsequent replays.
+local function bump_counter_and_return_value()
+    local cur = tonumber(fs.read(COUNTER)) or 0
+    fs.write(COUNTER, tostring(cur + 1))
+    return { token = "tok-" .. tostring(cur + 1) }
+end
+
+workflow.define("WithSideEffect", function(ctx, input)
+    local token = ctx:side_effect("issue_token", bump_counter_and_return_value)
+    -- Two activities so we get multiple replay cycles
+    local a = ctx:execute_activity("step", { token = token.token })
+    local b = ctx:execute_activity("step", { token = token.token })
+    return { token = token, a = a, b = b }
+end)
+
+workflow.activity("step", function(ctx, input)
+    return { saw = input.token }
+end)
+
+workflow.listen({ queue = "default" })
+"#
+    .replace("__COUNTER_PATH__", counter_path.to_str().unwrap());
+    std::fs::write(&worker_path, worker_src).expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "WithSideEffect",
+            "workflow_id": "wf-se-1",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let final_wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-se-1",
+        "COMPLETED",
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+    let result_str = final_wf["result"].as_str().expect("result");
+    let result: serde_json::Value = serde_json::from_str(result_str).unwrap();
+
+    // The token should be the same across both activities (cached value)
+    assert_eq!(result["token"]["token"], "tok-1");
+    assert_eq!(result["a"]["saw"], "tok-1");
+    assert_eq!(result["b"]["saw"], "tok-1");
+
+    // The side_effect function should have run exactly ONCE despite the
+    // workflow being replayed multiple times (once per activity completion).
+    let counter = std::fs::read_to_string(&counter_path).expect("counter").trim().to_string();
+    assert_eq!(
+        counter, "1",
+        "side_effect function ran {counter} times — must be exactly 1"
+    );
+
+    let _ = worker.kill().await;
+}
+
+/// 9.8b — Parent workflow starts a child workflow and waits for it to
+/// complete, picking up the child's result. Verifies the parent and child
+/// run independently as proper workflows (not just inline subroutines).
+#[tokio::test]
+async fn lua_child_workflow_completes_before_parent() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_child_workflow_completes_before_parent — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("Parent", function(ctx, input)
+    local child_result = ctx:start_child_workflow("Child", {
+        workflow_id = "child-of-" .. input.parent_label,
+        input = { multiplier = input.multiplier },
+    })
+    return { from_child = child_result, parent_label = input.parent_label }
+end)
+
+workflow.define("Child", function(ctx, input)
+    local r = ctx:execute_activity("multiply", { x = 7, by = input.multiplier })
+    return { product = r.product }
+end)
+
+workflow.activity("multiply", function(ctx, input)
+    return { product = input.x * input.by }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "Parent",
+            "workflow_id": "wf-parent-1",
+            "task_queue": "default",
+            "input": {"parent_label": "alpha", "multiplier": 6},
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let parent = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-parent-1",
+        "COMPLETED",
+        std::time::Duration::from_secs(15),
+    )
+    .await;
+    let parent_result_str = parent["result"].as_str().expect("parent result");
+    let parent_result: serde_json::Value =
+        serde_json::from_str(parent_result_str).expect("parse parent result");
+    assert_eq!(parent_result["parent_label"], "alpha");
+    assert_eq!(parent_result["from_child"]["product"], 42, "7 * 6 = 42");
+
+    // The child workflow should also be COMPLETED with its parent_id set
+    let child: serde_json::Value = c
+        .get(format!("{url}/api/v1/workflows/child-of-alpha"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(child["status"], "COMPLETED");
+    assert_eq!(child["parent_id"], "wf-parent-1");
+
+    let _ = worker.kill().await;
+}
+
 /// 9.7 — End-to-end cancellation: a workflow sleeps for 5 seconds and would
 /// then run an activity. We cancel after 200ms; the workflow ends CANCELLED,
 /// the timer never fires, and the activity that came after the sleep is

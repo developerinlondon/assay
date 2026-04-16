@@ -255,7 +255,7 @@ function M._make_workflow_ctx(workflow_id, history)
     -- typically wait on a specific signal name), and the signal queue
     -- preserves arrival order so multiple of the same name are consumed
     -- in turn.
-    local activity_results, fired_timers = {}, {}
+    local activity_results, fired_timers, side_effects, child_results = {}, {}, {}, {}
     local signals_by_name = {} -- [name] = list of payloads in arrival order
     local cancel_requested = false
     for _, event in ipairs(history) do
@@ -269,6 +269,12 @@ function M._make_workflow_ctx(workflow_id, history)
         elseif event.event_type == "SignalReceived" and p and p.signal then
             signals_by_name[p.signal] = signals_by_name[p.signal] or {}
             table.insert(signals_by_name[p.signal], p.payload)
+        elseif event.event_type == "SideEffectRecorded" and p and p.side_effect_seq then
+            side_effects[p.side_effect_seq] = p.value
+        elseif event.event_type == "ChildWorkflowCompleted" and p and p.child_workflow_id then
+            child_results[p.child_workflow_id] = { ok = true, value = p.result }
+        elseif event.event_type == "ChildWorkflowFailed" and p and p.child_workflow_id then
+            child_results[p.child_workflow_id] = { ok = false, err = p.error }
         elseif event.event_type == "WorkflowCancelRequested" then
             cancel_requested = true
         end
@@ -279,7 +285,7 @@ function M._make_workflow_ctx(workflow_id, history)
     -- this replay, so a workflow that waits twice for "approve" gets the
     -- first arrival on the first call, the second on the second call.
     local signal_cursor = {}
-    local activity_seq, timer_seq = 0, 0
+    local activity_seq, timer_seq, side_effect_seq = 0, 0, 0
     local ctx = { workflow_id = workflow_id }
 
     -- Helper: any ctx method bails out via this if the workflow has been
@@ -332,6 +338,62 @@ function M._make_workflow_ctx(workflow_id, history)
             type = "ScheduleTimer",
             seq = timer_seq,
             duration_secs = seconds,
+        })
+        error("workflow ctx: yielded but resumed unexpectedly")
+    end
+
+    --- Run a non-deterministic operation exactly once. The result is
+    --- recorded in the workflow event log and returned from cache on all
+    --- subsequent replays — so calls like `crypto.uuid()`, `os.time()`,
+    --- or anything reading external mutable state can safely live inside
+    --- a workflow handler.
+    ---
+    --- Conceptually a checkpoint: the function runs in the worker, the
+    --- worker yields the value to the engine to record, and the engine
+    --- re-dispatches the workflow so it continues with the cached value.
+    function ctx:side_effect(name, fn)
+        check_cancel()
+        side_effect_seq = side_effect_seq + 1
+        local cached = side_effects[side_effect_seq]
+        if cached ~= nil then
+            return cached
+        end
+        local value = fn()
+        coroutine.yield({
+            type = "RecordSideEffect",
+            seq = side_effect_seq,
+            name = name,
+            value = value,
+        })
+        error("workflow ctx: yielded but resumed unexpectedly")
+    end
+
+    --- Start a child workflow and (synchronously, for the workflow author)
+    --- wait for it to complete. Returns the child's result, or raises if
+    --- the child failed. The parent yields and is paused until the child
+    --- reaches a terminal state — at which point the engine appends a
+    --- ChildWorkflowCompleted/Failed event to the parent and re-dispatches
+    --- so the parent's handler can replay past this call.
+    ---
+    --- `opts.workflow_id` MUST be deterministic — repeated calls during
+    --- replay must produce the same id, otherwise idempotency breaks.
+    function ctx:start_child_workflow(workflow_type, opts)
+        check_cancel()
+        if not opts or not opts.workflow_id then
+            error("ctx:start_child_workflow: opts.workflow_id is required")
+        end
+        local cached = child_results[opts.workflow_id]
+        if cached then
+            if cached.ok then return cached.value end
+            error("child workflow '" .. opts.workflow_id ..
+                "' failed: " .. tostring(cached.err))
+        end
+        coroutine.yield({
+            type = "StartChildWorkflow",
+            workflow_type = workflow_type,
+            workflow_id = opts.workflow_id,
+            input = opts.input,
+            task_queue = opts.task_queue or "default",
         })
         error("workflow ctx: yielded but resumed unexpectedly")
     end
