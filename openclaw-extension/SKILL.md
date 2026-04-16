@@ -1,14 +1,17 @@
 # Assay
 
-Assay executes Lua workflows for infrastructure automation, AI agent orchestration, and resumable approval flows.
+Assay executes Lua workflows for infrastructure automation, AI agent orchestration, and resumable
+approval flows.
 
 ## When to use Assay
 
 - Multi-step infrastructure tasks that should live in a checked-in Lua script
 - Scheduled or repeatable workflows with deterministic behavior
-- Data processing or service automation that benefits from Assay's builtin HTTP, JSON, DB, and filesystem support
+- Data processing or service automation that benefits from Assay's builtin HTTP, JSON, DB, and
+  filesystem support
 - Tasks that may pause for human approval and resume later
-- Workflows that need Assay stdlib modules for Kubernetes, GitOps, observability, identity, storage, or AI agents
+- Workflows that need Assay stdlib modules for Kubernetes, GitOps, observability, identity, storage,
+  or AI agents
 
 ## When not to use Assay
 
@@ -67,7 +70,8 @@ When Assay returns `status: "needs_approval"`:
 - `status: "ok"` means the script completed successfully
 - `status: "needs_approval"` means execution paused and expects `resume`
 - `status: "error"` means the script failed; report the error and fix the script or inputs
-- `status: "timeout"` means the workflow exceeded the configured timeout; simplify the workflow or raise the timeout
+- `status: "timeout"` means the workflow exceeded the configured timeout; simplify the workflow or
+  raise the timeout
 - If stdout contains debug lines before JSON, trust the final JSON envelope
 
 ## Stdlib modules quick reference

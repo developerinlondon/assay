@@ -19,8 +19,10 @@ Filesystem operations. No `require()` needed.
 ### Directory Operations
 
 - `fs.mkdir(path)` → nil — Create directory (and parents)
-- `fs.list(path)` → `[{name, type}]` — List directory entries. `type`: `"file"`, `"directory"`, `"symlink"`
-- `fs.readdir(path, opts?)` → `[{name, path, type}]` — Recursive directory listing. `opts`: `{depth = N}` for max recursion
+- `fs.list(path)` → `[{name, type}]` — List directory entries. `type`: `"file"`, `"directory"`,
+  `"symlink"`
+- `fs.readdir(path, opts?)` → `[{name, path, type}]` — Recursive directory listing. `opts`:
+  `{depth = N}` for max recursion
 - `fs.glob(pattern)` → `[path]` — Glob pattern matching, returns array of path strings
 - `fs.tempdir()` → path — Create a temporary directory
 
@@ -31,10 +33,9 @@ Filesystem operations. No `require()` needed.
 
 ### Binary I/O
 
-`fs.read_bytes` and `fs.write_bytes` handle files with arbitrary byte content
-(images, WASM, protobuf, compressed data). Lua strings can hold any bytes,
-so the returned value works with `http.serve()` response bodies, `base64.encode()`,
-or any other builtin that accepts strings.
+`fs.read_bytes` and `fs.write_bytes` handle files with arbitrary byte content (images, WASM,
+protobuf, compressed data). Lua strings can hold any bytes, so the returned value works with
+`http.serve()` response bodies, `base64.encode()`, or any other builtin that accepts strings.
 
 ```lua
 -- Copy a binary file

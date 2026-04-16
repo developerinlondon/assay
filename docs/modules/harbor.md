@@ -1,7 +1,7 @@
 ## assay.harbor
 
-Harbor container registry. Projects, repositories, artifacts, vulnerability scanning.
-Client: `harbor.client(url, {api_key="..."})` or `{username="...", password="..."}`.
+Harbor container registry. Projects, repositories, artifacts, vulnerability scanning. Client:
+`harbor.client(url, {api_key="..."})` or `{username="...", password="..."}`.
 
 ### System (`c.system`)
 
@@ -22,7 +22,8 @@ Client: `harbor.client(url, {api_key="..."})` or `{username="...", password="...
 
 ### Artifacts (`c.artifacts`)
 
-- `c.artifacts:list(project_name, repo_name, opts?)` → [artifact] — List artifacts. `opts`: `{page, page_size, with_tag, with_scan_overview}`
+- `c.artifacts:list(project_name, repo_name, opts?)` → [artifact] — List artifacts. `opts`:
+  `{page, page_size, with_tag, with_scan_overview}`
 - `c.artifacts:get(project_name, repo_name, reference)` → artifact — Get artifact by tag or digest
 - `c.artifacts:tags(project_name, repo_name, reference)` → [tag] — List artifact tags
 - `c.artifacts:exists(project_name, repo_name, tag)` → bool — Check if image tag exists
@@ -31,18 +32,22 @@ Client: `harbor.client(url, {api_key="..."})` or `{username="...", password="...
 ### Scan (`c.scan`)
 
 - `c.scan:trigger(project_name, repo_name, reference)` → true — Trigger vulnerability scan (async)
-- `c.scan:vulnerabilities(project_name, repo_name, reference)` → `{total, fixable, critical, high, medium, low, negligible}`|nil — Get vulnerability summary
+- `c.scan:vulnerabilities(project_name, repo_name, reference)` →
+  `{total, fixable, critical, high, medium, low, negligible}`|nil — Get vulnerability summary
 
 ### Replication (`c.replication`)
 
 - `c.replication:policies()` → [policy] — List replication policies
-- `c.replication:executions(opts?)` → [execution] — List replication executions. `opts`: `{policy_id}`
+- `c.replication:executions(opts?)` → [execution] — List replication executions. `opts`:
+  `{policy_id}`
 
 ### Backward Compatibility
 
-All legacy colon-style methods (`c:health()`, `c:projects()`, `c:artifacts()`, etc.) remain available and delegate to the sub-objects above.
+All legacy colon-style methods (`c:health()`, `c:projects()`, `c:artifacts()`, etc.) remain
+available and delegate to the sub-objects above.
 
 Example:
+
 ```lua
 local harbor = require("assay.harbor")
 local c = harbor.client("https://harbor.example.com", {username = "admin", password = env.get("HARBOR_PASS")})

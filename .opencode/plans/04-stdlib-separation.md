@@ -1,15 +1,14 @@
 # Plan 04: Stdlib Separation — Assay as a Generic Runtime Platform
 
-**Status**: Draft — awaiting review
-**Created**: 2026-02-12
-**Context**: Assay is intended to be a key element for multiple products. The current architecture
-embeds domain-specific stdlibs (k8s, vault, argocd, etc.) in the Rust binary, coupling runtime
-releases to library changes and preventing independent versioning.
+**Status**: Draft — awaiting review **Created**: 2026-02-12 **Context**: Assay is intended to be a
+key element for multiple products. The current architecture embeds domain-specific stdlibs (k8s,
+vault, argocd, etc.) in the Rust binary, coupling runtime releases to library changes and preventing
+independent versioning.
 
 ## Problem
 
-1. K8s-specific code (`build_http_client()` with SA CA cert) was added to the Rust runtime in
-   v0.3.3 to fix TLS errors — this violates the "generic runtime" principle
+1. K8s-specific code (`build_http_client()` with SA CA cert) was added to the Rust runtime in v0.3.3
+   to fix TLS errors — this violates the "generic runtime" principle
 2. All 15+ stdlibs are compiled into the binary — can't version independently
 3. Contributors need Rust knowledge to modify Lua libraries
 4. Every stdlib change requires a full Rust rebuild + Docker image push
@@ -171,8 +170,8 @@ certmanager.lua --> requires k8s (Certificate CRDs)
 
 ### 4. k8s.patch Content-Type fix
 
-The current `k8s.patch()` sends `application/json` which K8s rejects for PATCH operations.
-With the stdlib separation, this is fixed properly:
+The current `k8s.patch()` sends `application/json` which K8s rejects for PATCH operations. With the
+stdlib separation, this is fixed properly:
 
 ```lua
 -- k8s/init.lua
@@ -317,15 +316,15 @@ jobs:
 
 ## Trade-offs
 
-| Concern                      | Mitigation                                                    |
-| ---------------------------- | ------------------------------------------------------------- |
-| Two repos = more overhead    | Stdlib is pure Lua -- CI is fast, no build step               |
-| Breaking runtime changes     | Manifest declares min version; CI tests against multiple      |
-| Users need two images        | Publish assay-full image; most users never think about it     |
-| Discovery of available libs  | README catalog; future: `assay search <name>`                 |
-| Stdlib size in containers    | All 15+ stdlibs are ~50KB of Lua. Negligible.                 |
-| Cold start (loading from fs) | Lua files are tiny; fs.read + compile is <1ms per file        |
-| Stdlib inter-dependencies    | Shallow tree -- most only need http.client(), not other libs  |
+| Concern                      | Mitigation                                                   |
+| ---------------------------- | ------------------------------------------------------------ |
+| Two repos = more overhead    | Stdlib is pure Lua -- CI is fast, no build step              |
+| Breaking runtime changes     | Manifest declares min version; CI tests against multiple     |
+| Users need two images        | Publish assay-full image; most users never think about it    |
+| Discovery of available libs  | README catalog; future: `assay search <name>`                |
+| Stdlib size in containers    | All 15+ stdlibs are ~50KB of Lua. Negligible.                |
+| Cold start (loading from fs) | Lua files are tiny; fs.read + compile is <1ms per file       |
+| Stdlib inter-dependencies    | Shallow tree -- most only need http.client(), not other libs |
 
 ## Module Resolution
 
