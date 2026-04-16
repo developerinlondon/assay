@@ -180,10 +180,10 @@ pub async fn fail_task<S: WorkflowStore>(
     Path(id): Path<i64>,
     Json(body): Json<FailTaskBody>,
 ) -> Result<axum::http::StatusCode, AppError> {
-    state
-        .engine
-        .complete_activity(id, None, Some(&body.error), true)
-        .await?;
+    // fail_activity honors the activity's retry policy: re-queues with
+    // backoff while attempts remain, otherwise marks FAILED + appends
+    // ActivityFailed event.
+    state.engine.fail_activity(id, &body.error).await?;
     Ok(axum::http::StatusCode::OK)
 }
 

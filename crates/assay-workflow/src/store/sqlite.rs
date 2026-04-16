@@ -566,6 +566,27 @@ impl WorkflowStore for SqliteStore {
         Ok(row.map(Into::into))
     }
 
+    async fn requeue_activity_for_retry(
+        &self,
+        id: i64,
+        next_attempt: i32,
+        next_scheduled_at: f64,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE workflow_activities
+             SET status = 'PENDING', attempt = ?, scheduled_at = ?,
+                 claimed_by = NULL, started_at = NULL, last_heartbeat = NULL,
+                 error = NULL
+             WHERE id = ?",
+        )
+        .bind(next_attempt)
+        .bind(next_scheduled_at)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     async fn complete_activity(
         &self,
         id: i64,

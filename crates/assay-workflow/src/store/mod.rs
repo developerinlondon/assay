@@ -114,6 +114,17 @@ pub trait WorkflowStore: Send + Sync + 'static {
         worker_id: &str,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send;
 
+    /// Re-queue an activity for retry: clears the running state
+    /// (status→PENDING, claimed_by/started_at cleared), bumps `attempt`,
+    /// and sets `scheduled_at = now + backoff` so the next claim_activity
+    /// won't pick it up before the backoff elapses.
+    fn requeue_activity_for_retry(
+        &self,
+        id: i64,
+        next_attempt: i32,
+        next_scheduled_at: f64,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
     fn complete_activity(
         &self,
         id: i64,

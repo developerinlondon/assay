@@ -336,6 +336,13 @@ impl<S: WorkflowStore> Engine<S> {
         self.store.get_activity(id).await
     }
 
+    /// Mark a successfully-executed activity complete and append an
+    /// `ActivityCompleted` event to the workflow event log so a replaying
+    /// workflow can pick up the cached result.
+    ///
+    /// `failed=true` is preserved for legacy callers that go straight
+    /// through complete with a non-retry path; new code should call
+    /// [`Engine::fail_activity`] instead so retry policy is honored.
     pub async fn complete_activity(
         &self,
         id: i64,
@@ -343,7 +350,92 @@ impl<S: WorkflowStore> Engine<S> {
         error: Option<&str>,
         failed: bool,
     ) -> Result<()> {
-        self.store.complete_activity(id, result, error, failed).await
+        self.store.complete_activity(id, result, error, failed).await?;
+
+        // Look up the activity so we can attribute the event correctly
+        let act = match self.store.get_activity(id).await? {
+            Some(a) => a,
+            None => return Ok(()),
+        };
+
+        let event_type = if failed {
+            "ActivityFailed"
+        } else {
+            "ActivityCompleted"
+        };
+        let payload = serde_json::json!({
+            "activity_id": id,
+            "activity_seq": act.seq,
+            "name": act.name,
+            "result": result.and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()),
+            "error": error,
+        });
+        let event_seq = self.store.get_event_count(&act.workflow_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: act.workflow_id,
+                seq: event_seq,
+                event_type: event_type.to_string(),
+                payload: Some(payload.to_string()),
+                timestamp: timestamp_now(),
+            })
+            .await?;
+        Ok(())
+    }
+
+    /// Fail an activity, honoring its retry policy.
+    ///
+    /// If `attempt < max_attempts`, the activity is re-queued with
+    /// exponential backoff (`initial_interval_secs * backoff_coefficient^(attempt-1)`)
+    /// and `attempt` is incremented. **No event is appended** — retries
+    /// are an internal-engine concern, not workflow-visible.
+    ///
+    /// If `attempt >= max_attempts`, the activity is permanently FAILED
+    /// and an `ActivityFailed` event is appended so the workflow can react.
+    pub async fn fail_activity(&self, id: i64, error: &str) -> Result<()> {
+        let act = match self.store.get_activity(id).await? {
+            Some(a) => a,
+            None => return Ok(()),
+        };
+
+        if act.attempt < act.max_attempts {
+            // Compute exponential backoff: interval * coefficient^(attempt-1)
+            let backoff = act.initial_interval_secs
+                * act.backoff_coefficient.powi(act.attempt - 1);
+            let next_scheduled_at = timestamp_now() + backoff;
+            self.store
+                .requeue_activity_for_retry(id, act.attempt + 1, next_scheduled_at)
+                .await?;
+            return Ok(());
+        }
+
+        // Out of retries — mark FAILED and surface to the workflow
+        self.store
+            .complete_activity(id, None, Some(error), true)
+            .await?;
+
+        let event_seq = self.store.get_event_count(&act.workflow_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: act.workflow_id,
+                seq: event_seq,
+                event_type: "ActivityFailed".to_string(),
+                payload: Some(
+                    serde_json::json!({
+                        "activity_id": id,
+                        "activity_seq": act.seq,
+                        "name": act.name,
+                        "error": error,
+                        "final_attempt": act.attempt,
+                    })
+                    .to_string(),
+                ),
+                timestamp: timestamp_now(),
+            })
+            .await?;
+        Ok(())
     }
 
     pub async fn heartbeat_activity(&self, id: i64, details: Option<&str>) -> Result<()> {

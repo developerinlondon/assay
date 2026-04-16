@@ -184,3 +184,207 @@ async fn schedule_activity_is_idempotent_on_seq() {
         .count();
     assert_eq!(scheduled_count, 1, "second schedule must not append a second event");
 }
+
+/// Helper used by 9.2 tests: schedule a workflow + activity, claim it as a
+/// fake worker, and return the activity id ready to be completed/failed.
+async fn schedule_and_claim(c: &reqwest::Client, url: &str, workflow_id: &str) -> i64 {
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "TestWorkflow",
+            "workflow_id": workflow_id,
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    c.post(format!("{url}/api/v1/workers/register"))
+        .json(&serde_json::json!({
+            "identity": "test-worker",
+            "queue": "default",
+            "activities": ["fetch"],
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let scheduled: serde_json::Value = c
+        .post(format!("{url}/api/v1/workflows/{workflow_id}/activities"))
+        .json(&serde_json::json!({
+            "name": "fetch",
+            "input": {"x": 1},
+            "task_queue": "default",
+            "seq": 1,
+            "max_attempts": 3,
+            "initial_interval_secs": 0.05,
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let activity_id = scheduled["id"].as_i64().expect("activity id");
+
+    // Claim via /tasks/poll so worker has the activity in RUNNING state
+    let poll_resp: serde_json::Value = c
+        .post(format!("{url}/api/v1/tasks/poll"))
+        .json(&serde_json::json!({
+            "queue": "default",
+            "worker_id": "test-worker",
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        poll_resp["id"].as_i64(),
+        Some(activity_id),
+        "expected to claim the just-scheduled activity, got {poll_resp}"
+    );
+
+    activity_id
+}
+
+/// 9.2 — completing an activity appends ActivityCompleted to the workflow
+/// event log with the activity's seq, and the workflow record stays in
+/// RUNNING (not COMPLETED — that needs orchestration to know there's no
+/// more work).
+#[tokio::test]
+async fn complete_activity_appends_event() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+    let activity_id = schedule_and_claim(&c, &url, "wf-complete").await;
+
+    let resp = c
+        .post(format!("{url}/api/v1/tasks/{activity_id}/complete"))
+        .json(&serde_json::json!({"result": {"bytes": 42}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let events: Vec<serde_json::Value> = c
+        .get(format!("{url}/api/v1/workflows/wf-complete/events"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let completed = events
+        .iter()
+        .find(|e| e["event_type"].as_str() == Some("ActivityCompleted"))
+        .expect("ActivityCompleted event should appear");
+    let payload: serde_json::Value =
+        serde_json::from_str(completed["payload"].as_str().unwrap()).unwrap();
+    assert_eq!(payload["activity_seq"], 1, "event must carry activity seq");
+    assert_eq!(payload["activity_id"], activity_id);
+    assert!(payload["result"].is_object() || payload["result"].is_string());
+}
+
+/// 9.2 — fail_activity with retry policy: first failure re-queues with
+/// backoff (status returns to PENDING with attempt+=1); the workflow only
+/// gets ActivityFailed once attempts are exhausted.
+#[tokio::test]
+async fn fail_activity_retries_until_max_attempts() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+    let activity_id = schedule_and_claim(&c, &url, "wf-retry").await;
+
+    // First failure → should re-queue (attempts left)
+    let resp = c
+        .post(format!("{url}/api/v1/tasks/{activity_id}/fail"))
+        .json(&serde_json::json!({"error": "transient: ConnectionReset"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Activity should be PENDING again with attempt = 2
+    let act: serde_json::Value = c
+        .get(format!("{url}/api/v1/activities/{activity_id}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        act["status"], "PENDING",
+        "first fail must requeue while attempts remain, got {act}"
+    );
+    assert_eq!(act["attempt"], 2, "attempt should increment");
+
+    // No ActivityFailed event yet
+    let events: Vec<serde_json::Value> = c
+        .get(format!("{url}/api/v1/workflows/wf-retry/events"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let failed_count = events
+        .iter()
+        .filter(|e| e["event_type"].as_str() == Some("ActivityFailed"))
+        .count();
+    assert_eq!(failed_count, 0, "should not fire ActivityFailed while retrying");
+
+    // Wait for the backoff to elapse, then claim + fail attempts 2 and 3
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    for expected_attempt in 2..=3 {
+        let claimed: serde_json::Value = c
+            .post(format!("{url}/api/v1/tasks/poll"))
+            .json(&serde_json::json!({
+                "queue": "default",
+                "worker_id": "test-worker",
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(claimed["id"].as_i64(), Some(activity_id), "should re-claim same activity");
+        assert_eq!(claimed["attempt"], expected_attempt);
+
+        c.post(format!("{url}/api/v1/tasks/{activity_id}/fail"))
+            .json(&serde_json::json!({"error": "still failing"}))
+            .send()
+            .await
+            .unwrap();
+
+        if expected_attempt < 3 {
+            tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        }
+    }
+
+    // Now the activity should be permanently FAILED with one ActivityFailed event
+    let act: serde_json::Value = c
+        .get(format!("{url}/api/v1/activities/{activity_id}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(act["status"], "FAILED", "after max attempts the activity is FAILED");
+    assert_eq!(act["attempt"], 3);
+
+    let events: Vec<serde_json::Value> = c
+        .get(format!("{url}/api/v1/workflows/wf-retry/events"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let failed_count = events
+        .iter()
+        .filter(|e| e["event_type"].as_str() == Some("ActivityFailed"))
+        .count();
+    assert_eq!(failed_count, 1, "exactly one ActivityFailed event after exhausting retries");
+}

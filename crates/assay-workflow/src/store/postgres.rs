@@ -463,6 +463,27 @@ impl WorkflowStore for PostgresStore {
         Ok(row.map(Into::into))
     }
 
+    async fn requeue_activity_for_retry(
+        &self,
+        id: i64,
+        next_attempt: i32,
+        next_scheduled_at: f64,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE workflow_activities
+             SET status = 'PENDING', attempt = $1, scheduled_at = $2,
+                 claimed_by = NULL, started_at = NULL, last_heartbeat = NULL,
+                 error = NULL
+             WHERE id = $3",
+        )
+        .bind(next_attempt)
+        .bind(next_scheduled_at)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     async fn complete_activity(
         &self,
         id: i64,
