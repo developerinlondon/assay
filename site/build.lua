@@ -138,7 +138,7 @@ local categories = {
   { name = "Infrastructure", pattern = {"crossplane", "velero", "temporal", "harbor"} },
   { name = "Data &amp; Storage", pattern = {"postgres", "s3"} },
   { name = "Feature Flags &amp; Utilities", pattern = {"unleash", "healthcheck"} },
-  { name = "AI Agent &amp; Workflow", pattern = {"ai-agents"} },
+  { name = "AI Agent &amp; Workflow", pattern = {"ai-agents", "workflow"} },
 }
 
 local modules = {}
