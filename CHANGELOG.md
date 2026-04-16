@@ -2,6 +2,22 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.2] - 2026-04-16
+
+### Fixed
+
+- **Docker image build** — `Dockerfile` now `COPY crates/` so the `assay-workflow` workspace
+  member's manifest is in the build context. Without this, the v0.11.1 release.yml docker job failed
+  with `failed to read /app/crates/assay-workflow/Cargo.toml` and no
+  `ghcr.io/developerinlondon/assay:v0.11.1` image was published. v0.11.2 republishes everything
+  (binaries / crates.io / npm / docker) so `:latest` points at a working image again.
+
+### Notes
+
+- No source-level changes versus v0.11.1 — `assay-lua` and `assay-workflow` crates are
+  byte-identical to v0.11.1 except for the version bumps. Existing v0.11.1 binaries, crates.io
+  packages, and npm packages remain valid; only the GHCR image was missing.
+
 ## [0.11.1] - 2026-04-16
 
 ### Added
