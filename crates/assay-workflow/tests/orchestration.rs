@@ -642,3 +642,178 @@ async fn complete_workflow_command_marks_terminal() {
     let next = poll_workflow_task(&c, &url, "default", "worker-A").await;
     assert!(next.is_null(), "completed workflow must not poll");
 }
+
+// ─── 9.4 — Lua deterministic-replay runtime end-to-end ─────────────────────
+//
+// These tests boot the engine in-process AND spawn a real assay subprocess
+// running the actual stdlib/workflow.lua client. They prove the engine and
+// the Lua client interoperate to run a workflow from Pending → Completed
+// with real activities that return real values.
+//
+// The subprocess approach intentionally exercises the same `assay run` path
+// users will, so any breakage in the Lua client / API contract is caught.
+
+use std::path::PathBuf;
+use std::process::Stdio;
+
+/// Locate the `assay` binary inside the workspace target dir. Tries
+/// `debug` then `release`. Returns `None` if neither exists — caller
+/// should skip the test with a message in that case (CI builds the
+/// binary first; a fresh local checkout might not have it yet).
+fn locate_assay_binary() -> Option<PathBuf> {
+    let here = std::env::current_dir().ok()?;
+    // Walk up until we find a `target` dir (handles running from
+    // workspace root or from the crate dir).
+    let mut probe = here.clone();
+    loop {
+        let cand_dbg = probe.join("target/debug/assay");
+        let cand_rel = probe.join("target/release/assay");
+        if cand_dbg.is_file() {
+            return Some(cand_dbg);
+        }
+        if cand_rel.is_file() {
+            return Some(cand_rel);
+        }
+        if !probe.pop() {
+            return None;
+        }
+    }
+}
+
+/// Wait for the workflow to reach a terminal status, polling its REST
+/// endpoint. Times out with a useful error containing the last-seen
+/// status + recent events for debugging.
+async fn wait_for_workflow_status(
+    c: &reqwest::Client,
+    base_url: &str,
+    workflow_id: &str,
+    target_status: &str,
+    timeout: std::time::Duration,
+) -> serde_json::Value {
+    let deadline = std::time::Instant::now() + timeout;
+    let mut last: serde_json::Value = serde_json::Value::Null;
+    while std::time::Instant::now() < deadline {
+        let resp = c
+            .get(format!("{base_url}/api/v1/workflows/{workflow_id}"))
+            .send()
+            .await
+            .expect("describe workflow");
+        if resp.status() == 200 {
+            last = resp.json().await.expect("workflow json");
+            if last["status"].as_str() == Some(target_status) {
+                return last;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let events: serde_json::Value = c
+        .get(format!("{base_url}/api/v1/workflows/{workflow_id}/events"))
+        .send()
+        .await
+        .map(|r| r)
+        .ok()
+        .map(|r| r)
+        .unwrap()
+        .json()
+        .await
+        .unwrap_or(serde_json::Value::Null);
+    panic!(
+        "workflow {workflow_id} did not reach {target_status} within timeout.\n\
+         last workflow record: {}\n\
+         events: {}",
+        serde_json::to_string_pretty(&last).unwrap(),
+        serde_json::to_string_pretty(&events).unwrap()
+    );
+}
+
+/// 9.4 — End-to-end: a real Lua worker subprocess runs a workflow with
+/// two sequential activities and the result lands in the workflow record.
+#[tokio::test]
+async fn lua_workflow_runs_to_completion() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!(
+            "SKIP: lua_workflow_runs_to_completion — no assay binary at \
+             target/{{debug,release}}/assay. Run `cargo build --bin assay` first."
+        );
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    // Write the worker script to a tempdir
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("TwoStep", function(ctx, input)
+    local a = ctx:execute_activity("step1", { n = input.n })
+    local b = ctx:execute_activity("step2", { prev = a })
+    return { first = a, second = b, sum = a.value + b.value }
+end)
+
+workflow.activity("step1", function(ctx, input)
+    return { value = input.n * 2 }
+end)
+
+workflow.activity("step2", function(ctx, input)
+    return { value = input.prev.value + 10 }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    // Spawn the assay subprocess
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn assay worker subprocess");
+
+    // Give the worker a moment to register
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    // Start the workflow
+    let resp = c
+        .post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "TwoStep",
+            "workflow_id": "wf-lua-1",
+            "task_queue": "default",
+            "input": {"n": 5},
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "workflow start");
+
+    // Wait for completion (generous timeout for slow CI)
+    let wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-lua-1",
+        "COMPLETED",
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    let result_str = wf["result"].as_str().expect("workflow result");
+    let result: serde_json::Value = serde_json::from_str(result_str).expect("result json");
+
+    // step1 doubled n=5 → 10; step2 added 10 → 20; sum = 30
+    assert_eq!(result["first"]["value"], 10, "step1 result");
+    assert_eq!(result["second"]["value"], 20, "step2 result");
+    assert_eq!(result["sum"], 30, "sum");
+
+    // Cleanup
+    let _ = worker.kill().await;
+}
