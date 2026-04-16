@@ -4,18 +4,46 @@
 /// and run the full store contract against it. Requires Docker.
 ///
 /// Run with: cargo test -p assay-workflow --test postgres_store
+///
+/// Skipped automatically when Docker is not available (e.g. macOS CI).
 use assay_workflow::store::postgres::PostgresStore;
 use assay_workflow::store::WorkflowStore;
 use assay_workflow::types::*;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 
-async fn create_store() -> (PostgresStore, testcontainers::ContainerAsync<Postgres>) {
+fn docker_available() -> bool {
+    std::process::Command::new("docker")
+        .arg("info")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Skip test if Docker is not running. Returns None to signal skip.
+async fn create_store() -> Option<(PostgresStore, testcontainers::ContainerAsync<Postgres>)> {
+    if !docker_available() {
+        eprintln!("Skipping: Docker not available");
+        return None;
+    }
     let container = Postgres::default().start().await.unwrap();
     let port = container.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
     let store = PostgresStore::new(&url).await.unwrap();
-    (store, container)
+    Some((store, container))
+}
+
+/// Macro to skip tests when Docker is unavailable.
+macro_rules! require_docker {
+    ($store:ident, $container:ident) => {
+        let Some(($store, $container)) = create_store().await else {
+            return;
+        };
+        // Keep container alive for the test duration
+        let _ = &$container;
+    };
 }
 
 fn now() -> f64 {
@@ -47,7 +75,7 @@ fn make_workflow(id: &str, wf_type: &str) -> WorkflowRecord {
 
 #[tokio::test]
 async fn pg_workflow_create_and_get() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
     let wf = make_workflow("pg-wf-1", "IngestData");
 
     store.create_workflow(&wf).await.unwrap();
@@ -61,7 +89,7 @@ async fn pg_workflow_create_and_get() {
 
 #[tokio::test]
 async fn pg_workflow_list_by_namespace() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
 
     store
         .create_workflow(&make_workflow("pg-wf-1", "TypeA"))
@@ -93,7 +121,7 @@ async fn pg_workflow_list_by_namespace() {
 
 #[tokio::test]
 async fn pg_workflow_claim_and_status() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
     store
         .create_workflow(&make_workflow("pg-wf-1", "TypeA"))
         .await
@@ -122,7 +150,7 @@ async fn pg_workflow_claim_and_status() {
 
 #[tokio::test]
 async fn pg_activity_claim_concurrent() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
     store
         .create_workflow(&make_workflow("pg-wf-1", "TypeA"))
         .await
@@ -166,7 +194,7 @@ async fn pg_activity_claim_concurrent() {
 
 #[tokio::test]
 async fn pg_events_and_signals() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
     store
         .create_workflow(&make_workflow("pg-wf-1", "TypeA"))
         .await
@@ -214,7 +242,7 @@ async fn pg_events_and_signals() {
 
 #[tokio::test]
 async fn pg_timers() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
     store
         .create_workflow(&make_workflow("pg-wf-1", "TypeA"))
         .await
@@ -255,7 +283,7 @@ async fn pg_timers() {
 
 #[tokio::test]
 async fn pg_schedules() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
 
     store
         .create_schedule(&WorkflowSchedule {
@@ -287,7 +315,7 @@ async fn pg_schedules() {
 
 #[tokio::test]
 async fn pg_namespace_stats() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
 
     store
         .create_workflow(&make_workflow("pg-wf-1", "TypeA"))
@@ -306,7 +334,7 @@ async fn pg_namespace_stats() {
 
 #[tokio::test]
 async fn pg_leader_lock() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
 
     // Advisory lock should succeed — at least one attempt should work
     let acquired = store.try_acquire_leader_lock().await.unwrap();
@@ -315,7 +343,7 @@ async fn pg_leader_lock() {
 
 #[tokio::test]
 async fn pg_workers() {
-    let (store, _container) = create_store().await;
+    require_docker!(store, _container);
     let ts = now();
 
     store
