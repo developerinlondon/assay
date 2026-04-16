@@ -951,6 +951,15 @@ assay/                                 ← workspace root (Cargo.toml)
 
 ## Implementation Phases
 
+> **HONEST RE-ASSESSMENT (April 2026):** Phases 1–7 below were originally ticked ✅ but only
+> delivered the **substrate** — data model, REST API, persistence, namespaces, dashboard, auth,
+> multi-instance Postgres backend. The actual **runtime that turns scheduled activities into
+> completed workflows** was missing. Tests verified CRUD, not execution. See
+> `.claude/plans/03-assay-11-workflow-runtime.md` for the Phase 9 work that delivers the
+> deterministic-replay runtime, real Lua workflow execution, durable timers, signals, cancellation
+> propagation, side-effects, child workflows, cron firing, and worker crash recovery — all backed by
+> 17 end-to-end orchestration tests including a real assay subprocess SIGKILL/recovery scenario.
+
 ### Phase 0: Remove Temporal from Assay ✅ (released as v0.11.0)
 
 **Goal**: Clean slate. Cut 5MB, 60s build, `protoc` requirement.
