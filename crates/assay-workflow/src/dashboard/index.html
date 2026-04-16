@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay Workflow Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="/workflow/favicon.svg">
+  <link rel="stylesheet" href="/workflow/theme.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/workflow/style.css?v=__ASSETV__">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h1 class="logo">
+          <span class="logo-full">Assay</span>
+          <span class="logo-mark" aria-hidden="true">A</span>
+        </h1>
+        <button type="button" class="header-icon-btn" id="sidebar-collapse" title="Collapse sidebar" aria-label="Toggle sidebar">
+          <span class="icon-collapse">&lt;</span>
+          <span class="icon-expand">&gt;</span>
+        </button>
+      </div>
+      <div class="sidebar-section">
+        <label class="sidebar-label" for="namespace-select">Namespace</label>
+        <select id="namespace-select" class="namespace-select"></select>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-link active" data-view="workflows">
+          <span class="nav-icon">&#9654;</span> <span class="nav-label">Workflows</span>
+        </a>
+        <a href="#" class="nav-link" data-view="schedules">
+          <span class="nav-icon">&#9200;</span> <span class="nav-label">Schedules</span>
+        </a>
+        <a href="#" class="nav-link" data-view="workers">
+          <span class="nav-icon">&#9881;</span> <span class="nav-label">Workers</span>
+        </a>
+        <a href="#" class="nav-link" data-view="queues">
+          <span class="nav-icon">&#9776;</span> <span class="nav-label">Queues</span>
+        </a>
+        <a href="#" class="nav-link" data-view="settings">
+          <span class="nav-icon">&#9881;</span> <span class="nav-label">Settings</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="/api/v1/docs" class="nav-link nav-link-grow" target="_blank">
+          <span class="nav-icon">&#128196;</span> <span class="nav-label">API Docs</span>
+        </a>
+        <button type="button" class="nav-link nav-link-button nav-link-icon" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+          <span class="nav-icon icon-sun">&#9788;</span>
+          <span class="nav-icon icon-moon">&#9790;</span>
+        </button>
+      </div>
+    </aside>
+
+    <main id="content" class="main-content"></main>
+
+    <div id="detail-panel" class="detail-panel"></div>
+  </div>
+
+  <footer class="status-bar">
+    <span class="status-item" id="status-connection">
+      <span class="status-dot" id="connection-dot"></span>
+      <span id="connection-text">Connecting...</span>
+    </span>
+    <span class="status-item">
+      Namespace: <strong id="status-namespace">main</strong>
+    </span>
+    <span class="status-item">
+      Workers: <strong id="status-workers">0</strong>
+    </span>
+    <span class="status-item status-version">
+      Assay Workflow Engine
+    </span>
+  </footer>
+
+  <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">&#9776;</button>
+
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="/workflow/components/workflows.js?v=__ASSETV__"></script>
+  <script src="/workflow/components/detail.js?v=__ASSETV__"></script>
+  <script src="/workflow/components/schedules.js?v=__ASSETV__"></script>
+  <script src="/workflow/components/workers.js?v=__ASSETV__"></script>
+  <script src="/workflow/components/queues.js?v=__ASSETV__"></script>
+  <script src="/workflow/components/settings.js?v=__ASSETV__"></script>
+  <script src="/workflow/app.js?v=__ASSETV__"></script>
+</body>
+</html>

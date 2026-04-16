@@ -10,11 +10,12 @@ Assay v0.11 delivers three things in order:
 3. **Add workflow client** — a Lua library (`assay.workflow`) that talks to an assay workflow server
    over HTTP, letting assay apps define and execute workflows
 
-One binary, multiple modes. The workflow engine is a **service mode** of assay — `assay serve`
-starts it as infrastructure. Since assay already depends on axum, sqlx, and tokio, the engine adds
-near-zero binary size. In production, the same Docker image runs as both engine and worker with
-different entrypoints. Future services (auth, gateway, monitoring) can be added as additional serve
-options.
+One binary, multiple modes. The workflow engine is a **separate crate** (`assay-workflow`) in the
+same workspace — independently publishable to crates.io and embeddable by other Rust projects. The
+`assay` binary depends on it and exposes it via `assay serve`. Since assay already depends on axum,
+sqlx, and tokio, the engine adds near-zero binary size (shared deps compile once). In production,
+the same Docker image runs as both engine and worker with different entrypoints. Future services
+(auth, gateway, monitoring) can be added as additional serve options.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -47,7 +48,8 @@ options.
 │  │                                                                  │    │
 │  └──────────────────────────────────────────────────────────────────┘    │
 │                                                                          │
-│  cargo install assay                                                     │
+│  cargo install assay            ← full binary (Lua + workflow engine)     │
+│  cargo install assay-workflow   ← engine crate only (for Rust embedding) │
 │  ghcr.io/org/assay:0.11.0                                                │
 │                                                                          │
 │  Production: same image, different entrypoint                            │
@@ -486,73 +488,97 @@ The most architecturally relevant project. Study these specific patterns:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Authentication (Ory Stack)
+### Authentication (Provider-Agnostic)
+
+Three auth modes, simplest to most secure. The engine doesn't care who issued the token — it works
+with any OIDC-compliant provider.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                                                                     │
+│  THREE AUTH MODES                                                   │
+│  ════════════════                                                   │
+│                                                                     │
+│  1. NO AUTH (default in dev)                                        │
+│     assay serve --no-auth                                           │
+│     All endpoints open. For local dev and trusted networks.         │
+│                                                                     │
+│  2. API KEYS (simple machine-to-machine)                            │
+│     assay serve --auth api-key                                      │
+│     Keys stored hashed in workflow DB. No OAuth2 needed.            │
+│                                                                     │
+│     Worker App                              Engine                  │
+│      │                                        │                     │
+│      │ Authorization: Bearer <api-key>        │                     │
+│      │───────────────────────────────────────→│                     │
+│      │                                        │  SHA256(key)        │
+│      │                                        │  matches DB? ✓     │
+│                                                                     │
+│     CLI management:                                                 │
+│     assay serve --generate-api-key            (prints key once)     │
+│     assay serve --list-api-keys               (shows hashed keys)   │
+│     assay serve --revoke-api-key <prefix>     (deletes by prefix)   │
+│                                                                     │
+│  3. JWT/OIDC (any provider)                                         │
+│     assay serve --auth-issuer https://your-provider.com             │
+│     Engine fetches JWKS from {issuer}/.well-known/openid-config.    │
+│     Validates signature, expiry, issuer, audience.                  │
+│     Works with Ory Hydra, Keycloak, Auth0, Azure AD, Google, etc.  │
+│                                                                     │
+│     Worker App        Any OIDC Provider          Engine             │
+│      │                      │                      │                │
+│      │ POST /oauth2/token   │                      │                │
+│      │ (client_credentials) │                      │                │
+│      │─────────────────────→│                      │                │
+│      │                      │                      │                │
+│      │ { access_token: jwt }│                      │                │
+│      │←─────────────────────│                      │                │
+│      │                                             │                │
+│      │ Authorization: Bearer <jwt>                 │                │
+│      │────────────────────────────────────────────→│                │
+│      │                                             │                │
+│      │                         Validate JWT via JWKS (cached)       │
+│      │                         Check exp, iss, aud                  │
+│                                                                     │
+│                                                                     │
 │  DASHBOARD (humans) — OAuth2 Authorization Code Flow                │
 │  ═══════════════════════════════════════════════════                 │
+│  Only when --auth-issuer is set. Engine acts as an OAuth2 client.   │
 │                                                                     │
-│  Browser          Engine                  Hydra         Kratos      │
-│   │                 │                       │              │        │
-│   │ GET /workflow/  │                       │              │        │
-│   │ (no session)    │                       │              │        │
-│   │────────────────→│                       │              │        │
-│   │                 │                       │              │        │
-│   │ 302 → Hydra /oauth2/auth               │              │        │
-│   │←────────────────│                       │              │        │
-│   │                                         │              │        │
-│   │ User logs in via Kratos                 │              │        │
-│   │────────────────────────────────────────→│─────────────→│        │
-│   │                                         │              │        │
-│   │ Auth code redirect                      │              │        │
-│   │←────────────────────────────────────────│              │        │
-│   │                                         │              │        │
-│   │ GET /auth/callback?code=xxx             │              │        │
-│   │────────────────→│                       │              │        │
-│   │                 │ Exchange code → token  │              │        │
-│   │                 │──────────────────────→│              │        │
-│   │                 │←──────────────────────│              │        │
-│   │                 │                       │              │        │
-│   │ Set-Cookie: session=jwt                 │              │        │
-│   │ 302 → /workflow/                        │              │        │
-│   │←────────────────│                       │              │        │
-│                                                                     │
-│                                                                     │
-│  WORKER APPS + API CLIENTS — OAuth2 Client Credentials              │
-│  ════════════════════════════════════════════════════                │
-│                                                                     │
-│  Each app is registered as an OAuth2 client in Hydra.               │
-│  Machine-to-machine auth, no human login needed.                    │
-│                                                                     │
-│  Worker App             Hydra                     Engine            │
-│   │                       │                         │               │
-│   │ POST /oauth2/token    │                         │               │
-│   │ grant_type=           │                         │               │
-│   │  client_credentials   │                         │               │
-│   │──────────────────────→│                         │               │
-│   │                       │                         │               │
-│   │ { access_token: jwt } │                         │               │
-│   │←──────────────────────│                         │               │
-│   │                                                 │               │
-│   │ All API calls with:                             │               │
-│   │ Authorization: Bearer <jwt>                     │               │
-│   │────────────────────────────────────────────────→│               │
-│   │                                                 │               │
-│   │ Engine validates JWT against Hydra JWKS,        │               │
-│   │ checks permissions via Keto.                    │               │
+│  Browser          Engine               OIDC Provider                │
+│   │                 │                       │                       │
+│   │ GET /workflow/  │                       │                       │
+│   │ (no session)    │                       │                       │
+│   │────────────────→│                       │                       │
+│   │                 │                       │                       │
+│   │ 302 → provider /authorize              │                       │
+│   │←────────────────│                       │                       │
+│   │                                         │                       │
+│   │ User logs in at provider                │                       │
+│   │────────────────────────────────────────→│                       │
+│   │                                         │                       │
+│   │ Auth code redirect                      │                       │
+│   │←────────────────────────────────────────│                       │
+│   │                                         │                       │
+│   │ GET /auth/callback?code=xxx             │                       │
+│   │────────────────→│                       │                       │
+│   │                 │ Exchange code → token  │                       │
+│   │                 │──────────────────────→│                       │
+│   │                 │←──────────────────────│                       │
+│   │                 │                       │                       │
+│   │ Set-Cookie: session=jwt                 │                       │
+│   │ 302 → /workflow/                        │                       │
+│   │←────────────────│                       │                       │
 │                                                                     │
 │                                                                     │
-│  PERMISSION MODEL (Keto RBAC)                                       │
-│  ════════════════════════════                                       │
+│  TESTING                                                            │
+│  ═══════                                                            │
 │                                                                     │
-│  workflow:queue:data#worker@client:my-cool-pipeline                 │
-│  workflow:queue:deploy#worker@client:deploy-bot                     │
-│  workflow:global#start@client:order-processor                       │
-│  workflow:global#admin@group:engineering                            │
-│                                                                     │
-│  Auth is optional. Disabled in dev mode.                            │
+│  No auth:  trivial — no headers needed                              │
+│  API keys: generate key, pass as Bearer token                       │
+│  JWT:      self-signed JWTs via crypto.jwt_sign (already in assay)  │
+│            Tests generate RSA keypair, sign tokens, engine validates │
+│            against in-memory JWKS. No running OAuth2 server needed. │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -878,60 +904,63 @@ workflow.listen({
 ## Repo Structure
 
 ```
-assay/                                 ← single binary
+assay/                                 ← workspace root (Cargo.toml)
 │
-├── src/
+├── crates/
+│   └── assay-workflow/                ← SEPARATE CRATE (publishable, embeddable)
+│       ├── Cargo.toml                 │  deps: sqlx, tokio, serde, cron, chrono
+│       │                              │  NO: mlua, lua, assay
+│       └── src/
+│           ├── lib.rs                 │  Public API: Engine, SqliteStore, WorkflowStore
+│           ├── engine.rs              │  Engine<S> orchestrator + high-level ops
+│           ├── state.rs               │  WorkflowCommand enum, state transitions
+│           ├── scheduler.rs           │  Cron evaluation (cron + chrono + tokio)
+│           ├── timers.rs              │  Timer polling + TimerFired events
+│           ├── health.rs              │  Dead worker detection, activity timeouts
+│           ├── types.rs               │  All record types + status enums
+│           ├── store/
+│           │   ├── mod.rs             │  WorkflowStore trait (Send futures)
+│           │   ├── sqlite.rs          │  SqliteStore (full impl + schema)
+│           │   └── postgres.rs        │  PostgresStore (future)
+│           ├── api/                   │  (Phase 3: REST API + SSE)
+│           │   ├── mod.rs             │  Axum router
+│           │   ├── workflows.rs       │  /api/v1/workflows/*
+│           │   ├── tasks.rs           │  /api/v1/tasks/* + SSE
+│           │   ├── schedules.rs       │  /api/v1/schedules/*
+│           │   ├── workers.rs         │  /api/v1/workers/*
+│           │   ├── events.rs          │  /api/v1/events/* SSE
+│           │   ├── auth.rs            │  JWT/OIDC/API key middleware
+│           │   └── dashboard.rs       │  Static HTML/JS serving
+│           └── dashboard/             │  Embedded HTML/JS/CSS
+│
+├── src/                               ← ASSAY BINARY (Lua runtime)
 │   ├── main.rs                        │  CLI: run, serve, workflow, schedule
-│   ├── lua/
-│   │   └── builtins/
-│   │       ├── http.rs                │  UPDATED: SSE client support
-│   │       │                          │  (auto-detect text/event-stream,
-│   │       │                          │   stream events via callback)
-│   │       ├── temporal.rs            │  REMOVED in Phase 0
-│   │       └── temporal_worker.rs     │  REMOVED in Phase 0
-│   │
-│   └── workflow/                      │  ← WORKFLOW ENGINE (built into assay)
-│       ├── mod.rs                     │  Public API + engine orchestrator
-│       ├── store/
-│       │   ├── mod.rs                 │  WorkflowStore trait + types
-│       │   ├── postgres.rs            │  PostgresStore
-│       │   └── sqlite.rs             │  SqliteStore
-│       ├── state.rs                   │  Workflow state machine
-│       ├── scheduler.rs               │  Cron evaluation + leader election
-│       ├── timers.rs                  │  Timer polling + firing
-│       ├── health.rs                  │  Worker timeout detection
-│       ├── api/
-│       │   ├── mod.rs                 │  Axum router
-│       │   ├── workflows.rs           │  /api/v1/workflows/*
-│       │   ├── tasks.rs               │  /api/v1/tasks/* + SSE
-│       │   ├── schedules.rs           │  /api/v1/schedules/*
-│       │   ├── workers.rs             │  /api/v1/workers/*
-│       │   ├── events.rs              │  /api/v1/events/* SSE
-│       │   ├── auth.rs                │  OAuth2/JWT middleware
-│       │   └── dashboard.rs           │  Static HTML/JS serving
-│       ├── dashboard/                 │  Embedded HTML/JS/CSS
-│       └── types.rs                   │  Shared types
+│   ├── lib.rs                         │  re-exports assay_workflow as workflow
+│   └── lua/
+│       └── builtins/
+│           ├── http.rs                │  UPDATED: SSE client support (Phase 6)
+│           └── ...
 │
 ├── stdlib/
-│   └── workflow.lua                   │  Pure Lua workflow client
+│   └── workflow.lua                   │  Pure Lua workflow client (Phase 6)
 │                                      │  (uses http.*, json.*, coroutines)
 │
 └── tests/
-    ├── workflow/                       │  workflow engine tests
-    │   ├── workflow_basic.rs
-    │   ├── workflow_signals.rs
-    │   ├── workflow_timers.rs
-    │   ├── workflow_schedules.rs
-    │   ├── workflow_multi_worker.rs
-    │   └── workflow_auth.rs
-    │
-    └── integration/                   │  end-to-end tests
-        └── workflow_e2e.rs            │  Lua → engine → back
+    └── workflow_store.rs              │  11 tests: CRUD, claim, timers, signals
 ```
 
 ## Implementation Phases
 
-### Phase 0: Remove Temporal from Assay
+> **HONEST RE-ASSESSMENT (April 2026):** Phases 1–7 below were originally ticked ✅ but only
+> delivered the **substrate** — data model, REST API, persistence, namespaces, dashboard, auth,
+> multi-instance Postgres backend. The actual **runtime that turns scheduled activities into
+> completed workflows** was missing. Tests verified CRUD, not execution. See
+> `.claude/plans/03-assay-11-workflow-runtime.md` for the Phase 9 work that delivers the
+> deterministic-replay runtime, real Lua workflow execution, durable timers, signals, cancellation
+> propagation, side-effects, child workflows, cron firing, and worker crash recovery — all backed by
+> 17 end-to-end orchestration tests including a real assay subprocess SIGKILL/recovery scenario.
+
+### Phase 0: Remove Temporal from Assay ✅ (released as v0.11.0)
 
 **Goal**: Clean slate. Cut 5MB, 60s build, `protoc` requirement.
 
@@ -948,33 +977,33 @@ assay/                                 ← single binary
 
 **Delivers**: Clean 11MB assay binary, fast builds, no `protoc`.
 
-### Phase 1: Workflow Engine Scaffolding + Store — ~600 lines Rust
+### Phase 1: Workflow Engine Scaffolding + Store — ~600 lines Rust ✅
 
-**Goal**: `src/workflow/` module, database layer, both backends, `assay serve` subcommand.
+**Goal**: Separate `assay-workflow` crate, database layer, `assay serve` subcommand.
 
-| Step | Description                                                 | Files                            |
-| ---- | ----------------------------------------------------------- | -------------------------------- |
-| 1.1  | Create `src/workflow/` module structure                     | `src/workflow/mod.rs`            |
-| 1.2  | Define types (WorkflowRecord, Event, Activity, Timer, etc.) | `src/workflow/types.rs`          |
-| 1.3  | Define `WorkflowStore` trait                                | `src/workflow/store/mod.rs`      |
-| 1.4  | Implement `SqliteStore`                                     | `src/workflow/store/sqlite.rs`   |
-| 1.5  | Implement `PostgresStore`                                   | `src/workflow/store/postgres.rs` |
-| 1.6  | Add `assay serve` and `assay workflow` CLI subcommands      | `src/main.rs`                    |
-| 1.7  | Unit tests for both stores                                  | tests                            |
+| Step | Description                                                  | Files                                         | Status   |
+| ---- | ------------------------------------------------------------ | --------------------------------------------- | -------- |
+| 1.1  | Create `crates/assay-workflow/` workspace member             | `crates/assay-workflow/Cargo.toml`            | ✅       |
+| 1.2  | Define types (WorkflowRecord, Event, Activity, Timer, etc.)  | `crates/assay-workflow/src/types.rs`          | ✅       |
+| 1.3  | Define `WorkflowStore` trait (Send futures for tokio::spawn) | `crates/assay-workflow/src/store/mod.rs`      | ✅       |
+| 1.4  | Implement `SqliteStore` (schema migration + full trait impl) | `crates/assay-workflow/src/store/sqlite.rs`   | ✅       |
+| 1.5  | Implement `PostgresStore`                                    | `crates/assay-workflow/src/store/postgres.rs` | deferred |
+| 1.6  | Add `assay serve`, `assay workflow`, `assay schedule` CLI    | `src/main.rs`                                 | ✅       |
+| 1.7  | Unit tests for SqliteStore (11 tests)                        | `tests/workflow_store.rs`                     | ✅       |
 
-### Phase 2: Engine Core — ~600 lines Rust
+### Phase 2: Engine Core — ~600 lines Rust ✅
 
 **Goal**: Scheduler, timer poller, health monitor, state machine.
 
-| Step | Description                                               | Files          |
-| ---- | --------------------------------------------------------- | -------------- |
-| 2.1  | Workflow state machine (transitions, validation)          | `state.rs`     |
-| 2.2  | Cron scheduler (with `pg_advisory_lock` leader election)  | `scheduler.rs` |
-| 2.3  | Timer poller (fire due timers, write events)              | `timers.rs`    |
-| 2.4  | Health monitor (dead worker detection, task reassignment) | `health.rs`    |
-| 2.5  | Engine orchestrator (wires everything together)           | `engine.rs`    |
+| Step | Description                                               | Files          | Status |
+| ---- | --------------------------------------------------------- | -------------- | ------ |
+| 2.1  | Workflow state machine (transitions, validation)          | `state.rs`     | ✅     |
+| 2.2  | Cron scheduler (cron + chrono + tokio background task)    | `scheduler.rs` | ✅     |
+| 2.3  | Timer poller (fire due timers, write events)              | `timers.rs`    | ✅     |
+| 2.4  | Health monitor (dead worker detection, task reassignment) | `health.rs`    | ✅     |
+| 2.5  | Engine orchestrator (wires everything together)           | `engine.rs`    | ✅     |
 
-### Phase 3: REST API + SSE — ~800 lines Rust
+### Phase 3: REST API + SSE — ~800 lines Rust ✅
 
 **Goal**: Complete HTTP API. All endpoints, SSE streams.
 
@@ -989,19 +1018,22 @@ assay/                                 ← single binary
 | 3.7  | CLI management commands (`assay workflow list`, etc.)                  | `main.rs`          |
 | 3.8  | Integration tests                                                      | tests              |
 
-### Phase 4: Authentication — ~400 lines Rust
+### Phase 4: Authentication — ~400 lines Rust ✅
 
-**Goal**: OAuth2 via Ory Hydra/Kratos/Keto.
+**Goal**: Provider-agnostic auth — no auth, API keys, or JWT/OIDC (any provider).
 
-| Step | Description                                      | Files         |
-| ---- | ------------------------------------------------ | ------------- |
-| 4.1  | JWT validation middleware (Hydra JWKS)           | `api/auth.rs` |
-| 4.2  | OAuth2 authorization code flow (dashboard login) | `api/auth.rs` |
-| 4.3  | Keto permission checks (per-endpoint)            | `api/auth.rs` |
-| 4.4  | Session management (cookies for dashboard)       | `api/auth.rs` |
-| 4.5  | Optional auth (disabled in dev mode)             | `api/auth.rs` |
+| Step | Description                                                      | Files         |
+| ---- | ---------------------------------------------------------------- | ------------- |
+| 4.1  | Auth middleware (extracts Bearer token, routes to mode)          | `api/auth.rs` |
+| 4.2  | API key mode (SHA256 hash lookup in workflow DB)                 | `api/auth.rs` |
+| 4.3  | JWT/OIDC mode (JWKS fetch + cache, validate sig/exp/iss/aud)     | `api/auth.rs` |
+| 4.4  | OAuth2 authorization code flow (dashboard login, any provider)   | `api/auth.rs` |
+| 4.5  | Session management (cookies for dashboard)                       | `api/auth.rs` |
+| 4.6  | No-auth mode (default in dev, `--no-auth` flag)                  | `api/auth.rs` |
+| 4.7  | API key CLI (`--generate-api-key`, `--revoke-api-key`)           | `main.rs`     |
+| 4.8  | Tests (self-signed JWTs via crypto.jwt_sign, no external server) | tests         |
 
-### Phase 5: Dashboard — ~500 lines HTML/JS/CSS + ~200 lines Rust
+### Phase 5: Dashboard — ~500 lines HTML/JS/CSS + ~200 lines Rust ✅
 
 **Goal**: Built-in web UI with real-time updates.
 
@@ -1014,7 +1046,7 @@ assay/                                 ← single binary
 | 5.5  | Worker status view                                   | `dashboard/`       |
 | 5.6  | Static file serving                                  | `api/dashboard.rs` |
 
-### Phase 6: Assay Integration — ~200 lines Rust + ~400 lines Lua
+### Phase 6: Assay Integration — ~200 lines Rust + ~400 lines Lua ✅
 
 **Goal**: SSE client support in assay, pure Lua workflow client library.
 
@@ -1025,17 +1057,51 @@ assay/                                 ← single binary
 |      | listen — uses `http.*`, `json.*`, Lua coroutines for replay)         |                            |
 | 6.3  | End-to-end tests (Lua → engine → back)                               | tests                      |
 
-### Phase 7: Child Workflows + Advanced — ~400 lines Rust
+### Phase 7: Child Workflows + Advanced — ~400 lines Rust ✅
 
 **Goal**: Nested workflows, cancellation, snapshots.
 
-| Step | Description                                  | Files  |
-| ---- | -------------------------------------------- | ------ |
-| 7.1  | Child workflow execution                     | engine |
-| 7.2  | Cancellation propagation (parent → children) | engine |
-| 7.3  | Continue-as-new                              | engine |
-| 7.4  | State snapshots (fast replay optimization)   | store  |
-| 7.5  | `ctx:side_effect()`                          | engine |
+| Step | Description                                  | Files  | Status |
+| ---- | -------------------------------------------- | ------ | ------ |
+| 7.1  | Child workflow execution                     | engine | ✅     |
+| 7.2  | Cancellation propagation (parent → children) | engine | ✅     |
+| 7.3  | Continue-as-new                              | engine | ✅     |
+| 7.4  | State snapshots (fast replay optimization)   | store  | ✅     |
+| 7.5  | `ctx:side_effect()`                          | engine | ✅     |
+
+### Phase 8: Namespaces + Dashboard Redesign
+
+**Goal**: Multi-namespace isolation + production-grade admin dashboard.
+
+**8A: Namespace support**
+
+| Step  | Description                                                                | Files               |
+| ----- | -------------------------------------------------------------------------- | ------------------- |
+| 8A.1  | Add `namespaces` table + `namespace` column to workflows/schedules/workers | `store/sqlite.rs`   |
+| 8A.2  | Update `WorkflowStore` trait — all queries scoped by namespace             | `store/mod.rs`      |
+| 8A.3  | Update `SqliteStore` — migrate schema, update all SQL queries              | `store/sqlite.rs`   |
+| 8A.4  | Namespace CRUD endpoints (POST/GET/DELETE /api/v1/namespaces)              | `api/namespaces.rs` |
+| 8A.5  | Add `?namespace=` param to all existing API endpoints                      | `api/*.rs`          |
+| 8A.6  | Task queue stats endpoint (GET /api/v1/queues)                             | `api/queues.rs`     |
+| 8A.7  | Per-workflow SSE stream (GET /api/v1/workflows/:id/events/stream)          | `api/events.rs`     |
+| 8A.8  | Namespace filter on global SSE stream                                      | `api/events.rs`     |
+| 8A.9  | Update Engine to pass namespace through all operations                     | `engine.rs`         |
+| 8A.10 | Update CLI: `assay serve --namespace`, `assay workflow --namespace`        | `src/main.rs`       |
+| 8A.11 | Update OpenAPI spec with namespace params + new endpoints                  | `api/openapi.rs`    |
+| 8A.12 | Tests: namespace isolation, cross-namespace visibility                     | tests               |
+
+**8B: Dashboard redesign**
+
+| Step | Description                                                   | Files        |
+| ---- | ------------------------------------------------------------- | ------------ |
+| 8B.1 | Left sidebar layout with namespace switcher                   | `dashboard/` |
+| 8B.2 | Workflow list: search, advanced filters, pagination, live SSE | `dashboard/` |
+| 8B.3 | Workflow detail: expandable JSON, event timeline, child tree  | `dashboard/` |
+| 8B.4 | Schedule view: list + create form                             | `dashboard/` |
+| 8B.5 | Worker view: live status, queue assignment                    | `dashboard/` |
+| 8B.6 | Queue stats view: depth, poll rate, worker count              | `dashboard/` |
+| 8B.7 | Settings view: namespace management, engine info              | `dashboard/` |
+| 8B.8 | Status bar: engine info, namespace, worker count, version     | `dashboard/` |
 
 ## Estimated Effort
 

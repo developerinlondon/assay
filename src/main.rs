@@ -4,6 +4,7 @@ mod lua;
 mod output;
 mod runner;
 
+
 use clap::{Parser, Subcommand};
 use mlua::LuaSerdeExt;
 use serde::{Deserialize, Serialize};
@@ -84,6 +85,117 @@ enum Commands {
         approve: String,
         #[arg(long, default_value = "3600")]
         resume_ttl: Option<u64>,
+    },
+    /// Start the assay workflow engine server
+    Serve {
+        /// Database backend URL (sqlite:// or postgres://).
+        /// Can also be set via DATABASE_URL env var to avoid exposing credentials.
+        #[arg(long, env = "DATABASE_URL", default_value = "sqlite://assay-workflow.db?mode=rwc")]
+        backend: String,
+        /// Port to listen on
+        #[arg(long, default_value = "8080")]
+        port: u16,
+        /// Disable authentication (open access, default)
+        #[arg(long)]
+        no_auth: bool,
+        /// OIDC issuer URL for JWT validation
+        #[arg(long)]
+        auth_issuer: Option<String>,
+        /// Expected JWT audience
+        #[arg(long)]
+        auth_audience: Option<String>,
+        /// Enable API key authentication mode
+        #[arg(long)]
+        auth_api_key: bool,
+        /// Generate a new API key and exit
+        #[arg(long)]
+        generate_api_key: bool,
+        /// List existing API keys and exit
+        #[arg(long)]
+        list_api_keys: bool,
+    },
+    /// Manage workflows
+    Workflow {
+        #[command(subcommand)]
+        command: WorkflowCommands,
+    },
+    /// Manage schedules
+    Schedule {
+        #[command(subcommand)]
+        command: ScheduleCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum WorkflowCommands {
+    /// List workflows
+    List {
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long, name = "type")]
+        workflow_type: Option<String>,
+        #[arg(long, default_value = "20")]
+        limit: i64,
+    },
+    /// Describe a workflow
+    Describe {
+        /// Workflow ID
+        id: String,
+    },
+    /// Send a signal to a workflow
+    Signal {
+        /// Workflow ID
+        id: String,
+        /// Signal name
+        name: String,
+        /// JSON payload
+        payload: Option<String>,
+    },
+    /// Cancel a workflow
+    Cancel {
+        /// Workflow ID
+        id: String,
+    },
+    /// Terminate a workflow
+    Terminate {
+        /// Workflow ID
+        id: String,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ScheduleCommands {
+    /// List schedules
+    List,
+    /// Create a schedule
+    Create {
+        /// Schedule name
+        name: String,
+        #[arg(long, name = "type")]
+        workflow_type: String,
+        #[arg(long)]
+        cron: String,
+        #[arg(long)]
+        input: Option<String>,
+        #[arg(long, default_value = "default")]
+        queue: String,
+    },
+    /// Pause a schedule
+    Pause {
+        /// Schedule name
+        name: String,
+    },
+    /// Resume a schedule
+    Resume {
+        /// Schedule name
+        name: String,
+    },
+    /// Delete a schedule
+    Delete {
+        /// Schedule name
+        name: String,
     },
 }
 
@@ -187,6 +299,56 @@ async fn main() -> ExitCode {
             approve,
             resume_ttl,
         }) => resume_tool_execution(&token, &approve, resume_ttl).await,
+        #[cfg(feature = "workflow")]
+        Some(Commands::Serve {
+            backend,
+            port,
+            no_auth,
+            auth_issuer,
+            auth_audience,
+            auth_api_key,
+            generate_api_key,
+            list_api_keys,
+        }) => {
+            let auth_mode = if let Some(issuer) = auth_issuer {
+                assay_workflow::api::auth::AuthMode::jwt(issuer, auth_audience)
+            } else if auth_api_key {
+                assay_workflow::api::auth::AuthMode::ApiKey
+            } else {
+                assay_workflow::api::auth::AuthMode::NoAuth
+            };
+
+            if no_auth && !matches!(auth_mode, assay_workflow::api::auth::AuthMode::NoAuth) {
+                eprintln!("Warning: --no-auth is redundant when --auth-issuer or --auth-api-key is set");
+            }
+
+            if backend.starts_with("postgres://") || backend.starts_with("postgresql://") {
+                serve_with_postgres(
+                    &backend, port, auth_mode, generate_api_key, list_api_keys,
+                )
+                .await
+            } else {
+                serve_with_sqlite(
+                    &backend, port, auth_mode, generate_api_key, list_api_keys,
+                )
+                .await
+            }
+        }
+        #[cfg(not(feature = "workflow"))]
+        Some(Commands::Serve { .. }) => {
+            eprintln!("assay serve: workflow engine not compiled (enable 'workflow' feature)");
+            ExitCode::from(1)
+        }
+        Some(Commands::Workflow { command }) => {
+            eprintln!("assay workflow: {command:?}");
+            eprintln!("workflow management not yet implemented (v0.11.1)");
+            ExitCode::from(1)
+        }
+        Some(Commands::Schedule { command }) => {
+            eprintln!("assay schedule: {command:?}");
+            eprintln!("schedule management not yet implemented (v0.11.1)");
+            ExitCode::from(1)
+        }
         None => {
             if let Some(ref file) = cli.file {
                 dispatch_file(file, RunOptions::default()).await
@@ -198,6 +360,109 @@ async fn main() -> ExitCode {
             }
         }
     }
+}
+
+#[cfg(feature = "workflow")]
+async fn serve_with_store<S: assay_workflow::WorkflowStore>(
+    store: S,
+    port: u16,
+    auth_mode: assay_workflow::api::auth::AuthMode,
+    generate_api_key: bool,
+    list_api_keys: bool,
+) -> ExitCode {
+    if generate_api_key {
+        let key = assay_workflow::api::auth::generate_api_key();
+        let hash = assay_workflow::api::auth::hash_api_key(&key);
+        let prefix = assay_workflow::api::auth::key_prefix(&key);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        if let Err(e) = store.create_api_key(&hash, &prefix, None, now).await {
+            error!("Failed to store API key: {e}");
+            return ExitCode::from(1);
+        }
+        println!("{key}");
+        eprintln!("API key created (prefix: {prefix}). Store it securely — it cannot be recovered.");
+        return ExitCode::SUCCESS;
+    }
+
+    if list_api_keys {
+        match store.list_api_keys().await {
+            Ok(keys) => {
+                if keys.is_empty() {
+                    println!("No API keys configured.");
+                } else {
+                    for k in keys {
+                        let label = k.label.unwrap_or_default();
+                        println!("  {} {label}", k.prefix);
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to list API keys: {e}");
+                return ExitCode::from(1);
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    let engine = assay_workflow::Engine::start(store);
+    if let Err(e) = assay_workflow::api::serve(engine, port, auth_mode).await {
+        error!("Engine server error: {e}");
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
+#[cfg(feature = "workflow")]
+async fn serve_with_sqlite(
+    backend: &str,
+    port: u16,
+    auth_mode: assay_workflow::api::auth::AuthMode,
+    generate_api_key: bool,
+    list_api_keys: bool,
+) -> ExitCode {
+    info!("Starting assay workflow engine on port {port} with SQLite backend");
+    eprintln!("Note: SQLite supports a single engine instance only.");
+    eprintln!("      For multi-instance (Kubernetes), use: --backend postgres://...");
+    let store = match assay_workflow::SqliteStore::new(backend).await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to connect to SQLite backend: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    // Acquire single-instance lock (prevents duplicate engines on same DB)
+    if !generate_api_key
+        && !list_api_keys
+        && let Err(e) = store.acquire_engine_lock().await
+    {
+        error!("{e}");
+        return ExitCode::from(1);
+    }
+
+    serve_with_store(store, port, auth_mode, generate_api_key, list_api_keys).await
+}
+
+#[cfg(feature = "workflow")]
+async fn serve_with_postgres(
+    backend: &str,
+    port: u16,
+    auth_mode: assay_workflow::api::auth::AuthMode,
+    generate_api_key: bool,
+    list_api_keys: bool,
+) -> ExitCode {
+    info!("Starting assay workflow engine on port {port} with PostgreSQL backend");
+    let store = match assay_workflow::PostgresStore::new(backend).await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to connect to PostgreSQL backend: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    serve_with_store(store, port, auth_mode, generate_api_key, list_api_keys).await
 }
 
 fn resolve_script_mode(cli_mode: Option<&str>) -> ScriptMode {

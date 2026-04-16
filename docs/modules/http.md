@@ -10,11 +10,12 @@ Options table supports `{headers = {["X-Key"] = "value"}}`.
 - `http.delete(url, opts?)` → `{status, body, headers}` — DELETE request
 - `http.serve(port, routes)` → blocks — Start HTTP server with async handlers
   - Routes: `{GET = {["/path"] = function(req) return {status=200, body="ok"} end}}`
-  - Handlers receive `{method, path, body, headers, query}`, return `{status, body, json?, headers?}`
+  - Handlers receive `{method, path, body, headers, query}`, return
+    `{status, body, json?, headers?}`
   - Handlers can call async builtins (`http.get`, `sleep`, etc.)
-  - Header values can be a string or an array of strings. Array values emit the same header
-    name multiple times — required for `Set-Cookie` with multiple cookies, and useful for
-    `Link`, `Vary`, `Cache-Control`, etc.:
+  - Header values can be a string or an array of strings. Array values emit the same header name
+    multiple times — required for `Set-Cookie` with multiple cookies, and useful for `Link`, `Vary`,
+    `Cache-Control`, etc.:
     ```lua
     return {
       status = 200,

@@ -1,7 +1,6 @@
 ## db
 
-SQL database access. No `require()` needed.
-Supports Postgres, MySQL, SQLite via connection URL.
+SQL database access. No `require()` needed. Supports Postgres, MySQL, SQLite via connection URL.
 
 - `db.connect(url)` → conn — Connect to database
   - URLs: `postgres://user:pass@host:5432/db`, `mysql://user:pass@host:3306/db`, `sqlite:///path.db`

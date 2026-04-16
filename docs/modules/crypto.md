@@ -9,7 +9,8 @@ Cryptography utilities. No `require()` needed.
   - `opts`: `{kid = "key-id"}` — optional key ID header
 - `crypto.jwt_decode(token)` → `{header, claims}` — Decode a JWT WITHOUT verifying its signature
   - Returns `header` and `claims` parsed from the base64url segments
-  - Use when the JWT travels through a trusted channel (your own session cookie over TLS) and you just need to read the claims
+  - Use when the JWT travels through a trusted channel (your own session cookie over TLS) and you
+    just need to read the claims
   - For untrusted JWTs, verify the signature with a JWKS-aware verifier instead
 - `crypto.hash(str, alg)` → string — Hash string (hex output)
   - `alg`: `"sha256"` | `"sha384"` | `"sha512"` | `"md5"`

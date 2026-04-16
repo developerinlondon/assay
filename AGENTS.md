@@ -63,6 +63,7 @@ Use cases:
 ```bash
 assay script.lua     # Lua mode — run script with all builtins
 assay checks.yaml    # YAML mode — structured checks with retry/backoff/parallel
+assay serve          # Workflow engine mode — REST+SSE API, dashboard
 ```
 
 ### Example: Kubernetes Job
@@ -173,7 +174,7 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 
 ## Stdlib Modules
 
-34 embedded Lua modules loaded via `require("assay.<name>")`:
+35 embedded Lua modules loaded via `require("assay.<name>")`:
 
 | Module               | Description                                                                                                                 |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -200,6 +201,7 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.crossplane`   | Providers, XRDs, compositions, managed resources                                                                            |
 | `assay.velero`       | Backups, restores, schedules, storage locations                                                                             |
 | `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                                                   |
+| `assay.workflow`     | Workflow engine client — connect, define workflows/activities, listen as worker, start/signal/cancel workflows              |
 | `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                                                 |
 | `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4                                                                          |
 | `assay.postgres`     | Postgres-specific helpers                                                                                                   |

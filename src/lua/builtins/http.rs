@@ -319,6 +319,78 @@ async fn execute_http_request(
         .map_err(|e| mlua::Error::runtime(format!("http.{method_name} failed: {e}")))?;
     let status = resp.status().as_u16();
     let resp_headers = resp.headers().clone();
+
+    // Check for SSE: Content-Type text/event-stream + on_event callback
+    let is_sse = resp_headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ct| ct.contains("text/event-stream"));
+
+    let on_event_callback = opts
+        .as_ref()
+        .and_then(|o| o.get::<mlua::Function>("on_event").ok());
+
+    if let (true, Some(callback)) = (is_sse, on_event_callback) {
+
+        let result = lua.create_table()?;
+        result.set("status", status)?;
+        let headers_out = lua.create_table()?;
+        for (name, value) in &resp_headers {
+            if let Ok(v) = value.to_str() {
+                headers_out.set(name.as_str().to_string(), v.to_string())?;
+            }
+        }
+        result.set("headers", headers_out)?;
+
+        // Stream SSE events to the callback
+        let mut stream = resp.bytes_stream();
+        let mut buffer = String::new();
+
+        use futures_util::StreamExt;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| {
+                mlua::Error::runtime(format!("http.{method_name}: SSE stream error: {e}"))
+            })?;
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            // Parse complete SSE events (delimited by double newline)
+            while let Some(pos) = buffer.find("\n\n") {
+                let event_text = buffer[..pos].to_string();
+                buffer = buffer[pos + 2..].to_string();
+
+                if event_text.trim().is_empty() {
+                    continue;
+                }
+
+                let event_table = lua.create_table()?;
+                for line in event_text.lines() {
+                    if let Some(value) = line.strip_prefix("event: ") {
+                        event_table.set("event", value.to_string())?;
+                    } else if let Some(value) = line.strip_prefix("data: ") {
+                        event_table.set("data", value.to_string())?;
+                    } else if let Some(value) = line.strip_prefix("id: ") {
+                        event_table.set("id", value.to_string())?;
+                    } else if let Some(value) = line.strip_prefix("retry: ")
+                        && let Ok(ms) = value.parse::<i64>()
+                    {
+                        event_table.set("retry", ms)?;
+                    }
+                }
+
+                let action: Value = callback.call_async(Value::Table(event_table)).await?;
+                // If callback returns "close", stop streaming
+                if let Value::String(s) = &action
+                    && s.to_str()? == "close"
+                {
+                    return Ok(Value::Table(result));
+                }
+            }
+        }
+
+        return Ok(Value::Table(result));
+    }
+
+    // Standard response: buffer full body
     let body = resp.text().await.map_err(|e| {
         mlua::Error::runtime(format!("http.{method_name}: reading body failed: {e}"))
     })?;

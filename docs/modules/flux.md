@@ -1,7 +1,7 @@
 ## assay.flux
 
-Flux CD GitOps toolkit. GitRepositories, Kustomizations, HelmReleases, notifications, image automation.
-Client: `flux.client(url, token)`.
+Flux CD GitOps toolkit. GitRepositories, Kustomizations, HelmReleases, notifications, image
+automation. Client: `flux.client(url, token)`.
 
 ### Git Repositories
 
@@ -28,16 +28,20 @@ Client: `flux.client(url, token)`.
 - `c.kustomizations:list(namespace)` -> `{items}` -- List Kustomizations
 - `c.kustomizations:get(namespace, name)` -> ks|nil -- Get Kustomization by name
 - `c.kustomizations:is_ready(namespace, name)` -> bool -- Check if Kustomization is ready
-- `c.kustomizations:status(namespace, name)` -> `{ready, revision, last_applied_revision, conditions}`|nil -- Get status
-- `c.kustomizations:all_ready(namespace)` -> `{ready, not_ready, total, not_ready_names}` -- Check all Kustomizations
+- `c.kustomizations:status(namespace, name)` ->
+  `{ready, revision, last_applied_revision, conditions}`|nil -- Get status
+- `c.kustomizations:all_ready(namespace)` -> `{ready, not_ready, total, not_ready_names}` -- Check
+  all Kustomizations
 
 ### Helm Releases
 
 - `c.helm_releases:list(namespace)` -> `{items}` -- List HelmReleases
 - `c.helm_releases:get(namespace, name)` -> hr|nil -- Get HelmRelease by name
 - `c.helm_releases:is_ready(namespace, name)` -> bool -- Check if HelmRelease is ready
-- `c.helm_releases:status(namespace, name)` -> `{ready, revision, last_applied_revision, conditions}`|nil -- Get status
-- `c.helm_releases:all_ready(namespace)` -> `{ready, not_ready, total, not_ready_names}` -- Check all HelmReleases
+- `c.helm_releases:status(namespace, name)` ->
+  `{ready, revision, last_applied_revision, conditions}`|nil -- Get status
+- `c.helm_releases:all_ready(namespace)` -> `{ready, not_ready, total, not_ready_names}` -- Check
+  all HelmReleases
 
 ### Notifications
 
@@ -51,9 +55,11 @@ Client: `flux.client(url, token)`.
 
 ### Sources (aggregate)
 
-- `c.sources:all_ready(namespace)` -> `{ready, not_ready, total, not_ready_names}` -- Check all Git+Helm sources
+- `c.sources:all_ready(namespace)` -> `{ready, not_ready, total, not_ready_names}` -- Check all
+  Git+Helm sources
 
 Example:
+
 ```lua
 local flux = require("assay.flux")
 local c = flux.client("https://k8s-api:6443", env.get("K8S_TOKEN"))

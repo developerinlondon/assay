@@ -1,13 +1,15 @@
 ## assay.velero
 
-Velero backup and restore. Backups, restores, schedules, storage locations.
-Client: `velero.client(url, token, namespace?)`. Default namespace: `"velero"`.
+Velero backup and restore. Backups, restores, schedules, storage locations. Client:
+`velero.client(url, token, namespace?)`. Default namespace: `"velero"`.
 
 ### Backups
 
 - `c.backups:list()` -> [backup] -- List all backups
 - `c.backups:get(name)` -> backup|nil -- Get backup by name
-- `c.backups:status(name)` -> `{phase, started, completed, expiration, errors, warnings, items_backed_up, items_total}` -- Get status
+- `c.backups:status(name)` ->
+  `{phase, started, completed, expiration, errors, warnings, items_backed_up, items_total}` -- Get
+  status
 - `c.backups:is_completed(name)` -> bool -- Check if backup phase is "Completed"
 - `c.backups:is_failed(name)` -> bool -- Check if backup phase is "Failed" or "PartiallyFailed"
 - `c.backups:latest(schedule_name)` -> backup|nil -- Get most recent backup for a schedule
@@ -32,7 +34,8 @@ Client: `velero.client(url, token, namespace?)`. Default namespace: `"velero"`.
 - `c.storage_locations:list()` -> [bsl] -- List backup storage locations
 - `c.storage_locations:get(name)` -> bsl|nil -- Get backup storage location
 - `c.storage_locations:is_available(name)` -> bool -- Check if storage location phase is "Available"
-- `c.storage_locations:all_available()` -> `{available, unavailable, total, unavailable_names}` -- Check all storage locations
+- `c.storage_locations:all_available()` -> `{available, unavailable, total, unavailable_names}` --
+  Check all storage locations
 
 ### Volume Snapshots
 
@@ -45,6 +48,7 @@ Client: `velero.client(url, token, namespace?)`. Default namespace: `"velero"`.
 - `c.repositories:get(name)` -> repo|nil -- Get backup repository
 
 Example:
+
 ```lua
 local velero = require("assay.velero")
 local c = velero.client("https://k8s-api:6443", env.get("K8S_TOKEN"), "velero")

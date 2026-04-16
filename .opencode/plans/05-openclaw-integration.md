@@ -1,9 +1,7 @@
 # Plan 05: OpenClaw Integration — Full Lobster Replacement (v0.6.0)
 
-**Status**: Approved — implementation in progress
-**Created**: 2026-04-05
-**Branch**: `feat/openclaw-integration`
-**Version**: 0.5.6 → 0.6.0 (minor release — new capability domain)
+**Status**: Approved — implementation in progress **Created**: 2026-04-05 **Branch**:
+`feat/openclaw-integration` **Version**: 0.5.6 → 0.6.0 (minor release — new capability domain)
 
 ## Context
 
@@ -12,6 +10,7 @@ runner (~80MB runtime). Assay replaces it with a 9MB static binary, proper contr
 parallel execution, error handling, and 27 stdlib modules Lobster has no equivalent for.
 
 This plan covers two directions of integration:
+
 - **Assay → OpenClaw**: Lua modules that call the OpenClaw HTTP API (stdlib)
 - **OpenClaw → Assay**: TypeScript plugin that spawns the `assay` binary (extension)
 
@@ -75,47 +74,44 @@ This plan covers two directions of integration:
 
 Commit `c77b505` on `feat/openclaw-integration` (20 files, +2173/-100):
 
-| Item                       | Status | Detail                                    |
-| -------------------------- | ------ | ----------------------------------------- |
-| `stdlib/openclaw.lua`      | Done   | 166 lines, 12 methods, 7 tests           |
-| `stdlib/github.lua`        | Done   | 179 lines, 12 methods, 9 tests           |
-| `stdlib/gmail.lua`         | Done   | 204 lines, 5 methods, 6 tests            |
-| `stdlib/gcal.lua`          | Done   | 170 lines, 6 methods, 6 tests            |
-| Cargo.toml version bump    | Done   | 0.5.6 → 0.6.0                            |
-| CHANGELOG.md               | Done   | v0.6.0 section                            |
-| README.md                  | Done   | Module count 23→27, new table rows        |
-| SKILL.md                   | Done   | Module count 23→27, new table rows        |
-| AGENTS.md                  | Done   | Description + module table updated        |
-| llms.txt (root + site)     | Done   | New AI Agent & Workflow section            |
-| site/llms-full.txt         | Done   | Full code examples for 4 modules          |
-| site/modules.html          | Done   | New HTML section with examples            |
-| examples/openclaw-health   | Done   | 22 lines                                  |
-| examples/github-pr-monitor | Done   | 37 lines                                  |
+| Item                       | Status | Detail                             |
+| -------------------------- | ------ | ---------------------------------- |
+| `stdlib/openclaw.lua`      | Done   | 166 lines, 12 methods, 7 tests     |
+| `stdlib/github.lua`        | Done   | 179 lines, 12 methods, 9 tests     |
+| `stdlib/gmail.lua`         | Done   | 204 lines, 5 methods, 6 tests      |
+| `stdlib/gcal.lua`          | Done   | 170 lines, 6 methods, 6 tests      |
+| Cargo.toml version bump    | Done   | 0.5.6 → 0.6.0                      |
+| CHANGELOG.md               | Done   | v0.6.0 section                     |
+| README.md                  | Done   | Module count 23→27, new table rows |
+| SKILL.md                   | Done   | Module count 23→27, new table rows |
+| AGENTS.md                  | Done   | Description + module table updated |
+| llms.txt (root + site)     | Done   | New AI Agent & Workflow section    |
+| site/llms-full.txt         | Done   | Full code examples for 4 modules   |
+| site/modules.html          | Done   | New HTML section with examples     |
+| examples/openclaw-health   | Done   | 22 lines                           |
+| examples/github-pr-monitor | Done   | 37 lines                           |
 
 ## What Remains
 
 ### Sprint 1: Stdlib Completion (Lua only, no Rust)
 
-- [ ] **1.1** Extract `stdlib/oauth2.lua` (~120 lines) from duplicated inline code in gmail.lua
-      and gcal.lua. Functions: `M.from_file(creds_path, token_path)`, `client:access_token()`,
+- [ ] **1.1** Extract `stdlib/oauth2.lua` (~120 lines) from duplicated inline code in gmail.lua and
+      gcal.lua. Functions: `M.from_file(creds_path, token_path)`, `client:access_token()`,
       `client:refresh()`, `client:save()`. Default paths: `~/.config/gog/credentials.json` and
       `~/.config/gog/token.json`. Support overrides via opts table.
-- [ ] **1.2** Refactor `gmail.lua` and `gcal.lua` to `require("assay.oauth2")` internally instead
-      of inline token refresh. No API changes to gmail/gcal — purely internal refactor.
-- [ ] **1.3** Create `stdlib/email_triage.lua` (~100 lines). Functions:
-      `M.categorize(emails, opts)` — deterministic rules (subject keywords, noreply detection),
-      returns `{needs_reply={}, needs_action={}, fyi={}}`.
-      `M.categorize_llm(emails, openclaw_client, opts)` — uses OpenClaw LLM task for smarter
-      classification + optional draft replies.
-- [ ] **1.4** Add tests for `oauth2.lua` — wiremock tests for token refresh, expired token,
-      file persistence, error handling (~6 tests)
+- [ ] **1.2** Refactor `gmail.lua` and `gcal.lua` to `require("assay.oauth2")` internally instead of
+      inline token refresh. No API changes to gmail/gcal — purely internal refactor.
+- [ ] **1.3** Create `stdlib/email_triage.lua` (~100 lines). Functions: `M.categorize(emails, opts)`
+      — deterministic rules (subject keywords, noreply detection), returns
+      `{needs_reply={}, needs_action={}, fyi={}}`. `M.categorize_llm(emails, openclaw_client, opts)`
+      — uses OpenClaw LLM task for smarter classification + optional draft replies.
+- [ ] **1.4** Add tests for `oauth2.lua` — wiremock tests for token refresh, expired token, file
+      persistence, error handling (~6 tests)
 - [ ] **1.5** Add tests for `email_triage.lua` — unit tests for deterministic categorization,
       wiremock test for LLM-assisted mode (~5 tests)
-- [ ] **1.6** Fill test gaps in existing modules (~12 missing method tests):
-      - openclaw: `notify`, `cron_add`, `spawn`, `approve`
-      - github: `pr_reviews`, `pr_merge`, `issue_get`, `issue_comment`, `run_get`
-      - gmail: `reply`
-      - gcal: `event_update`, token refresh
+- [ ] **1.6** Fill test gaps in existing modules (~12 missing method tests): - openclaw: `notify`,
+      `cron_add`, `spawn`, `approve` - github: `pr_reviews`, `pr_merge`, `issue_get`,
+      `issue_comment`, `run_get` - gmail: `reply` - gcal: `event_update`, token refresh
 - [ ] **1.7** Add example scripts: `examples/gmail-digest.lua`, `examples/gcal-daily-agenda.lua`,
       `examples/email-triage.lua`
 
@@ -125,23 +121,22 @@ Assay needs a "tool mode" so OpenClaw can spawn it and read structured JSON from
 
 - [ ] **2.1** Add `--mode tool` CLI flag (clap). When set, assay wraps script output in a JSON
       envelope on stdout:
-      ```json
+      `json
       {
         "ok": true,
         "status": "ok",
         "output": "<script return value as JSON>",
         "requiresApproval": null
-      }
-      ```
+      }`
       Error case: `{ "ok": false, "status": "error", "error": "<message>" }`
-- [ ] **2.2** Also support `ASSAY_MODE=tool` env var (same behavior as `--mode tool`).
-      Env var takes precedence if both are set.
-- [ ] **2.3** In tool mode, suppress all log.info/log.warn output to stderr (not stdout).
-      Only the final JSON envelope goes to stdout.
+- [ ] **2.2** Also support `ASSAY_MODE=tool` env var (same behavior as `--mode tool`). Env var takes
+      precedence if both are set.
+- [ ] **2.3** In tool mode, suppress all log.info/log.warn output to stderr (not stdout). Only the
+      final JSON envelope goes to stdout.
 - [ ] **2.4** Add stdout size cap (512KB, matching Lobster's limit) and execution timeout
       (configurable via `--timeout <secs>`, default 20s).
-- [ ] **2.5** Tests for tool mode: envelope format, error envelope, timeout, stdout cap,
-      stderr separation (~8 tests)
+- [ ] **2.5** Tests for tool mode: envelope format, error envelope, timeout, stdout cap, stderr
+      separation (~8 tests)
 
 ### Sprint 3: Resume/Halt Mechanism (Rust)
 
@@ -150,7 +145,7 @@ mid-execution and resume later.
 
 - [ ] **3.1** Add `assay resume --token <token> --approve yes|no` CLI subcommand.
 - [ ] **3.2** When `openclaw.approve()` is called in tool mode, the script halts and emits:
-      ```json
+      `json
       {
         "ok": true,
         "status": "needs_approval",
@@ -159,37 +154,35 @@ mid-execution and resume later.
           "context": { ... },
           "resumeToken": "<base64-encoded state>"
         }
-      }
-      ```
-- [ ] **3.3** State serialization: save Lua VM state to `~/.assay/state/resume/<token>.json`.
-      State includes: script path, environment, approval context, and a continuation marker.
-      (Full VM serialization is not feasible — the resume re-runs the script with the approval
-      result injected, matching Lobster's pattern.)
+      }`
+- [ ] **3.3** State serialization: save Lua VM state to `~/.assay/state/resume/<token>.json`. State
+      includes: script path, environment, approval context, and a continuation marker. (Full VM
+      serialization is not feasible — the resume re-runs the script with the approval result
+      injected, matching Lobster's pattern.)
 - [ ] **3.4** On `assay resume --token X --approve yes`, load state, re-execute script with
-      `ASSAY_APPROVAL_RESULT=yes` env var. The `openclaw.approve()` function checks this var
-      and returns the result immediately instead of halting.
+      `ASSAY_APPROVAL_RESULT=yes` env var. The `openclaw.approve()` function checks this var and
+      returns the result immediately instead of halting.
 - [ ] **3.5** Resume token expiry: state files expire after 1 hour (configurable via
       `--resume-ttl <secs>`). Expired tokens return error envelope.
-- [ ] **3.6** Tests for resume: approve/reject flow, expired token, invalid token,
-      state cleanup (~7 tests)
+- [ ] **3.6** Tests for resume: approve/reject flow, expired token, invalid token, state cleanup (~7
+      tests)
 
 ### Sprint 4: OpenClaw Extension (TypeScript, in assay repo)
 
-The TypeScript plugin that lets OpenClaw spawn and communicate with the assay binary.
-Lives in `assay/openclaw-extension/` and is published to npm as `@assay/openclaw-extension`.
+The TypeScript plugin that lets OpenClaw spawn and communicate with the assay binary. Lives in
+`assay/openclaw-extension/` and is published to npm as `@assay/openclaw-extension`.
 
 - [ ] **4.1** Create `openclaw-extension/package.json`:
-      ```json
+      `json
       {
         "name": "@assay/openclaw-extension",
         "version": "0.6.0",
         "description": "Assay workflow runtime for OpenClaw",
         "openclaw": { "extensions": ["./index.ts"] },
         "peerDependencies": { "openclaw": "*" }
-      }
-      ```
+      }`
 - [ ] **4.2** Create `openclaw-extension/openclaw.plugin.json`:
-      ```json
+      `json
       {
         "id": "assay",
         "name": "Assay Workflow Runtime",
@@ -204,59 +197,56 @@ Lives in `assay/openclaw-extension/` and is published to npm as `@assay/openclaw
             "scriptsDir": { "type": "string" }
           }
         }
-      }
-      ```
-- [ ] **4.3** Create `openclaw-extension/index.ts` — `register(api)` that calls
-      `api.registerTool()` with optional flag, skip when sandboxed.
-- [ ] **4.4** Create `openclaw-extension/src/assay-tool.ts` (~250 lines):
-      - `run` action: spawn `assay run --mode tool <script>`, parse JSON envelope from stdout
-      - `resume` action: spawn `assay resume --token <token> --approve yes|no`
-      - Sandboxed CWD (relative paths only, no path traversal)
-      - Timeout + stdout cap enforcement
-      - Tolerant JSON parser (skip debug output before final JSON, match Lobster's pattern)
-- [ ] **4.5** Create `openclaw-extension/SKILL.md` (~100 lines) — agent-facing documentation:
-      when to use assay vs shell, available modules, script patterns, approval workflow.
-      Must list all 29 stdlib modules (27 existing + oauth2 + email_triage).
+      }`
+- [ ] **4.3** Create `openclaw-extension/index.ts` — `register(api)` that calls `api.registerTool()`
+      with optional flag, skip when sandboxed.
+- [ ] **4.4** Create `openclaw-extension/src/assay-tool.ts` (~250 lines): - `run` action: spawn
+      `assay run --mode tool <script>`, parse JSON envelope from stdout - `resume` action: spawn
+      `assay resume --token <token> --approve yes|no` - Sandboxed CWD (relative paths only, no path
+      traversal) - Timeout + stdout cap enforcement - Tolerant JSON parser (skip debug output before
+      final JSON, match Lobster's pattern)
+- [ ] **4.5** Create `openclaw-extension/SKILL.md` (~100 lines) — agent-facing documentation: when
+      to use assay vs shell, available modules, script patterns, approval workflow. Must list all 29
+      stdlib modules (27 existing + oauth2 + email_triage).
 - [ ] **4.6** Create `openclaw-extension/README.md` — user-facing: installation, configuration,
       security model, examples.
-- [ ] **4.7** Tests for the tool: mock assay binary spawning, envelope parsing, timeout,
-      sandbox path validation, resume flow (~8 tests)
+- [ ] **4.7** Tests for the tool: mock assay binary spawning, envelope parsing, timeout, sandbox
+      path validation, resume flow (~8 tests)
 
 ### Sprint 5: Documentation & Release
 
-- [ ] **5.1** Update CHANGELOG.md with complete v0.6.0 notes covering all new modules,
-      tool mode, resume support, and OpenClaw extension.
-- [ ] **5.2** Update README.md — add OpenClaw integration section, update module count to 29,
-      add `openclaw-extension` section.
+- [ ] **5.1** Update CHANGELOG.md with complete v0.6.0 notes covering all new modules, tool mode,
+      resume support, and OpenClaw extension.
+- [ ] **5.2** Update README.md — add OpenClaw integration section, update module count to 29, add
+      `openclaw-extension` section.
 - [ ] **5.3** Update AGENTS.md — module count 27→29, add tool mode and extension docs.
 - [ ] **5.4** Update SKILL.md — module count 27→29.
 - [ ] **5.5** Update site/modules.html — add oauth2 and email_triage to the Agent & Workflow
       section.
-- [ ] **5.6** Update llms.txt, site/llms.txt, site/llms-full.txt — add oauth2 and
-      email_triage docs.
+- [ ] **5.6** Update llms.txt, site/llms.txt, site/llms-full.txt — add oauth2 and email_triage docs.
 - [ ] **5.7** Run full verification: `cargo clippy --tests -- -D warnings && cargo test`
 - [ ] **5.8** Verify openclaw-extension builds: `cd openclaw-extension && npm install && npm test`
 
 ## Key Design Decisions
 
-| Decision                   | Choice                    | Why                                        |
-| -------------------------- | ------------------------- | ------------------------------------------ |
-| Version                    | 0.6.0 (minor)            | New capability domain, 6+ new modules      |
-| email_triage location      | stdlib module             | Reusable, not just an example              |
-| OAuth2 credentials         | gog config files default  | Existing infra, overridable via opts       |
-| State directory            | ~/.assay/state/           | Overridable via ASSAY_STATE_DIR env var    |
-| Extension packaging        | In assay repo             | Versions with assay, team controls it      |
-| Extension distribution     | npm as @assay/openclaw-ext| Users: openclaw plugins install ...        |
-| YAML workflow compat       | Skipped                   | Clean break — Lua only, no .lobster shim   |
-| Shell-free                 | All HTTP-native           | No subprocess overhead, proper errors      |
-| Resume mechanism           | Re-run with env var       | Full VM serialization not feasible in Lua  |
-| Tool mode output           | JSON envelope on stdout   | Matches Lobster protocol for compatibility |
+| Decision               | Choice                     | Why                                        |
+| ---------------------- | -------------------------- | ------------------------------------------ |
+| Version                | 0.6.0 (minor)              | New capability domain, 6+ new modules      |
+| email_triage location  | stdlib module              | Reusable, not just an example              |
+| OAuth2 credentials     | gog config files default   | Existing infra, overridable via opts       |
+| State directory        | ~/.assay/state/            | Overridable via ASSAY_STATE_DIR env var    |
+| Extension packaging    | In assay repo              | Versions with assay, team controls it      |
+| Extension distribution | npm as @assay/openclaw-ext | Users: openclaw plugins install ...        |
+| YAML workflow compat   | Skipped                    | Clean break — Lua only, no .lobster shim   |
+| Shell-free             | All HTTP-native            | No subprocess overhead, proper errors      |
+| Resume mechanism       | Re-run with env var        | Full VM serialization not feasible in Lua  |
+| Tool mode output       | JSON envelope on stdout    | Matches Lobster protocol for compatibility |
 
 ## Extension Versioning Strategy
 
 The `openclaw-extension/` directory has its own `package.json` with semver. The version tracks
-Assay's version (both start at 0.6.0) but can diverge if the extension needs a hotfix without
-a runtime change. The SKILL.md is the coupling point — it must accurately reflect which Assay
+Assay's version (both start at 0.6.0) but can diverge if the extension needs a hotfix without a
+runtime change. The SKILL.md is the coupling point — it must accurately reflect which Assay
 version's modules are available.
 
 ```

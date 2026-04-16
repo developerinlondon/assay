@@ -9,12 +9,14 @@ Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 51 mod
 ## What is Assay?
 
 A single ~11 MB static binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes.
-Full-featured Lua 5.5 runtime with HTTP client/server, database, WebSocket, JWT, templates, and 34
-embedded stdlib modules for Kubernetes, monitoring, security, and AI agent integrations.
+Full-featured Lua 5.5 runtime with HTTP client/server, database, WebSocket, JWT, templates, and 35
+embedded stdlib modules for Kubernetes, monitoring, security, and AI agent integrations. Includes a
+built-in durable workflow engine (`assay serve`) with REST+SSE API, dashboard, and OpenAPI spec.
 
 ```bash
 assay script.lua     # Run Lua with all builtins
 assay checks.yaml    # Structured checks with retry/backoff/JSON output
+assay serve          # Start the workflow engine (dashboard at /workflow/)
 assay exec -e 'log.info("hello")'   # Inline evaluation
 assay context "grafana"              # LLM-ready module docs
 assay modules                        # List all 51 modules

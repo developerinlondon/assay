@@ -1,0 +1,54 @@
+[package]
+name = "assay-workflow"
+version = "0.1.0"
+categories = ["asynchronous", "database"]
+edition = "2024"
+keywords = ["workflow", "durable-execution", "orchestration", "task-queue"]
+license = "Apache-2.0"
+repository = "https://github.com/developerinlondon/assay"
+description = "Durable workflow engine with REST+SSE API, PostgreSQL/SQLite backends. Embeddable library or standalone server."
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["rt", "time", "macros"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite", "any"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Cron expression parsing
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+cron = "0.16"
+
+# HTTP server + REST API
+axum = "0.8"
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# OpenAPI spec generation (compile-time only, zero runtime cost)
+utoipa = { version = "5", features = ["axum_extras"] }
+
+# Auth — JWT validation + API key hashing
+data-encoding = "2"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+rand = "0.9"
+sha2 = "0.10"
+
+# HTTP client (JWKS fetching)
+reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
+
+# Error handling
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+
+[dev-dependencies]
+reqwest = { version = "0.13", features = ["json"], default-features = false }
+rsa = "0.9"
+tempfile = "3.27.0"
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
+tokio = { version = "1", features = ["full"] }

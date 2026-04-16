@@ -2,7 +2,8 @@
 
 ### assay.openclaw
 
-OpenClaw AI agent platform integration. Invoke tools, send messages, manage state, spawn sub-agents, approval gates, LLM tasks.
+OpenClaw AI agent platform integration. Invoke tools, send messages, manage state, spawn sub-agents,
+approval gates, LLM tasks.
 
 ```lua
 local openclaw = require("assay.openclaw")
@@ -168,20 +169,29 @@ end
 
 ### assay.oauth2
 
-Google OAuth2 token management. File-based credentials loading, automatic access token refresh
-via refresh_token grant, token persistence, and auth header generation. Used internally by
-gmail and gcal modules.
+Google OAuth2 token management. File-based credentials loading, automatic access token refresh via
+refresh_token grant, token persistence, and auth header generation. Used internally by gmail and
+gcal modules.
 
 Default credential paths: `~/.config/gog/credentials.json` (OAuth2 client credentials) and
 `~/.config/gog/token.json` (saved access/refresh tokens).
 
-- `M.from_file(credentials_path?, token_path?, opts?)` -> client -- Load OAuth2 credentials and token files. Defaults to `~/.config/gog/credentials.json` and `~/.config/gog/token.json`. Reads `installed` or `web` key from credentials JSON. `opts`: `{token_url}` to override the Google token endpoint.
+- `M.from_file(credentials_path?, token_path?, opts?)` -> client -- Load OAuth2 credentials and
+  token files. Defaults to `~/.config/gog/credentials.json` and `~/.config/gog/token.json`. Reads
+  `installed` or `web` key from credentials JSON. `opts`: `{token_url}` to override the Google token
+  endpoint.
 - `client:access_token()` -> string -- Return current access token
-- `client:refresh()` -> string -- Refresh access token using refresh_token grant. POSTs to `https://oauth2.googleapis.com/token` with client_id, client_secret, and refresh_token. Updates internal state with new access_token, refresh_token, expires_in, and token_type.
-- `client:save()` -> true -- Persist current token data (including refreshed access_token) back to the token file
-- `client:headers()` -> table -- Return `{Authorization = "Bearer <token>", ["Content-Type"] = "application/json"}` for use with http builtins
+- `client:refresh()` -> string -- Refresh access token using refresh_token grant. POSTs to
+  `https://oauth2.googleapis.com/token` with client_id, client_secret, and refresh_token. Updates
+  internal state with new access_token, refresh_token, expires_in, and token_type.
+- `client:save()` -> true -- Persist current token data (including refreshed access_token) back to
+  the token file
+- `client:headers()` -> table -- Return
+  `{Authorization = "Bearer <token>", ["Content-Type"] = "application/json"}` for use with http
+  builtins
 
 Example:
+
 ```lua
 local oauth2 = require("assay.oauth2")
 
@@ -203,18 +213,26 @@ local resp = http.get("https://www.googleapis.com/calendar/v3/calendars/primary/
 
 ### assay.email_triage
 
-Email triage helpers for deterministic categorization or OpenClaw LLM-assisted classification.
-Sorts emails into three buckets: `needs_reply`, `needs_action`, and `fyi`.
+Email triage helpers for deterministic categorization or OpenClaw LLM-assisted classification. Sorts
+emails into three buckets: `needs_reply`, `needs_action`, and `fyi`.
 
 Deterministic rules:
+
 - `needs_action`: subject contains "action required", "urgent", or "deadline"
-- `fyi`: from address contains "noreply", "no-reply", "newsletter"; subject contains "newsletter" or "automated"; or `email.automated == true`
+- `fyi`: from address contains "noreply", "no-reply", "newsletter"; subject contains "newsletter" or
+  "automated"; or `email.automated == true`
 - `needs_reply`: everything else (human emails that likely need a response)
 
-- `M.categorize(emails, opts?)` -> buckets -- Deterministically bucket emails by subject and sender patterns. Returns `{needs_reply = [...], needs_action = [...], fyi = [...]}`. Each email should have `from`, `subject` fields (strings). `opts` is reserved for future use.
-- `M.categorize_llm(emails, openclaw_client, opts?)` -> buckets -- Use OpenClaw LLM task for smarter bucketing. Requires an `openclaw_client` with `llm_task` method. Returns same bucket structure. `opts`: `{prompt, output_schema}` to customize the LLM classification prompt and expected JSON schema.
+- `M.categorize(emails, opts?)` -> buckets -- Deterministically bucket emails by subject and sender
+  patterns. Returns `{needs_reply = [...], needs_action = [...], fyi = [...]}`. Each email should
+  have `from`, `subject` fields (strings). `opts` is reserved for future use.
+- `M.categorize_llm(emails, openclaw_client, opts?)` -> buckets -- Use OpenClaw LLM task for smarter
+  bucketing. Requires an `openclaw_client` with `llm_task` method. Returns same bucket structure.
+  `opts`: `{prompt, output_schema}` to customize the LLM classification prompt and expected JSON
+  schema.
 
 Example:
+
 ```lua
 local email_triage = require("assay.email_triage")
 

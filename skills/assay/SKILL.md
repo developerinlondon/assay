@@ -123,8 +123,8 @@ These are always available in every `.lua` script.
 
 Options: `{ headers = { ["X-Key"] = "value" } }`
 
-`http.serve` response handlers accept array values for headers to emit the same header name
-multiple times — required for `Set-Cookie` with multiple cookies, and useful for `Link`, `Vary`,
+`http.serve` response handlers accept array values for headers to emit the same header name multiple
+times — required for `Set-Cookie` with multiple cookies, and useful for `Link`, `Vary`,
 `Cache-Control`, etc.:
 
 ```lua
@@ -239,59 +239,59 @@ URLs: `postgres://user:pass@host:5432/db`, `mysql://...`, `sqlite:///path/to/fil
 
 Available when built with `--features temporal`. Native gRPC client for Temporal workflow engine.
 
-| Function                                     | Description                                           |
-| -------------------------------------------- | ----------------------------------------------------- |
-| `temporal.connect({ url, namespace? })`      | Connect to Temporal server, returns client             |
-| `temporal.start({ url, namespace?, ... })`   | One-shot: connect + start workflow                     |
-| `client:start_workflow({ task_queue, workflow_type, workflow_id, input? })` | Start a workflow execution |
-| `client:signal_workflow({ workflow_id, signal_name, input? })`             | Signal a running workflow  |
-| `client:query_workflow({ workflow_id, query_type, input? })`               | Query workflow state       |
-| `client:describe_workflow(workflow_id)`       | Get workflow status and metadata                       |
-| `client:get_result({ workflow_id })`          | Wait for workflow completion and get result             |
-| `client:cancel_workflow(workflow_id)`         | Request workflow cancellation                           |
-| `client:terminate_workflow(workflow_id)`      | Forcefully terminate a workflow                         |
+| Function                                                                    | Description                                 |
+| --------------------------------------------------------------------------- | ------------------------------------------- |
+| `temporal.connect({ url, namespace? })`                                     | Connect to Temporal server, returns client  |
+| `temporal.start({ url, namespace?, ... })`                                  | One-shot: connect + start workflow          |
+| `client:start_workflow({ task_queue, workflow_type, workflow_id, input? })` | Start a workflow execution                  |
+| `client:signal_workflow({ workflow_id, signal_name, input? })`              | Signal a running workflow                   |
+| `client:query_workflow({ workflow_id, query_type, input? })`                | Query workflow state                        |
+| `client:describe_workflow(workflow_id)`                                     | Get workflow status and metadata            |
+| `client:get_result({ workflow_id })`                                        | Wait for workflow completion and get result |
+| `client:cancel_workflow(workflow_id)`                                       | Request workflow cancellation               |
+| `client:terminate_workflow(workflow_id)`                                    | Forcefully terminate a workflow             |
 
 ## Stdlib Modules Quick Reference
 
 All 35 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
-| Module                | Description                                                                |
-| --------------------- | -------------------------------------------------------------------------- |
-| `assay.prometheus`    | PromQL queries, alerts, targets, rules, label values, series               |
-| `assay.alertmanager`  | Manage alerts, silences, receivers, config                                 |
-| `assay.loki`          | Push logs, query with LogQL, labels, series, tail                          |
-| `assay.grafana`       | Health, dashboards, datasources, annotations, alert rules, folders         |
-| `assay.k8s`           | 30+ resource types, CRDs, readiness checks, pod logs, rollouts             |
-| `assay.argocd`        | Apps, sync, health, projects, repositories, clusters                       |
-| `assay.kargo`         | Stages, freight, promotions, warehouses, pipeline status                   |
-| `assay.flux`          | GitRepositories, Kustomizations, HelmReleases, notifications               |
-| `assay.traefik`       | Routers, services, middlewares, entrypoints, TLS status                    |
-| `assay.vault`         | KV secrets, policies, auth, transit, PKI, token management                 |
-| `assay.openbao`       | Alias for vault (OpenBao API-compatible)                                   |
-| `assay.certmanager`   | Certificates, issuers, ACME orders and challenges                          |
-| `assay.eso`           | ExternalSecrets, SecretStores, ClusterSecretStores sync status             |
-| `assay.dex`           | OIDC discovery, JWKS, health, configuration validation                     |
-| `assay.zitadel`       | OIDC identity management with JWT machine auth                             |
-| `assay.ory.kratos`        | Ory Kratos — login/registration/recovery/settings flows, identities, sessions |
-| `assay.ory.hydra`         | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs |
-| `assay.ory.keto`          | Ory Keto ReBAC — relation tuples, permission checks, expand                |
-| `assay.ory.rbac`          | Capability-based RBAC engine over Keto — roles + capabilities, separation of duties |
-| `assay.ory`           | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together; also re-exports `rbac` |
-| `assay.crossplane`    | Providers, XRDs, compositions, managed resources                           |
-| `assay.velero`        | Backups, restores, schedules, storage locations                            |
-| `assay.temporal`      | Workflows, task queues, schedules, signals + native gRPC (temporal feature)|
-| `assay.harbor`        | Projects, repositories, artifacts, vulnerability scanning                  |
-| `assay.healthcheck`   | HTTP checks, JSON path, body matching, latency, multi-check                |
-| `assay.s3`            | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                    |
-| `assay.postgres`      | Postgres helpers: users, databases, grants, Vault integration              |
-| `assay.unleash`       | Feature flags: projects, environments, features, strategies, tokens        |
-| `assay.openclaw`      | OpenClaw AI agent — invoke tools, state, diff, approve, LLM tasks          |
-| `assay.gitlab`        | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, registry   |
-| `assay.github`        | GitHub REST API — PRs, issues, actions, repos, GraphQL                     |
-| `assay.gmail`         | Gmail REST API with OAuth2 — search, read, reply, send, labels             |
-| `assay.gcal`          | Google Calendar REST API with OAuth2 — events CRUD, calendar list          |
-| `assay.oauth2`        | Google OAuth2 token management — credentials, auto-refresh, persistence    |
-| `assay.email_triage`  | Email classification — deterministic rules + LLM-assisted triage           |
+| Module               | Description                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| `assay.prometheus`   | PromQL queries, alerts, targets, rules, label values, series                                            |
+| `assay.alertmanager` | Manage alerts, silences, receivers, config                                                              |
+| `assay.loki`         | Push logs, query with LogQL, labels, series, tail                                                       |
+| `assay.grafana`      | Health, dashboards, datasources, annotations, alert rules, folders                                      |
+| `assay.k8s`          | 30+ resource types, CRDs, readiness checks, pod logs, rollouts                                          |
+| `assay.argocd`       | Apps, sync, health, projects, repositories, clusters                                                    |
+| `assay.kargo`        | Stages, freight, promotions, warehouses, pipeline status                                                |
+| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases, notifications                                            |
+| `assay.traefik`      | Routers, services, middlewares, entrypoints, TLS status                                                 |
+| `assay.vault`        | KV secrets, policies, auth, transit, PKI, token management                                              |
+| `assay.openbao`      | Alias for vault (OpenBao API-compatible)                                                                |
+| `assay.certmanager`  | Certificates, issuers, ACME orders and challenges                                                       |
+| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores sync status                                          |
+| `assay.dex`          | OIDC discovery, JWKS, health, configuration validation                                                  |
+| `assay.zitadel`      | OIDC identity management with JWT machine auth                                                          |
+| `assay.ory.kratos`   | Ory Kratos — login/registration/recovery/settings flows, identities, sessions                           |
+| `assay.ory.hydra`    | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs                            |
+| `assay.ory.keto`     | Ory Keto ReBAC — relation tuples, permission checks, expand                                             |
+| `assay.ory.rbac`     | Capability-based RBAC engine over Keto — roles + capabilities, separation of duties                     |
+| `assay.ory`          | Convenience wrapper — `ory.connect()` builds kratos/hydra/keto clients together; also re-exports `rbac` |
+| `assay.crossplane`   | Providers, XRDs, compositions, managed resources                                                        |
+| `assay.velero`       | Backups, restores, schedules, storage locations                                                         |
+| `assay.temporal`     | Workflows, task queues, schedules, signals + native gRPC (temporal feature)                             |
+| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                               |
+| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                             |
+| `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                                                 |
+| `assay.postgres`     | Postgres helpers: users, databases, grants, Vault integration                                           |
+| `assay.unleash`      | Feature flags: projects, environments, features, strategies, tokens                                     |
+| `assay.openclaw`     | OpenClaw AI agent — invoke tools, state, diff, approve, LLM tasks                                       |
+| `assay.gitlab`       | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, registry                                 |
+| `assay.github`       | GitHub REST API — PRs, issues, actions, repos, GraphQL                                                  |
+| `assay.gmail`        | Gmail REST API with OAuth2 — search, read, reply, send, labels                                          |
+| `assay.gcal`         | Google Calendar REST API with OAuth2 — events CRUD, calendar list                                       |
+| `assay.oauth2`       | Google OAuth2 token management — credentials, auto-refresh, persistence                                 |
+| `assay.email_triage` | Email classification — deterministic rules + LLM-assisted triage                                        |
 
 ## Common Patterns
 
@@ -505,8 +505,8 @@ fails, run `assay modules` to see the exact module names.
 builtin handles nested tables.
 
 **Temporal gRPC vs HTTP**: The `temporal` builtin (gRPC) and `assay.temporal` stdlib (HTTP) are
-complementary. Use `temporal.connect()` for starting/signaling workflows (gRPC, more reliable).
-Use `require("assay.temporal").client()` for querying the Temporal Web UI (HTTP REST API).
+complementary. Use `temporal.connect()` for starting/signaling workflows (gRPC, more reliable). Use
+`require("assay.temporal").client()` for querying the Temporal Web UI (HTTP REST API).
 
 ## MCP Replacement
 
@@ -587,7 +587,8 @@ Today: use `assay context <query>` from terminal and paste output into agent con
 
 ## MCP-Serve Vision (v0.6.0)
 
-`assay mcp-serve` will expose all 51 modules (34 stdlib + 17 builtins) as MCP tools over stdio/SSE transport:
+`assay mcp-serve` will expose all 51 modules (34 stdlib + 17 builtins) as MCP tools over stdio/SSE
+transport:
 
 - Each stdlib module becomes an MCP tool (e.g., `grafana_health`, `k8s_pods`)
 - Each builtin becomes an MCP tool (e.g., `http_get`, `crypto_jwt_sign`)

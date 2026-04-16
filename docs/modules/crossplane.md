@@ -1,7 +1,7 @@
 ## assay.crossplane
 
-Crossplane infrastructure management. Providers, XRDs, compositions, managed resources.
-Client: `crossplane.client(url, token)`.
+Crossplane infrastructure management. Providers, XRDs, compositions, managed resources. Client:
+`crossplane.client(url, token)`.
 
 ### Providers
 
@@ -9,8 +9,10 @@ Client: `crossplane.client(url, token)`.
 - `c.providers:get(name)` -> provider|nil -- Get provider by name
 - `c.providers:is_healthy(name)` -> bool -- Check if provider has Healthy=True condition
 - `c.providers:is_installed(name)` -> bool -- Check if provider has Installed=True condition
-- `c.providers:status(name)` -> `{installed, healthy, current_revision, conditions}` -- Get full provider status
-- `c.providers:all_healthy()` -> `{healthy, unhealthy, total, unhealthy_names}` -- Check all providers health
+- `c.providers:status(name)` -> `{installed, healthy, current_revision, conditions}` -- Get full
+  provider status
+- `c.providers:all_healthy()` -> `{healthy, unhealthy, total, unhealthy_names}` -- Check all
+  providers health
 
 ### Provider Revisions
 
@@ -45,10 +47,12 @@ Client: `crossplane.client(url, token)`.
 ### Managed Resources
 
 - `c.managed_resources:get(api_group, version, kind, name)` -> resource|nil -- Get managed resource
-- `c.managed_resources:is_ready(api_group, version, kind, name)` -> bool -- Check if managed resource has Ready=True
+- `c.managed_resources:is_ready(api_group, version, kind, name)` -> bool -- Check if managed
+  resource has Ready=True
 - `c.managed_resources:list(api_group, version, kind)` -> `{items}` -- List managed resources
 
 Example:
+
 ```lua
 local crossplane = require("assay.crossplane")
 local c = crossplane.client("https://k8s-api:6443", env.get("K8S_TOKEN"))
