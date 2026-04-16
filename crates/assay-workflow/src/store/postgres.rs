@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS workflow_timers (
     workflow_id     TEXT NOT NULL REFERENCES workflows(id),
     seq             INTEGER NOT NULL,
     fire_at         DOUBLE PRECISION NOT NULL,
-    fired           BOOLEAN NOT NULL DEFAULT FALSE
+    fired           BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE (workflow_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_wf_timers_due ON workflow_timers(fire_at) WHERE fired = FALSE;
 
@@ -598,6 +599,22 @@ impl WorkflowStore for PostgresStore {
         .fetch_one(&self.pool)
         .await?;
         Ok(row.0)
+    }
+
+    async fn get_timer_by_workflow_seq(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+    ) -> Result<Option<WorkflowTimer>> {
+        let row = sqlx::query_as::<_, PgTimerRow>(
+            "SELECT id, workflow_id, seq, fire_at, fired
+             FROM workflow_timers WHERE workflow_id = $1 AND seq = $2",
+        )
+        .bind(workflow_id)
+        .bind(seq)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
     }
 
     async fn fire_due_timers(&self, now: f64) -> Result<Vec<WorkflowTimer>> {

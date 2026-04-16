@@ -817,3 +817,105 @@ workflow.listen({ queue = "default" })
     // Cleanup
     let _ = worker.kill().await;
 }
+
+/// 9.5 — End-to-end with a durable timer: workflow sleeps for ~1 second
+/// (durably — the timer survives a worker bouncing) then completes.
+#[tokio::test]
+async fn lua_workflow_with_durable_timer() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_with_durable_timer — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("SleepThenStep", function(ctx, input)
+    ctx:sleep(1)
+    local r = ctx:execute_activity("step", { x = input.x })
+    return { x = r.x, slept = true }
+end)
+
+workflow.activity("step", function(ctx, input)
+    return { x = input.x * 3 }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn assay worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    let started_at = std::time::Instant::now();
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "SleepThenStep",
+            "workflow_id": "wf-timer-1",
+            "task_queue": "default",
+            "input": {"x": 7},
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-timer-1",
+        "COMPLETED",
+        std::time::Duration::from_secs(15),
+    )
+    .await;
+    let elapsed = started_at.elapsed();
+
+    // Sanity: at LEAST 0.9s (the durable timer was 1s, allow ~100ms slack)
+    // and at MOST 5s (anything slower means we're not waking up promptly)
+    assert!(
+        elapsed >= std::time::Duration::from_millis(900),
+        "workflow finished too fast: {elapsed:?} (durable timer should have made us wait ~1s)"
+    );
+    assert!(
+        elapsed <= std::time::Duration::from_secs(5),
+        "workflow took too long: {elapsed:?}"
+    );
+
+    let result_str = wf["result"].as_str().expect("result");
+    let result: serde_json::Value = serde_json::from_str(result_str).unwrap();
+    assert_eq!(result["x"], 21, "step ran with input.x*3 after timer");
+    assert_eq!(result["slept"], true);
+
+    // History should record TimerScheduled and TimerFired
+    let events: Vec<serde_json::Value> = c
+        .get(format!("{url}/api/v1/workflows/wf-timer-1/events"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let types: Vec<&str> = events
+        .iter()
+        .map(|e| e["event_type"].as_str().unwrap_or(""))
+        .collect();
+    assert!(types.contains(&"TimerScheduled"), "missing TimerScheduled in {types:?}");
+    assert!(types.contains(&"TimerFired"), "missing TimerFired in {types:?}");
+
+    let _ = worker.kill().await;
+}

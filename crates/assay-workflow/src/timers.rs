@@ -28,12 +28,29 @@ async fn fire_timers<S: WorkflowStore>(store: &S) -> Result<()> {
     let fired = store.fire_due_timers(now).await?;
 
     for timer in fired {
+        // event_seq is the workflow event log seq (monotonic across event
+        // types); timer.seq is the workflow-relative timer seq used for
+        // replay matching. Carry both — the replay uses timer_seq to
+        // short-circuit the matching ctx:sleep call.
+        let event_seq = match store.get_event_count(&timer.workflow_id).await {
+            Ok(n) => n as i32 + 1,
+            Err(e) => {
+                error!("Failed to compute event_seq for {}: {e}", timer.workflow_id);
+                continue;
+            }
+        };
         let event = WorkflowEvent {
             id: None,
             workflow_id: timer.workflow_id.clone(),
-            seq: timer.seq,
+            seq: event_seq,
             event_type: "TimerFired".to_string(),
-            payload: Some(serde_json::json!({ "fire_at": timer.fire_at }).to_string()),
+            payload: Some(
+                serde_json::json!({
+                    "timer_seq": timer.seq,
+                    "fire_at": timer.fire_at,
+                })
+                .to_string(),
+            ),
             timestamp: now,
         };
 
@@ -45,8 +62,16 @@ async fn fire_timers<S: WorkflowStore>(store: &S) -> Result<()> {
             continue;
         }
 
+        // Wake the workflow task so it can replay and continue past ctx:sleep
+        if let Err(e) = store.mark_workflow_dispatchable(&timer.workflow_id).await {
+            error!(
+                "Failed to mark workflow dispatchable after timer fire: {e} (wf={})",
+                timer.workflow_id
+            );
+        }
+
         debug!(
-            "Timer fired: workflow={}, seq={}",
+            "Timer fired: workflow={}, timer_seq={}",
             timer.workflow_id, timer.seq
         );
     }

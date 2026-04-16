@@ -179,6 +179,15 @@ pub trait WorkflowStore: Send + Sync + 'static {
         timer: &WorkflowTimer,
     ) -> impl Future<Output = anyhow::Result<i64>> + Send;
 
+    /// Look up an existing timer by its workflow-relative seq. Used by the
+    /// engine for idempotent ScheduleTimer (deterministic replay can call
+    /// schedule_timer for the same seq more than once on retries).
+    fn get_timer_by_workflow_seq(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowTimer>>> + Send;
+
     fn fire_due_timers(
         &self,
         now: f64,

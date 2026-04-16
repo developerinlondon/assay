@@ -80,7 +80,8 @@ CREATE TABLE IF NOT EXISTS workflow_timers (
     workflow_id     TEXT NOT NULL REFERENCES workflows(id),
     seq             INTEGER NOT NULL,
     fire_at         REAL NOT NULL,
-    fired           INTEGER NOT NULL DEFAULT 0
+    fired           INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (workflow_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_wf_timers_due ON workflow_timers(fire_at);
 
@@ -702,6 +703,22 @@ impl WorkflowStore for SqliteStore {
         .execute(&self.pool)
         .await?;
         Ok(res.last_insert_rowid())
+    }
+
+    async fn get_timer_by_workflow_seq(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+    ) -> Result<Option<WorkflowTimer>> {
+        let row = sqlx::query_as::<_, SqliteTimerRow>(
+            "SELECT id, workflow_id, seq, fire_at, fired
+             FROM workflow_timers WHERE workflow_id = ? AND seq = ?",
+        )
+        .bind(workflow_id)
+        .bind(seq)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
     }
 
     async fn fire_due_timers(&self, now: f64) -> Result<Vec<WorkflowTimer>> {

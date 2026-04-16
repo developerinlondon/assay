@@ -242,18 +242,23 @@ end
 --- increments an internal seq counter and either returns the cached
 --- value from history (replay) or yields a command (first time through).
 function M._make_workflow_ctx(workflow_id, history)
-    -- Pre-index history by activity_seq for O(1) lookups during replay
-    local activity_results = {}
+    -- Pre-index history by per-command seq for O(1) lookups during replay.
+    -- Each command type has its own seq space — activity, timer, etc. are
+    -- independent counters, so a workflow with one timer and one activity
+    -- emits ScheduleTimer{seq=1} and ScheduleActivity{seq=1} both at seq=1.
+    local activity_results, fired_timers = {}, {}
     for _, event in ipairs(history) do
         local p = event.payload
         if event.event_type == "ActivityCompleted" and p and p.activity_seq then
             activity_results[p.activity_seq] = { ok = true, value = p.result }
         elseif event.event_type == "ActivityFailed" and p and p.activity_seq then
             activity_results[p.activity_seq] = { ok = false, err = p.error }
+        elseif event.event_type == "TimerFired" and p and p.timer_seq then
+            fired_timers[p.timer_seq] = true
         end
     end
 
-    local seq = 0
+    local activity_seq, timer_seq = 0, 0
     local ctx = { workflow_id = workflow_id }
 
     --- Schedule an activity and (synchronously, for the workflow author)
@@ -262,15 +267,15 @@ function M._make_workflow_ctx(workflow_id, history)
     --- command and the workflow run ends until the activity completes
     --- and the workflow becomes dispatchable again.
     function ctx:execute_activity(name, input, opts)
-        seq = seq + 1
-        local r = activity_results[seq]
+        activity_seq = activity_seq + 1
+        local r = activity_results[activity_seq]
         if r then
             if r.ok then return r.value end
             error("activity '" .. name .. "' failed: " .. tostring(r.err))
         end
         coroutine.yield({
             type = "ScheduleActivity",
-            seq = seq,
+            seq = activity_seq,
             name = name,
             task_queue = (opts and opts.task_queue) or "default",
             input = input,
@@ -281,6 +286,21 @@ function M._make_workflow_ctx(workflow_id, history)
             heartbeat_timeout_secs = opts and opts.heartbeat_timeout_secs,
         })
         -- Unreachable in single-yield mode — yielding ends this replay.
+        error("workflow ctx: yielded but resumed unexpectedly")
+    end
+
+    --- Pause the workflow durably for `seconds`. The timer is persisted in
+    --- the engine; if the worker dies the timer still fires when due and
+    --- another worker picks up the workflow. On replay, returns immediately
+    --- once the matching TimerFired event is in history.
+    function ctx:sleep(seconds)
+        timer_seq = timer_seq + 1
+        if fired_timers[timer_seq] then return end
+        coroutine.yield({
+            type = "ScheduleTimer",
+            seq = timer_seq,
+            duration_secs = seconds,
+        })
         error("workflow ctx: yielded but resumed unexpectedly")
     end
 

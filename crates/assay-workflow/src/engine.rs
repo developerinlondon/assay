@@ -524,6 +524,14 @@ impl<S: WorkflowStore> Engine<S> {
                     )
                     .await?;
                 }
+                "ScheduleTimer" => {
+                    let seq = cmd.get("seq").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    let duration = cmd
+                        .get("duration_secs")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    self.schedule_timer(workflow_id, seq, duration).await?;
+                }
                 "CompleteWorkflow" => {
                     let result = cmd.get("result").map(|v| v.to_string());
                     self.complete_workflow(workflow_id, result.as_deref()).await?;
@@ -545,6 +553,65 @@ impl<S: WorkflowStore> Engine<S> {
             .release_workflow_task(workflow_id, worker_id)
             .await?;
         Ok(())
+    }
+
+    /// Schedule a durable timer for a workflow.
+    ///
+    /// Idempotent on `(workflow_id, seq)` — a workflow that yields the same
+    /// `ScheduleTimer{seq=N}` on retry will reuse the existing timer, not
+    /// schedule a second one. This is the timer counterpart to
+    /// `schedule_activity`'s replay-safe behaviour.
+    ///
+    /// On the first call:
+    /// - inserts a row in `workflow_timers` with `fire_at = now + duration`
+    /// - appends a `TimerScheduled` event so the worker can replay and
+    ///   know it's been scheduled (otherwise replays would yield it again)
+    pub async fn schedule_timer(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+        duration_secs: f64,
+    ) -> Result<WorkflowTimer> {
+        if let Some(existing) = self
+            .store
+            .get_timer_by_workflow_seq(workflow_id, seq)
+            .await?
+        {
+            return Ok(existing);
+        }
+
+        let now = timestamp_now();
+        let mut timer = WorkflowTimer {
+            id: None,
+            workflow_id: workflow_id.to_string(),
+            seq,
+            fire_at: now + duration_secs,
+            fired: false,
+        };
+        let id = self.store.create_timer(&timer).await?;
+        timer.id = Some(id);
+
+        let event_seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
+        self.store
+            .append_event(&WorkflowEvent {
+                id: None,
+                workflow_id: workflow_id.to_string(),
+                seq: event_seq,
+                event_type: "TimerScheduled".to_string(),
+                payload: Some(
+                    serde_json::json!({
+                        "timer_id": id,
+                        "timer_seq": seq,
+                        "fire_at": timer.fire_at,
+                        "duration_secs": duration_secs,
+                    })
+                    .to_string(),
+                ),
+                timestamp: now,
+            })
+            .await?;
+
+        Ok(timer)
     }
 
     /// Mark a workflow COMPLETED with a result + append WorkflowCompleted event.
