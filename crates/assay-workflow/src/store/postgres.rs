@@ -807,6 +807,19 @@ impl WorkflowStore for PostgresStore {
             })
             .collect())
     }
+
+    // ── Leader Election ─────────────────────────────────────
+
+    async fn try_acquire_scheduler_lock(&self) -> Result<bool> {
+        // pg_try_advisory_lock is session-scoped — only one connection
+        // in the pool will hold the lock. In a multi-replica Kubernetes
+        // deployment, only one pod's connection wins.
+        let row: (bool,) =
+            sqlx::query_as("SELECT pg_try_advisory_lock(42)")
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(row.0)
+    }
 }
 
 fn timestamp_now() -> f64 {

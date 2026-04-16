@@ -19,8 +19,22 @@ pub async fn run_scheduler<S: WorkflowStore>(store: Arc<S>) {
 
     loop {
         tick.tick().await;
-        if let Err(e) = evaluate_schedules(&*store).await {
-            error!("Scheduler error: {e}");
+
+        // Leader election: only one instance should evaluate cron schedules.
+        // SQLite always returns true (single-instance).
+        // Postgres uses pg_try_advisory_lock — only one pod wins.
+        match store.try_acquire_scheduler_lock().await {
+            Ok(true) => {
+                if let Err(e) = evaluate_schedules(&*store).await {
+                    error!("Scheduler error: {e}");
+                }
+            }
+            Ok(false) => {
+                debug!("Scheduler: not the leader, skipping cron evaluation");
+            }
+            Err(e) => {
+                error!("Scheduler: leader election failed: {e}");
+            }
         }
     }
 }

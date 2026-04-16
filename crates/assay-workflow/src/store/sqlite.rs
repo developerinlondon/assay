@@ -825,6 +825,13 @@ impl WorkflowStore for SqliteStore {
         stats.sort_by(|a, b| a.queue.cmp(&b.queue));
         Ok(stats)
     }
+
+    // ── Leader Election ─────────────────────────────────────
+
+    async fn try_acquire_scheduler_lock(&self) -> Result<bool> {
+        // SQLite is single-instance — always the leader
+        Ok(true)
+    }
 }
 
 fn timestamp_now() -> f64 {

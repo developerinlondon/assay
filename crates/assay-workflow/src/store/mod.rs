@@ -250,6 +250,17 @@ pub trait WorkflowStore: Send + Sync + 'static {
         &self,
         namespace: &str,
     ) -> impl Future<Output = anyhow::Result<Vec<QueueStats>>> + Send;
+
+    // ── Leader Election ─────────────────────────────────────
+
+    /// Try to acquire the scheduler lock for leader election.
+    /// Returns true if this instance should run the cron scheduler.
+    ///
+    /// - SQLite: always returns true (single-instance assumed)
+    /// - Postgres: uses pg_try_advisory_lock (only one instance wins)
+    fn try_acquire_scheduler_lock(
+        &self,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 }
 
 /// API key metadata (hash is never exposed).
