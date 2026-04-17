@@ -58,10 +58,36 @@ impl EngineClient {
 
     // ── Workflows ──────────────────────────────────────────
 
+    pub async fn workflow_start(
+        &self,
+        workflow_type: &str,
+        workflow_id: &str,
+        input: Option<&Value>,
+        task_queue: Option<&str>,
+        search_attributes: Option<&Value>,
+    ) -> Result<Value> {
+        let url = format!("{}/workflows", self.base);
+        let mut body = serde_json::json!({
+            "namespace": self.namespace,
+            "workflow_type": workflow_type,
+            "workflow_id": workflow_id,
+            "task_queue": task_queue.unwrap_or("default"),
+        });
+        if let Some(v) = input {
+            body["input"] = v.clone();
+        }
+        if let Some(v) = search_attributes {
+            body["search_attributes"] = v.clone();
+        }
+        self.send(self.http.post(&url).json(&body), "workflow start")
+            .await
+    }
+
     pub async fn workflow_list(
         &self,
         status: Option<&str>,
         workflow_type: Option<&str>,
+        search_attrs: Option<&Value>,
         limit: Option<i64>,
     ) -> Result<Value> {
         let mut url = format!("{}/workflows?namespace={}", self.base, self.namespace);
@@ -73,6 +99,10 @@ impl EngineClient {
         }
         if let Some(l) = limit {
             url.push_str(&format!("&limit={l}"));
+        }
+        if let Some(attrs) = search_attrs {
+            let encoded = urlencoding_encode(&attrs.to_string());
+            url.push_str(&format!("&search_attrs={encoded}"));
         }
         self.send(self.http.get(&url), "workflow list").await
     }
@@ -88,6 +118,16 @@ impl EngineClient {
             None => format!("{}/workflows/{id}/state", self.base),
         };
         self.send(self.http.get(&url), "workflow state").await
+    }
+
+    pub async fn workflow_events(&self, id: &str) -> Result<Value> {
+        let url = format!("{}/workflows/{id}/events", self.base);
+        self.send(self.http.get(&url), "workflow events").await
+    }
+
+    pub async fn workflow_children(&self, id: &str) -> Result<Value> {
+        let url = format!("{}/workflows/{id}/children", self.base);
+        self.send(self.http.get(&url), "workflow children").await
     }
 
     pub async fn workflow_signal(
@@ -121,11 +161,33 @@ impl EngineClient {
         Ok(())
     }
 
+    pub async fn workflow_continue_as_new(
+        &self,
+        id: &str,
+        input: Option<&Value>,
+    ) -> Result<Value> {
+        let url = format!("{}/workflows/{id}/continue-as-new", self.base);
+        let body = serde_json::json!({ "input": input });
+        self.send(
+            self.http.post(&url).json(&body),
+            "workflow continue-as-new",
+        )
+        .await
+    }
+
     // ── Schedules ──────────────────────────────────────────
 
     pub async fn schedule_list(&self) -> Result<Value> {
         let url = format!("{}/schedules?namespace={}", self.base, self.namespace);
         self.send(self.http.get(&url), "schedule list").await
+    }
+
+    pub async fn schedule_describe(&self, name: &str) -> Result<Value> {
+        let url = format!(
+            "{}/schedules/{name}?namespace={}",
+            self.base, self.namespace
+        );
+        self.send(self.http.get(&url), "schedule describe").await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -220,5 +282,79 @@ impl EngineClient {
             .send(self.http.delete(&url), "schedule delete")
             .await?;
         Ok(())
+    }
+
+    // ── Namespaces ─────────────────────────────────────────
+
+    pub async fn namespace_create(&self, name: &str) -> Result<()> {
+        let url = format!("{}/namespaces", self.base);
+        let body = serde_json::json!({ "name": name });
+        let _ = self
+            .send(self.http.post(&url).json(&body), "namespace create")
+            .await?;
+        Ok(())
+    }
+
+    pub async fn namespace_list(&self) -> Result<Value> {
+        let url = format!("{}/namespaces", self.base);
+        self.send(self.http.get(&url), "namespace list").await
+    }
+
+    pub async fn namespace_stats(&self, name: &str) -> Result<Value> {
+        let url = format!("{}/namespaces/{name}", self.base);
+        self.send(self.http.get(&url), "namespace describe").await
+    }
+
+    pub async fn namespace_delete(&self, name: &str) -> Result<()> {
+        let url = format!("{}/namespaces/{name}", self.base);
+        let _ = self
+            .send(self.http.delete(&url), "namespace delete")
+            .await?;
+        Ok(())
+    }
+
+    // ── Workers ────────────────────────────────────────────
+
+    pub async fn worker_list(&self) -> Result<Value> {
+        let url = format!("{}/workers?namespace={}", self.base, self.namespace);
+        self.send(self.http.get(&url), "worker list").await
+    }
+
+    // ── Queues ─────────────────────────────────────────────
+
+    pub async fn queue_stats(&self) -> Result<Value> {
+        let url = format!("{}/queues?namespace={}", self.base, self.namespace);
+        self.send(self.http.get(&url), "queue stats").await
+    }
+}
+
+/// Tiny URL encoder — just enough for JSON values in query params
+/// (no external crate dep).
+fn urlencoding_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.bytes() {
+        match c {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(c as char)
+            }
+            _ => out.push_str(&format!("%{c:02X}")),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::urlencoding_encode;
+
+    #[test]
+    fn encodes_json_like_strings() {
+        let encoded = urlencoding_encode(r#"{"env":"prod"}"#);
+        assert_eq!(encoded, "%7B%22env%22%3A%22prod%22%7D");
+    }
+
+    #[test]
+    fn leaves_safe_chars_alone() {
+        assert_eq!(urlencoding_encode("abc-123_XYZ"), "abc-123_XYZ");
     }
 }

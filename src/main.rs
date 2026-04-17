@@ -129,11 +129,42 @@ enum Commands {
         #[command(subcommand)]
         command: ScheduleCommands,
     },
+    /// Manage namespaces
+    Namespace {
+        #[command(flatten)]
+        global: CliEngineOpts,
+        #[command(subcommand)]
+        command: NamespaceCommands,
+    },
+    /// Inspect workers registered with the engine
+    Worker {
+        #[command(flatten)]
+        global: CliEngineOpts,
+        #[command(subcommand)]
+        command: WorkerCommands,
+    },
+    /// Inspect task-queue stats
+    Queue {
+        #[command(flatten)]
+        global: CliEngineOpts,
+        #[command(subcommand)]
+        command: QueueCommands,
+    },
+    /// Generate shell completion scripts.
+    ///
+    /// Pipe the output into the appropriate shell-completion location:
+    ///   bash:  assay completion bash > /etc/bash_completion.d/assay
+    ///   zsh:   assay completion zsh  > "${fpath[1]}/_assay"
+    ///   fish:  assay completion fish > ~/.config/fish/completions/assay.fish
+    Completion {
+        /// Target shell.
+        shell: clap_complete::Shell,
+    },
 }
 
-/// Global flags shared by `workflow` and `schedule` subcommands. Each
-/// backed by an env var so pods can drop these into their environment
-/// without passing flags on every invocation.
+/// Global flags shared by `workflow` / `schedule` / `namespace` / `worker` /
+/// `queue` subcommands. Each backed by an env var so pods can drop these
+/// into their environment without passing flags on every invocation.
 #[derive(clap::Args, Debug)]
 struct CliEngineOpts {
     /// Workflow engine base URL (default http://127.0.0.1:8080 / $ASSAY_ENGINE_URL).
@@ -146,16 +177,59 @@ struct CliEngineOpts {
     /// Target namespace (default "main" / $ASSAY_NAMESPACE).
     #[arg(long, global = true, env = "ASSAY_NAMESPACE")]
     namespace: Option<String>,
+    /// Output format: table | json | jsonl | yaml.
+    /// Default is `table` on a TTY and `json` when stdout is piped.
+    #[arg(long, global = true, env = "ASSAY_OUTPUT")]
+    output: Option<String>,
+    /// Path to a YAML config file. Discovery order: --config flag,
+    /// ASSAY_CONFIG_FILE, $XDG_CONFIG_HOME/assay/config.yaml,
+    /// $HOME/.config/assay/config.yaml, /etc/assay/config.yaml.
+    #[arg(long, global = true, env = "ASSAY_CONFIG_FILE")]
+    config: Option<String>,
+}
+
+impl CliEngineOpts {
+    fn as_flags(&self) -> cli::GlobalFlags<'_> {
+        cli::GlobalFlags {
+            engine_url: self.engine_url.as_deref(),
+            api_key: self.api_key.as_deref(),
+            namespace: self.namespace.as_deref(),
+            output: self.output.as_deref(),
+            config: self.config.as_deref(),
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
 enum WorkflowCommands {
+    /// Start a new workflow run
+    Start {
+        /// Workflow type name
+        #[arg(long = "type")]
+        workflow_type: String,
+        /// Workflow ID (auto-generated if omitted)
+        #[arg(long)]
+        id: Option<String>,
+        /// JSON input. Literal, `@file.json`, or `-` for stdin.
+        #[arg(long)]
+        input: Option<String>,
+        /// Task queue (default "default")
+        #[arg(long)]
+        queue: Option<String>,
+        /// JSON search attributes (indexed metadata for filtering).
+        /// Literal, `@file.json`, or `-` for stdin.
+        #[arg(long)]
+        search_attrs: Option<String>,
+    },
     /// List workflows
     List {
         #[arg(long)]
         status: Option<String>,
         #[arg(long = "type")]
         workflow_type: Option<String>,
+        /// Filter by search attributes. Literal JSON, `@file.json`, or `-` for stdin.
+        #[arg(long)]
+        search_attrs: Option<String>,
         #[arg(long, default_value = "20")]
         limit: i64,
     },
@@ -172,13 +246,26 @@ enum WorkflowCommands {
         /// Query handler name (omit to dump all registered queries)
         name: Option<String>,
     },
+    /// Read a workflow's event log, optionally streaming new events.
+    Events {
+        /// Workflow ID
+        id: String,
+        /// Poll for new events every 500ms until the workflow terminates.
+        #[arg(long)]
+        follow: bool,
+    },
+    /// List a parent workflow's child workflows
+    Children {
+        /// Parent workflow ID
+        id: String,
+    },
     /// Send a signal to a workflow
     Signal {
         /// Workflow ID
         id: String,
         /// Signal name
         name: String,
-        /// JSON payload
+        /// JSON payload. Literal, `@file.json`, or `-` for stdin.
         payload: Option<String>,
     },
     /// Cancel a workflow
@@ -193,12 +280,74 @@ enum WorkflowCommands {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// Close out a workflow and start a fresh run with the same type,
+    /// namespace, and task queue. Client-side continue-as-new — distinct
+    /// from the worker-side `ctx:continue_as_new`.
+    #[command(name = "continue-as-new")]
+    ContinueAsNew {
+        /// Workflow ID
+        id: String,
+        /// JSON input for the new run. Literal, `@file.json`, or `-` for stdin.
+        #[arg(long)]
+        input: Option<String>,
+    },
+    /// Block until a workflow reaches a terminal state (or a specific
+    /// target status). Exits 0 on COMPLETED / match, 1 on FAILED /
+    /// CANCELLED / TIMED_OUT (when no target), 2 on timeout.
+    Wait {
+        /// Workflow ID
+        id: String,
+        /// Max seconds to wait (default 300)
+        #[arg(long, default_value = "300")]
+        timeout: u64,
+        /// Specific status to wait for (default: any terminal status)
+        #[arg(long)]
+        target: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum NamespaceCommands {
+    /// Create a namespace
+    Create {
+        /// Namespace name
+        name: String,
+    },
+    /// List namespaces
+    List,
+    /// Describe a namespace (includes live counts)
+    Describe {
+        /// Namespace name
+        name: String,
+    },
+    /// Delete a namespace
+    Delete {
+        /// Namespace name
+        name: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum WorkerCommands {
+    /// List registered workers
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+enum QueueCommands {
+    /// Pending / running activity counts per task queue
+    Stats,
 }
 
 #[derive(Subcommand, Debug)]
 enum ScheduleCommands {
     /// List schedules
     List,
+    /// Describe a single schedule
+    Describe {
+        /// Schedule name
+        name: String,
+    },
     /// Create a schedule
     Create {
         /// Schedule name
@@ -389,22 +538,43 @@ async fn main() -> ExitCode {
             ExitCode::from(1)
         }
         Some(Commands::Workflow { global, command }) => {
-            let opts = cli::GlobalOpts::resolve(
-                global.engine_url.as_deref(),
-                global.api_key.as_deref(),
-                global.namespace.as_deref(),
-            );
+            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
+                Ok(o) => o,
+                Err(code) => return code,
+            };
             match command {
+                WorkflowCommands::Start {
+                    workflow_type,
+                    id,
+                    input,
+                    queue,
+                    search_attrs,
+                } => {
+                    cli::commands::workflow_start(
+                        &opts, &workflow_type, id, input, queue, search_attrs,
+                    )
+                    .await
+                }
                 WorkflowCommands::List {
                     status,
                     workflow_type,
+                    search_attrs,
                     limit,
-                } => cli::commands::workflow_list(&opts, status, workflow_type, limit).await,
+                } => {
+                    cli::commands::workflow_list(&opts, status, workflow_type, search_attrs, limit)
+                        .await
+                }
                 WorkflowCommands::Describe { id } => {
                     cli::commands::workflow_describe(&opts, &id).await
                 }
                 WorkflowCommands::State { id, name } => {
                     cli::commands::workflow_state(&opts, &id, name.as_deref()).await
+                }
+                WorkflowCommands::Events { id, follow } => {
+                    cli::commands::workflow_events(&opts, &id, follow).await
+                }
+                WorkflowCommands::Children { id } => {
+                    cli::commands::workflow_children(&opts, &id).await
                 }
                 WorkflowCommands::Signal { id, name, payload } => {
                     cli::commands::workflow_signal(&opts, &id, &name, payload).await
@@ -413,16 +583,26 @@ async fn main() -> ExitCode {
                 WorkflowCommands::Terminate { id, reason } => {
                     cli::commands::workflow_terminate(&opts, &id, reason).await
                 }
+                WorkflowCommands::ContinueAsNew { id, input } => {
+                    cli::commands::workflow_continue_as_new(&opts, &id, input).await
+                }
+                WorkflowCommands::Wait {
+                    id,
+                    timeout,
+                    target,
+                } => cli::commands::workflow_wait(&opts, &id, timeout, target).await,
             }
         }
         Some(Commands::Schedule { global, command }) => {
-            let opts = cli::GlobalOpts::resolve(
-                global.engine_url.as_deref(),
-                global.api_key.as_deref(),
-                global.namespace.as_deref(),
-            );
+            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
+                Ok(o) => o,
+                Err(code) => return code,
+            };
             match command {
                 ScheduleCommands::List => cli::commands::schedule_list(&opts).await,
+                ScheduleCommands::Describe { name } => {
+                    cli::commands::schedule_describe(&opts, &name).await
+                }
                 ScheduleCommands::Create {
                     name,
                     workflow_type,
@@ -463,6 +643,60 @@ async fn main() -> ExitCode {
                 }
                 ScheduleCommands::Delete { name } => {
                     cli::commands::schedule_delete(&opts, &name).await
+                }
+            }
+        }
+        Some(Commands::Namespace { global, command }) => {
+            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
+                Ok(o) => o,
+                Err(code) => return code,
+            };
+            match command {
+                NamespaceCommands::Create { name } => {
+                    cli::commands::namespace_create(&opts, &name).await
+                }
+                NamespaceCommands::List => cli::commands::namespace_list(&opts).await,
+                NamespaceCommands::Describe { name } => {
+                    cli::commands::namespace_describe(&opts, &name).await
+                }
+                NamespaceCommands::Delete { name } => {
+                    cli::commands::namespace_delete(&opts, &name).await
+                }
+            }
+        }
+        Some(Commands::Worker { global, command }) => {
+            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
+                Ok(o) => o,
+                Err(code) => return code,
+            };
+            match command {
+                WorkerCommands::List => cli::commands::worker_list(&opts).await,
+            }
+        }
+        Some(Commands::Queue { global, command }) => {
+            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
+                Ok(o) => o,
+                Err(code) => return code,
+            };
+            match command {
+                QueueCommands::Stats => cli::commands::queue_stats(&opts).await,
+            }
+        }
+        Some(Commands::Completion { shell }) => {
+            use clap::CommandFactory;
+            let mut cmd = Cli::command();
+            // Buffer first so we can exit cleanly on a broken pipe
+            // (e.g. `assay completion bash | head`): clap_complete's
+            // default writer panics on BrokenPipe.
+            let mut buf: Vec<u8> = Vec::new();
+            clap_complete::generate(shell, &mut cmd, "assay", &mut buf);
+            use std::io::Write;
+            match std::io::stdout().write_all(&buf) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("error: writing completion: {e}");
+                    ExitCode::from(1)
                 }
             }
         }
