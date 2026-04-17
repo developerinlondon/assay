@@ -51,7 +51,7 @@
 ## Infrastructure
 - [assay.crossplane](https://assay.rs/modules/crossplane.html): Crossplane providers, XRDs, compositions
 - [assay.velero](https://assay.rs/modules/velero.html): Velero backups, restores, schedules
-- [assay.temporal](https://assay.rs/modules/temporal.html): Temporal — HTTP REST client, gRPC client, worker runtime with workflow coroutines
+- [assay.workflow](https://assay.rs/modules/workflow.html): Native durable workflow engine — `assay serve` runs REST+SSE+dashboard; `require("assay.workflow")` registers handlers; namespace-scoped, JWT/API-key auth, dashboard whitelabel via ASSAY_WHITELABEL_* env vars
 - [assay.harbor](https://assay.rs/modules/harbor.html): Harbor registry, projects, vulnerability scanning
 
 ## Data & Storage

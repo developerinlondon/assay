@@ -37,7 +37,7 @@ end
 
 local function count_builtins()
   local src = fs.read("src/lua/builtins/mod.rs")
-  local internal = { register_all=1, register_shell=1, register_process=1, register_disk=1, register_os=1, register_temporal_worker=1 }
+  local internal = { register_all=1, register_shell=1, register_process=1, register_disk=1, register_os=1 }
   local count = 0
   for line in src:gmatch("[^\n]+") do
     local fn_name = line:match("(register_%w+)")
@@ -135,7 +135,7 @@ local categories = {
   { name = "Monitoring &amp; Observability", pattern = {"prometheus", "alertmanager", "loki", "grafana"} },
   { name = "Kubernetes &amp; GitOps", pattern = {"k8s", "argocd", "kargo", "flux", "traefik"} },
   { name = "Security &amp; Identity", pattern = {"vault", "openbao", "certmanager", "eso", "dex", "zitadel", "ory"} },
-  { name = "Infrastructure", pattern = {"crossplane", "velero", "temporal", "harbor"} },
+  { name = "Infrastructure", pattern = {"crossplane", "velero", "harbor"} },
   { name = "Data &amp; Storage", pattern = {"postgres", "s3"} },
   { name = "Feature Flags &amp; Utilities", pattern = {"unleash", "healthcheck"} },
   { name = "AI Agent &amp; Workflow", pattern = {"ai-agents", "workflow"} },
