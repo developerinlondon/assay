@@ -2,6 +2,37 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.9] - 2026-04-17
+
+### Added
+
+- **`ctx:wait_for_signal(name, { timeout = seconds })` — bounded signal wait.**
+  Returns the signal's JSON payload when a matching signal arrives within the
+  timeout, or `nil` when the timer expires first. Enables approval gates,
+  external-callback waits, and any workflow that must abandon its wait after a
+  deadline — without a side-channel timer or manual race logic in user code.
+
+  The call yields a batch of two commands (`ScheduleTimer` + `WaitForSignal`);
+  on replay the winner is decided by comparing history event seqs of the next
+  unconsumed `SignalReceived` against the paired `TimerFired`. Determinism
+  matches `ctx:sleep` and `ctx:execute_parallel`.
+
+  Backward compatible: `ctx:wait_for_signal(name)` without opts is unchanged.
+
+### Changed
+
+- `WaitForSignal` engine command accepts an optional `timer_seq`. When present,
+  it is recorded in the `WorkflowAwaitingSignal` event payload so the dashboard
+  can show which timer is racing the wait.
+
+### Tests
+
+- Two new orchestration tests (`orchestration.rs`):
+  - `lua_workflow_wait_for_signal_timeout_signal_wins` — signal arrives before
+    the 30s timer; workflow completes with the payload.
+  - `lua_workflow_wait_for_signal_timeout_timer_wins` — no signal sent; the 1s
+    timer fires and the workflow completes with the timeout branch.
+
 ## [0.11.8] - 2026-04-17
 
 ### Changed
