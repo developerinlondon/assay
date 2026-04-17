@@ -3,7 +3,7 @@ members = [".", "crates/assay-workflow"]
 
 [package]
 name = "assay-lua"
-version = "0.11.6"
+version = "0.11.7"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"

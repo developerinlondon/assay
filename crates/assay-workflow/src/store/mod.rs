@@ -371,6 +371,21 @@ pub trait WorkflowStore: Send + Sync + 'static {
         prefix: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
+    /// Return true iff the `api_keys` table has no rows. Used by the HTTP layer
+    /// to identify the first-ever key-creation window (where the `POST
+    /// /api/v1/api-keys` endpoint is callable without authentication).
+    fn api_keys_empty(&self) -> impl Future<Output = anyhow::Result<bool>> + Send;
+
+    /// Find an existing API key by its label. Returns None if no key has this
+    /// label (or `label` is NULL). Used to implement idempotent key creation:
+    /// a second `POST /api/v1/api-keys { label, idempotent: true }` call hits
+    /// this method and returns the existing record's metadata (without a
+    /// plaintext, which is only ever retrievable at generation time).
+    fn get_api_key_by_label(
+        &self,
+        label: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<ApiKeyRecord>>> + Send;
+
     // ── Child Workflows ─────────────────────────────────────
 
     fn list_child_workflows(
@@ -412,7 +427,7 @@ pub trait WorkflowStore: Send + Sync + 'static {
 }
 
 /// API key metadata (hash is never exposed).
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct ApiKeyRecord {
     pub prefix: String,
     pub label: Option<String>,

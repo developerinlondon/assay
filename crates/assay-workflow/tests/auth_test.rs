@@ -505,3 +505,156 @@ fn is_enabled_reflects_state() {
     assert!(AuthMode::jwt("https://auth.example.com".to_string(), None).is_enabled());
     assert!(AuthMode::combined("https://auth.example.com".to_string(), None).is_enabled());
 }
+
+// ── POST /api/v1/api-keys — bootstrap window + idempotent mode ────
+
+#[tokio::test]
+async fn bootstrap_post_api_keys_allowed_without_auth_when_empty() {
+    // Fresh store, api_keys table is empty. In api-key auth mode, the only
+    // way to mint the first key is unauthenticated POST /api/v1/api-keys.
+    let (url, _h) = start_server(AuthMode::api_key()).await;
+
+    let resp = client()
+        .post(format!("{url}/api/v1/api-keys"))
+        .json(&serde_json::json!({ "label": "first-ever", "idempotent": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "bootstrap window should allow unauth");
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body.get("plaintext").and_then(|v| v.as_str()).is_some(),
+        "fresh mint must include plaintext"
+    );
+    assert_eq!(body["label"], "first-ever");
+    assert!(body["prefix"].as_str().unwrap().starts_with("assay_"));
+}
+
+#[tokio::test]
+async fn bootstrap_closes_after_first_key() {
+    // First call closes the window; second unauth call must be rejected.
+    let (url, _h) = start_server(AuthMode::api_key()).await;
+
+    let first = client()
+        .post(format!("{url}/api/v1/api-keys"))
+        .json(&serde_json::json!({ "label": "k1" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 201);
+
+    let second = client()
+        .post(format!("{url}/api/v1/api-keys"))
+        .json(&serde_json::json!({ "label": "k2" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        second.status(),
+        401,
+        "bootstrap window closes once any key exists"
+    );
+}
+
+#[tokio::test]
+async fn bootstrap_only_on_post_api_keys_path() {
+    // Other endpoints don't get the bootstrap pass — empty api_keys table
+    // doesn't imply free access to everything.
+    let (url, _h) = start_server(AuthMode::api_key()).await;
+
+    let resp = client()
+        .get(format!("{url}/api/v1/workflows"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        401,
+        "bootstrap window only covers POST /api/v1/api-keys"
+    );
+}
+
+#[tokio::test]
+async fn api_keys_idempotent_returns_existing_without_plaintext() {
+    // Bootstrap the first key; then call again with the same label and
+    // idempotent=true. The server should return 200 with metadata but
+    // NO plaintext (the plaintext was issued once and can't be re-emitted).
+    let (url, _h) = start_server(AuthMode::api_key()).await;
+
+    let first = client()
+        .post(format!("{url}/api/v1/api-keys"))
+        .json(&serde_json::json!({ "label": "cc_api_key", "idempotent": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 201);
+    let first_body: serde_json::Value = first.json().await.unwrap();
+    let key = first_body["plaintext"].as_str().unwrap().to_string();
+
+    // Second call with idempotent=true — authenticated via the key we just received.
+    let second = client()
+        .post(format!("{url}/api/v1/api-keys"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "label": "cc_api_key", "idempotent": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second.status(), 200);
+    let second_body: serde_json::Value = second.json().await.unwrap();
+    assert!(
+        second_body.get("plaintext").is_none()
+            || second_body["plaintext"].is_null(),
+        "idempotent hit must omit plaintext"
+    );
+    assert_eq!(second_body["label"], "cc_api_key");
+    assert_eq!(second_body["prefix"], first_body["prefix"]);
+}
+
+#[tokio::test]
+async fn api_keys_non_idempotent_mints_another_with_same_label() {
+    // Without idempotent=true (default), the server mints a NEW key even when
+    // another key with the same label exists. Labels aren't unique in the
+    // engine; idempotency is opt-in.
+    let (url, _h) = start_server(AuthMode::api_key()).await;
+
+    let first = client()
+        .post(format!("{url}/api/v1/api-keys"))
+        .json(&serde_json::json!({ "label": "shared-label" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 201);
+    let first_body: serde_json::Value = first.json().await.unwrap();
+    let key = first_body["plaintext"].as_str().unwrap().to_string();
+
+    let second = client()
+        .post(format!("{url}/api/v1/api-keys"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "label": "shared-label" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second.status(), 201);
+    let second_body: serde_json::Value = second.json().await.unwrap();
+    assert!(second_body["plaintext"].as_str().is_some());
+    assert_ne!(
+        first_body["prefix"], second_body["prefix"],
+        "non-idempotent must mint a fresh key, different prefix"
+    );
+}
+
+#[tokio::test]
+async fn bootstrap_window_closed_in_no_auth_mode_is_a_noop() {
+    // no-auth mode: the whole API is open, so the bootstrap gate is irrelevant.
+    // This test just confirms we don't trip over ourselves in that configuration.
+    let (url, _h) = start_server(AuthMode::no_auth()).await;
+
+    let resp = client()
+        .post(format!("{url}/api/v1/api-keys"))
+        .json(&serde_json::json!({ "label": "anything" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+}
