@@ -12,10 +12,10 @@
 
 
   <main>
-    <!-- v0.11.9 release banner -->
+    <!-- v0.11.10 release banner -->
     <a href="changelog.html" class="release-banner">
-      <span class="release-banner-tag">v0.11.9</span>
-      <span class="release-banner-text">ctx:wait_for_signal now accepts an optional timeout — approval gates, external-callback waits, and any workflow that must abandon its wait after a deadline without a side-channel timer</span>
+      <span class="release-banner-tag">v0.11.10</span>
+      <span class="release-banner-text">workflow.start and workflow.listen now accept namespace — multi-tenant deployment pipelines can scope workers + runs without dropping to the REST API</span>
       <span class="release-banner-arrow">&rarr;</span>
     </a>
 
@@ -147,7 +147,7 @@
     <h2>Core Capabilities</h2>
     <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
       <div class="card card-highlight">
-        <h3 style="margin-top: 0;">Workflow Engine <span style="color: var(--accent); font-size: 0.7rem; font-weight: 700; vertical-align: middle; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px;">v0.11.9</span></h3>
+        <h3 style="margin-top: 0;">Workflow Engine <span style="color: var(--accent); font-size: 0.7rem; font-weight: 700; vertical-align: middle; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px;">v0.11.10</span></h3>
         <p class="text-muted">Native durable workflow engine with deterministic-replay runtime. Activities (sequential + parallel), signals, durable timers, child workflows, side effects, live state via <code>ctx:register_query</code>, search attributes, optional S3 archival. Crash-safe by replay — workers can die mid-flight without losing work or duplicating side effects.</p>
         <pre style="margin-bottom: 0;"><code>workflow.define("Deploy", function(ctx, in)
   local img = ctx:execute_activity("build", in)
@@ -299,7 +299,7 @@ cargo install assay-lua
 
     <h3>mise</h3>
     <pre><code># .mise.toml
-"github:developerinlondon/assay" = "v0.11.9"</code></pre>
+"github:developerinlondon/assay" = "v0.11.10"</code></pre>
 
   </main>
 

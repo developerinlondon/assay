@@ -279,8 +279,8 @@ on other non-2xx.
 | `workflow.connect(url, opts?)`                                                          | Verify reachability; opts = `{ token = "Bearer …" }` |
 | `workflow.define(name, function(ctx, input) … end)`                                     | Register a workflow handler (runs as a coroutine)    |
 | `workflow.activity(name, function(ctx, input) … end)`                                   | Register an activity implementation                  |
-| `workflow.listen({queue, identity?})`                                                   | Block; poll workflow tasks AND activity tasks        |
-| `workflow.start({workflow_type, workflow_id, input?, search_attributes?, task_queue?})` | Start a workflow                                     |
+| `workflow.listen({queue, namespace?, identity?})`                                                   | Block; poll workflow tasks AND activity tasks. **v0.11.10:** `namespace` scopes the worker (default `"main"`). |
+| `workflow.start({workflow_type, workflow_id, namespace?, input?, search_attributes?, task_queue?})` | Start a workflow. **v0.11.10:** `namespace` + `search_attributes` now flow through to the engine.              |
 | `workflow.list({namespace?, status?, type?, search_attrs?, limit?, offset?})`           | List + filter workflows                              |
 | `workflow.describe(id)` / `workflow.get_events(id)`                                     | Inspect                                              |
 | `workflow.get_state(id, name?)`                                                         | Read the latest register_query snapshot (nil on 404) |

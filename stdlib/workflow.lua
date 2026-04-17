@@ -87,14 +87,20 @@ function M.activity(name, handler)
 end
 
 --- Start a workflow on the engine (client-side, not as a worker).
---- @param opts table { workflow_type, workflow_id, input?, task_queue? }
+--- @param opts table { workflow_type, workflow_id, namespace?, input?, task_queue?, search_attributes? }
 --- @return table { workflow_id, run_id, status }
 function M.start(opts)
     local body = {
         workflow_type = opts.workflow_type,
         workflow_id = opts.workflow_id,
+        -- `namespace` is optional; the engine defaults to "main" when
+        -- absent. Passing it lets callers scope a run to a non-default
+        -- namespace (e.g. "deployments", "platform") so listing,
+        -- schedules, and worker registration stay partitioned.
+        namespace = opts.namespace,
         input = opts.input,
         task_queue = opts.task_queue or "default",
+        search_attributes = opts.search_attributes,
     }
     local resp = M._api("POST", "/workflows", body)
     if resp.status ~= 201 then
@@ -453,13 +459,17 @@ end
 
 --- Start listening for tasks. Blocks until cancelled.
 --- Polls workflow tasks first (cheap orchestration) then activity tasks.
---- @param opts table { identity?, queue?, max_concurrent_workflows?, max_concurrent_activities? }
+--- A worker is scoped to a single (namespace, queue) pair — only
+--- workflows started in the same namespace on the same queue will be
+--- dispatched to it.
+--- @param opts table { identity?, queue?, namespace?, max_concurrent_workflows?, max_concurrent_activities? }
 function M.listen(opts)
     if not _engine_url then
         error("workflow.listen: call workflow.connect() first")
     end
 
     local queue = opts.queue or "default"
+    local namespace = opts.namespace or "main"
     local identity = opts.identity or
         ("assay-worker-" .. (os.hostname and os.hostname() or "unknown"))
 
@@ -471,6 +481,7 @@ function M.listen(opts)
     -- Register as a worker
     local reg_resp = M._api("POST", "/workers/register", {
         identity = identity,
+        namespace = namespace,
         queue = queue,
         workflows = wf_names,
         activities = act_names,
@@ -481,7 +492,11 @@ function M.listen(opts)
         error("workflow.listen: registration failed: " .. (reg_resp.body or "unknown"))
     end
     _worker_id = json.parse(reg_resp.body).worker_id
-    log.info("Registered as worker " .. _worker_id .. " on queue '" .. queue .. "'")
+    log.info(
+        "Registered as worker " .. _worker_id
+            .. " on namespace '" .. namespace
+            .. "' queue '" .. queue .. "'"
+    )
 
     -- Poll loop
     while true do

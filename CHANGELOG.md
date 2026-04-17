@@ -2,6 +2,39 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.10] - 2026-04-17
+
+### Added
+
+- **`workflow.start({namespace, search_attributes})` — full engine parity.**
+  `workflow.start()` now passes `opts.namespace` and `opts.search_attributes`
+  through to the engine, so Lua callers can scope workflows to a non-default
+  namespace and seed indexed metadata at start time. Previously these fields
+  were accepted by `POST /api/v1/workflows` but silently dropped by the Lua
+  stdlib client, forcing callers to hit the REST API directly for any
+  multi-tenant deployment.
+
+- **`workflow.listen({namespace})` — namespace-scoped workers.** Workers
+  register into `opts.namespace` (default `"main"`) on `POST /workers/register`,
+  so a worker pool in one namespace no longer accidentally picks up tasks
+  from a sibling namespace that happens to share its queue name. The
+  startup log line now carries the namespace alongside the queue for easy
+  `kubectl logs` triage.
+
+Both changes close a gap surfaced by consumers building multi-tenant
+deployment pipelines on top of the engine (e.g. a platform-engineering
+namespace for promotions, a data-engineering namespace for backfills,
+both sharing one assay-serve instance). No engine changes — the engine
+already supported namespace on these endpoints; only the stdlib was missing.
+
+### Tests
+
+- New orchestration test (`orchestration.rs`):
+  `lua_workflow_namespace_scoping_end_to_end` — creates a non-default
+  namespace via the engine API, starts a worker with `namespace="deployments"`,
+  starts a workflow in the same namespace, and asserts the completed
+  record carries `namespace: "deployments"` and the expected result.
+
 ## [0.11.9] - 2026-04-17
 
 ### Added

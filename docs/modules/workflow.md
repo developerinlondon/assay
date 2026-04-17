@@ -182,6 +182,8 @@ Two roles in one module: **worker** (register handlers and block polling for tas
 - `workflow.listen(opts)` → blocks — poll workflow + activity tasks on a queue
   - `opts.queue` (default `"default"`), `opts.identity`, `opts.max_concurrent_workflows` (10),
     `opts.max_concurrent_activities` (20)
+  - **v0.11.10:** `opts.namespace` (default `"main"`) scopes the worker. A worker registered
+    in one namespace is never dispatched tasks from a sibling namespace even if queue names collide.
 
 #### Management role (new in v0.11.3 — parity with REST)
 
