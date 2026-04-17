@@ -11,6 +11,56 @@ var AssayWorkflows = (function () {
   let ctx = null;
   let container = null;
 
+  /**
+   * Toggle the inline expansion row for a workflow. Click once to open,
+   * click again to close. Opening another row auto-closes the previous
+   * one — simpler to scan than a pile of open rows, matches the pattern
+   * you'd get from a radio group.
+   */
+  function toggleRowDetail(linkEl) {
+    var row = linkEl.closest('tr');
+    if (!row) return;
+    var id = linkEl.dataset.id;
+
+    // Click-to-close on the already-expanded row.
+    var next = row.nextElementSibling;
+    if (next && next.classList.contains('wf-detail-row') && next.dataset.forId === id) {
+      next.remove();
+      row.classList.remove('wf-row-expanded');
+      return;
+    }
+    // Close any other open detail rows in the same table first.
+    var openDetails = row.parentNode.querySelectorAll('.wf-detail-row');
+    for (var i = 0; i < openDetails.length; i++) openDetails[i].remove();
+    var openParents = row.parentNode.querySelectorAll('.wf-row-expanded');
+    for (var j = 0; j < openParents.length; j++) {
+      openParents[j].classList.remove('wf-row-expanded');
+    }
+
+    // Expand this row.
+    var colCount = row.children.length;
+    var detailRow = document.createElement('tr');
+    detailRow.className = 'wf-detail-row';
+    detailRow.dataset.forId = id;
+    detailRow.innerHTML =
+      '<td colspan="' + colCount + '">' +
+        '<div class="wf-inline-detail"></div>' +
+      '</td>';
+    row.parentNode.insertBefore(detailRow, row.nextSibling);
+    row.classList.add('wf-row-expanded');
+
+    var target = detailRow.querySelector('.wf-inline-detail');
+    if (ctx.showDetail) {
+      ctx.showDetail(id, ctx, {
+        target: target,
+        onClose: function () {
+          detailRow.remove();
+          row.classList.remove('wf-row-expanded');
+        },
+      });
+    }
+  }
+
   function render(el, context) {
     ctx = context;
     container = el;
@@ -70,7 +120,7 @@ var AssayWorkflows = (function () {
       var link = e.target.closest('.wf-link');
       if (link) {
         e.preventDefault();
-        if (ctx.showDetail) ctx.showDetail(link.dataset.id, ctx);
+        toggleRowDetail(link);
         return;
       }
 
@@ -159,7 +209,12 @@ var AssayWorkflows = (function () {
 
       html +=
         '<tr>' +
-        '<td><a href="#" class="clickable wf-link mono" data-id="' + ctx.escapeHtml(wf.id) + '">' +
+        // title= reveals the full workflow id on hover — ids are
+        // truncated to 32 chars for table density, but operators debugging
+        // a specific run need to see the whole value without opening the
+        // detail panel or URL-bar surgery.
+        '<td><a href="#" class="clickable wf-link mono" data-id="' + ctx.escapeHtml(wf.id) +
+          '" title="' + ctx.escapeHtml(wf.id) + '">' +
           ctx.escapeHtml(ctx.truncate(wf.id, 32)) + '</a></td>' +
         '<td>' + ctx.escapeHtml(wf.workflow_type || '-') + '</td>' +
         '<td><span class="badge ' + ctx.badgeClass(status) + '">' + status + '</span></td>' +
@@ -185,19 +240,28 @@ var AssayWorkflows = (function () {
 
   function renderPagination(count) {
     var pag = container.querySelector('#wf-pagination');
-    var html = '';
 
-    if (currentOffset > 0) {
+    // Don't render the pagination bar at all when there's only one
+    // page of results (no prev page, current page isn't full). A
+    // standalone "Page 1" on a three-row table is chrome-for-its-own-
+    // sake; operators only need the controls once there's actually
+    // something to page through.
+    var hasPrev = currentOffset > 0;
+    var hasNext = count === PAGE_SIZE;
+    if (!hasPrev && !hasNext) {
+      pag.innerHTML = '';
+      return;
+    }
+
+    var html = '';
+    if (hasPrev) {
       html += '<button class="btn btn-sm" data-offset="' + Math.max(0, currentOffset - PAGE_SIZE) + '">Prev</button>';
     }
-
     var page = Math.floor(currentOffset / PAGE_SIZE) + 1;
     html += '<span style="padding: 0 8px; color: var(--text-muted);">Page ' + page + '</span>';
-
-    if (count === PAGE_SIZE) {
+    if (hasNext) {
       html += '<button class="btn btn-sm" data-offset="' + (currentOffset + PAGE_SIZE) + '">Next</button>';
     }
-
     pag.innerHTML = html;
   }
 

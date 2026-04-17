@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>__PAGE_TITLE__</title>
-  <link rel="icon" type="image/svg+xml" href="/workflow/favicon.svg">
+  __FAVICON_LINK__
   <link rel="stylesheet" href="/workflow/theme.css?v=__ASSETV__">
   <link rel="stylesheet" href="/workflow/style.css?v=__ASSETV__">
   __EXTRA_CSS_LINK__
 </head>
-<body>
+<body__DEFAULT_NAMESPACE_ATTR__>
   <div class="layout">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
@@ -22,8 +22,18 @@
           </span>
         </h1>
         <button type="button" class="header-icon-btn" id="sidebar-collapse" title="Collapse sidebar" aria-label="Toggle sidebar">
-          <span class="icon-collapse">&lt;</span>
-          <span class="icon-expand">&gt;</span>
+          <!--
+            Chevron icons replace the ASCII `<` / `>` that used to live
+            here — same toggle behaviour, cleaner visual. The two icons
+            swap via `.sidebar.collapsed` CSS rules so the button always
+            points at the direction the sidebar is about to move.
+          -->
+          <svg class="icon-collapse" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+          <svg class="icon-expand" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
         </button>
       </div>
       <div class="sidebar-section">
@@ -68,7 +78,20 @@
       <span id="connection-text">Connecting...</span>
     </span>
     <span class="status-item">
-      Namespace: <strong id="status-namespace">main</strong>
+      Namespace:
+      <!--
+        Clickable shortcut to the namespace selector. Users spending
+        time in a single namespace see this value all the time; making
+        it a live switcher avoids the round-trip up to the sidebar
+        dropdown.
+      -->
+      <button type="button" id="status-namespace-btn" class="status-namespace-btn"
+              title="Switch namespace">
+        <strong id="status-namespace">main</strong>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </button>
     </span>
     <span class="status-item">
       Workers: <strong id="status-workers">0</strong>

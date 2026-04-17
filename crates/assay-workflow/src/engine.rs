@@ -74,6 +74,16 @@ impl<S: WorkflowStore> Engine<S> {
         let now = timestamp_now();
         let run_id = format!("run-{workflow_id}-{}", now as u64);
 
+        // Auto-stamp the engine version that started this run into its
+        // search attributes. Makes post-mortem triage concrete: "this
+        // run was v0.11.9, that's why it was stuck in main instead of
+        // deployments" is the kind of question that's otherwise guesswork
+        // once multiple engine versions have coexisted in a deployment.
+        // The operator's own attributes take precedence if they also
+        // supplied `assay_engine_version` — we don't overwrite, just
+        // backfill on the "not set" case.
+        let stamped_attrs = inject_engine_version(search_attributes);
+
         let wf = WorkflowRecord {
             id: workflow_id.to_string(),
             namespace: namespace.to_string(),
@@ -86,7 +96,7 @@ impl<S: WorkflowStore> Engine<S> {
             error: None,
             parent_id: None,
             claimed_by: None,
-            search_attributes: search_attributes.map(String::from),
+            search_attributes: stamped_attrs,
             archived_at: None,
             archive_uri: None,
             created_at: now,
@@ -1173,6 +1183,75 @@ fn timestamp_now() -> f64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs_f64()
+}
+
+/// Engine version (the binary version pulled from Cargo at build time).
+/// Stamped into every workflow's search_attributes at start so operators
+/// can correlate runs to the engine release that executed them.
+const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Auto-stamp `assay_engine_version` into a workflow's search attributes.
+/// Returns `Some` JSON string for the caller to store in the record.
+///
+/// If the caller already supplied `assay_engine_version` in their patch,
+/// we leave their value alone (explicit override wins). Otherwise we
+/// backfill the running engine's version. Callers who supply no
+/// attributes at all get a single-key object with just the version.
+fn inject_engine_version(caller_attrs: Option<&str>) -> Option<String> {
+    let mut obj: serde_json::Map<String, serde_json::Value> = match caller_attrs {
+        Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
+            Ok(serde_json::Value::Object(m)) => m,
+            // Non-object JSON (or unparsable) — preserve as-is without
+            // stamping; we can't safely merge a key into a non-object.
+            Ok(other) => return Some(other.to_string()),
+            Err(_) => return Some(raw.to_string()),
+        },
+        None => serde_json::Map::new(),
+    };
+    obj.entry("assay_engine_version".to_string())
+        .or_insert_with(|| serde_json::Value::String(ENGINE_VERSION.to_string()));
+    Some(serde_json::Value::Object(obj).to_string())
+}
+
+#[cfg(test)]
+mod engine_version_stamp_tests {
+    use super::*;
+
+    #[test]
+    fn no_attrs_produces_single_key_object() {
+        let out = inject_engine_version(None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["assay_engine_version"], ENGINE_VERSION);
+        assert_eq!(v.as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn existing_attrs_gain_the_version_field() {
+        let out = inject_engine_version(Some(r#"{"env":"prod","tenant":"acme"}"#)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["env"], "prod");
+        assert_eq!(v["tenant"], "acme");
+        assert_eq!(v["assay_engine_version"], ENGINE_VERSION);
+    }
+
+    #[test]
+    fn caller_supplied_version_wins_on_conflict() {
+        let out = inject_engine_version(Some(r#"{"assay_engine_version":"0.0.1-test"}"#)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["assay_engine_version"], "0.0.1-test");
+    }
+
+    #[test]
+    fn non_object_json_is_preserved_unchanged() {
+        let out = inject_engine_version(Some("[1, 2, 3]")).unwrap();
+        assert_eq!(out, "[1,2,3]");
+    }
+
+    #[test]
+    fn unparsable_json_is_preserved_unchanged() {
+        let out = inject_engine_version(Some("not json")).unwrap();
+        assert_eq!(out, "not json");
+    }
 }
 
 // WorkflowStatus::from_str returns Result, re-export for convenience

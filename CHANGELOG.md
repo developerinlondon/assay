@@ -2,6 +2,84 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.12] - 2026-04-17
+
+### Added
+
+- **Per-run engine-version stamp.** `start_workflow` now auto-stamps the
+  running engine's version into each workflow's `search_attributes` as
+  `assay_engine_version`. Triages "which engine started this run" without
+  operators having to keep their own bookkeeping — searchable via
+  `workflow.list({ search_attrs = { assay_engine_version = "0.11.12" } })`.
+  Caller-supplied `assay_engine_version` wins on conflict (explicit
+  override preserved for replay / testing scenarios).
+
+- **More whitelabel knobs:**
+  | Variable                             | Purpose                                      | Default        |
+  | ------------------------------------ | -------------------------------------------- | -------------- |
+  | `ASSAY_WHITELABEL_FAVICON_URL`       | Replace the browser-tab icon                 | Built-in SVG   |
+  | `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | Namespace the dashboard opens on             | `main`         |
+
+- **Tabbed detail view.** The workflow detail block is now organised into
+  tabs — Overview (input/result/error), State (register_query snapshot),
+  Events, Children, Attributes. Variable-height sections live behind tabs
+  so the meta grid + actions stay compact and scannable regardless of how
+  much a run has accumulated. Empty tabs (no state snapshot, no children,
+  no search attrs) dim rather than hide, so operators see a consistent
+  shape across runs.
+
+- **Inline row-expansion.** Clicking a row in the workflows list toggles
+  an inline detail block beneath it. Click again to collapse. Opening a
+  new row auto-collapses the previous one. The right-hand detail panel
+  is retained for child-workflow click-through navigation. Matches the
+  "drill into one run while keeping context above/below visible" pattern.
+
+### Changed
+
+- **Footer attribution wording** — whitelabel mode now says "Powered by
+  Assay" with a link to https://assay.rs, not "Powered by Assay Workflow
+  Engine". Less redundant when the operator's own `_SUBTITLE` already
+  includes "Workflow Engine" (e.g. CC embeds).
+
+- **Clickable namespace in the status bar.** The footer's current
+  namespace value is now a button that focuses / opens the sidebar's
+  namespace dropdown — saves a trip to the top of the sidebar when the
+  user's already looking at the footer.
+
+- **Collapse-arrow SVGs** replacing the ASCII `<` / `>` chars in the
+  sidebar toggle. Same toggle behaviour, cleaner visual, aligned to the
+  rest of assay's outlined-stroke icon set.
+
+- **Workflow IDs get a `title=` tooltip** everywhere they're truncated
+  in the dashboard (workflows list, workers list, detail header, run
+  ID, children table). Hover reveals the full ID without operators
+  having to open the detail panel to see it.
+
+- **Pagination hides on single-page lists.** The "Prev / Page 1 / Next"
+  chrome used to render even when there was only one page; now it
+  renders only when there's actually content to page through.
+
+### Fixed
+
+- **Undefined CSS custom properties** `--surface-1`, `--surface-2`, and
+  `--text-primary` referenced by `.btn-action:hover`, `.inline-form`,
+  and the toast component fell back to `transparent` / `initial`, which
+  made buttons appear "completely white" on hover against a white page.
+  All three references renamed to their defined counterparts
+  (`--surface`, `--surface-hover`, `--text`) — 37 references now point
+  at defined tokens, zero undefined references remaining.
+
+### Tests
+
+- 5 new whitelabel render tests: favicon URL override, default-namespace
+  data-attribute, "Powered by Assay" wording (not Workflow Engine),
+  attribution link presence, favicon-only customisation flipping the
+  footer. Total whitelabel unit coverage: 18 tests.
+- 5 new `inject_engine_version` unit tests: default (no attrs), existing
+  attrs gain the field, caller override wins, non-object JSON preserved,
+  unparsable JSON preserved.
+- 40 orchestration + 32 lib tests all pass. Clippy clean with -D warnings.
+
 ## [0.11.11] - 2026-04-17
 
 ### Added

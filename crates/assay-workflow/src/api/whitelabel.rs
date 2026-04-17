@@ -18,6 +18,8 @@
 //! | `ASSAY_WHITELABEL_CSS_URL`      | Extra stylesheet loaded after assay's own CSS        | — (none)                     |
 //! | `ASSAY_WHITELABEL_SUBTITLE`     | Small muted line shown under the brand name          | — (none)                     |
 //! | `ASSAY_WHITELABEL_MARK`         | Single glyph for the always-visible badge square     | First char of NAME (upper)   |
+//! | `ASSAY_WHITELABEL_FAVICON_URL`  | Replace the browser-tab icon                         | Built-in `A`-mark SVG        |
+//! | `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | Namespace the dashboard opens on                | `main`                       |
 //!
 //! ## Hiding vs overriding
 //!
@@ -88,6 +90,14 @@ pub struct WhitelabelConfig {
     /// use this to re-skin the dashboard by overriding CSS custom
     /// properties or specific selectors without touching the source.
     pub css_url: Option<String>,
+    /// Optional favicon URL. When `None` the built-in SVG `A`-mark is
+    /// served at `/workflow/favicon.svg`; when `Some(url)` the template
+    /// points `<link rel="icon">` at the operator's URL instead.
+    pub favicon_url: Option<String>,
+    /// Namespace the dashboard opens on by default. Operators running
+    /// assay single-tenant (all workflows in one non-`main` namespace)
+    /// shouldn't force every user to change the dropdown on first load.
+    pub default_namespace: String,
 }
 
 impl WhitelabelConfig {
@@ -100,6 +110,7 @@ impl WhitelabelConfig {
             || !self.subtitle.is_empty()
             || self.logo_url.is_some()
             || self.css_url.is_some()
+            || self.favicon_url.is_some()
     }
 }
 
@@ -145,6 +156,13 @@ impl WhitelabelConfig {
         let css_url = std::env::var("ASSAY_WHITELABEL_CSS_URL")
             .ok()
             .filter(|s| !s.is_empty());
+        let favicon_url = std::env::var("ASSAY_WHITELABEL_FAVICON_URL")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let default_namespace = std::env::var("ASSAY_WHITELABEL_DEFAULT_NAMESPACE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "main".to_string());
         Self {
             name,
             mark,
@@ -155,6 +173,8 @@ impl WhitelabelConfig {
             parent_name,
             api_docs_url,
             css_url,
+            favicon_url,
+            default_namespace,
         }
     }
 }
@@ -223,14 +243,36 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
 
     // Footer version-line: vanilla dashboards keep the current
     // "Assay Workflow Engine vX.Y.Z" wording. Whitelabel deployments
-    // get a "Powered by [link] vX.Y.Z" line that attributes the engine
-    // and points users at assay.rs for discovery. The version span is
-    // populated by the existing dashboard JS in both variants.
+    // get a "Powered by Assay vX.Y.Z" line — short, not redundant with
+    // a subtitle that may already say "Workflow Engine", still links
+    // to assay.rs for discovery. The version span is populated by the
+    // existing dashboard JS in both variants.
     let engine_footer = if wl.is_customised() {
-        r#"Powered by <a class="assay-attribution" href="https://assay.rs" target="_blank" rel="noopener noreferrer">Assay Workflow Engine</a> <span id="status-version">—</span>"#.to_string()
+        r#"Powered by <a class="assay-attribution" href="https://assay.rs" target="_blank" rel="noopener noreferrer">Assay</a> <span id="status-version">—</span>"#.to_string()
     } else {
         r#"Assay Workflow Engine <span id="status-version">—</span>"#.to_string()
     };
+
+    // Favicon — operator-supplied URL when set, otherwise assay's own
+    // inline SVG served from /workflow/favicon.svg. Emitted as a
+    // full <link> tag so the operator URL can be absolute, a path,
+    // or a data: URI without the template having to know.
+    let favicon_link = match &wl.favicon_url {
+        Some(url) => format!(
+            r#"<link rel="icon" href="{}">"#,
+            html_escape(url)
+        ),
+        None => r#"<link rel="icon" type="image/svg+xml" href="/workflow/favicon.svg">"#.to_string(),
+    };
+
+    // Default namespace — threaded into the template as a data-attribute
+    // the dashboard JS picks up on first load. Operators running a
+    // single-tenant assay-as-a-product shouldn't force every user to
+    // change the namespace dropdown on first visit.
+    let default_namespace_attr = format!(
+        r#" data-default-namespace="{}""#,
+        html_escape(&wl.default_namespace)
+    );
 
     // Emitted at the end of <head>, after assay's own theme.css + style.css,
     // so operator overrides win on source order + specificity. Asset-version
@@ -260,6 +302,8 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         .replace("__PARENT_BACK_LINK__", &back_link)
         .replace("__API_DOCS_LINK__", &api_docs_link)
         .replace("__EXTRA_CSS_LINK__", &extra_css)
+        .replace("__FAVICON_LINK__", &favicon_link)
+        .replace("__DEFAULT_NAMESPACE_ATTR__", &default_namespace_attr)
 }
 
 #[cfg(test)]
@@ -267,14 +311,16 @@ mod tests {
     use super::*;
 
     const TEMPLATE: &str = r#"<title>__PAGE_TITLE__</title>
-<head>__EXTRA_CSS_LINK__</head>
+<head>__FAVICON_LINK__ __EXTRA_CSS_LINK__</head>
+<body__DEFAULT_NAMESPACE_ATTR__>
 <span>__BRAND_NAME__</span><span>__BRAND_MARK__</span>
 __BRAND_SUBTITLE__
 __BRAND_LOGO_IMG__
 __PARENT_BACK_LINK__
 __API_DOCS_LINK__
 <footer>__ENGINE_FOOTER__</footer>
-v=__ASSETV__"#;
+v=__ASSETV__
+</body>"#;
 
     fn default_cfg() -> WhitelabelConfig {
         WhitelabelConfig {
@@ -287,6 +333,8 @@ v=__ASSETV__"#;
             parent_name: "Back".into(),
             api_docs_url: Some("/api/v1/docs".into()),
             css_url: None,
+            favicon_url: None,
+            default_namespace: "main".into(),
         }
     }
 
@@ -305,6 +353,10 @@ v=__ASSETV__"#;
         assert!(!out.contains("assay-attribution"));
         // Default API Docs link present and pointing at the engine path.
         assert!(out.contains("href=\"/api/v1/docs\""));
+        // Default favicon points at the built-in SVG.
+        assert!(out.contains(r#"href="/workflow/favicon.svg""#));
+        // Default namespace attr exposes "main" for the dashboard JS.
+        assert!(out.contains(r#"data-default-namespace="main""#));
         // Asset version substitution still works.
         assert!(out.contains("v=42"));
     }
@@ -343,11 +395,40 @@ v=__ASSETV__"#;
         cfg.mark = "A".into();
         let out = render_index(TEMPLATE, "v", &cfg);
         assert!(out.contains("Powered by"));
+        assert!(out.contains(r#">Assay</a>"#), "short 'Assay' attribution text");
+        assert!(!out.contains("Workflow Engine</a>"), "should not say 'Assay Workflow Engine' in link");
         assert!(out.contains(r#"href="https://assay.rs""#));
         assert!(out.contains(r#"target="_blank""#));
         assert!(out.contains(r#"rel="noopener noreferrer""#));
         // Version span is still emitted for the existing JS populator.
         assert!(out.contains(r#"<span id="status-version">—</span>"#));
+    }
+
+    #[test]
+    fn favicon_url_override_emits_operator_link_tag() {
+        let mut cfg = default_cfg();
+        cfg.favicon_url = Some("/static/acme-favicon.ico".into());
+        let out = render_index(TEMPLATE, "v", &cfg);
+        assert!(out.contains(r#"href="/static/acme-favicon.ico""#));
+        assert!(!out.contains(r#"href="/workflow/favicon.svg""#));
+    }
+
+    #[test]
+    fn default_namespace_override_threads_into_data_attr() {
+        let mut cfg = default_cfg();
+        cfg.default_namespace = "deployments".into();
+        let out = render_index(TEMPLATE, "v", &cfg);
+        assert!(out.contains(r#"data-default-namespace="deployments""#));
+    }
+
+    #[test]
+    fn favicon_override_flips_footer_attribution_too() {
+        // A favicon override alone counts as "customised" — the footer
+        // should switch to the "Powered by Assay" variant.
+        let mut cfg = default_cfg();
+        cfg.favicon_url = Some("/f.ico".into());
+        let out = render_index(TEMPLATE, "v", &cfg);
+        assert!(out.contains("Powered by"));
     }
 
     #[test]
