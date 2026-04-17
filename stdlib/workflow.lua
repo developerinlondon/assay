@@ -951,6 +951,37 @@ function M._make_workflow_ctx(workflow_id, history)
         self._queries[name] = fn
     end
 
+    --- Terminate the current workflow with engine status `CANCELLED`.
+    ---
+    --- Use this when the workflow has decided itself that it should
+    --- stop early — typically after a human-approval signal comes back
+    --- as a reject, or a precondition fails — and you want downstream
+    --- observers (dashboards, audit queries, `workflow.list` filters)
+    --- to see `CANCELLED` rather than `COMPLETED`.
+    ---
+    --- Implemented by raising the internal cancellation sentinel which
+    --- the task runner already translates into a `CancelWorkflow`
+    --- command. Distinct from an externally-requested cancel
+    --- (`workflow.cancel(id)` → `WorkflowCancelRequested` event), but
+    --- lands in the same terminal state.
+    ---
+    --- Usage:
+    ---   if decision.action == "reject" then
+    ---       state.rejected_by = decision.user
+    ---       ctx:cancel("rejected by " .. decision.user)
+    ---   end
+    function ctx:cancel(reason)
+        -- reason is accepted for symmetry with Temporal's cancel/fail
+        -- APIs and for callsite-readability; it's logged but not wired
+        -- into the sentinel because the engine's CancelWorkflow command
+        -- already carries enough context (status change, timestamps).
+        if reason and reason ~= "" then
+            log.info("workflow " .. tostring(self.workflow_id) ..
+                " cancelling itself: " .. tostring(reason))
+        end
+        error("__ASSAY_WORKFLOW_CANCELLED__")
+    end
+
     --- Block until a signal with the given name arrives, optionally
     --- bounded by a timeout. Returns the signal's JSON payload (or nil
     --- if signaled with no payload). With `opts.timeout`, returns nil
