@@ -39,13 +39,12 @@ html, body {
   min-width: 56px;
 }
 .sidebar.collapsed .sidebar-section,
-.sidebar.collapsed .nav-label,
-.sidebar.collapsed .logo-full {
+.sidebar.collapsed .nav-label {
   display: none;
 }
-.sidebar.collapsed .logo-mark {
-  display: inline;
-}
+/* .logo-text handles the collapsed hide for the brand text stack (see
+   .sidebar.collapsed .logo-text below); the mark-badge's collapsed
+   size is tuned inline on .logo-mark itself. */
 .sidebar.collapsed .nav-link {
   justify-content: center;
   padding: 10px 0;
@@ -89,29 +88,83 @@ html, body {
   letter-spacing: -0.5px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
 }
 
-/* Whitelabel logo image (rendered when ASSAY_WHITELABEL_LOGO_URL is set). */
+/* Whitelabel logo image — when ASSAY_WHITELABEL_LOGO_URL is set it
+   replaces the mark-badge glyph; CSS below hides the badge in that case. */
 .logo-img {
-  height: 22px;
+  height: 36px;
   width: auto;
   display: inline-block;
   vertical-align: middle;
   flex-shrink: 0;
 }
 
-.sidebar.collapsed .logo-img {
-  height: 18px;
+.logo:has(.logo-img) .logo-mark {
+  /* An explicit logo image supersedes the generated letter-badge. */
+  display: none;
 }
 
-/* The single-letter mark shown when the sidebar is collapsed */
+.sidebar.collapsed .logo-img {
+  height: 28px;
+}
+
+/* Always-visible brand badge: filled accent square with a single-letter
+   (or short) glyph derived from ASSAY_WHITELABEL_NAME (or overridden via
+   ASSAY_WHITELABEL_MARK). Replaces the old collapsed-only behaviour so
+   vanilla and whitelabel deployments alike get a proper brand block. */
 .logo-mark {
-  display: none;
-  font-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
   font-weight: 700;
-  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.sidebar.collapsed .logo-mark {
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+}
+
+/* Stacked name + subtitle on the right of the mark-badge. The subtitle
+   is a muted second line rendered when ASSAY_WHITELABEL_SUBTITLE is set;
+   when unset the span simply isn't emitted and the stack collapses to
+   the single bold name line. */
+.logo-text {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+  gap: 2px;
+}
+
+.logo-full {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0.2px;
+}
+
+.logo-subtitle {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.1px;
+}
+
+/* Collapsed sidebar hides the stacked text entirely — the mark-badge
+   is the whole brand identity in that state. */
+.sidebar.collapsed .logo-text {
+  display: none;
 }
 
 /* Parent-app back-link in the sidebar footer — only rendered when
@@ -270,6 +323,20 @@ html, body {
 
 .status-version {
   margin-left: auto;
+}
+
+/* "Powered by Assay Workflow Engine" attribution link — only rendered
+   in whitelabel mode. Inherits the status-bar colour so it doesn't shout
+   at the user; accent on hover hints it's clickable. */
+.assay-attribution {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+
+.assay-attribution:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .status-dot {

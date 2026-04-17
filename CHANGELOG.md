@@ -2,6 +2,67 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.11] - 2026-04-17
+
+### Added
+
+- **Whitelabel: subtitle + mark-badge + two-line brand layout.** The
+  dashboard sidebar header now renders a mark-badge (filled accent
+  square with a single-letter glyph), a bold brand name, and an optional
+  muted subtitle underneath — giving operators the canonical two-line
+  brand block without needing a bespoke logo SVG. The mark-badge is now
+  always visible (previously only when the sidebar was collapsed), so
+  standalone and whitelabel dashboards alike get a proper brand block.
+
+  Two new env vars:
+
+  | Variable                    | Purpose                                                    | Default                      |
+  | --------------------------- | ---------------------------------------------------------- | ---------------------------- |
+  | `ASSAY_WHITELABEL_SUBTITLE` | Small muted line under the brand name                      | — (no subtitle rendered)     |
+  | `ASSAY_WHITELABEL_MARK`     | Glyph in the badge; override when `NAME`'s first char isn't right | First char of `NAME` uppercased |
+
+  When `ASSAY_WHITELABEL_LOGO_URL` is set, the supplied image replaces
+  the badge glyph entirely via `:has(.logo-img)` targeting.
+
+- **Footer attribution: "Powered by" in whitelabel mode.** Any
+  customised identity (non-default `NAME`, non-empty `SUBTITLE`, or a
+  `LOGO_URL` / `CSS_URL` set) flips the status-bar engine line from
+  `Assay Workflow Engine vX.Y.Z` to
+  `Powered by Assay Workflow Engine vX.Y.Z`, with "Assay Workflow
+  Engine" linked to https://assay.rs. Attribution without burying the
+  engine. Non-whitelabel deployments see no change.
+
+- **`ctx:cancel(reason)` — workflows can land themselves in CANCELLED.**
+  Raises the internal cancellation sentinel the task runner already
+  handles, so a workflow that decides it should stop early (human
+  approver rejected, preconditions fail) transitions to engine-level
+  `CANCELLED` instead of `COMPLETED`. Previously the only way to reach
+  that status was an external `POST /workflows/{id}/cancel`, which
+  forced workflow authors to either return normally (wrong status
+  surfaced in dashboards) or raise a generic error (status became
+  `FAILED`, also wrong). Distinct from an externally-requested cancel —
+  same terminal state.
+
+  ```lua
+  workflow.define("ApproveAndDeploy", function(ctx, input)
+      local d = ctx:wait_for_signal("decision")
+      if d.action == "reject" then
+          state.rejected_by = d.user
+          ctx:cancel("rejected by " .. d.user)
+      end
+      return ctx:execute_activity("deploy", input)
+  end)
+  ```
+
+### Tests
+
+- 5 new whitelabel render tests: subtitle rendering (set + unset),
+  mark override, "Powered by"-footer variant, and the `is_customised()`
+  detection that drives it. Total whitelabel coverage: 15 tests.
+- New orchestration test `lua_workflow_ctx_cancel_lands_in_cancelled_status`
+  verifies a workflow calling `ctx:cancel("reason")` ends with
+  `status = "CANCELLED"` and no result payload.
+
 ## [0.11.10] - 2026-04-17
 
 ### Added

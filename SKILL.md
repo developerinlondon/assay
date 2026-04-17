@@ -305,6 +305,7 @@ Workflow handler `ctx`:
 | `ctx:register_query(name, fn)`             | nil             | **v0.11.3**: expose live state via `GET /workflows/{id}/state`. Handler runs on every replay.                |
 | `ctx:upsert_search_attributes(patch)`      | nil             | **v0.11.3**: merge into the workflow's indexed metadata; callers filter with `workflow.list({search_attrs})` |
 | `ctx:continue_as_new(input)`               | nil (yields)    | **v0.11.3**: close this run, start a fresh one with empty history; same type/namespace/queue                 |
+| `ctx:cancel(reason?)`                      | never (raises)  | **v0.11.11**: terminate the workflow with engine status `CANCELLED`. Self-decided cancel; not the same as an external cancel request. |
 
 **Dashboard** at `/workflow/` — read-only views in v0.11.2; **v0.11.3** adds tier-1 operator
 controls: start-workflow form, per-row signal/cancel/terminate, full schedule CRUD (including
@@ -320,13 +321,16 @@ create/delete, engine version shown in the status bar.
 `ASSAY_ARCHIVE_RETENTION_DAYS` (default 30) to S3 and stubs the row with `archived_at` +
 `archive_uri`. See `docs/modules/workflow.md` for the full list of `ASSAY_ARCHIVE_*` env vars.
 
-**Dashboard whitelabel** (v0.11.10+). Seven optional `ASSAY_WHITELABEL_*` env vars rebrand the
-embedded `/workflow` dashboard per-deployment — name (`_NAME`), logo image (`_LOGO_URL`), browser
-title (`_PAGE_TITLE`), parent-app back-link (`_PARENT_URL` + `_PARENT_NAME`), API Docs link
-override / hide (`_API_DOCS_URL`; set to `""` to hide), and an extra stylesheet URL (`_CSS_URL`)
-loaded after assay's own CSS for re-skinning via CSS custom properties. Every knob defaults to
-assay's identity; unset env keeps the standalone experience unchanged. Use when embedding assay
-inside another admin UI. Full table + theme tokens in `docs/modules/workflow.md#dashboard-whitelabel`.
+**Dashboard whitelabel** (v0.11.10+). Nine optional `ASSAY_WHITELABEL_*` env vars rebrand the
+embedded `/workflow` dashboard per-deployment — brand name (`_NAME`), mark-badge glyph (`_MARK`;
+v0.11.11), subtitle (`_SUBTITLE`; v0.11.11), logo image (`_LOGO_URL`), browser title
+(`_PAGE_TITLE`), parent-app back-link (`_PARENT_URL` + `_PARENT_NAME`), API Docs link override /
+hide (`_API_DOCS_URL`; set to `""` to hide), and an extra stylesheet URL (`_CSS_URL`) loaded
+after assay's own CSS for re-skinning via CSS custom properties. Any customised identity flips
+the footer to `Powered by Assay Workflow Engine vX.Y.Z` with a link to https://assay.rs
+(v0.11.11). Every knob defaults to assay's identity; unset env keeps the standalone experience
+unchanged. Use when embedding assay inside another admin UI. Full table + theme tokens in
+`docs/modules/workflow.md#dashboard-whitelabel`.
 
 ## Stdlib Modules Quick Reference
 
