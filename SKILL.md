@@ -320,12 +320,13 @@ create/delete, engine version shown in the status bar.
 `ASSAY_ARCHIVE_RETENTION_DAYS` (default 30) to S3 and stubs the row with `archived_at` +
 `archive_uri`. See `docs/modules/workflow.md` for the full list of `ASSAY_ARCHIVE_*` env vars.
 
-**Dashboard whitelabel** (v0.11.10+). Six optional `ASSAY_WHITELABEL_*` env vars rebrand the
+**Dashboard whitelabel** (v0.11.10+). Seven optional `ASSAY_WHITELABEL_*` env vars rebrand the
 embedded `/workflow` dashboard per-deployment — name (`_NAME`), logo image (`_LOGO_URL`), browser
 title (`_PAGE_TITLE`), parent-app back-link (`_PARENT_URL` + `_PARENT_NAME`), API Docs link
-override / hide (`_API_DOCS_URL`; set to `""` to hide). Every knob defaults to assay's identity;
-unset env keeps the standalone experience unchanged. Use when embedding assay inside another
-admin UI. Full table in `docs/modules/workflow.md#dashboard-whitelabel`.
+override / hide (`_API_DOCS_URL`; set to `""` to hide), and an extra stylesheet URL (`_CSS_URL`)
+loaded after assay's own CSS for re-skinning via CSS custom properties. Every knob defaults to
+assay's identity; unset env keeps the standalone experience unchanged. Use when embedding assay
+inside another admin UI. Full table + theme tokens in `docs/modules/workflow.md#dashboard-whitelabel`.
 
 ## Stdlib Modules Quick Reference
 

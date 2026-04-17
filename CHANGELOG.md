@@ -21,11 +21,21 @@ All notable changes to Assay are documented here.
   | `ASSAY_WHITELABEL_PARENT_URL`     | Back-link URL in the sidebar footer                  | — (hidden)                   |
   | `ASSAY_WHITELABEL_PARENT_NAME`    | Label for the back-link                              | `Back`                       |
   | `ASSAY_WHITELABEL_API_DOCS_URL`   | Override / hide the sidebar API Docs link            | `/api/v1/docs`               |
+  | `ASSAY_WHITELABEL_CSS_URL`        | Extra stylesheet loaded after assay's own CSS        | — (no extra sheet)           |
 
   `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link
   entirely — useful when the embedding app's ingress doesn't route the
   OpenAPI path or the docs are provided elsewhere. Any other value
   redirects the link to that URL.
+
+  `ASSAY_WHITELABEL_CSS_URL` lets operators re-skin the dashboard
+  without forking. The extra stylesheet loads at the end of `<head>`,
+  after assay's `theme.css` + `style.css`, so source-order specificity
+  lets it override any CSS custom property (e.g. `--accent`, `--bg`,
+  `--text`) or specific selector. Full design-token list in
+  `docs/modules/workflow.md#dashboard-whitelabel`. Asset-version is
+  appended automatically so a redeploy that changes the stylesheet
+  forces a browser re-fetch.
 
   Hosting the logo: if assay is mounted on the same origin as the
   embedding app (e.g. behind a reverse proxy at `/workflow/*`), a

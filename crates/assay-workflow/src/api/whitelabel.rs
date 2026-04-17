@@ -15,6 +15,7 @@
 //! | `ASSAY_WHITELABEL_PARENT_URL`   | When set, adds a back-link in the sidebar footer     | — (hidden)                   |
 //! | `ASSAY_WHITELABEL_PARENT_NAME`  | Label for the back-link                              | `Back`                       |
 //! | `ASSAY_WHITELABEL_API_DOCS_URL` | Override (or hide) the API Docs sidebar link         | `/api/v1/docs`               |
+//! | `ASSAY_WHITELABEL_CSS_URL`      | Extra stylesheet loaded after assay's own CSS        | — (none)                     |
 //!
 //! ## Hiding vs overriding
 //!
@@ -29,6 +30,28 @@
 //! embedding app (e.g. behind a reverse proxy at `/workflow/*`), a
 //! path-absolute URL like `/static/my-logo.svg` loads from the host
 //! app with no CORS plumbing.
+//!
+//! ## Theming via `ASSAY_WHITELABEL_CSS_URL`
+//!
+//! Assay's dashboard styles are token-driven — every colour, radius,
+//! and shadow is a CSS custom property on `:root`. An extra stylesheet
+//! loaded at the end of `<head>` can therefore override any design
+//! token without touching the assay source:
+//!
+//! ```css
+//! :root {
+//!   --bg:      hsl(0 0% 98%);
+//!   --surface: hsl(0 0% 100%);
+//!   --accent:  #009999;
+//!   --accent-hover: #007a7a;
+//!   --text:    hsl(222 84% 5%);
+//!   --border:  hsl(214 32% 91%);
+//! }
+//! ```
+//!
+//! Tokens documented in `docs/modules/workflow.md#dashboard-whitelabel`.
+//! Operators can additionally override any assay selector in the same
+//! file — specificity + source order ensures the later sheet wins.
 
 use std::sync::LazyLock;
 
@@ -54,6 +77,10 @@ pub struct WhitelabelConfig {
     /// `Some(url)` → render the link pointing at `url`.
     /// `None`      → hide the link entirely.
     pub api_docs_url: Option<String>,
+    /// Optional stylesheet URL loaded after assay's own CSS. Operators
+    /// use this to re-skin the dashboard by overriding CSS custom
+    /// properties or specific selectors without touching the source.
+    pub css_url: Option<String>,
 }
 
 impl WhitelabelConfig {
@@ -82,6 +109,9 @@ impl WhitelabelConfig {
             Ok(s) => Some(s),
             Err(_) => Some("/api/v1/docs".to_string()),
         };
+        let css_url = std::env::var("ASSAY_WHITELABEL_CSS_URL")
+            .ok()
+            .filter(|s| !s.is_empty());
         Self {
             name,
             mark,
@@ -90,6 +120,7 @@ impl WhitelabelConfig {
             parent_url,
             parent_name,
             api_docs_url,
+            css_url,
         }
     }
 }
@@ -144,6 +175,23 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         None => String::new(),
     };
 
+    // Emitted at the end of <head>, after assay's own theme.css + style.css,
+    // so operator overrides win on source order + specificity. Asset-version
+    // is appended to the URL so a redeploy that changes the stylesheet
+    // forces a browser re-fetch (same pattern as assay's own assets).
+    let extra_css = match &wl.css_url {
+        Some(url) => {
+            let sep = if url.contains('?') { '&' } else { '?' };
+            format!(
+                r#"<link rel="stylesheet" href="{}{}v={}">"#,
+                html_escape(url),
+                sep,
+                asset_version
+            )
+        }
+        None => String::new(),
+    };
+
     template
         .replace("__ASSETV__", asset_version)
         .replace("__PAGE_TITLE__", &html_escape(&wl.page_title))
@@ -152,6 +200,7 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         .replace("__BRAND_LOGO_IMG__", &logo_img)
         .replace("__PARENT_BACK_LINK__", &back_link)
         .replace("__API_DOCS_LINK__", &api_docs_link)
+        .replace("__EXTRA_CSS_LINK__", &extra_css)
 }
 
 #[cfg(test)]
@@ -159,6 +208,7 @@ mod tests {
     use super::*;
 
     const TEMPLATE: &str = r#"<title>__PAGE_TITLE__</title>
+<head>__EXTRA_CSS_LINK__</head>
 <span>__BRAND_NAME__</span><span>__BRAND_MARK__</span>
 __BRAND_LOGO_IMG__
 __PARENT_BACK_LINK__
@@ -174,6 +224,7 @@ v=__ASSETV__"#;
             parent_url: None,
             parent_name: "Back".into(),
             api_docs_url: Some("/api/v1/docs".into()),
+            css_url: None,
         }
     }
 
@@ -237,6 +288,34 @@ v=__ASSETV__"#;
         let out = render_index(TEMPLATE, "v", &cfg);
         assert!(out.contains(r#"href="https://docs.example/api""#));
         assert!(out.contains("API Docs"));
+    }
+
+    #[test]
+    fn css_url_unset_emits_no_extra_stylesheet() {
+        let out = render_index(TEMPLATE, "42", &default_cfg());
+        assert!(
+            !out.contains("rel=\"stylesheet\""),
+            "no extra stylesheet should render when ASSAY_WHITELABEL_CSS_URL is unset"
+        );
+    }
+
+    #[test]
+    fn css_url_emits_cache_busted_link_tag() {
+        let mut cfg = default_cfg();
+        cfg.css_url = Some("/static/cc-theme.css".into());
+        let out = render_index(TEMPLATE, "42", &cfg);
+        assert!(out.contains(r#"<link rel="stylesheet" href="/static/cc-theme.css?v=42">"#));
+    }
+
+    #[test]
+    fn css_url_with_existing_query_string_uses_ampersand() {
+        // Operators may want to version their stylesheet themselves
+        // (`?rev=abc`) — we still tack the asset-version on without
+        // breaking the query string.
+        let mut cfg = default_cfg();
+        cfg.css_url = Some("/static/cc-theme.css?rev=abc".into());
+        let out = render_index(TEMPLATE, "42", &cfg);
+        assert!(out.contains("href=\"/static/cc-theme.css?rev=abc&v=42\""));
     }
 
     #[test]

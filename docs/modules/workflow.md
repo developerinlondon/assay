@@ -89,11 +89,53 @@ read as part of that product.
 | `ASSAY_WHITELABEL_PARENT_URL`   | (unset, link hidden)       | If set, adds a back-link in the sidebar footer to the parent app |
 | `ASSAY_WHITELABEL_PARENT_NAME`  | `Back`                     | Label for the back-link                                         |
 | `ASSAY_WHITELABEL_API_DOCS_URL` | `/api/v1/docs`             | Override or hide the API Docs sidebar link                      |
+| `ASSAY_WHITELABEL_CSS_URL`      | (unset, no extra sheet)    | Extra stylesheet loaded after assay's own CSS                   |
 
 `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link entirely.
 Any other value redirects the link to that URL. Setting the variable
 explicitly to empty is distinct from leaving it unset — unset keeps the
 default `/api/v1/docs` link, empty hides it.
+
+**Theming via CSS custom properties.** Every colour, radius, and shadow
+on the dashboard is a CSS variable on `:root`. An extra stylesheet
+loaded after assay's own CSS can re-declare any of them without
+forking. The full token list:
+
+```
+--bg          --surface      --surface-hover  --border
+--text        --text-muted
+--accent      --accent-hover
+--green       --red          --yellow         --orange
+--shadow      --code-bg
+```
+
+Minimal example — re-skin the dashboard to match your host app's
+primary colour:
+
+```css
+/* served at /static/my-theme.css by your host app */
+:root {
+  --accent:       #009999;
+  --accent-hover: #007a7a;
+  --bg:           hsl(0 0% 98%);
+  --surface:      hsl(0 0% 100%);
+  --text:         hsl(222 84% 5%);
+  --border:       hsl(214 32% 91%);
+}
+```
+
+Then point assay at it:
+
+```yaml
+- name: ASSAY_WHITELABEL_CSS_URL
+  value: "/static/my-theme.css"
+```
+
+Operators can also override any specific selector in the same file —
+source-order specificity ensures the extra sheet wins. The URL is
+loaded as a plain `<link rel="stylesheet">` at the end of `<head>`; an
+asset-version query-string is appended automatically so redeploys
+invalidate browser caches.
 
 **Hosting the logo.** If assay is mounted on the same origin as the
 embedding app (e.g. behind a reverse proxy at `/workflow/*`), a
