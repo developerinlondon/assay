@@ -83,25 +83,63 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Publish assay-workflow to crates.io
+      # Crate versions are bumped independently — a release that only
+      # touches the binary (assay-lua) leaves assay-workflow on the same
+      # version as the previous release. Unconditionally re-publishing
+      # the unchanged sub-crate would fail with "crate already exists on
+      # the crates.io index" and turn the whole release red even though
+      # the actual user-facing artefacts (binary, image, GitHub release)
+      # shipped fine. Skipping when the version on crates.io already
+      # matches what we'd push keeps the workflow idempotent across
+      # binary-only and sub-crate-bump releases.
+      - name: Publish assay-workflow to crates.io (skip if version unchanged)
+        id: publish_workflow
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        # The root assay-lua crate has an optional dep on assay-workflow,
-        # so the engine crate must be published first. --allow-dirty
-        # because release.yml runs against a tagged commit (clean working
-        # tree, but some CI dirs may exist from prior steps).
-        run: cargo publish --allow-dirty -p assay-workflow
+        run: |
+          set -euo pipefail
+          VERSION=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name=="assay-workflow") | .version')
+          echo "assay-workflow manifest version: $VERSION"
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -A 'assay-release-ci (https://github.com/developerinlondon/assay)' \
+            "https://crates.io/api/v1/crates/assay-workflow/$VERSION")
+          if [ "$STATUS" = "200" ]; then
+            echo "assay-workflow@$VERSION is already on crates.io — skipping publish"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            # --allow-dirty because release.yml runs against a tagged
+            # commit (clean working tree, but some CI dirs may exist from
+            # prior steps).
+            cargo publish --allow-dirty -p assay-workflow
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
 
+      # Only needed when we actually pushed a new version — skip the
+      # 30s sleep on crates.io-no-op releases.
       - name: Wait for crates.io indexing
+        if: steps.publish_workflow.outputs.skipped != 'true'
         # Newly-published versions take a few seconds to be discoverable
         # by `cargo publish`. Without this, the assay-lua publish below
         # may fail to resolve assay-workflow = "0.1".
         run: sleep 30
 
-      - name: Publish assay-lua to crates.io
+      - name: Publish assay-lua to crates.io (skip if version unchanged)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --allow-dirty -p assay-lua
+        run: |
+          set -euo pipefail
+          VERSION=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name=="assay-lua") | .version')
+          echo "assay-lua manifest version: $VERSION"
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -A 'assay-release-ci (https://github.com/developerinlondon/assay)' \
+            "https://crates.io/api/v1/crates/assay-lua/$VERSION")
+          if [ "$STATUS" = "200" ]; then
+            echo "assay-lua@$VERSION is already on crates.io — skipping publish"
+          else
+            cargo publish --allow-dirty -p assay-lua
+          fi
 
   docker:
     runs-on: ubuntu-latest
