@@ -200,13 +200,17 @@
     if (component && component.render) {
       component.render(document.getElementById('content'), {
         namespace: currentNamespace,
+        getNamespace: function () { return currentNamespace; },
         apiFetch: apiFetch,
+        apiFetchRaw: apiFetchRaw,
+        toast: toast,
         formatTime: formatTime,
         truncate: truncate,
         isTerminal: isTerminal,
         formatJson: formatJson,
         badgeClass: badgeClass,
         escapeHtml: escapeHtml,
+        refreshCurrentView: refreshCurrentView,
         showDetail: typeof AssayDetail !== 'undefined' ? AssayDetail.showDetail : null,
       });
     }
