@@ -105,22 +105,76 @@ All notable changes to Assay are documented here.
   Every function is a thin HTTP wrapper returning the parsed JSON response (or `nil` on a 404 for
   `describe`/`get_state`), raising on other non-2xx responses.
 
-- **`assay workflow` and `assay schedule` CLI subcommands.** The stubs registered in v0.11.1 and
-  shipped as "not yet implemented" in v0.11.2 are replaced with real REST client implementations.
-  Covers every subcommand already in the parser
-  (`workflow list / describe /
-  signal / cancel / terminate`,
-  `schedule list / create / pause / resume / delete`) plus three v0.11.3-feature extensions:
+- **Full CLI for the workflow engine.** The stubs registered in v0.11.1 and shipped as "not yet
+  implemented" in v0.11.2 are replaced with real REST-client implementations, plus a considerable
+  expansion. Everything visible in `assay --help` actually runs.
 
-  - `assay workflow state <id> [<query-name>]` — reads the latest `register_query` snapshot
-  - `assay schedule patch <name> …` — in-place schedule updates
-  - `assay schedule create --timezone <tz>` — timezone flag on create
+  **Subcommand trees:**
 
-  Global flags, all env-backed: `--engine-url` / `ASSAY_ENGINE_URL` (default
-  `http://127.0.0.1:8080`), `--api-key` / `ASSAY_API_KEY` (bearer token forwarded as
-  `Authorization: Bearer <value>`), `--namespace` / `ASSAY_NAMESPACE` (default `main`). Exit 0 on
-  success, 1 on HTTP error / unreachable engine / bad JSON. No `--output json` flag — scripts use
-  the Lua stdlib; humans read the tables.
+  ```
+  assay workflow
+    start --type T [--id ID] [--input JSON] [--queue Q] [--search-attrs JSON]
+    list [--status S] [--type T] [--search-attrs JSON] [--limit N]
+    describe <id>
+    state <id> [<query-name>]                   # register_query reader
+    events <id> [--follow]                      # log, or poll-stream until terminal
+    children <id>
+    signal <id> <name> [payload-as-json-or-@file-or--]
+    cancel <id>
+    terminate <id> [--reason R]
+    continue-as-new <id> [--input JSON]         # client-side
+    wait <id> [--timeout SECS] [--target STATUS]  # exit 0/1/2 for scripts
+
+  assay schedule
+    list
+    describe <name>
+    create <name> --type T --cron EXPR [--timezone TZ] [--input JSON] [--queue Q]
+    patch <name> [--cron EXPR] [--timezone TZ] [--input JSON] [--queue Q] [--overlap POLICY]
+    pause <name>
+    resume <name>
+    delete <name>
+
+  assay namespace   create | list | describe | delete
+  assay worker      list
+  assay queue       stats
+  assay completion  <bash|zsh|fish|powershell|elvish>
+  ```
+
+  **Global options** (all flag-backed, env-backed, and config-file-backed, resolved in that
+  precedence order):
+
+  - `--engine-url` / `ASSAY_ENGINE_URL` (default `http://127.0.0.1:8080`)
+  - `--api-key` / `ASSAY_API_KEY` (bearer token, forwarded as `Authorization: Bearer <value>`)
+  - `--namespace` / `ASSAY_NAMESPACE` (default `main`)
+  - `--output` / `ASSAY_OUTPUT` — `table` | `json` | `jsonl` | `yaml`; TTY-adaptive default (`table`
+    on a terminal, `json` when stdout is piped)
+  - `--config` / `ASSAY_CONFIG_FILE` — YAML config file, discovered in this order: flag → env →
+    `$XDG_CONFIG_HOME/assay/config.yaml` → `~/.config/assay/config.yaml` → `/etc/assay/config.yaml`
+
+  **Config file** (every field optional):
+
+  ```yaml
+  engine_url: https://assay.example.com
+  api_key_file: /run/secrets/assay-api-key # preferred over `api_key:`
+  namespace: main
+  output: table
+  ```
+
+  `api_key_file` reads the file contents, trims whitespace, and uses that as the bearer token. Lets
+  the config live in a ConfigMap with the credential in a separate Secret.
+
+  **JSON input indirection.** `--input`, `--search-attrs`, and signal payload args accept:
+
+  - a literal JSON string (`'{"n":1}'`)
+  - `@PATH` — read the file and parse
+  - `-` — read stdin and parse
+
+  **Exit codes:** 0 success, 1 HTTP error / unreachable / not-found, 2 `workflow wait` timeout, 64
+  usage error (bad JSON input).
+
+  **Shell completion.** `assay completion <shell> > /etc/bash_completion.d/assay` (or the equivalent
+  for your shell). Buffered and graceful on SIGPIPE so piping to `head` doesn't panic. Adds one new
+  crate dep: `clap_complete`.
 
 ### Changed
 
