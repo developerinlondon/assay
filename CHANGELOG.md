@@ -176,6 +176,32 @@ All notable changes to Assay are documented here.
   for your shell). Buffered and graceful on SIGPIPE so piping to `head` doesn't panic. Adds one new
   crate dep: `clap_complete`.
 
+- **Tier-1 dashboard mutations.** The built-in dashboard at `/workflow/` was read-only in v0.11.1;
+  every existing view now pairs with its matching operator control:
+
+  - **Workflows view** — new `+ Start workflow` inline form (type / id / task_queue / input JSON /
+    search_attributes JSON); per-row Signal / Cancel / Terminate; search-attributes filter in the
+    toolbar (debounced, with client-side JSON validation).
+  - **Workflow detail panel** — Signal, Cancel, Terminate, and Continue-as-new buttons, all with
+    toast feedback. "Live state" card renders the latest snapshot written by `ctx:register_query`
+    handlers (with the event seq and timestamp the snapshot was taken at).
+  - **Schedules view** — per-row Edit (PATCH form pre-filled with the schedule's values), Pause /
+    Resume toggle, Delete. Create form picks up a Timezone field.
+  - **Settings view** — Engine Info card shows the engine version + build profile, fetched from
+    `/api/v1/version`. Namespace create / delete upgraded to toast feedback and refreshes the
+    sidebar namespace switcher.
+  - Shared `toast()` + `apiFetchRaw()` helpers exposed via the component context for consistent
+    success/error feedback across every mutation.
+
+  Explicitly tier 1 — no in-browser workflow authoring, no batch operations, no reset-to-event, no
+  in-browser RBAC. Those are tier 2 / tier 3 and deferred to later releases.
+
+- **`GET /api/v1/version` endpoint.** Returns `{ version, build_profile }`. The CLI passes its own
+  `CARGO_PKG_VERSION` to `assay_workflow::api::serve_with_version`, so the field reflects the
+  user-facing binary (e.g. `0.11.3`) and not the internal `assay-workflow` crate version. Embedders
+  using plain `serve` get the crate version as a fallback. `AppState` gains a
+  `binary_version: Option<&'static str>` field.
+
 ### Changed
 
 - **`Engine::start_workflow` signature** gains a `search_attributes: Option<&str>` parameter (for
