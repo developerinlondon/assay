@@ -21,6 +21,7 @@ serde_json = "1"
 
 # Cron expression parsing
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono-tz = { version = "0.10", default-features = false }
 cron = "0.16"
 
 # HTTP server + REST API

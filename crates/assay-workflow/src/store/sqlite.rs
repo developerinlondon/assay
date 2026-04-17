@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
     namespace       TEXT NOT NULL DEFAULT 'main',
     workflow_type   TEXT NOT NULL,
     cron_expr       TEXT NOT NULL,
+    timezone        TEXT NOT NULL DEFAULT 'UTC',
     input           TEXT,
     task_queue      TEXT NOT NULL DEFAULT 'main',
     overlap_policy  TEXT NOT NULL DEFAULT 'skip',
@@ -273,6 +274,35 @@ impl SqliteStore {
             if !trimmed.is_empty() {
                 sqlx::query(trimmed).execute(&self.pool).await?;
             }
+        }
+        // Additive migrations for schema evolution. SQLite doesn't support
+        // `ADD COLUMN IF NOT EXISTS`, so we check via pragma_table_info
+        // before issuing ALTER. Each call is idempotent across startups.
+        Self::add_column_if_missing(
+            &self.pool,
+            "workflow_schedules",
+            "timezone",
+            "TEXT NOT NULL DEFAULT 'UTC'",
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn add_column_if_missing(
+        pool: &SqlitePool,
+        table: &str,
+        column: &str,
+        type_def: &str,
+    ) -> Result<()> {
+        let exists: Option<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info(?) WHERE name = ?")
+                .bind(table)
+                .bind(column)
+                .fetch_optional(pool)
+                .await?;
+        if exists.is_none() {
+            let sql = format!("ALTER TABLE {table} ADD COLUMN {column} {type_def}");
+            sqlx::query(&sql).execute(pool).await?;
         }
         Ok(())
     }
@@ -816,13 +846,14 @@ impl WorkflowStore for SqliteStore {
 
     async fn create_schedule(&self, sched: &WorkflowSchedule) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflow_schedules (name, namespace, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO workflow_schedules (name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&sched.name)
         .bind(&sched.namespace)
         .bind(&sched.workflow_type)
         .bind(&sched.cron_expr)
+        .bind(&sched.timezone)
         .bind(&sched.input)
         .bind(&sched.task_queue)
         .bind(&sched.overlap_policy)
@@ -838,7 +869,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn get_schedule(&self, namespace: &str, name: &str) -> Result<Option<WorkflowSchedule>> {
         let row = sqlx::query_as::<_, SqliteScheduleRow>(
-            "SELECT name, namespace, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
+            "SELECT name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
              FROM workflow_schedules WHERE namespace = ? AND name = ?",
         )
         .bind(namespace)
@@ -850,7 +881,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn list_schedules(&self, namespace: &str) -> Result<Vec<WorkflowSchedule>> {
         let rows = sqlx::query_as::<_, SqliteScheduleRow>(
-            "SELECT name, namespace, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
+            "SELECT name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
              FROM workflow_schedules WHERE namespace = ? ORDER BY name",
         )
         .bind(namespace)
@@ -1292,6 +1323,7 @@ struct SqliteScheduleRow {
     namespace: String,
     workflow_type: String,
     cron_expr: String,
+    timezone: String,
     input: Option<String>,
     task_queue: String,
     overlap_policy: String,
@@ -1309,6 +1341,7 @@ impl From<SqliteScheduleRow> for WorkflowSchedule {
             namespace: r.namespace,
             workflow_type: r.workflow_type,
             cron_expr: r.cron_expr,
+            timezone: r.timezone,
             input: r.input,
             task_queue: r.task_queue,
             overlap_policy: r.overlap_policy,

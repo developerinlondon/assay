@@ -291,6 +291,7 @@ async fn pg_schedules() {
             namespace: "main".to_string(),
             workflow_type: "IngestData".to_string(),
             cron_expr: "0 * * * *".to_string(),
+            timezone: "UTC".to_string(),
             input: None,
             task_queue: "main".to_string(),
             overlap_policy: "skip".to_string(),

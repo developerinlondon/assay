@@ -261,6 +261,10 @@ pub struct WorkflowSchedule {
     pub namespace: String,
     pub workflow_type: String,
     pub cron_expr: String,
+    /// IANA time-zone name used to interpret `cron_expr` (e.g. "Europe/Berlin",
+    /// "America/New_York"). Defaults to "UTC" when a schedule is created
+    /// without an explicit timezone, preserving v0.11.2 behaviour.
+    pub timezone: String,
     pub input: Option<String>,
     pub task_queue: String,
     pub overlap_policy: String,

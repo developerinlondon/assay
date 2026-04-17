@@ -31,6 +31,10 @@ pub struct CreateScheduleRequest {
     pub workflow_type: String,
     /// Cron expression (e.g. "0 * * * *" for hourly)
     pub cron_expr: String,
+    /// IANA time-zone name used to interpret `cron_expr`
+    /// (e.g. "Europe/Berlin", "America/New_York"). Default: "UTC".
+    #[serde(default = "default_timezone")]
+    pub timezone: String,
     /// Optional JSON input passed to each workflow run
     pub input: Option<serde_json::Value>,
     /// Task queue for created workflows (default: "main")
@@ -53,6 +57,10 @@ fn default_overlap() -> String {
     "skip".to_string()
 }
 
+fn default_timezone() -> String {
+    "UTC".to_string()
+}
+
 #[utoipa::path(
     post, path = "/api/v1/schedules",
     tag = "schedules",
@@ -68,11 +76,23 @@ pub async fn create_schedule<S: WorkflowStore>(
 ) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
     let now = timestamp_now();
 
+    // Validate the timezone early so a bad value produces a clean 400
+    // instead of a mysterious silent no-op from the scheduler later.
+    if !req.timezone.eq_ignore_ascii_case("UTC")
+        && req.timezone.parse::<chrono_tz::Tz>().is_err()
+    {
+        return Err(AppError::Internal(anyhow::anyhow!(
+            "invalid timezone: {}",
+            req.timezone
+        )));
+    }
+
     let schedule = WorkflowSchedule {
         name: req.name.clone(),
         namespace: req.namespace.clone(),
         workflow_type: req.workflow_type,
         cron_expr: req.cron_expr,
+        timezone: req.timezone,
         input: req.input.map(|v| v.to_string()),
         task_queue: req.task_queue,
         overlap_policy: req.overlap_policy,

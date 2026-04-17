@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
     name            TEXT NOT NULL,
     workflow_type   TEXT NOT NULL,
     cron_expr       TEXT NOT NULL,
+    timezone        TEXT NOT NULL DEFAULT 'UTC',
     input           TEXT,
     task_queue      TEXT NOT NULL DEFAULT 'main',
     overlap_policy  TEXT NOT NULL DEFAULT 'skip',
@@ -107,6 +108,10 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
     created_at      DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (namespace, name)
 );
+-- Upgrades from v0.11.2 need the timezone column added; on a fresh
+-- install the CREATE TABLE above has already created it and this is
+-- a silent no-op.
+ALTER TABLE workflow_schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC';
 
 CREATE TABLE IF NOT EXISTS workflow_workers (
     id              TEXT PRIMARY KEY,
@@ -709,13 +714,14 @@ impl WorkflowStore for PostgresStore {
 
     async fn create_schedule(&self, sched: &WorkflowSchedule) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflow_schedules (namespace, name, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+            "INSERT INTO workflow_schedules (namespace, name, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
         )
         .bind(&sched.namespace)
         .bind(&sched.name)
         .bind(&sched.workflow_type)
         .bind(&sched.cron_expr)
+        .bind(&sched.timezone)
         .bind(&sched.input)
         .bind(&sched.task_queue)
         .bind(&sched.overlap_policy)
@@ -731,7 +737,7 @@ impl WorkflowStore for PostgresStore {
 
     async fn get_schedule(&self, namespace: &str, name: &str) -> Result<Option<WorkflowSchedule>> {
         let row = sqlx::query_as::<_, PgScheduleRow>(
-            "SELECT namespace, name, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at FROM workflow_schedules WHERE namespace = $1 AND name = $2",
+            "SELECT namespace, name, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at FROM workflow_schedules WHERE namespace = $1 AND name = $2",
         )
         .bind(namespace)
         .bind(name)
@@ -742,7 +748,7 @@ impl WorkflowStore for PostgresStore {
 
     async fn list_schedules(&self, namespace: &str) -> Result<Vec<WorkflowSchedule>> {
         let rows = sqlx::query_as::<_, PgScheduleRow>(
-            "SELECT namespace, name, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at FROM workflow_schedules WHERE namespace = $1 ORDER BY name",
+            "SELECT namespace, name, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at FROM workflow_schedules WHERE namespace = $1 ORDER BY name",
         )
         .bind(namespace)
         .fetch_all(&self.pool)
@@ -1161,6 +1167,7 @@ struct PgScheduleRow {
     name: String,
     workflow_type: String,
     cron_expr: String,
+    timezone: String,
     input: Option<String>,
     task_queue: String,
     overlap_policy: String,
@@ -1178,6 +1185,7 @@ impl From<PgScheduleRow> for WorkflowSchedule {
             name: r.name,
             workflow_type: r.workflow_type,
             cron_expr: r.cron_expr,
+            timezone: r.timezone,
             input: r.input,
             task_queue: r.task_queue,
             overlap_policy: r.overlap_policy,
