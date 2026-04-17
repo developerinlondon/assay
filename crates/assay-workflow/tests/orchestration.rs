@@ -2208,13 +2208,19 @@ async fn cli_workflow_list_empty() {
     };
     let (url, _h) = start_test_server().await;
 
+    // Force --output table explicitly: the CLI's default is TTY-adaptive,
+    // and stdout is a pipe here so the auto-default is `json`.
     let output = tokio::process::Command::new(&assay_bin)
-        .args(["workflow", "list", "--engine-url", &url])
+        .args(["workflow", "list", "--output", "table", "--engine-url", &url])
         .output()
         .await
         .expect("run assay workflow list");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "exit 0; stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "exit 0; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(stdout.contains("ID"), "header row present: {stdout}");
 }
 
@@ -2339,4 +2345,274 @@ async fn cli_honors_engine_url_env_var() {
         .await
         .expect("run");
     assert!(output.status.success(), "env var honored; stderr: {}", String::from_utf8_lossy(&output.stderr));
+}
+
+// ── Plan 05 expansion — extended CLI integration tests ──────────────
+//
+// Covers the new subcommands (start, events, children, continue-as-new,
+// wait, namespace/worker/queue, completion), the output formats
+// (table/json/jsonl/yaml), config-file precedence, and JSON input
+// indirection (@file / - stdin / literal).
+
+#[tokio::test]
+async fn cli_workflow_start_returns_identifiers() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_workflow_start_returns_identifiers — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    let out = tokio::process::Command::new(&assay_bin)
+        .args([
+            "workflow", "start",
+            "--type", "SmokeTest",
+            "--id", "wf-cli-start",
+            "--input", r#"{"n":1}"#,
+            "--output", "json",
+            "--engine-url", &url,
+        ])
+        .output()
+        .await
+        .expect("run assay workflow start");
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let body: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(body["workflow_id"], "wf-cli-start");
+    assert!(body["run_id"].is_string());
+}
+
+#[tokio::test]
+async fn cli_workflow_wait_times_out_with_exit_2() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_workflow_wait_times_out_with_exit_2 — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    // Start a workflow that will never terminate (no worker running).
+    tokio::process::Command::new(&assay_bin)
+        .args([
+            "workflow", "start",
+            "--type", "NeverCompletes",
+            "--id", "wf-wait-timeout",
+            "--engine-url", &url,
+        ])
+        .output()
+        .await
+        .unwrap();
+
+    let out = tokio::process::Command::new(&assay_bin)
+        .args([
+            "workflow", "wait", "wf-wait-timeout",
+            "--timeout", "1",
+            "--engine-url", &url,
+        ])
+        .output()
+        .await
+        .expect("run assay workflow wait");
+    let code = out.status.code().unwrap_or(-1);
+    assert_eq!(code, 2, "timeout → exit 2; stderr: {}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[tokio::test]
+async fn cli_namespace_lifecycle_via_cli() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_namespace_lifecycle_via_cli — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    async fn run(bin: &std::path::Path, args: &[&str]) -> std::process::Output {
+        let out = tokio::process::Command::new(bin)
+            .args(args)
+            .output()
+            .await
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "command {:?} failed.\nstdout: {}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out
+    }
+
+    run(&assay_bin, &["namespace", "create", "cli-ns", "--engine-url", &url]).await;
+    let listed = run(&assay_bin, &["namespace", "list", "--engine-url", &url]).await;
+    assert!(
+        String::from_utf8_lossy(&listed.stdout).contains("cli-ns"),
+        "list should include cli-ns"
+    );
+    let desc = run(
+        &assay_bin,
+        &["namespace", "describe", "cli-ns", "--output", "json", "--engine-url", &url],
+    )
+    .await;
+    let body: serde_json::Value = serde_json::from_slice(&desc.stdout).unwrap();
+    assert_eq!(body["namespace"], "cli-ns");
+    assert_eq!(body["total_workflows"], 0);
+    run(&assay_bin, &["namespace", "delete", "cli-ns", "--engine-url", &url]).await;
+}
+
+#[tokio::test]
+async fn cli_worker_and_queue_list_empty() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_worker_and_queue_list_empty — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    let workers = tokio::process::Command::new(&assay_bin)
+        .args(["worker", "list", "--output", "json", "--engine-url", &url])
+        .output()
+        .await
+        .unwrap();
+    assert!(workers.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&workers.stdout).unwrap();
+    assert!(v.is_array());
+
+    let queues = tokio::process::Command::new(&assay_bin)
+        .args(["queue", "stats", "--output", "json", "--engine-url", &url])
+        .output()
+        .await
+        .unwrap();
+    assert!(queues.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&queues.stdout).unwrap();
+    assert!(v.is_array());
+}
+
+#[tokio::test]
+async fn cli_output_formats_are_parseable() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_output_formats_are_parseable — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    // seed with one workflow so the list isn't empty
+    tokio::process::Command::new(&assay_bin)
+        .args(["workflow", "start", "--type", "X", "--id", "wf-fmt", "--engine-url", &url])
+        .output()
+        .await
+        .unwrap();
+
+    for fmt in ["json", "jsonl", "yaml", "table"] {
+        let out = tokio::process::Command::new(&assay_bin)
+            .args(["workflow", "list", "--output", fmt, "--engine-url", &url])
+            .output()
+            .await
+            .expect("run list");
+        assert!(
+            out.status.success(),
+            "format={fmt} failed.\nstderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        match fmt {
+            "json" => {
+                let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+                assert!(parsed.is_array(), "json output is an array");
+            }
+            "jsonl" => {
+                for line in stdout.lines() {
+                    if !line.trim().is_empty() {
+                        serde_json::from_str::<serde_json::Value>(line).unwrap();
+                    }
+                }
+            }
+            "yaml" => {
+                // YAML list output starts with `- ` at the top level.
+                // We don't pull serde_yml into this crate's dev-deps just
+                // to round-trip; a looser sanity check is sufficient.
+                assert!(
+                    stdout.trim_start().starts_with('-'),
+                    "yaml list output should start with '- ': {stdout:?}"
+                );
+            }
+            "table" => {
+                assert!(stdout.contains("wf-fmt"));
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[tokio::test]
+async fn cli_input_via_stdin_resolves() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_input_via_stdin_resolves — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    // Start a workflow so the signal has a target
+    tokio::process::Command::new(&assay_bin)
+        .args(["workflow", "start", "--type", "X", "--id", "wf-stdin", "--engine-url", &url])
+        .output()
+        .await
+        .unwrap();
+
+    let mut child = tokio::process::Command::new(&assay_bin)
+        .args(["workflow", "signal", "wf-stdin", "go", "-", "--engine-url", &url])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    {
+        use tokio::io::AsyncWriteExt;
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(br#"{"from":"stdin"}"#).await.unwrap();
+    }
+    let output = child.wait_with_output().await.unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
+async fn cli_config_file_supplies_engine_url() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_config_file_supplies_engine_url — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg_path = tmp.path().join("cfg.yaml");
+    std::fs::write(&cfg_path, format!("engine_url: {url}\noutput: json\n")).unwrap();
+
+    let out = tokio::process::Command::new(&assay_bin)
+        .args(["workflow", "list", "--config", cfg_path.to_str().unwrap()])
+        .env_remove("ASSAY_ENGINE_URL")
+        .env_remove("ASSAY_API_KEY")
+        .output()
+        .await
+        .expect("run");
+    assert!(
+        out.status.success(),
+        "config should supply engine_url.\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let _parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+}
+
+#[tokio::test]
+async fn cli_completion_generates_for_every_shell() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_completion_generates_for_every_shell — no assay binary");
+        return;
+    };
+
+    for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
+        let out = tokio::process::Command::new(&assay_bin)
+            .args(["completion", shell])
+            .output()
+            .await
+            .expect("run completion");
+        assert!(out.status.success(), "completion {shell}: stderr: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(!out.stdout.is_empty(), "completion {shell}: empty output");
+    }
 }
