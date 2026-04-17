@@ -644,6 +644,81 @@ async fn api_keys_non_idempotent_mints_another_with_same_label() {
     );
 }
 
+// ── Public endpoints — unauth even when auth is enabled ─────
+
+#[tokio::test]
+async fn health_is_unauth_in_api_key_mode() {
+    // /api/v1/health must always be reachable without auth so k8s kubelet
+    // probes, load balancers, and third-party monitors don't need tokens.
+    let (url, _h) = start_server(AuthMode::api_key()).await;
+
+    let resp = client()
+        .get(format!("{url}/api/v1/health"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["status"], "ok");
+}
+
+#[tokio::test]
+async fn health_is_unauth_in_jwt_mode() {
+    let keys = generate_test_rsa_keys();
+    let (url, _h) = start_server(jwt_auth_mode(&keys)).await;
+
+    let resp = client()
+        .get(format!("{url}/api/v1/health"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
+async fn health_is_unauth_in_combined_mode() {
+    let keys = generate_test_rsa_keys();
+    let (url, _h) = start_server(combined_auth_mode(&keys)).await;
+
+    let resp = client()
+        .get(format!("{url}/api/v1/health"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
+async fn version_is_unauth_in_api_key_mode() {
+    // /api/v1/version — used by the CLI and dashboard to identify the
+    // running build. Always unauth for the same reasons as /health.
+    let (url, _h) = start_server(AuthMode::api_key()).await;
+
+    let resp = client()
+        .get(format!("{url}/api/v1/version"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body.get("version").is_some());
+    assert!(body.get("build_profile").is_some());
+}
+
+#[tokio::test]
+async fn other_api_v1_paths_still_require_auth_when_auth_enabled() {
+    // Regression: carving out /health + /version must not accidentally
+    // open up the rest of /api/v1/*. /api/v1/workflows is auth-gated.
+    let (url, _h) = start_server(AuthMode::api_key()).await;
+
+    let resp = client()
+        .get(format!("{url}/api/v1/workflows"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
+
 #[tokio::test]
 async fn bootstrap_window_closed_in_no_auth_mode_is_a_noop() {
     // no-auth mode: the whole API is open, so the bootstrap gate is irrelevant.

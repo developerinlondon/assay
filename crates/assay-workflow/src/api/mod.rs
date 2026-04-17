@@ -3,9 +3,9 @@ pub mod api_keys;
 pub mod auth;
 pub mod dashboard;
 pub mod events;
-pub mod meta;
 pub mod namespaces;
 pub mod openapi;
+pub mod public;
 pub mod queues;
 pub mod schedules;
 pub mod tasks;
@@ -38,24 +38,36 @@ pub struct AppState<S: WorkflowStore> {
 }
 
 /// Build the full API router.
+///
+/// Three tiers:
+///   1. **Authenticated `/api/v1/*`** — workflows, schedules, namespaces,
+///      activities, tasks, workers, queues, api-keys, events, meta/version.
+///      Gated by `auth::auth_middleware` when an auth mode is enabled.
+///   2. **Public `/api/v1/*`** — health, version. Always unauthenticated so
+///      Kubernetes probes, load balancers, and third-party monitors can
+///      reach them without a bearer token.
+///   3. **Dashboard + OpenAPI** — HTML/JSON at the root. Always public.
 pub fn router<S: WorkflowStore + 'static>(state: Arc<AppState<S>>) -> Router {
     let needs_auth = state.auth_mode.is_enabled();
 
-    let api = Router::new()
+    let authed_api = Router::new()
         .nest("/api/v1", api_v1_router())
         .nest("/api/v1", events::router());
 
-    let api = if needs_auth {
-        api.layer(middleware::from_fn_with_state(
+    let authed_api = if needs_auth {
+        authed_api.layer(middleware::from_fn_with_state(
             Arc::clone(&state),
             auth::auth_middleware,
         ))
     } else {
-        api
+        authed_api
     };
 
-    // Dashboard + OpenAPI docs (no auth)
-    let app = api
+    // Public /api/v1/* routes — outside the auth layer by construction.
+    let public_api = Router::new().nest("/api/v1", public::router());
+
+    let app = authed_api
+        .merge(public_api)
         .merge(dashboard::router())
         .merge(openapi::router());
 
@@ -73,7 +85,6 @@ fn api_v1_router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .merge(namespaces::router())
         .merge(queues::router())
         .merge(api_keys::router())
-        .merge(meta::router())
 }
 
 /// Start the HTTP server on the given port.
