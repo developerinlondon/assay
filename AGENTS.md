@@ -115,6 +115,22 @@ Follow this sequence for every PR merge into `main`, even as an admin who could 
 protection. Branch protection is the enforcement layer, the process below is the discipline
 layer — protection is the last line of defence, not the only one.
 
+### 0. Create the PR with the right assignee
+
+Every PR in this repo is owned by the repo owner — `developerinlondon`. Always pass
+`--assignee developerinlondon` (or `--assignee @me` when you're authenticated as that user)
+when running `gh pr create`:
+
+```sh
+gh pr create --title "..." --body "..." --assignee developerinlondon
+```
+
+If you forget at creation time, fix it immediately with:
+
+```sh
+gh pr edit <PR> --add-assignee developerinlondon
+```
+
 ### 1. Wait for CI to settle fully
 
 ```sh
