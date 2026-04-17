@@ -75,7 +75,8 @@ var AssayWorkers = (function () {
           '<td><span class="worker-dot ' + dotClass + '" title="' +
             (dotClass === 'healthy' ? 'Healthy' : dotClass === 'warning' ? 'Slow heartbeat' : 'Stale') +
           '"></span></td>' +
-          '<td class="mono">' + ctx.escapeHtml(ctx.truncate(w.id, 24)) + '</td>' +
+          '<td class="mono" title="' + ctx.escapeHtml(w.id) + '">' +
+            ctx.escapeHtml(ctx.truncate(w.id, 24)) + '</td>' +
           '<td>' + ctx.escapeHtml(w.identity || '-') + '</td>' +
           '<td class="mono">' + ctx.escapeHtml(w.task_queue || '-') + '</td>' +
           '<td>' + (w.active_tasks || 0) + '/' + maxTasks + '</td>' +

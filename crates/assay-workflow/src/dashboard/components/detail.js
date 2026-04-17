@@ -5,20 +5,39 @@ var AssayDetail = (function () {
 
   let panel = null;
   let ctx = null;
+  // Per-instance close handler. The side-panel flow collapses the panel
+  // itself; the inline-row flow removes the expansion <tr>. Both invoke
+  // whatever's registered here at the moment the ✕ button is clicked.
+  let activeClose = null;
 
   function getPanel() {
     if (!panel) panel = document.getElementById('detail-panel');
     return panel;
   }
 
-  async function showDetail(id, context) {
+  /**
+   * Render the workflow detail into a target element.
+   *
+   * @param {string} id — workflow id
+   * @param {object} context — shared dashboard ctx (apiFetch, escapeHtml, …)
+   * @param {object} [opts]
+   * @param {HTMLElement} [opts.target] — element to render into (default:
+   *                       the sidebar #detail-panel)
+   * @param {function} [opts.onClose] — called when the user clicks the ✕;
+   *                       default collapses the side panel
+   */
+  async function showDetail(id, context, opts) {
     ctx = context;
-    var p = getPanel();
+    var p = (opts && opts.target) || getPanel();
+    activeClose = (opts && opts.onClose) || closeDetail;
+
     p.innerHTML = '<div class="detail-header"><h2>Loading...</h2>' +
       '<button class="detail-close" id="detail-close-btn">&times;</button></div>';
-    p.classList.add('open');
+    if (p === getPanel()) p.classList.add('open');
 
-    p.querySelector('#detail-close-btn').addEventListener('click', closeDetail);
+    p.querySelector('#detail-close-btn').addEventListener('click', function () {
+      activeClose && activeClose();
+    });
 
     try {
       // /state returns 404 when the workflow hasn't written a snapshot
@@ -36,24 +55,27 @@ var AssayDetail = (function () {
         statePromise,
       ]);
 
-      renderDetail(wf, events || [], children || [], state);
+      renderDetail(wf, events || [], children || [], state, p);
     } catch (err) {
       p.innerHTML =
         '<div class="detail-header"><h2>Error</h2>' +
         '<button class="detail-close" id="detail-close-btn">&times;</button></div>' +
         '<div class="detail-body"><div class="error-box">' + ctx.escapeHtml(err.message) + '</div></div>';
-      p.querySelector('#detail-close-btn').addEventListener('click', closeDetail);
+      p.querySelector('#detail-close-btn').addEventListener('click', function () {
+        activeClose && activeClose();
+      });
     }
   }
 
-  function renderDetail(wf, events, children, state) {
-    var p = getPanel();
+  function renderDetail(wf, events, children, state, targetEl) {
+    var p = targetEl || getPanel();
     var status = (wf.status || 'PENDING').toUpperCase();
     var terminal = ctx.isTerminal(status);
 
     var html =
       '<div class="detail-header">' +
-        '<h2>' + ctx.escapeHtml(ctx.truncate(wf.id, 40)) + '</h2>' +
+        '<h2 title="' + ctx.escapeHtml(wf.id) + '">' +
+          ctx.escapeHtml(ctx.truncate(wf.id, 40)) + '</h2>' +
         '<button class="detail-close" id="detail-close-btn">&times;</button>' +
       '</div>' +
       '<div class="detail-body">';
@@ -65,7 +87,8 @@ var AssayDetail = (function () {
         metaItem('Type', ctx.escapeHtml(wf.workflow_type || '-')) +
         metaItem('Namespace', ctx.escapeHtml(wf.namespace || '-')) +
         metaItem('Queue', ctx.escapeHtml(wf.task_queue || '-')) +
-        metaItem('Run ID', '<span class="mono">' + ctx.escapeHtml(ctx.truncate(wf.run_id, 24)) + '</span>') +
+        metaItem('Run ID', '<span class="mono" title="' + ctx.escapeHtml(wf.run_id || '') + '">' +
+          ctx.escapeHtml(ctx.truncate(wf.run_id, 24)) + '</span>') +
         metaItem('Created', ctx.formatTime(wf.created_at)) +
         metaItem('Claimed By', ctx.escapeHtml(wf.claimed_by || '-')) +
         metaItem('Completed', wf.completed_at ? ctx.formatTime(wf.completed_at) : '-') +
@@ -86,84 +109,146 @@ var AssayDetail = (function () {
     }
     html += '</div>';
 
-    // Live state snapshot (populated by ctx:register_query handlers in the
-    // workflow code). Only shown if a snapshot exists — workflows that
-    // don't register queries just won't have this section.
-    if (state && state.state !== undefined && state.state !== null) {
-      var stateJson = typeof state.state === 'string'
-        ? state.state
-        : JSON.stringify(state.state, null, 2);
+    // Tabs — Overview / State / Events / Children / Attributes. Variable-
+    // height content lives behind tabs so the header + meta grid + actions
+    // remain compact and scannable regardless of how much data a run has
+    // accumulated. Tabs that have no content (no state snapshot, zero
+    // children, no search attrs) are dimmed rather than hidden so operators
+    // have consistent visual anchors across runs.
+
+    var tabs = [
+      {
+        id: 'overview',
+        label: 'Overview',
+        count: null,
+        build: function () {
+          var body = '';
+          if (wf.input) {
+            body += '<h4 class="detail-subhead">Input</h4>' +
+              '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(wf.input)) + '</div>';
+          }
+          if (wf.result) {
+            body += '<h4 class="detail-subhead">Result</h4>' +
+              '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(wf.result)) + '</div>';
+          }
+          if (wf.error) {
+            body += '<h4 class="detail-subhead" style="color: var(--red);">Error</h4>' +
+              '<div class="error-box">' + ctx.escapeHtml(wf.error) + '</div>';
+          }
+          if (!body) {
+            body = '<p class="detail-muted">No input, result, or error recorded.</p>';
+          }
+          return body;
+        },
+      },
+      {
+        id: 'state',
+        label: 'State',
+        empty: !(state && state.state !== undefined && state.state !== null),
+        build: function () {
+          if (!state || state.state === undefined || state.state === null) {
+            return '<p class="detail-muted">' +
+              'No live state snapshot. This workflow did not call <code>ctx:register_query</code>.' +
+              '</p>';
+          }
+          var stateJson = typeof state.state === 'string'
+            ? state.state
+            : JSON.stringify(state.state, null, 2);
+          return '<div class="json-viewer">' + ctx.escapeHtml(stateJson) + '</div>' +
+            '<p class="detail-muted" style="margin-top: 6px;">' +
+              'Snapshot at event seq ' + (state.event_seq || '?') +
+              (state.created_at ? ' — ' + ctx.formatTime(state.created_at) : '') +
+            '</p>';
+        },
+      },
+      {
+        id: 'events',
+        label: 'Events',
+        count: events.length,
+        build: function () {
+          if (!events.length) return '<p class="detail-muted">No events recorded.</p>';
+          var out = '<div class="event-timeline">';
+          for (var i = 0; i < events.length; i++) {
+            var evt = events[i];
+            out +=
+              '<div class="event-item" data-idx="' + i + '">' +
+                '<div class="event-header">' +
+                  '<span class="event-type">' + ctx.escapeHtml(evt.event_type) + '</span>' +
+                  '<span class="event-time">#' + evt.seq + ' - ' + ctx.formatTime(evt.timestamp) + '</span>' +
+                '</div>' +
+                '<div class="event-payload" id="evt-payload-' + i + '">' +
+                  (evt.payload
+                    ? '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(evt.payload)) + '</div>'
+                    : '<span style="color: var(--text-muted); font-size: 12px;">No payload</span>') +
+                '</div>' +
+              '</div>';
+          }
+          return out + '</div>';
+        },
+      },
+      {
+        id: 'children',
+        label: 'Children',
+        count: children.length,
+        empty: children.length === 0,
+        build: function () {
+          if (!children.length) return '<p class="detail-muted">No child workflows.</p>';
+          var out = '<table class="data-table"><thead><tr>' +
+            '<th>ID</th><th>Type</th><th>Status</th></tr></thead><tbody>';
+          for (var j = 0; j < children.length; j++) {
+            var child = children[j];
+            var cs = (child.status || 'PENDING').toUpperCase();
+            out +=
+              '<tr>' +
+                '<td><a href="#" class="clickable child-link mono" data-id="' + ctx.escapeHtml(child.id) + '" title="' + ctx.escapeHtml(child.id) + '">' +
+                  ctx.escapeHtml(ctx.truncate(child.id, 28)) + '</a></td>' +
+                '<td>' + ctx.escapeHtml(child.workflow_type || '-') + '</td>' +
+                '<td><span class="badge ' + ctx.badgeClass(cs) + '">' + cs + '</span></td>' +
+              '</tr>';
+          }
+          return out + '</tbody></table>';
+        },
+      },
+      {
+        id: 'attrs',
+        label: 'Attributes',
+        empty: !wf.search_attributes,
+        build: function () {
+          if (!wf.search_attributes) {
+            return '<p class="detail-muted">No search attributes set on this run.</p>';
+          }
+          return '<div class="json-viewer">' +
+            ctx.escapeHtml(ctx.formatJson(wf.search_attributes)) +
+            '</div>';
+        },
+      },
+    ];
+
+    html += '<div class="detail-tabs">';
+    html += '<div class="detail-tab-nav" role="tablist">';
+    for (var t = 0; t < tabs.length; t++) {
+      var tab = tabs[t];
+      var active = t === 0 ? ' active' : '';
+      var dim = tab.empty ? ' dim' : '';
+      var label = tab.label +
+        (tab.count != null ? ' <span class="tab-count">(' + tab.count + ')</span>' : '');
       html +=
-        '<h3 style="margin-bottom: 8px;">Live state</h3>' +
-        '<div class="json-viewer">' + ctx.escapeHtml(stateJson) + '</div>' +
-        '<p style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">' +
-          'Snapshot at event seq ' + (state.event_seq || '?') +
-          (state.created_at ? ' — ' + ctx.formatTime(state.created_at) : '') +
-        '</p>';
+        '<button class="detail-tab' + active + dim +
+        '" data-tab="' + tab.id + '" role="tab">' +
+          label +
+        '</button>';
     }
-
-    // Input
-    if (wf.input) {
-      html += collapsible('Input', '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(wf.input)) + '</div>');
+    html += '</div>';
+    html += '<div class="detail-tab-panels">';
+    for (var u = 0; u < tabs.length; u++) {
+      var active2 = u === 0 ? ' active' : '';
+      html +=
+        '<div class="detail-tab-panel' + active2 + '" data-tab="' + tabs[u].id + '" role="tabpanel">' +
+          tabs[u].build() +
+        '</div>';
     }
-
-    // Result
-    if (wf.result) {
-      html += collapsible('Result', '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(wf.result)) + '</div>');
-    }
-
-    // Error
-    if (wf.error) {
-      html += '<h3 style="margin-bottom: 8px; color: var(--red);">Error</h3>' +
-        '<div class="error-box">' + ctx.escapeHtml(wf.error) + '</div>';
-    }
-
-    // Event timeline
-    html += '<h3 style="margin-bottom: 12px;">Events (' + events.length + ')</h3>';
-    if (events.length > 0) {
-      html += '<div class="event-timeline">';
-      for (var i = 0; i < events.length; i++) {
-        var evt = events[i];
-        html +=
-          '<div class="event-item" data-idx="' + i + '">' +
-            '<div class="event-header">' +
-              '<span class="event-type">' + ctx.escapeHtml(evt.event_type) + '</span>' +
-              '<span class="event-time">#' + evt.seq + ' - ' + ctx.formatTime(evt.timestamp) + '</span>' +
-            '</div>' +
-            '<div class="event-payload" id="evt-payload-' + i + '">';
-
-        if (evt.payload) {
-          html += '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(evt.payload)) + '</div>';
-        } else {
-          html += '<span style="color: var(--text-muted); font-size: 12px;">No payload</span>';
-        }
-
-        html += '</div></div>';
-      }
-      html += '</div>';
-    } else {
-      html += '<p style="color: var(--text-muted);">No events recorded</p>';
-    }
-
-    // Children
-    if (children.length > 0) {
-      html += '<h3 style="margin: 20px 0 12px;">Child Workflows (' + children.length + ')</h3>';
-      html += '<table class="data-table"><thead><tr>' +
-        '<th>ID</th><th>Type</th><th>Status</th>' +
-        '</tr></thead><tbody>';
-      for (var j = 0; j < children.length; j++) {
-        var child = children[j];
-        var cs = (child.status || 'PENDING').toUpperCase();
-        html +=
-          '<tr>' +
-            '<td><a href="#" class="clickable child-link mono" data-id="' + ctx.escapeHtml(child.id) + '">' +
-              ctx.escapeHtml(ctx.truncate(child.id, 28)) + '</a></td>' +
-            '<td>' + ctx.escapeHtml(child.workflow_type || '-') + '</td>' +
-            '<td><span class="badge ' + ctx.badgeClass(cs) + '">' + cs + '</span></td>' +
-          '</tr>';
-      }
-      html += '</tbody></table>';
-    }
+    html += '</div>';
+    html += '</div>';
 
     html += '</div>';
     p.innerHTML = html;
@@ -175,7 +260,27 @@ var AssayDetail = (function () {
   function handlePanelClick(e) {
     // Close button
     if (e.target.closest('#detail-close-btn') || e.target.closest('.detail-close')) {
-      closeDetail();
+      (activeClose || closeDetail)();
+      return;
+    }
+
+    // Tab switch — click on a .detail-tab swaps the active tab + panel
+    // within the same detail container. Uses the closest .detail-tabs
+    // ancestor so multiple detail blocks on the page (e.g. the side
+    // panel + an inline-row expansion) don't cross-trigger each other.
+    var tabBtn = e.target.closest('.detail-tab');
+    if (tabBtn) {
+      e.preventDefault();
+      var container = tabBtn.closest('.detail-tabs');
+      if (!container) return;
+      var id = tabBtn.dataset.tab;
+      var tabs = container.querySelectorAll('.detail-tab');
+      for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+      tabBtn.classList.add('active');
+      var panels = container.querySelectorAll('.detail-tab-panel');
+      for (var j = 0; j < panels.length; j++) {
+        panels[j].classList.toggle('active', panels[j].dataset.tab === id);
+      }
       return;
     }
 
@@ -313,13 +418,6 @@ var AssayDetail = (function () {
     }
   }
 
-  function collapsible(title, content) {
-    var id = 'coll-' + title.toLowerCase().replace(/\s+/g, '-');
-    return '<div class="collapsible-header" onclick="document.getElementById(\'' + id + '\').classList.toggle(\'open\')">' +
-      '&#9654; ' + title +
-      '</div>' +
-      '<div class="collapsible-content" id="' + id + '">' + content + '</div>';
-  }
 
   function metaItem(label, value) {
     return '<div class="meta-item"><label>' + label + '</label><span>' + value + '</span></div>';
