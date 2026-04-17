@@ -672,6 +672,22 @@ impl<S: WorkflowStore> Engine<S> {
                         .unwrap_or(0.0);
                     self.schedule_timer(workflow_id, seq, duration).await?;
                 }
+                "RecordSnapshot" => {
+                    // Persist the workflow's current query-handler state. Each
+                    // snapshot is keyed by the current event seq so the latest
+                    // is easy to retrieve via `get_latest_snapshot`. Runs on
+                    // every worker replay, which is fine — `create_snapshot`
+                    // is an insert, so each replay adds a new row reflecting
+                    // the state at that point in history.
+                    let state = cmd
+                        .get("state")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+                    let event_seq = self.store.get_event_count(workflow_id).await? as i32;
+                    self.store
+                        .create_snapshot(workflow_id, event_seq, &state.to_string())
+                        .await?;
+                }
                 "CompleteWorkflow" => {
                     let result = cmd.get("result").map(|v| v.to_string());
                     self.complete_workflow(workflow_id, result.as_deref()).await?;

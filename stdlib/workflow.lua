@@ -207,11 +207,16 @@ function M._poll_activity_task(queue)
 end
 
 --- Run the workflow handler against the current event history. Returns
---- the list of commands to submit back to the engine — exactly one of:
----  * a single yielded command (`ScheduleActivity`, etc.) when the
----    handler reached an unfulfilled step
----  * `CompleteWorkflow` when the handler returned normally
----  * `FailWorkflow` when the handler raised an error
+--- the list of commands to submit back to the engine. Shape:
+---   * (optional) `RecordSnapshot` command when `ctx:register_query` was
+---     called — always emitted first so the latest state is persisted
+---     before any scheduling / completion decisions
+---   * then one terminal or scheduling command:
+---     - a single yielded command (`ScheduleActivity`, etc.) when the
+---       handler reached an unfulfilled step
+---     - `CompleteWorkflow` when the handler returned normally
+---     - `FailWorkflow` when the handler raised an error
+---     - `CancelWorkflow` when cancellation was requested
 ---
 --- One yield per replay keeps the model simple; future versions can batch
 --- commands when a workflow yields multiple parallel awaits in one go.
@@ -228,21 +233,58 @@ function M._handle_workflow_task(task)
     local co = coroutine.create(function() return handler(ctx, task.input) end)
 
     local ok, yielded_or_returned = coroutine.resume(co)
+
+    -- Collect registered query results into a snapshot. Runs on every replay
+    -- so the latest state is always visible via GET /workflows/{id}/state.
+    -- `_collect_snapshot` returns nil when no queries were registered, so
+    -- workflows that don't use `ctx:register_query` don't pay the cost.
+    local snapshot_cmd = M._collect_snapshot(ctx)
+    local function with_snapshot(cmds)
+        if snapshot_cmd then
+            table.insert(cmds, 1, snapshot_cmd)
+        end
+        return cmds
+    end
+
     if not ok then
         local err = tostring(yielded_or_returned)
         -- Cancellation is a clean exit, not a failure — translate the
         -- sentinel raised by ctx:check_cancel back into a CancelWorkflow
         -- command so the engine flips status to CANCELLED (not FAILED).
         if err:find("__ASSAY_WORKFLOW_CANCELLED__", 1, true) then
-            return {{ type = "CancelWorkflow" }}
+            return with_snapshot({{ type = "CancelWorkflow" }})
         end
-        return {{ type = "FailWorkflow", error = err }}
+        return with_snapshot({{ type = "FailWorkflow", error = err }})
     end
     if coroutine.status(co) == "dead" then
-        return {{ type = "CompleteWorkflow", result = yielded_or_returned }}
+        return with_snapshot({{ type = "CompleteWorkflow", result = yielded_or_returned }})
     end
     -- Yielded a command — submit it and let a subsequent replay continue
-    return { yielded_or_returned }
+    return with_snapshot({ yielded_or_returned })
+end
+
+--- Build a RecordSnapshot command from any query handlers registered via
+--- `ctx:register_query`. Returns nil if no handlers were registered, so
+--- workflows that don't expose state don't emit snapshot commands.
+---
+--- Each handler runs once per replay. A handler that errors is dropped
+--- from the snapshot rather than crashing the workflow — queries are a
+--- best-effort read-through, not load-bearing.
+function M._collect_snapshot(ctx)
+    if not ctx._queries or not next(ctx._queries) then
+        return nil
+    end
+    local state = {}
+    for name, fn in pairs(ctx._queries) do
+        local ok, value = pcall(fn)
+        if ok then
+            state[name] = value
+        end
+    end
+    if next(state) == nil then
+        return nil
+    end
+    return { type = "RecordSnapshot", state = state }
 end
 
 --- Build the workflow ctx object used during replay. Each `ctx:` call
@@ -396,6 +438,38 @@ function M._make_workflow_ctx(workflow_id, history)
             task_queue = opts.task_queue or "default",
         })
         error("workflow ctx: yielded but resumed unexpectedly")
+    end
+
+    --- Register a named query handler that exposes live workflow state to
+    --- external callers via `GET /api/v1/workflows/{id}/state` (all handlers)
+    --- or `GET /api/v1/workflows/{id}/state/{name}` (one handler).
+    ---
+    --- The handler is invoked on every worker replay, after the workflow
+    --- coroutine yields or returns. Its result is serialised as JSON and
+    --- persisted as a snapshot keyed by the current event seq. Because
+    --- workflow handlers replay deterministically, the closure captures
+    --- the latest values of any local variables it references.
+    ---
+    --- Usage:
+    ---   workflow.define("Pipeline", function(ctx, input)
+    ---       local state = { stage = "init" }
+    ---       ctx:register_query("pipeline_state", function() return state end)
+    ---       state.stage = "running"
+    ---       ctx:execute_activity("step1", {})
+    ---       state.stage = "done"
+    ---   end)
+    ---
+    --- A handler that raises is dropped from the snapshot rather than
+    --- crashing the workflow — queries are a best-effort read-through.
+    function ctx:register_query(name, fn)
+        if type(name) ~= "string" or name == "" then
+            error("ctx:register_query: name must be a non-empty string")
+        end
+        if type(fn) ~= "function" then
+            error("ctx:register_query: handler must be a function")
+        end
+        self._queries = self._queries or {}
+        self._queries[name] = fn
     end
 
     --- Block until a signal with the given name arrives. Returns the

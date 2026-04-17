@@ -37,6 +37,8 @@ use crate::store::WorkflowStore;
         crate::api::schedules::delete_schedule,
         crate::api::workflows::list_children,
         crate::api::workflows::continue_as_new,
+        crate::api::workflows::get_workflow_state,
+        crate::api::workflows::get_workflow_state_by_name,
         crate::api::workers::list_workers,
         crate::api::workers::health_check,
     ),
