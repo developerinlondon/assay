@@ -372,6 +372,55 @@ function M.namespaces.delete(name)
     end
 end
 
+-- ── API Keys ────────────────────────────────────────────────
+
+M.api_keys = {}
+
+--- Generate (or idempotently retrieve) an API key.
+---
+--- @param label string|nil  Optional label to tag the key with.
+--- @param opts table|nil    `{ idempotent = bool }`. When true and a key
+---                          with this `label` already exists, the server
+---                          returns the existing record's metadata without
+---                          a plaintext (which is only ever retrievable at
+---                          generation time).
+--- @return table            `{ plaintext?, prefix, label, created_at }`.
+---                          `plaintext` is present only on a fresh mint.
+---
+--- Bootstrap window: this call works without authentication iff the
+--- server's `api_keys` table is empty (first-ever key). After that, a
+--- valid Bearer token is required.
+function M.api_keys.generate(label, opts)
+    opts = opts or {}
+    local body = { label = label }
+    if opts.idempotent ~= nil then
+        body.idempotent = opts.idempotent
+    end
+    local resp = M._api("POST", "/api-keys", body)
+    if resp.status ~= 200 and resp.status ~= 201 then
+        error("workflow.api_keys.generate failed: " .. (resp.body or "unknown error"))
+    end
+    return json.parse(resp.body)
+end
+
+--- List API key metadata (hashes never exposed). Returns prefix + label
+--- + created_at per key.
+function M.api_keys.list()
+    local resp = M._api("GET", "/api-keys")
+    if resp.status ~= 200 then
+        error("workflow.api_keys.list failed: " .. (resp.body or "unknown error"))
+    end
+    return json.parse(resp.body)
+end
+
+--- Revoke an API key by its prefix (e.g. "assay_abcd1234...").
+function M.api_keys.delete(prefix)
+    local resp = M._api("DELETE", "/api-keys/" .. url_encode(prefix))
+    if resp.status ~= 204 and resp.status ~= 404 then
+        error("workflow.api_keys.delete failed: " .. (resp.body or "unknown error"))
+    end
+end
+
 -- ── Workers ─────────────────────────────────────────────────
 
 M.workers = {}

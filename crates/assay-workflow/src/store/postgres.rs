@@ -1122,6 +1122,30 @@ impl WorkflowStore for PostgresStore {
         Ok(res.rows_affected() > 0)
     }
 
+    async fn api_keys_empty(&self) -> Result<bool> {
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM api_keys")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.0 == 0)
+    }
+
+    async fn get_api_key_by_label(
+        &self,
+        label: &str,
+    ) -> Result<Option<crate::store::ApiKeyRecord>> {
+        let row: Option<(String, Option<String>, f64)> = sqlx::query_as(
+            "SELECT prefix, label, created_at FROM api_keys WHERE label = $1 LIMIT 1",
+        )
+        .bind(label)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(prefix, label, created_at)| crate::store::ApiKeyRecord {
+            prefix,
+            label,
+            created_at,
+        }))
+    }
+
     // ── Child Workflows ─────────────────────────────────────
 
     async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {

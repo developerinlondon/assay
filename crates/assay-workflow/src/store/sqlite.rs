@@ -1256,6 +1256,27 @@ impl WorkflowStore for SqliteStore {
         Ok(res.rows_affected() > 0)
     }
 
+    async fn api_keys_empty(&self) -> Result<bool> {
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM api_keys")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.0 == 0)
+    }
+
+    async fn get_api_key_by_label(&self, label: &str) -> Result<Option<ApiKeyRecord>> {
+        let row: Option<(String, Option<String>, f64)> = sqlx::query_as(
+            "SELECT prefix, label, created_at FROM api_keys WHERE label = ? LIMIT 1",
+        )
+        .bind(label)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(prefix, label, created_at)| ApiKeyRecord {
+            prefix,
+            label,
+            created_at,
+        }))
+    }
+
     // ── Child Workflows ─────────────────────────────────────
 
     async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {
