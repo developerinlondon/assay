@@ -2,6 +2,41 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.4] - 2026-04-17
+
+### Added
+
+- **Combined JWT + API-key authentication for `assay serve`.** `--auth-issuer` and
+  `--auth-api-key` can now be set on the same invocation. When both are enabled, the
+  auth middleware dispatches on token shape:
+
+  - Bearer tokens that parse as a JWS header are validated against the OIDC issuer's
+    JWKS.
+  - Bearer tokens that are not JWT-shaped are hashed and looked up in the API-key
+    store.
+
+  A semantically-invalid JWT (expired, wrong issuer / audience, forged signature) is
+  rejected on the JWT path and is **not** retried as an API key — a token that looks
+  like a JWT is treated as a JWT. This lets a single server accept short-lived OIDC
+  user tokens from a browser session and long-lived machine API keys from a CI job
+  without the caller picking a mode up front.
+
+### Changed
+
+- **`AuthMode` is now a struct** (`api_key: bool`, `jwt: Option<JwtConfig>`) instead of
+  an enum with three variants. Library constructors are unchanged in shape —
+  `AuthMode::no_auth()`, `AuthMode::api_key()`, `AuthMode::jwt(issuer, audience)` — and
+  a new `AuthMode::combined(issuer, audience)` enables both paths. `AuthMode::is_enabled()`
+  replaces `!matches!(.., NoAuth)` call sites.
+
+  Breaking for downstream Rust consumers that matched on `AuthMode::NoAuth | ApiKey |
+  Jwt { .. }`. The `assay` binary and REST / dashboard users are unaffected.
+
+### Docs
+
+- `docs/modules/workflow.md` auth table adds the combined-mode row and documents the
+  token-shape dispatch rule.
+
 ## [0.11.3] - 2026-04-16
 
 ### Added

@@ -99,13 +99,15 @@ enum Commands {
         /// Disable authentication (open access, default)
         #[arg(long)]
         no_auth: bool,
-        /// OIDC issuer URL for JWT validation
+        /// OIDC issuer URL for JWT validation. May be combined with `--auth-api-key`:
+        /// tokens that parse as JWTs take the JWT path, everything else the API-key path.
         #[arg(long)]
         auth_issuer: Option<String>,
-        /// Expected JWT audience
+        /// Expected JWT audience (required only when your tokens set the `aud` claim).
         #[arg(long)]
         auth_audience: Option<String>,
-        /// Enable API key authentication mode
+        /// Enable API-key authentication. May be combined with `--auth-issuer` to run both
+        /// modes simultaneously (see `--auth-issuer`).
         #[arg(long)]
         auth_api_key: bool,
         /// Generate a new API key and exit
@@ -508,15 +510,18 @@ async fn main() -> ExitCode {
             generate_api_key,
             list_api_keys,
         }) => {
-            let auth_mode = if let Some(issuer) = auth_issuer {
-                assay_workflow::api::auth::AuthMode::jwt(issuer, auth_audience)
-            } else if auth_api_key {
-                assay_workflow::api::auth::AuthMode::ApiKey
-            } else {
-                assay_workflow::api::auth::AuthMode::NoAuth
+            let auth_mode = match (auth_issuer, auth_api_key) {
+                (Some(issuer), true) => {
+                    assay_workflow::api::auth::AuthMode::combined(issuer, auth_audience)
+                }
+                (Some(issuer), false) => {
+                    assay_workflow::api::auth::AuthMode::jwt(issuer, auth_audience)
+                }
+                (None, true) => assay_workflow::api::auth::AuthMode::api_key(),
+                (None, false) => assay_workflow::api::auth::AuthMode::no_auth(),
             };
 
-            if no_auth && !matches!(auth_mode, assay_workflow::api::auth::AuthMode::NoAuth) {
+            if no_auth && auth_mode.is_enabled() {
                 eprintln!("Warning: --no-auth is redundant when --auth-issuer or --auth-api-key is set");
             }
 
