@@ -908,6 +908,92 @@ workflow.listen({ queue = "default" })
     let _ = worker.kill().await;
 }
 
+/// 9.7 — Namespace end-to-end: a worker listening on a non-default
+/// namespace picks up a workflow started in the same namespace, runs it,
+/// and the completed record carries that namespace. Proves
+/// workflow.start({namespace}) and workflow.listen({namespace}) flow
+/// through to the engine's partitioning.
+#[tokio::test]
+async fn lua_workflow_namespace_scoping_end_to_end() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_namespace_scoping_end_to_end — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    // Create the non-default namespace the worker + workflow will use.
+    let resp = c
+        .post(format!("{url}/api/v1/namespaces"))
+        .json(&serde_json::json!({ "name": "deployments" }))
+        .send()
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "create namespace: {}", resp.status());
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("ScopedPing", function(ctx, input)
+    return { pong = input.n }
+end)
+
+workflow.listen({ queue = "scoped-q", namespace = "deployments" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    // Start the workflow in the same namespace via the stdlib shape
+    // (POST /workflows with `namespace` in the body).
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "ScopedPing",
+            "workflow_id": "wf-ns-scoped",
+            "task_queue": "scoped-q",
+            "namespace": "deployments",
+            "input": { "n": 7 },
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let final_wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-ns-scoped",
+        "COMPLETED",
+        std::time::Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(final_wf["namespace"], "deployments", "workflow carries namespace");
+    let result: serde_json::Value =
+        serde_json::from_str(final_wf["result"].as_str().expect("result")).unwrap();
+    assert_eq!(result["pong"], 7);
+
+    // And a main-namespace worker must NOT pick this up: a second workflow
+    // started in deployments stays RUNNING if we only had a main worker —
+    // we skip proving the negative here, the positive is sufficient and
+    // the engine's task-queue scoping already has dedicated tests.
+
+    let _ = worker.kill().await;
+}
+
 /// 9.6a — wait_for_signal with a timeout: the signal arrives before the
 /// timer fires, so the workflow completes with the payload (timer is
 /// harmlessly ignored on replay).

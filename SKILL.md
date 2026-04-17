@@ -279,8 +279,8 @@ on other non-2xx.
 | `workflow.connect(url, opts?)`                                                          | Verify reachability; opts = `{ token = "Bearer …" }` |
 | `workflow.define(name, function(ctx, input) … end)`                                     | Register a workflow handler (runs as a coroutine)    |
 | `workflow.activity(name, function(ctx, input) … end)`                                   | Register an activity implementation                  |
-| `workflow.listen({queue, identity?})`                                                   | Block; poll workflow tasks AND activity tasks        |
-| `workflow.start({workflow_type, workflow_id, input?, search_attributes?, task_queue?})` | Start a workflow                                     |
+| `workflow.listen({queue, namespace?, identity?})`                                                   | Block; poll workflow tasks AND activity tasks. **v0.11.10:** `namespace` scopes the worker (default `"main"`). |
+| `workflow.start({workflow_type, workflow_id, namespace?, input?, search_attributes?, task_queue?})` | Start a workflow. **v0.11.10:** `namespace` + `search_attributes` now flow through to the engine.              |
 | `workflow.list({namespace?, status?, type?, search_attrs?, limit?, offset?})`           | List + filter workflows                              |
 | `workflow.describe(id)` / `workflow.get_events(id)`                                     | Inspect                                              |
 | `workflow.get_state(id, name?)`                                                         | Read the latest register_query snapshot (nil on 404) |
@@ -319,6 +319,14 @@ create/delete, engine version shown in the status bar.
 `ASSAY_ARCHIVE_S3_BUCKET` is set, a background task archives workflows in terminal states older than
 `ASSAY_ARCHIVE_RETENTION_DAYS` (default 30) to S3 and stubs the row with `archived_at` +
 `archive_uri`. See `docs/modules/workflow.md` for the full list of `ASSAY_ARCHIVE_*` env vars.
+
+**Dashboard whitelabel** (v0.11.10+). Seven optional `ASSAY_WHITELABEL_*` env vars rebrand the
+embedded `/workflow` dashboard per-deployment — name (`_NAME`), logo image (`_LOGO_URL`), browser
+title (`_PAGE_TITLE`), parent-app back-link (`_PARENT_URL` + `_PARENT_NAME`), API Docs link
+override / hide (`_API_DOCS_URL`; set to `""` to hide), and an extra stylesheet URL (`_CSS_URL`)
+loaded after assay's own CSS for re-skinning via CSS custom properties. Every knob defaults to
+assay's identity; unset env keeps the standalone experience unchanged. Use when embedding assay
+inside another admin UI. Full table + theme tokens in `docs/modules/workflow.md#dashboard-whitelabel`.
 
 ## Stdlib Modules Quick Reference
 
@@ -596,8 +604,7 @@ builtin handles nested tables.
 
 **Workflow engine**: Use `assay serve` + `require("assay.workflow")` for durable workflows with
 deterministic-replay crash safety. See the "Workflow engine" section above for the API and
-`docs/modules/workflow.md` for the full replay model. Note: 0.11.0 removed the externally-hosted
-Temporal integration in favour of this built-in engine.
+`docs/modules/workflow.md` for the full replay model.
 
 ## MCP Replacement
 
