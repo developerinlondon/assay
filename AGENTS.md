@@ -41,29 +41,73 @@ in `LICENSE`/`NOTICE`/`CLA.md`.
 ## Release docs checklist
 
 Every release (patch, minor, or major) must update **all** of the following before the PR merges —
-never ship a release that only touches source + CHANGELOG. The site and llms.txt drift silently if
-you forget them, and agents downstream (including future-you) see stale information.
+never ship a release that only touches source + CHANGELOG. The site, llms.txt, and sub-crate
+manifests drift silently if you forget them, and agents downstream (including future-you) see
+stale information.
 
-- `Cargo.toml` — bump `version` under `[package]`.
-- `CHANGELOG.md` — new section at the top; describe the OIDC/Kubernetes/HTTP scenario enabled, not a
-  specific consumer.
+### Version bumps
+
+- `Cargo.toml` (workspace root) — bump `[package].version` for the `assay-lua` binary crate.
+- **`crates/*/Cargo.toml`** — each sub-crate follows **independent semver tied to its own public
+  Rust API**, not the binary's version. Today that's `crates/assay-workflow/Cargo.toml`. Skip this
+  and the crates.io publish step of the release workflow fails at tag push time (the crate version
+  already exists on the index).
+- When a sub-crate version bumps, the workspace root `Cargo.toml` dependency spec must bump to
+  match (e.g. `assay-workflow = { ..., version = "0.2" }`). Cargo's lockfile will regenerate on the
+  next build; commit the resulting `Cargo.lock` update.
+
+### Pre-1.0 semver: patch bumps by default
+
+**Every release bumps the patch digit. Never jump the minor without an explicit conversation.**
+
+Rationale: assay is pre-1.0. Both the binary (`assay-lua`) and the engine library
+(`assay-workflow`) are young and do not have a stable promised API yet. A minor bump on a 0.x
+crate conventionally signals a breaking change to downstream Cargo consumers — which matters
+once there are downstream consumers. While there aren't, a patch bump is both sufficient and
+keeps Cargo dep specs (`version = "0.1"` = `^0.1`, `version = "0.11"` = `^0.11`) stable across
+the upgrade.
+
+- `assay-lua` (binary): always patch bump (`0.11.4 → 0.11.5`) unless the user says otherwise.
+- `assay-workflow` (engine sub-crate): always patch bump (`0.1.2 → 0.1.3`) unless the user says
+  otherwise.
+- **Don't pick a minor bump unilaterally.** If a change looks like it justifies one (e.g. a
+  public enum becomes a struct, a trait signature changes), surface the tradeoff to the user and
+  ask before touching the version field. Discussion first, edit second.
+
+The binary version and sub-crate version are independent. It's normal for `assay-lua 0.11.5` to
+ship `assay-workflow 0.1.3`; they have unrelated bump cadences.
+
+### Non-source files
+
+- `CHANGELOG.md` — new section at the top; describe the OIDC/Kubernetes/HTTP scenario enabled, not
+  a specific consumer.
 - `docs/modules/*.md` — any module whose surface changed.
-- `README.md`, `SKILL.md`, `AGENTS.md`, `skills/assay/SKILL.md` — auth / CLI / API tables if touched.
+- `README.md`, `SKILL.md`, `AGENTS.md`, `skills/assay/SKILL.md` — auth / CLI / API tables if
+  touched.
 - `llms.txt` (root) — one-liner module descriptors.
 - `site/pages/index.html` — the release banner (`v0.x.y` tag + copy) and any version badge on
   feature cards (e.g. the Workflow Engine card).
-- `site/static/llms.txt` — this is the site's static teaser; keep it reasonably fresh (it's not
-  auto-generated from the root `llms.txt`).
-- Any site page that references the previous version in prose or code (e.g. the
-  `mise` / `crates.io` install snippets on `index.html`).
+- `site/static/llms.txt` — site's static teaser; keep it reasonably fresh (not auto-generated from
+  the root `llms.txt`).
+- Any site page that references the previous version in prose or code (e.g. the `mise` /
+  `crates.io` install snippets on `index.html`).
 
-Verify with a grep for the previous version before opening the PR:
+### Verification before opening the PR
 
 ```sh
+# No stale version references in shipping content:
 grep -rn "v0.PREVIOUS" . --include="*.md" --include="*.html" --include="*.toml" --include="*.txt"
+
+# Every crate manifest version field matches what you intend to publish:
+grep -E '^version = ' Cargo.toml crates/*/Cargo.toml
+
+# Dep spec in the root Cargo.toml tracks the sub-crate bump:
+grep -A0 'assay-workflow' Cargo.toml | grep 'version ='
 ```
 
-The only matches that should remain are historical CHANGELOG entries.
+Only matches that should remain for the first grep are historical CHANGELOG entries and
+"introduced in vX.Y.Z" feature markers. The second and third greps exist because v0.11.4's
+crates.io publish failed when the sub-crate version was missed — do not skip them.
 
 ## What is Assay
 
