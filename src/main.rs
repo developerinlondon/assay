@@ -1,4 +1,5 @@
 mod checks;
+mod cli;
 mod config;
 mod lua;
 mod output;
@@ -116,14 +117,35 @@ enum Commands {
     },
     /// Manage workflows
     Workflow {
+        #[command(flatten)]
+        global: CliEngineOpts,
         #[command(subcommand)]
         command: WorkflowCommands,
     },
     /// Manage schedules
     Schedule {
+        #[command(flatten)]
+        global: CliEngineOpts,
         #[command(subcommand)]
         command: ScheduleCommands,
     },
+}
+
+/// Global flags shared by `workflow` and `schedule` subcommands. Each
+/// backed by an env var so pods can drop these into their environment
+/// without passing flags on every invocation.
+#[derive(clap::Args, Debug)]
+struct CliEngineOpts {
+    /// Workflow engine base URL (default http://127.0.0.1:8080 / $ASSAY_ENGINE_URL).
+    #[arg(long, global = true, env = "ASSAY_ENGINE_URL")]
+    engine_url: Option<String>,
+    /// Bearer token. CLI forwards it as `Authorization: Bearer <value>`;
+    /// the engine decides whether it's an API key or a JWT.
+    #[arg(long, global = true, env = "ASSAY_API_KEY")]
+    api_key: Option<String>,
+    /// Target namespace (default "main" / $ASSAY_NAMESPACE).
+    #[arg(long, global = true, env = "ASSAY_NAMESPACE")]
+    namespace: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -132,7 +154,7 @@ enum WorkflowCommands {
     List {
         #[arg(long)]
         status: Option<String>,
-        #[arg(long, name = "type")]
+        #[arg(long = "type")]
         workflow_type: Option<String>,
         #[arg(long, default_value = "20")]
         limit: i64,
@@ -141,6 +163,14 @@ enum WorkflowCommands {
     Describe {
         /// Workflow ID
         id: String,
+    },
+    /// Read the latest state snapshot written by `ctx:register_query` handlers.
+    /// With a query name, returns just that query's value; without, the full map.
+    State {
+        /// Workflow ID
+        id: String,
+        /// Query handler name (omit to dump all registered queries)
+        name: Option<String>,
     },
     /// Send a signal to a workflow
     Signal {
@@ -173,14 +203,33 @@ enum ScheduleCommands {
     Create {
         /// Schedule name
         name: String,
-        #[arg(long, name = "type")]
+        #[arg(long = "type")]
         workflow_type: String,
         #[arg(long)]
         cron: String,
+        /// IANA timezone for cron evaluation (default UTC)
+        #[arg(long)]
+        timezone: Option<String>,
         #[arg(long)]
         input: Option<String>,
         #[arg(long, default_value = "default")]
         queue: String,
+    },
+    /// Apply a partial update to a schedule. Only fields present are
+    /// changed; unchanged fields keep their values.
+    Patch {
+        /// Schedule name
+        name: String,
+        #[arg(long)]
+        cron: Option<String>,
+        #[arg(long)]
+        timezone: Option<String>,
+        #[arg(long)]
+        input: Option<String>,
+        #[arg(long)]
+        queue: Option<String>,
+        #[arg(long)]
+        overlap: Option<String>,
     },
     /// Pause a schedule
     Pause {
@@ -339,15 +388,83 @@ async fn main() -> ExitCode {
             eprintln!("assay serve: workflow engine not compiled (enable 'workflow' feature)");
             ExitCode::from(1)
         }
-        Some(Commands::Workflow { command }) => {
-            eprintln!("assay workflow: {command:?}");
-            eprintln!("workflow management not yet implemented (v0.11.1)");
-            ExitCode::from(1)
+        Some(Commands::Workflow { global, command }) => {
+            let opts = cli::GlobalOpts::resolve(
+                global.engine_url.as_deref(),
+                global.api_key.as_deref(),
+                global.namespace.as_deref(),
+            );
+            match command {
+                WorkflowCommands::List {
+                    status,
+                    workflow_type,
+                    limit,
+                } => cli::commands::workflow_list(&opts, status, workflow_type, limit).await,
+                WorkflowCommands::Describe { id } => {
+                    cli::commands::workflow_describe(&opts, &id).await
+                }
+                WorkflowCommands::State { id, name } => {
+                    cli::commands::workflow_state(&opts, &id, name.as_deref()).await
+                }
+                WorkflowCommands::Signal { id, name, payload } => {
+                    cli::commands::workflow_signal(&opts, &id, &name, payload).await
+                }
+                WorkflowCommands::Cancel { id } => cli::commands::workflow_cancel(&opts, &id).await,
+                WorkflowCommands::Terminate { id, reason } => {
+                    cli::commands::workflow_terminate(&opts, &id, reason).await
+                }
+            }
         }
-        Some(Commands::Schedule { command }) => {
-            eprintln!("assay schedule: {command:?}");
-            eprintln!("schedule management not yet implemented (v0.11.1)");
-            ExitCode::from(1)
+        Some(Commands::Schedule { global, command }) => {
+            let opts = cli::GlobalOpts::resolve(
+                global.engine_url.as_deref(),
+                global.api_key.as_deref(),
+                global.namespace.as_deref(),
+            );
+            match command {
+                ScheduleCommands::List => cli::commands::schedule_list(&opts).await,
+                ScheduleCommands::Create {
+                    name,
+                    workflow_type,
+                    cron,
+                    timezone,
+                    input,
+                    queue,
+                } => {
+                    cli::commands::schedule_create(
+                        &opts,
+                        &name,
+                        &workflow_type,
+                        &cron,
+                        timezone,
+                        input,
+                        Some(queue),
+                    )
+                    .await
+                }
+                ScheduleCommands::Patch {
+                    name,
+                    cron,
+                    timezone,
+                    input,
+                    queue,
+                    overlap,
+                } => {
+                    cli::commands::schedule_patch(
+                        &opts, &name, cron, timezone, input, queue, overlap,
+                    )
+                    .await
+                }
+                ScheduleCommands::Pause { name } => {
+                    cli::commands::schedule_pause(&opts, &name).await
+                }
+                ScheduleCommands::Resume { name } => {
+                    cli::commands::schedule_resume(&opts, &name).await
+                }
+                ScheduleCommands::Delete { name } => {
+                    cli::commands::schedule_delete(&opts, &name).await
+                }
+            }
         }
         None => {
             if let Some(ref file) = cli.file {
