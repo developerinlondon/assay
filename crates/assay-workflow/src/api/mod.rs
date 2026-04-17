@@ -1,4 +1,5 @@
 pub mod activities;
+pub mod api_keys;
 pub mod auth;
 pub mod dashboard;
 pub mod events;
@@ -71,6 +72,7 @@ fn api_v1_router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .merge(workers::router())
         .merge(namespaces::router())
         .merge(queues::router())
+        .merge(api_keys::router())
         .merge(meta::router())
 }
 

@@ -2,6 +2,52 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.7] - 2026-04-17
+
+### Added
+
+- **`POST /api/v1/api-keys` endpoint** — REST alternative to the
+  `assay serve --generate-api-key` CLI subcommand. Accepts
+  `{ label?, idempotent? }`. With `idempotent=true` and a key matching
+  the label already exists, returns `200 OK` with the existing record's
+  metadata (no plaintext). Otherwise mints a fresh key and returns
+  `201 Created` with the plaintext.
+
+  **Bootstrap window:** when the `api_keys` table is empty, `POST
+  /api/v1/api-keys` is callable without authentication. This is the
+  only way a freshly deployed server running in API-key or combined
+  mode can receive its first credential without operator shell access.
+  The window closes the moment any key exists.
+
+- **`GET /api/v1/api-keys`** and **`DELETE /api/v1/api-keys/{prefix}`** —
+  list and revoke.
+
+- **`workflow.api_keys.{generate, list, delete}`** Lua stdlib helpers
+  wrapping the above endpoints. Example:
+
+  ```lua
+  local resp = workflow.api_keys.generate("cc_api_key", { idempotent = true })
+  if resp.plaintext then
+      -- fresh mint; persist plaintext somewhere (e.g. a k8s Secret)
+  else
+      -- already exists; plaintext was issued on first call
+  end
+  ```
+
+### Store
+
+- New `WorkflowStore` trait methods: `api_keys_empty()` (used by the
+  bootstrap-window gate) and `get_api_key_by_label(label)` (used by the
+  idempotent-mode lookup). Implemented for both SQLite and Postgres.
+
+- `ApiKeyRecord` now derives `utoipa::ToSchema` so the OpenAPI spec
+  includes it.
+
+### Changed
+
+- **`assay-workflow` crate** bumped to `0.1.5` (from `0.1.4`). Additive
+  API changes; downstream consumers on `version = "0.1"` continue to work.
+
 ## [0.11.6] - 2026-04-17
 
 ### Fixed

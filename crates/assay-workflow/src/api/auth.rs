@@ -259,6 +259,12 @@ fn find_key_in_set(jwks: &JwkSet, kid: &str) -> Option<DecodingKey> {
 /// the API-key path. A semantically-invalid JWT (expired, forged signature, wrong
 /// audience) is rejected and is *not* retried as an API key — a token that looks
 /// like a JWT is treated as a JWT.
+///
+/// **Bootstrap window:** `POST /api/v1/api-keys` is accepted without a Bearer
+/// token iff the `api_keys` table is empty. This is the only way a freshly
+/// deployed server running in API-key or combined mode can receive its first
+/// credential without operator shell access. The window closes the moment any
+/// key exists.
 pub async fn auth_middleware<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     request: Request,
@@ -268,6 +274,28 @@ pub async fn auth_middleware<S: WorkflowStore>(
 
     if !auth.is_enabled() {
         return next.run(request).await;
+    }
+
+    if is_bootstrap_request(&request) {
+        match state.engine.store().api_keys_empty().await {
+            Ok(true) => {
+                info!(
+                    "Allowing unauthenticated POST /api/v1/api-keys — api_keys table is empty (bootstrap window)"
+                );
+                return next.run(request).await;
+            }
+            Ok(false) => {
+                // Fall through to normal auth — bootstrap window is closed.
+            }
+            Err(e) => {
+                warn!("api_keys_empty check failed: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": "auth bootstrap check failed"})),
+                )
+                    .into_response();
+            }
+        }
     }
 
     let token = match extract_bearer(&request) {
@@ -391,6 +419,14 @@ fn extract_bearer(request: &Request) -> Option<&str> {
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
+}
+
+/// True iff the request is the bootstrap-window endpoint
+/// (`POST /api/v1/api-keys`). The caller is still responsible for checking
+/// that the `api_keys` table is empty before actually allowing unauth access.
+fn is_bootstrap_request(request: &Request) -> bool {
+    request.method() == axum::http::Method::POST
+        && request.uri().path() == "/api/v1/api-keys"
 }
 
 fn auth_error(msg: &str) -> Response {
