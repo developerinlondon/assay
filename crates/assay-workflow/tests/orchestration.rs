@@ -2191,3 +2191,152 @@ print("stdlib_surface: all assertions passed")
         "expected success marker in stdout.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }
+
+// ── Plan 06 — CLI integration tests ─────────────────────────
+//
+// These spawn the compiled `assay` binary as a subprocess and exercise
+// the workflow / schedule subcommands against an in-process engine.
+// They prove the CLI surface wires up correctly end-to-end; the REST
+// API paths themselves have dedicated coverage above.
+
+/// `assay workflow list` on an empty engine returns 0 and a header row.
+#[tokio::test]
+async fn cli_workflow_list_empty() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_workflow_list_empty — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    let output = tokio::process::Command::new(&assay_bin)
+        .args(["workflow", "list", "--engine-url", &url])
+        .output()
+        .await
+        .expect("run assay workflow list");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "exit 0; stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(stdout.contains("ID"), "header row present: {stdout}");
+}
+
+/// `assay workflow describe <missing>` returns exit 1 with a useful
+/// stderr message (not a panic, not exit 0).
+#[tokio::test]
+async fn cli_workflow_describe_missing_is_exit_1() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_workflow_describe_missing_is_exit_1 — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    let output = tokio::process::Command::new(&assay_bin)
+        .args(["workflow", "describe", "nonexistent", "--engine-url", &url])
+        .output()
+        .await
+        .expect("run assay workflow describe");
+    assert!(!output.status.success(), "missing workflow should exit non-zero");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("404") || stderr.contains("not found"),
+        "stderr should mention 404/not-found, got: {stderr}"
+    );
+}
+
+/// Schedule full lifecycle via the CLI: create → list → patch → pause
+/// → resume → delete. Each step's exit code is 0.
+#[tokio::test]
+async fn cli_schedule_full_lifecycle() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_schedule_full_lifecycle — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    async fn run_ok(bin: &std::path::Path, args: &[&str]) -> std::process::Output {
+        let out = tokio::process::Command::new(bin)
+            .args(args)
+            .output()
+            .await
+            .expect("run assay");
+        assert!(
+            out.status.success(),
+            "command {:?} failed.\nstdout: {}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out
+    }
+
+    run_ok(&assay_bin, &[
+        "schedule", "create", "cli-sched",
+        "--type", "CliTestWorkflow",
+        "--cron", "0 0 2 * * *",
+        "--timezone", "Europe/Berlin",
+        "--engine-url", &url,
+    ]).await;
+
+    let list_out = run_ok(&assay_bin, &["schedule", "list", "--engine-url", &url]).await;
+    let stdout = String::from_utf8_lossy(&list_out.stdout);
+    assert!(stdout.contains("cli-sched"), "list includes new schedule: {stdout}");
+    assert!(
+        stdout.contains("Europe/Berlin"),
+        "timezone column populated: {stdout}"
+    );
+
+    run_ok(&assay_bin, &[
+        "schedule", "patch", "cli-sched",
+        "--cron", "0 0 3 * * *",
+        "--engine-url", &url,
+    ]).await;
+    run_ok(&assay_bin, &["schedule", "pause",  "cli-sched", "--engine-url", &url]).await;
+    run_ok(&assay_bin, &["schedule", "resume", "cli-sched", "--engine-url", &url]).await;
+    run_ok(&assay_bin, &["schedule", "delete", "cli-sched", "--engine-url", &url]).await;
+
+    let final_list = run_ok(&assay_bin, &["schedule", "list", "--engine-url", &url]).await;
+    let stdout = String::from_utf8_lossy(&final_list.stdout);
+    assert!(
+        !stdout.contains("cli-sched"),
+        "deleted schedule should be gone: {stdout}"
+    );
+}
+
+/// `schedule patch` with no fields returns exit 1 with a usage hint.
+#[tokio::test]
+async fn cli_schedule_patch_without_fields_is_exit_1() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_schedule_patch_without_fields_is_exit_1 — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    let output = tokio::process::Command::new(&assay_bin)
+        .args(["schedule", "patch", "whatever", "--engine-url", &url])
+        .output()
+        .await
+        .expect("run assay schedule patch");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("at least one") || stderr.contains("--cron"),
+        "stderr should hint at required fields, got: {stderr}"
+    );
+}
+
+/// `ASSAY_ENGINE_URL` env var is honored when the flag is absent.
+#[tokio::test]
+async fn cli_honors_engine_url_env_var() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_honors_engine_url_env_var — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    let output = tokio::process::Command::new(&assay_bin)
+        .args(["workflow", "list"])
+        .env("ASSAY_ENGINE_URL", &url)
+        .env_remove("ASSAY_API_KEY")
+        .output()
+        .await
+        .expect("run");
+    assert!(output.status.success(), "env var honored; stderr: {}", String::from_utf8_lossy(&output.stderr));
+}
