@@ -1810,3 +1810,176 @@ workflow.listen({ queue = "default" })
 
     let _ = worker.kill().await;
 }
+
+/// F5 — `ctx:execute_parallel` schedules multiple activities from one
+/// replay and waits for all to complete before the workflow proceeds.
+#[tokio::test]
+async fn lua_workflow_execute_parallel_three_activities() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_execute_parallel_three_activities — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("FanOut", function(ctx, input)
+    local results = ctx:execute_parallel({
+        { name = "double", input = { n = 1 } },
+        { name = "double", input = { n = 2 } },
+        { name = "double", input = { n = 3 } },
+    })
+    return { sum = results[1].v + results[2].v + results[3].v }
+end)
+
+workflow.activity("double", function(ctx, input)
+    return { v = input.n * 2 }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "FanOut",
+            "workflow_id": "wf-par-1",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-par-1",
+        "COMPLETED",
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    let result_str = wf["result"].as_str().expect("result");
+    let result: serde_json::Value = serde_json::from_str(result_str).unwrap();
+    // 1*2 + 2*2 + 3*2 = 12
+    assert_eq!(result["sum"], 12);
+
+    // All three activities should have been scheduled in the first replay —
+    // verify by counting ActivityScheduled events before the first
+    // ActivityCompleted.
+    let events: Vec<serde_json::Value> = c
+        .get(format!("{url}/api/v1/workflows/wf-par-1/events"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let mut scheduled_before_completed = 0;
+    for e in &events {
+        match e["event_type"].as_str().unwrap_or("") {
+            "ActivityScheduled" => scheduled_before_completed += 1,
+            "ActivityCompleted" => break,
+            _ => {}
+        }
+    }
+    assert_eq!(
+        scheduled_before_completed, 3,
+        "all 3 parallel activities should be scheduled before any completes"
+    );
+
+    let _ = worker.kill().await;
+}
+
+/// F5 — execute_parallel raises when any sub-activity fails after retries.
+#[tokio::test]
+async fn lua_workflow_execute_parallel_one_fails_raises() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_execute_parallel_one_fails_raises — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("FanOutWithFailure", function(ctx, input)
+    ctx:execute_parallel({
+        { name = "ok",   input = {}, opts = { max_attempts = 1 } },
+        { name = "fail", input = {}, opts = { max_attempts = 1 } },
+    })
+    return { reached_end = true }
+end)
+
+workflow.activity("ok", function(ctx, input) return { ok = true } end)
+workflow.activity("fail", function(ctx, input) error("boom") end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "FanOutWithFailure",
+            "workflow_id": "wf-par-fail",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-par-fail",
+        "FAILED",
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    let error = wf["error"].as_str().expect("error").to_string();
+    assert!(
+        error.contains("fail") || error.contains("boom"),
+        "error should mention the failing activity, got: {error}"
+    );
+
+    let _ = worker.kill().await;
+}

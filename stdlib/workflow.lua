@@ -259,7 +259,13 @@ function M._handle_workflow_task(task)
     if coroutine.status(co) == "dead" then
         return with_snapshot({{ type = "CompleteWorkflow", result = yielded_or_returned }})
     end
-    -- Yielded a command — submit it and let a subsequent replay continue
+    -- Yielded a command (or a batch) — submit and let a subsequent replay continue.
+    -- Parallel activities yield `{ _batch = true, commands = {...} }` so we
+    -- can submit N commands from a single handler run without bouncing the
+    -- workflow N times through the dispatch loop.
+    if type(yielded_or_returned) == "table" and yielded_or_returned._batch then
+        return with_snapshot(yielded_or_returned.commands)
+    end
     return with_snapshot({ yielded_or_returned })
 end
 
@@ -365,6 +371,77 @@ function M._make_workflow_ctx(workflow_id, history)
             heartbeat_timeout_secs = opts and opts.heartbeat_timeout_secs,
         })
         -- Unreachable in single-yield mode — yielding ends this replay.
+        error("workflow ctx: yielded but resumed unexpectedly")
+    end
+
+    --- Schedule multiple activities concurrently and return their results in
+    --- the same order. On replay: if all N activities have completed events
+    --- in history, returns immediately with a list of results. If any are
+    --- missing, yields a batch of ScheduleActivity commands for the missing
+    --- ones — the engine schedules them idempotently (on `seq`) and the
+    --- workflow is re-dispatched on each completion. The workflow proceeds
+    --- past this call only when every activity has a terminal event.
+    ---
+    --- Each completion triggers a replay that yields another batch of
+    --- missing commands; because `schedule_activity` is idempotent on
+    --- `(workflow_id, seq)`, repeated scheduling of the same seq is a
+    --- no-op at the store layer.
+    ---
+    --- If any activity fails after exhausting its retries, this call raises
+    --- with that activity's error. Per-activity retry/timeout opts are
+    --- passed through, same as `ctx:execute_activity`.
+    ---
+    --- Usage:
+    ---   local results = ctx:execute_parallel({
+    ---       { name = "check_a", input = { id = 1 } },
+    ---       { name = "check_b", input = { id = 2 } },
+    ---       { name = "check_c", input = { id = 3 } },
+    ---   })
+    ---   -- results[1], results[2], results[3] are in input order
+    function ctx:execute_parallel(activities)
+        check_cancel()
+        if type(activities) ~= "table" or #activities == 0 then
+            error("ctx:execute_parallel: activities must be a non-empty list")
+        end
+        local seqs, results, all_done, first_error = {}, {}, true, nil
+        local pending_cmds = {}
+        for i, a in ipairs(activities) do
+            activity_seq = activity_seq + 1
+            seqs[i] = activity_seq
+            local r = activity_results[activity_seq]
+            if r then
+                if r.ok then
+                    results[i] = r.value
+                else
+                    first_error = first_error
+                        or ("activity '" .. (a.name or "?")
+                            .. "' failed: " .. tostring(r.err))
+                end
+            else
+                all_done = false
+                local opts = a.opts or {}
+                pending_cmds[#pending_cmds + 1] = {
+                    type = "ScheduleActivity",
+                    seq = activity_seq,
+                    name = a.name,
+                    task_queue = opts.task_queue or "default",
+                    input = a.input,
+                    max_attempts = opts.max_attempts,
+                    initial_interval_secs = opts.initial_interval_secs,
+                    backoff_coefficient = opts.backoff_coefficient,
+                    start_to_close_secs = opts.start_to_close_secs,
+                    heartbeat_timeout_secs = opts.heartbeat_timeout_secs,
+                }
+            end
+        end
+        if all_done then
+            if first_error then error(first_error) end
+            return results
+        end
+        -- Yield a BATCH: a table with `_batch = true` so the worker's
+        -- replay loop recognises it and submits every command in order
+        -- instead of wrapping a single command.
+        coroutine.yield({ _batch = true, commands = pending_cmds })
         error("workflow ctx: yielded but resumed unexpectedly")
     end
 
