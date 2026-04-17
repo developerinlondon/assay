@@ -603,8 +603,7 @@ builtin handles nested tables.
 
 **Workflow engine**: Use `assay serve` + `require("assay.workflow")` for durable workflows with
 deterministic-replay crash safety. See the "Workflow engine" section above for the API and
-`docs/modules/workflow.md` for the full replay model. Note: 0.11.0 removed the externally-hosted
-Temporal integration in favour of this built-in engine.
+`docs/modules/workflow.md` for the full replay model.
 
 ## MCP Replacement
 
