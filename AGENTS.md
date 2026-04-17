@@ -38,6 +38,33 @@ This applies to all files in the repo: `stdlib/`, `src/`, `tests/`, `*.md`, `*.h
 `CHANGELOG.md`, and any commit/PR text. The only legitimate exception is the copyright holder's name
 in `LICENSE`/`NOTICE`/`CLA.md`.
 
+## Release docs checklist
+
+Every release (patch, minor, or major) must update **all** of the following before the PR merges —
+never ship a release that only touches source + CHANGELOG. The site and llms.txt drift silently if
+you forget them, and agents downstream (including future-you) see stale information.
+
+- `Cargo.toml` — bump `version` under `[package]`.
+- `CHANGELOG.md` — new section at the top; describe the OIDC/Kubernetes/HTTP scenario enabled, not a
+  specific consumer.
+- `docs/modules/*.md` — any module whose surface changed.
+- `README.md`, `SKILL.md`, `AGENTS.md`, `skills/assay/SKILL.md` — auth / CLI / API tables if touched.
+- `llms.txt` (root) — one-liner module descriptors.
+- `site/pages/index.html` — the release banner (`v0.x.y` tag + copy) and any version badge on
+  feature cards (e.g. the Workflow Engine card).
+- `site/static/llms.txt` — this is the site's static teaser; keep it reasonably fresh (it's not
+  auto-generated from the root `llms.txt`).
+- Any site page that references the previous version in prose or code (e.g. the
+  `mise` / `crates.io` install snippets on `index.html`).
+
+Verify with a grep for the previous version before opening the PR:
+
+```sh
+grep -rn "v0.PREVIOUS" . --include="*.md" --include="*.html" --include="*.toml" --include="*.txt"
+```
+
+The only matches that should remain are historical CHANGELOG entries.
+
 ## What is Assay
 
 General-purpose enhanced Lua runtime. Single ~11 MB static binary with batteries included: HTTP

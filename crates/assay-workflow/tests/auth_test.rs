@@ -1,4 +1,4 @@
-use assay_workflow::api::auth::{generate_api_key, hash_api_key, AuthMode, JwksCache};
+use assay_workflow::api::auth::{generate_api_key, hash_api_key, AuthMode, JwksCache, JwtConfig};
 use assay_workflow::{Engine, SqliteStore, WorkflowStore};
 use jsonwebtoken::jwk::{
     CommonParameters, Jwk, JwkSet, KeyAlgorithm, PublicKeyUse, RSAKeyParameters, RSAKeyType,
@@ -90,27 +90,36 @@ fn sign_jwt(keys: &TestKeys, claims: &serde_json::Value) -> String {
     jsonwebtoken::encode(&header, claims, &keys.encoding_key).unwrap()
 }
 
-fn jwt_auth_mode(keys: &TestKeys) -> AuthMode {
+fn jwt_config(keys: &TestKeys, audience: Option<&str>) -> JwtConfig {
     let cache = JwksCache::with_jwks(
         "https://auth.example.com".to_string(),
         keys.jwk_set.clone(),
     );
-    AuthMode::Jwt {
+    JwtConfig {
         issuer: "https://auth.example.com".to_string(),
-        audience: None,
+        audience: audience.map(|s| s.to_string()),
         jwks_cache: Arc::new(cache),
     }
 }
 
+fn jwt_auth_mode(keys: &TestKeys) -> AuthMode {
+    AuthMode {
+        api_key: false,
+        jwt: Some(jwt_config(keys, None)),
+    }
+}
+
 fn jwt_auth_mode_with_audience(keys: &TestKeys, audience: &str) -> AuthMode {
-    let cache = JwksCache::with_jwks(
-        "https://auth.example.com".to_string(),
-        keys.jwk_set.clone(),
-    );
-    AuthMode::Jwt {
-        issuer: "https://auth.example.com".to_string(),
-        audience: Some(audience.to_string()),
-        jwks_cache: Arc::new(cache),
+    AuthMode {
+        api_key: false,
+        jwt: Some(jwt_config(keys, Some(audience))),
+    }
+}
+
+fn combined_auth_mode(keys: &TestKeys) -> AuthMode {
+    AuthMode {
+        api_key: true,
+        jwt: Some(jwt_config(keys, None)),
     }
 }
 
@@ -126,7 +135,7 @@ fn future_exp() -> u64 {
 
 #[tokio::test]
 async fn no_auth_allows_all_requests() {
-    let (url, _h) = start_server(AuthMode::NoAuth).await;
+    let (url, _h) = start_server(AuthMode::no_auth()).await;
 
     let resp = client()
         .get(format!("{url}/api/v1/health"))
@@ -147,7 +156,7 @@ async fn no_auth_allows_all_requests() {
 
 #[tokio::test]
 async fn api_key_rejects_no_token() {
-    let (url, _h) = start_server(AuthMode::ApiKey).await;
+    let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let resp = client()
         .get(format!("{url}/api/v1/workflows"))
@@ -159,7 +168,7 @@ async fn api_key_rejects_no_token() {
 
 #[tokio::test]
 async fn api_key_rejects_invalid_key() {
-    let (url, _h) = start_server(AuthMode::ApiKey).await;
+    let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let resp = client()
         .get(format!("{url}/api/v1/workflows"))
@@ -185,7 +194,7 @@ async fn api_key_accepts_valid_key() {
         .await
         .unwrap();
 
-    let (url, _h) = start_server_with_store(store, AuthMode::ApiKey).await;
+    let (url, _h) = start_server_with_store(store, AuthMode::api_key()).await;
 
     let resp = client()
         .get(format!("{url}/api/v1/workflows"))
@@ -356,4 +365,143 @@ async fn jwt_rejects_different_rsa_key() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 401);
+}
+
+// ── Combined mode (JWT + API key on the same server) ─────────
+
+#[tokio::test]
+async fn combined_accepts_valid_jwt() {
+    let keys = generate_test_rsa_keys();
+    let (url, _h) = start_server(combined_auth_mode(&keys)).await;
+
+    let token = sign_jwt(
+        &keys,
+        &serde_json::json!({
+            "iss": "https://auth.example.com",
+            "exp": future_exp(),
+            "sub": "user-1",
+        }),
+    );
+
+    let resp = client()
+        .get(format!("{url}/api/v1/workflows"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
+async fn combined_accepts_valid_api_key() {
+    let keys = generate_test_rsa_keys();
+    let store = SqliteStore::new("sqlite::memory:").await.unwrap();
+
+    let api_key = generate_api_key();
+    let hash = hash_api_key(&api_key);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    store
+        .create_api_key(&hash, "assay_test...", None, now)
+        .await
+        .unwrap();
+
+    let (url, _h) = start_server_with_store(store, combined_auth_mode(&keys)).await;
+
+    let resp = client()
+        .get(format!("{url}/api/v1/workflows"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
+async fn combined_rejects_missing_token() {
+    let keys = generate_test_rsa_keys();
+    let (url, _h) = start_server(combined_auth_mode(&keys)).await;
+
+    let resp = client()
+        .get(format!("{url}/api/v1/workflows"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
+
+#[tokio::test]
+async fn combined_rejects_garbage_token() {
+    let keys = generate_test_rsa_keys();
+    let (url, _h) = start_server(combined_auth_mode(&keys)).await;
+
+    // Not JWT-shaped, not a stored API key — should fail the API-key lookup.
+    let resp = client()
+        .get(format!("{url}/api/v1/workflows"))
+        .header("Authorization", "Bearer assay_not_a_real_key_abcd")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
+
+#[tokio::test]
+async fn combined_rejects_expired_jwt_without_api_key_fallback() {
+    // An expired JWT is JWT-shaped, so the middleware takes the JWT path
+    // and rejects it there — it must NOT silently be retried as an API key.
+    let keys = generate_test_rsa_keys();
+    let (url, _h) = start_server(combined_auth_mode(&keys)).await;
+
+    let token = sign_jwt(
+        &keys,
+        &serde_json::json!({
+            "iss": "https://auth.example.com",
+            "exp": 1_000_000_000u64, // 2001 — long expired
+        }),
+    );
+
+    let resp = client()
+        .get(format!("{url}/api/v1/workflows"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
+
+// ── AuthMode helpers ─────────────────────────────────────────
+
+#[test]
+fn describe_no_auth() {
+    assert_eq!(AuthMode::no_auth().describe(), "no-auth (open access)");
+}
+
+#[test]
+fn describe_api_key_only() {
+    assert_eq!(AuthMode::api_key().describe(), "api-key");
+}
+
+#[test]
+fn describe_jwt_only() {
+    let m = AuthMode::jwt("https://auth.example.com".to_string(), None);
+    assert_eq!(m.describe(), "jwt (issuer: https://auth.example.com)");
+}
+
+#[test]
+fn describe_combined() {
+    let m = AuthMode::combined("https://auth.example.com".to_string(), None);
+    assert_eq!(
+        m.describe(),
+        "jwt (issuer: https://auth.example.com) + api-key"
+    );
+}
+
+#[test]
+fn is_enabled_reflects_state() {
+    assert!(!AuthMode::no_auth().is_enabled());
+    assert!(AuthMode::api_key().is_enabled());
+    assert!(AuthMode::jwt("https://auth.example.com".to_string(), None).is_enabled());
+    assert!(AuthMode::combined("https://auth.example.com".to_string(), None).is_enabled());
 }

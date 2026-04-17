@@ -31,13 +31,26 @@ assay serve --backend postgres://u:p@h:5432/assay     # Postgres (multi-instance
 DATABASE_URL=postgres://... assay serve               # backend from env (keeps creds out of argv)
 ```
 
-Auth modes (mutually exclusive):
+Auth modes:
 
 | Flag                                        | Behaviour                                                                                                                                         |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--no-auth` (default)                       | Open access. Use only behind a trusted gateway.                                                                                                   |
 | `--auth-api-key`                            | Clients send `Authorization: Bearer <key>`. Manage keys with `--generate-api-key` / `--list-api-keys`. Keys are SHA256-hashed at rest.            |
 | `--auth-issuer <url> --auth-audience <aud>` | JWT/OIDC. Fetches and caches the issuer's JWKS to validate signatures. Works with Auth0, Okta, Dex, Keycloak, Cloudflare Access, any OIDC issuer. |
+| `--auth-api-key` + `--auth-issuer …`        | Combined. Tokens that parse as a JWS header take the JWT path; everything else takes the API-key path. Same server accepts both token types on `Authorization: Bearer`. |
+
+**Combined mode dispatch** (when both `--auth-issuer` and `--auth-api-key` are set):
+
+- `Authorization: Bearer <jwt>` — validated against JWKS. Rejected if expired / wrong
+  issuer / wrong audience / bad signature. A semantically-invalid JWT is **not** silently
+  retried as an API key.
+- `Authorization: Bearer <api-key>` — hashed and looked up in the store.
+- `Authorization: Bearer <garbage>` — 401.
+
+Combined mode lets the same server serve short-lived OIDC user tokens (from a browser
+session) alongside long-lived machine API keys (from a CI job) without the caller picking
+a mode up front.
 
 **Multi-instance deployment.** SQLite is single-instance only (engine takes an `engine_lock` row at
 startup). For Kubernetes / Docker Swarm, use Postgres: the cron scheduler picks a leader via

@@ -19,26 +19,83 @@ const JWKS_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
 // ── Auth Mode ───────────────────────────────────────────────
 
-/// Auth configuration — determines which mode the engine runs in.
+/// Auth configuration for the engine's HTTP API.
+///
+/// Both authentication methods (JWT and API key) can be enabled at the same time.
+/// When both are enabled, the middleware dispatches on token shape — tokens that
+/// parse as a JWS header are validated as JWTs, everything else is validated as
+/// an API key. This lets the same server accept long-lived machine API keys
+/// alongside short-lived OIDC-issued user tokens without the caller picking a
+/// mode up front.
 #[derive(Clone, Debug, Default)]
-pub enum AuthMode {
-    /// No authentication — all requests allowed (dev mode).
-    #[default]
-    NoAuth,
-    /// API key authentication — Bearer token validated against hashed keys in DB.
-    ApiKey,
-    /// JWT/OIDC — validate Bearer JWT signature against JWKS from the issuer.
-    Jwt {
-        issuer: String,
-        audience: Option<String>,
-        jwks_cache: Arc<JwksCache>,
-    },
+pub struct AuthMode {
+    /// API-key authentication enabled. When true, Bearer tokens that are not
+    /// JWT-shaped are validated against the `api_keys` table.
+    pub api_key: bool,
+    /// JWT authentication enabled. When set, Bearer tokens that parse as a
+    /// JWS header are validated against the issuer's JWKS.
+    pub jwt: Option<JwtConfig>,
+}
+
+/// JWT validation configuration.
+#[derive(Clone, Debug)]
+pub struct JwtConfig {
+    pub issuer: String,
+    pub audience: Option<String>,
+    pub jwks_cache: Arc<JwksCache>,
 }
 
 impl AuthMode {
-    /// Create a JWT auth mode that fetches JWKS from the issuer's OIDC discovery.
+    /// Open access — no authentication. All requests allowed.
+    pub fn no_auth() -> Self {
+        Self::default()
+    }
+
+    /// JWT/OIDC only. Tokens are validated against the issuer's JWKS.
     pub fn jwt(issuer: String, audience: Option<String>) -> Self {
-        Self::Jwt {
+        Self {
+            api_key: false,
+            jwt: Some(JwtConfig::new(issuer, audience)),
+        }
+    }
+
+    /// API key only. Bearer tokens are hashed and looked up in the store.
+    pub fn api_key() -> Self {
+        Self {
+            api_key: true,
+            jwt: None,
+        }
+    }
+
+    /// Both JWT and API key. Tokens that parse as JWTs take the JWT path;
+    /// everything else takes the API-key path.
+    pub fn combined(issuer: String, audience: Option<String>) -> Self {
+        Self {
+            api_key: true,
+            jwt: Some(JwtConfig::new(issuer, audience)),
+        }
+    }
+
+    /// True if any authentication method is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.api_key || self.jwt.is_some()
+    }
+
+    /// Human-readable summary for startup logging.
+    pub fn describe(&self) -> String {
+        match (self.jwt.as_ref(), self.api_key) {
+            (None, false) => "no-auth (open access)".to_string(),
+            (None, true) => "api-key".to_string(),
+            (Some(c), false) => format!("jwt (issuer: {})", c.issuer),
+            (Some(c), true) => format!("jwt (issuer: {}) + api-key", c.issuer),
+        }
+    }
+}
+
+impl JwtConfig {
+    /// Build a JwtConfig with a fresh JWKS cache pointed at `issuer`'s OIDC discovery endpoint.
+    pub fn new(issuer: String, audience: Option<String>) -> Self {
+        Self {
             jwks_cache: Arc::new(JwksCache::new(issuer.clone())),
             issuer,
             audience,
@@ -196,19 +253,46 @@ fn find_key_in_set(jwks: &JwkSet, kid: &str) -> Option<DecodingKey> {
 // ── Middleware ───────────────────────────────────────────────
 
 /// Axum middleware that enforces authentication based on the configured mode.
+///
+/// When both JWT and API-key auth are enabled, dispatch is based on token shape:
+/// if the Bearer token parses as a JWS header it takes the JWT path, otherwise
+/// the API-key path. A semantically-invalid JWT (expired, forged signature, wrong
+/// audience) is rejected and is *not* retried as an API key — a token that looks
+/// like a JWT is treated as a JWT.
 pub async fn auth_middleware<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     request: Request,
     next: Next,
 ) -> Response {
-    match &state.auth_mode {
-        AuthMode::NoAuth => next.run(request).await,
-        AuthMode::ApiKey => validate_api_key(state, request, next).await,
-        AuthMode::Jwt {
-            issuer,
-            audience,
-            jwks_cache,
-        } => validate_jwt(issuer, audience.as_deref(), jwks_cache, request, next).await,
+    let auth = &state.auth_mode;
+
+    if !auth.is_enabled() {
+        return next.run(request).await;
+    }
+
+    let token = match extract_bearer(&request) {
+        Some(t) => t,
+        None => return auth_error("Missing Authorization: Bearer <token>"),
+    };
+
+    if jsonwebtoken::decode_header(token).is_ok() {
+        match &auth.jwt {
+            Some(jwt) => {
+                validate_jwt(
+                    &jwt.issuer,
+                    jwt.audience.as_deref(),
+                    &jwt.jwks_cache,
+                    request,
+                    next,
+                )
+                .await
+            }
+            None => auth_error("JWT authentication is not enabled on this server"),
+        }
+    } else if auth.api_key {
+        validate_api_key(state, request, next).await
+    } else {
+        auth_error("Token is not a valid JWT and API-key authentication is not enabled")
     }
 }
 

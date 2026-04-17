@@ -38,7 +38,7 @@ pub struct AppState<S: WorkflowStore> {
 
 /// Build the full API router.
 pub fn router<S: WorkflowStore + 'static>(state: Arc<AppState<S>>) -> Router {
-    let needs_auth = !matches!(state.auth_mode, AuthMode::NoAuth);
+    let needs_auth = state.auth_mode.is_enabled();
 
     let api = Router::new()
         .nest("/api/v1", api_v1_router())
@@ -96,11 +96,7 @@ pub async fn serve_with_version<S: WorkflowStore + 'static>(
 ) -> anyhow::Result<()> {
     let (event_tx, _) = broadcast::channel(1024);
 
-    let mode_desc = match &auth_mode {
-        AuthMode::NoAuth => "no-auth (open access)".to_string(),
-        AuthMode::ApiKey => "api-key".to_string(),
-        AuthMode::Jwt { issuer, .. } => format!("jwt (issuer: {issuer})"),
-    };
+    let mode_desc = auth_mode.describe();
 
     let state = Arc::new(AppState {
         engine: Arc::new(engine),
