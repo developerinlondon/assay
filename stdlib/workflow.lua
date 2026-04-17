@@ -636,6 +636,13 @@ function M._make_workflow_ctx(workflow_id, history)
     -- in turn.
     local activity_results, fired_timers, side_effects, child_results = {}, {}, {}, {}
     local signals_by_name = {} -- [name] = list of payloads in arrival order
+    -- Parallel to signals_by_name, holds the event seq of each arrival so
+    -- ctx:wait_for_signal with a timeout can race a specific signal against
+    -- a specific timer by comparing their history event seqs.
+    local signal_seqs_by_name = {}
+    -- Event seq at which each timer fired, keyed by the timer's workflow-
+    -- local seq. Used by the timed wait_for_signal path to decide winner.
+    local timer_fired_seqs = {}
     local cancel_requested = false
     for _, event in ipairs(history) do
         local p = event.payload
@@ -645,9 +652,12 @@ function M._make_workflow_ctx(workflow_id, history)
             activity_results[p.activity_seq] = { ok = false, err = p.error }
         elseif event.event_type == "TimerFired" and p and p.timer_seq then
             fired_timers[p.timer_seq] = true
+            timer_fired_seqs[p.timer_seq] = event.seq
         elseif event.event_type == "SignalReceived" and p and p.signal then
             signals_by_name[p.signal] = signals_by_name[p.signal] or {}
+            signal_seqs_by_name[p.signal] = signal_seqs_by_name[p.signal] or {}
             table.insert(signals_by_name[p.signal], p.payload)
+            table.insert(signal_seqs_by_name[p.signal], event.seq)
         elseif event.event_type == "SideEffectRecorded" and p and p.side_effect_seq then
             side_effects[p.side_effect_seq] = p.value
         elseif event.event_type == "ChildWorkflowCompleted" and p and p.child_workflow_id then
@@ -926,24 +936,93 @@ function M._make_workflow_ctx(workflow_id, history)
         self._queries[name] = fn
     end
 
-    --- Block until a signal with the given name arrives. Returns the
-    --- signal's JSON payload (or nil if signaled with no payload).
+    --- Block until a signal with the given name arrives, optionally
+    --- bounded by a timeout. Returns the signal's JSON payload (or nil
+    --- if signaled with no payload). With `opts.timeout`, returns nil
+    --- when the timeout elapses before any matching signal arrives.
+    ---
     --- The "wait" is purely declarative — the workflow yields, the worker
     --- releases its lease, and a future call to send_signal wakes the
     --- workflow back up via mark_workflow_dispatchable. Multiple waits for
     --- the same signal name consume signals in arrival order.
-    function ctx:wait_for_signal(name)
+    ---
+    --- With a timeout, the ctx yields a batch of two commands:
+    ---   * `ScheduleTimer{seq = T, duration_secs = opts.timeout}`
+    ---   * `WaitForSignal{name, timer_seq = T}`
+    --- On replay the winner is chosen by history event seq — whichever
+    --- of the next unconsumed `SignalReceived{signal = name}` or the
+    --- paired `TimerFired{timer_seq = T}` has the lower seq wins. If
+    --- neither has happened yet, the batch is re-yielded (idempotent on
+    --- `timer_seq`). Determinism matches `ctx:sleep` and `ctx:execute_parallel`.
+    ---
+    --- Usage:
+    ---   local payload = ctx:wait_for_signal("approve")
+    ---   local payload = ctx:wait_for_signal("approve", { timeout = 86400 })
+    ---   if payload == nil then
+    ---       -- treat as rejected / cancelled
+    ---   end
+    function ctx:wait_for_signal(name, opts)
         check_cancel()
+        if type(name) ~= "string" or name == "" then
+            error("ctx:wait_for_signal: name must be a non-empty string")
+        end
+        if opts ~= nil and type(opts) ~= "table" then
+            error("ctx:wait_for_signal: opts must be a table if provided")
+        end
+        local timeout = opts and opts.timeout
+        if timeout ~= nil and (type(timeout) ~= "number" or timeout <= 0) then
+            error("ctx:wait_for_signal: opts.timeout must be a positive number")
+        end
+
+        if not timeout then
+            local consumed = signal_cursor[name] or 0
+            local arrivals = signals_by_name[name] or {}
+            if consumed < #arrivals then
+                consumed = consumed + 1
+                signal_cursor[name] = consumed
+                return arrivals[consumed]
+            end
+            coroutine.yield({
+                type = "WaitForSignal",
+                name = name,
+            })
+            error("workflow ctx: yielded but resumed unexpectedly")
+        end
+
+        -- Timed path: race the next unconsumed signal of this name against
+        -- a workflow-local timer. Each call increments timer_seq so repeat
+        -- calls schedule distinct timers; `ScheduleTimer` is idempotent on
+        -- (workflow_id, seq) at the engine so replays don't duplicate.
+        timer_seq = timer_seq + 1
+        local my_timer_seq = timer_seq
         local consumed = signal_cursor[name] or 0
         local arrivals = signals_by_name[name] or {}
-        if consumed < #arrivals then
-            consumed = consumed + 1
-            signal_cursor[name] = consumed
-            return arrivals[consumed]
+        local seqs = signal_seqs_by_name[name] or {}
+        local next_signal_seq = seqs[consumed + 1]
+        local timer_fired_at = timer_fired_seqs[my_timer_seq]
+
+        if next_signal_seq and (not timer_fired_at or next_signal_seq < timer_fired_at) then
+            signal_cursor[name] = consumed + 1
+            return arrivals[consumed + 1]
         end
+        if timer_fired_at then
+            return nil
+        end
+
         coroutine.yield({
-            type = "WaitForSignal",
-            name = name,
+            _batch = true,
+            commands = {
+                {
+                    type = "ScheduleTimer",
+                    seq = my_timer_seq,
+                    duration_secs = timeout,
+                },
+                {
+                    type = "WaitForSignal",
+                    name = name,
+                    timer_seq = my_timer_seq,
+                },
+            },
         })
         error("workflow ctx: yielded but resumed unexpectedly")
     end

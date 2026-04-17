@@ -610,8 +610,22 @@ impl<S: WorkflowStore> Engine<S> {
                     // and will be re-dispatched when a matching signal arrives.
                     // Releasing the lease (below) is enough; record the wait
                     // intent for the dashboard / debugging.
+                    //
+                    // When the command carries `timer_seq`, the wait is paired
+                    // with a `ScheduleTimer` yielded in the same batch — the
+                    // worker uses the timer_seq to pick the winner on replay
+                    // (signal vs timeout). The engine stores the pairing on
+                    // the event for observability only.
                     let signal_name =
                         cmd.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                    let timer_seq = cmd.get("timer_seq").and_then(|v| v.as_i64());
+                    let payload = match timer_seq {
+                        Some(ts) => serde_json::json!({
+                            "signal": signal_name,
+                            "timer_seq": ts,
+                        }),
+                        None => serde_json::json!({ "signal": signal_name }),
+                    };
                     let event_seq =
                         self.store.get_event_count(workflow_id).await? as i32 + 1;
                     self.store
@@ -620,9 +634,7 @@ impl<S: WorkflowStore> Engine<S> {
                             workflow_id: workflow_id.to_string(),
                             seq: event_seq,
                             event_type: "WorkflowAwaitingSignal".to_string(),
-                            payload: Some(
-                                serde_json::json!({ "signal": signal_name }).to_string(),
-                            ),
+                            payload: Some(payload.to_string()),
                             timestamp: timestamp_now(),
                         })
                         .await?;
