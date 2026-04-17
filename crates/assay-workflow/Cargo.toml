@@ -46,6 +46,23 @@ anyhow = "1"
 # Logging
 tracing = "0.1"
 
+[features]
+default = []
+# Enable the S3 archival background task for completed workflows.
+# Adds the AWS SDK dependency (~5MB of binary size); leave off when
+# archival isn't needed.
+s3-archival = ["dep:aws-config", "dep:aws-sdk-s3"]
+
+[dependencies.aws-config]
+version = "1.8"
+optional = true
+features = ["behavior-version-latest"]
+
+[dependencies.aws-sdk-s3]
+version = "1.125"
+optional = true
+features = ["behavior-version-latest"]
+
 [dev-dependencies]
 reqwest = { version = "0.13", features = ["json"], default-features = false }
 rsa = "0.9"

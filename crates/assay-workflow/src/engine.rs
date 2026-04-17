@@ -21,6 +21,8 @@ pub struct Engine<S: WorkflowStore> {
     _timer_poller: JoinHandle<()>,
     _health_monitor: JoinHandle<()>,
     _dispatch_recovery: JoinHandle<()>,
+    #[cfg(feature = "s3-archival")]
+    _archival: Option<JoinHandle<()>>,
 }
 
 impl<S: WorkflowStore> Engine<S> {
@@ -35,6 +37,11 @@ impl<S: WorkflowStore> Engine<S> {
             Arc::clone(&store),
         ));
 
+        #[cfg(feature = "s3-archival")]
+        let _archival = crate::archival::ArchivalConfig::from_env().map(|cfg| {
+            tokio::spawn(crate::archival::run_archival(Arc::clone(&store), cfg))
+        });
+
         info!("Workflow engine started");
 
         Self {
@@ -43,6 +50,8 @@ impl<S: WorkflowStore> Engine<S> {
             _timer_poller,
             _health_monitor,
             _dispatch_recovery,
+            #[cfg(feature = "s3-archival")]
+            _archival,
         }
     }
 
@@ -78,6 +87,8 @@ impl<S: WorkflowStore> Engine<S> {
             parent_id: None,
             claimed_by: None,
             search_attributes: search_attributes.map(String::from),
+            archived_at: None,
+            archive_uri: None,
             created_at: now,
             updated_at: now,
             completed_at: None,
@@ -1022,6 +1033,8 @@ impl<S: WorkflowStore> Engine<S> {
             parent_id: Some(parent_id.to_string()),
             claimed_by: None,
             search_attributes: None,
+            archived_at: None,
+            archive_uri: None,
             created_at: now,
             updated_at: now,
             completed_at: None,

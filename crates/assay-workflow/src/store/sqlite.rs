@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS workflows (
     parent_id       TEXT,
     claimed_by      TEXT,
     search_attributes TEXT,
+    archived_at     REAL,
+    archive_uri     TEXT,
     -- Workflow-task dispatch (Phase 9): a workflow is "dispatchable" when
     -- it has new events a worker needs to replay against. Set true on
     -- start, on activity completion, on timer fire, on signal arrival.
@@ -288,6 +290,8 @@ impl SqliteStore {
         .await?;
         Self::add_column_if_missing(&self.pool, "workflows", "search_attributes", "TEXT")
             .await?;
+        Self::add_column_if_missing(&self.pool, "workflows", "archived_at", "REAL").await?;
+        Self::add_column_if_missing(&self.pool, "workflows", "archive_uri", "TEXT").await?;
         Ok(())
     }
 
@@ -400,8 +404,8 @@ impl WorkflowStore for SqliteStore {
 
     async fn create_workflow(&self, wf: &WorkflowRecord) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&wf.id)
         .bind(&wf.namespace)
@@ -415,6 +419,8 @@ impl WorkflowStore for SqliteStore {
         .bind(&wf.parent_id)
         .bind(&wf.claimed_by)
         .bind(&wf.search_attributes)
+        .bind(wf.archived_at)
+        .bind(&wf.archive_uri)
         .bind(wf.created_at)
         .bind(wf.updated_at)
         .bind(wf.completed_at)
@@ -425,7 +431,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn get_workflow(&self, id: &str) -> Result<Option<WorkflowRecord>> {
         let row = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at FROM workflows WHERE id = ?",
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at FROM workflows WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -455,7 +461,7 @@ impl WorkflowStore for SqliteStore {
             .unwrap_or_default();
 
         let mut sql = String::from(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
              FROM workflows
              WHERE namespace = ?
                AND (? IS NULL OR status = ?)
@@ -563,7 +569,7 @@ impl WorkflowStore for SqliteStore {
                 ORDER BY updated_at ASC
                 LIMIT 1
              )
-             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at",
+             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at",
         )
         .bind(worker_id)
         .bind(now)
@@ -963,6 +969,67 @@ impl WorkflowStore for SqliteStore {
         Ok(res.rows_affected() > 0)
     }
 
+    async fn list_archivable_workflows(
+        &self,
+        cutoff: f64,
+        limit: i64,
+    ) -> Result<Vec<WorkflowRecord>> {
+        let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
+             FROM workflows
+             WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT')
+               AND completed_at IS NOT NULL
+               AND completed_at < ?
+               AND archived_at IS NULL
+             ORDER BY completed_at ASC
+             LIMIT ?",
+        )
+        .bind(cutoff)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn mark_archived_and_purge(
+        &self,
+        workflow_id: &str,
+        archive_uri: &str,
+        archived_at: f64,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM workflow_events WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_activities WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_timers WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_signals WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_snapshots WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE workflows SET archived_at = ?, archive_uri = ? WHERE id = ?",
+        )
+        .bind(archived_at)
+        .bind(archive_uri)
+        .bind(workflow_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn upsert_search_attributes(
         &self,
         workflow_id: &str,
@@ -1184,7 +1251,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {
         let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
              FROM workflows WHERE parent_id = ? ORDER BY created_at ASC",
         )
         .bind(parent_id)
@@ -1338,6 +1405,8 @@ struct SqliteWorkflowRow {
     parent_id: Option<String>,
     claimed_by: Option<String>,
     search_attributes: Option<String>,
+    archived_at: Option<f64>,
+    archive_uri: Option<String>,
     created_at: f64,
     updated_at: f64,
     completed_at: Option<f64>,
@@ -1358,6 +1427,8 @@ impl From<SqliteWorkflowRow> for WorkflowRecord {
             parent_id: r.parent_id,
             claimed_by: r.claimed_by,
             search_attributes: r.search_attributes,
+            archived_at: r.archived_at,
+            archive_uri: r.archive_uri,
             created_at: r.created_at,
             updated_at: r.updated_at,
             completed_at: r.completed_at,

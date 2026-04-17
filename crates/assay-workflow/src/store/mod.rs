@@ -56,6 +56,26 @@ pub trait WorkflowStore: Send + Sync + 'static {
         offset: i64,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send;
 
+    /// List workflows in terminal states whose `completed_at` is older than
+    /// `cutoff` and which haven't been archived yet. Used by the optional
+    /// S3 archival background task to batch candidates.
+    fn list_archivable_workflows(
+        &self,
+        cutoff: f64,
+        limit: i64,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send;
+
+    /// Mark a workflow as archived (records `archived_at` + `archive_uri`)
+    /// and purge its events, activities, timers, signals, and snapshots.
+    /// The workflow record itself is preserved so `GET /workflows/{id}`
+    /// still resolves with an archive pointer.
+    fn mark_archived_and_purge(
+        &self,
+        workflow_id: &str,
+        archive_uri: &str,
+        archived_at: f64,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
     /// Merge a JSON object patch into the workflow's `search_attributes`.
     /// Keys in the patch overwrite existing keys; keys already present but
     /// not in the patch are preserved. If the current column is NULL, the

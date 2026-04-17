@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS workflows (
     parent_id       TEXT,
     claimed_by      TEXT,
     search_attributes TEXT,
+    archived_at     DOUBLE PRECISION,
+    archive_uri     TEXT,
     -- Workflow-task dispatch (Phase 9): see sqlite.rs for the full comment.
     needs_dispatch  BOOLEAN NOT NULL DEFAULT FALSE,
     dispatch_claimed_by    TEXT,
@@ -37,9 +39,11 @@ CREATE TABLE IF NOT EXISTS workflows (
 CREATE INDEX IF NOT EXISTS idx_wf_status_queue ON workflows(status, task_queue);
 CREATE INDEX IF NOT EXISTS idx_wf_namespace ON workflows(namespace);
 CREATE INDEX IF NOT EXISTS idx_wf_dispatch ON workflows(task_queue, needs_dispatch, dispatch_claimed_by);
--- Upgrades from v0.11.2 need the column + GIN index added; on fresh
--- installs both already exist (CREATE above) and these are no-ops.
+-- Upgrades from v0.11.2 need the additive columns; on fresh installs
+-- they're already in the CREATE above so these ADDs are no-ops.
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS search_attributes TEXT;
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS archived_at DOUBLE PRECISION;
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS archive_uri TEXT;
 
 CREATE TABLE IF NOT EXISTS workflow_events (
     id              BIGSERIAL PRIMARY KEY,
@@ -269,8 +273,8 @@ impl WorkflowStore for PostgresStore {
 
     async fn create_workflow(&self, wf: &WorkflowRecord) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
+            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
         )
         .bind(&wf.id)
         .bind(&wf.namespace)
@@ -284,6 +288,8 @@ impl WorkflowStore for PostgresStore {
         .bind(&wf.parent_id)
         .bind(&wf.claimed_by)
         .bind(&wf.search_attributes)
+        .bind(wf.archived_at)
+        .bind(&wf.archive_uri)
         .bind(wf.created_at)
         .bind(wf.updated_at)
         .bind(wf.completed_at)
@@ -294,7 +300,7 @@ impl WorkflowStore for PostgresStore {
 
     async fn get_workflow(&self, id: &str) -> Result<Option<WorkflowRecord>> {
         let row = sqlx::query_as::<_, PgWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at FROM workflows WHERE id = $1",
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at FROM workflows WHERE id = $1",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -320,7 +326,7 @@ impl WorkflowStore for PostgresStore {
             .unwrap_or_default();
 
         let mut sql = String::from(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
              FROM workflows
              WHERE namespace = $1
                AND ($2::TEXT IS NULL OR status = $2)
@@ -419,7 +425,7 @@ impl WorkflowStore for PostgresStore {
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
              )
-             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at",
+             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at",
         )
         .bind(worker_id)
         .bind(now)
@@ -816,6 +822,67 @@ impl WorkflowStore for PostgresStore {
         Ok(res.rows_affected() > 0)
     }
 
+    async fn list_archivable_workflows(
+        &self,
+        cutoff: f64,
+        limit: i64,
+    ) -> Result<Vec<WorkflowRecord>> {
+        let rows = sqlx::query_as::<_, PgWorkflowRow>(
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
+             FROM workflows
+             WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT')
+               AND completed_at IS NOT NULL
+               AND completed_at < $1
+               AND archived_at IS NULL
+             ORDER BY completed_at ASC
+             LIMIT $2",
+        )
+        .bind(cutoff)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn mark_archived_and_purge(
+        &self,
+        workflow_id: &str,
+        archive_uri: &str,
+        archived_at: f64,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM workflow_events WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_activities WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_timers WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_signals WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_snapshots WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE workflows SET archived_at = $1, archive_uri = $2 WHERE id = $3",
+        )
+        .bind(archived_at)
+        .bind(archive_uri)
+        .bind(workflow_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn upsert_search_attributes(
         &self,
         workflow_id: &str,
@@ -1037,7 +1104,7 @@ impl WorkflowStore for PostgresStore {
 
     async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {
         let rows = sqlx::query_as::<_, PgWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
              FROM workflows WHERE parent_id = $1 ORDER BY created_at ASC",
         )
         .bind(parent_id)
@@ -1154,6 +1221,8 @@ struct PgWorkflowRow {
     parent_id: Option<String>,
     claimed_by: Option<String>,
     search_attributes: Option<String>,
+    archived_at: Option<f64>,
+    archive_uri: Option<String>,
     created_at: f64,
     updated_at: f64,
     completed_at: Option<f64>,
@@ -1174,6 +1243,8 @@ impl From<PgWorkflowRow> for WorkflowRecord {
             parent_id: r.parent_id,
             claimed_by: r.claimed_by,
             search_attributes: r.search_attributes,
+            archived_at: r.archived_at,
+            archive_uri: r.archive_uri,
             created_at: r.created_at,
             updated_at: r.updated_at,
             completed_at: r.completed_at,

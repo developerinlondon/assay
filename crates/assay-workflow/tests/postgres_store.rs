@@ -68,6 +68,8 @@ fn make_workflow(id: &str, wf_type: &str) -> WorkflowRecord {
         parent_id: None,
         claimed_by: None,
         search_attributes: None,
+        archived_at: None,
+        archive_uri: None,
         created_at: ts,
         updated_at: ts,
         completed_at: None,

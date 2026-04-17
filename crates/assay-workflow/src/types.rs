@@ -191,6 +191,12 @@ pub struct WorkflowRecord {
     /// `ctx:upsert_search_attributes(...)` from workflow code. Filter the
     /// list endpoint with `?search_attrs={"key":"value"}`.
     pub search_attributes: Option<String>,
+    /// Set when the archival task has moved this workflow's
+    /// events+activities+snapshots off to cold storage. The row itself
+    /// stays (with `archive_uri` pointing at the bundle) so that
+    /// `GET /workflows/{id}` still resolves.
+    pub archived_at: Option<f64>,
+    pub archive_uri: Option<String>,
     pub created_at: f64,
     pub updated_at: f64,
     pub completed_at: Option<f64>,
