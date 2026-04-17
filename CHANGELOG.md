@@ -19,18 +19,18 @@ All notable changes to Assay are documented here.
   entirely when no handlers are registered. A handler that raises is dropped from the snapshot
   rather than crashing the workflow (queries are best-effort read-through).
 
-- **`ctx:continue_as_new`** — Lua surface for the engine-level `continue_as_new` REST endpoint
-  that already existed. Workflows yield a `ContinueAsNew` command and the engine closes out the
-  current run, starts a fresh one with the same type / namespace / task_queue under
-  `{id}-continued-{ts}` with the caller-supplied input and empty event history. Standard pattern
-  for unbounded-loop workflows (pollers, schedulers) whose event log would otherwise grow forever.
+- **`ctx:continue_as_new`** — Lua surface for the engine-level `continue_as_new` REST endpoint that
+  already existed. Workflows yield a `ContinueAsNew` command and the engine closes out the current
+  run, starts a fresh one with the same type / namespace / task_queue under `{id}-continued-{ts}`
+  with the caller-supplied input and empty event history. Standard pattern for unbounded-loop
+  workflows (pollers, schedulers) whose event log would otherwise grow forever.
 
-- **`ctx:execute_parallel`** — Run multiple activities concurrently from a single handler run.
-  The worker yields a batch of `ScheduleActivity` commands; the engine schedules them
-  idempotently on `(workflow_id, seq)`. Each completion re-dispatches the workflow, replay
-  cache-hits for completed activities and re-yields the rest (no-op at the store layer). The
-  handler proceeds past the call only when every activity has a terminal event. Per-activity
-  retry / timeout opts match `ctx:execute_activity`.
+- **`ctx:execute_parallel`** — Run multiple activities concurrently from a single handler run. The
+  worker yields a batch of `ScheduleActivity` commands; the engine schedules them idempotently on
+  `(workflow_id, seq)`. Each completion re-dispatches the workflow, replay cache-hits for completed
+  activities and re-yields the rest (no-op at the store layer). The handler proceeds past the call
+  only when every activity has a terminal event. Per-activity retry / timeout opts match
+  `ctx:execute_activity`.
 
   ```lua
   local results = ctx:execute_parallel({
@@ -43,20 +43,19 @@ All notable changes to Assay are documented here.
 
 - **`ctx:upsert_search_attributes`** + **search attributes on workflows** — Workflows gain a
   `search_attributes` JSON object settable at start (`POST /workflows` body) and updatable at
-  runtime (`ctx:upsert_search_attributes({ … })`). The list endpoint accepts a
-  URL-encoded JSON filter that matches workflows whose attributes contain every listed key at
-  the given value:
+  runtime (`ctx:upsert_search_attributes({ … })`). The list endpoint accepts a URL-encoded JSON
+  filter that matches workflows whose attributes contain every listed key at the given value:
 
   ```
   GET /api/v1/workflows?search_attrs=%7B%22env%22%3A%22prod%22%7D
   ```
 
-  SQLite uses `json_extract`; Postgres uses `(search_attributes::jsonb)->>'key'`. Filters
-  AND-join. Unchanged keys are preserved across upserts.
+  SQLite uses `json_extract`; Postgres uses `(search_attributes::jsonb)->>'key'`. Filters AND-join.
+  Unchanged keys are preserved across upserts.
 
 - **Schedule `PATCH` / `pause` / `resume`** — Schedules can be updated in place without a
-  delete-and-recreate. Only fields present on the patch are touched; unchanged fields keep
-  their existing values.
+  delete-and-recreate. Only fields present on the patch are touched; unchanged fields keep their
+  existing values.
 
   ```
   PATCH /api/v1/schedules/{name}  body: { cron_expr?, timezone?, input?, task_queue?, overlap_policy? }
@@ -64,39 +63,76 @@ All notable changes to Assay are documented here.
   POST  /api/v1/schedules/{name}/resume
   ```
 
-  Paused schedules are skipped by the scheduler; resume recomputes `next_run_at` from now and
-  does not backfill missed fires. Updates take effect within a scheduler tick (≤15s).
+  Paused schedules are skipped by the scheduler; resume recomputes `next_run_at` from now and does
+  not backfill missed fires. Updates take effect within a scheduler tick (≤15s).
 
 - **Cron timezone** — Schedules gain a `timezone` field (IANA name, e.g. `"Europe/Berlin"`,
   `"America/New_York"`). Default `"UTC"` preserves v0.11.2 behaviour. The scheduler parses the
-  timezone via `chrono-tz` and evaluates the cron expression in that zone, then persists the
-  UTC epoch as `next_run_at`. Invalid names are rejected at create / patch time.
+  timezone via `chrono-tz` and evaluates the cron expression in that zone, then persists the UTC
+  epoch as `next_run_at`. Invalid names are rejected at create / patch time.
 
 - **Optional S3 archival for completed workflows** — Behind the `s3-archival` cargo feature
-  (default-off). When compiled in and `ASSAY_ARCHIVE_S3_BUCKET` is set at runtime, a background
-  task periodically finds workflows in terminal states older than
-  `ASSAY_ARCHIVE_RETENTION_DAYS` (default 30), bundles `{workflow_record, events}` as JSON,
-  uploads to `s3://bucket/prefix/<namespace>/<workflow_id>.json`, and purges dependent rows
-  (events, activities, timers, signals, snapshots). The workflow row itself is retained with
-  `archived_at` + `archive_uri` set so `GET /workflows/{id}` still resolves with a pointer to
-  the cold-storage bundle.
+  (default-off). When compiled in and `ASSAY_ARCHIVE_S3_BUCKET` is set at runtime, a background task
+  periodically finds workflows in terminal states older than `ASSAY_ARCHIVE_RETENTION_DAYS` (default
+  30), bundles `{workflow_record, events}` as JSON, uploads to
+  `s3://bucket/prefix/<namespace>/<workflow_id>.json`, and purges dependent rows (events,
+  activities, timers, signals, snapshots). The workflow row itself is retained with `archived_at` +
+  `archive_uri` set so `GET /workflows/{id}` still resolves with a pointer to the cold-storage
+  bundle.
 
   Credentials resolve via the AWS SDK's default chain — env vars, shared config, or IRSA /
-  pod-identity via web-identity token. Other env vars:
-  `ASSAY_ARCHIVE_S3_PREFIX` (default `assay/`), `ASSAY_ARCHIVE_POLL_SECS` (default 3600),
-  `ASSAY_ARCHIVE_BATCH_SIZE` (default 50).
+  pod-identity via web-identity token. Other env vars: `ASSAY_ARCHIVE_S3_PREFIX` (default `assay/`),
+  `ASSAY_ARCHIVE_POLL_SECS` (default 3600), `ASSAY_ARCHIVE_BATCH_SIZE` (default 50).
+
+- **`assay.workflow` Lua stdlib — full management surface.** The stdlib now covers every REST
+  endpoint the engine exposes, so Lua scripts (including CC and Kubernetes Jobs running
+  `assay run seed.lua`) can manage workflows, schedules, namespaces, workers, and queues without
+  hand-rolling HTTP calls. New top-level functions:
+
+  ```
+  workflow.list(opts)              workflow.list_children(id)
+  workflow.terminate(id, reason)   workflow.continue_as_new(id, input)
+  workflow.get_events(id)          workflow.get_state(id, name?)
+  ```
+
+  New sub-tables (each exposes `create / list / describe / patch / pause / resume / delete` as
+  applicable):
+
+  ```
+  workflow.schedules   workflow.namespaces   workflow.workers   workflow.queues
+  ```
+
+  Every function is a thin HTTP wrapper returning the parsed JSON response (or `nil` on a 404 for
+  `describe`/`get_state`), raising on other non-2xx responses.
+
+- **`assay workflow` and `assay schedule` CLI subcommands.** The stubs registered in v0.11.1 and
+  shipped as "not yet implemented" in v0.11.2 are replaced with real REST client implementations.
+  Covers every subcommand already in the parser
+  (`workflow list / describe /
+  signal / cancel / terminate`,
+  `schedule list / create / pause / resume / delete`) plus three v0.11.3-feature extensions:
+
+  - `assay workflow state <id> [<query-name>]` — reads the latest `register_query` snapshot
+  - `assay schedule patch <name> …` — in-place schedule updates
+  - `assay schedule create --timezone <tz>` — timezone flag on create
+
+  Global flags, all env-backed: `--engine-url` / `ASSAY_ENGINE_URL` (default
+  `http://127.0.0.1:8080`), `--api-key` / `ASSAY_API_KEY` (bearer token forwarded as
+  `Authorization: Bearer <value>`), `--namespace` / `ASSAY_NAMESPACE` (default `main`). Exit 0 on
+  success, 1 on HTTP error / unreachable engine / bad JSON. No `--output json` flag — scripts use
+  the Lua stdlib; humans read the tables.
 
 ### Changed
 
-- **`Engine::start_workflow` signature** gains a `search_attributes: Option<&str>` parameter
-  (for embedders using the crate directly). REST callers are unaffected; the field is optional
-  on `StartWorkflowRequest`.
+- **`Engine::start_workflow` signature** gains a `search_attributes: Option<&str>` parameter (for
+  embedders using the crate directly). REST callers are unaffected; the field is optional on
+  `StartWorkflowRequest`.
 
 - **`WorkflowStore::list_workflows` signature** gains a `search_attrs_filter: Option<&str>`
   parameter (for embedders).
 
-- **`WorkflowSchedule`** struct gains a `timezone: String` field. Deserialisers that accept the
-  type from an older v0.11.2 engine will need to tolerate the missing field (default "UTC").
+- **`WorkflowSchedule`** struct gains a `timezone: String` field. Deserialisers that accept the type
+  from an older v0.11.2 engine will need to tolerate the missing field (default "UTC").
 
 - **`WorkflowRecord`** struct gains `search_attributes`, `archived_at`, `archive_uri` fields.
 
@@ -108,12 +144,14 @@ All notable changes to Assay are documented here.
 ### Notes
 
 - Schema migrations for new columns are idempotent on both backends: Postgres uses
-  `ADD COLUMN IF NOT EXISTS`; SQLite uses a `pragma_table_info` pre-check before `ALTER TABLE
-  ADD COLUMN`. Fresh installs get the column from `CREATE TABLE` and the ALTER is a no-op.
-- Parallel activities are still best-effort in the sense that each completion triggers a
-  replay; deeply parallel fan-outs generate O(N²) idempotent `schedule_activity` calls. The
-  store-level idempotency makes this correct but not minimal; a follow-up can short-circuit
-  re-yields for already-scheduled seqs.
+  `ADD COLUMN IF NOT EXISTS`; SQLite uses a `pragma_table_info` pre-check before
+  `ALTER TABLE
+  ADD COLUMN`. Fresh installs get the column from `CREATE TABLE` and the ALTER is a
+  no-op.
+- Parallel activities are still best-effort in the sense that each completion triggers a replay;
+  deeply parallel fan-outs generate O(N²) idempotent `schedule_activity` calls. The store-level
+  idempotency makes this correct but not minimal; a follow-up can short-circuit re-yields for
+  already-scheduled seqs.
 
 ## [0.11.2] - 2026-04-16
 
