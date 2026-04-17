@@ -10,9 +10,7 @@ use crate::api::AppState;
 use crate::store::WorkflowStore;
 
 pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
-    Router::new()
-        .route("/workers", get(list_workers))
-        .route("/health", get(health_check))
+    Router::new().route("/workers", get(list_workers))
 }
 
 #[derive(Deserialize)]
@@ -43,20 +41,6 @@ pub async fn list_workers<S: WorkflowStore>(
         .map(|w| serde_json::to_value(w).unwrap_or_default())
         .collect();
     Ok(Json(json))
-}
-
-#[utoipa::path(
-    get, path = "/api/v1/health",
-    tag = "workers",
-    responses(
-        (status = 200, description = "Engine health status"),
-    ),
-)]
-pub async fn health_check() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "status": "ok",
-        "service": "assay-workflow",
-    }))
 }
 
 use crate::types::WorkflowWorker;

@@ -2,6 +2,47 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.8] - 2026-04-17
+
+### Changed
+
+- **`GET /api/v1/health` and `GET /api/v1/version` are now always
+  unauthenticated,** regardless of whether `--auth-issuer` or
+  `--auth-api-key` is set. Standard practice for liveness/readiness
+  probes and version discovery — Kubernetes kubelet, load balancers,
+  third-party monitors, and the CLI can now reach these endpoints
+  without a bearer token.
+
+  Previously both endpoints lived inside the auth-gated `/api/v1/*`
+  surface, which forced `workflow.connect()`'s connectivity probe and
+  kubelet probes to carry a valid credential. That blocked legitimate
+  first-boot bootstrap flows (e.g. the gitops reconcile script trying
+  to `POST /api/v1/api-keys` through the unauth bootstrap window had
+  to sidestep `workflow.connect` entirely).
+
+  All other `/api/v1/*` endpoints remain authenticated when auth is
+  enabled.
+
+### Internal
+
+- `api/public.rs` — new module that owns the public (unauth) sub-router
+  at `/api/v1/*`. Holds `health_check` + `version`.
+- `api/meta.rs` deleted — its single `/version` route moved to
+  `api/public.rs`. The `VersionInfo` struct moved with it.
+- `api/workers.rs` no longer registers `/health`. Its single responsibility
+  is `/workers` now.
+- `api/mod.rs` `router()` grew a third tier alongside
+  "authenticated /api/v1/*" and "dashboard + openapi": "public /api/v1/*",
+  merged outside the auth middleware layer by construction.
+
+### Tests
+
+- Five new auth tests (`auth_test.rs`) verify `/api/v1/health` returns
+  200 unauth in api-key / jwt / combined modes, that `/api/v1/version`
+  is unauth in api-key mode, and that other `/api/v1/*` paths still
+  require auth (regression guard against accidentally opening up more
+  of the surface).
+
 ## [0.11.7] - 2026-04-17
 
 ### Added
