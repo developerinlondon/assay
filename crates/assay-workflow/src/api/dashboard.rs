@@ -5,6 +5,7 @@ use axum::Router;
 use std::sync::{Arc, LazyLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::api::whitelabel::{render_index, WHITELABEL};
 use crate::api::AppState;
 use crate::store::WorkflowStore;
 
@@ -75,7 +76,7 @@ fn asset(content_type: &'static str, body: &'static str) -> impl IntoResponse {
 }
 
 async fn index() -> impl IntoResponse {
-    let body = INDEX_HTML.replace("__ASSETV__", ASSET_VERSION.as_str());
+    let body = render_index(INDEX_HTML, ASSET_VERSION.as_str(), &WHITELABEL);
     (
         StatusCode::OK,
         [

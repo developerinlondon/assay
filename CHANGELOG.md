@@ -6,6 +6,32 @@ All notable changes to Assay are documented here.
 
 ### Added
 
+- **Dashboard whitelabel support** — six optional env vars let operators
+  rebrand the embedded `/workflow` dashboard per-deployment, so a platform
+  team can surface assay inside their own admin UI under their own company
+  name, logo, and browser title without forking the binary. Every knob
+  defaults to assay's built-in identity, so an unset env keeps the
+  standalone experience unchanged.
+
+  | Variable                          | Purpose                                              | Default                      |
+  | --------------------------------- | ---------------------------------------------------- | ---------------------------- |
+  | `ASSAY_WHITELABEL_NAME`           | Text in the sidebar header                           | `Assay`                      |
+  | `ASSAY_WHITELABEL_LOGO_URL`       | Image URL rendered before the brand text             | — (no image)                 |
+  | `ASSAY_WHITELABEL_PAGE_TITLE`     | Browser tab title                                    | `Assay Workflow Dashboard`   |
+  | `ASSAY_WHITELABEL_PARENT_URL`     | Back-link URL in the sidebar footer                  | — (hidden)                   |
+  | `ASSAY_WHITELABEL_PARENT_NAME`    | Label for the back-link                              | `Back`                       |
+  | `ASSAY_WHITELABEL_API_DOCS_URL`   | Override / hide the sidebar API Docs link            | `/api/v1/docs`               |
+
+  `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link
+  entirely — useful when the embedding app's ingress doesn't route the
+  OpenAPI path or the docs are provided elsewhere. Any other value
+  redirects the link to that URL.
+
+  Hosting the logo: if assay is mounted on the same origin as the
+  embedding app (e.g. behind a reverse proxy at `/workflow/*`), a
+  path-absolute URL like `/static/my-logo.svg` loads from the host app
+  with no CORS plumbing.
+
 - **`workflow.start({namespace, search_attributes})` — full engine parity.**
   `workflow.start()` now passes `opts.namespace` and `opts.search_attributes`
   through to the engine, so Lua callers can scope workflows to a non-default
