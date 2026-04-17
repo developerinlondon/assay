@@ -90,6 +90,8 @@ read as part of that product.
 | `ASSAY_WHITELABEL_PARENT_NAME`  | `Back`                     | Label for the back-link                                         |
 | `ASSAY_WHITELABEL_API_DOCS_URL` | `/api/v1/docs`             | Override or hide the API Docs sidebar link                      |
 | `ASSAY_WHITELABEL_CSS_URL`      | (unset, no extra sheet)    | Extra stylesheet loaded after assay's own CSS                   |
+| `ASSAY_WHITELABEL_SUBTITLE`     | (unset, no subtitle)       | Small muted line rendered under the brand name                  |
+| `ASSAY_WHITELABEL_MARK`         | First char of `NAME` (uppercased) | Glyph in the always-visible brand badge square           |
 
 `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link entirely.
 Any other value redirects the link to that URL. Setting the variable
@@ -319,6 +321,7 @@ Inside `workflow.define(name, function(ctx, input) ... end)`:
 | `ctx:register_query(name, fn)`                  | **v0.11.3.** Expose live workflow state to external callers via `GET /workflows/{id}/state[/{name}]`. Handler runs on every replay; result is persisted as a snapshot. |
 | `ctx:upsert_search_attributes(patch)`           | **v0.11.3.** Merge a table into the workflow's `search_attributes` so callers can filter on it via `workflow.list({ search_attrs = ... })`.                            |
 | `ctx:continue_as_new(input)`                    | **v0.11.3.** Close this run and start a fresh one with empty history (same type / namespace / queue). Standard pattern for unbounded-loop workflows.                   |
+| `ctx:cancel(reason?)`                           | **v0.11.11.** Terminate this workflow with engine status `CANCELLED`. Use when the handler itself decides to stop early (human rejected, preconditions failed). Distinct from an externally-requested cancel; same terminal state. |
 
 `opts` on `execute_activity` / `execute_parallel`:
 `{ task_queue?, max_attempts?, initial_interval_secs?, backoff_coefficient?, start_to_close_secs?,

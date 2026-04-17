@@ -16,6 +16,8 @@
 //! | `ASSAY_WHITELABEL_PARENT_NAME`  | Label for the back-link                              | `Back`                       |
 //! | `ASSAY_WHITELABEL_API_DOCS_URL` | Override (or hide) the API Docs sidebar link         | `/api/v1/docs`               |
 //! | `ASSAY_WHITELABEL_CSS_URL`      | Extra stylesheet loaded after assay's own CSS        | — (none)                     |
+//! | `ASSAY_WHITELABEL_SUBTITLE`     | Small muted line shown under the brand name          | — (none)                     |
+//! | `ASSAY_WHITELABEL_MARK`         | Single glyph for the always-visible badge square     | First char of NAME (upper)   |
 //!
 //! ## Hiding vs overriding
 //!
@@ -67,9 +69,14 @@ pub static WHITELABEL: LazyLock<WhitelabelConfig> = LazyLock::new(WhitelabelConf
 #[derive(Debug, Clone)]
 pub struct WhitelabelConfig {
     pub name: String,
-    /// Single-letter glyph shown in the collapsed sidebar; derived
-    /// from `name` unless overridden in future.
+    /// Single-letter (or short) glyph rendered inside the always-visible
+    /// badge square at the top of the sidebar. Derived from the first
+    /// character of `name` unless `ASSAY_WHITELABEL_MARK` overrides.
     pub mark: String,
+    /// Muted subtitle rendered beneath the brand name (empty → no
+    /// subtitle line). Gives operators the canonical two-line brand
+    /// block without needing a custom logo SVG.
+    pub subtitle: String,
     pub logo_url: Option<String>,
     pub page_title: String,
     pub parent_url: Option<String>,
@@ -84,16 +91,42 @@ pub struct WhitelabelConfig {
 }
 
 impl WhitelabelConfig {
+    /// `true` when any operator-facing identity field has been overridden
+    /// from the default. Drives the "Powered by …" prefix in the footer
+    /// version line — attribution without burying the engine on the
+    /// standalone dashboard.
+    pub fn is_customised(&self) -> bool {
+        self.name != "Assay"
+            || !self.subtitle.is_empty()
+            || self.logo_url.is_some()
+            || self.css_url.is_some()
+    }
+}
+
+impl WhitelabelConfig {
     /// Read every knob from env, applying defaults and the
     /// "set-to-empty means hide" convention for `api_docs_url`.
     pub fn from_env() -> Self {
         let name =
             std::env::var("ASSAY_WHITELABEL_NAME").unwrap_or_else(|_| "Assay".to_string());
-        let mark = name
-            .chars()
-            .next()
-            .map(|c| c.to_uppercase().to_string())
-            .unwrap_or_else(|| "A".to_string());
+        // MARK falls back to the first character of NAME (uppercased) so
+        // operators who only set NAME get a sensible badge glyph
+        // automatically. Explicit override handles cases where the name
+        // doesn't begin with the intended letter (e.g. NAME="Acme Inc",
+        // MARK="A" is the auto-default anyway; NAME="SIMONS Command
+        // Center", MARK="S" is fine; NAME="The Platform", MARK="P"
+        // needs the override to drop the article).
+        let mark = std::env::var("ASSAY_WHITELABEL_MARK")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| {
+                name.chars()
+                    .next()
+                    .map(|c| c.to_uppercase().to_string())
+                    .unwrap_or_else(|| "A".to_string())
+            });
+        let subtitle =
+            std::env::var("ASSAY_WHITELABEL_SUBTITLE").unwrap_or_default();
         let logo_url = std::env::var("ASSAY_WHITELABEL_LOGO_URL")
             .ok()
             .filter(|s| !s.is_empty());
@@ -115,6 +148,7 @@ impl WhitelabelConfig {
         Self {
             name,
             mark,
+            subtitle,
             logo_url,
             page_title,
             parent_url,
@@ -175,6 +209,29 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         None => String::new(),
     };
 
+    // Subtitle is rendered as a distinct span under the brand name so
+    // operators get a real, accessible, translatable line of text —
+    // not a baked-into-SVG image.
+    let subtitle = if wl.subtitle.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<span class="logo-subtitle">{}</span>"#,
+            html_escape(&wl.subtitle)
+        )
+    };
+
+    // Footer version-line: vanilla dashboards keep the current
+    // "Assay Workflow Engine vX.Y.Z" wording. Whitelabel deployments
+    // get a "Powered by [link] vX.Y.Z" line that attributes the engine
+    // and points users at assay.rs for discovery. The version span is
+    // populated by the existing dashboard JS in both variants.
+    let engine_footer = if wl.is_customised() {
+        r#"Powered by <a class="assay-attribution" href="https://assay.rs" target="_blank" rel="noopener noreferrer">Assay Workflow Engine</a> <span id="status-version">—</span>"#.to_string()
+    } else {
+        r#"Assay Workflow Engine <span id="status-version">—</span>"#.to_string()
+    };
+
     // Emitted at the end of <head>, after assay's own theme.css + style.css,
     // so operator overrides win on source order + specificity. Asset-version
     // is appended to the URL so a redeploy that changes the stylesheet
@@ -198,6 +255,8 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         .replace("__BRAND_NAME__", &html_escape(&wl.name))
         .replace("__BRAND_MARK__", &html_escape(&wl.mark))
         .replace("__BRAND_LOGO_IMG__", &logo_img)
+        .replace("__BRAND_SUBTITLE__", &subtitle)
+        .replace("__ENGINE_FOOTER__", &engine_footer)
         .replace("__PARENT_BACK_LINK__", &back_link)
         .replace("__API_DOCS_LINK__", &api_docs_link)
         .replace("__EXTRA_CSS_LINK__", &extra_css)
@@ -210,15 +269,18 @@ mod tests {
     const TEMPLATE: &str = r#"<title>__PAGE_TITLE__</title>
 <head>__EXTRA_CSS_LINK__</head>
 <span>__BRAND_NAME__</span><span>__BRAND_MARK__</span>
+__BRAND_SUBTITLE__
 __BRAND_LOGO_IMG__
 __PARENT_BACK_LINK__
 __API_DOCS_LINK__
+<footer>__ENGINE_FOOTER__</footer>
 v=__ASSETV__"#;
 
     fn default_cfg() -> WhitelabelConfig {
         WhitelabelConfig {
             name: "Assay".into(),
             mark: "A".into(),
+            subtitle: String::new(),
             logo_url: None,
             page_title: "Assay Workflow Dashboard".into(),
             parent_url: None,
@@ -236,10 +298,78 @@ v=__ASSETV__"#;
         // Optional bits are absent/empty by default.
         assert!(!out.contains("nav-link-back"));
         assert!(!out.contains("logo-img"));
+        assert!(!out.contains("logo-subtitle"));
+        // Vanilla footer — no "Powered by" prefix, no attribution link.
+        assert!(out.contains("Assay Workflow Engine"));
+        assert!(!out.contains("Powered by"));
+        assert!(!out.contains("assay-attribution"));
         // Default API Docs link present and pointing at the engine path.
         assert!(out.contains("href=\"/api/v1/docs\""));
         // Asset version substitution still works.
         assert!(out.contains("v=42"));
+    }
+
+    #[test]
+    fn subtitle_renders_as_muted_span_when_set() {
+        let mut cfg = default_cfg();
+        cfg.name = "SIMONS".into();
+        cfg.subtitle = "Command Center".into();
+        let out = render_index(TEMPLATE, "v", &cfg);
+        assert!(out.contains(r#"<span class="logo-subtitle">Command Center</span>"#));
+    }
+
+    #[test]
+    fn subtitle_unset_emits_nothing() {
+        let out = render_index(TEMPLATE, "v", &default_cfg());
+        assert!(!out.contains("logo-subtitle"));
+    }
+
+    #[test]
+    fn mark_override_wins_over_name_initial() {
+        let mut cfg = default_cfg();
+        cfg.name = "The Platform".into();
+        cfg.mark = "P".into();
+        let out = render_index(TEMPLATE, "v", &cfg);
+        // Mark is rendered explicitly, not auto-derived.
+        assert!(out.contains("<span>The Platform</span><span>P</span>"));
+    }
+
+    #[test]
+    fn whitelabel_footer_includes_powered_by_and_attribution_link() {
+        // Any customised identity flips the footer to the attributed
+        // variant — a simple NAME change is enough.
+        let mut cfg = default_cfg();
+        cfg.name = "Acme Workflows".into();
+        cfg.mark = "A".into();
+        let out = render_index(TEMPLATE, "v", &cfg);
+        assert!(out.contains("Powered by"));
+        assert!(out.contains(r#"href="https://assay.rs""#));
+        assert!(out.contains(r#"target="_blank""#));
+        assert!(out.contains(r#"rel="noopener noreferrer""#));
+        // Version span is still emitted for the existing JS populator.
+        assert!(out.contains(r#"<span id="status-version">—</span>"#));
+    }
+
+    #[test]
+    fn customised_detection_requires_more_than_defaults() {
+        let base = default_cfg();
+        assert!(!base.is_customised(), "stock defaults must not read as customised");
+
+        let mut with_name = default_cfg();
+        with_name.name = "Acme".into();
+        assert!(with_name.is_customised());
+
+        let mut with_subtitle = default_cfg();
+        with_subtitle.subtitle = "Something".into();
+        assert!(with_subtitle.is_customised());
+
+        let mut with_logo = default_cfg();
+        with_logo.logo_url = Some("/l.svg".into());
+        assert!(with_logo.is_customised());
+
+        let mut with_css = default_cfg();
+        with_css.css_url = Some("/t.css".into());
+        assert!(with_css.is_customised());
     }
 
     #[test]

@@ -908,6 +908,78 @@ workflow.listen({ queue = "default" })
     let _ = worker.kill().await;
 }
 
+/// 9.6c — ctx:cancel(reason): a workflow that decides it should stop
+/// early (e.g. human approver rejected, preconditions fail) lands in
+/// engine-level status CANCELLED, not COMPLETED. Before this helper,
+/// workflows that returned a result after a logical "reject" path
+/// silently showed as COMPLETED on the dashboard even though the
+/// app-level pipeline_state said "cancelled".
+#[tokio::test]
+async fn lua_workflow_ctx_cancel_lands_in_cancelled_status() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_ctx_cancel_lands_in_cancelled_status — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("SelfCancel", function(ctx, input)
+    ctx:cancel("operator rejected the request")
+    -- unreachable — ctx:cancel raises
+    return { unreachable = true }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "SelfCancel",
+            "workflow_id": "wf-self-cancel",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let final_wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-self-cancel",
+        "CANCELLED",
+        std::time::Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(final_wf["status"], "CANCELLED");
+    assert!(
+        final_wf["result"].is_null(),
+        "cancelled workflow should not carry a completion result"
+    );
+
+    let _ = worker.kill().await;
+}
+
 /// 9.7 — Namespace end-to-end: a worker listening on a non-default
 /// namespace picks up a workflow started in the same namespace, runs it,
 /// and the completed record carries that namespace. Proves

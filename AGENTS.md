@@ -272,11 +272,13 @@ create/delete). Engine version shown in the status bar, fetched from `/api/v1/ve
 
 **Dashboard whitelabel** (v0.11.10+). The embedded dashboard can be rebranded per-deployment via
 `ASSAY_WHITELABEL_*` env vars so platform teams fronting assay inside another admin UI can match
-their own identity. Seven knobs: `_NAME`, `_LOGO_URL`, `_PAGE_TITLE`, `_PARENT_URL` + `_PARENT_NAME`
-(sidebar-footer back-link to the parent app), `_API_DOCS_URL` (override or set to `""` to hide
-the built-in API Docs link), and `_CSS_URL` (extra stylesheet loaded after assay's own CSS for
-re-skinning via CSS custom properties). All optional; unset env preserves assay's built-in
-identity. Full table + examples in `docs/modules/workflow.md#dashboard-whitelabel`.
+their own identity. Nine knobs: `_NAME`, `_SUBTITLE` (v0.11.11), `_MARK` (v0.11.11), `_LOGO_URL`,
+`_PAGE_TITLE`, `_PARENT_URL` + `_PARENT_NAME` (sidebar-footer back-link to the parent app),
+`_API_DOCS_URL` (override or set to `""` to hide the built-in API Docs link), and `_CSS_URL`
+(extra stylesheet loaded after assay's own CSS for re-skinning via CSS custom properties). v0.11.11
+also flips the footer to `Powered by Assay Workflow Engine vX.Y.Z` (linked to assay.rs) whenever
+any identity is customised. All optional; unset env preserves assay's built-in identity. Full
+table + examples in `docs/modules/workflow.md#dashboard-whitelabel`.
 
 **Optional S3 archival** (cargo feature `s3-archival`, default-off). Enabled when
 `ASSAY_ARCHIVE_S3_BUCKET` is set. Bundles completed workflows to S3 after
