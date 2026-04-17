@@ -74,20 +74,19 @@ pub async fn create_api_key<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(req): Json<CreateApiKeyRequest>,
 ) -> Result<(axum::http::StatusCode, Json<CreateApiKeyResponse>), AppError> {
-    if req.idempotent {
-        if let Some(label) = req.label.as_deref() {
-            if let Some(existing) = state.engine.store().get_api_key_by_label(label).await? {
-                return Ok((
-                    axum::http::StatusCode::OK,
-                    Json(CreateApiKeyResponse {
-                        plaintext: None,
-                        prefix: existing.prefix,
-                        label: existing.label,
-                        created_at: existing.created_at,
-                    }),
-                ));
-            }
-        }
+    if req.idempotent
+        && let Some(label) = req.label.as_deref()
+        && let Some(existing) = state.engine.store().get_api_key_by_label(label).await?
+    {
+        return Ok((
+            axum::http::StatusCode::OK,
+            Json(CreateApiKeyResponse {
+                plaintext: None,
+                prefix: existing.prefix,
+                label: existing.label,
+                created_at: existing.created_at,
+            }),
+        ));
     }
 
     let plaintext = generate_api_key();
