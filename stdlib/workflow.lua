@@ -440,6 +440,31 @@ function M._make_workflow_ctx(workflow_id, history)
         error("workflow ctx: yielded but resumed unexpectedly")
     end
 
+    --- End this run and start a fresh one with the same workflow type,
+    --- namespace, and task queue but an empty event history. Use for
+    --- unbounded-loop workflows (pollers, schedulers) whose event log
+    --- would otherwise grow forever.
+    ---
+    --- The new run's id is derived from the current one (with a timestamp
+    --- suffix) and its `input` is whatever you pass here. The current run
+    --- is marked COMPLETED.
+    ---
+    --- Typically the last thing a handler calls:
+    ---
+    ---   workflow.define("Poller", function(ctx, input)
+    ---       local items = ctx:execute_activity("poll", input)
+    ---       ctx:sleep(60)
+    ---       return ctx:continue_as_new({ cursor = items.next_cursor })
+    ---   end)
+    function ctx:continue_as_new(input)
+        check_cancel()
+        coroutine.yield({
+            type = "ContinueAsNew",
+            input = input,
+        })
+        error("workflow ctx: yielded but resumed unexpectedly")
+    end
+
     --- Register a named query handler that exposes live workflow state to
     --- external callers via `GET /api/v1/workflows/{id}/state` (all handlers)
     --- or `GET /api/v1/workflows/{id}/state/{name}` (one handler).

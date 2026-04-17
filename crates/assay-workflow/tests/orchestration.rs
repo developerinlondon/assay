@@ -1709,3 +1709,104 @@ workflow.listen({ queue = "default" })
 
     let _ = worker.kill().await;
 }
+
+/// F2 — `ctx:continue_as_new` resets event history and starts a new run.
+///
+/// The first run calls continue_as_new with a bumped counter; the engine
+/// completes the first workflow and spawns a new run with fresh event
+/// history. The test verifies both workflows reach terminal state and the
+/// second one received the bumped input.
+#[tokio::test]
+async fn lua_workflow_continue_as_new_starts_fresh_run() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_continue_as_new_starts_fresh_run — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+-- First run: call continue_as_new with a bumped counter, never returns.
+-- Second run: observes the bumped input, completes normally.
+workflow.define("Counter", function(ctx, input)
+    local n = (input and input.n) or 0
+    if n == 0 then
+        ctx:continue_as_new({ n = 1 })
+    end
+    return { final_n = n }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "Counter",
+            "workflow_id": "wf-can-1",
+            "task_queue": "default",
+            "input": { "n": 0 },
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // First run completes (closed out by continue_as_new)
+    wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-can-1",
+        "COMPLETED",
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    // Second run ID follows the engine's naming convention:
+    // `{original_id}-continued-{timestamp}`. Find it by listing workflows
+    // of this type and picking the one that isn't the original.
+    let resp = c
+        .get(format!("{url}/api/v1/workflows?type=Counter&limit=10"))
+        .send()
+        .await
+        .unwrap();
+    let workflows: Vec<serde_json::Value> = resp.json().await.unwrap();
+    let second = workflows
+        .iter()
+        .find(|w| w["id"].as_str() != Some("wf-can-1"))
+        .expect("second run should exist");
+    let second_id = second["id"].as_str().expect("second id");
+
+    let second_wf = wait_for_workflow_status(
+        &c,
+        &url,
+        second_id,
+        "COMPLETED",
+        std::time::Duration::from_secs(5),
+    )
+    .await;
+
+    let result_str = second_wf["result"].as_str().expect("second run result");
+    let result: serde_json::Value = serde_json::from_str(result_str).unwrap();
+    assert_eq!(result["final_n"], 1, "second run should see bumped input");
+
+    let _ = worker.kill().await;
+}

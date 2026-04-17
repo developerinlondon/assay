@@ -672,6 +672,17 @@ impl<S: WorkflowStore> Engine<S> {
                         .unwrap_or(0.0);
                     self.schedule_timer(workflow_id, seq, duration).await?;
                 }
+                "ContinueAsNew" => {
+                    // Close out the current run and start a new one with the
+                    // same type / namespace / queue under a fresh id. Input
+                    // may be any JSON value; it's serialised and becomes the
+                    // new run's `input`. Called from workflow code via
+                    // `ctx:continue_as_new(input)` to reset event history
+                    // when a handler would otherwise loop forever.
+                    let input = cmd.get("input").map(|v| v.to_string());
+                    self.continue_as_new(workflow_id, input.as_deref())
+                        .await?;
+                }
                 "RecordSnapshot" => {
                     // Persist the workflow's current query-handler state. Each
                     // snapshot is keyed by the current event seq so the latest
