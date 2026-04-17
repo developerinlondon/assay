@@ -3,7 +3,14 @@
 (function () {
   'use strict';
 
-  let currentNamespace = 'main';
+  // Default namespace comes from the whitelabel template (a data attribute
+  // on <body>). Operators running a single-tenant assay-as-a-product point
+  // every user at the non-"main" namespace their own runs live in, so
+  // nobody has to change the dropdown on first load. Falls back to "main"
+  // for vanilla standalone deployments where the attribute isn't set.
+  let currentNamespace =
+    (document.body && document.body.dataset && document.body.dataset.defaultNamespace) ||
+    'main';
   let currentView = 'workflows';
   let eventSource = null;
 
@@ -311,6 +318,28 @@
       connectSSE();
       refreshCurrentView();
     });
+
+    // Status-bar namespace shortcut: clicking the namespace value in the
+    // footer focuses + opens the sidebar dropdown. Saves the user a
+    // round-trip to the sidebar when they've already been staring at the
+    // footer to read the value.
+    var statusNsBtn = document.getElementById('status-namespace-btn');
+    if (statusNsBtn) {
+      statusNsBtn.addEventListener('click', function () {
+        var sel = document.getElementById('namespace-select');
+        if (!sel) return;
+        sel.focus();
+        // Native <select> doesn't expose a "showPicker" cross-browser,
+        // so dispatch a mousedown — most browsers interpret that as
+        // "open the dropdown" for a focused select. Falls back to just
+        // focusing the element in older browsers.
+        try {
+          sel.showPicker && sel.showPicker();
+        } catch (_) {
+          // showPicker can throw if not user-gesture; focus is already fine.
+        }
+      });
+    }
 
     // Load namespaces then render
     loadNamespaces().then(function () {

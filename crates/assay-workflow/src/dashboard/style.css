@@ -59,6 +59,12 @@ html, body {
 .icon-expand   { display: none; }
 .sidebar.collapsed .icon-collapse { display: none; }
 .sidebar.collapsed .icon-expand   { display: inline; }
+/* Chevron SVGs shouldn't sit on the text baseline — align them to the
+   button box so the sidebar-collapse button reads visually centred. */
+.icon-collapse,
+.icon-expand {
+  vertical-align: middle;
+}
 /* Theme icons swap based on data-theme on <html> */
 .icon-moon { display: none; }
 [data-theme="light"] .icon-sun  { display: none; }
@@ -325,9 +331,9 @@ html, body {
   margin-left: auto;
 }
 
-/* "Powered by Assay Workflow Engine" attribution link — only rendered
-   in whitelabel mode. Inherits the status-bar colour so it doesn't shout
-   at the user; accent on hover hints it's clickable. */
+/* "Powered by Assay" attribution link — only rendered in whitelabel
+   mode. Inherits the status-bar colour so it doesn't shout at the
+   user; accent on hover hints it's clickable. */
 .assay-attribution {
   color: inherit;
   text-decoration: none;
@@ -337,6 +343,136 @@ html, body {
 .assay-attribution:hover {
   color: var(--accent);
   border-bottom-color: var(--accent);
+}
+
+/* Status-bar namespace shortcut button — reads as plain text until
+   hovered, then clearly clickable. Button reset so it doesn't inherit
+   default button chrome. Click opens the sidebar's namespace dropdown
+   so users don't have to scroll back up to switch namespaces. */
+.status-namespace-btn {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 3px;
+}
+
+.status-namespace-btn:hover {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.status-namespace-btn svg {
+  opacity: 0.6;
+}
+
+/* ── Inline row-expansion (v0.11.12) ───────────────────────────────
+ * Clicking a workflow row expands a detail block below it. This is
+ * the primary "drill into one run" interaction now; the legacy right-
+ * hand detail panel still exists for child-workflow navigation and
+ * direct showDetail calls, but most users interact via these inline
+ * expansions. */
+tr.wf-row-expanded > td {
+  /* Subtle accent to tie the expanded row to its detail block below. */
+  background: var(--surface-hover);
+}
+tr.wf-detail-row > td {
+  padding: 0;
+  border-top: none;
+  background: var(--surface-hover);
+}
+.wf-inline-detail {
+  padding: 16px 20px;
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  border-bottom: 1px solid var(--border);
+}
+/* Children link inside the expanded detail stays distinct from the
+ * outer workflow-id links so the delegated click handler on
+ * #wf-table-wrap doesn't accidentally re-trigger row expansion when a
+ * user clicks a child link. */
+.wf-inline-detail .child-link {
+  color: var(--accent);
+}
+
+/* ── Tabbed detail sections (Overview / State / Events / …) ───────── */
+.detail-tabs {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.detail-tab-nav {
+  display: flex;
+  gap: 0;
+  background: var(--surface-hover);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.detail-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.detail-tab:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.detail-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--surface);
+  font-weight: 600;
+}
+.detail-tab.dim {
+  /* Tab has no content — still clickable so users can see the "empty"
+   * message, but dimmed so operators see the shape of a populated
+   * vs empty run at a glance. */
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+.detail-tab .tab-count {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 11px;
+}
+.detail-tab-panels {
+  padding: 16px;
+  background: var(--surface);
+}
+.detail-tab-panel {
+  display: none;
+}
+.detail-tab-panel.active {
+  display: block;
+}
+.detail-subhead {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.detail-subhead + * {
+  margin-bottom: 16px;
+}
+.detail-muted {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 0;
 }
 
 .status-dot {
@@ -879,8 +1015,8 @@ html, body {
 }
 
 .toast {
-  background: var(--surface-2);
-  color: var(--text-primary);
+  background: var(--surface-hover);
+  color: var(--text);
   border: 1px solid var(--border);
   border-left-width: 4px;
   padding: 10px 14px;
@@ -925,7 +1061,7 @@ html, body {
 
 .btn-action {
   background: transparent;
-  color: var(--text-primary);
+  color: var(--text);
   border: 1px solid var(--border);
   padding: 6px 12px;
   border-radius: 4px;
@@ -935,7 +1071,7 @@ html, body {
 }
 
 .btn-action:hover {
-  background: var(--surface-2);
+  background: var(--surface-hover);
 }
 
 .btn-action-primary {
@@ -958,7 +1094,7 @@ html, body {
 }
 
 .inline-form {
-  background: var(--surface-2);
+  background: var(--surface-hover);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 12px;
@@ -979,8 +1115,8 @@ html, body {
 .inline-form input[type="text"],
 .inline-form textarea,
 .inline-form select {
-  background: var(--surface-1);
-  color: var(--text-primary);
+  background: var(--surface);
+  color: var(--text);
   border: 1px solid var(--border);
   padding: 6px 8px;
   border-radius: 4px;

@@ -92,6 +92,8 @@ read as part of that product.
 | `ASSAY_WHITELABEL_CSS_URL`      | (unset, no extra sheet)    | Extra stylesheet loaded after assay's own CSS                   |
 | `ASSAY_WHITELABEL_SUBTITLE`     | (unset, no subtitle)       | Small muted line rendered under the brand name                  |
 | `ASSAY_WHITELABEL_MARK`         | First char of `NAME` (uppercased) | Glyph in the always-visible brand badge square           |
+| `ASSAY_WHITELABEL_FAVICON_URL`  | Built-in SVG               | Browser-tab icon URL (v0.11.12+)                                |
+| `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | `main`                | Namespace the dashboard opens on (v0.11.12+)                    |
 
 `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link entirely.
 Any other value redirects the link to that URL. Setting the variable
