@@ -243,35 +243,82 @@ Native durable workflow engine built into the `assay` binary (default-on `workfl
 replays from a persisted event log — worker crashes don't lose work and side effects don't
 duplicate.
 
-CLI:
+See `docs/modules/workflow.md` for the full reference.
 
-| Command                                                | Description                                                    |
-| ------------------------------------------------------ | -------------------------------------------------------------- |
-| `assay serve [--port N] [--backend ...]`               | Start the engine (SQLite default; Postgres for multi-instance) |
-| `assay workflow list/describe/signal/cancel/terminate` | Drive an existing engine                                       |
-| `assay schedule list/create/pause/resume/delete`       | Cron schedules (6/7-field crons)                               |
+CLI — `assay <noun> <verb>` with global
+`--engine-url`/`--api-key`/`--namespace`/`--output`/`--config` flags (all env-backed:
+`ASSAY_ENGINE_URL`, `ASSAY_API_KEY`, `ASSAY_API_KEY_FILE`, `ASSAY_NAMESPACE`, `ASSAY_OUTPUT`,
+`ASSAY_CONFIG_FILE`):
 
-Lua client (`require("assay.workflow")`):
+| Command                                                         | Description                                                       |
+| --------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `assay serve [--port N] [--backend ...]`                        | Start the engine (SQLite default; Postgres for multi-instance)    |
+| `assay workflow start --type T [--id] [--input] …`              | Start a workflow                                                  |
+| `assay workflow list/describe/events/children`                  | Inspect workflows (events supports `--follow` for live streaming) |
+| `assay workflow state <id> [<query-name>]`                      | Read the latest `ctx:register_query` snapshot                     |
+| `assay workflow signal/cancel/terminate/continue-as-new`        | Mutate workflows                                                  |
+| `assay workflow wait <id> [--timeout] [--target]`               | Block for scripts; exit 0/1/2 for COMPLETED / failure / timeout   |
+| `assay schedule list/describe/create/patch/pause/resume/delete` | Full cron schedule lifecycle (cron is 6/7-field)                  |
+| `assay namespace create/list/describe/delete`                   | Namespace management                                              |
+| `assay worker list` / `assay queue stats`                       | Inspect engine state                                              |
+| `assay completion <bash                                         | zsh                                                               |
 
-| Function                                                            | Description                                          |
-| ------------------------------------------------------------------- | ---------------------------------------------------- |
-| `workflow.connect(url, opts?)`                                      | Verify reachability; opts = `{ token = "Bearer …" }` |
-| `workflow.define(name, function(ctx, input) … end)`                 | Register a workflow handler (runs as a coroutine)    |
-| `workflow.activity(name, function(ctx, input) … end)`               | Register an activity implementation                  |
-| `workflow.listen({queue, identity?})`                               | Block; poll workflow tasks AND activity tasks        |
-| `workflow.start({workflow_type, workflow_id, input?, task_queue?})` | Start a workflow from any client                     |
-| `workflow.signal(id, name, payload?)`                               | Send a signal to a running workflow                  |
-| `workflow.describe(id)` / `workflow.cancel(id)`                     | Inspect / cancel                                     |
+`--input`, `--search-attrs`, and signal payloads accept a literal JSON string, `@file.json`, or `-`
+for stdin. Config file auto-discovered at `--config PATH` / `$ASSAY_CONFIG_FILE` /
+`$XDG_CONFIG_HOME/assay/config.yaml` / `~/.config/assay/config.yaml` / `/etc/assay/config.yaml`.
+Fields: `engine_url`, `api_key`, `api_key_file` (preferred; keeps the secret out of env/argv),
+`namespace`, `output`.
+
+Lua client (`require("assay.workflow")`) — two roles in one module: **worker** (register handlers +
+block polling) and **management** (inspect/mutate the engine from anywhere, REST parity with the
+CLI). Returns parsed JSON on success, nil on a 404 for describe/get_state, raises with HTTP status
+on other non-2xx.
+
+| Function                                                                                | Description                                          |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `workflow.connect(url, opts?)`                                                          | Verify reachability; opts = `{ token = "Bearer …" }` |
+| `workflow.define(name, function(ctx, input) … end)`                                     | Register a workflow handler (runs as a coroutine)    |
+| `workflow.activity(name, function(ctx, input) … end)`                                   | Register an activity implementation                  |
+| `workflow.listen({queue, identity?})`                                                   | Block; poll workflow tasks AND activity tasks        |
+| `workflow.start({workflow_type, workflow_id, input?, search_attributes?, task_queue?})` | Start a workflow                                     |
+| `workflow.list({namespace?, status?, type?, search_attrs?, limit?, offset?})`           | List + filter workflows                              |
+| `workflow.describe(id)` / `workflow.get_events(id)`                                     | Inspect                                              |
+| `workflow.get_state(id, name?)`                                                         | Read the latest register_query snapshot (nil on 404) |
+| `workflow.list_children(id)`                                                            | List a parent's child workflows                      |
+| `workflow.signal(id, name, payload?)`                                                   | Send a signal                                        |
+| `workflow.cancel(id)` / `workflow.terminate(id, reason?)`                               | Graceful / hard stop                                 |
+| `workflow.continue_as_new(id, input?)`                                                  | Client-side continue-as-new (distinct from `ctx:`)   |
+| `workflow.schedules.{create, list, describe, patch, pause, resume, delete}`             | Full schedule management                             |
+| `workflow.namespaces.{create, list, describe, stats, delete}`                           | Namespace management                                 |
+| `workflow.workers.list(opts?)` / `workflow.queues.stats(opts?)`                         | Engine-state inspection                              |
 
 Workflow handler `ctx`:
 
-| Method                                     | Returns         | Notes                                                                                          |
-| ------------------------------------------ | --------------- | ---------------------------------------------------------------------------------------------- |
-| `ctx:execute_activity(name, input, opts?)` | activity result | Sync; raises after retries exhausted                                                           |
-| `ctx:sleep(seconds)`                       | nil             | Durable timer; survives worker restart                                                         |
-| `ctx:wait_for_signal(name)`                | signal payload  | Block until matching signal arrives                                                            |
-| `ctx:start_child_workflow(type, opts)`     | child result    | `opts.workflow_id` required and deterministic                                                  |
-| `ctx:side_effect(name, fn)`                | value of fn()   | Run once, cache in event log; use for `crypto.uuid()`, `os.time()`, anything non-deterministic |
+| Method                                     | Returns         | Notes                                                                                                        |
+| ------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `ctx:execute_activity(name, input, opts?)` | activity result | Sync; raises after retries exhausted                                                                         |
+| `ctx:execute_parallel(activities)`         | list of results | **v0.11.3**: fan out; handler resumes only when all terminal. Raises if any fail.                            |
+| `ctx:sleep(seconds)`                       | nil             | Durable timer; survives worker restart                                                                       |
+| `ctx:wait_for_signal(name)`                | signal payload  | Block until matching signal arrives                                                                          |
+| `ctx:start_child_workflow(type, opts)`     | child result    | `opts.workflow_id` required and deterministic                                                                |
+| `ctx:side_effect(name, fn)`                | value of fn()   | Run once, cache in event log; use for `crypto.uuid()`, `os.time()`, anything non-deterministic               |
+| `ctx:register_query(name, fn)`             | nil             | **v0.11.3**: expose live state via `GET /workflows/{id}/state`. Handler runs on every replay.                |
+| `ctx:upsert_search_attributes(patch)`      | nil             | **v0.11.3**: merge into the workflow's indexed metadata; callers filter with `workflow.list({search_attrs})` |
+| `ctx:continue_as_new(input)`               | nil (yields)    | **v0.11.3**: close this run, start a fresh one with empty history; same type/namespace/queue                 |
+
+**Dashboard** at `/workflow/` — read-only views in v0.11.2; **v0.11.3** adds tier-1 operator
+controls: start-workflow form, per-row signal/cancel/terminate, full schedule CRUD (including
+patch/pause/resume/timezone), detail-panel continue-as-new + live `register_query` state, namespace
+create/delete, engine version shown in the status bar.
+
+**`GET /api/v1/version`** returns `{ version, build_profile }`. CLI forwards its own
+`CARGO_PKG_VERSION` so the field reflects the user-facing binary (e.g. `0.11.3`), not the internal
+`assay-workflow` crate version.
+
+**Optional S3 archival** (cargo feature `s3-archival`, default-off). When compiled in and
+`ASSAY_ARCHIVE_S3_BUCKET` is set, a background task archives workflows in terminal states older than
+`ASSAY_ARCHIVE_RETENTION_DAYS` (default 30) to S3 and stubs the row with `archived_at` +
+`archive_uri`. See `docs/modules/workflow.md` for the full list of `ASSAY_ARCHIVE_*` env vars.
 
 ## Stdlib Modules Quick Reference
 

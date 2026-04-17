@@ -185,6 +185,18 @@ pub struct WorkflowRecord {
     pub error: Option<String>,
     pub parent_id: Option<String>,
     pub claimed_by: Option<String>,
+    /// Application-level indexed metadata, JSON object encoded as a string
+    /// (e.g. `{"env":"prod","tenant":"acme","progress":0.5}`). Settable on
+    /// workflow start and updatable at runtime via
+    /// `ctx:upsert_search_attributes(...)` from workflow code. Filter the
+    /// list endpoint with `?search_attrs={"key":"value"}`.
+    pub search_attributes: Option<String>,
+    /// Set when the archival task has moved this workflow's
+    /// events+activities+snapshots off to cold storage. The row itself
+    /// stays (with `archive_uri` pointing at the bundle) so that
+    /// `GET /workflows/{id}` still resolves.
+    pub archived_at: Option<f64>,
+    pub archive_uri: Option<String>,
     pub created_at: f64,
     pub updated_at: f64,
     pub completed_at: Option<f64>,
@@ -261,6 +273,10 @@ pub struct WorkflowSchedule {
     pub namespace: String,
     pub workflow_type: String,
     pub cron_expr: String,
+    /// IANA time-zone name used to interpret `cron_expr` (e.g. "Europe/Berlin",
+    /// "America/New_York"). Defaults to "UTC" when a schedule is created
+    /// without an explicit timezone, preserving v0.11.2 behaviour.
+    pub timezone: String,
     pub input: Option<String>,
     pub task_queue: String,
     pub overlap_policy: String,
@@ -269,6 +285,18 @@ pub struct WorkflowSchedule {
     pub next_run_at: Option<f64>,
     pub last_workflow_id: Option<String>,
     pub created_at: f64,
+}
+
+/// Partial update to a `WorkflowSchedule`. Only fields set to `Some` are
+/// applied; `None` leaves the existing value untouched. Used by
+/// `PATCH /api/v1/schedules/{name}`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
+pub struct SchedulePatch {
+    pub cron_expr: Option<String>,
+    pub timezone: Option<String>,
+    pub input: Option<serde_json::Value>,
+    pub task_queue: Option<String>,
+    pub overlap_policy: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]

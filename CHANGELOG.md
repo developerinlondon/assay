@@ -2,6 +2,241 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.3] - 2026-04-16
+
+### Added
+
+- **`ctx:register_query`** — Lua workflows can expose live application-level state to external
+  callers via named query handlers. After every worker replay the engine persists a snapshot of
+  every handler's result; two new REST endpoints surface it:
+
+  ```
+  GET /api/v1/workflows/{id}/state         → latest full snapshot
+  GET /api/v1/workflows/{id}/state/{name}  → one handler's value
+  ```
+
+  Workflows that don't call `register_query` pay nothing — the worker skips the snapshot command
+  entirely when no handlers are registered. A handler that raises is dropped from the snapshot
+  rather than crashing the workflow (queries are best-effort read-through).
+
+- **`ctx:continue_as_new`** — Lua surface for the engine-level `continue_as_new` REST endpoint that
+  already existed. Workflows yield a `ContinueAsNew` command and the engine closes out the current
+  run, starts a fresh one with the same type / namespace / task_queue under `{id}-continued-{ts}`
+  with the caller-supplied input and empty event history. Standard pattern for unbounded-loop
+  workflows (pollers, schedulers) whose event log would otherwise grow forever.
+
+- **`ctx:execute_parallel`** — Run multiple activities concurrently from a single handler run. The
+  worker yields a batch of `ScheduleActivity` commands; the engine schedules them idempotently on
+  `(workflow_id, seq)`. Each completion re-dispatches the workflow, replay cache-hits for completed
+  activities and re-yields the rest (no-op at the store layer). The handler proceeds past the call
+  only when every activity has a terminal event. Per-activity retry / timeout opts match
+  `ctx:execute_activity`.
+
+  ```lua
+  local results = ctx:execute_parallel({
+      { name = "check_a", input = { id = 1 } },
+      { name = "check_b", input = { id = 2 }, opts = { max_attempts = 5 } },
+      { name = "check_c", input = { id = 3 } },
+  })
+  -- results[1], [2], [3] in input order; raises if any fail after retries.
+  ```
+
+- **`ctx:upsert_search_attributes`** + **search attributes on workflows** — Workflows gain a
+  `search_attributes` JSON object settable at start (`POST /workflows` body) and updatable at
+  runtime (`ctx:upsert_search_attributes({ … })`). The list endpoint accepts a URL-encoded JSON
+  filter that matches workflows whose attributes contain every listed key at the given value:
+
+  ```
+  GET /api/v1/workflows?search_attrs=%7B%22env%22%3A%22prod%22%7D
+  ```
+
+  SQLite uses `json_extract`; Postgres uses `(search_attributes::jsonb)->>'key'`. Filters AND-join.
+  Unchanged keys are preserved across upserts.
+
+- **Schedule `PATCH` / `pause` / `resume`** — Schedules can be updated in place without a
+  delete-and-recreate. Only fields present on the patch are touched; unchanged fields keep their
+  existing values.
+
+  ```
+  PATCH /api/v1/schedules/{name}  body: { cron_expr?, timezone?, input?, task_queue?, overlap_policy? }
+  POST  /api/v1/schedules/{name}/pause
+  POST  /api/v1/schedules/{name}/resume
+  ```
+
+  Paused schedules are skipped by the scheduler; resume recomputes `next_run_at` from now and does
+  not backfill missed fires. Updates take effect within a scheduler tick (≤15s).
+
+- **Cron timezone** — Schedules gain a `timezone` field (IANA name, e.g. `"Europe/Berlin"`,
+  `"America/New_York"`). Default `"UTC"` preserves v0.11.2 behaviour. The scheduler parses the
+  timezone via `chrono-tz` and evaluates the cron expression in that zone, then persists the UTC
+  epoch as `next_run_at`. Invalid names are rejected at create / patch time.
+
+- **Optional S3 archival for completed workflows** — Behind the `s3-archival` cargo feature
+  (default-off). When compiled in and `ASSAY_ARCHIVE_S3_BUCKET` is set at runtime, a background task
+  periodically finds workflows in terminal states older than `ASSAY_ARCHIVE_RETENTION_DAYS` (default
+  30), bundles `{workflow_record, events}` as JSON, uploads to
+  `s3://bucket/prefix/<namespace>/<workflow_id>.json`, and purges dependent rows (events,
+  activities, timers, signals, snapshots). The workflow row itself is retained with `archived_at` +
+  `archive_uri` set so `GET /workflows/{id}` still resolves with a pointer to the cold-storage
+  bundle.
+
+  Credentials resolve via the AWS SDK's default chain — env vars, shared config, or IRSA /
+  pod-identity via web-identity token. Other env vars: `ASSAY_ARCHIVE_S3_PREFIX` (default `assay/`),
+  `ASSAY_ARCHIVE_POLL_SECS` (default 3600), `ASSAY_ARCHIVE_BATCH_SIZE` (default 50).
+
+- **`assay.workflow` Lua stdlib — full management surface.** The stdlib now covers every REST
+  endpoint the engine exposes, so Lua scripts (including CC and Kubernetes Jobs running
+  `assay run seed.lua`) can manage workflows, schedules, namespaces, workers, and queues without
+  hand-rolling HTTP calls. New top-level functions:
+
+  ```
+  workflow.list(opts)              workflow.list_children(id)
+  workflow.terminate(id, reason)   workflow.continue_as_new(id, input)
+  workflow.get_events(id)          workflow.get_state(id, name?)
+  ```
+
+  New sub-tables (each exposes `create / list / describe / patch / pause / resume / delete` as
+  applicable):
+
+  ```
+  workflow.schedules   workflow.namespaces   workflow.workers   workflow.queues
+  ```
+
+  Every function is a thin HTTP wrapper returning the parsed JSON response (or `nil` on a 404 for
+  `describe`/`get_state`), raising on other non-2xx responses.
+
+- **Full CLI for the workflow engine.** The clap-registered `assay workflow …` / `assay schedule …`
+  subcommands that through v0.11.2 printed "not yet implemented" and exited 1 are replaced with real
+  REST-client implementations, plus a considerable expansion. Everything visible in `assay --help`
+  actually runs.
+
+  **Subcommand trees:**
+
+  ```
+  assay workflow
+    start --type T [--id ID] [--input JSON] [--queue Q] [--search-attrs JSON]
+    list [--status S] [--type T] [--search-attrs JSON] [--limit N]
+    describe <id>
+    state <id> [<query-name>]                   # register_query reader
+    events <id> [--follow]                      # log, or poll-stream until terminal
+    children <id>
+    signal <id> <name> [payload-as-json-or-@file-or--]
+    cancel <id>
+    terminate <id> [--reason R]
+    continue-as-new <id> [--input JSON]         # client-side
+    wait <id> [--timeout SECS] [--target STATUS]  # exit 0/1/2 for scripts
+
+  assay schedule
+    list
+    describe <name>
+    create <name> --type T --cron EXPR [--timezone TZ] [--input JSON] [--queue Q]
+    patch <name> [--cron EXPR] [--timezone TZ] [--input JSON] [--queue Q] [--overlap POLICY]
+    pause <name>
+    resume <name>
+    delete <name>
+
+  assay namespace   create | list | describe | delete
+  assay worker      list
+  assay queue       stats
+  assay completion  <bash|zsh|fish|powershell|elvish>
+  ```
+
+  **Global options** (all flag-backed, env-backed, and config-file-backed, resolved in that
+  precedence order):
+
+  - `--engine-url` / `ASSAY_ENGINE_URL` (default `http://127.0.0.1:8080`)
+  - `--api-key` / `ASSAY_API_KEY` (bearer token, forwarded as `Authorization: Bearer <value>`)
+  - `--namespace` / `ASSAY_NAMESPACE` (default `main`)
+  - `--output` / `ASSAY_OUTPUT` — `table` | `json` | `jsonl` | `yaml`; TTY-adaptive default (`table`
+    on a terminal, `json` when stdout is piped)
+  - `--config` / `ASSAY_CONFIG_FILE` — YAML config file, discovered in this order: flag → env →
+    `$XDG_CONFIG_HOME/assay/config.yaml` → `~/.config/assay/config.yaml` → `/etc/assay/config.yaml`
+
+  **Config file** (every field optional):
+
+  ```yaml
+  engine_url: https://assay.example.com
+  api_key_file: /run/secrets/assay-api-key # preferred over `api_key:`
+  namespace: main
+  output: table
+  ```
+
+  `api_key_file` reads the file contents, trims whitespace, and uses that as the bearer token. Lets
+  the config live in a ConfigMap with the credential in a separate Secret.
+
+  **JSON input indirection.** `--input`, `--search-attrs`, and signal payload args accept:
+
+  - a literal JSON string (`'{"n":1}'`)
+  - `@PATH` — read the file and parse
+  - `-` — read stdin and parse
+
+  **Exit codes:** 0 success, 1 HTTP error / unreachable / not-found, 2 `workflow wait` timeout, 64
+  usage error (bad JSON input).
+
+  **Shell completion.** `assay completion <shell> > /etc/bash_completion.d/assay` (or the equivalent
+  for your shell). Buffered and graceful on SIGPIPE so piping to `head` doesn't panic. Adds one new
+  crate dep: `clap_complete`.
+
+- **Tier-1 dashboard mutations.** The built-in dashboard at `/workflow/` was read-only through
+  v0.11.2; every existing view now pairs with its matching operator control:
+
+  - **Workflows view** — new `+ Start workflow` inline form (type / id / task_queue / input JSON /
+    search_attributes JSON); per-row Signal / Cancel / Terminate; search-attributes filter in the
+    toolbar (debounced, with client-side JSON validation).
+  - **Workflow detail panel** — Signal, Cancel, Terminate, and Continue-as-new buttons, all with
+    toast feedback. "Live state" card renders the latest snapshot written by `ctx:register_query`
+    handlers (with the event seq and timestamp the snapshot was taken at).
+  - **Schedules view** — per-row Edit (PATCH form pre-filled with the schedule's values), Pause /
+    Resume toggle, Delete. Create form picks up a Timezone field.
+  - **Settings view** — Engine Info card shows the engine version + build profile, fetched from
+    `/api/v1/version`. Namespace create / delete upgraded to toast feedback and refreshes the
+    sidebar namespace switcher.
+  - Shared `toast()` + `apiFetchRaw()` helpers exposed via the component context for consistent
+    success/error feedback across every mutation.
+
+  Explicitly tier 1 — no in-browser workflow authoring, no batch operations, no reset-to-event, no
+  in-browser RBAC. Those are tier 2 / tier 3 and deferred to later releases.
+
+- **`GET /api/v1/version` endpoint.** Returns `{ version, build_profile }`. The CLI passes its own
+  `CARGO_PKG_VERSION` to `assay_workflow::api::serve_with_version`, so the field reflects the
+  user-facing binary (e.g. `0.11.3`) and not the internal `assay-workflow` crate version. Embedders
+  using plain `serve` get the crate version as a fallback. `AppState` gains a
+  `binary_version: Option<&'static str>` field.
+
+### Changed
+
+- **`Engine::start_workflow` signature** gains a `search_attributes: Option<&str>` parameter (for
+  embedders using the crate directly). REST callers are unaffected; the field is optional on
+  `StartWorkflowRequest`.
+
+- **`WorkflowStore::list_workflows` signature** gains a `search_attrs_filter: Option<&str>`
+  parameter (for embedders).
+
+- **`WorkflowSchedule`** struct gains a `timezone: String` field. Deserialisers that accept the type
+  from an older v0.11.2 engine will need to tolerate the missing field (default "UTC").
+
+- **`WorkflowRecord`** struct gains `search_attributes`, `archived_at`, `archive_uri` fields.
+
+### Fixed
+
+- Removed three pre-existing `clippy::map_identity` warnings in orchestration test helpers so
+  `cargo clippy --tests -- -D warnings` stays clean under rust 1.92 / clippy 1.91.
+
+### Notes
+
+- **No migrations from v0.11.2.** The engine is pre-1.0 and no v0.11.x release has been deployed
+  against a real workload yet, so all v0.11.3 columns (`search_attributes`, `archived_at`,
+  `archive_uri` on `workflows`; `timezone` on `workflow_schedules`) live in the baseline
+  `CREATE TABLE` statements only. A fresh DB picks them up automatically; an existing v0.11.2 DB
+  needs to be recreated. The migration plumbing is kept in place for post-v0.11.3 additive
+  migrations — Postgres does `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` natively, SQLite has a
+  dormant `add_column_if_missing` helper that pragma-checks before ALTER. The pattern is documented
+  at the bottom of each store's `SCHEMA` constant / `migrate()` fn.
+- Parallel activities are still best-effort in the sense that each completion triggers a replay;
+  deeply parallel fan-outs generate O(N²) idempotent `schedule_activity` calls. The store-level
+  idempotency makes this correct but not minimal; a follow-up can short-circuit re-yields for
+  already-scheduled seqs.
+
 ## [0.11.2] - 2026-04-16
 
 ### Fixed

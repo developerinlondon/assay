@@ -69,11 +69,15 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(store: &S, namespace: &s
             continue;
         }
 
-        // Parse cron to compute next run
-        let next_run = match compute_next_run(&sched.cron_expr) {
+        // Parse cron to compute next run — interpreted in the schedule's
+        // configured timezone (defaults to UTC).
+        let next_run = match compute_next_run(&sched.cron_expr, &sched.timezone) {
             Some(t) => t,
             None => {
-                warn!("Invalid cron expression for schedule '{}': {}", sched.name, sched.cron_expr);
+                warn!(
+                    "Invalid cron expression or timezone for schedule '{}': expr={} tz={}",
+                    sched.name, sched.cron_expr, sched.timezone
+                );
                 continue;
             }
         };
@@ -113,6 +117,9 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(store: &S, namespace: &s
             error: None,
             parent_id: None,
             claimed_by: None,
+            search_attributes: None,
+            archived_at: None,
+            archive_uri: None,
             created_at: now,
             updated_at: now,
             completed_at: None,
@@ -147,9 +154,16 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(store: &S, namespace: &s
     Ok(())
 }
 
-fn compute_next_run(cron_expr: &str) -> Option<f64> {
+fn compute_next_run(cron_expr: &str, timezone: &str) -> Option<f64> {
     let schedule = Schedule::from_str(cron_expr).ok()?;
-    let next = schedule.upcoming(chrono::Utc).next()?;
+    // Empty string is treated as UTC so older schedules (pre-v0.11.3) keep
+    // behaving identically even if they migrate in without the column set.
+    if timezone.is_empty() || timezone.eq_ignore_ascii_case("UTC") {
+        let next = schedule.upcoming(chrono::Utc).next()?;
+        return Some(next.timestamp() as f64);
+    }
+    let tz: chrono_tz::Tz = timezone.parse().ok()?;
+    let next = schedule.upcoming(tz).next()?;
     Some(next.timestamp() as f64)
 }
 
@@ -158,4 +172,40 @@ fn timestamp_now() -> f64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs_f64()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// "Daily at 02:00" computes a different UTC epoch depending on the
+    /// schedule's timezone. UTC and Europe/Berlin produce different
+    /// next-fire times outside of the months where they happen to align.
+    #[test]
+    fn compute_next_run_honors_timezone() {
+        let utc_next = compute_next_run("0 0 2 * * *", "UTC").expect("utc next_run");
+        let berlin_next =
+            compute_next_run("0 0 2 * * *", "Europe/Berlin").expect("berlin next_run");
+        assert_ne!(
+            utc_next, berlin_next,
+            "02:00 UTC and 02:00 Europe/Berlin should not coincide"
+        );
+    }
+
+    #[test]
+    fn compute_next_run_empty_timezone_defaults_to_utc() {
+        let utc_next = compute_next_run("0 0 2 * * *", "UTC").expect("utc next_run");
+        let default_next = compute_next_run("0 0 2 * * *", "").expect("empty next_run");
+        assert_eq!(utc_next, default_next);
+    }
+
+    #[test]
+    fn compute_next_run_invalid_timezone_returns_none() {
+        assert!(compute_next_run("0 0 2 * * *", "Not/AZone").is_none());
+    }
+
+    #[test]
+    fn compute_next_run_invalid_cron_returns_none() {
+        assert!(compute_next_run("not a cron", "UTC").is_none());
+    }
 }

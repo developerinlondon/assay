@@ -27,6 +27,9 @@ fn make_workflow(id: &str, wf_type: &str) -> WorkflowRecord {
         error: None,
         parent_id: None,
         claimed_by: None,
+        search_attributes: None,
+        archived_at: None,
+        archive_uri: None,
         created_at: ts,
         updated_at: ts,
         completed_at: None,
@@ -72,20 +75,23 @@ async fn workflow_list_filter_by_status() {
         .unwrap();
 
     let running = store
-        .list_workflows("main", Some(WorkflowStatus::Running), None, 100, 0)
+        .list_workflows("main", Some(WorkflowStatus::Running), None, None, 100, 0)
         .await
         .unwrap();
     assert_eq!(running.len(), 1);
     assert_eq!(running[0].id, "wf-1");
 
     let pending = store
-        .list_workflows("main", Some(WorkflowStatus::Pending), None, 100, 0)
+        .list_workflows("main", Some(WorkflowStatus::Pending), None, None, 100, 0)
         .await
         .unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].id, "wf-2");
 
-    let all = store.list_workflows("main", None, None, 100, 0).await.unwrap();
+    let all = store
+        .list_workflows("main", None, None, None, 100, 0)
+        .await
+        .unwrap();
     assert_eq!(all.len(), 2);
 }
 
@@ -323,6 +329,7 @@ async fn schedule_crud() {
             namespace: "main".to_string(),
             workflow_type: "IngestData".to_string(),
             cron_expr: "0 * * * *".to_string(),
+            timezone: "UTC".to_string(),
             input: None,
             task_queue: "main".to_string(),
             overlap_policy: "skip".to_string(),
@@ -398,4 +405,66 @@ async fn worker_register_heartbeat_remove() {
 
     let workers = store.list_workers("main").await.unwrap();
     assert!(workers.is_empty());
+}
+
+/// F7 — list_archivable_workflows returns terminal workflows past the
+/// cutoff, and mark_archived_and_purge deletes dependent rows + retains
+/// the stub with archive_uri set.
+#[tokio::test]
+async fn archivable_list_and_purge() {
+    let store = test_store().await;
+
+    // Three workflows: one completed long ago, one completed recently,
+    // one still running. Only the first should be archivable at cutoff.
+    let mut old = make_workflow("wf-old", "Type");
+    old.status = "COMPLETED".to_string();
+    old.completed_at = Some(100.0);
+    old.updated_at = 100.0;
+    store.create_workflow(&old).await.unwrap();
+    store
+        .append_event(&WorkflowEvent {
+            id: None,
+            workflow_id: "wf-old".to_string(),
+            seq: 1,
+            event_type: "WorkflowStarted".to_string(),
+            payload: None,
+            timestamp: 100.0,
+        })
+        .await
+        .unwrap();
+
+    let mut recent = make_workflow("wf-recent", "Type");
+    recent.status = "COMPLETED".to_string();
+    recent.completed_at = Some(now());
+    store.create_workflow(&recent).await.unwrap();
+
+    let running = make_workflow("wf-running", "Type");
+    store.create_workflow(&running).await.unwrap();
+
+    // Cutoff between the old and recent ones → only `wf-old` matches.
+    let archivable = store
+        .list_archivable_workflows(now() - 1.0, 10)
+        .await
+        .unwrap();
+    let ids: Vec<&str> = archivable.iter().map(|w| w.id.as_str()).collect();
+    assert_eq!(ids, vec!["wf-old"]);
+
+    // Purge + stub: row remains, events cleared, archive_uri set.
+    store
+        .mark_archived_and_purge("wf-old", "s3://bucket/wf-old.json", now())
+        .await
+        .unwrap();
+
+    let stub = store.get_workflow("wf-old").await.unwrap().unwrap();
+    assert!(stub.archived_at.is_some());
+    assert_eq!(stub.archive_uri.as_deref(), Some("s3://bucket/wf-old.json"));
+
+    let events = store.list_events("wf-old").await.unwrap();
+    assert!(events.is_empty(), "events should be purged");
+
+    // Running + recent workflows untouched
+    let running_still = store.get_workflow("wf-running").await.unwrap().unwrap();
+    assert!(running_still.archived_at.is_none());
+    let recent_still = store.get_workflow("wf-recent").await.unwrap().unwrap();
+    assert!(recent_still.archived_at.is_none());
 }

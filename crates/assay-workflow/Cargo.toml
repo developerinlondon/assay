@@ -1,6 +1,6 @@
 [package]
 name = "assay-workflow"
-version = "0.1.1"
+version = "0.1.2"
 categories = ["asynchronous", "database"]
 edition = "2024"
 keywords = ["workflow", "durable-execution", "orchestration", "task-queue"]
@@ -21,6 +21,7 @@ serde_json = "1"
 
 # Cron expression parsing
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono-tz = { version = "0.10", default-features = false }
 cron = "0.16"
 
 # HTTP server + REST API
@@ -44,6 +45,23 @@ anyhow = "1"
 
 # Logging
 tracing = "0.1"
+
+[features]
+default = []
+# Enable the S3 archival background task for completed workflows.
+# Adds the AWS SDK dependency (~5MB of binary size); leave off when
+# archival isn't needed.
+s3-archival = ["dep:aws-config", "dep:aws-sdk-s3"]
+
+[dependencies.aws-config]
+version = "1.8"
+optional = true
+features = ["behavior-version-latest"]
+
+[dependencies.aws-sdk-s3]
+version = "1.125"
+optional = true
+features = ["behavior-version-latest"]
 
 [dev-dependencies]
 reqwest = { version = "0.13", features = ["json"], default-features = false }

@@ -51,9 +51,40 @@ pub trait WorkflowStore: Send + Sync + 'static {
         namespace: &str,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
+        search_attrs_filter: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send;
+
+    /// List workflows in terminal states whose `completed_at` is older than
+    /// `cutoff` and which haven't been archived yet. Used by the optional
+    /// S3 archival background task to batch candidates.
+    fn list_archivable_workflows(
+        &self,
+        cutoff: f64,
+        limit: i64,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send;
+
+    /// Mark a workflow as archived (records `archived_at` + `archive_uri`)
+    /// and purge its events, activities, timers, signals, and snapshots.
+    /// The workflow record itself is preserved so `GET /workflows/{id}`
+    /// still resolves with an archive pointer.
+    fn mark_archived_and_purge(
+        &self,
+        workflow_id: &str,
+        archive_uri: &str,
+        archived_at: f64,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    /// Merge a JSON object patch into the workflow's `search_attributes`.
+    /// Keys in the patch overwrite existing keys; keys already present but
+    /// not in the patch are preserved. If the current column is NULL, the
+    /// patch becomes the new value.
+    fn upsert_search_attributes(
+        &self,
+        workflow_id: &str,
+        patch_json: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
     fn update_workflow_status(
         &self,
@@ -265,6 +296,33 @@ pub trait WorkflowStore: Send + Sync + 'static {
         namespace: &str,
         name: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+
+    /// Apply an in-place patch to a schedule. Only fields present on
+    /// `patch` are updated; the rest keep their current values. Returns
+    /// the updated record, or `None` if the schedule doesn't exist.
+    ///
+    /// The scheduler's `next_run_at` is recomputed from the new
+    /// `cron_expr` + `timezone` on the next evaluation tick, so a PATCH
+    /// takes effect within the scheduler's poll interval.
+    fn update_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+        patch: &SchedulePatch,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send;
+
+    /// Flip a schedule's `paused` flag. Returns the updated record, or
+    /// `None` if the schedule doesn't exist.
+    ///
+    /// A paused schedule is skipped by the scheduler; resuming it
+    /// doesn't backfill missed fires — the next fire is whatever the
+    /// cron expression says, starting from now.
+    fn set_schedule_paused(
+        &self,
+        namespace: &str,
+        name: &str,
+        paused: bool,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send;
 
     // ── Workers ─────────────────────────────────────────────
 
