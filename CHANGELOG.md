@@ -105,9 +105,10 @@ All notable changes to Assay are documented here.
   Every function is a thin HTTP wrapper returning the parsed JSON response (or `nil` on a 404 for
   `describe`/`get_state`), raising on other non-2xx responses.
 
-- **Full CLI for the workflow engine.** The stubs registered in v0.11.1 and shipped as "not yet
-  implemented" in v0.11.2 are replaced with real REST-client implementations, plus a considerable
-  expansion. Everything visible in `assay --help` actually runs.
+- **Full CLI for the workflow engine.** The clap-registered `assay workflow …` / `assay schedule …`
+  subcommands that through v0.11.2 printed "not yet implemented" and exited 1 are replaced with real
+  REST-client implementations, plus a considerable expansion. Everything visible in `assay --help`
+  actually runs.
 
   **Subcommand trees:**
 
@@ -176,8 +177,8 @@ All notable changes to Assay are documented here.
   for your shell). Buffered and graceful on SIGPIPE so piping to `head` doesn't panic. Adds one new
   crate dep: `clap_complete`.
 
-- **Tier-1 dashboard mutations.** The built-in dashboard at `/workflow/` was read-only in v0.11.1;
-  every existing view now pairs with its matching operator control:
+- **Tier-1 dashboard mutations.** The built-in dashboard at `/workflow/` was read-only through
+  v0.11.2; every existing view now pairs with its matching operator control:
 
   - **Workflows view** — new `+ Start workflow` inline form (type / id / task_queue / input JSON /
     search_attributes JSON); per-row Signal / Cancel / Terminate; search-attributes filter in the
