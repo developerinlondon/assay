@@ -275,6 +275,18 @@ pub struct WorkflowSchedule {
     pub created_at: f64,
 }
 
+/// Partial update to a `WorkflowSchedule`. Only fields set to `Some` are
+/// applied; `None` leaves the existing value untouched. Used by
+/// `PATCH /api/v1/schedules/{name}`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
+pub struct SchedulePatch {
+    pub cron_expr: Option<String>,
+    pub timezone: Option<String>,
+    pub input: Option<serde_json::Value>,
+    pub task_queue: Option<String>,
+    pub overlap_policy: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowWorker {
     pub id: String,

@@ -921,6 +921,24 @@ impl<S: WorkflowStore> Engine<S> {
         self.store.delete_schedule(namespace, name).await
     }
 
+    pub async fn update_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+        patch: &SchedulePatch,
+    ) -> Result<Option<WorkflowSchedule>> {
+        self.store.update_schedule(namespace, name, patch).await
+    }
+
+    pub async fn set_schedule_paused(
+        &self,
+        namespace: &str,
+        name: &str,
+        paused: bool,
+    ) -> Result<Option<WorkflowSchedule>> {
+        self.store.set_schedule_paused(namespace, name, paused).await
+    }
+
     // ── Namespace Operations ────────────────────────────────
 
     pub async fn create_namespace(&self, name: &str) -> Result<()> {

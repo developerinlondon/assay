@@ -35,6 +35,9 @@ use crate::store::WorkflowStore;
         crate::api::schedules::list_schedules,
         crate::api::schedules::get_schedule,
         crate::api::schedules::delete_schedule,
+        crate::api::schedules::patch_schedule,
+        crate::api::schedules::pause_schedule,
+        crate::api::schedules::resume_schedule,
         crate::api::workflows::list_children,
         crate::api::workflows::continue_as_new,
         crate::api::workflows::get_workflow_state,
@@ -60,6 +63,7 @@ use crate::store::WorkflowStore;
         crate::api::tasks::CompleteTaskBody,
         crate::api::tasks::FailTaskBody,
         crate::api::schedules::CreateScheduleRequest,
+        crate::api::schedules::PatchScheduleRequest,
         crate::api::workflows::ContinueAsNewBody,
     )),
     tags(

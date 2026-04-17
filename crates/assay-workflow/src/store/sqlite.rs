@@ -921,6 +921,86 @@ impl WorkflowStore for SqliteStore {
         Ok(res.rows_affected() > 0)
     }
 
+    async fn update_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+        patch: &SchedulePatch,
+    ) -> Result<Option<WorkflowSchedule>> {
+        // Build the UPDATE dynamically so unchanged fields aren't touched
+        // and NULL from `serde_json::Value::Null` round-trips cleanly.
+        let mut sets: Vec<&'static str> = Vec::new();
+        if patch.cron_expr.is_some() {
+            sets.push("cron_expr = ?");
+        }
+        if patch.timezone.is_some() {
+            sets.push("timezone = ?");
+        }
+        if patch.input.is_some() {
+            sets.push("input = ?");
+        }
+        if patch.task_queue.is_some() {
+            sets.push("task_queue = ?");
+        }
+        if patch.overlap_policy.is_some() {
+            sets.push("overlap_policy = ?");
+        }
+        // Updating last_run_at/next_run_at is internal only (update_schedule_last_run).
+        if sets.is_empty() {
+            return self.get_schedule(namespace, name).await;
+        }
+
+        let sql = format!(
+            "UPDATE workflow_schedules SET {} WHERE namespace = ? AND name = ?",
+            sets.join(", ")
+        );
+        let mut q = sqlx::query(&sql);
+        if let Some(ref v) = patch.cron_expr {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = patch.timezone {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = patch.input {
+            q = q.bind(v.to_string());
+        }
+        if let Some(ref v) = patch.task_queue {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = patch.overlap_policy {
+            q = q.bind(v);
+        }
+        let res = q
+            .bind(namespace)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        if res.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.get_schedule(namespace, name).await
+    }
+
+    async fn set_schedule_paused(
+        &self,
+        namespace: &str,
+        name: &str,
+        paused: bool,
+    ) -> Result<Option<WorkflowSchedule>> {
+        let res = sqlx::query(
+            "UPDATE workflow_schedules SET paused = ? WHERE namespace = ? AND name = ?",
+        )
+        .bind(paused)
+        .bind(namespace)
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
+        if res.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.get_schedule(namespace, name).await
+    }
+
     // ── Workers ─────────────────────────────────────────────
 
     async fn register_worker(&self, w: &WorkflowWorker) -> Result<()> {

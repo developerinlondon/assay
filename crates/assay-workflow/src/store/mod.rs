@@ -266,6 +266,33 @@ pub trait WorkflowStore: Send + Sync + 'static {
         name: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
+    /// Apply an in-place patch to a schedule. Only fields present on
+    /// `patch` are updated; the rest keep their current values. Returns
+    /// the updated record, or `None` if the schedule doesn't exist.
+    ///
+    /// The scheduler's `next_run_at` is recomputed from the new
+    /// `cron_expr` + `timezone` on the next evaluation tick, so a PATCH
+    /// takes effect within the scheduler's poll interval.
+    fn update_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+        patch: &SchedulePatch,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send;
+
+    /// Flip a schedule's `paused` flag. Returns the updated record, or
+    /// `None` if the schedule doesn't exist.
+    ///
+    /// A paused schedule is skipped by the scheduler; resuming it
+    /// doesn't backfill missed fires — the next fire is whatever the
+    /// cron expression says, starting from now.
+    fn set_schedule_paused(
+        &self,
+        namespace: &str,
+        name: &str,
+        paused: bool,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send;
+
     // ── Workers ─────────────────────────────────────────────
 
     fn register_worker(
