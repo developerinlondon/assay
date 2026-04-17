@@ -12,6 +12,7 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
         engine: Arc::new(engine),
         event_tx,
         auth_mode: assay_workflow::api::auth::AuthMode::NoAuth,
+        binary_version: None,
     });
 
     let app = assay_workflow::api::router(state);
@@ -383,4 +384,19 @@ async fn schedule_patch_rejects_invalid_timezone() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 500, "invalid timezone rejected");
+}
+
+#[tokio::test]
+async fn version_endpoint_returns_shape() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+    let resp = c.get(format!("{url}/api/v1/version")).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["version"].is_string(), "version is a string");
+    let profile = body["build_profile"].as_str().expect("build_profile string");
+    assert!(
+        profile == "debug" || profile == "release",
+        "build_profile one of debug|release, got {profile}"
+    );
 }

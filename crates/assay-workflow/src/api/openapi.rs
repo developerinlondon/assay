@@ -44,6 +44,7 @@ use crate::store::WorkflowStore;
         crate::api::workflows::get_workflow_state_by_name,
         crate::api::workers::list_workers,
         crate::api::workers::health_check,
+        crate::api::meta::version,
     ),
     components(schemas(
         crate::types::WorkflowRecord,
@@ -65,6 +66,7 @@ use crate::store::WorkflowStore;
         crate::api::schedules::CreateScheduleRequest,
         crate::api::schedules::PatchScheduleRequest,
         crate::api::workflows::ContinueAsNewBody,
+        crate::api::meta::VersionInfo,
     )),
     tags(
         (name = "workflows", description = "Workflow lifecycle management"),
@@ -72,6 +74,7 @@ use crate::store::WorkflowStore;
         (name = "schedules", description = "Cron schedule management"),
         (name = "workers", description = "Worker registry and health"),
         (name = "events", description = "Real-time event streams (SSE)"),
+        (name = "meta", description = "Engine metadata (version, build info)"),
     ),
     servers(
         (url = "/", description = "Current server"),
