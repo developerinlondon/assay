@@ -271,6 +271,18 @@ impl SqliteStore {
         });
     }
 
+    /// Apply the baseline schema.
+    ///
+    /// Fresh installs get the current `CREATE TABLE IF NOT EXISTS` statements
+    /// in one pass. The engine is pre-1.0 and no v0.11.x release has been
+    /// deployed against a real workload yet, so we don't carry
+    /// `ALTER TABLE ADD COLUMN` statements for historical columns — the
+    /// baseline is the source of truth.
+    ///
+    /// For **future** additive migrations (post-v0.11.3), call
+    /// `Self::add_column_if_missing(&self.pool, "<table>", "<column>",
+    /// "<type_def>").await?` here before returning. Kept around so adding a
+    /// column later is a one-liner.
     async fn migrate(&self) -> Result<()> {
         for statement in SCHEMA.split(';') {
             let trimmed = statement.trim();
@@ -278,23 +290,20 @@ impl SqliteStore {
                 sqlx::query(trimmed).execute(&self.pool).await?;
             }
         }
-        // Additive migrations for schema evolution. SQLite doesn't support
-        // `ADD COLUMN IF NOT EXISTS`, so we check via pragma_table_info
-        // before issuing ALTER. Each call is idempotent across startups.
-        Self::add_column_if_missing(
-            &self.pool,
-            "workflow_schedules",
-            "timezone",
-            "TEXT NOT NULL DEFAULT 'UTC'",
-        )
-        .await?;
-        Self::add_column_if_missing(&self.pool, "workflows", "search_attributes", "TEXT")
-            .await?;
-        Self::add_column_if_missing(&self.pool, "workflows", "archived_at", "REAL").await?;
-        Self::add_column_if_missing(&self.pool, "workflows", "archive_uri", "TEXT").await?;
+        // Future additive migrations go here; see doc-comment above.
         Ok(())
     }
 
+    /// Add a column to an existing table if it's not already there.
+    ///
+    /// SQLite (unlike Postgres) doesn't support `ADD COLUMN IF NOT EXISTS`,
+    /// so we check via `pragma_table_info` before issuing the ALTER. Each
+    /// call is idempotent across startups.
+    ///
+    /// Currently unused — kept as the documented pattern for the first
+    /// additive migration after v0.11.3. Remove `#[allow(dead_code)]` when
+    /// a caller is added.
+    #[allow(dead_code)]
     async fn add_column_if_missing(
         pool: &SqlitePool,
         table: &str,

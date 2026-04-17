@@ -224,11 +224,14 @@ All notable changes to Assay are documented here.
 
 ### Notes
 
-- Schema migrations for new columns are idempotent on both backends: Postgres uses
-  `ADD COLUMN IF NOT EXISTS`; SQLite uses a `pragma_table_info` pre-check before
-  `ALTER TABLE
-  ADD COLUMN`. Fresh installs get the column from `CREATE TABLE` and the ALTER is a
-  no-op.
+- **No migrations from v0.11.2.** The engine is pre-1.0 and no v0.11.x release has been deployed
+  against a real workload yet, so all v0.11.3 columns (`search_attributes`, `archived_at`,
+  `archive_uri` on `workflows`; `timezone` on `workflow_schedules`) live in the baseline
+  `CREATE TABLE` statements only. A fresh DB picks them up automatically; an existing v0.11.2 DB
+  needs to be recreated. The migration plumbing is kept in place for post-v0.11.3 additive
+  migrations — Postgres does `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` natively, SQLite has a
+  dormant `add_column_if_missing` helper that pragma-checks before ALTER. The pattern is documented
+  at the bottom of each store's `SCHEMA` constant / `migrate()` fn.
 - Parallel activities are still best-effort in the sense that each completion triggers a replay;
   deeply parallel fan-outs generate O(N²) idempotent `schedule_activity` calls. The store-level
   idempotency makes this correct but not minimal; a follow-up can short-circuit re-yields for

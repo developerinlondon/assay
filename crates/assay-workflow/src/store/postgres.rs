@@ -39,11 +39,6 @@ CREATE TABLE IF NOT EXISTS workflows (
 CREATE INDEX IF NOT EXISTS idx_wf_status_queue ON workflows(status, task_queue);
 CREATE INDEX IF NOT EXISTS idx_wf_namespace ON workflows(namespace);
 CREATE INDEX IF NOT EXISTS idx_wf_dispatch ON workflows(task_queue, needs_dispatch, dispatch_claimed_by);
--- Upgrades from v0.11.2 need the additive columns; on fresh installs
--- they're already in the CREATE above so these ADDs are no-ops.
-ALTER TABLE workflows ADD COLUMN IF NOT EXISTS search_attributes TEXT;
-ALTER TABLE workflows ADD COLUMN IF NOT EXISTS archived_at DOUBLE PRECISION;
-ALTER TABLE workflows ADD COLUMN IF NOT EXISTS archive_uri TEXT;
 
 CREATE TABLE IF NOT EXISTS workflow_events (
     id              BIGSERIAL PRIMARY KEY,
@@ -116,10 +111,6 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
     created_at      DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (namespace, name)
 );
--- Upgrades from v0.11.2 need the timezone column added; on a fresh
--- install the CREATE TABLE above has already created it and this is
--- a silent no-op.
-ALTER TABLE workflow_schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC';
 
 CREATE TABLE IF NOT EXISTS workflow_workers (
     id              TEXT PRIMARY KEY,
@@ -150,6 +141,16 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at      DOUBLE PRECISION NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
+
+-- Future additive migrations go below this line. Postgres supports
+-- `ADD COLUMN IF NOT EXISTS` natively, so the pattern is simply:
+--
+--   ALTER TABLE workflows ADD COLUMN IF NOT EXISTS some_new_field TEXT;
+--
+-- Idempotent across startups; fresh installs pick the column up from the
+-- CREATE TABLE above so the ADD is a no-op. Currently no pending
+-- migrations — baseline schema in CREATE TABLE statements above is the
+-- source of truth through v0.11.3.
 "#;
 
 pub struct PostgresStore {
