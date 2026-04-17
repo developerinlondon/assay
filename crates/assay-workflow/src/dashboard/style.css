@@ -87,6 +87,23 @@ html, body {
   font-weight: 700;
   color: var(--accent);
   letter-spacing: -0.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+/* Whitelabel logo image (rendered when ASSAY_WHITELABEL_LOGO_URL is set). */
+.logo-img {
+  height: 22px;
+  width: auto;
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.sidebar.collapsed .logo-img {
+  height: 18px;
 }
 
 /* The single-letter mark shown when the sidebar is collapsed */
@@ -94,6 +111,20 @@ html, body {
   display: none;
   font-size: 20px;
   font-weight: 700;
+  color: var(--accent);
+}
+
+/* Parent-app back-link in the sidebar footer — only rendered when
+   ASSAY_WHITELABEL_PARENT_URL is set. Visually distinct from peer nav
+   links so it reads as "exit" rather than "section". */
+.nav-link-back {
+  border-top: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+  padding-top: 10px;
+  margin-top: 4px;
+  color: var(--text-muted, inherit);
+}
+
+.nav-link-back:hover {
   color: var(--accent);
 }
 

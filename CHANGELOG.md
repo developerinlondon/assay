@@ -2,6 +2,75 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.10] - 2026-04-17
+
+### Added
+
+- **Dashboard whitelabel support** — six optional env vars let operators
+  rebrand the embedded `/workflow` dashboard per-deployment, so a platform
+  team can surface assay inside their own admin UI under their own company
+  name, logo, and browser title without forking the binary. Every knob
+  defaults to assay's built-in identity, so an unset env keeps the
+  standalone experience unchanged.
+
+  | Variable                          | Purpose                                              | Default                      |
+  | --------------------------------- | ---------------------------------------------------- | ---------------------------- |
+  | `ASSAY_WHITELABEL_NAME`           | Text in the sidebar header                           | `Assay`                      |
+  | `ASSAY_WHITELABEL_LOGO_URL`       | Image URL rendered before the brand text             | — (no image)                 |
+  | `ASSAY_WHITELABEL_PAGE_TITLE`     | Browser tab title                                    | `Assay Workflow Dashboard`   |
+  | `ASSAY_WHITELABEL_PARENT_URL`     | Back-link URL in the sidebar footer                  | — (hidden)                   |
+  | `ASSAY_WHITELABEL_PARENT_NAME`    | Label for the back-link                              | `Back`                       |
+  | `ASSAY_WHITELABEL_API_DOCS_URL`   | Override / hide the sidebar API Docs link            | `/api/v1/docs`               |
+  | `ASSAY_WHITELABEL_CSS_URL`        | Extra stylesheet loaded after assay's own CSS        | — (no extra sheet)           |
+
+  `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link
+  entirely — useful when the embedding app's ingress doesn't route the
+  OpenAPI path or the docs are provided elsewhere. Any other value
+  redirects the link to that URL.
+
+  `ASSAY_WHITELABEL_CSS_URL` lets operators re-skin the dashboard
+  without forking. The extra stylesheet loads at the end of `<head>`,
+  after assay's `theme.css` + `style.css`, so source-order specificity
+  lets it override any CSS custom property (e.g. `--accent`, `--bg`,
+  `--text`) or specific selector. Full design-token list in
+  `docs/modules/workflow.md#dashboard-whitelabel`. Asset-version is
+  appended automatically so a redeploy that changes the stylesheet
+  forces a browser re-fetch.
+
+  Hosting the logo: if assay is mounted on the same origin as the
+  embedding app (e.g. behind a reverse proxy at `/workflow/*`), a
+  path-absolute URL like `/static/my-logo.svg` loads from the host app
+  with no CORS plumbing.
+
+- **`workflow.start({namespace, search_attributes})` — full engine parity.**
+  `workflow.start()` now passes `opts.namespace` and `opts.search_attributes`
+  through to the engine, so Lua callers can scope workflows to a non-default
+  namespace and seed indexed metadata at start time. Previously these fields
+  were accepted by `POST /api/v1/workflows` but silently dropped by the Lua
+  stdlib client, forcing callers to hit the REST API directly for any
+  multi-tenant deployment.
+
+- **`workflow.listen({namespace})` — namespace-scoped workers.** Workers
+  register into `opts.namespace` (default `"main"`) on `POST /workers/register`,
+  so a worker pool in one namespace no longer accidentally picks up tasks
+  from a sibling namespace that happens to share its queue name. The
+  startup log line now carries the namespace alongside the queue for easy
+  `kubectl logs` triage.
+
+Both changes close a gap surfaced by consumers building multi-tenant
+deployment pipelines on top of the engine (e.g. a platform-engineering
+namespace for promotions, a data-engineering namespace for backfills,
+both sharing one assay-serve instance). No engine changes — the engine
+already supported namespace on these endpoints; only the stdlib was missing.
+
+### Tests
+
+- New orchestration test (`orchestration.rs`):
+  `lua_workflow_namespace_scoping_end_to_end` — creates a non-default
+  namespace via the engine API, starts a worker with `namespace="deployments"`,
+  starts a workflow in the same namespace, and asserts the completed
+  record carries `namespace: "deployments"` and the expected result.
+
 ## [0.11.9] - 2026-04-17
 
 ### Added

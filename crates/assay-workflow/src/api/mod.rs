@@ -9,6 +9,7 @@ pub mod public;
 pub mod queues;
 pub mod schedules;
 pub mod tasks;
+pub mod whitelabel;
 pub mod workers;
 pub mod workflow_tasks;
 pub mod workflows;

@@ -3,18 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Assay Workflow Dashboard</title>
+  <title>__PAGE_TITLE__</title>
   <link rel="icon" type="image/svg+xml" href="/workflow/favicon.svg">
   <link rel="stylesheet" href="/workflow/theme.css?v=__ASSETV__">
   <link rel="stylesheet" href="/workflow/style.css?v=__ASSETV__">
+  __EXTRA_CSS_LINK__
 </head>
 <body>
   <div class="layout">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <h1 class="logo">
-          <span class="logo-full">Assay</span>
-          <span class="logo-mark" aria-hidden="true">A</span>
+          __BRAND_LOGO_IMG__
+          <span class="logo-full">__BRAND_NAME__</span>
+          <span class="logo-mark" aria-hidden="true">__BRAND_MARK__</span>
         </h1>
         <button type="button" class="header-icon-btn" id="sidebar-collapse" title="Collapse sidebar" aria-label="Toggle sidebar">
           <span class="icon-collapse">&lt;</span>
@@ -43,9 +45,8 @@
         </a>
       </nav>
       <div class="sidebar-footer">
-        <a href="/api/v1/docs" class="nav-link nav-link-grow" target="_blank">
-          <span class="nav-icon">&#128196;</span> <span class="nav-label">API Docs</span>
-        </a>
+        __PARENT_BACK_LINK__
+        __API_DOCS_LINK__
         <button type="button" class="nav-link nav-link-button nav-link-icon" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
           <span class="nav-icon icon-sun">&#9788;</span>
           <span class="nav-icon icon-moon">&#9790;</span>
