@@ -109,6 +109,80 @@ Only matches that should remain for the first grep are historical CHANGELOG entr
 "introduced in vX.Y.Z" feature markers. The second and third greps exist because v0.11.4's
 crates.io publish failed when the sub-crate version was missed — do not skip them.
 
+## PR merge process
+
+Follow this sequence for every PR merge into `main`, even as an admin who could bypass branch
+protection. Branch protection is the enforcement layer, the process below is the discipline
+layer — protection is the last line of defence, not the only one.
+
+### 1. Wait for CI to settle fully
+
+```sh
+gh pr checks <PR> --watch
+```
+
+**Do not use `--required`.** On repos without required-check protection, `--required` prints "no
+required checks reported" and exits immediately, letting a merge-chain proceed while checks are
+still running. Even on protected repos, `--required` only watches the required contexts — other
+CI in the same workflow may still be running. Plain `--watch` blocks on every check.
+
+### 2. Never merge through red
+
+If any check ends non-green, inspect before deciding:
+
+```sh
+gh run view <run-id>
+gh api repos/developerinlondon/assay/actions/jobs/<job-id>/logs
+```
+
+- **Infrastructure flakes** — runner `No space left on device`, `Runner failed to dispatch`,
+  transient network timeouts pulling crates, GitHub outages — re-run the failed job on a fresh
+  runner:
+
+  ```sh
+  gh run rerun <run-id> --failed
+  gh pr checks <PR> --watch   # wait again
+  ```
+
+  Merging through an infra flake is gambling that the flake hides nothing. Occasionally it does.
+
+- **Code failures** — test assertion, clippy error, compile error — fix in a new commit on the
+  same branch, push, wait for CI. Never merge a PR with a known code failure on the promise of a
+  "follow-up fix" — the follow-up lives in the same PR.
+
+### 3. Squash-merge with branch delete
+
+```sh
+gh pr merge <PR> --squash --delete-branch
+```
+
+Prefer `--squash` over `--merge` so `main` history stays one-commit-per-PR and greppable. Let
+`--delete-branch` clean up the remote branch; don't leave stale feature branches around.
+
+### 4. Verify the post-merge CI run
+
+The `push` trigger on `ci.yml` fires a fresh CI run on the merge commit itself. Occasionally a
+merge commit behaves differently than the PR HEAD (e.g. silent conflict with concurrent merges,
+unrelated upstream drift). Confirm it lands green before triggering anything downstream (tag
+push, release workflow, deploy):
+
+```sh
+gh run list --workflow=ci.yml --branch main --limit 3
+```
+
+If the first entry isn't `success`, treat `main` as broken and fix before anything else. Don't
+tag a release off a main that isn't green.
+
+### Why this exists
+
+v0.11.5 was merged with one CI check still in progress because the merge-chain used
+`gh pr checks 46 --watch --required` on a repo that had no required checks configured. The
+watch command exited immediately, the auto-merge fired, and the still-running ubuntu check job
+later errored on a runner infrastructure flake (`No space left on device`). The post-merge CI
+on `main` was green, so nothing broke — but the only reason was luck. Branch protection on
+`main` was added retroactively (see "PR merge process → 1" above for the correct watch
+invocation that would have caught this).
+
 ## What is Assay
 
 General-purpose enhanced Lua runtime. Single ~11 MB static binary with batteries included: HTTP
