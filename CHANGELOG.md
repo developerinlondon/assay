@@ -2,6 +2,29 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.5] - 2026-04-17
+
+### Changed
+
+- **`assay-workflow` crate version** bumped to `0.1.3` (from `0.1.2`) — carries the
+  v0.11.4 `AuthMode` refactor from enum to struct. Per assay's pre-1.0 policy of
+  patch-bumps-by-default, both crates stay in their current minor tracks until there's
+  a deliberate decision to signal API instability to downstream consumers.
+
+### Fixed
+
+- **crates.io publish.** v0.11.4 shipped the binary (GHCR, npm, Linux/macOS artefacts,
+  GitHub release) but its crates.io publish failed because `assay-workflow` was still
+  pinned to `0.1.2` — the same version already published for v0.11.3. v0.11.5 is a
+  re-release of v0.11.4's code with both crates' versions bumped so the publish
+  actually lands on crates.io.
+
+### Docs
+
+- `AGENTS.md` "Release docs checklist" gains an explicit note about `crates/*/Cargo.toml`
+  and the independent-versioning policy for sub-crates — the gap that caused the v0.11.4
+  crates.io failure.
+
 ## [0.11.4] - 2026-04-17
 
 ### Added
