@@ -21,13 +21,22 @@ var AssayDetail = (function () {
     p.querySelector('#detail-close-btn').addEventListener('click', closeDetail);
 
     try {
-      var [wf, events, children] = await Promise.all([
+      // /state returns 404 when the workflow hasn't written a snapshot
+      // yet (the common case for workflows that don't use
+      // ctx:register_query). Catch that per-promise so it doesn't bubble
+      // up and kill the whole detail render.
+      var statePromise = ctx
+        .apiFetch('/workflows/' + encodeURIComponent(id) + '/state')
+        .catch(function () { return null; });
+
+      var [wf, events, children, state] = await Promise.all([
         ctx.apiFetch('/workflows/' + encodeURIComponent(id)),
         ctx.apiFetch('/workflows/' + encodeURIComponent(id) + '/events'),
         ctx.apiFetch('/workflows/' + encodeURIComponent(id) + '/children'),
+        statePromise,
       ]);
 
-      renderDetail(wf, events || [], children || []);
+      renderDetail(wf, events || [], children || [], state);
     } catch (err) {
       p.innerHTML =
         '<div class="detail-header"><h2>Error</h2>' +
@@ -37,7 +46,7 @@ var AssayDetail = (function () {
     }
   }
 
-  function renderDetail(wf, events, children) {
+  function renderDetail(wf, events, children, state) {
     var p = getPanel();
     var status = (wf.status || 'PENDING').toUpperCase();
     var terminal = ctx.isTerminal(status);
@@ -63,12 +72,34 @@ var AssayDetail = (function () {
       '</div>';
 
     // Actions
+    var idAttr = ctx.escapeHtml(wf.id);
+    html += '<div class="action-row" style="margin-bottom: 16px;">';
     if (!terminal) {
       html +=
-        '<div style="margin-bottom: 16px;">' +
-          '<button class="btn btn-sm btn-signal-detail" data-id="' + ctx.escapeHtml(wf.id) + '">Signal</button> ' +
-          '<button class="btn btn-sm btn-danger btn-cancel-detail" data-id="' + ctx.escapeHtml(wf.id) + '">Cancel</button>' +
-        '</div>';
+        '<button class="btn-action btn-signal-detail" data-id="' + idAttr + '">Send signal</button>' +
+        '<button class="btn-action btn-cancel-detail" data-id="' + idAttr + '">Cancel</button>' +
+        '<button class="btn-action btn-action-danger btn-terminate-detail" data-id="' + idAttr + '">Terminate</button>' +
+        '<button class="btn-action btn-continue-detail" data-id="' + idAttr + '">Continue as new</button>';
+    } else {
+      html +=
+        '<button class="btn-action btn-continue-detail" data-id="' + idAttr + '" title="Start a fresh run with the same type + queue">Continue as new</button>';
+    }
+    html += '</div>';
+
+    // Live state snapshot (populated by ctx:register_query handlers in the
+    // workflow code). Only shown if a snapshot exists — workflows that
+    // don't register queries just won't have this section.
+    if (state && state.state !== undefined && state.state !== null) {
+      var stateJson = typeof state.state === 'string'
+        ? state.state
+        : JSON.stringify(state.state, null, 2);
+      html +=
+        '<h3 style="margin-bottom: 8px;">Live state</h3>' +
+        '<div class="json-viewer">' + ctx.escapeHtml(stateJson) + '</div>' +
+        '<p style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">' +
+          'Snapshot at event seq ' + (state.event_seq || '?') +
+          (state.created_at ? ' — ' + ctx.formatTime(state.created_at) : '') +
+        '</p>';
     }
 
     // Input
@@ -176,6 +207,20 @@ var AssayDetail = (function () {
     var canBtn = e.target.closest('.btn-cancel-detail');
     if (canBtn) {
       handleCancel(canBtn.dataset.id);
+      return;
+    }
+
+    // Terminate button
+    var termBtn = e.target.closest('.btn-terminate-detail');
+    if (termBtn) {
+      handleTerminate(termBtn.dataset.id);
+      return;
+    }
+
+    // Continue-as-new button
+    var contBtn = e.target.closest('.btn-continue-detail');
+    if (contBtn) {
+      handleContinueAsNew(contBtn.dataset.id);
     }
   }
 
@@ -193,9 +238,10 @@ var AssayDetail = (function () {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ payload: payload }),
       });
+      ctx.toast("Signal '" + name + "' sent", 'success');
       showDetail(id, ctx);
     } catch (err) {
-      alert('Signal failed: ' + err.message);
+      ctx.toast('Signal failed: ' + err.message, 'error');
     }
   }
 
@@ -203,9 +249,67 @@ var AssayDetail = (function () {
     if (!confirm('Cancel workflow ' + id + '?')) return;
     try {
       await ctx.apiFetch('/workflows/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+      ctx.toast('Cancel requested', 'success');
       showDetail(id, ctx);
     } catch (err) {
-      alert('Cancel failed: ' + err.message);
+      ctx.toast('Cancel failed: ' + err.message, 'error');
+    }
+  }
+
+  async function handleTerminate(id) {
+    var reason = prompt(
+      'Terminate workflow ' + id + '?\n\nReason (optional):',
+      ''
+    );
+    if (reason === null) return;
+    var body = reason ? { reason: reason } : {};
+    try {
+      await ctx.apiFetch('/workflows/' + encodeURIComponent(id) + '/terminate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      ctx.toast('Terminated', 'success');
+      showDetail(id, ctx);
+    } catch (err) {
+      ctx.toast('Terminate failed: ' + err.message, 'error');
+    }
+  }
+
+  async function handleContinueAsNew(id) {
+    var inputStr = prompt(
+      'Close out ' + id + ' and start a fresh run with the same type + queue.\n\n' +
+      'New input (JSON, optional):',
+      ''
+    );
+    if (inputStr === null) return;
+    var body = {};
+    if (inputStr && inputStr.trim()) {
+      try {
+        body.input = JSON.parse(inputStr);
+      } catch (err) {
+        ctx.toast('Input must be valid JSON', 'error');
+        return;
+      }
+    }
+    try {
+      var newRun = await ctx.apiFetch(
+        '/workflows/' + encodeURIComponent(id) + '/continue-as-new',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      );
+      ctx.toast('New run: ' + (newRun && newRun.workflow_id || 'unknown'), 'success');
+      if (newRun && newRun.workflow_id) {
+        showDetail(newRun.workflow_id, ctx);
+      } else {
+        closeDetail();
+      }
+      if (ctx.refreshCurrentView) ctx.refreshCurrentView();
+    } catch (err) {
+      ctx.toast('Continue-as-new failed: ' + err.message, 'error');
     }
   }
 

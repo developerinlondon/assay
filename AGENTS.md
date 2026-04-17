@@ -58,13 +58,60 @@ Use cases:
 - **Crate**: [crates.io/crates/assay-lua](https://crates.io/crates/assay-lua)
 - **Stack**: Rust (2024 edition), Tokio, Lua 5.5 (mlua), reqwest, clap, axum
 
-## Two Modes
+## Three Modes
 
 ```bash
 assay script.lua     # Lua mode — run script with all builtins
 assay checks.yaml    # YAML mode — structured checks with retry/backoff/parallel
-assay serve          # Workflow engine mode — REST+SSE API, dashboard
+assay serve          # Workflow engine mode — REST+SSE API, dashboard, CLI
 ```
+
+### Workflow engine mode — short overview
+
+Full reference: `docs/modules/workflow.md`. One binary runs the engine (`assay serve`), the CLI that
+drives it (`assay workflow/schedule/namespace/worker/queue/completion …`), and the Lua client
+(`require("assay.workflow")`) for worker processes and management scripts.
+
+```bash
+assay serve --backend postgres://... --port 8080       # engine (multi-instance via Postgres)
+assay workflow start --type Deploy --input @req.json   # start a run; --input takes @file/-/literal
+assay workflow wait <id> --timeout 300                 # block for scripts; exit 0/1/2
+assay schedule create nightly --cron "0 0 2 * * *" --timezone Europe/Berlin  --type Report
+assay completion bash > /etc/bash_completion.d/assay   # generate shell completion
+```
+
+Global CLI flags (all env-backed and config-file-backed): `--engine-url`, `--api-key`,
+`--namespace`, `--output`, `--config`. YAML config file auto-discovered at `--config PATH` /
+`$ASSAY_CONFIG_FILE` / `$XDG_CONFIG_HOME/assay/config.yaml` / `~/.config/assay/config.yaml` /
+`/etc/assay/config.yaml`. `api_key_file:` keeps the secret out of env/argv. Output formats: table
+(TTY default), json (pipe default), jsonl, yaml.
+
+Lua surface (worker + management in one module):
+
+```lua
+local workflow = require("assay.workflow")
+workflow.connect("http://assay:8080", { token = env.get("ASSAY_API_KEY") })
+
+-- Worker: define handlers, listen. ctx gets execute_activity / execute_parallel (v0.11.3) /
+-- sleep / wait_for_signal / start_child_workflow / side_effect / register_query (v0.11.3) /
+-- upsert_search_attributes (v0.11.3) / continue_as_new (v0.11.3).
+workflow.define("Pipeline", function(ctx, input) ... end)
+workflow.activity("step", function(ctx, input) ... end)
+workflow.listen({ queue = "default" })  -- blocks
+
+-- Management: workflow.list/describe/get_events/get_state/list_children/continue_as_new,
+-- workflow.schedules.{create,list,describe,patch,pause,resume,delete},
+-- workflow.namespaces.{create,list,describe,stats,delete},
+-- workflow.workers.list, workflow.queues.stats.
+```
+
+**Dashboard** at `/workflow/` — reads + tier-1 operator controls (start, signal, cancel, terminate,
+continue-as-new, live `register_query` state, schedule CRUD + pause/resume, namespace
+create/delete). Engine version shown in the status bar, fetched from `/api/v1/version`.
+
+**Optional S3 archival** (cargo feature `s3-archival`, default-off). Enabled when
+`ASSAY_ARCHIVE_S3_BUCKET` is set. Bundles completed workflows to S3 after
+`ASSAY_ARCHIVE_RETENTION_DAYS` and stubs the row with `archive_uri`.
 
 ### Example: Kubernetes Job
 
@@ -176,43 +223,43 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 
 35 embedded Lua modules loaded via `require("assay.<name>")`:
 
-| Module               | Description                                                                                                                 |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `assay.prometheus`   | Query metrics, alerts, targets, rules, label values, series                                                                 |
-| `assay.alertmanager` | Manage alerts, silences, receivers, config                                                                                  |
-| `assay.loki`         | Push logs, query, labels, series                                                                                            |
-| `assay.grafana`      | Health, dashboards, datasources, annotations                                                                                |
-| `assay.k8s`          | 30+ resource types, CRDs, readiness checks                                                                                  |
-| `assay.argocd`       | Apps, sync, health, projects, repositories                                                                                  |
-| `assay.kargo`        | Stages, freight, promotions, verification                                                                                   |
-| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases                                                                               |
-| `assay.traefik`      | Routers, services, middlewares, entrypoints                                                                                 |
-| `assay.vault`        | KV secrets, policies, auth, transit, PKI                                                                                    |
-| `assay.openbao`      | Alias for vault (API-compatible)                                                                                            |
-| `assay.certmanager`  | Certificates, issuers, ACME challenges                                                                                      |
-| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores                                                                          |
-| `assay.dex`          | OIDC discovery, JWKS, health                                                                                                |
-| `assay.zitadel`      | OIDC identity management with JWT machine auth                                                                              |
-| `assay.ory.kratos`   | Ory Kratos identity — login/registration/recovery/settings flows, identities, sessions, schemas                             |
-| `assay.ory.hydra`    | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs                                 |
-| `assay.ory.keto`     | Ory Keto ReBAC — relation tuples, permission checks, role/group membership, expand                                          |
-| `assay.ory.rbac`     | Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships, separation of duties |
-| `assay.ory`          | Convenience wrapper re-exporting kratos/hydra/keto/rbac with `ory.connect(opts)`                                            |
-| `assay.crossplane`   | Providers, XRDs, compositions, managed resources                                                                            |
-| `assay.velero`       | Backups, restores, schedules, storage locations                                                                             |
-| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                                                   |
-| `assay.workflow`     | Workflow engine client — connect, define workflows/activities, listen as worker, start/signal/cancel workflows              |
-| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                                                 |
-| `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4                                                                          |
-| `assay.postgres`     | Postgres-specific helpers                                                                                                   |
-| `assay.unleash`      | Feature flags: projects, environments, features, strategies, API tokens                                                     |
-| `assay.openclaw`     | OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks                                                  |
-| `assay.gitlab`       | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, issues, registry                                             |
-| `assay.github`       | GitHub REST API — PRs, issues, actions, repos, GraphQL                                                                      |
-| `assay.gmail`        | Gmail REST API with OAuth2 — search, read, reply, send, labels                                                              |
-| `assay.gcal`         | Google Calendar REST API with OAuth2 — events CRUD, calendar list                                                           |
-| `assay.oauth2`       | Google OAuth2 token management — file-based credentials, auto-refresh, persistence                                          |
-| `assay.email_triage` | Email classification — deterministic rules + optional LLM-assisted triage via OpenClaw                                      |
+| Module               | Description                                                                                                                                                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assay.prometheus`   | Query metrics, alerts, targets, rules, label values, series                                                                                                                                                                                                                     |
+| `assay.alertmanager` | Manage alerts, silences, receivers, config                                                                                                                                                                                                                                      |
+| `assay.loki`         | Push logs, query, labels, series                                                                                                                                                                                                                                                |
+| `assay.grafana`      | Health, dashboards, datasources, annotations                                                                                                                                                                                                                                    |
+| `assay.k8s`          | 30+ resource types, CRDs, readiness checks                                                                                                                                                                                                                                      |
+| `assay.argocd`       | Apps, sync, health, projects, repositories                                                                                                                                                                                                                                      |
+| `assay.kargo`        | Stages, freight, promotions, verification                                                                                                                                                                                                                                       |
+| `assay.flux`         | GitRepositories, Kustomizations, HelmReleases                                                                                                                                                                                                                                   |
+| `assay.traefik`      | Routers, services, middlewares, entrypoints                                                                                                                                                                                                                                     |
+| `assay.vault`        | KV secrets, policies, auth, transit, PKI                                                                                                                                                                                                                                        |
+| `assay.openbao`      | Alias for vault (API-compatible)                                                                                                                                                                                                                                                |
+| `assay.certmanager`  | Certificates, issuers, ACME challenges                                                                                                                                                                                                                                          |
+| `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores                                                                                                                                                                                                                              |
+| `assay.dex`          | OIDC discovery, JWKS, health                                                                                                                                                                                                                                                    |
+| `assay.zitadel`      | OIDC identity management with JWT machine auth                                                                                                                                                                                                                                  |
+| `assay.ory.kratos`   | Ory Kratos identity — login/registration/recovery/settings flows, identities, sessions, schemas                                                                                                                                                                                 |
+| `assay.ory.hydra`    | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, introspection, JWKs                                                                                                                                                                                     |
+| `assay.ory.keto`     | Ory Keto ReBAC — relation tuples, permission checks, role/group membership, expand                                                                                                                                                                                              |
+| `assay.ory.rbac`     | Capability-based RBAC engine over Keto — define roles + capabilities, query users, manage memberships, separation of duties                                                                                                                                                     |
+| `assay.ory`          | Convenience wrapper re-exporting kratos/hydra/keto/rbac with `ory.connect(opts)`                                                                                                                                                                                                |
+| `assay.crossplane`   | Providers, XRDs, compositions, managed resources                                                                                                                                                                                                                                |
+| `assay.velero`       | Backups, restores, schedules, storage locations                                                                                                                                                                                                                                 |
+| `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                                                                                                                                                                                                       |
+| `assay.workflow`     | Workflow engine client — define workflows/activities + listen as worker; or full management surface (list/start/signal/cancel/terminate/state/events/children/continue-as-new plus `.schedules`/`.namespaces`/`.workers`/`.queues` sub-tables). See `docs/modules/workflow.md`. |
+| `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                                                                                                                                                                                                     |
+| `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4                                                                                                                                                                                                                              |
+| `assay.postgres`     | Postgres-specific helpers                                                                                                                                                                                                                                                       |
+| `assay.unleash`      | Feature flags: projects, environments, features, strategies, API tokens                                                                                                                                                                                                         |
+| `assay.openclaw`     | OpenClaw AI agent platform — invoke tools, state, diff, approve, LLM tasks                                                                                                                                                                                                      |
+| `assay.gitlab`       | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, issues, registry                                                                                                                                                                                                 |
+| `assay.github`       | GitHub REST API — PRs, issues, actions, repos, GraphQL                                                                                                                                                                                                                          |
+| `assay.gmail`        | Gmail REST API with OAuth2 — search, read, reply, send, labels                                                                                                                                                                                                                  |
+| `assay.gcal`         | Google Calendar REST API with OAuth2 — events CRUD, calendar list                                                                                                                                                                                                               |
+| `assay.oauth2`       | Google OAuth2 token management — file-based credentials, auto-refresh, persistence                                                                                                                                                                                              |
+| `assay.email_triage` | Email classification — deterministic rules + optional LLM-assisted triage via OpenClaw                                                                                                                                                                                          |
 
 ### Client Pattern
 

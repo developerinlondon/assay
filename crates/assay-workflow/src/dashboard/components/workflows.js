@@ -7,6 +7,7 @@ var AssayWorkflows = (function () {
   let currentOffset = 0;
   let currentFilter = '';
   let searchTerm = '';
+  let searchAttrs = '';
   let ctx = null;
   let container = null;
 
@@ -16,6 +17,7 @@ var AssayWorkflows = (function () {
     currentOffset = 0;
     currentFilter = '';
     searchTerm = '';
+    searchAttrs = '';
 
     el.innerHTML =
       '<h2 class="section-title">Workflows</h2>' +
@@ -30,7 +32,10 @@ var AssayWorkflows = (function () {
           '<option value="WAITING">Waiting</option>' +
           '<option value="CANCELLED">Cancelled</option>' +
         '</select>' +
+        '<input type="text" class="search-input" id="wf-search-attrs" placeholder=\'Search attrs filter, e.g. {"env":"prod"}\' style="flex:1.2;">' +
+        '<button type="button" class="btn-action btn-action-primary" id="wf-start-toggle">+ Start workflow</button>' +
       '</div>' +
+      '<div id="wf-start-form-wrap"></div>' +
       '<div id="wf-table-wrap"></div>' +
       '<div id="wf-pagination" class="pagination"></div>';
 
@@ -45,6 +50,21 @@ var AssayWorkflows = (function () {
       currentOffset = 0;
       loadWorkflows();
     });
+
+    // Search-attributes filter: debounce so every keystroke doesn't hit
+    // the API. 300ms matches common search-field latency heuristics.
+    let searchAttrsTimer = null;
+    el.querySelector('#wf-search-attrs').addEventListener('input', function (e) {
+      const val = e.target.value.trim();
+      clearTimeout(searchAttrsTimer);
+      searchAttrsTimer = setTimeout(function () {
+        searchAttrs = val;
+        currentOffset = 0;
+        loadWorkflows();
+      }, 300);
+    });
+
+    el.querySelector('#wf-start-toggle').addEventListener('click', toggleStartForm);
 
     el.querySelector('#wf-table-wrap').addEventListener('click', function (e) {
       var link = e.target.closest('.wf-link');
@@ -65,6 +85,13 @@ var AssayWorkflows = (function () {
       if (cancelBtn) {
         e.preventDefault();
         handleCancel(cancelBtn.dataset.id);
+        return;
+      }
+
+      var termBtn = e.target.closest('.btn-terminate');
+      if (termBtn) {
+        e.preventDefault();
+        handleTerminate(termBtn.dataset.id);
       }
     });
 
@@ -83,6 +110,21 @@ var AssayWorkflows = (function () {
     var params = '?limit=' + PAGE_SIZE + '&offset=' + currentOffset;
     if (currentFilter) params += '&status=' + currentFilter;
     if (searchTerm) params += '&type=' + encodeURIComponent(searchTerm);
+    if (searchAttrs) {
+      // Validate JSON client-side so bad input doesn't silently vanish.
+      try {
+        JSON.parse(searchAttrs);
+        params += '&search_attrs=' + encodeURIComponent(searchAttrs);
+      } catch (_) {
+        // Invalid JSON: skip the param, leave a subtle hint on the input.
+        var attrsInput = container.querySelector('#wf-search-attrs');
+        if (attrsInput) attrsInput.style.borderColor = '#d04040';
+        renderTable(wrap, []);
+        return;
+      }
+    }
+    var attrsInput = container.querySelector('#wf-search-attrs');
+    if (attrsInput) attrsInput.style.borderColor = '';
 
     try {
       var workflows = await ctx.apiFetch('/workflows' + params);
@@ -128,7 +170,8 @@ var AssayWorkflows = (function () {
       if (!terminal) {
         html +=
           '<button class="btn btn-sm btn-signal" data-id="' + ctx.escapeHtml(wf.id) + '">Signal</button> ' +
-          '<button class="btn btn-sm btn-danger btn-cancel" data-id="' + ctx.escapeHtml(wf.id) + '">Cancel</button>';
+          '<button class="btn btn-sm btn-cancel" data-id="' + ctx.escapeHtml(wf.id) + '">Cancel</button> ' +
+          '<button class="btn btn-sm btn-danger btn-terminate" data-id="' + ctx.escapeHtml(wf.id) + '">Terminate</button>';
       } else {
         html += '<span style="color: var(--text-muted)">-</span>';
       }
@@ -158,6 +201,91 @@ var AssayWorkflows = (function () {
     pag.innerHTML = html;
   }
 
+  /// Open/close the inline "start workflow" form. Collapsed by default so
+  /// the list takes the full width; click the button to expand.
+  function toggleStartForm() {
+    var wrap = container.querySelector('#wf-start-form-wrap');
+    if (wrap.innerHTML.trim() !== '') {
+      wrap.innerHTML = '';
+      return;
+    }
+    wrap.innerHTML =
+      '<form class="inline-form" id="wf-start-form">' +
+        '<label>Workflow type <span style="color:#d04040">*</span>' +
+          '<input type="text" name="type" placeholder="e.g. IngestData" required>' +
+        '</label>' +
+        '<label>Workflow ID (optional — auto-generated if blank)' +
+          '<input type="text" name="id" placeholder="e.g. ingest-2026-04-17">' +
+        '</label>' +
+        '<label>Task queue' +
+          '<input type="text" name="task_queue" value="default">' +
+        '</label>' +
+        '<label>Input (JSON, optional)' +
+          '<textarea name="input" placeholder=\'{"key":"value"}\'></textarea>' +
+        '</label>' +
+        '<label>Search attributes (JSON, optional)' +
+          '<textarea name="search_attrs" placeholder=\'{"env":"prod","tenant":"acme"}\'></textarea>' +
+        '</label>' +
+        '<div class="form-actions">' +
+          '<button type="button" class="btn-action" id="wf-start-cancel">Cancel</button>' +
+          '<button type="submit" class="btn-action btn-action-primary">Start</button>' +
+        '</div>' +
+      '</form>';
+    wrap.querySelector('#wf-start-cancel').addEventListener('click', function () {
+      wrap.innerHTML = '';
+    });
+    wrap.querySelector('#wf-start-form').addEventListener('submit', handleStart);
+  }
+
+  async function handleStart(e) {
+    e.preventDefault();
+    var form = e.currentTarget;
+    var data = new FormData(form);
+    var body = {
+      workflow_type: data.get('type').trim(),
+      task_queue: (data.get('task_queue') || 'default').trim(),
+      namespace: ctx.getNamespace(),
+    };
+    var idVal = (data.get('id') || '').trim();
+    if (idVal) {
+      body.workflow_id = idVal;
+    } else {
+      body.workflow_id =
+        'wf-' + body.workflow_type.toLowerCase() + '-' + Date.now();
+    }
+    var inputRaw = (data.get('input') || '').trim();
+    if (inputRaw) {
+      try {
+        body.input = JSON.parse(inputRaw);
+      } catch (err) {
+        ctx.toast('Input is not valid JSON', 'error');
+        return;
+      }
+    }
+    var attrsRaw = (data.get('search_attrs') || '').trim();
+    if (attrsRaw) {
+      try {
+        body.search_attributes = JSON.parse(attrsRaw);
+      } catch (err) {
+        ctx.toast('Search attributes must be valid JSON', 'error');
+        return;
+      }
+    }
+
+    try {
+      await ctx.apiFetchRaw('/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      ctx.toast('Started ' + body.workflow_id, 'success');
+      container.querySelector('#wf-start-form-wrap').innerHTML = '';
+      loadWorkflows();
+    } catch (err) {
+      ctx.toast('Start failed: ' + err.message, 'error');
+    }
+  }
+
   async function handleSignal(id) {
     var name = prompt('Signal name:');
     if (!name) return;
@@ -177,9 +305,10 @@ var AssayWorkflows = (function () {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ payload: payload }),
       });
+      ctx.toast("Signal '" + name + "' sent", 'success');
       loadWorkflows();
     } catch (err) {
-      alert('Signal failed: ' + err.message);
+      ctx.toast('Signal failed: ' + err.message, 'error');
     }
   }
 
@@ -189,9 +318,30 @@ var AssayWorkflows = (function () {
       await ctx.apiFetch('/workflows/' + encodeURIComponent(id) + '/cancel', {
         method: 'POST',
       });
+      ctx.toast('Cancel requested', 'success');
       loadWorkflows();
     } catch (err) {
-      alert('Cancel failed: ' + err.message);
+      ctx.toast('Cancel failed: ' + err.message, 'error');
+    }
+  }
+
+  async function handleTerminate(id) {
+    var reason = prompt(
+      'Terminate workflow ' + id + '?\n\nReason (optional):',
+      ''
+    );
+    if (reason === null) return; // user cancelled
+    var body = reason ? { reason: reason } : {};
+    try {
+      await ctx.apiFetch('/workflows/' + encodeURIComponent(id) + '/terminate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      ctx.toast('Terminated', 'success');
+      loadWorkflows();
+    } catch (err) {
+      ctx.toast('Terminate failed: ' + err.message, 'error');
     }
   }
 

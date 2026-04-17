@@ -12,6 +12,7 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
         engine: Arc::new(engine),
         event_tx,
         auth_mode: assay_workflow::api::auth::AuthMode::NoAuth,
+        binary_version: None,
     });
 
     let app = assay_workflow::api::router(state);
@@ -260,4 +261,142 @@ async fn workflow_not_found() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn schedule_patch_updates_fields() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    // Create
+    let resp = c
+        .post(format!("{url}/api/v1/schedules"))
+        .json(&serde_json::json!({
+            "name": "nightly",
+            "workflow_type": "Report",
+            "cron_expr": "0 0 2 * * *",
+            "timezone": "UTC",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "create schedule");
+
+    // Patch cron + timezone + input
+    let resp = c
+        .patch(format!("{url}/api/v1/schedules/nightly"))
+        .json(&serde_json::json!({
+            "cron_expr": "0 0 3 * * *",
+            "timezone": "Europe/Berlin",
+            "input": { "lookback_hours": 24 },
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "patch schedule");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["cron_expr"], "0 0 3 * * *");
+    assert_eq!(body["timezone"], "Europe/Berlin");
+    let input_str = body["input"].as_str().expect("input string");
+    let input: serde_json::Value = serde_json::from_str(input_str).unwrap();
+    assert_eq!(input["lookback_hours"], 24);
+
+    // Patch with unchanged fields preserves them
+    let resp = c
+        .patch(format!("{url}/api/v1/schedules/nightly"))
+        .json(&serde_json::json!({ "task_queue": "reports" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["task_queue"], "reports");
+    assert_eq!(body["cron_expr"], "0 0 3 * * *", "cron kept from prior patch");
+    assert_eq!(body["timezone"], "Europe/Berlin", "timezone kept from prior patch");
+}
+
+#[tokio::test]
+async fn schedule_pause_and_resume() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    c.post(format!("{url}/api/v1/schedules"))
+        .json(&serde_json::json!({
+            "name": "hourly",
+            "workflow_type": "Report",
+            "cron_expr": "0 0 * * * *",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Pause
+    let resp = c
+        .post(format!("{url}/api/v1/schedules/hourly/pause"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["paused"], true);
+
+    // Resume
+    let resp = c
+        .post(format!("{url}/api/v1/schedules/hourly/resume"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["paused"], false);
+}
+
+#[tokio::test]
+async fn schedule_patch_404_on_missing() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+    let resp = c
+        .patch(format!("{url}/api/v1/schedules/ghost"))
+        .json(&serde_json::json!({ "cron_expr": "0 0 * * * *" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn schedule_patch_rejects_invalid_timezone() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+    c.post(format!("{url}/api/v1/schedules"))
+        .json(&serde_json::json!({
+            "name": "x",
+            "workflow_type": "T",
+            "cron_expr": "0 0 * * * *",
+        }))
+        .send()
+        .await
+        .unwrap();
+    let resp = c
+        .patch(format!("{url}/api/v1/schedules/x"))
+        .json(&serde_json::json!({ "timezone": "Not/AZone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 500, "invalid timezone rejected");
+}
+
+#[tokio::test]
+async fn version_endpoint_returns_shape() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+    let resp = c.get(format!("{url}/api/v1/version")).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["version"].is_string(), "version is a string");
+    let profile = body["build_profile"].as_str().expect("build_profile string");
+    assert!(
+        profile == "debug" || profile == "release",
+        "build_profile one of debug|release, got {profile}"
+    );
 }

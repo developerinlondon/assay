@@ -2,6 +2,7 @@ pub mod activities;
 pub mod auth;
 pub mod dashboard;
 pub mod events;
+pub mod meta;
 pub mod namespaces;
 pub mod openapi;
 pub mod queues;
@@ -27,6 +28,12 @@ pub struct AppState<S: WorkflowStore> {
     pub engine: Arc<Engine<S>>,
     pub event_tx: broadcast::Sender<events::BroadcastEvent>,
     pub auth_mode: AuthMode,
+    /// Version of the containing binary (e.g. the `assay-lua` CLI) — set
+    /// by embedders so `/api/v1/version` reflects the user-facing
+    /// binary, not this internal engine-crate version. Defaults to the
+    /// `assay-workflow` crate version, which is what the dashboard
+    /// falls back to when an embedder doesn't override.
+    pub binary_version: Option<&'static str>,
 }
 
 /// Build the full API router.
@@ -64,6 +71,7 @@ fn api_v1_router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .merge(workers::router())
         .merge(namespaces::router())
         .merge(queues::router())
+        .merge(meta::router())
 }
 
 /// Start the HTTP server on the given port.
@@ -71,6 +79,20 @@ pub async fn serve<S: WorkflowStore + 'static>(
     engine: Engine<S>,
     port: u16,
     auth_mode: AuthMode,
+) -> anyhow::Result<()> {
+    serve_with_version(engine, port, auth_mode, None).await
+}
+
+/// Like `serve`, but lets the embedder (e.g. the `assay` binary) pass
+/// its own semver so `/api/v1/version` reflects the binary users are
+/// actually running instead of the internal `assay-workflow` crate
+/// version. Without this, the dashboard would show a misleading
+/// "engine crate" version to operators.
+pub async fn serve_with_version<S: WorkflowStore + 'static>(
+    engine: Engine<S>,
+    port: u16,
+    auth_mode: AuthMode,
+    binary_version: Option<&'static str>,
 ) -> anyhow::Result<()> {
     let (event_tx, _) = broadcast::channel(1024);
 
@@ -84,6 +106,7 @@ pub async fn serve<S: WorkflowStore + 'static>(
         engine: Arc::new(engine),
         event_tx,
         auth_mode,
+        binary_version,
     });
 
     let app = router(state);

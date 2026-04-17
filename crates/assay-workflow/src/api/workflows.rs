@@ -20,6 +20,8 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .route("/workflows/{id}/terminate", post(terminate_workflow))
         .route("/workflows/{id}/children", get(list_children))
         .route("/workflows/{id}/continue-as-new", post(continue_as_new))
+        .route("/workflows/{id}/state", get(get_workflow_state))
+        .route("/workflows/{id}/state/{name}", get(get_workflow_state_by_name))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -35,6 +37,10 @@ pub struct StartWorkflowRequest {
     /// Task queue to route the workflow to (default: "main")
     #[serde(default = "default_queue")]
     pub task_queue: String,
+    /// Optional indexed metadata (JSON object). Used by list-filtering;
+    /// workflows can also update it at runtime via
+    /// `ctx:upsert_search_attributes(...)`.
+    pub search_attributes: Option<serde_json::Value>,
 }
 
 fn default_queue() -> String {
@@ -63,6 +69,7 @@ pub async fn start_workflow<S: WorkflowStore>(
 ) -> Result<(axum::http::StatusCode, Json<WorkflowResponse>), AppError> {
     let input = req.input.map(|v| v.to_string());
     let namespace = req.namespace.as_deref().unwrap_or("main");
+    let search_attributes = req.search_attributes.map(|v| v.to_string());
     let wf = state
         .engine
         .start_workflow(
@@ -71,6 +78,7 @@ pub async fn start_workflow<S: WorkflowStore>(
             &req.workflow_id,
             input.as_deref(),
             &req.task_queue,
+            search_attributes.as_deref(),
         )
         .await?;
 
@@ -91,6 +99,10 @@ pub struct ListQuery {
     pub status: Option<String>,
     #[serde(rename = "type")]
     pub workflow_type: Option<String>,
+    /// URL-encoded JSON object; matches workflows whose `search_attributes`
+    /// contain every listed key at the given value. e.g.
+    /// `?search_attrs=%7B%22env%22%3A%22prod%22%7D` for `{"env":"prod"}`.
+    pub search_attrs: Option<String>,
     #[serde(default = "default_limit")]
     pub limit: i64,
     #[serde(default)]
@@ -129,7 +141,14 @@ pub async fn list_workflows<S: WorkflowStore>(
 
     let workflows = state
         .engine
-        .list_workflows(&q.namespace, status, q.workflow_type.as_deref(), q.limit, q.offset)
+        .list_workflows(
+            &q.namespace,
+            status,
+            q.workflow_type.as_deref(),
+            q.search_attrs.as_deref(),
+            q.limit,
+            q.offset,
+        )
         .await?;
 
     let json: Vec<serde_json::Value> = workflows
@@ -321,6 +340,85 @@ pub async fn continue_as_new<S: WorkflowStore>(
             status: wf.status,
         }),
     ))
+}
+
+// ── Live state (register_query) ─────────────────────────────
+
+/// Read the latest snapshot of a workflow's query-handler state.
+///
+/// Populated by workflow code that calls `ctx:register_query(name, fn)` —
+/// each worker replay re-evaluates the registered handlers and persists the
+/// combined result. Returns 404 if no workflow run has written a snapshot
+/// yet (either the workflow hasn't registered any queries, or the first
+/// replay hasn't completed).
+#[utoipa::path(
+    get, path = "/api/v1/workflows/{id}/state",
+    tag = "workflows",
+    params(("id" = String, Path, description = "Workflow ID")),
+    responses(
+        (status = 200, description = "Latest state snapshot"),
+        (status = 404, description = "No snapshot recorded for this workflow"),
+    ),
+)]
+pub async fn get_workflow_state<S: WorkflowStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let snapshot = state
+        .engine
+        .get_latest_snapshot(&id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("state for workflow {id}")))?;
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&snapshot.state_json).unwrap_or(serde_json::Value::Null);
+
+    Ok(Json(serde_json::json!({
+        "state": parsed,
+        "event_seq": snapshot.event_seq,
+        "created_at": snapshot.created_at,
+    })))
+}
+
+/// Read a single named query result from a workflow's latest snapshot.
+///
+/// Returns the value under the given key in the latest snapshot's state
+/// object, or 404 if no snapshot exists or the key is absent.
+#[utoipa::path(
+    get, path = "/api/v1/workflows/{id}/state/{name}",
+    tag = "workflows",
+    params(
+        ("id" = String, Path, description = "Workflow ID"),
+        ("name" = String, Path, description = "Query handler name"),
+    ),
+    responses(
+        (status = 200, description = "Query value"),
+        (status = 404, description = "No snapshot or key not present"),
+    ),
+)]
+pub async fn get_workflow_state_by_name<S: WorkflowStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Path((id, name)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let snapshot = state
+        .engine
+        .get_latest_snapshot(&id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("state for workflow {id}")))?;
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&snapshot.state_json).unwrap_or(serde_json::Value::Null);
+
+    let value = parsed
+        .get(&name)
+        .cloned()
+        .ok_or_else(|| AppError::NotFound(format!("query '{name}' for workflow {id}")))?;
+
+    Ok(Json(serde_json::json!({
+        "value": value,
+        "event_seq": snapshot.event_seq,
+        "created_at": snapshot.created_at,
+    })))
 }
 
 // ── Error type ──────────────────────────────────────────────

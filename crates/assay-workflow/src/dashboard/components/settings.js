@@ -27,11 +27,15 @@ var AssaySettings = (function () {
         '<div class="card-body" id="settings-engine-info">' +
           '<div class="meta-grid">' +
             metaItem('Service', 'assay-workflow') +
+            metaItem('Version', '<span class="mono" id="settings-version">loading…</span>') +
+            metaItem('Build', '<span id="settings-build-profile">—</span>') +
             metaItem('API Docs', '<a href="/api/v1/docs" target="_blank" class="clickable">/api/v1/docs</a>') +
             metaItem('OpenAPI Spec', '<a href="/api/v1/openapi.json" target="_blank" class="clickable">/api/v1/openapi.json</a>') +
           '</div>' +
         '</div>' +
       '</div>';
+
+    loadEngineInfo();
 
     var showCreate = false;
     el.querySelector('#settings-toggle-create').addEventListener('click', function () {
@@ -137,24 +141,29 @@ var AssaySettings = (function () {
     var input = container.querySelector('#settings-ns-name');
     var name = input.value.trim();
     if (!name) {
-      alert('Namespace name is required.');
+      ctx.toast('Namespace name is required', 'error');
       return;
     }
 
     try {
-      await fetch('/api/v1/namespaces', {
+      var res = await fetch('/api/v1/namespaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name }),
       });
+      if (!res.ok) {
+        var body = await res.text();
+        throw new Error(body || res.statusText);
+      }
       input.value = '';
+      ctx.toast("Created namespace '" + name + "'", 'success');
       loadNamespaces();
-      // Refresh the namespace dropdown in the sidebar
+      // Refresh the namespace dropdown in the sidebar.
       if (window.AssayApp && window.AssayApp.refreshCurrentView) {
         window.AssayApp.refreshCurrentView();
       }
     } catch (err) {
-      alert('Create failed: ' + err.message);
+      ctx.toast('Create failed: ' + err.message, 'error');
     }
   }
 
@@ -166,9 +175,27 @@ var AssaySettings = (function () {
         var body = await res.text();
         throw new Error(body || res.statusText);
       }
+      ctx.toast("Deleted namespace '" + name + "'", 'success');
       loadNamespaces();
+      if (window.AssayApp && window.AssayApp.refreshCurrentView) {
+        window.AssayApp.refreshCurrentView();
+      }
     } catch (err) {
-      alert('Delete failed: ' + err.message);
+      ctx.toast('Delete failed: ' + err.message, 'error');
+    }
+  }
+
+  async function loadEngineInfo() {
+    try {
+      var v = await ctx.apiFetchRaw('/version');
+      if (v) {
+        var vel = container.querySelector('#settings-version');
+        var bel = container.querySelector('#settings-build-profile');
+        if (vel) vel.textContent = 'v' + (v.version || '?');
+        if (bel) bel.textContent = v.build_profile || '—';
+      }
+    } catch (_) {
+      // Non-fatal — older engines may not have /version. Leave placeholders.
     }
   }
 

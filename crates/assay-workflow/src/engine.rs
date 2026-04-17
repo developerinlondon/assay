@@ -21,6 +21,8 @@ pub struct Engine<S: WorkflowStore> {
     _timer_poller: JoinHandle<()>,
     _health_monitor: JoinHandle<()>,
     _dispatch_recovery: JoinHandle<()>,
+    #[cfg(feature = "s3-archival")]
+    _archival: Option<JoinHandle<()>>,
 }
 
 impl<S: WorkflowStore> Engine<S> {
@@ -35,6 +37,11 @@ impl<S: WorkflowStore> Engine<S> {
             Arc::clone(&store),
         ));
 
+        #[cfg(feature = "s3-archival")]
+        let _archival = crate::archival::ArchivalConfig::from_env().map(|cfg| {
+            tokio::spawn(crate::archival::run_archival(Arc::clone(&store), cfg))
+        });
+
         info!("Workflow engine started");
 
         Self {
@@ -43,6 +50,8 @@ impl<S: WorkflowStore> Engine<S> {
             _timer_poller,
             _health_monitor,
             _dispatch_recovery,
+            #[cfg(feature = "s3-archival")]
+            _archival,
         }
     }
 
@@ -60,6 +69,7 @@ impl<S: WorkflowStore> Engine<S> {
         workflow_id: &str,
         input: Option<&str>,
         task_queue: &str,
+        search_attributes: Option<&str>,
     ) -> Result<WorkflowRecord> {
         let now = timestamp_now();
         let run_id = format!("run-{workflow_id}-{}", now as u64);
@@ -76,6 +86,9 @@ impl<S: WorkflowStore> Engine<S> {
             error: None,
             parent_id: None,
             claimed_by: None,
+            search_attributes: search_attributes.map(String::from),
+            archived_at: None,
+            archive_uri: None,
             created_at: now,
             updated_at: now,
             completed_at: None,
@@ -110,11 +123,29 @@ impl<S: WorkflowStore> Engine<S> {
         namespace: &str,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
+        search_attrs_filter: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<WorkflowRecord>> {
         self.store
-            .list_workflows(namespace, status, workflow_type, limit, offset)
+            .list_workflows(
+                namespace,
+                status,
+                workflow_type,
+                search_attrs_filter,
+                limit,
+                offset,
+            )
+            .await
+    }
+
+    pub async fn upsert_search_attributes(
+        &self,
+        workflow_id: &str,
+        patch_json: &str,
+    ) -> Result<()> {
+        self.store
+            .upsert_search_attributes(workflow_id, patch_json)
             .await
     }
 
@@ -672,6 +703,47 @@ impl<S: WorkflowStore> Engine<S> {
                         .unwrap_or(0.0);
                     self.schedule_timer(workflow_id, seq, duration).await?;
                 }
+                "UpsertSearchAttributes" => {
+                    // Merge the patch object into the workflow's stored
+                    // search_attributes. Workflow code can call this from
+                    // `ctx:upsert_search_attributes(...)` to surface live
+                    // progress / tenant / env tags that downstream callers
+                    // can filter on via the list endpoint.
+                    let patch = cmd
+                        .get("patch")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Object(Default::default()));
+                    self.store
+                        .upsert_search_attributes(workflow_id, &patch.to_string())
+                        .await?;
+                }
+                "ContinueAsNew" => {
+                    // Close out the current run and start a new one with the
+                    // same type / namespace / queue under a fresh id. Input
+                    // may be any JSON value; it's serialised and becomes the
+                    // new run's `input`. Called from workflow code via
+                    // `ctx:continue_as_new(input)` to reset event history
+                    // when a handler would otherwise loop forever.
+                    let input = cmd.get("input").map(|v| v.to_string());
+                    self.continue_as_new(workflow_id, input.as_deref())
+                        .await?;
+                }
+                "RecordSnapshot" => {
+                    // Persist the workflow's current query-handler state. Each
+                    // snapshot is keyed by the current event seq so the latest
+                    // is easy to retrieve via `get_latest_snapshot`. Runs on
+                    // every worker replay, which is fine — `create_snapshot`
+                    // is an insert, so each replay adds a new row reflecting
+                    // the state at that point in history.
+                    let state = cmd
+                        .get("state")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+                    let event_seq = self.store.get_event_count(workflow_id).await? as i32;
+                    self.store
+                        .create_snapshot(workflow_id, event_seq, &state.to_string())
+                        .await?;
+                }
                 "CompleteWorkflow" => {
                     let result = cmd.get("result").map(|v| v.to_string());
                     self.complete_workflow(workflow_id, result.as_deref()).await?;
@@ -894,6 +966,24 @@ impl<S: WorkflowStore> Engine<S> {
         self.store.delete_schedule(namespace, name).await
     }
 
+    pub async fn update_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+        patch: &SchedulePatch,
+    ) -> Result<Option<WorkflowSchedule>> {
+        self.store.update_schedule(namespace, name, patch).await
+    }
+
+    pub async fn set_schedule_paused(
+        &self,
+        namespace: &str,
+        name: &str,
+        paused: bool,
+    ) -> Result<Option<WorkflowSchedule>> {
+        self.store.set_schedule_paused(namespace, name, paused).await
+    }
+
     // ── Namespace Operations ────────────────────────────────
 
     pub async fn create_namespace(&self, name: &str) -> Result<()> {
@@ -942,6 +1032,9 @@ impl<S: WorkflowStore> Engine<S> {
             error: None,
             parent_id: Some(parent_id.to_string()),
             claimed_by: None,
+            search_attributes: None,
+            archived_at: None,
+            archive_uri: None,
             created_at: now,
             updated_at: now,
             completed_at: None,
@@ -1015,6 +1108,7 @@ impl<S: WorkflowStore> Engine<S> {
             &new_id,
             input,
             &old_wf.task_queue,
+            old_wf.search_attributes.as_deref(),
         )
         .await
     }

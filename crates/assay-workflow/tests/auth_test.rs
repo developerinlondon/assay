@@ -21,6 +21,7 @@ async fn start_server_with_store(
         engine: Arc::new(engine),
         event_tx,
         auth_mode,
+        binary_version: None,
     });
     let app = assay_workflow::api::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

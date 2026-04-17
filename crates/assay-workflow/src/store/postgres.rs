@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS workflows (
     error           TEXT,
     parent_id       TEXT,
     claimed_by      TEXT,
+    search_attributes TEXT,
+    archived_at     DOUBLE PRECISION,
+    archive_uri     TEXT,
     -- Workflow-task dispatch (Phase 9): see sqlite.rs for the full comment.
     needs_dispatch  BOOLEAN NOT NULL DEFAULT FALSE,
     dispatch_claimed_by    TEXT,
@@ -97,6 +100,7 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
     name            TEXT NOT NULL,
     workflow_type   TEXT NOT NULL,
     cron_expr       TEXT NOT NULL,
+    timezone        TEXT NOT NULL DEFAULT 'UTC',
     input           TEXT,
     task_queue      TEXT NOT NULL DEFAULT 'main',
     overlap_policy  TEXT NOT NULL DEFAULT 'skip',
@@ -137,6 +141,16 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at      DOUBLE PRECISION NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
+
+-- Future additive migrations go below this line. Postgres supports
+-- `ADD COLUMN IF NOT EXISTS` natively, so the pattern is simply:
+--
+--   ALTER TABLE workflows ADD COLUMN IF NOT EXISTS some_new_field TEXT;
+--
+-- Idempotent across startups; fresh installs pick the column up from the
+-- CREATE TABLE above so the ADD is a no-op. Currently no pending
+-- migrations — baseline schema in CREATE TABLE statements above is the
+-- source of truth through v0.11.3.
 "#;
 
 pub struct PostgresStore {
@@ -260,8 +274,8 @@ impl WorkflowStore for PostgresStore {
 
     async fn create_workflow(&self, wf: &WorkflowRecord) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
         )
         .bind(&wf.id)
         .bind(&wf.namespace)
@@ -274,6 +288,9 @@ impl WorkflowStore for PostgresStore {
         .bind(&wf.error)
         .bind(&wf.parent_id)
         .bind(&wf.claimed_by)
+        .bind(&wf.search_attributes)
+        .bind(wf.archived_at)
+        .bind(&wf.archive_uri)
         .bind(wf.created_at)
         .bind(wf.updated_at)
         .bind(wf.completed_at)
@@ -284,7 +301,7 @@ impl WorkflowStore for PostgresStore {
 
     async fn get_workflow(&self, id: &str) -> Result<Option<WorkflowRecord>> {
         let row = sqlx::query_as::<_, PgWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at FROM workflows WHERE id = $1",
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at FROM workflows WHERE id = $1",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -297,26 +314,51 @@ impl WorkflowStore for PostgresStore {
         namespace: &str,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
+        search_attrs_filter: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<WorkflowRecord>> {
         let status_str = status.map(|s| s.to_string());
-        let rows = sqlx::query_as::<_, PgWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at
+
+        let filter_pairs: Vec<(String, serde_json::Value)> = search_attrs_filter
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| v.as_object().cloned())
+            .map(|m| m.into_iter().collect())
+            .unwrap_or_default();
+
+        let mut sql = String::from(
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
              FROM workflows
              WHERE namespace = $1
                AND ($2::TEXT IS NULL OR status = $2)
-               AND ($3::TEXT IS NULL OR workflow_type = $3)
-             ORDER BY created_at DESC
-             LIMIT $4 OFFSET $5",
-        )
-        .bind(namespace)
-        .bind(&status_str)
-        .bind(workflow_type)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&self.pool)
-        .await?;
+               AND ($3::TEXT IS NULL OR workflow_type = $3)",
+        );
+        // Bind placeholders for the filter follow $3; next index is 4.
+        let mut idx = 4usize;
+        for _ in &filter_pairs {
+            sql.push_str(&format!(
+                " AND (search_attributes::jsonb)->>${} = ${}",
+                idx,
+                idx + 1
+            ));
+            idx += 2;
+        }
+        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ${} OFFSET ${}", idx, idx + 1));
+
+        let mut q = sqlx::query_as::<_, PgWorkflowRow>(&sql)
+            .bind(namespace)
+            .bind(&status_str)
+            .bind(workflow_type);
+        for (key, value) in &filter_pairs {
+            q = q.bind(key.clone());
+            // JSONB ->> always returns TEXT; compare by stringified value.
+            let as_text = match value {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            q = q.bind(as_text);
+        }
+        let rows = q.bind(limit).bind(offset).fetch_all(&self.pool).await?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -384,7 +426,7 @@ impl WorkflowStore for PostgresStore {
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
              )
-             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at",
+             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at",
         )
         .bind(worker_id)
         .bind(now)
@@ -709,13 +751,14 @@ impl WorkflowStore for PostgresStore {
 
     async fn create_schedule(&self, sched: &WorkflowSchedule) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflow_schedules (namespace, name, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+            "INSERT INTO workflow_schedules (namespace, name, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
         )
         .bind(&sched.namespace)
         .bind(&sched.name)
         .bind(&sched.workflow_type)
         .bind(&sched.cron_expr)
+        .bind(&sched.timezone)
         .bind(&sched.input)
         .bind(&sched.task_queue)
         .bind(&sched.overlap_policy)
@@ -731,7 +774,7 @@ impl WorkflowStore for PostgresStore {
 
     async fn get_schedule(&self, namespace: &str, name: &str) -> Result<Option<WorkflowSchedule>> {
         let row = sqlx::query_as::<_, PgScheduleRow>(
-            "SELECT namespace, name, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at FROM workflow_schedules WHERE namespace = $1 AND name = $2",
+            "SELECT namespace, name, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at FROM workflow_schedules WHERE namespace = $1 AND name = $2",
         )
         .bind(namespace)
         .bind(name)
@@ -742,7 +785,7 @@ impl WorkflowStore for PostgresStore {
 
     async fn list_schedules(&self, namespace: &str) -> Result<Vec<WorkflowSchedule>> {
         let rows = sqlx::query_as::<_, PgScheduleRow>(
-            "SELECT namespace, name, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at FROM workflow_schedules WHERE namespace = $1 ORDER BY name",
+            "SELECT namespace, name, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at FROM workflow_schedules WHERE namespace = $1 ORDER BY name",
         )
         .bind(namespace)
         .fetch_all(&self.pool)
@@ -778,6 +821,173 @@ impl WorkflowStore for PostgresStore {
             .execute(&self.pool)
             .await?;
         Ok(res.rows_affected() > 0)
+    }
+
+    async fn list_archivable_workflows(
+        &self,
+        cutoff: f64,
+        limit: i64,
+    ) -> Result<Vec<WorkflowRecord>> {
+        let rows = sqlx::query_as::<_, PgWorkflowRow>(
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
+             FROM workflows
+             WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT')
+               AND completed_at IS NOT NULL
+               AND completed_at < $1
+               AND archived_at IS NULL
+             ORDER BY completed_at ASC
+             LIMIT $2",
+        )
+        .bind(cutoff)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn mark_archived_and_purge(
+        &self,
+        workflow_id: &str,
+        archive_uri: &str,
+        archived_at: f64,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM workflow_events WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_activities WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_timers WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_signals WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_snapshots WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE workflows SET archived_at = $1, archive_uri = $2 WHERE id = $3",
+        )
+        .bind(archived_at)
+        .bind(archive_uri)
+        .bind(workflow_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn upsert_search_attributes(
+        &self,
+        workflow_id: &str,
+        patch_json: &str,
+    ) -> Result<()> {
+        let current: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT search_attributes FROM workflows WHERE id = $1")
+                .bind(workflow_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        let merged = crate::store::sqlite::merge_search_attrs(
+            current.and_then(|(s,)| s).as_deref(),
+            patch_json,
+        )?;
+        sqlx::query("UPDATE workflows SET search_attributes = $1 WHERE id = $2")
+            .bind(merged)
+            .bind(workflow_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn update_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+        patch: &SchedulePatch,
+    ) -> Result<Option<WorkflowSchedule>> {
+        let mut sets: Vec<String> = Vec::new();
+        let mut idx = 1usize;
+        if patch.cron_expr.is_some() {
+            sets.push(format!("cron_expr = ${idx}"));
+            idx += 1;
+        }
+        if patch.timezone.is_some() {
+            sets.push(format!("timezone = ${idx}"));
+            idx += 1;
+        }
+        if patch.input.is_some() {
+            sets.push(format!("input = ${idx}"));
+            idx += 1;
+        }
+        if patch.task_queue.is_some() {
+            sets.push(format!("task_queue = ${idx}"));
+            idx += 1;
+        }
+        if patch.overlap_policy.is_some() {
+            sets.push(format!("overlap_policy = ${idx}"));
+            idx += 1;
+        }
+        if sets.is_empty() {
+            return self.get_schedule(namespace, name).await;
+        }
+        let sql = format!(
+            "UPDATE workflow_schedules SET {} WHERE namespace = ${} AND name = ${}",
+            sets.join(", "),
+            idx,
+            idx + 1
+        );
+        let mut q = sqlx::query(&sql);
+        if let Some(ref v) = patch.cron_expr {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = patch.timezone {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = patch.input {
+            q = q.bind(v.to_string());
+        }
+        if let Some(ref v) = patch.task_queue {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = patch.overlap_policy {
+            q = q.bind(v);
+        }
+        let res = q
+            .bind(namespace)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        if res.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.get_schedule(namespace, name).await
+    }
+
+    async fn set_schedule_paused(
+        &self,
+        namespace: &str,
+        name: &str,
+        paused: bool,
+    ) -> Result<Option<WorkflowSchedule>> {
+        let res = sqlx::query(
+            "UPDATE workflow_schedules SET paused = $1 WHERE namespace = $2 AND name = $3",
+        )
+        .bind(paused)
+        .bind(namespace)
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
+        if res.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.get_schedule(namespace, name).await
     }
 
     // ── Workers ─────────────────────────────────────────────
@@ -895,7 +1105,7 @@ impl WorkflowStore for PostgresStore {
 
     async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {
         let rows = sqlx::query_as::<_, PgWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
              FROM workflows WHERE parent_id = $1 ORDER BY created_at ASC",
         )
         .bind(parent_id)
@@ -1011,6 +1221,9 @@ struct PgWorkflowRow {
     error: Option<String>,
     parent_id: Option<String>,
     claimed_by: Option<String>,
+    search_attributes: Option<String>,
+    archived_at: Option<f64>,
+    archive_uri: Option<String>,
     created_at: f64,
     updated_at: f64,
     completed_at: Option<f64>,
@@ -1030,6 +1243,9 @@ impl From<PgWorkflowRow> for WorkflowRecord {
             error: r.error,
             parent_id: r.parent_id,
             claimed_by: r.claimed_by,
+            search_attributes: r.search_attributes,
+            archived_at: r.archived_at,
+            archive_uri: r.archive_uri,
             created_at: r.created_at,
             updated_at: r.updated_at,
             completed_at: r.completed_at,
@@ -1161,6 +1377,7 @@ struct PgScheduleRow {
     name: String,
     workflow_type: String,
     cron_expr: String,
+    timezone: String,
     input: Option<String>,
     task_queue: String,
     overlap_policy: String,
@@ -1178,6 +1395,7 @@ impl From<PgScheduleRow> for WorkflowSchedule {
             name: r.name,
             workflow_type: r.workflow_type,
             cron_expr: r.cron_expr,
+            timezone: r.timezone,
             input: r.input,
             task_queue: r.task_queue,
             overlap_policy: r.overlap_policy,

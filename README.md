@@ -268,6 +268,91 @@ assay modules             # List all 51 modules
 
 Custom modules: place `.lua` files in `./modules/` (project) or `~/.assay/modules/` (global).
 
+## Managing the workflow engine from the CLI
+
+Once `assay serve` is running, the same binary manages it via REST:
+
+```bash
+# Start a workflow, wait for it to complete (exit 0/1/2 for scripts).
+assay workflow start --type MyFlow --input '{"x":1}' --id wf-42
+assay workflow wait wf-42 --timeout 300
+
+# List + filter + inspect.
+assay workflow list --status RUNNING --search-attrs '{"env":"prod"}'
+assay workflow describe wf-42
+assay workflow events wf-42 --follow        # polls until terminal
+assay workflow state wf-42 pipeline_stage   # register_query reader
+
+# Signal / cancel / terminate.
+assay workflow signal wf-42 approve '{"by":"alice"}'
+assay workflow cancel wf-42
+assay workflow terminate wf-42 --reason "wrong input"
+
+# Schedules (full lifecycle without a delete-and-recreate cycle).
+assay schedule create nightly --type Report --cron '0 0 2 * * *' \
+    --timezone Europe/Berlin --input '{"lookback":24}'
+assay schedule patch nightly --cron '0 0 3 * * *'
+assay schedule pause nightly
+assay schedule resume nightly
+
+# Namespaces, workers, queues.
+assay namespace create tenant-acme
+assay namespace describe main   # live counts
+assay worker list
+assay queue stats
+```
+
+**Configuration** (in precedence order — flag > env > config file > default):
+
+```bash
+assay workflow list --engine-url http://engine:8080 --api-key sk_xxxx
+
+# Or via env (fits Kubernetes Secret → env patterns):
+export ASSAY_ENGINE_URL=https://assay.example.com
+export ASSAY_API_KEY=sk_xxxx
+assay workflow list
+
+# Or via a YAML config file — auto-discovered at
+# --config FLAG / $ASSAY_CONFIG_FILE / $XDG_CONFIG_HOME/assay/config.yaml /
+# ~/.config/assay/config.yaml / /etc/assay/config.yaml.
+cat >/etc/assay/config.yaml <<'YAML'
+engine_url: https://assay.example.com
+api_key_file: /run/secrets/assay-api-key    # preferred — keeps secrets out of env
+namespace: main
+output: table
+YAML
+```
+
+**Output formats.** Default is `table` on a TTY, `json` when stdout is piped. Override per-call:
+
+```bash
+assay workflow list --output json | jq '.[].id'
+assay workflow list --output jsonl | head -5      # streaming-friendly
+assay workflow list --output yaml
+```
+
+**JSON input anywhere** — literal, `@file`, or `-` for stdin:
+
+```bash
+assay workflow start --type MyFlow --input @request.json
+echo '{"k":"v"}' | assay workflow signal wf-1 go -
+```
+
+**Shell completion.** Writes a script for bash / zsh / fish / powershell / elvish:
+
+```bash
+assay completion bash > /etc/bash_completion.d/assay
+assay completion zsh  > "${fpath[1]}/_assay"
+assay completion fish > ~/.config/fish/completions/assay.fish
+```
+
+**Exit codes:** 0 success · 1 HTTP error / unreachable / not-found · 2 `workflow wait` timeout · 64
+usage error (bad JSON).
+
+Prefer the Lua stdlib for automation — `local workflow = require("assay.workflow")` mirrors the same
+surface programmatically without spawning a subprocess per call. The CLI is for humans at a terminal
+and one-shot shell scripts.
+
 ## Development
 
 ```bash

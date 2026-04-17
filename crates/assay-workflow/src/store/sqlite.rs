@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS workflows (
     error           TEXT,
     parent_id       TEXT,
     claimed_by      TEXT,
+    search_attributes TEXT,
+    archived_at     REAL,
+    archive_uri     TEXT,
     -- Workflow-task dispatch (Phase 9): a workflow is "dispatchable" when
     -- it has new events a worker needs to replay against. Set true on
     -- start, on activity completion, on timer fire, on signal arrival.
@@ -100,6 +103,7 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
     namespace       TEXT NOT NULL DEFAULT 'main',
     workflow_type   TEXT NOT NULL,
     cron_expr       TEXT NOT NULL,
+    timezone        TEXT NOT NULL DEFAULT 'UTC',
     input           TEXT,
     task_queue      TEXT NOT NULL DEFAULT 'main',
     overlap_policy  TEXT NOT NULL DEFAULT 'skip',
@@ -267,12 +271,54 @@ impl SqliteStore {
         });
     }
 
+    /// Apply the baseline schema.
+    ///
+    /// Fresh installs get the current `CREATE TABLE IF NOT EXISTS` statements
+    /// in one pass. The engine is pre-1.0 and no v0.11.x release has been
+    /// deployed against a real workload yet, so we don't carry
+    /// `ALTER TABLE ADD COLUMN` statements for historical columns — the
+    /// baseline is the source of truth.
+    ///
+    /// For **future** additive migrations (post-v0.11.3), call
+    /// `Self::add_column_if_missing(&self.pool, "<table>", "<column>",
+    /// "<type_def>").await?` here before returning. Kept around so adding a
+    /// column later is a one-liner.
     async fn migrate(&self) -> Result<()> {
         for statement in SCHEMA.split(';') {
             let trimmed = statement.trim();
             if !trimmed.is_empty() {
                 sqlx::query(trimmed).execute(&self.pool).await?;
             }
+        }
+        // Future additive migrations go here; see doc-comment above.
+        Ok(())
+    }
+
+    /// Add a column to an existing table if it's not already there.
+    ///
+    /// SQLite (unlike Postgres) doesn't support `ADD COLUMN IF NOT EXISTS`,
+    /// so we check via `pragma_table_info` before issuing the ALTER. Each
+    /// call is idempotent across startups.
+    ///
+    /// Currently unused — kept as the documented pattern for the first
+    /// additive migration after v0.11.3. Remove `#[allow(dead_code)]` when
+    /// a caller is added.
+    #[allow(dead_code)]
+    async fn add_column_if_missing(
+        pool: &SqlitePool,
+        table: &str,
+        column: &str,
+        type_def: &str,
+    ) -> Result<()> {
+        let exists: Option<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info(?) WHERE name = ?")
+                .bind(table)
+                .bind(column)
+                .fetch_optional(pool)
+                .await?;
+        if exists.is_none() {
+            let sql = format!("ALTER TABLE {table} ADD COLUMN {column} {type_def}");
+            sqlx::query(&sql).execute(pool).await?;
         }
         Ok(())
     }
@@ -367,8 +413,8 @@ impl WorkflowStore for SqliteStore {
 
     async fn create_workflow(&self, wf: &WorkflowRecord) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&wf.id)
         .bind(&wf.namespace)
@@ -381,6 +427,9 @@ impl WorkflowStore for SqliteStore {
         .bind(&wf.error)
         .bind(&wf.parent_id)
         .bind(&wf.claimed_by)
+        .bind(&wf.search_attributes)
+        .bind(wf.archived_at)
+        .bind(&wf.archive_uri)
         .bind(wf.created_at)
         .bind(wf.updated_at)
         .bind(wf.completed_at)
@@ -391,7 +440,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn get_workflow(&self, id: &str) -> Result<Option<WorkflowRecord>> {
         let row = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at FROM workflows WHERE id = ?",
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at FROM workflows WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -404,27 +453,65 @@ impl WorkflowStore for SqliteStore {
         namespace: &str,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
+        search_attrs_filter: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<WorkflowRecord>> {
         let status_str = status.map(|s| s.to_string());
-        let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at
+
+        // Parse search filter into (key, value) pairs. Each pair adds a
+        // `json_extract(search_attributes, '$.key') = value` predicate so
+        // matches require every filter key to be present in the stored
+        // attributes. Invalid/empty JSON → no filter (all pass).
+        let filter_pairs: Vec<(String, serde_json::Value)> = search_attrs_filter
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| v.as_object().cloned())
+            .map(|m| m.into_iter().collect())
+            .unwrap_or_default();
+
+        let mut sql = String::from(
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
              FROM workflows
              WHERE namespace = ?
                AND (? IS NULL OR status = ?)
-               AND (? IS NULL OR workflow_type = ?)
-             ORDER BY created_at DESC
-             LIMIT ? OFFSET ?",
-        )
-        .bind(namespace)
-        .bind(&status_str)
-        .bind(&status_str)
-        .bind(workflow_type)
-        .bind(workflow_type)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&self.pool)
+               AND (? IS NULL OR workflow_type = ?)",
+        );
+        for _ in &filter_pairs {
+            sql.push_str(" AND json_extract(search_attributes, '$.' || ?) = ?");
+        }
+        sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+
+        let mut q = sqlx::query_as::<_, SqliteWorkflowRow>(&sql)
+            .bind(namespace)
+            .bind(&status_str)
+            .bind(&status_str)
+            .bind(workflow_type)
+            .bind(workflow_type);
+        for (key, value) in &filter_pairs {
+            q = q.bind(key.clone());
+            // Bind the JSON value as its string/number representation.
+            // json_extract on a stored JSON string returns its "natural"
+            // SQLite type (text for strings, numeric for numbers), so we
+            // match by the same type.
+            match value {
+                serde_json::Value::String(s) => q = q.bind(s.clone()),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        q = q.bind(i);
+                    } else if let Some(f) = n.as_f64() {
+                        q = q.bind(f);
+                    } else {
+                        q = q.bind(n.to_string());
+                    }
+                }
+                serde_json::Value::Bool(b) => q = q.bind(*b as i64),
+                _ => q = q.bind(value.to_string()),
+            }
+        }
+        let rows = q
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
@@ -491,7 +578,7 @@ impl WorkflowStore for SqliteStore {
                 ORDER BY updated_at ASC
                 LIMIT 1
              )
-             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at",
+             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at",
         )
         .bind(worker_id)
         .bind(now)
@@ -816,13 +903,14 @@ impl WorkflowStore for SqliteStore {
 
     async fn create_schedule(&self, sched: &WorkflowSchedule) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflow_schedules (name, namespace, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO workflow_schedules (name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&sched.name)
         .bind(&sched.namespace)
         .bind(&sched.workflow_type)
         .bind(&sched.cron_expr)
+        .bind(&sched.timezone)
         .bind(&sched.input)
         .bind(&sched.task_queue)
         .bind(&sched.overlap_policy)
@@ -838,7 +926,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn get_schedule(&self, namespace: &str, name: &str) -> Result<Option<WorkflowSchedule>> {
         let row = sqlx::query_as::<_, SqliteScheduleRow>(
-            "SELECT name, namespace, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
+            "SELECT name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
              FROM workflow_schedules WHERE namespace = ? AND name = ?",
         )
         .bind(namespace)
@@ -850,7 +938,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn list_schedules(&self, namespace: &str) -> Result<Vec<WorkflowSchedule>> {
         let rows = sqlx::query_as::<_, SqliteScheduleRow>(
-            "SELECT name, namespace, workflow_type, cron_expr, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
+            "SELECT name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
              FROM workflow_schedules WHERE namespace = ? ORDER BY name",
         )
         .bind(namespace)
@@ -888,6 +976,171 @@ impl WorkflowStore for SqliteStore {
                 .execute(&self.pool)
                 .await?;
         Ok(res.rows_affected() > 0)
+    }
+
+    async fn list_archivable_workflows(
+        &self,
+        cutoff: f64,
+        limit: i64,
+    ) -> Result<Vec<WorkflowRecord>> {
+        let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
+             FROM workflows
+             WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT')
+               AND completed_at IS NOT NULL
+               AND completed_at < ?
+               AND archived_at IS NULL
+             ORDER BY completed_at ASC
+             LIMIT ?",
+        )
+        .bind(cutoff)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn mark_archived_and_purge(
+        &self,
+        workflow_id: &str,
+        archive_uri: &str,
+        archived_at: f64,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM workflow_events WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_activities WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_timers WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_signals WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM workflow_snapshots WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE workflows SET archived_at = ?, archive_uri = ? WHERE id = ?",
+        )
+        .bind(archived_at)
+        .bind(archive_uri)
+        .bind(workflow_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn upsert_search_attributes(
+        &self,
+        workflow_id: &str,
+        patch_json: &str,
+    ) -> Result<()> {
+        // Merge at the application layer so we don't depend on SQLite's
+        // `json_patch`, which is only available with the json1 extension.
+        let current: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT search_attributes FROM workflows WHERE id = ?")
+                .bind(workflow_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        let merged = merge_search_attrs(
+            current.and_then(|(s,)| s).as_deref(),
+            patch_json,
+        )?;
+        sqlx::query("UPDATE workflows SET search_attributes = ? WHERE id = ?")
+            .bind(merged)
+            .bind(workflow_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn update_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+        patch: &SchedulePatch,
+    ) -> Result<Option<WorkflowSchedule>> {
+        // Build the UPDATE dynamically so unchanged fields aren't touched
+        // and NULL from `serde_json::Value::Null` round-trips cleanly.
+        let mut sets: Vec<&'static str> = Vec::new();
+        if patch.cron_expr.is_some() {
+            sets.push("cron_expr = ?");
+        }
+        if patch.timezone.is_some() {
+            sets.push("timezone = ?");
+        }
+        if patch.input.is_some() {
+            sets.push("input = ?");
+        }
+        if patch.task_queue.is_some() {
+            sets.push("task_queue = ?");
+        }
+        if patch.overlap_policy.is_some() {
+            sets.push("overlap_policy = ?");
+        }
+        // Updating last_run_at/next_run_at is internal only (update_schedule_last_run).
+        if sets.is_empty() {
+            return self.get_schedule(namespace, name).await;
+        }
+
+        let sql = format!(
+            "UPDATE workflow_schedules SET {} WHERE namespace = ? AND name = ?",
+            sets.join(", ")
+        );
+        let mut q = sqlx::query(&sql);
+        if let Some(ref v) = patch.cron_expr {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = patch.timezone {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = patch.input {
+            q = q.bind(v.to_string());
+        }
+        if let Some(ref v) = patch.task_queue {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = patch.overlap_policy {
+            q = q.bind(v);
+        }
+        let res = q
+            .bind(namespace)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        if res.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.get_schedule(namespace, name).await
+    }
+
+    async fn set_schedule_paused(
+        &self,
+        namespace: &str,
+        name: &str,
+        paused: bool,
+    ) -> Result<Option<WorkflowSchedule>> {
+        let res = sqlx::query(
+            "UPDATE workflow_schedules SET paused = ? WHERE namespace = ? AND name = ?",
+        )
+        .bind(paused)
+        .bind(namespace)
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
+        if res.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.get_schedule(namespace, name).await
     }
 
     // ── Workers ─────────────────────────────────────────────
@@ -1007,7 +1260,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {
         let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
              FROM workflows WHERE parent_id = ? ORDER BY created_at ASC",
         )
         .bind(parent_id)
@@ -1127,6 +1380,24 @@ fn timestamp_now() -> f64 {
         .as_secs_f64()
 }
 
+/// Merge a JSON-object patch into a (possibly-null) current JSON object,
+/// returning the serialised result. Shared by SQLite and Postgres stores.
+pub(crate) fn merge_search_attrs(current: Option<&str>, patch_json: &str) -> Result<String> {
+    let mut current_map: serde_json::Map<String, serde_json::Value> = current
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    let patch: serde_json::Value = serde_json::from_str(patch_json)
+        .map_err(|e| anyhow::anyhow!("invalid search_attributes patch: {e}"))?;
+    let patch_obj = patch
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("search_attributes patch must be a JSON object"))?;
+    for (k, v) in patch_obj {
+        current_map.insert(k.clone(), v.clone());
+    }
+    Ok(serde_json::Value::Object(current_map).to_string())
+}
+
 // ── SQLite row types (sqlx::FromRow) ────────────────────────
 
 #[derive(sqlx::FromRow)]
@@ -1142,6 +1413,9 @@ struct SqliteWorkflowRow {
     error: Option<String>,
     parent_id: Option<String>,
     claimed_by: Option<String>,
+    search_attributes: Option<String>,
+    archived_at: Option<f64>,
+    archive_uri: Option<String>,
     created_at: f64,
     updated_at: f64,
     completed_at: Option<f64>,
@@ -1161,6 +1435,9 @@ impl From<SqliteWorkflowRow> for WorkflowRecord {
             error: r.error,
             parent_id: r.parent_id,
             claimed_by: r.claimed_by,
+            search_attributes: r.search_attributes,
+            archived_at: r.archived_at,
+            archive_uri: r.archive_uri,
             created_at: r.created_at,
             updated_at: r.updated_at,
             completed_at: r.completed_at,
@@ -1292,6 +1569,7 @@ struct SqliteScheduleRow {
     namespace: String,
     workflow_type: String,
     cron_expr: String,
+    timezone: String,
     input: Option<String>,
     task_queue: String,
     overlap_policy: String,
@@ -1309,6 +1587,7 @@ impl From<SqliteScheduleRow> for WorkflowSchedule {
             namespace: r.namespace,
             workflow_type: r.workflow_type,
             cron_expr: r.cron_expr,
+            timezone: r.timezone,
             input: r.input,
             task_queue: r.task_queue,
             overlap_policy: r.overlap_policy,
