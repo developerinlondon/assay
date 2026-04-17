@@ -148,7 +148,7 @@
     <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
       <div class="card card-highlight">
         <h3 style="margin-top: 0;">Workflow Engine <span style="color: var(--accent); font-size: 0.7rem; font-weight: 700; vertical-align: middle; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px;">v0.11.10</span></h3>
-        <p class="text-muted">Native durable workflow engine with deterministic-replay runtime. Activities (sequential + parallel), signals, durable timers, child workflows, side effects, live state via <code>ctx:register_query</code>, search attributes, optional S3 archival. Crash-safe by replay — workers can die mid-flight without losing work or duplicating side effects.</p>
+        <p class="text-muted">Native durable workflow engine with deterministic-replay runtime. Activities (sequential + parallel), signals (with optional timeout), durable timers, child workflows, side effects, live state via <code>ctx:register_query</code>, search attributes, namespace-scoped workers + workflows, optional S3 archival, and dashboard whitelabel (<code>ASSAY_WHITELABEL_*</code> env vars to rebrand the embedded <code>/workflow</code> UI per deployment). Crash-safe by replay — workers can die mid-flight without losing work or duplicating side effects.</p>
         <pre style="margin-bottom: 0;"><code>workflow.define("Deploy", function(ctx, in)
   local img = ctx:execute_activity("build", in)
   ctx:wait_for_signal("approve")
