@@ -2041,3 +2041,153 @@ async fn search_attributes_filter_list() {
         .unwrap();
     assert_eq!(staging.len(), 1);
 }
+
+/// Plan 06 — exercise the Lua stdlib's new management surface end-to-end
+/// (workflow.list / terminate / get_events / get_state / list_children /
+/// continue_as_new; workflow.schedules.*; workflow.namespaces.*;
+/// workflow.workers.list; workflow.queues.stats).
+///
+/// One big test so we don't spin up a subprocess per method call — the
+/// REST endpoints themselves have dedicated coverage elsewhere; this
+/// proves the Lua wrappers all parse + round-trip correctly.
+#[tokio::test]
+async fn lua_stdlib_management_surface_roundtrips() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_stdlib_management_surface_roundtrips — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let script_path = tmp.path().join("stdlib_surface.lua");
+    std::fs::write(
+        &script_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+-- Assay's Lua environment shadows `assert` with a table of helpers
+-- (assert.eq, assert.ne, …). Plain `assert(cond, msg)` isn't available,
+-- so we use a local `check` helper that raises on false.
+local function check(cond, msg)
+    if not cond then error(msg or "assertion failed") end
+end
+
+-- workflow.start + list + describe
+workflow.start({
+    workflow_type = "X", workflow_id = "wf-plan06-a", task_queue = "q1",
+    input = { n = 1 },
+})
+workflow.start({
+    workflow_type = "X", workflow_id = "wf-plan06-b", task_queue = "q1",
+})
+
+local listed = workflow.list({ type = "X", limit = 50 })
+check(#listed >= 2, "list should return at least the 2 we started")
+
+local desc = workflow.describe("wf-plan06-a")
+check(desc.id == "wf-plan06-a", "describe should return the record")
+
+-- workflow.get_events — at least WorkflowStarted
+local events = workflow.get_events("wf-plan06-a")
+local has_started = false
+for _, e in ipairs(events) do
+    if e.event_type == "WorkflowStarted" then has_started = true end
+end
+check(has_started, "event log should contain WorkflowStarted")
+
+-- workflow.get_state — 404 is ok before any register_query snapshot written
+local state = workflow.get_state("wf-plan06-a")
+check(state == nil, "no snapshot yet -> get_state returns nil")
+
+-- workflow.list_children — empty list for a childless workflow
+local children = workflow.list_children("wf-plan06-a")
+check(#children == 0, "no children yet")
+
+-- workflow.terminate — flips status to FAILED
+workflow.terminate("wf-plan06-b", "stdlib test")
+local after = workflow.describe("wf-plan06-b")
+check(after.status == "FAILED", "terminate should flip to FAILED, got " .. tostring(after.status))
+
+-- workflow.schedules.* — full lifecycle
+workflow.schedules.create({
+    name = "plan06-sched",
+    workflow_type = "X",
+    cron_expr = "0 0 2 * * *",
+    timezone = "Europe/Berlin",
+    task_queue = "q1",
+    overlap_policy = "skip",
+})
+
+local sched = workflow.schedules.describe("plan06-sched")
+check(sched.cron_expr == "0 0 2 * * *", "describe returns the cron expr")
+check(sched.timezone == "Europe/Berlin", "timezone persists")
+check(sched.paused == false, "fresh schedule is not paused")
+
+workflow.schedules.patch("plan06-sched", { cron_expr = "0 0 3 * * *" })
+local patched = workflow.schedules.describe("plan06-sched")
+check(patched.cron_expr == "0 0 3 * * *", "patch updates cron")
+check(patched.timezone == "Europe/Berlin", "patch preserves unchanged fields")
+
+workflow.schedules.pause("plan06-sched")
+check(workflow.schedules.describe("plan06-sched").paused == true, "pause sets paused")
+
+workflow.schedules.resume("plan06-sched")
+check(workflow.schedules.describe("plan06-sched").paused == false, "resume clears paused")
+
+local schedules = workflow.schedules.list()
+local found = false
+for _, s in ipairs(schedules) do
+    if s.name == "plan06-sched" then found = true end
+end
+check(found, "list should include our schedule")
+
+workflow.schedules.delete("plan06-sched")
+check(workflow.schedules.describe("plan06-sched") == nil, "delete removes it")
+
+-- workflow.namespaces.*
+workflow.namespaces.create("plan06-ns")
+local namespaces = workflow.namespaces.list()
+local ns_found = false
+for _, n in ipairs(namespaces) do
+    if n.name == "plan06-ns" then ns_found = true end
+end
+check(ns_found, "created namespace should appear in list")
+
+local stats = workflow.namespaces.stats("main")
+check(type(stats.total_workflows) == "number", "stats returns counts")
+
+workflow.namespaces.delete("plan06-ns")
+
+-- workflow.workers.list + workflow.queues.stats — just verify they return tables
+local workers = workflow.workers.list()
+check(type(workers) == "table", "workers.list returns a table")
+
+local q = workflow.queues.stats()
+check(type(q) == "table", "queues.stats returns a table")
+
+print("stdlib_surface: all assertions passed")
+"#,
+    )
+    .expect("write script");
+
+    let output = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&script_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .output()
+        .await
+        .expect("run assay script");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdlib surface script failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("all assertions passed"),
+        "expected success marker in stdout.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
