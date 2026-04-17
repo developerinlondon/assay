@@ -908,6 +908,158 @@ workflow.listen({ queue = "default" })
     let _ = worker.kill().await;
 }
 
+/// 9.6a — wait_for_signal with a timeout: the signal arrives before the
+/// timer fires, so the workflow completes with the payload (timer is
+/// harmlessly ignored on replay).
+#[tokio::test]
+async fn lua_workflow_wait_for_signal_timeout_signal_wins() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_wait_for_signal_timeout_signal_wins — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("WaitWithTimeout", function(ctx, input)
+    local payload = ctx:wait_for_signal("decide", { timeout = 30 })
+    if payload == nil then
+        return { timed_out = true }
+    end
+    return { timed_out = false, choice = payload.choice }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "WaitWithTimeout",
+            "workflow_id": "wf-timed-sig-win",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Let the worker hit the timed wait and yield the batch.
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    // Signal well before the 30s timer would fire.
+    let resp = c
+        .post(format!("{url}/api/v1/workflows/wf-timed-sig-win/signal/decide"))
+        .json(&serde_json::json!({"payload": {"choice": "approve"}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let final_wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-timed-sig-win",
+        "COMPLETED",
+        std::time::Duration::from_secs(5),
+    )
+    .await;
+    let result: serde_json::Value =
+        serde_json::from_str(final_wf["result"].as_str().expect("result")).unwrap();
+    assert_eq!(result["timed_out"], false);
+    assert_eq!(result["choice"], "approve");
+
+    let _ = worker.kill().await;
+}
+
+/// 9.6b — wait_for_signal with a timeout: the timer fires before any
+/// signal arrives, so the workflow resumes with nil and records the
+/// timeout branch.
+#[tokio::test]
+async fn lua_workflow_wait_for_signal_timeout_timer_wins() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_wait_for_signal_timeout_timer_wins — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local workflow = require("assay.workflow")
+workflow.connect(env.get("ASSAY_ENGINE_URL"))
+
+workflow.define("WaitWithShortTimeout", function(ctx, input)
+    local payload = ctx:wait_for_signal("decide", { timeout = 1 })
+    if payload == nil then
+        return { timed_out = true }
+    end
+    return { timed_out = false, choice = payload.choice }
+end)
+
+workflow.listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "WaitWithShortTimeout",
+            "workflow_id": "wf-timed-sig-timeout",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Send no signal. The 1s timer fires; workflow resumes with nil.
+    let final_wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-timed-sig-timeout",
+        "COMPLETED",
+        std::time::Duration::from_secs(8),
+    )
+    .await;
+    let result: serde_json::Value =
+        serde_json::from_str(final_wf["result"].as_str().expect("result")).unwrap();
+    assert_eq!(result["timed_out"], true);
+
+    let _ = worker.kill().await;
+}
+
 /// 9.10 — Cron schedule fires a real workflow that runs to completion.
 /// Creates a schedule with a never-run-before `next_run_at`, the scheduler
 /// fires it on its next tick, the worker claims and completes it.

@@ -299,7 +299,7 @@ Workflow handler `ctx`:
 | `ctx:execute_activity(name, input, opts?)` | activity result | Sync; raises after retries exhausted                                                                         |
 | `ctx:execute_parallel(activities)`         | list of results | **v0.11.3**: fan out; handler resumes only when all terminal. Raises if any fail.                            |
 | `ctx:sleep(seconds)`                       | nil             | Durable timer; survives worker restart                                                                       |
-| `ctx:wait_for_signal(name)`                | signal payload  | Block until matching signal arrives                                                                          |
+| `ctx:wait_for_signal(name, opts?)`         | signal payload  | Block until matching signal arrives. **v0.11.9**: `opts.timeout` bounds the wait; returns nil on timeout.    |
 | `ctx:start_child_workflow(type, opts)`     | child result    | `opts.workflow_id` required and deterministic                                                                |
 | `ctx:side_effect(name, fn)`                | value of fn()   | Run once, cache in event log; use for `crypto.uuid()`, `os.time()`, anything non-deterministic               |
 | `ctx:register_query(name, fn)`             | nil             | **v0.11.3**: expose live state via `GET /workflows/{id}/state`. Handler runs on every replay.                |

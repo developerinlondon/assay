@@ -84,7 +84,7 @@ checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 
 [[package]]
 name = "assay-lua"
-version = "0.11.8"
+version = "0.11.9"
 dependencies = [
  "anyhow",
  "assay-workflow",
@@ -128,7 +128,7 @@ dependencies = [
 
 [[package]]
 name = "assay-workflow"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "aws-config",
