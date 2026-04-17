@@ -1983,3 +1983,61 @@ workflow.listen({ queue = "default" })
 
     let _ = worker.kill().await;
 }
+
+/// F6 — search attributes settable on start and filterable on list.
+#[tokio::test]
+async fn search_attributes_filter_list() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    // Create three workflows with distinct search attributes
+    for (id, env) in [("wf-sa-1", "prod"), ("wf-sa-2", "prod"), ("wf-sa-3", "staging")] {
+        c.post(format!("{url}/api/v1/workflows"))
+            .json(&serde_json::json!({
+                "workflow_type": "Tagged",
+                "workflow_id": id,
+                "task_queue": "default",
+                "search_attributes": { "env": env },
+            }))
+            .send()
+            .await
+            .unwrap();
+    }
+
+    // No filter: all 3
+    let all: Vec<serde_json::Value> = c
+        .get(format!("{url}/api/v1/workflows?type=Tagged"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 3);
+
+    // Filter env=prod: 2 (URL-encoded {"env":"prod"})
+    let prod: Vec<serde_json::Value> = c
+        .get(format!(
+            "{url}/api/v1/workflows?type=Tagged&search_attrs=%7B%22env%22%3A%22prod%22%7D"
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(prod.len(), 2, "env=prod matches two workflows");
+
+    // Filter env=staging: 1
+    let staging: Vec<serde_json::Value> = c
+        .get(format!(
+            "{url}/api/v1/workflows?type=Tagged&search_attrs=%7B%22env%22%3A%22staging%22%7D"
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(staging.len(), 1);
+}

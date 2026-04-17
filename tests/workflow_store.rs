@@ -27,6 +27,7 @@ fn make_workflow(id: &str, wf_type: &str) -> WorkflowRecord {
         error: None,
         parent_id: None,
         claimed_by: None,
+        search_attributes: None,
         created_at: ts,
         updated_at: ts,
         completed_at: None,
@@ -72,20 +73,23 @@ async fn workflow_list_filter_by_status() {
         .unwrap();
 
     let running = store
-        .list_workflows("main", Some(WorkflowStatus::Running), None, 100, 0)
+        .list_workflows("main", Some(WorkflowStatus::Running), None, None, 100, 0)
         .await
         .unwrap();
     assert_eq!(running.len(), 1);
     assert_eq!(running[0].id, "wf-1");
 
     let pending = store
-        .list_workflows("main", Some(WorkflowStatus::Pending), None, 100, 0)
+        .list_workflows("main", Some(WorkflowStatus::Pending), None, None, 100, 0)
         .await
         .unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].id, "wf-2");
 
-    let all = store.list_workflows("main", None, None, 100, 0).await.unwrap();
+    let all = store
+        .list_workflows("main", None, None, None, 100, 0)
+        .await
+        .unwrap();
     assert_eq!(all.len(), 2);
 }
 
@@ -323,6 +327,7 @@ async fn schedule_crud() {
             namespace: "main".to_string(),
             workflow_type: "IngestData".to_string(),
             cron_expr: "0 * * * *".to_string(),
+            timezone: "UTC".to_string(),
             input: None,
             task_queue: "main".to_string(),
             overlap_policy: "skip".to_string(),

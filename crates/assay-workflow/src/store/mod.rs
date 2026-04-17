@@ -51,9 +51,20 @@ pub trait WorkflowStore: Send + Sync + 'static {
         namespace: &str,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
+        search_attrs_filter: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send;
+
+    /// Merge a JSON object patch into the workflow's `search_attributes`.
+    /// Keys in the patch overwrite existing keys; keys already present but
+    /// not in the patch are preserved. If the current column is NULL, the
+    /// patch becomes the new value.
+    fn upsert_search_attributes(
+        &self,
+        workflow_id: &str,
+        patch_json: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
     fn update_workflow_status(
         &self,

@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS workflows (
     error           TEXT,
     parent_id       TEXT,
     claimed_by      TEXT,
+    search_attributes TEXT,
     -- Workflow-task dispatch (Phase 9): a workflow is "dispatchable" when
     -- it has new events a worker needs to replay against. Set true on
     -- start, on activity completion, on timer fire, on signal arrival.
@@ -285,6 +286,8 @@ impl SqliteStore {
             "TEXT NOT NULL DEFAULT 'UTC'",
         )
         .await?;
+        Self::add_column_if_missing(&self.pool, "workflows", "search_attributes", "TEXT")
+            .await?;
         Ok(())
     }
 
@@ -397,8 +400,8 @@ impl WorkflowStore for SqliteStore {
 
     async fn create_workflow(&self, wf: &WorkflowRecord) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&wf.id)
         .bind(&wf.namespace)
@@ -411,6 +414,7 @@ impl WorkflowStore for SqliteStore {
         .bind(&wf.error)
         .bind(&wf.parent_id)
         .bind(&wf.claimed_by)
+        .bind(&wf.search_attributes)
         .bind(wf.created_at)
         .bind(wf.updated_at)
         .bind(wf.completed_at)
@@ -421,7 +425,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn get_workflow(&self, id: &str) -> Result<Option<WorkflowRecord>> {
         let row = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at FROM workflows WHERE id = ?",
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at FROM workflows WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -434,27 +438,65 @@ impl WorkflowStore for SqliteStore {
         namespace: &str,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
+        search_attrs_filter: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<WorkflowRecord>> {
         let status_str = status.map(|s| s.to_string());
-        let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at
+
+        // Parse search filter into (key, value) pairs. Each pair adds a
+        // `json_extract(search_attributes, '$.key') = value` predicate so
+        // matches require every filter key to be present in the stored
+        // attributes. Invalid/empty JSON → no filter (all pass).
+        let filter_pairs: Vec<(String, serde_json::Value)> = search_attrs_filter
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| v.as_object().cloned())
+            .map(|m| m.into_iter().collect())
+            .unwrap_or_default();
+
+        let mut sql = String::from(
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at
              FROM workflows
              WHERE namespace = ?
                AND (? IS NULL OR status = ?)
-               AND (? IS NULL OR workflow_type = ?)
-             ORDER BY created_at DESC
-             LIMIT ? OFFSET ?",
-        )
-        .bind(namespace)
-        .bind(&status_str)
-        .bind(&status_str)
-        .bind(workflow_type)
-        .bind(workflow_type)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&self.pool)
+               AND (? IS NULL OR workflow_type = ?)",
+        );
+        for _ in &filter_pairs {
+            sql.push_str(" AND json_extract(search_attributes, '$.' || ?) = ?");
+        }
+        sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+
+        let mut q = sqlx::query_as::<_, SqliteWorkflowRow>(&sql)
+            .bind(namespace)
+            .bind(&status_str)
+            .bind(&status_str)
+            .bind(workflow_type)
+            .bind(workflow_type);
+        for (key, value) in &filter_pairs {
+            q = q.bind(key.clone());
+            // Bind the JSON value as its string/number representation.
+            // json_extract on a stored JSON string returns its "natural"
+            // SQLite type (text for strings, numeric for numbers), so we
+            // match by the same type.
+            match value {
+                serde_json::Value::String(s) => q = q.bind(s.clone()),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        q = q.bind(i);
+                    } else if let Some(f) = n.as_f64() {
+                        q = q.bind(f);
+                    } else {
+                        q = q.bind(n.to_string());
+                    }
+                }
+                serde_json::Value::Bool(b) => q = q.bind(*b as i64),
+                _ => q = q.bind(value.to_string()),
+            }
+        }
+        let rows = q
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
@@ -521,7 +563,7 @@ impl WorkflowStore for SqliteStore {
                 ORDER BY updated_at ASC
                 LIMIT 1
              )
-             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at",
+             RETURNING id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at",
         )
         .bind(worker_id)
         .bind(now)
@@ -921,6 +963,30 @@ impl WorkflowStore for SqliteStore {
         Ok(res.rows_affected() > 0)
     }
 
+    async fn upsert_search_attributes(
+        &self,
+        workflow_id: &str,
+        patch_json: &str,
+    ) -> Result<()> {
+        // Merge at the application layer so we don't depend on SQLite's
+        // `json_patch`, which is only available with the json1 extension.
+        let current: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT search_attributes FROM workflows WHERE id = ?")
+                .bind(workflow_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        let merged = merge_search_attrs(
+            current.and_then(|(s,)| s).as_deref(),
+            patch_json,
+        )?;
+        sqlx::query("UPDATE workflows SET search_attributes = ? WHERE id = ?")
+            .bind(merged)
+            .bind(workflow_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     async fn update_schedule(
         &self,
         namespace: &str,
@@ -1118,7 +1184,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {
         let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, created_at, updated_at, completed_at
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, created_at, updated_at, completed_at
              FROM workflows WHERE parent_id = ? ORDER BY created_at ASC",
         )
         .bind(parent_id)
@@ -1238,6 +1304,24 @@ fn timestamp_now() -> f64 {
         .as_secs_f64()
 }
 
+/// Merge a JSON-object patch into a (possibly-null) current JSON object,
+/// returning the serialised result. Shared by SQLite and Postgres stores.
+pub(crate) fn merge_search_attrs(current: Option<&str>, patch_json: &str) -> Result<String> {
+    let mut current_map: serde_json::Map<String, serde_json::Value> = current
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    let patch: serde_json::Value = serde_json::from_str(patch_json)
+        .map_err(|e| anyhow::anyhow!("invalid search_attributes patch: {e}"))?;
+    let patch_obj = patch
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("search_attributes patch must be a JSON object"))?;
+    for (k, v) in patch_obj {
+        current_map.insert(k.clone(), v.clone());
+    }
+    Ok(serde_json::Value::Object(current_map).to_string())
+}
+
 // ── SQLite row types (sqlx::FromRow) ────────────────────────
 
 #[derive(sqlx::FromRow)]
@@ -1253,6 +1337,7 @@ struct SqliteWorkflowRow {
     error: Option<String>,
     parent_id: Option<String>,
     claimed_by: Option<String>,
+    search_attributes: Option<String>,
     created_at: f64,
     updated_at: f64,
     completed_at: Option<f64>,
@@ -1272,6 +1357,7 @@ impl From<SqliteWorkflowRow> for WorkflowRecord {
             error: r.error,
             parent_id: r.parent_id,
             claimed_by: r.claimed_by,
+            search_attributes: r.search_attributes,
             created_at: r.created_at,
             updated_at: r.updated_at,
             completed_at: r.completed_at,

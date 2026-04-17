@@ -185,6 +185,12 @@ pub struct WorkflowRecord {
     pub error: Option<String>,
     pub parent_id: Option<String>,
     pub claimed_by: Option<String>,
+    /// Application-level indexed metadata, JSON object encoded as a string
+    /// (e.g. `{"env":"prod","tenant":"acme","progress":0.5}`). Settable on
+    /// workflow start and updatable at runtime via
+    /// `ctx:upsert_search_attributes(...)` from workflow code. Filter the
+    /// list endpoint with `?search_attrs={"key":"value"}`.
+    pub search_attributes: Option<String>,
     pub created_at: f64,
     pub updated_at: f64,
     pub completed_at: Option<f64>,

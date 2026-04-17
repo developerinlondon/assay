@@ -517,6 +517,27 @@ function M._make_workflow_ctx(workflow_id, history)
         error("workflow ctx: yielded but resumed unexpectedly")
     end
 
+    --- Merge a JSON object into the workflow's stored `search_attributes`
+    --- so external callers can filter the list endpoint on application-
+    --- level metadata. Keys in the patch overwrite existing keys; keys
+    --- not in the patch are preserved.
+    ---
+    --- Typical use: tag the workflow with progress / tenant / env so
+    --- dashboards can filter by them:
+    ---
+    ---   ctx:upsert_search_attributes({ progress = 0.5, stage = "deploy" })
+    function ctx:upsert_search_attributes(patch)
+        check_cancel()
+        if type(patch) ~= "table" then
+            error("ctx:upsert_search_attributes: patch must be a table")
+        end
+        coroutine.yield({
+            type = "UpsertSearchAttributes",
+            patch = patch,
+        })
+        error("workflow ctx: yielded but resumed unexpectedly")
+    end
+
     --- End this run and start a fresh one with the same workflow type,
     --- namespace, and task queue but an empty event history. Use for
     --- unbounded-loop workflows (pollers, schedulers) whose event log

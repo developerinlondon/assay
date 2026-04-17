@@ -117,6 +117,7 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(store: &S, namespace: &s
             error: None,
             parent_id: None,
             claimed_by: None,
+            search_attributes: None,
             created_at: now,
             updated_at: now,
             completed_at: None,

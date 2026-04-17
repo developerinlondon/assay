@@ -67,6 +67,7 @@ fn make_workflow(id: &str, wf_type: &str) -> WorkflowRecord {
         error: None,
         parent_id: None,
         claimed_by: None,
+        search_attributes: None,
         created_at: ts,
         updated_at: ts,
         completed_at: None,
@@ -104,7 +105,7 @@ async fn pg_workflow_list_by_namespace() {
 
     // List main — should only see wf-1
     let main_wfs = store
-        .list_workflows("main", None, None, 100, 0)
+        .list_workflows("main", None, None, None, 100, 0)
         .await
         .unwrap();
     assert_eq!(main_wfs.len(), 1);
@@ -112,7 +113,7 @@ async fn pg_workflow_list_by_namespace() {
 
     // List staging — should only see wf-2
     let staging_wfs = store
-        .list_workflows("staging", None, None, 100, 0)
+        .list_workflows("staging", None, None, None, 100, 0)
         .await
         .unwrap();
     assert_eq!(staging_wfs.len(), 1);

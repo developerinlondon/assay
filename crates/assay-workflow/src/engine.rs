@@ -60,6 +60,7 @@ impl<S: WorkflowStore> Engine<S> {
         workflow_id: &str,
         input: Option<&str>,
         task_queue: &str,
+        search_attributes: Option<&str>,
     ) -> Result<WorkflowRecord> {
         let now = timestamp_now();
         let run_id = format!("run-{workflow_id}-{}", now as u64);
@@ -76,6 +77,7 @@ impl<S: WorkflowStore> Engine<S> {
             error: None,
             parent_id: None,
             claimed_by: None,
+            search_attributes: search_attributes.map(String::from),
             created_at: now,
             updated_at: now,
             completed_at: None,
@@ -110,11 +112,29 @@ impl<S: WorkflowStore> Engine<S> {
         namespace: &str,
         status: Option<WorkflowStatus>,
         workflow_type: Option<&str>,
+        search_attrs_filter: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<WorkflowRecord>> {
         self.store
-            .list_workflows(namespace, status, workflow_type, limit, offset)
+            .list_workflows(
+                namespace,
+                status,
+                workflow_type,
+                search_attrs_filter,
+                limit,
+                offset,
+            )
+            .await
+    }
+
+    pub async fn upsert_search_attributes(
+        &self,
+        workflow_id: &str,
+        patch_json: &str,
+    ) -> Result<()> {
+        self.store
+            .upsert_search_attributes(workflow_id, patch_json)
             .await
     }
 
@@ -672,6 +692,20 @@ impl<S: WorkflowStore> Engine<S> {
                         .unwrap_or(0.0);
                     self.schedule_timer(workflow_id, seq, duration).await?;
                 }
+                "UpsertSearchAttributes" => {
+                    // Merge the patch object into the workflow's stored
+                    // search_attributes. Workflow code can call this from
+                    // `ctx:upsert_search_attributes(...)` to surface live
+                    // progress / tenant / env tags that downstream callers
+                    // can filter on via the list endpoint.
+                    let patch = cmd
+                        .get("patch")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Object(Default::default()));
+                    self.store
+                        .upsert_search_attributes(workflow_id, &patch.to_string())
+                        .await?;
+                }
                 "ContinueAsNew" => {
                     // Close out the current run and start a new one with the
                     // same type / namespace / queue under a fresh id. Input
@@ -987,6 +1021,7 @@ impl<S: WorkflowStore> Engine<S> {
             error: None,
             parent_id: Some(parent_id.to_string()),
             claimed_by: None,
+            search_attributes: None,
             created_at: now,
             updated_at: now,
             completed_at: None,
@@ -1060,6 +1095,7 @@ impl<S: WorkflowStore> Engine<S> {
             &new_id,
             input,
             &old_wf.task_queue,
+            old_wf.search_attributes.as_deref(),
         )
         .await
     }
