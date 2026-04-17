@@ -1,6 +1,6 @@
 [package]
 name = "assay-workflow"
-version = "0.1.3"
+version = "0.1.4"
 categories = ["asynchronous", "database"]
 edition = "2024"
 keywords = ["workflow", "durable-execution", "orchestration", "task-queue"]

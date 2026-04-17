@@ -153,6 +153,31 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
 -- source of truth through v0.11.3.
 "#;
 
+/// Split a Postgres DDL script into individual statements ready for `sqlx::query`.
+///
+/// Drops pure-comment lines (those starting with `--` after optional whitespace)
+/// *before* splitting on `;`. Without this step, a semicolon inside a line comment
+/// (e.g. `-- Idempotent across startups; fresh installs pick the column up`) would
+/// split the surrounding comment into fragments — one of which is naked prose that
+/// Postgres tries to parse as SQL and rejects with `syntax error at or near "<word>"`.
+///
+/// The filter only drops *pure-comment* lines (leading whitespace then `--`), leaving
+/// `--`-after-code untouched. That keeps string literals safe (could legally contain
+/// `--`) and is conservative enough to remain correct if the SCHEMA grows more prose.
+fn sanitise_schema(schema: &str) -> Vec<String> {
+    let without_comments: String = schema
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("--"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    without_comments
+        .split(';')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 pub struct PostgresStore {
     pool: PgPool,
 }
@@ -166,12 +191,8 @@ impl PostgresStore {
     }
 
     async fn migrate(&self) -> Result<()> {
-        // Execute each statement separately — Postgres handles CREATE IF NOT EXISTS
-        for statement in SCHEMA.split(';') {
-            let trimmed = statement.trim();
-            if !trimmed.is_empty() {
-                sqlx::query(trimmed).execute(&self.pool).await?;
-            }
+        for statement in sanitise_schema(SCHEMA) {
+            sqlx::query(&statement).execute(&self.pool).await?;
         }
         Ok(())
     }
@@ -1437,6 +1458,78 @@ impl From<PgWorkerRow> for WorkflowWorker {
             active_tasks: r.active_tasks,
             last_heartbeat: r.last_heartbeat,
             registered_at: r.registered_at,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitise_schema_keeps_statements_intact() {
+        let input = "CREATE TABLE foo (x INT);\nCREATE INDEX idx_foo ON foo(x);\n";
+        let out = sanitise_schema(input);
+        assert_eq!(out.len(), 2);
+        assert!(out[0].starts_with("CREATE TABLE foo"));
+        assert!(out[1].starts_with("CREATE INDEX idx_foo"));
+    }
+
+    #[test]
+    fn sanitise_schema_drops_pure_comment_lines() {
+        let input = "-- header comment\nCREATE TABLE foo (x INT);\n-- trailing comment\n";
+        let out = sanitise_schema(input);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].starts_with("CREATE TABLE foo"));
+    }
+
+    #[test]
+    fn sanitise_schema_ignores_semicolons_inside_comment_prose() {
+        // Regression: the exact shape that broke v0.11.3–v0.11.5 in production.
+        // `-- foo; bar` used to split into "foo" and " bar" fragments, the second
+        // of which was executed as SQL and rejected with `syntax error at or near "bar"`.
+        let input = "\
+CREATE TABLE foo (x INT);
+-- Idempotent across startups; fresh installs pick the column up from the
+-- CREATE TABLE above so the ADD is a no-op.
+";
+        let out = sanitise_schema(input);
+        assert_eq!(
+            out.len(),
+            1,
+            "expected 1 real statement, got {}: {:?}",
+            out.len(),
+            out
+        );
+        assert!(out[0].starts_with("CREATE TABLE foo"));
+    }
+
+    #[test]
+    fn sanitise_schema_drops_indented_comment_lines() {
+        let input = "  -- indented comment\n\tCREATE TABLE foo (x INT);\n";
+        let out = sanitise_schema(input);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].contains("CREATE TABLE foo"));
+    }
+
+    #[test]
+    fn sanitise_schema_real_constant_produces_only_ddl() {
+        // The real SCHEMA constant must not produce any statement whose first
+        // token isn't a recognised SQL keyword. A prose fragment leaking in
+        // (e.g. "fresh installs...") means the filter regressed.
+        for stmt in sanitise_schema(SCHEMA) {
+            let first_word = stmt
+                .split_whitespace()
+                .next()
+                .expect("non-empty statement")
+                .to_uppercase();
+            assert!(
+                matches!(
+                    first_word.as_str(),
+                    "CREATE" | "INSERT" | "UPDATE" | "DROP" | "ALTER" | "WITH"
+                ),
+                "SCHEMA produced non-DDL statement starting with {first_word:?}: {stmt:?}"
+            );
         }
     }
 }

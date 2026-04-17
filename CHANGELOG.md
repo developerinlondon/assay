@@ -2,6 +2,38 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.6] - 2026-04-17
+
+### Fixed
+
+- **Postgres schema migration crash on startup.** `PostgresStore::migrate()` split
+  the embedded `SCHEMA` string by `;` and executed each fragment as SQL. A semicolon
+  inside an SQL line comment (`-- Idempotent across startups; fresh installs pick
+  the column up from the…`) produced a phantom fragment starting with naked prose,
+  and Postgres rejected it with `syntax error at or near "fresh"` — which crashed
+  `assay serve` on every boot against a Postgres backend, regardless of whether the
+  target database was fresh or already populated. Affects v0.11.3 through v0.11.5.
+
+  Fix: extract the split into a `sanitise_schema` helper that drops pure-comment
+  lines (leading whitespace then `--`) before splitting on `;`. Inline `--`-after-code
+  and string-literal contents are left untouched, so the filter is conservative enough
+  to stay correct as the SCHEMA grows more prose.
+
+### Changed
+
+- **`assay-workflow` crate** bumped to `0.1.4` (from `0.1.3`). No public API
+  changes. Downstream consumers on `version = "0.1"` continue to work.
+
+### Tests
+
+- Added five pure-Rust unit tests for `sanitise_schema` under `src/store/postgres.rs`
+  that run on all platforms — no Docker required. Includes a regression test
+  (`sanitise_schema_real_constant_produces_only_ddl`) that asserts the live `SCHEMA`
+  constant never produces a statement whose first token isn't a recognised SQL
+  keyword. This would have caught the v0.11.3 bug at CI time; the existing
+  integration tests under `tests/postgres_store.rs` skip when Docker is unavailable
+  (macOS default), which is why this class of bug slipped through.
+
 ## [0.11.5] - 2026-04-17
 
 ### Changed
