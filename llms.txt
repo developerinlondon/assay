@@ -1,7 +1,9 @@
 # Assay
 
-> Assay is a ~9 MB static binary that runs Lua scripts in Kubernetes. It replaces 50-250 MB
-> Python/Node/kubectl containers. One binary handles HTTP, database, crypto, WebSocket, and
+> Assay is a ~9 MB static binary that runs Lua scripts in Kubernetes, ships a native durable
+> workflow engine (`assay serve`), and exposes a full CLI (`assay workflow/schedule/namespace/
+> worker/queue/completion`) over the engine's REST API. It replaces 50-250 MB Python/Node/kubectl
+> containers. One binary handles HTTP, database, crypto, WebSocket, workflow orchestration, and
 > Kubernetes-native and AI agent service integrations. No `require()` for builtins — they are global.
 > Stdlib modules use `require("assay.<name>")` then `M.client(url, opts)` → `c:method()`.
 > Run `assay context <query>` to get LLM-ready method signatures for any module.
@@ -51,7 +53,6 @@
 ## Infrastructure
 - [assay.crossplane](https://assay.rs/modules/crossplane.html): Crossplane providers, XRDs, compositions
 - [assay.velero](https://assay.rs/modules/velero.html): Velero backups, restores, schedules
-- [assay.temporal](https://assay.rs/modules/temporal.html): Temporal — HTTP REST client, gRPC client, worker runtime with workflow coroutines
 - [assay.harbor](https://assay.rs/modules/harbor.html): Harbor registry, projects, vulnerability scanning
 
 ## Data & Storage
@@ -62,7 +63,11 @@
 - [assay.unleash](https://assay.rs/modules/unleash.html): Unleash feature flags, environments, strategies
 - [assay.healthcheck](https://assay.rs/modules/healthcheck.html): HTTP health checks, JSON path, latency
 
-## AI Agent & Workflow
+## Workflow Engine
+- [assay.workflow](https://assay.rs/modules/workflow.html): Durable workflow engine — `assay serve` runs engine with REST+SSE+dashboard; `require("assay.workflow")` registers handlers + exposes full management surface (list/start/signal/cancel/terminate/state/events/children/continue-as-new plus `.schedules`/`.namespaces`/`.workers`/`.queues` sub-tables). Deterministic replay, Postgres/SQLite backend, Ory-compatible JWT/API-key auth, optional S3 archival.
+- [assay CLI](https://assay.rs/modules/workflow.html#cli): `assay workflow/schedule/namespace/worker/queue/completion` subcommands over the engine's REST API. Config file + env vars + flags; output formats table/json/jsonl/yaml with TTY-adaptive default; JSON input indirection (@file, stdin, literal).
+
+## AI Agent
 - [AI Agents](https://assay.rs/modules/ai-agents.html): OpenClaw, GitHub, Gmail, Google Calendar, OAuth2, Email Triage
 
 ## Optional
