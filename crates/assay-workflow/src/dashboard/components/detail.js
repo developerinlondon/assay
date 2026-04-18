@@ -74,8 +74,13 @@ var AssayDetail = (function () {
 
     var html =
       '<div class="detail-header">' +
-        '<h2 title="' + ctx.escapeHtml(wf.id) + '">' +
-          ctx.escapeHtml(ctx.truncate(wf.id, 40)) + '</h2>' +
+        // Full workflow id — the detail view has the width for it, and
+        // operators consulting this panel are usually trying to read or
+        // copy the id in full. `word-break: break-all` in .detail-header
+        // h2 (see style.css) keeps long ids wrapping cleanly instead of
+        // bursting out of the container.
+        '<h2 class="detail-id" title="' + ctx.escapeHtml(wf.id) + '">' +
+          ctx.escapeHtml(wf.id) + '</h2>' +
         '<button class="detail-close" id="detail-close-btn">&times;</button>' +
       '</div>' +
       '<div class="detail-body">';
@@ -87,8 +92,11 @@ var AssayDetail = (function () {
         metaItem('Type', ctx.escapeHtml(wf.workflow_type || '-')) +
         metaItem('Namespace', ctx.escapeHtml(wf.namespace || '-')) +
         metaItem('Queue', ctx.escapeHtml(wf.task_queue || '-')) +
-        metaItem('Run ID', '<span class="mono" title="' + ctx.escapeHtml(wf.run_id || '') + '">' +
-          ctx.escapeHtml(ctx.truncate(wf.run_id, 24)) + '</span>') +
+        // Run ID also rendered in full — same reasoning as the header. The
+        // .mono span already wraps on long ids because `.mono` inside a
+        // flex meta-item cell stays within its column.
+        metaItem('Run ID', '<span class="mono meta-id">' +
+          ctx.escapeHtml(wf.run_id || '-') + '</span>') +
         metaItem('Created', ctx.formatTime(wf.created_at)) +
         metaItem('Claimed By', ctx.escapeHtml(wf.claimed_by || '-')) +
         metaItem('Completed', wf.completed_at ? ctx.formatTime(wf.completed_at) : '-') +

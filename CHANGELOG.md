@@ -2,6 +2,53 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.13] - 2026-04-17
+
+### Changed
+
+- **Full workflow IDs in the detail view.** The detail-view header and
+  Run ID meta field no longer truncate — the detail panel has the
+  horizontal space for the full id, and operators consulting this panel
+  are usually trying to read or copy the id anyway. Long ids wrap
+  cleanly on column boundaries via `word-break: break-all`. List-view
+  and children-table truncation retained (density matters there).
+
+- **Smart truncate.** The `truncate(str, len)` helper now requires at
+  least 4 chars of actual savings before it adds `"..."`. Previously a
+  34-char id in a 32-char column showed `"thirty-two-char-id-exactly-thi..."`
+  — lossy for barely any column gain. Now it just shows the full string
+  when trimming wouldn't materially help.
+
+- **Row-click expansion.** Clicking *anywhere* on a workflow row now
+  toggles the inline detail — not just on the id link. Buttons
+  (Signal / Cancel / Terminate) still have their own click behaviour
+  and don't trigger expansion. Cursor pointer + hover feedback across
+  the row so the affordance is obvious.
+
+- **Modern link hover.** `.data-table .clickable:hover` no longer
+  underlines — it shifts to the accent-hover colour instead. Cleaner
+  under monospace id strings where typographic underlines on numbers
+  and dashes can look jagged. Row-hover still provides a strong visual
+  affordance.
+
+- **Inline namespace switcher in the status bar.** Replaced the button
+  that opened the sidebar's dropdown with its own native `<select>`,
+  styled to look like plain text. The native dropdown now opens
+  anchored at the status bar (where the user clicked), not at the
+  top-left sidebar. Mirrors the sidebar select's options — switching
+  either keeps both in sync.
+
+- **Modern select trigger.** Both the sidebar namespace select and the
+  new status-bar select got flat, OS-chrome-free styling with an inline
+  SVG chevron, accent ring on focus, subtle border darken on hover.
+  Native dropdown list still renders OS-default (no way to restyle
+  that without a custom combobox).
+
+### Tests
+
+- 32 lib + 40 orchestration tests still pass. Clippy clean with
+  -D warnings.
+
 ## [0.11.12] - 2026-04-17
 
 ### Added
