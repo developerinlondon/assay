@@ -30,7 +30,15 @@
 
   function truncate(str, len) {
     if (!str) return '';
-    return str.length > len ? str.substring(0, len) + '...' : str;
+    // The ellipsis itself is 3 chars, so truncating a string that's only
+    // a handful of chars over the limit is lossy UI noise — you show
+    // "thirty-two-char-id-exactly-thir..." instead of the real 35-char
+    // string that would have fit without much column growth. Require at
+    // least TRUNCATE_MIN_SAVINGS chars of actual savings to bother.
+    var TRUNCATE_MIN_SAVINGS = 4;
+    return str.length > len + TRUNCATE_MIN_SAVINGS
+      ? str.substring(0, len) + '...'
+      : str;
   }
 
   function isTerminal(status) {
@@ -121,17 +129,21 @@
 
   async function loadNamespaces() {
     const select = document.getElementById('namespace-select');
+    const statusSelect = document.getElementById('status-namespace-select');
     try {
       const namespaces = await fetch('/api/v1/namespaces').then((r) => r.json());
-      select.innerHTML = namespaces
+      const options = namespaces
         .map((ns) => {
           const name = ns.name || ns;
           const sel = name === currentNamespace ? ' selected' : '';
           return '<option value="' + escapeHtml(name) + '"' + sel + '>' + escapeHtml(name) + '</option>';
         })
         .join('');
+      select.innerHTML = options;
+      if (statusSelect) statusSelect.innerHTML = options;
     } catch (_) {
       select.innerHTML = '<option value="main" selected>main</option>';
+      if (statusSelect) statusSelect.innerHTML = '<option value="main" selected>main</option>';
     }
   }
 
@@ -232,6 +244,13 @@
 
   async function updateStatusBar() {
     document.getElementById('status-namespace').textContent = currentNamespace;
+    // Keep the status-bar select in sync with the current namespace —
+    // matters when the switch happened through the sidebar select or
+    // programmatically.
+    var statusSel = document.getElementById('status-namespace-select');
+    if (statusSel && statusSel.value !== currentNamespace) {
+      statusSel.value = currentNamespace;
+    }
 
     try {
       const workers = await apiFetch('/workers');
@@ -319,25 +338,21 @@
       refreshCurrentView();
     });
 
-    // Status-bar namespace shortcut: clicking the namespace value in the
-    // footer focuses + opens the sidebar dropdown. Saves the user a
-    // round-trip to the sidebar when they've already been staring at the
-    // footer to read the value.
-    var statusNsBtn = document.getElementById('status-namespace-btn');
-    if (statusNsBtn) {
-      statusNsBtn.addEventListener('click', function () {
-        var sel = document.getElementById('namespace-select');
-        if (!sel) return;
-        sel.focus();
-        // Native <select> doesn't expose a "showPicker" cross-browser,
-        // so dispatch a mousedown — most browsers interpret that as
-        // "open the dropdown" for a focused select. Falls back to just
-        // focusing the element in older browsers.
-        try {
-          sel.showPicker && sel.showPicker();
-        } catch (_) {
-          // showPicker can throw if not user-gesture; focus is already fine.
+    // Status-bar namespace switcher change handler — same behaviour as
+    // the sidebar select (sync currentNamespace, reconnect SSE, refresh
+    // view). No click handler needed: the native <select> handles its
+    // own dropdown, anchored at the status-bar location.
+    var statusSelectEl = document.getElementById('status-namespace-select');
+    if (statusSelectEl) {
+      statusSelectEl.addEventListener('change', function (e) {
+        currentNamespace = e.target.value;
+        // Keep the sidebar select in sync.
+        var sidebar = document.getElementById('namespace-select');
+        if (sidebar && sidebar.value !== currentNamespace) {
+          sidebar.value = currentNamespace;
         }
+        connectSSE();
+        refreshCurrentView();
       });
     }
 

@@ -236,15 +236,31 @@ html, body {
   margin-bottom: 6px;
 }
 
+/* Modern select trigger — flat, no OS chrome, custom chevron from
+   inline SVG data URI, accent ring on focus. Native dropdown list
+   is still rendered by the OS (no way to fully restyle that without
+   a custom combobox component), but the closed state matches the
+   rest of the dashboard. */
 .namespace-select {
   width: 100%;
-  padding: 6px 8px;
-  background: var(--bg);
+  padding: 6px 28px 6px 10px;
+  background-color: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.namespace-select:hover {
+  border-color: var(--text-muted);
 }
 
 .namespace-select:focus {
@@ -345,31 +361,39 @@ html, body {
   border-bottom-color: var(--accent);
 }
 
-/* Status-bar namespace shortcut button — reads as plain text until
-   hovered, then clearly clickable. Button reset so it doesn't inherit
-   default button chrome. Click opens the sidebar's namespace dropdown
-   so users don't have to scroll back up to switch namespaces. */
-.status-namespace-btn {
+/* Status-bar namespace switcher — a native <select> styled to look
+   like plain text. The native dropdown therefore opens anchored to
+   the status bar (where the user clicked) instead of the sidebar
+   select's location at the top-left. */
+.status-namespace-select {
   background: none;
   border: none;
-  padding: 0 4px;
+  padding: 0 18px 0 4px;
   margin: 0;
   font: inherit;
+  font-weight: 700;
   color: inherit;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   border-radius: 3px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  /* Inline chevron as background — positioned on the right of the
+     displayed value so it reads as a dropdown indicator without
+     pushing the text around. */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
 }
 
-.status-namespace-btn:hover {
-  background: var(--surface-hover);
+.status-namespace-select:hover {
+  background-color: var(--surface-hover);
   color: var(--accent);
 }
 
-.status-namespace-btn svg {
-  opacity: 0.6;
+.status-namespace-select:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ── Inline row-expansion (v0.11.12) ───────────────────────────────
@@ -378,6 +402,14 @@ html, body {
  * hand detail panel still exists for child-workflow navigation and
  * direct showDetail calls, but most users interact via these inline
  * expansions. */
+/* Rows are click-expandable anywhere — not just the id link — so the
+ * whole <tr> gets cursor + subtle hover feedback. The explicit
+ * `.clickable-row` class is applied in JS to avoid sweeping this onto
+ * tables that aren't meant to be row-expandable. */
+tr.clickable-row {
+  cursor: pointer;
+}
+
 tr.wf-row-expanded > td {
   /* Subtle accent to tie the expanded row to its detail block below. */
   background: var(--surface-hover);
@@ -521,10 +553,16 @@ tr.wf-detail-row > td {
   color: var(--accent);
   cursor: pointer;
   text-decoration: none;
+  transition: color 120ms ease;
 }
 
+/* Hover uses a slightly darker accent rather than an underline — reads as
+   "interactive text" without the typographic jaggedness of an underline
+   under a monospace id string. The row-hover treatment (on the <tr>)
+   already gives an additional strong affordance so we don't need the
+   text itself to shout. */
 .data-table .clickable:hover {
-  text-decoration: underline;
+  color: var(--accent-hover);
 }
 
 .data-table .mono {
@@ -599,6 +637,22 @@ tr.wf-detail-row > td {
 .detail-header h2 {
   font-size: 16px;
   font-weight: 600;
+  /* Workflow ids can be long (timestamp + version + target). Prefer
+   * letting them wrap rather than truncating, since the detail view has
+   * the horizontal space to spare. `word-break: break-all` is the right
+   * fallback for strings without natural break points (underscores,
+   * dashes). */
+  word-break: break-all;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Long monospaced ids inside the meta grid (Run ID) — same break-all
+ * treatment so they wrap at the column boundary instead of exploding
+ * the grid layout. */
+.detail-id,
+.meta-id {
+  word-break: break-all;
 }
 
 .detail-body {

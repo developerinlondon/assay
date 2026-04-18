@@ -117,11 +117,32 @@ var AssayWorkflows = (function () {
     el.querySelector('#wf-start-toggle').addEventListener('click', toggleStartForm);
 
     el.querySelector('#wf-table-wrap').addEventListener('click', function (e) {
+      // Button / interactive elements inside the row — Signal, Cancel,
+      // Terminate etc — shouldn't trigger the row expansion. Bail out
+      // when the click originates inside anything that already owns a
+      // click behaviour.
+      if (e.target.closest('button, .btn')) return;
+
+      // The id link still fires first (delegated below). Any other
+      // click inside a workflow row (body text, badges, queue name)
+      // expands the row too, so users can click anywhere on the row —
+      // not just the link — to drill in.
       var link = e.target.closest('.wf-link');
       if (link) {
         e.preventDefault();
         toggleRowDetail(link);
         return;
+      }
+
+      // Click anywhere else on a workflow row — fall through to row
+      // expansion using the row's first .wf-link as the trigger source.
+      var row = e.target.closest('tr');
+      if (row && row.classList.contains('clickable-row')) {
+        var anyLink = row.querySelector('.wf-link');
+        if (anyLink) {
+          toggleRowDetail(anyLink);
+          return;
+        }
       }
 
       var signalBtn = e.target.closest('.btn-signal');
@@ -208,7 +229,7 @@ var AssayWorkflows = (function () {
       var terminal = ctx.isTerminal(status);
 
       html +=
-        '<tr>' +
+        '<tr class="clickable-row">' +
         // title= reveals the full workflow id on hover — ids are
         // truncated to 32 chars for table density, but operators debugging
         // a specific run need to see the whole value without opening the
