@@ -230,13 +230,14 @@ var AssayWorkflows = (function () {
 
       html +=
         '<tr class="clickable-row">' +
-        // title= reveals the full workflow id on hover — ids are
-        // truncated to 32 chars for table density, but operators debugging
-        // a specific run need to see the whole value without opening the
-        // detail panel or URL-bar surgery.
-        '<td><a href="#" class="clickable wf-link mono" data-id="' + ctx.escapeHtml(wf.id) +
-          '" title="' + ctx.escapeHtml(wf.id) + '">' +
-          ctx.escapeHtml(ctx.truncate(wf.id, 32)) + '</a></td>' +
+        // Full workflow id in the list view — the id is usually the
+        // primary thing an operator wants to read. `word-break: break-all`
+        // in `.data-table .mono` lets long ids wrap at column boundaries
+        // instead of forcing a horizontal scroll. The inline expanded
+        // detail hides its own id header because this row already shows
+        // the full value.
+        '<td><a href="#" class="clickable wf-link mono" data-id="' + ctx.escapeHtml(wf.id) + '">' +
+          ctx.escapeHtml(wf.id) + '</a></td>' +
         '<td>' + ctx.escapeHtml(wf.workflow_type || '-') + '</td>' +
         '<td><span class="badge ' + ctx.badgeClass(status) + '">' + status + '</span></td>' +
         '<td class="mono">' + ctx.escapeHtml(wf.task_queue || 'main') + '</td>' +
