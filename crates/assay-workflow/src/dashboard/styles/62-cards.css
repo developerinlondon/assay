@@ -1,0 +1,55 @@
+/* ── Cards / Sections ───────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.card-body {
+  padding: 16px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+/* When a section title sits inside the toolbar (workflows /
+ * schedules etc.) it lives on the same row as the search + filter
+ * controls — saves vertical space. Strip the bottom margin and let
+ * the toolbar's own gap handle spacing. */
+.toolbar .section-title {
+  margin: 0;
+  flex: 0 0 auto;
+  margin-right: 8px;
+}
+
+/* ── Pagination ─────────────────────────────────────── */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.pagination .btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+

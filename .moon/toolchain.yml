@@ -1,0 +1,24 @@
+# https://moonrepo.dev/docs/config/toolchain
+#
+# Tool versions are managed by mise (see .mise.toml at the repo root),
+# not by moon. We deliberately do NOT enable moon's built-in proto
+# toolchain — keeping one tool-management surface (mise) avoids drift
+# between local dev and CI, and matches the existing .mise.toml that
+# already pins rust + protoc.
+#
+# This file just declares which moon-aware language plugins are in
+# play so per-project moon.yml files can use the right `language:` /
+# `platform:` fields.
+
+# Node — the dashboard e2e suite (Playwright) and the openclaw VS Code
+# extension. Pinned by mise; we tell moon to leave version selection
+# alone.
+node:
+  version: null
+
+# Rust — workflow crate + root binary. Same deal: mise owns the
+# version pin (rust = "1.95.0" in .mise.toml).
+rust:
+  version: null
+  bins: []
+  syncToolchainConfig: false

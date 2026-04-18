@@ -1,0 +1,27 @@
+# assay.rs static site — built by `assay site/build.lua` from
+# markdown docs + stdlib reference data + CHANGELOG.md.
+# Deploy is handled by .github/workflows/deploy.yml on pushes to
+# main; this `build` task gives `moon ci` a way to validate the site
+# builds clean on every PR that touches its inputs.
+
+language: 'lua'
+layer: 'application'
+stack: 'frontend'
+
+tasks:
+  build:
+    command: '../target/release/assay site/build.lua'
+    deps:
+      - 'assay-lua:build'
+    inputs:
+      - '**/*'
+      - '/docs/**/*'
+      - '/stdlib/**/*'
+      - '/CHANGELOG.md'
+      - '/llms.txt'
+      - '/src/lua/builtins/mod.rs'
+    outputs:
+      - '/build/site/**/*'
+    options:
+      cache: true
+      runInCI: true

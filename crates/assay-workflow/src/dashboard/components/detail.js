@@ -9,6 +9,58 @@ var AssayDetail = (function () {
   // itself; the inline-row flow removes the expansion <tr>. Both invoke
   // whatever's registered here at the moment the ✕ button is clicked.
   let activeClose = null;
+  // closeDetail queues a 300ms innerHTML clear (after the slide-out
+  // animation). If a new showDetail starts before that clear fires,
+  // we'd wipe the freshly-rendered content. Track the pending timeout
+  // so showDetail can cancel it.
+  let pendingClearTimeout = null;
+  // Single live-tail poller. The Pipeline tab polls
+  // /workflows/{id}/state/pipeline_state every 1s while the tab is open
+  // and the workflow is RUNNING; only one detail panel renders at a
+  // time so one poller handle is enough.
+  let activePoller = null;
+
+  // Step status → glyph + class. Kept tight so the same map drives
+  // initial render and live-update DOM mutations. Six canonical
+  // statuses; document the convention in docs/modules/workflow.md
+  // before adding more.
+  //
+  // `running` uses a proper SVG spinner instead of a text glyph because
+  // rotating an asymmetric unicode arrow inside the circle looked
+  // janky — a symmetric ring with a gap rotates cleanly. Other states
+  // are text glyphs (no animation needed).
+  const RUNNING_SPINNER_SVG =
+    '<svg class="step-spinner" viewBox="0 0 24 24" width="20" height="20" ' +
+        'fill="none" stroke="currentColor" stroke-width="2.5" ' +
+        'stroke-linecap="round" aria-hidden="true">' +
+      '<path d="M 12 2 a 10 10 0 0 1 10 10" />' +
+    '</svg>';
+  const STEP_STATE = {
+    waiting:   { glyph: '\u25CB', cls: 'waiting' },   // ○ outlined dim
+    running:   { glyph: RUNNING_SPINNER_SVG, cls: 'running', isHtml: true },
+    done:      { glyph: '\u2713', cls: 'done' },      // ✓ filled green
+    failed:    { glyph: '\u2715', cls: 'failed' },    // ✕ filled red
+    cancelled: { glyph: '\u2298', cls: 'cancelled' }, // ⊘ no-entry orange
+    skipped:   { glyph: '\u00B7', cls: 'skipped' },   // · muted dot — never ran
+  };
+
+  function stepView(status) {
+    return STEP_STATE[(status || 'waiting').toLowerCase()] || STEP_STATE.waiting;
+  }
+
+  // Connector fill class derived from the state of the two steps it
+  // joins. `done → done` is fully filled; `done → running` is partial;
+  // anything leading into a `skipped` step is muted (the workflow
+  // ended before reaching it).
+  function connectorFill(prev, next) {
+    var p = (prev || '').toLowerCase();
+    var n = (next || '').toLowerCase();
+    if (n === 'skipped') return 'muted';
+    if (p === 'done' && (n === 'done' || n === 'failed' || n === 'cancelled')) return 'full';
+    if (p === 'done' && n === 'running') return 'partial';
+    if (p === 'done') return 'partial';
+    return 'muted';
+  }
 
   function getPanel() {
     if (!panel) panel = document.getElementById('detail-panel');
@@ -31,9 +83,23 @@ var AssayDetail = (function () {
     var p = (opts && opts.target) || getPanel();
     activeClose = (opts && opts.onClose) || closeDetail;
 
+    // Cancel any pending innerHTML clear from a prior closeDetail —
+    // otherwise the freshly-rendered content would be wiped 300ms in.
+    if (pendingClearTimeout) {
+      clearTimeout(pendingClearTimeout);
+      pendingClearTimeout = null;
+    }
+
     p.innerHTML = '<div class="detail-header"><h2>Loading...</h2>' +
       '<button class="detail-close" id="detail-close-btn">&times;</button></div>';
-    if (p === getPanel()) p.classList.add('open');
+    if (p === getPanel()) {
+      p.classList.add('open');
+      p.dataset.workflowId = id;
+      // Mirror to the URL hash so F5 / share-link restore lands here.
+      if (window.AssayApp && window.AssayApp.setOpenWorkflow) {
+        window.AssayApp.setOpenWorkflow(id);
+      }
+    }
 
     p.querySelector('#detail-close-btn').addEventListener('click', function () {
       activeClose && activeClose();
@@ -85,86 +151,44 @@ var AssayDetail = (function () {
       '</div>' +
       '<div class="detail-body">';
 
-    // Two-column grid: fixed-width left column carries the run's
-    // identity card (status badge, meta items stacked, actions) and
-    // stays visible regardless of which tab is selected. Right column
-    // gets the rest of the horizontal space for tab content, which is
-    // the variable-height material. On narrow viewports the grid
-    // collapses to a single column (see .detail-grid in style.css).
-    html += '<div class="detail-grid">';
-
-    // ── LEFT column: core info + actions ───────────────
-    html += '<div class="detail-core">';
-
-    html += '<div class="detail-core-status">' +
-      '<span class="badge ' + ctx.badgeClass(status) + '">' + status + '</span>' +
-      '</div>';
-
-    html +=
-      '<dl class="detail-core-meta">' +
-        coreMeta('Type', ctx.escapeHtml(wf.workflow_type || '-')) +
-        coreMeta('Namespace', ctx.escapeHtml(wf.namespace || '-')) +
-        coreMeta('Queue', ctx.escapeHtml(wf.task_queue || '-')) +
-        coreMeta('Run ID',
-          '<span class="mono meta-id">' + ctx.escapeHtml(wf.run_id || '-') + '</span>') +
-        coreMeta('Created', ctx.formatTime(wf.created_at)) +
-        coreMeta('Claimed By', ctx.escapeHtml(wf.claimed_by || '-')) +
-        (wf.completed_at
-          ? coreMeta('Completed', ctx.formatTime(wf.completed_at))
-          : '') +
-      '</dl>';
-
-    // Actions sit at the bottom of the left column, below the meta.
-    var idAttr = ctx.escapeHtml(wf.id);
-    html += '<div class="detail-core-actions">';
-    if (!terminal) {
-      html +=
-        '<button class="btn-action btn-signal-detail" data-id="' + idAttr + '">Send signal</button>' +
-        '<button class="btn-action btn-cancel-detail" data-id="' + idAttr + '">Cancel</button>' +
-        '<button class="btn-action btn-action-danger btn-terminate-detail" data-id="' + idAttr + '">Terminate</button>' +
-        '<button class="btn-action btn-continue-detail" data-id="' + idAttr + '">Continue as new</button>';
-    } else {
-      html +=
-        '<button class="btn-action btn-continue-detail" data-id="' + idAttr + '" title="Start a fresh run with the same type + queue">Continue as new</button>';
+    // Every identity/config field shown in the detail block is also
+    // surfaced on the row above (id, type, status, queue, created) or
+    // in the namespace selector. The only field the row can't carry is
+    // `completed_at` — workflow list rows show "Created X ago" but not
+    // a completion timestamp. Put that on a slim meta row above the
+    // tabs so terminal runs get their one missing piece; no meta row
+    // at all for in-flight runs (nothing new to say).
+    //
+    // The action buttons (Signal / Cancel / Terminate / Continue-as-
+    // new) used to live on a toolbar here too; v0.12.0 dropped them
+    // because they duplicate the row's Action column. The row now
+    // shows them as icons with tooltips, so the detail view stays
+    // identity-only and the tabs get all the vertical space.
+    if (wf.completed_at) {
+      html += '<div class="detail-meta-line">' +
+        '<span class="detail-meta-label">Completed</span> ' +
+        '<span class="detail-meta-value">' + ctx.formatTime(wf.completed_at) + '</span>' +
+        '</div>';
     }
-    html += '</div>'; // /detail-core-actions
 
-    html += '</div>'; // /detail-core (left column closed)
+    // Tabs — [Pipeline] / Overview / State / Events / Children / Attributes.
+    // Pipeline tab is added at the front (and default-selected) only when the
+    // workflow has registered a `pipeline_state` query that includes a
+    // `steps[]` array — see docs/modules/workflow.md "Pipeline tab convention".
+    // Variable-height content lives behind tabs so the meta line + actions
+    // toolbar stay compact regardless of how much data a run has accumulated.
+    // Tabs with no content are dimmed rather than hidden so operators have
+    // consistent visual anchors across runs.
 
-    // ── RIGHT column: tabs + panel content ─────────────
-    html += '<div class="detail-tabs-col">';
-
-    // Tabs — Overview / State / Events / Children / Attributes. Variable-
-    // height content lives behind tabs so the left column (identity +
-    // actions) stays compact and scannable regardless of how much data
-    // a run has accumulated. Tabs that have no content (no state
-    // snapshot, zero children, no search attrs) are dimmed rather than
-    // hidden so operators have consistent visual anchors across runs.
+    var pipeline = extractPipelineState(state);
+    if (pipeline && terminal) applyTerminalOverlay(pipeline, status);
 
     var tabs = [
       {
         id: 'overview',
         label: 'Overview',
         count: null,
-        build: function () {
-          var body = '';
-          if (wf.input) {
-            body += '<h4 class="detail-subhead">Input</h4>' +
-              '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(wf.input)) + '</div>';
-          }
-          if (wf.result) {
-            body += '<h4 class="detail-subhead">Result</h4>' +
-              '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(wf.result)) + '</div>';
-          }
-          if (wf.error) {
-            body += '<h4 class="detail-subhead" style="color: var(--red);">Error</h4>' +
-              '<div class="error-box">' + ctx.escapeHtml(wf.error) + '</div>';
-          }
-          if (!body) {
-            body = '<p class="detail-muted">No input, result, or error recorded.</p>';
-          }
-          return body;
-        },
+        build: function () { return renderOverviewHtml(wf); },
       },
       {
         id: 'state',
@@ -192,22 +216,44 @@ var AssayDetail = (function () {
         count: events.length,
         build: function () {
           if (!events.length) return '<p class="detail-muted">No events recorded.</p>';
-          var out = '<div class="event-timeline">';
+          // Master-detail layout: list on the left, selected event's
+          // payload on the right. Much easier to scan than stacked
+          // expandables and mirrors how operators actually read event
+          // history (pick one → inspect, pick another → inspect).
+          var out = '<div class="event-split">';
+          out += '<div class="event-list" role="tablist">';
           for (var i = 0; i < events.length; i++) {
             var evt = events[i];
+            var activeCls = i === 0 ? ' active' : '';
+            // Exact wall-clock time on the left list so operators can
+            // line events up against external logs ("what happened at
+            // 14:32:08?"). The "N seconds ago" relative form stays on
+            // the right-side detail panel for at-a-glance freshness.
             out +=
-              '<div class="event-item" data-idx="' + i + '">' +
-                '<div class="event-header">' +
-                  '<span class="event-type">' + ctx.escapeHtml(evt.event_type) + '</span>' +
-                  '<span class="event-time">#' + evt.seq + ' - ' + ctx.formatTime(evt.timestamp) + '</span>' +
-                '</div>' +
-                '<div class="event-payload" id="evt-payload-' + i + '">' +
-                  (evt.payload
-                    ? '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(evt.payload)) + '</div>'
-                    : '<span style="color: var(--text-muted); font-size: 12px;">No payload</span>') +
-                '</div>' +
-              '</div>';
+              '<button type="button" class="event-list-item' + activeCls + '" data-idx="' + i + '" role="tab">' +
+                '<span class="event-seq">#' + evt.seq + '</span>' +
+                '<span class="event-type">' + ctx.escapeHtml(evt.event_type) + '</span>' +
+                '<span class="event-time">' + ctx.formatExactTime(evt.timestamp) + '</span>' +
+              '</button>';
           }
+          out += '</div>'; // /event-list
+          out += '<div class="event-detail">';
+          for (var j = 0; j < events.length; j++) {
+            var e = events[j];
+            var show = j === 0 ? '' : ' hidden';
+            out += '<div class="event-detail-panel' + show + '" data-idx="' + j + '">' +
+              '<div class="event-detail-head">' +
+                '<span class="event-detail-type">' + ctx.escapeHtml(e.event_type) + '</span>' +
+                '<span class="event-detail-meta">#' + e.seq + ' — ' +
+                  ctx.formatExactTime(e.timestamp) + ' (' + ctx.formatTime(e.timestamp) + ')' +
+                '</span>' +
+              '</div>' +
+              (e.payload
+                ? '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(e.payload)) + '</div>'
+                : '<p class="detail-muted">No payload for this event.</p>') +
+            '</div>';
+          }
+          out += '</div>'; // /event-detail
           return out + '</div>';
         },
       },
@@ -249,6 +295,22 @@ var AssayDetail = (function () {
       },
     ];
 
+    // Steps tab is prepended when present and becomes the default-active
+    // tab — that's the highest-density "what's happening right now" view a
+    // staged workflow has, so showing it first matches the operator's most
+    // common intent (open the run → see how far it's got). Internal CSS
+    // class names keep `.pipeline-*` for back-compat with consumer
+    // whitelabel themes that might reference them; the visible label
+    // follows our chosen "steps" vocabulary (see docs/modules/workflow.md).
+    if (pipeline) {
+      tabs.unshift({
+        id: 'pipeline',
+        label: 'Steps',
+        count: pipeline.steps.length,
+        build: function () { return renderPipelineHtml(wf, pipeline); },
+      });
+    }
+
     html += '<div class="detail-tabs">';
     html += '<div class="detail-tab-nav" role="tablist">';
     for (var t = 0; t < tabs.length; t++) {
@@ -275,20 +337,49 @@ var AssayDetail = (function () {
     html += '</div>'; // /detail-tab-panels
     html += '</div>'; // /detail-tabs
 
-    html += '</div>'; // /detail-tabs-col (right column closed)
-    html += '</div>'; // /detail-grid (two-column grid closed)
-
     html += '</div>'; // /detail-body
     p.innerHTML = html;
 
     // Wire up event delegation
     p.addEventListener('click', handlePanelClick);
+
+    // Auto-advance focus on initial render too — terminal workflows
+    // never poll, so this is the only chance to highlight the
+    // last-relevant step (the failed one for FAILED runs, the final
+    // step for COMPLETED runs).
+    if (pipeline) {
+      var pipelineRoot = p.querySelector('.pipeline-tab');
+      if (pipelineRoot) autoAdvanceFocus(pipelineRoot, pipeline);
+      startCountdownTicker();
+    }
+
+    // Stop any prior poll first — switching from one workflow to another
+    // would otherwise leak the previous interval. Kick off a new poller
+    // for the Pipeline tab if it's present and the workflow is still
+    // running. The poller handles its own teardown when the workflow
+    // goes terminal.
+    stopPoller();
+    if (pipeline && !terminal) {
+      startPipelinePoller(wf.id, p);
+    }
   }
 
   function handlePanelClick(e) {
     // Close button
     if (e.target.closest('#detail-close-btn') || e.target.closest('.detail-close')) {
       (activeClose || closeDetail)();
+      return;
+    }
+
+    // Cross-link — navigate to another view's detail (e.g. clicking
+    // "Claimed by" in Overview switches to Workers + opens that
+    // worker). Same handler shape as workers.js / queues.js so the
+    // affordance works identically across all three detail panels.
+    var cross = e.target.closest('.cross-link[data-nav]');
+    if (cross) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (ctx && ctx.navigate) ctx.navigate(cross.dataset.nav, cross.dataset.id);
       return;
     }
 
@@ -309,15 +400,106 @@ var AssayDetail = (function () {
       for (var j = 0; j < panels.length; j++) {
         panels[j].classList.toggle('active', panels[j].dataset.tab === id);
       }
+      // Pause poller when leaving Pipeline; resume when returning, but only
+      // if the workflow is still RUNNING (terminal runs don't need the
+      // 1Hz refresh). The poll endpoint is cheap, but idle traffic on a
+      // bunch of completed runs would still be wasteful.
+      if (id !== 'pipeline') {
+        stopPoller();
+      } else if (activePoller && activePoller.id) {
+        // Already polling for this workflow, keep going.
+      } else {
+        var pipelineEl = container.querySelector('.pipeline-tab');
+        if (pipelineEl && pipelineEl.dataset.terminal !== 'true') {
+          startPipelinePoller(pipelineEl.dataset.workflowId, container.closest('.detail-body, [id]') || document);
+        }
+      }
       return;
     }
 
-    // Event item toggle
-    var evtItem = e.target.closest('.event-item');
+    // Pipeline step circle — clicking toggles a per-step log filter so
+    // operators can drill into one slow step's lines without scrolling
+    // the full timeline. Click again to clear the filter. Skip when the
+    // click originated on an action button or its container — those are
+    // their own handlers (step_action signal POST below) and bubbling
+    // through the filter toggle would eat the click.
+    var stepEl = e.target.closest('.pipeline-step');
+    if (stepEl && !e.target.closest('.pipeline-step-action, .step-actions')) {
+      var pipelineRoot = stepEl.closest('.pipeline-tab');
+      if (pipelineRoot) {
+        var alreadySelected = stepEl.classList.contains('selected');
+        var allSteps = pipelineRoot.querySelectorAll('.pipeline-step');
+        for (var s = 0; s < allSteps.length; s++) allSteps[s].classList.remove('selected');
+        if (alreadySelected) {
+          // Clearing manual selection — release auto-advance so the
+          // next snapshot poll re-focuses on whatever's running.
+          delete pipelineRoot.dataset.filterStep;
+          delete pipelineRoot.dataset.userSelected;
+        } else {
+          stepEl.classList.add('selected');
+          pipelineRoot.dataset.filterStep = stepEl.dataset.stepIdx;
+          // Stick on this choice — auto-advance backs off until the
+          // user clicks the same step again to release.
+          pipelineRoot.dataset.userSelected = 'true';
+        }
+        applyLogFilter(pipelineRoot);
+      }
+      return;
+    }
+
+    // Pipeline scroll-lock toggle — operators reading mid-log don't want
+    // the auto-scroll yanking them back to the bottom every second.
+    // Toggle disables it; the indicator shows the current state.
+    var scrollBtn = e.target.closest('.pipeline-scroll-lock');
+    if (scrollBtn) {
+      e.preventDefault();
+      var pr = scrollBtn.closest('.pipeline-tab');
+      if (pr) {
+        var locked = pr.dataset.scrollLock === 'true';
+        pr.dataset.scrollLock = locked ? 'false' : 'true';
+        scrollBtn.textContent = locked ? '\u25BE Auto-scroll' : '\u25B8 Locked';
+        if (!locked) {
+          // Switching to "Locked" — leave the log where it is.
+        } else {
+          // Switching back to auto-scroll — jump to bottom now.
+          var logEl = pr.querySelector('.pipeline-log');
+          if (logEl) logEl.scrollTop = logEl.scrollHeight;
+        }
+      }
+      return;
+    }
+
+    // Pipeline step action — buttons rendered next to each step that
+    // exposes an `actions[]` array. Click → POST a `step_action` signal
+    // to AWE; the workflow handler reads it and decides what to do.
+    // Pure routing: AWE never knows what "approve" means, the workflow
+    // does.
+    var actBtn = e.target.closest('.pipeline-step-action');
+    if (actBtn) {
+      e.preventDefault();
+      handleStepAction(
+        actBtn.dataset.workflowId,
+        actBtn.dataset.stepName,
+        actBtn.dataset.action
+      );
+      return;
+    }
+
+    // Event list item — master-detail pattern. Clicking a row on
+    // the left selects that event and shows its payload on the right.
+    var evtItem = e.target.closest('.event-list-item');
     if (evtItem) {
       var idx = evtItem.dataset.idx;
-      var payload = document.getElementById('evt-payload-' + idx);
-      if (payload) payload.classList.toggle('open');
+      var eventsRoot = evtItem.closest('.event-split');
+      if (eventsRoot) {
+        var items = eventsRoot.querySelectorAll('.event-list-item');
+        for (var ii = 0; ii < items.length; ii++) items[ii].classList.remove('active');
+        evtItem.classList.add('active');
+        var panels = eventsRoot.querySelectorAll('.event-detail-panel');
+        for (var pi = 0; pi < panels.length; pi++) {
+          panels[pi].toggleAttribute('hidden', panels[pi].dataset.idx !== idx);
+        }
+      }
       return;
     }
 
@@ -329,137 +511,600 @@ var AssayDetail = (function () {
       return;
     }
 
-    // Signal button
-    var sigBtn = e.target.closest('.btn-signal-detail');
-    if (sigBtn) {
-      handleSignal(sigBtn.dataset.id);
-      return;
-    }
-
-    // Cancel button
-    var canBtn = e.target.closest('.btn-cancel-detail');
-    if (canBtn) {
-      handleCancel(canBtn.dataset.id);
-      return;
-    }
-
-    // Terminate button
-    var termBtn = e.target.closest('.btn-terminate-detail');
-    if (termBtn) {
-      handleTerminate(termBtn.dataset.id);
-      return;
-    }
-
-    // Continue-as-new button
-    var contBtn = e.target.closest('.btn-continue-detail');
-    if (contBtn) {
-      handleContinueAsNew(contBtn.dataset.id);
-    }
-  }
-
-  async function handleSignal(id) {
-    var name = prompt('Signal name:');
-    if (!name) return;
-    var payloadStr = prompt('Signal payload (JSON, or leave empty):', '');
-    var payload = null;
-    if (payloadStr) {
-      try { payload = JSON.parse(payloadStr); } catch (_) { payload = payloadStr; }
-    }
-    try {
-      await ctx.apiFetch('/workflows/' + encodeURIComponent(id) + '/signal/' + encodeURIComponent(name), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payload: payload }),
-      });
-      ctx.toast("Signal '" + name + "' sent", 'success');
-      showDetail(id, ctx);
-    } catch (err) {
-      ctx.toast('Signal failed: ' + err.message, 'error');
-    }
-  }
-
-  async function handleCancel(id) {
-    if (!confirm('Cancel workflow ' + id + '?')) return;
-    try {
-      await ctx.apiFetch('/workflows/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
-      ctx.toast('Cancel requested', 'success');
-      showDetail(id, ctx);
-    } catch (err) {
-      ctx.toast('Cancel failed: ' + err.message, 'error');
-    }
-  }
-
-  async function handleTerminate(id) {
-    var reason = prompt(
-      'Terminate workflow ' + id + '?\n\nReason (optional):',
-      ''
-    );
-    if (reason === null) return;
-    var body = reason ? { reason: reason } : {};
-    try {
-      await ctx.apiFetch('/workflows/' + encodeURIComponent(id) + '/terminate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      ctx.toast('Terminated', 'success');
-      showDetail(id, ctx);
-    } catch (err) {
-      ctx.toast('Terminate failed: ' + err.message, 'error');
-    }
-  }
-
-  async function handleContinueAsNew(id) {
-    var inputStr = prompt(
-      'Close out ' + id + ' and start a fresh run with the same type + queue.\n\n' +
-      'New input (JSON, optional):',
-      ''
-    );
-    if (inputStr === null) return;
-    var body = {};
-    if (inputStr && inputStr.trim()) {
-      try {
-        body.input = JSON.parse(inputStr);
-      } catch (err) {
-        ctx.toast('Input must be valid JSON', 'error');
-        return;
-      }
-    }
-    try {
-      var newRun = await ctx.apiFetch(
-        '/workflows/' + encodeURIComponent(id) + '/continue-as-new',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }
-      );
-      ctx.toast('New run: ' + (newRun && newRun.workflow_id || 'unknown'), 'success');
-      if (newRun && newRun.workflow_id) {
-        showDetail(newRun.workflow_id, ctx);
-      } else {
-        closeDetail();
-      }
-      if (ctx.refreshCurrentView) ctx.refreshCurrentView();
-    } catch (err) {
-      ctx.toast('Continue-as-new failed: ' + err.message, 'error');
-    }
-  }
-
-
-  // Left-column meta row: `<dt>Label</dt><dd>Value</dd>`. Using a
-  // semantic definition list so each row pairs cleanly without needing
-  // flex plumbing, and screen readers announce the label/value
-  // relationship.
-  function coreMeta(label, value) {
-    return '<dt>' + label + '</dt><dd>' + value + '</dd>';
+    // The four workflow actions (Signal / Cancel / Terminate /
+    // Continue-as-new) used to render as buttons inside the detail
+    // toolbar; v0.12.0 dropped the toolbar (the row's Action column
+    // already exposes the same set as icons + tooltips). The handler
+    // logic moved to AssayActions for reuse across views.
   }
 
   function closeDetail() {
+    stopPoller();
     var p = getPanel();
     p.classList.remove('open');
+    delete p.dataset.workflowId;
+    if (window.AssayApp && window.AssayApp.setOpenWorkflow) {
+      window.AssayApp.setOpenWorkflow(null);
+    }
     p.removeEventListener('click', handlePanelClick);
-    setTimeout(function () { p.innerHTML = ''; }, 300);
+    if (pendingClearTimeout) clearTimeout(pendingClearTimeout);
+    pendingClearTimeout = setTimeout(function () {
+      p.innerHTML = '';
+      pendingClearTimeout = null;
+    }, 300);
+  }
+
+  // Render the Overview tab — the executive summary of a workflow
+  // run. A slim meta strip at the top with run-level context
+  // (duration, run id, claimed worker) followed by whatever input/
+  // result/error/search-attributes the run actually carries. Empty
+  // sections are skipped — a pending run with `input = {}` doesn't
+  // show an "Input: {}" line that's just noise.
+  function renderOverviewHtml(wf) {
+    var parts = [];
+    var meta = [];
+
+    meta.push(['Run ID', '<span class="mono">' + ctx.escapeHtml(wf.run_id || '-') + '</span>']);
+
+    // Duration: elapsed from created_at to completed_at (or now).
+    if (wf.created_at) {
+      var end = wf.completed_at || (Date.now() / 1000);
+      var dur = Math.max(0, end - wf.created_at);
+      meta.push(['Duration', formatDuration(dur) +
+        (wf.completed_at ? '' : ' (still running)')]);
+    }
+
+    if (wf.claimed_by) {
+      var cb = ctx.escapeHtml(wf.claimed_by);
+      meta.push(['Claimed by',
+        '<a href="#" class="cross-link mono" data-nav="worker" data-id="' + cb + '">' + cb + '</a>']);
+    }
+
+    if (wf.completed_at) {
+      meta.push(['Completed', ctx.formatTime(wf.completed_at) +
+        ' (' + ctx.formatExactTime(wf.completed_at) + ')']);
+    }
+
+    if (meta.length) {
+      var strip = '<div class="row-detail-meta">';
+      for (var i = 0; i < meta.length; i++) {
+        if (i > 0) strip += '<span class="row-detail-meta-sep">&middot;</span>';
+        strip += '<span><span class="row-detail-meta-label">' + meta[i][0] +
+          '</span> ' + meta[i][1] + '</span>';
+      }
+      strip += '</div>';
+      parts.push(strip);
+    }
+
+    // Input — skip if empty object / empty string / just whitespace.
+    var inputStr = wf.input != null ? String(wf.input).trim() : '';
+    if (inputStr && inputStr !== '{}' && inputStr !== '[]' && inputStr !== 'null') {
+      parts.push('<h4 class="detail-subhead">Input</h4>' +
+        '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(wf.input)) + '</div>');
+    }
+
+    if (wf.result) {
+      var resultStr = String(wf.result).trim();
+      if (resultStr && resultStr !== 'null') {
+        parts.push('<h4 class="detail-subhead">Result</h4>' +
+          '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(wf.result)) + '</div>');
+      }
+    }
+
+    if (wf.error) {
+      parts.push('<h4 class="detail-subhead" style="color: var(--red);">Error</h4>' +
+        '<div class="error-box">' + ctx.escapeHtml(wf.error) + '</div>');
+    }
+
+    // Search attributes — skip the auto-stamped engine version line
+    // since that's infra detail, not user-meaningful. Show the rest.
+    if (wf.search_attributes) {
+      try {
+        var attrs = typeof wf.search_attributes === 'string'
+          ? JSON.parse(wf.search_attributes)
+          : wf.search_attributes;
+        var keys = Object.keys(attrs || {}).filter(function (k) {
+          return k !== 'assay_engine_version';
+        });
+        if (keys.length) {
+          var filtered = {};
+          for (var k = 0; k < keys.length; k++) filtered[keys[k]] = attrs[keys[k]];
+          parts.push('<h4 class="detail-subhead">Search attributes</h4>' +
+            '<div class="json-viewer">' + ctx.escapeHtml(ctx.formatJson(JSON.stringify(filtered))) + '</div>');
+        }
+      } catch (_) { /* malformed — skip */ }
+    }
+
+    if (parts.length === 0) {
+      return '<p class="detail-muted">No run-level context recorded yet.</p>';
+    }
+    return parts.join('');
+  }
+
+  // Seconds → "1h 23m 45s" / "3m 12s" / "45s" / "120ms" — same
+  // granularity style formatTime uses for ages, but duration-flavour.
+  function formatDuration(secs) {
+    if (secs < 1) return Math.round(secs * 1000) + 'ms';
+    if (secs < 60) return Math.round(secs) + 's';
+    if (secs < 3600) {
+      var m = Math.floor(secs / 60);
+      var s = Math.round(secs % 60);
+      return m + 'm' + (s ? ' ' + s + 's' : '');
+    }
+    var h = Math.floor(secs / 3600);
+    var rem = secs - h * 3600;
+    var mm = Math.floor(rem / 60);
+    return h + 'h' + (mm ? ' ' + mm + 'm' : '');
+  }
+
+  // ── Pipeline tab — shape extraction ─────────────────────────────
+  //
+  // The state snapshot is the merged result of every `register_query`
+  // handler the workflow set up, keyed by query name. The Pipeline tab
+  // convention is one specific query: `pipeline_state`, returning at
+  // minimum a `steps[]` array. Anything else is treated as "no
+  // pipeline" and the tab is hidden entirely. See
+  // docs/modules/workflow.md for the full schema.
+  function extractPipelineState(stateResp) {
+    if (!stateResp || stateResp.state == null) return null;
+    var snap = stateResp.state;
+    var ps = (snap && typeof snap === 'object') ? snap.pipeline_state : null;
+    if (!ps || !Array.isArray(ps.steps) || ps.steps.length === 0) return null;
+    return {
+      status: ps.status || null,
+      current_step: ps.current_step || null,
+      steps: ps.steps,
+      log: Array.isArray(ps.log) ? ps.log : [],
+      raw: ps,
+    };
+  }
+
+  // When a workflow ends terminally without the handler running cleanup
+  // (Kill / SIGKILL, or Cancel on a handler that ignored the raise), the
+  // snapshot freezes mid-flight — the running step stays "running"
+  // forever because no replay happens. Overlay the engine's terminal
+  // status onto the display so operators don't see stale "running"
+  // circles on a dead workflow. Raw snapshot stays untouched (audit
+  // correctness); this is purely visual.
+  function applyTerminalOverlay(pipeline, workflowStatus) {
+    if (!pipeline || !Array.isArray(pipeline.steps)) return;
+    var s = (workflowStatus || '').toUpperCase();
+    if (s !== 'FAILED' && s !== 'CANCELLED' && s !== 'TERMINATED') return;
+    var interruptedStatus =
+      s === 'FAILED' ? 'failed' :
+      s === 'TERMINATED' ? 'failed' : 'cancelled';
+    var passedInterrupt = false;
+    for (var i = 0; i < pipeline.steps.length; i++) {
+      var step = pipeline.steps[i];
+      var cur = (step.status || '').toLowerCase();
+      if (passedInterrupt && cur === 'waiting') {
+        step.status = 'skipped';
+      } else if (cur === 'running') {
+        step.status = interruptedStatus;
+        passedInterrupt = true;
+      } else if (cur === 'waiting' && !passedInterrupt) {
+        // No running step found yet but workflow is dead — this step
+        // never ran either. Mark skipped.
+        step.status = 'skipped';
+      }
+    }
+  }
+
+  function renderPipelineHtml(wf, pipeline) {
+    var idAttr = ctx.escapeHtml(wf.id);
+    var terminal = ctx.isTerminal((wf.status || 'PENDING').toUpperCase());
+    var html =
+      '<div class="pipeline-tab"' +
+        ' data-workflow-id="' + idAttr + '"' +
+        ' data-terminal="' + (terminal ? 'true' : 'false') + '"' +
+        ' data-scroll-lock="false"' +
+      '>';
+
+    html += '<div class="pipeline-strip">';
+    for (var i = 0; i < pipeline.steps.length; i++) {
+      var step = pipeline.steps[i];
+      var view = stepView(step.status);
+      var nameAttr = ctx.escapeHtml(step.name || ('Step ' + (i + 1)));
+      html += '<div class="pipeline-step ' + view.cls + '"' +
+                ' data-step-idx="' + (i + 1) + '"' +
+                ' data-step-name="' + nameAttr + '">' +
+                '<div class="step-circle">' + view.glyph + '</div>' +
+                '<div class="step-label">' + nameAttr + '</div>' +
+                '<div class="step-status">' + ctx.escapeHtml(step.status || 'waiting') + '</div>';
+      // `view.glyph` for the running state is HTML (the SVG spinner)
+      // so it goes through innerHTML naturally — escapeHtml here would
+      // double-escape. Other states are plain unicode chars where
+      // innerHTML and escapeHtml give the same output.
+      if (Array.isArray(step.actions) && step.actions.length) {
+        html += '<div class="step-actions">';
+        for (var a = 0; a < step.actions.length; a++) {
+          var actName = String(step.actions[a]);
+          html +=
+            '<button class="pipeline-step-action"' +
+              ' data-workflow-id="' + idAttr + '"' +
+              ' data-step-name="' + nameAttr + '"' +
+              ' data-action="' + ctx.escapeHtml(actName) + '">' +
+              ctx.escapeHtml(actName) +
+            '</button>';
+        }
+        html += '</div>';
+      }
+      // Countdown badge — only on running steps with `expires_at`
+      // (the workflow author opts in by setting it). Live-ticked by
+      // tickStepCountdowns() every second.
+      if (step.expires_at && (step.status || '').toLowerCase() === 'running') {
+        html += '<div class="step-expires" data-expires-at="' +
+                  Number(step.expires_at) + '">' +
+                  formatRemaining(step.expires_at) +
+                '</div>';
+      }
+      html += '</div>'; // /pipeline-step
+
+      if (i < pipeline.steps.length - 1) {
+        var fill = connectorFill(step.status, pipeline.steps[i + 1].status);
+        html += '<div class="pipeline-connector ' + fill + '"></div>';
+      }
+    }
+    html += '</div>'; // /pipeline-strip
+
+    html += '<div class="pipeline-log-header">';
+    html += '<span class="pipeline-log-title">Step log</span>';
+    html += '<span class="pipeline-live ' + (terminal ? 'off' : 'on') + '">' +
+              (terminal ? 'final' : '\u25CF live') +
+            '</span>';
+    html += '<span class="pipeline-log-spacer"></span>';
+    html += '<button class="pipeline-scroll-lock" type="button">\u25BE Auto-scroll</button>';
+    html += '</div>';
+
+    html += '<div class="pipeline-log">';
+    html += renderLogLines(pipeline.log);
+    html += '</div>';
+
+    html += '</div>'; // /pipeline-tab
+    return html;
+  }
+
+  function renderLogLines(logArr) {
+    if (!logArr || !logArr.length) {
+      return '<div class="pipeline-log-empty">No log entries yet.</div>';
+    }
+    var out = '';
+    for (var i = 0; i < logArr.length; i++) {
+      out += renderLogLine(logArr[i]);
+    }
+    return out;
+  }
+
+  function renderLogLine(entry) {
+    var time = ctx.escapeHtml(String(entry.time || ''));
+    var msg = ctx.escapeHtml(String(entry.msg || ''));
+    var stepIdx = entry.step != null ? entry.step : entry.stage;
+    var stepAttr = stepIdx != null ? (' data-step-idx="' + Number(stepIdx) + '"') : '';
+    return '<div class="pipeline-log-line"' + stepAttr + '>' +
+             '<span class="log-time">' + time + '</span>' +
+             '<span class="log-msg">' + msg + '</span>' +
+           '</div>';
+  }
+
+  function applyLogFilter(pipelineRoot) {
+    var filter = pipelineRoot.dataset.filterStep || null;
+    var lines = pipelineRoot.querySelectorAll('.pipeline-log-line');
+    for (var i = 0; i < lines.length; i++) {
+      var match = filter == null || lines[i].dataset.stepIdx === filter;
+      lines[i].classList.toggle('hidden', !match);
+    }
+  }
+
+  // ── Pipeline tab — live polling ─────────────────────────────────
+  //
+  // While the Pipeline tab is open and the workflow hasn't reached a
+  // terminal status, poll /workflows/{id}/state/pipeline_state every
+  // 1s and diff-apply changes onto the existing DOM. We never re-render
+  // the whole tab — that would reset the user's scroll position in the
+  // log and kill any in-progress animations on the running circle.
+  function startPipelinePoller(workflowId, scopeEl) {
+    var POLL_MS = 1000;
+
+    // Find the .pipeline-tab element under the active panel scope.
+    function findRoot() {
+      // scopeEl may be the panel itself or a tab container; querySelector
+      // resolves to the first match either way.
+      return (scopeEl || document).querySelector('.pipeline-tab[data-workflow-id="' + cssEscape(workflowId) + '"]')
+        || document.querySelector('.pipeline-tab[data-workflow-id="' + cssEscape(workflowId) + '"]');
+    }
+
+    var handle = { id: workflowId, interval: null, lastEventSeq: -1, lastLogLen: 0 };
+    activePoller = handle;
+
+    async function tick() {
+      var root = findRoot();
+      if (!root || root.dataset.terminal === 'true') {
+        stopPoller();
+        return;
+      }
+      try {
+        var resp = await ctx.apiFetch(
+          '/workflows/' + encodeURIComponent(workflowId) + '/state/pipeline_state'
+        );
+        if (!resp || resp.value == null) return;
+        if (typeof resp.event_seq === 'number' && resp.event_seq === handle.lastEventSeq) {
+          // Snapshot hasn't advanced since last poll — skip work.
+          return;
+        }
+        handle.lastEventSeq = resp.event_seq != null ? resp.event_seq : handle.lastEventSeq;
+        applyPipelineUpdate(root, resp.value, handle);
+      } catch (_) {
+        // Transient errors during a 1Hz poll are common (engine pod
+        // restart, network blip). Swallow them silently and let the
+        // next tick try again — the worker resilience pattern from
+        // v0.11.14 applies here too.
+      }
+    }
+
+    handle.interval = setInterval(tick, POLL_MS);
+    // Capture the initial log length so the first diff doesn't append
+    // entries that are already on screen from the initial render.
+    var rootNow = findRoot();
+    if (rootNow) {
+      handle.lastLogLen = rootNow.querySelectorAll('.pipeline-log-line').length;
+    }
+    // Run immediately so operators don't wait a full second for the
+    // first refresh after the tab opens.
+    tick();
+  }
+
+  function stopPoller() {
+    if (activePoller && activePoller.interval) {
+      clearInterval(activePoller.interval);
+    }
+    activePoller = null;
+  }
+
+  function applyPipelineUpdate(root, value, handle) {
+    if (!value || !Array.isArray(value.steps)) return;
+
+    // Update step circles + connectors in place.
+    var stepEls = root.querySelectorAll('.pipeline-step');
+    var connectorEls = root.querySelectorAll('.pipeline-connector');
+    for (var i = 0; i < stepEls.length; i++) {
+      var s = value.steps[i];
+      if (!s) continue;
+      var view = stepView(s.status);
+      var el = stepEls[i];
+      // Reset state classes and reapply.
+      el.classList.remove('waiting', 'running', 'done', 'failed', 'cancelled', 'skipped');
+      el.classList.add(view.cls);
+      var glyphEl = el.querySelector('.step-circle');
+      if (glyphEl) {
+        // The running glyph is SVG markup (innerHTML); other statuses
+        // are plain unicode chars (textContent works for both, but
+        // setting innerHTML makes the SVG path render as a node).
+        if (view.isHtml) {
+          if (!glyphEl.querySelector('.step-spinner')) {
+            glyphEl.innerHTML = view.glyph;
+          }
+        } else if (glyphEl.textContent !== view.glyph) {
+          glyphEl.textContent = view.glyph;
+        }
+      }
+      var statusEl = el.querySelector('.step-status');
+      if (statusEl) statusEl.textContent = s.status || 'waiting';
+      reconcileStepActions(el, s, root.dataset.workflowId);
+      reconcileStepExpires(el, s);
+    }
+    for (var c = 0; c < connectorEls.length; c++) {
+      var prev = value.steps[c] && value.steps[c].status;
+      var next = value.steps[c + 1] && value.steps[c + 1].status;
+      var fill = connectorFill(prev, next);
+      connectorEls[c].classList.remove('full', 'partial', 'muted');
+      connectorEls[c].classList.add(fill);
+    }
+
+    // Auto-advance focus to the running step (or `current_step` if the
+    // workflow set it explicitly). Skipped when the user manually
+    // selected a step — their choice sticks until they click again to
+    // release. Keeps the log filter aligned with whatever's actually
+    // happening right now.
+    if (root.dataset.userSelected !== 'true') {
+      autoAdvanceFocus(root, value);
+    }
+
+    // Diff-append log lines.
+    var logArr = Array.isArray(value.log) ? value.log : [];
+    if (logArr.length > handle.lastLogLen) {
+      var logEl = root.querySelector('.pipeline-log');
+      if (logEl) {
+        var emptyEl = logEl.querySelector('.pipeline-log-empty');
+        if (emptyEl) emptyEl.remove();
+        var added = '';
+        for (var l = handle.lastLogLen; l < logArr.length; l++) {
+          added += renderLogLine(logArr[l]);
+        }
+        logEl.insertAdjacentHTML('beforeend', added);
+        handle.lastLogLen = logArr.length;
+        applyLogFilter(root);
+        if (root.dataset.scrollLock !== 'true') {
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+      }
+    }
+  }
+
+  // Pick the step the operator most likely cares about and select it,
+  // unless they've already chosen one manually (handled by the caller).
+  // Priority: explicit `current_step` from the snapshot → first
+  // `running` step → first `failed` step → no selection.
+  function autoAdvanceFocus(root, value) {
+    var idx = null;
+    if (typeof value.current_step === 'number' && value.current_step > 0) {
+      idx = value.current_step;
+    } else if (Array.isArray(value.steps)) {
+      for (var i = 0; i < value.steps.length; i++) {
+        if ((value.steps[i].status || '').toLowerCase() === 'running') {
+          idx = i + 1; break;
+        }
+      }
+      if (idx == null) {
+        for (var j = 0; j < value.steps.length; j++) {
+          if ((value.steps[j].status || '').toLowerCase() === 'failed') {
+            idx = j + 1; break;
+          }
+        }
+      }
+    }
+    var stepEls = root.querySelectorAll('.pipeline-step');
+    var changed = false;
+    for (var k = 0; k < stepEls.length; k++) {
+      var want = String(k + 1) === String(idx);
+      var has = stepEls[k].classList.contains('selected');
+      if (want && !has) { stepEls[k].classList.add('selected'); changed = true; }
+      else if (!want && has) { stepEls[k].classList.remove('selected'); changed = true; }
+    }
+    if (idx != null) {
+      root.dataset.filterStep = String(idx);
+    } else {
+      delete root.dataset.filterStep;
+    }
+    if (changed) applyLogFilter(root);
+  }
+
+  // Format remaining time until a unix-epoch deadline as "Xm Ys" or
+  // "Xs" (or "—" if already past). Used by the step countdown badge
+  // so operators can see exactly how long a wait_for_signal has
+  // before it times out.
+  function formatRemaining(epochSecs) {
+    var now = Math.floor(Date.now() / 1000);
+    var rem = Math.max(0, Number(epochSecs) - now);
+    if (rem <= 0) return 'expired';
+    if (rem < 60) return rem + 's';
+    var m = Math.floor(rem / 60);
+    var s = rem % 60;
+    if (m < 60) return m + 'm ' + (s ? s + 's' : '');
+    var h = Math.floor(m / 60);
+    var mm = m % 60;
+    return h + 'h ' + mm + 'm';
+  }
+
+  // Tick all visible step countdowns once per second. Started lazily
+  // by startCountdownTicker(); stopped when no .step-expires nodes
+  // remain (e.g. after the step transitions out of running and the
+  // poller's diff-update reconciles them away).
+  var countdownInterval = null;
+  function startCountdownTicker() {
+    if (countdownInterval) return;
+    countdownInterval = setInterval(function () {
+      var nodes = document.querySelectorAll('.step-expires[data-expires-at]');
+      if (!nodes.length) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+        return;
+      }
+      var nowSecs = Math.floor(Date.now() / 1000);
+      for (var i = 0; i < nodes.length; i++) {
+        var ea = Number(nodes[i].dataset.expiresAt);
+        nodes[i].textContent = formatRemaining(ea);
+        // Visual urgency at the last 60s.
+        if (ea - nowSecs <= 60) {
+          nodes[i].classList.add('step-expires-soon');
+        } else {
+          nodes[i].classList.remove('step-expires-soon');
+        }
+      }
+    }, 1000);
+  }
+
+  // Add/remove the live countdown badge in response to a fresh
+  // snapshot. Workflows clear `expires_at` when the wait completes
+  // (signal arrived, timer fired, step ended) and the badge needs
+  // to disappear in lockstep without a full re-render.
+  function reconcileStepExpires(stepEl, step) {
+    var existing = stepEl.querySelector('.step-expires');
+    var hasDeadline = step.expires_at &&
+      (step.status || '').toLowerCase() === 'running';
+    if (!hasDeadline) {
+      if (existing) existing.remove();
+      return;
+    }
+    var html = formatRemaining(step.expires_at);
+    if (existing) {
+      if (Number(existing.dataset.expiresAt) !== Number(step.expires_at)) {
+        existing.dataset.expiresAt = String(step.expires_at);
+      }
+      if (existing.textContent !== html) existing.textContent = html;
+    } else {
+      stepEl.insertAdjacentHTML('beforeend',
+        '<div class="step-expires" data-expires-at="' + Number(step.expires_at) + '">' +
+          html +
+        '</div>');
+      startCountdownTicker();
+    }
+  }
+
+  // Add/remove the per-step action buttons in response to a fresh
+  // snapshot. Workflows commonly clear `actions` once a step transitions
+  // (e.g. dropping the Approve/Reject buttons after the decision lands)
+  // and we want that to happen without a full tab re-render so the
+  // log scroll position and animations stay intact.
+  function reconcileStepActions(stepEl, step, workflowId) {
+    var existing = stepEl.querySelector('.step-actions');
+    var actions = Array.isArray(step.actions) ? step.actions : [];
+    if (!actions.length) {
+      if (existing) existing.remove();
+      return;
+    }
+    var stepName = stepEl.dataset.stepName || step.name || '';
+    var html = '';
+    for (var a = 0; a < actions.length; a++) {
+      var actName = String(actions[a]);
+      var safeAct = ctx.escapeHtml(actName);
+      var safeName = ctx.escapeHtml(stepName);
+      var safeId = ctx.escapeHtml(workflowId || '');
+      html +=
+        '<button class="pipeline-step-action"' +
+          ' data-workflow-id="' + safeId + '"' +
+          ' data-step-name="' + safeName + '"' +
+          ' data-action="' + safeAct + '">' +
+          safeAct +
+        '</button>';
+    }
+    if (existing) {
+      if (existing.innerHTML !== html) existing.innerHTML = html;
+    } else {
+      stepEl.insertAdjacentHTML('beforeend',
+        '<div class="step-actions">' + html + '</div>');
+    }
+  }
+
+  async function handleStepAction(workflowId, stepName, action) {
+    if (!workflowId || !stepName || !action) return;
+    var who = (typeof window !== 'undefined' && window.localStorage)
+      ? window.localStorage.getItem('assay.user') || ''
+      : '';
+    try {
+      await ctx.apiFetch(
+        '/workflows/' + encodeURIComponent(workflowId) + '/signal/step_action',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            payload: { step: stepName, action: action, user: who || null },
+          }),
+        }
+      );
+      ctx.toast(action + ' \u2192 ' + stepName, 'success');
+      // Snapshot will catch up via the 1Hz poller; no full re-render
+      // needed.
+    } catch (err) {
+      ctx.toast('Action failed: ' + (err && err.message), 'error');
+    }
+  }
+
+  // CSS.escape isn't universal in older browsers and our workflow ids
+  // can contain `.` (e.g. `promo-v0.1.0-rc24`) which would break a raw
+  // attribute selector. Minimal escape for the chars we actually care
+  // about in workflow ids.
+  function cssEscape(s) {
+    return String(s).replace(/(["\\])/g, '\\$1');
   }
 
   return { showDetail: showDetail, closeDetail: closeDetail };

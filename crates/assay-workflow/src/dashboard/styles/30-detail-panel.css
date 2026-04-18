@@ -1,0 +1,362 @@
+/* ── Chip list (used on worker + queue detail panels) ───────────── */
+.chip-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  padding: 3px 10px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* ── Row-detail two-column layout (workers + queues, v0.12.0) ─────
+ * Worker / queue inline-row expansion uses the same horizontal-real-
+ * estate-friendly two-column shape the workflow side panel had pre-
+ * v0.12.0. Left column (~40%): identity card / stats. Right column
+ * (~60%): variable-height lists (registered workflows + activities
+ * for workers; subscribed worker list for queues). Below the
+ * columns, full-width section for the recent-runs table.
+ *
+ * Stacks to a single column under 720px so narrow viewports stay
+ * readable.
+ */
+.row-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+@media (max-width: 720px) {
+  .row-detail-grid { grid-template-columns: 1fr; }
+}
+
+/* Two-column horizontal grid: each label/value pair is one row with
+ * the label on the left (auto-sized to its content), value on the
+ * right (fills the remaining space). Stacked vertically would waste
+ * the left column's width — long values that exceed the column wrap
+ * cleanly within the value cell. */
+.row-detail-grid .meta-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 16px;
+  row-gap: 8px;
+  margin: 0;
+  align-items: baseline;
+}
+.row-detail-grid .meta-grid dt {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin: 0;
+}
+.row-detail-grid .meta-grid dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-word;
+  min-width: 0;
+}
+
+.row-detail-grid .row-detail-right {
+  min-width: 0; /* let chip-lists wrap inside the grid cell */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.row-detail-grid .row-detail-right .detail-subhead:first-child {
+  margin-top: 0;
+}
+
+.row-detail-bottom {
+  margin-top: 0;
+}
+.row-detail-bottom .detail-subhead {
+  margin-top: 0;
+}
+
+/* 50/50 split variant — used when both columns hold equal-priority
+ * lists (e.g. registered workflows + activities for workers). The
+ * default row-detail-grid uses a wider-left split for "identity card
+ * + variable lists"; this variant makes both sides equal. */
+.row-detail-grid.row-detail-grid-50-50 {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* Slim meta strip at the top of the worker expansion — secondary
+ * fields (Registered, Concurrency) that aren't on the row but
+ * aren't worth a whole column. Single horizontal line with bullet
+ * separators between groups. */
+.row-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--text);
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  background: var(--surface-hover);
+  border-radius: 6px;
+}
+.row-detail-meta-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+.row-detail-meta-sep {
+  color: var(--text-muted);
+  margin: 0 4px;
+}
+
+/* ── Slim detail layout (v0.12.0) ────────────────────────────────
+ * Everything an operator needs at-a-glance (id, type, status, queue,
+ * created, actions) lives on the workflow row itself — the only
+ * field it can't carry is `completed_at`, so the detail block only
+ * surfaces that one meta line plus the action toolbar plus the tabs.
+ * No more left-column identity card; tabs fill the full width.
+ */
+.detail-meta-line {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.detail-meta-line .detail-meta-label {
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+/* ── Tabbed detail sections (Overview / State / Events / …) ───────── */
+.detail-tabs {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  /* Fill the right column of .detail-grid. */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.detail-tab-nav {
+  display: flex;
+  gap: 0;
+  background: var(--surface-hover);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.detail-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.detail-tab:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.detail-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--surface);
+  font-weight: 600;
+}
+.detail-tab.dim {
+  /* Tab has no content — still clickable so users can see the "empty"
+   * message, but dimmed so operators see the shape of a populated
+   * vs empty run at a glance. */
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+.detail-tab .tab-count {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 11px;
+}
+.detail-tab-panels {
+  padding: 16px;
+  background: var(--surface);
+}
+.detail-tab-panel {
+  display: none;
+}
+.detail-tab-panel.active {
+  display: block;
+}
+.detail-subhead {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.detail-subhead + * {
+  margin-bottom: 16px;
+}
+.detail-muted {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--yellow);
+}
+
+.status-dot.connected { background: var(--green); }
+.status-dot.disconnected { background: var(--red); }
+
+/* ── Detail Panel ───────────────────────────────────── */
+
+.detail-panel {
+  position: fixed;
+  top: 0;
+  right: -620px;
+  width: 600px;
+  height: calc(100vh - 32px);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 24px var(--shadow);
+  overflow-y: auto;
+  z-index: 50;
+  transition: right 0.25s ease;
+}
+
+.detail-panel.open {
+  right: 0;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.detail-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  /* Workflow ids can be long (timestamp + version + target). Prefer
+   * letting them wrap rather than truncating, since the detail view has
+   * the horizontal space to spare. `word-break: break-all` is the right
+   * fallback for strings without natural break points (underscores,
+   * dashes). */
+  word-break: break-all;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Long monospaced ids inside the meta grid (Run ID) — same break-all
+ * treatment so they wrap at the column boundary instead of exploding
+ * the grid layout. */
+.detail-id,
+.meta-id {
+  word-break: break-all;
+}
+
+.detail-body {
+  padding: 20px;
+}
+
+.detail-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.detail-close:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+/* ── Metadata Grid ──────────────────────────────────── */
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.meta-item label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.meta-item span {
+  font-size: 13px;
+}
+
+/* ── JSON Viewer ────────────────────────────────────── */
+
+.json-viewer {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  user-select: none;
+}
+
+.collapsible-header:hover {
+  color: var(--text);
+}
+
+.collapsible-content {
+  display: none;
+}
+
+.collapsible-content.open {
+  display: block;
+}
+

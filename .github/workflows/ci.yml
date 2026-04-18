@@ -2,66 +2,87 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
-    tags-ignore: ["v*"]
+    branches: ['**']
+    tags-ignore: ['v*']
   pull_request:
 
 permissions:
   contents: read
 
+# Cancel superseded runs on the same branch — saves CI minutes when
+# pushing rapid-fire commits.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  extension-tests:
+  ci:
+    name: moon ci (lint / test / build / e2e)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: openclaw-extension
+    timeout-minutes: 30
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: "22"
-      - run: npm install
-      - run: npx vitest run
+          # moon's affected detection compares against the base ref,
+          # which needs full history. Without this, every PR appears
+          # as a single-commit diff and the affected set is wrong.
+          fetch-depth: 0
 
-  check:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: macos-14
-            target: aarch64-apple-darwin
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
+      # Single source of truth for tool versions: .mise.toml at the
+      # repo root pins rust + node + moon. mise-action installs them
+      # and prepends them to PATH for every subsequent step.
+      - uses: jdx/mise-action@v2
         with:
-          components: clippy
-          targets: ${{ matrix.target }}
+          version: latest
+          install: true
+          cache: true
 
+      # Cargo's incremental build cache (target/, ~/.cargo/registry).
+      # Independent of moon's task-output cache — they cover different
+      # layers (compile artifacts vs declared task results).
       - uses: Swatinem/rust-cache@v2
         with:
-          # Shared across all branches — cache is only invalidated when
-          # Cargo.lock changes (new deps). Dramatically cuts CI time for
-          # PRs that don't touch dependencies (most of them).
-          shared-key: ${{ matrix.target }}-v2
-          # Cache all crates (including dev-dependencies like wiremock)
-          cache-all-crates: "true"
-          # Save cache even if tests fail, so next run has partial builds
-          save-if: "true"
+          shared-key: 'ci-rust-v3'
+          cache-all-crates: 'true'
+          save-if: 'true'
 
-      - name: Clippy (warnings = errors)
-        timeout-minutes: 10
-        run: cargo clippy --tests --target ${{ matrix.target }} -- -D warnings
+      # Cache the Playwright browser binaries (~150 MB) so we don't
+      # re-download chromium on every run. Key includes the e2e
+      # project's package.json so a Playwright bump invalidates the
+      # cache and forces a fresh install on the new version.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('crates/assay-workflow/tests-e2e/package.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
-      - name: Tests
-        # Global safety timeout — no individual test should hang more than
-        # a few seconds; if the step takes longer than 8 minutes something
-        # is wrong and we fail fast instead of waiting for CI timeout
-        timeout-minutes: 8
-        run: cargo test --target ${{ matrix.target }}
+      # Run only the tasks affected by the diff. moon walks the
+      # project graph, identifies which projects' inputs changed, and
+      # runs their `runInCI: true` tasks (lint/build/test for rust,
+      # install/install-browsers/test for the e2e + extension
+      # projects, build for the site). Doc-only PRs skip everything
+      # except site:build if the docs they touch feed it.
+      - name: moon ci
+        run: moon ci --color
+        env:
+          MOON_LOG: 'info'
+          PLAYWRIGHT_BROWSERS_PATH: '/home/runner/.cache/ms-playwright'
 
-      # Formatting is enforced by dprint locally (not rustfmt)
-      # dprint handles Rust, Markdown, YAML, JSON, TOML
+      # On failure, surface the Playwright HTML report + traces +
+      # screenshots so the PR author can debug without rerunning
+      # locally.
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            crates/assay-workflow/tests-e2e/playwright-report
+            crates/assay-workflow/tests-e2e/test-results
+            /tmp/assay-e2e-engine.log
+            /tmp/assay-e2e-worker.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,33 @@
+/* ── Error display ──────────────────────────────────── */
+
+.error-box {
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  padding: 12px;
+  color: var(--red);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  margin-bottom: 16px;
+  white-space: pre-wrap;
+}
+
+/* ── Warning icon ───────────────────────────────────── */
+
+.warning-icon {
+  color: var(--yellow);
+  font-weight: bold;
+}
+
+/* ── Empty state ────────────────────────────────────── */
+
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+
+.empty-state p {
+  font-size: 14px;
+}
+

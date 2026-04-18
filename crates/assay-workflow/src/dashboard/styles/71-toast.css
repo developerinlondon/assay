@@ -1,0 +1,49 @@
+/* ── Toast notifications (tier-1 dashboard) ─────────────────────────
+   Transient feedback for mutation results. Bottom-right stack, one
+   toast per action. Colour-coded by kind (success / error / info). */
+
+.toast-container {
+  position: fixed;
+  bottom: 40px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 300;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--surface-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 200px;
+  max-width: 420px;
+  opacity: 0;
+  transform: translateX(12px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  font-size: 13px;
+  pointer-events: auto;
+}
+
+.toast-show {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast-success {
+  border-left-color: var(--accent);
+}
+
+.toast-error {
+  border-left-color: #d04040;
+}
+
+.toast-info {
+  border-left-color: var(--text-muted, #888);
+}
+

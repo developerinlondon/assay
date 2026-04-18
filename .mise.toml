@@ -1,3 +1,36 @@
 [tools]
-rust = "1.92.0"
-protoc = "29.3"
+# Rust toolchain — pinned so local dev and CI agree byte-for-byte.
+# Bump in lockstep with anything that needs a newer compiler feature.
+rust = "1.95.0"
+
+# Node + npm for:
+#   - crates/assay-workflow/tests-e2e (Playwright dashboard e2e suite)
+#   - openclaw-extension (VS Code extension TypeScript + vitest)
+# CI installs this via jdx/mise-action so the same version runs locally
+# and in GitHub Actions.
+node = "25.9.0"
+
+# moon — task orchestration across the workspace's projects
+# (root binary, workflow crate, dashboard e2e tests, site, openclaw
+# extension). Affected-task detection drives CI.
+"aqua:moonrepo/moon" = "2.2.1"
+
+[tasks.ci]
+description = 'Run every affected task across all projects (mirrors GitHub Actions ci.yml)'
+run = 'moon ci'
+
+[tasks.e2e]
+description = 'Run the dashboard end-to-end Playwright suite (boots engine + worker locally)'
+run = 'moon run dashboard-e2e:test'
+
+[tasks.build]
+description = 'Build the assay release binary'
+run = 'moon run assay-lua:build'
+
+[tasks.lint]
+description = 'Run cargo clippy across the workspace (warnings = errors)'
+run = 'moon run assay-lua:lint'
+
+[tasks.test]
+description = 'Run the full Rust test suite'
+run = 'moon run assay-lua:test'

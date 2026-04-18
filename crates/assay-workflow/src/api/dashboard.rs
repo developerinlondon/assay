@@ -11,7 +11,34 @@ use crate::store::WorkflowStore;
 
 const INDEX_HTML: &str = include_str!("../dashboard/index.html");
 const THEME_CSS: &str = include_str!("../dashboard/theme.css");
-const STYLE_CSS: &str = include_str!("../dashboard/style.css");
+
+// style.css used to be one 1942-line file that was hard to scan +
+// hard for agents to edit without collateral damage. Split into
+// sections under ../dashboard/styles/. Concat order matters
+// (cascading order) — the filenames are numbered to make the order
+// obvious at a glance. Served as a single /workflow/style.css so
+// the browser still does one HTTP fetch.
+const STYLE_CSS: &str = concat!(
+    include_str!("../dashboard/styles/00-base.css"),
+    include_str!("../dashboard/styles/10-sidebar.css"),
+    include_str!("../dashboard/styles/11-status-bar.css"),
+    include_str!("../dashboard/styles/20-workflow-rows.css"),
+    include_str!("../dashboard/styles/21-tables.css"),
+    include_str!("../dashboard/styles/30-detail-panel.css"),
+    include_str!("../dashboard/styles/40-modal.css"),
+    include_str!("../dashboard/styles/41-row-actions.css"),
+    include_str!("../dashboard/styles/42-select.css"),
+    include_str!("../dashboard/styles/43-links.css"),
+    include_str!("../dashboard/styles/50-pipeline.css"),
+    include_str!("../dashboard/styles/51-events.css"),
+    include_str!("../dashboard/styles/60-buttons.css"),
+    include_str!("../dashboard/styles/61-forms.css"),
+    include_str!("../dashboard/styles/62-cards.css"),
+    include_str!("../dashboard/styles/63-toolbar.css"),
+    include_str!("../dashboard/styles/70-feedback.css"),
+    include_str!("../dashboard/styles/71-toast.css"),
+    include_str!("../dashboard/styles/80-mobile.css"),
+);
 const APP_JS: &str = include_str!("../dashboard/app.js");
 const WORKFLOWS_JS: &str = include_str!("../dashboard/components/workflows.js");
 const DETAIL_JS: &str = include_str!("../dashboard/components/detail.js");
@@ -19,6 +46,9 @@ const SCHEDULES_JS: &str = include_str!("../dashboard/components/schedules.js");
 const WORKERS_JS: &str = include_str!("../dashboard/components/workers.js");
 const QUEUES_JS: &str = include_str!("../dashboard/components/queues.js");
 const SETTINGS_JS: &str = include_str!("../dashboard/components/settings.js");
+const MODAL_JS: &str = include_str!("../dashboard/components/modal.js");
+const ACTIONS_JS: &str = include_str!("../dashboard/components/actions.js");
+const SELECT_JS: &str = include_str!("../dashboard/components/select.js");
 
 /// Inline SVG favicon — single accent-coloured "A" mark on a dark surface.
 /// Browsers fetch this for the tab icon and (in collapsed mode) it doubles as
@@ -43,6 +73,9 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
         .route("/workflow/components/workers.js", get(workers_js))
         .route("/workflow/components/queues.js", get(queues_js))
         .route("/workflow/components/settings.js", get(settings_js))
+        .route("/workflow/components/modal.js", get(modal_js))
+        .route("/workflow/components/actions.js", get(actions_js))
+        .route("/workflow/components/select.js", get(select_js))
         .route("/workflow/favicon.svg", get(favicon))
         .route("/favicon.ico", get(favicon))
 }
@@ -100,4 +133,7 @@ async fn schedules_js() -> impl IntoResponse { asset("application/javascript", S
 async fn workers_js() -> impl IntoResponse { asset("application/javascript", WORKERS_JS) }
 async fn queues_js() -> impl IntoResponse { asset("application/javascript", QUEUES_JS) }
 async fn settings_js() -> impl IntoResponse { asset("application/javascript", SETTINGS_JS) }
+async fn modal_js() -> impl IntoResponse { asset("application/javascript", MODAL_JS) }
+async fn actions_js() -> impl IntoResponse { asset("application/javascript", ACTIONS_JS) }
+async fn select_js() -> impl IntoResponse { asset("application/javascript", SELECT_JS) }
 async fn favicon() -> impl IntoResponse { asset("image/svg+xml", FAVICON_SVG) }

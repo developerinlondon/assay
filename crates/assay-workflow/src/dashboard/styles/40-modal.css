@@ -1,0 +1,148 @@
+/* ── Modal (v0.12.0) ──────────────────────────────────────────────
+ * Backdrop + centred dialog. Replaces browser prompt() / confirm()
+ * for Signal / Cancel / Terminate / Continue-as-new + future flows.
+ * Two flavours, both render via AssayModal: confirm (title + message
+ * + cancel/confirm) and form (title + fields + cancel/submit).
+ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+.modal-overlay.open { display: flex; }
+
+.modal-dialog {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.modal-close:hover { color: var(--text); }
+
+.modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+
+.modal-message {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.modal-message-danger {
+  padding: 10px 12px;
+  border-left: 3px solid var(--red);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  border-radius: 0 4px 4px 0;
+}
+.modal-form-body .modal-message:last-child { margin-bottom: 0; }
+
+.modal-form-body { display: flex; flex-direction: column; gap: 14px; }
+
+.modal-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.modal-field-label {
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-size: 11px;
+}
+.modal-field-control {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  background: var(--surface-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+.modal-field-control:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+textarea.modal-field-control {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  resize: vertical;
+  min-height: 80px;
+}
+.modal-field-hint { color: var(--text-muted); font-size: 11px; }
+.modal-field-error {
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-hover);
+}
+
+.modal-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.modal-btn:hover { background: var(--surface-hover); border-color: var(--text-muted); }
+.modal-confirm {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.modal-confirm:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.modal-confirm-danger {
+  background: var(--red);
+  border-color: var(--red);
+}
+.modal-confirm-danger:hover { background: var(--red); filter: brightness(1.1); }
+

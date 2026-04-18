@@ -1,0 +1,63 @@
+/* ── Inline row-expansion (v0.11.12) ───────────────────────────────
+ * Clicking a workflow row expands a detail block below it. This is
+ * the primary "drill into one run" interaction now; the legacy right-
+ * hand detail panel still exists for child-workflow navigation and
+ * direct showDetail calls, but most users interact via these inline
+ * expansions. */
+/* Rows are click-expandable anywhere — not just the id link — so the
+ * whole <tr> gets cursor + subtle hover feedback. The explicit
+ * `.clickable-row` class is applied in JS to avoid sweeping this onto
+ * tables that aren't meant to be row-expandable. */
+tr.clickable-row {
+  cursor: pointer;
+}
+
+tr.wf-row-expanded > td {
+  /* Subtle accent to tie the expanded row to its detail block below. */
+  background: var(--surface-hover);
+}
+tr.wf-detail-row > td {
+  padding: 0;
+  border-top: none;
+  background: var(--surface-hover);
+}
+.wf-inline-detail {
+  padding: 16px 20px;
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Inline row-expansion renders immediately beneath a row that already
+   shows the full workflow id in the first column AND the row itself is
+   a toggle (click-to-expand, click-to-collapse). The detail-header
+   section is redundant in that mode: h2 duplicates the row's id, and
+   the ✕ button duplicates the row-click collapse behaviour. Hide the
+   whole header block so the detail content starts flush with the top
+   of the expansion. The right-hand side panel (used for child-workflow
+   navigation) keeps the header because it has no row-above context
+   and no row-click toggle. */
+.wf-inline-detail .detail-header {
+  display: none;
+}
+
+.wf-inline-detail .detail-body {
+  /* Without the header eating 40-60px, the body itself shouldn't pad
+     top — the expansion box already provides padding on the outside. */
+  padding-top: 0;
+}
+
+/* The two-column grid has a margin-top for the standalone side-panel
+   case (separates it from the header + meta). In inline mode there's
+   no header above it, so the margin is pure whitespace. */
+.wf-inline-detail .detail-grid {
+  margin-top: 0;
+}
+/* Children link inside the expanded detail stays distinct from the
+ * outer workflow-id links so the delegated click handler on
+ * #wf-table-wrap doesn't accidentally re-trigger row expansion when a
+ * user clicks a child link. */
+.wf-inline-detail .child-link {
+  color: var(--accent);
+}
+
