@@ -80,18 +80,17 @@
     <span class="status-item">
       Namespace:
       <!--
-        Clickable shortcut to the namespace selector. Users spending
-        time in a single namespace see this value all the time; making
-        it a live switcher avoids the round-trip up to the sidebar
-        dropdown.
+        Inline namespace switcher. A native <select> styled to look like
+        plain text anchored in the status bar — the native dropdown
+        therefore opens where the user clicked, not at the sidebar's
+        select. Options are mirrored from the sidebar select on each
+        render. A hidden <strong id="status-namespace"> is kept alongside
+        for any code that still reads the current namespace from the
+        status bar (backwards-compat with older code paths).
       -->
-      <button type="button" id="status-namespace-btn" class="status-namespace-btn"
-              title="Switch namespace">
-        <strong id="status-namespace">main</strong>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M6 9l6 6 6-6"/>
-        </svg>
-      </button>
+      <select id="status-namespace-select" class="status-namespace-select"
+              title="Switch namespace"></select>
+      <strong id="status-namespace" hidden>main</strong>
     </span>
     <span class="status-item">
       Workers: <strong id="status-workers">0</strong>
