@@ -34,7 +34,12 @@ jobs:
       # and prepends them to PATH for every subsequent step.
       - uses: jdx/mise-action@v2
         with:
-          version: latest
+          # Pin mise itself rather than using `latest`. The download
+          # step for `latest` has been intermittently failing with
+          # "zstd: unexpected end of file" / "tar: child returned
+          # status 1" — a flaky CDN issue, not anything wrong with
+          # our config. A pinned version uses a stable artifact URL.
+          version: 2026.4.17
           install: true
           cache: true
 
