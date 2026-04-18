@@ -451,12 +451,85 @@ tr.wf-detail-row > td {
   color: var(--accent);
 }
 
+/* ── Two-column detail layout (v0.11.14) ──────────────────────────
+ * Left: fixed-width "identity card" (status, meta items stacked,
+ * actions). Always visible regardless of which tab is selected.
+ * Right: tabbed content, gets the rest of the horizontal space.
+ * Stacks vertically on narrow screens (< 720px).
+ */
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 20px;
+  margin-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.detail-core {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-core-status {
+  font-size: 14px;
+}
+
+/* Meta list — semantic <dl>. Each pair is one flex row with the label
+ * muted above the value. Stacks naturally within its fixed-width
+ * column. */
+.detail-core-meta {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.detail-core-meta dt {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  margin: 0 0 2px;
+}
+
+.detail-core-meta dd {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.detail-core-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.detail-core-actions .btn-action {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+}
+
 /* ── Tabbed detail sections (Overview / State / Events / …) ───────── */
 .detail-tabs {
-  margin-top: 16px;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
+  /* Fill the right column of .detail-grid. */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 .detail-tab-nav {
   display: flex;

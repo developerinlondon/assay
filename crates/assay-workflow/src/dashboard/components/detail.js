@@ -85,26 +85,38 @@ var AssayDetail = (function () {
       '</div>' +
       '<div class="detail-body">';
 
-    // Metadata grid
-    html +=
-      '<div class="meta-grid">' +
-        metaItem('Status', '<span class="badge ' + ctx.badgeClass(status) + '">' + status + '</span>') +
-        metaItem('Type', ctx.escapeHtml(wf.workflow_type || '-')) +
-        metaItem('Namespace', ctx.escapeHtml(wf.namespace || '-')) +
-        metaItem('Queue', ctx.escapeHtml(wf.task_queue || '-')) +
-        // Run ID also rendered in full — same reasoning as the header. The
-        // .mono span already wraps on long ids because `.mono` inside a
-        // flex meta-item cell stays within its column.
-        metaItem('Run ID', '<span class="mono meta-id">' +
-          ctx.escapeHtml(wf.run_id || '-') + '</span>') +
-        metaItem('Created', ctx.formatTime(wf.created_at)) +
-        metaItem('Claimed By', ctx.escapeHtml(wf.claimed_by || '-')) +
-        metaItem('Completed', wf.completed_at ? ctx.formatTime(wf.completed_at) : '-') +
+    // Two-column grid: fixed-width left column carries the run's
+    // identity card (status badge, meta items stacked, actions) and
+    // stays visible regardless of which tab is selected. Right column
+    // gets the rest of the horizontal space for tab content, which is
+    // the variable-height material. On narrow viewports the grid
+    // collapses to a single column (see .detail-grid in style.css).
+    html += '<div class="detail-grid">';
+
+    // ── LEFT column: core info + actions ───────────────
+    html += '<div class="detail-core">';
+
+    html += '<div class="detail-core-status">' +
+      '<span class="badge ' + ctx.badgeClass(status) + '">' + status + '</span>' +
       '</div>';
 
-    // Actions
+    html +=
+      '<dl class="detail-core-meta">' +
+        coreMeta('Type', ctx.escapeHtml(wf.workflow_type || '-')) +
+        coreMeta('Namespace', ctx.escapeHtml(wf.namespace || '-')) +
+        coreMeta('Queue', ctx.escapeHtml(wf.task_queue || '-')) +
+        coreMeta('Run ID',
+          '<span class="mono meta-id">' + ctx.escapeHtml(wf.run_id || '-') + '</span>') +
+        coreMeta('Created', ctx.formatTime(wf.created_at)) +
+        coreMeta('Claimed By', ctx.escapeHtml(wf.claimed_by || '-')) +
+        (wf.completed_at
+          ? coreMeta('Completed', ctx.formatTime(wf.completed_at))
+          : '') +
+      '</dl>';
+
+    // Actions sit at the bottom of the left column, below the meta.
     var idAttr = ctx.escapeHtml(wf.id);
-    html += '<div class="action-row" style="margin-bottom: 16px;">';
+    html += '<div class="detail-core-actions">';
     if (!terminal) {
       html +=
         '<button class="btn-action btn-signal-detail" data-id="' + idAttr + '">Send signal</button>' +
@@ -115,14 +127,19 @@ var AssayDetail = (function () {
       html +=
         '<button class="btn-action btn-continue-detail" data-id="' + idAttr + '" title="Start a fresh run with the same type + queue">Continue as new</button>';
     }
-    html += '</div>';
+    html += '</div>'; // /detail-core-actions
+
+    html += '</div>'; // /detail-core (left column closed)
+
+    // ── RIGHT column: tabs + panel content ─────────────
+    html += '<div class="detail-tabs-col">';
 
     // Tabs — Overview / State / Events / Children / Attributes. Variable-
-    // height content lives behind tabs so the header + meta grid + actions
-    // remain compact and scannable regardless of how much data a run has
-    // accumulated. Tabs that have no content (no state snapshot, zero
-    // children, no search attrs) are dimmed rather than hidden so operators
-    // have consistent visual anchors across runs.
+    // height content lives behind tabs so the left column (identity +
+    // actions) stays compact and scannable regardless of how much data
+    // a run has accumulated. Tabs that have no content (no state
+    // snapshot, zero children, no search attrs) are dimmed rather than
+    // hidden so operators have consistent visual anchors across runs.
 
     var tabs = [
       {
@@ -246,7 +263,7 @@ var AssayDetail = (function () {
           label +
         '</button>';
     }
-    html += '</div>';
+    html += '</div>'; // /detail-tab-nav
     html += '<div class="detail-tab-panels">';
     for (var u = 0; u < tabs.length; u++) {
       var active2 = u === 0 ? ' active' : '';
@@ -255,10 +272,13 @@ var AssayDetail = (function () {
           tabs[u].build() +
         '</div>';
     }
-    html += '</div>';
-    html += '</div>';
+    html += '</div>'; // /detail-tab-panels
+    html += '</div>'; // /detail-tabs
 
-    html += '</div>';
+    html += '</div>'; // /detail-tabs-col (right column closed)
+    html += '</div>'; // /detail-grid (two-column grid closed)
+
+    html += '</div>'; // /detail-body
     p.innerHTML = html;
 
     // Wire up event delegation
@@ -427,8 +447,12 @@ var AssayDetail = (function () {
   }
 
 
-  function metaItem(label, value) {
-    return '<div class="meta-item"><label>' + label + '</label><span>' + value + '</span></div>';
+  // Left-column meta row: `<dt>Label</dt><dd>Value</dd>`. Using a
+  // semantic definition list so each row pairs cleanly without needing
+  // flex plumbing, and screen readers announce the label/value
+  // relationship.
+  function coreMeta(label, value) {
+    return '<dt>' + label + '</dt><dd>' + value + '</dd>';
   }
 
   function closeDetail() {

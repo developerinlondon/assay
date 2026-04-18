@@ -498,13 +498,47 @@ function M.listen(opts)
             .. "' queue '" .. queue .. "'"
     )
 
-    -- Poll loop
+    -- Poll loop. Wraps each engine call in pcall so a transient network
+    -- blip (dns timeout, engine pod restart, kube-proxy hiccup) no
+    -- longer kills the worker. On failure we back off exponentially up
+    -- to LISTEN_BACKOFF_MAX_SECS and reset to the baseline sleep on the
+    -- first successful call — so recovery is instant once connectivity
+    -- returns instead of the worker waiting out a stale long sleep.
+    local LISTEN_BACKOFF_MIN_SECS = 1
+    local LISTEN_BACKOFF_MAX_SECS = 30
+    local idle_sleep = 0.5
+    local backoff = LISTEN_BACKOFF_MIN_SECS
     while true do
-        M._api("POST", "/workers/heartbeat", { worker_id = _worker_id })
+        local hb_ok, hb_err = pcall(function()
+            M._api("POST", "/workers/heartbeat", { worker_id = _worker_id })
+        end)
+        if not hb_ok then
+            log.warn(
+                "workflow.listen: heartbeat failed, backing off "
+                    .. tostring(backoff) .. "s: " .. tostring(hb_err)
+            )
+            sleep(backoff)
+            backoff = math.min(backoff * 2, LISTEN_BACKOFF_MAX_SECS)
+            goto continue
+        end
 
-        local did_work = M._poll_workflow_task(queue) or M._poll_activity_task(queue)
+        local poll_ok, did_work = pcall(function()
+            return M._poll_workflow_task(queue) or M._poll_activity_task(queue)
+        end)
+        if not poll_ok then
+            log.warn(
+                "workflow.listen: task poll failed, backing off "
+                    .. tostring(backoff) .. "s: " .. tostring(did_work)
+            )
+            sleep(backoff)
+            backoff = math.min(backoff * 2, LISTEN_BACKOFF_MAX_SECS)
+            goto continue
+        end
 
-        if not did_work then sleep(0.5) end
+        -- First success after a failure resets the exponential backoff.
+        backoff = LISTEN_BACKOFF_MIN_SECS
+        if not did_work then sleep(idle_sleep) end
+        ::continue::
     end
 end
 

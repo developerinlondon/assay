@@ -4,14 +4,41 @@ All notable changes to Assay are documented here.
 
 ## [0.11.14] - 2026-04-18
 
+### Fixed
+
+- **Worker resilience — don't crash on transient HTTP errors.** The
+  `workflow.listen()` poll loop now wraps each heartbeat + task-poll
+  call in `pcall` and backs off exponentially (1s → 2s → 4s → 8s → 16s,
+  capped at 30s) on failure. Previously a single DNS blip, engine pod
+  restart, or kube-proxy hiccup would propagate an error out of the
+  loop, kill the worker, and leave the worker row stale until the
+  consumer's pod was restarted — downstream effects included empty
+  Queues view, empty Workers view (the registered worker had stopped
+  heartbeating), and silently-dropped workflow tasks.
+
+  First successful call after a failure resets the backoff to the
+  baseline so recovery is instant once connectivity returns. Warn-
+  level log on each failure includes the backoff duration and error
+  message so operators can tell from logs whether a worker is cleanly
+  weathering a blip vs. persistently broken.
+
 ### Changed
 
-- **Full workflow IDs in the list view.** Removed the 32-char truncation
-  on the workflow id column; long ids wrap at column boundaries via
-  `word-break: break-all`. Makes the id the first thing an operator can
-  read and copy without opening the detail view. Since ids follow a
-  consistent pattern (`promo-{ts}-{version}-to-{env}`), rows wrap to
-  similar heights — the table doesn't become ragged.
+- **Two-column detail layout.** The workflow detail block is now a
+  grid: left column is a fixed-width identity card (status badge, meta
+  items stacked as `<dl>`, actions at the bottom) that stays visible
+  regardless of which tab is selected; right column gets the rest of
+  the horizontal space for tab content. Previously meta + actions ran
+  horizontally above the tabs, which left tab content cramped on any
+  single run with more than a few events. Stacks to a single column on
+  viewports narrower than 720px.
+
+- **Full workflow IDs in the list view.** Removed the 32-char
+  truncation on the workflow id column; long ids wrap at column
+  boundaries via `word-break: break-all`. Makes the id the first thing
+  an operator can read and copy without opening the detail view. Since
+  ids follow a consistent pattern (`promo-{ts}-{version}-to-{env}`),
+  rows wrap to similar heights — the table doesn't become ragged.
 
 - **Inline detail hides its id header.** When a row is expanded inline,
   the detail block no longer repeats the workflow id as an h2 — the
@@ -19,8 +46,9 @@ All notable changes to Assay are documented here.
   space. The right-hand side panel (used by child-workflow navigation)
   keeps the h2 because there's no row-above context there.
 
-Together these cut ~40px of vertical noise per expanded row while
-making the list view more scannable in the collapsed state.
+Together the two-column restructure and the header-hide cut ~60px of
+vertical noise per expanded row while making the list view more
+scannable in the collapsed state.
 
 ## [0.11.13] - 2026-04-17
 
