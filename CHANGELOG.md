@@ -2,6 +2,24 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.15] - 2026-04-18
+
+### Changed
+
+- **Inline row-expansion hides the detail-header entirely.** Previously
+  the inline expansion still rendered the `.detail-header` block (with
+  the h2 hidden but the `✕` close button visible on the right), leaving
+  ~40px of whitespace above the actual content. The close button was
+  redundant anyway — clicking the row itself toggles expand/collapse —
+  so the whole header block is now `display: none` in inline mode. The
+  right-hand side panel still renders its header (no row-above context
+  there, no row-click toggle). Detail-body and detail-grid top padding
+  / margin also zeroed for inline mode so content sits flush with the
+  top of the expansion.
+
+Cuts another ~40-60px of vertical space per expanded row on top of
+v0.11.14's id-header hide.
+
 ## [0.11.14] - 2026-04-18
 
 ### Fixed
