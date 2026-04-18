@@ -10,7 +10,10 @@ stack: 'frontend'
 
 tasks:
   build:
-    command: '../target/release/assay site/build.lua'
+    # moon runs the command from the project dir (site/), so the script
+    # path is relative to here. Don't prefix with site/ — that'd resolve
+    # to site/site/build.lua.
+    command: '../target/release/assay build.lua'
     deps:
       - 'assay-lua:build'
     inputs:

@@ -43,6 +43,12 @@ jobs:
           install: true
           cache: true
 
+      # mise's rust plugin defaults to the `minimal` profile which
+      # excludes clippy. CI runs `cargo clippy --workspace` so add
+      # the component explicitly. Cheap (~2s) and idempotent.
+      - name: Install clippy component
+        run: rustup component add clippy
+
       # Cargo's incremental build cache (target/, ~/.cargo/registry).
       # Independent of moon's task-output cache — they cover different
       # layers (compile artifacts vs declared task results).
