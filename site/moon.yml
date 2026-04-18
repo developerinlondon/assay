@@ -10,10 +10,10 @@ stack: 'frontend'
 
 tasks:
   build:
-    # moon runs the command from the project dir (site/), so the script
-    # path is relative to here. Don't prefix with site/ — that'd resolve
-    # to site/site/build.lua.
-    command: '../target/release/assay build.lua'
+    # build.lua reads other paths (src/lua/builtins/mod.rs, stdlib/**,
+    # docs/**, CHANGELOG.md) relative to cwd, so it needs to run from
+    # the repo root — not from site/. Wrap in a shell to cd up first.
+    command: 'bash -c "cd .. && ./target/release/assay site/build.lua"'
     deps:
       - 'assay-lua:build'
     inputs:
