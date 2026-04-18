@@ -2,6 +2,26 @@
 
 All notable changes to Assay are documented here.
 
+## [0.11.14] - 2026-04-18
+
+### Changed
+
+- **Full workflow IDs in the list view.** Removed the 32-char truncation
+  on the workflow id column; long ids wrap at column boundaries via
+  `word-break: break-all`. Makes the id the first thing an operator can
+  read and copy without opening the detail view. Since ids follow a
+  consistent pattern (`promo-{ts}-{version}-to-{env}`), rows wrap to
+  similar heights — the table doesn't become ragged.
+
+- **Inline detail hides its id header.** When a row is expanded inline,
+  the detail block no longer repeats the workflow id as an h2 — the
+  row above already shows the full id, repeating it wastes vertical
+  space. The right-hand side panel (used by child-workflow navigation)
+  keeps the h2 because there's no row-above context there.
+
+Together these cut ~40px of vertical noise per expanded row while
+making the list view more scannable in the collapsed state.
+
 ## [0.11.13] - 2026-04-17
 
 ### Changed

@@ -425,6 +425,24 @@ tr.wf-detail-row > td {
   border-left: 3px solid var(--accent);
   border-bottom: 1px solid var(--border);
 }
+
+/* Inline row-expansion renders immediately beneath a row that already
+   shows the full workflow id in the first column — repeating that id
+   as an h2 at the top of the detail block is redundant and wastes
+   vertical space. Hide it only in the inline case; the right-hand
+   side panel (used for child-workflow navigation) keeps the h2 because
+   there's no row-above context there. */
+.wf-inline-detail .detail-header h2 {
+  display: none;
+}
+
+.wf-inline-detail .detail-header {
+  /* Without the h2 the header row is just the close button — keep it
+     anchored to the right without the default flex baseline leaving
+     it stranded mid-pane. */
+  justify-content: flex-end;
+  padding-bottom: 0;
+}
 /* Children link inside the expanded detail stays distinct from the
  * outer workflow-id links so the delegated click handler on
  * #wf-table-wrap doesn't accidentally re-trigger row expansion when a
@@ -567,6 +585,11 @@ tr.wf-detail-row > td {
 
 .data-table .mono {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  /* Long workflow ids (`promo-…-v0.1.0-rc23-to-qa`) wrap at column
+     boundaries rather than forcing horizontal scroll on the whole
+     table. Since ids follow a consistent pattern, rows tend to wrap
+     to similar heights. */
+  word-break: break-all;
   font-size: 12px;
 }
 
