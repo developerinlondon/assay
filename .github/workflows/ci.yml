@@ -1,10 +1,17 @@
 name: CI
 
 on:
-  push:
-    branches: ['**']
-    tags-ignore: ['v*']
+  # Cover every PR commit via `pull_request` (fires on open + every
+  # new commit via the `synchronize` event, tested against the
+  # merge commit with the base branch). Restrict `push` to `main`
+  # only so feat-branch pushes don't double-run with pull_request,
+  # and so merges into `main` don't re-run the exact commit that
+  # pull_request just validated. `tags-ignore: ['v*']` keeps the
+  # release tag from triggering CI — that belongs to release.yml.
   pull_request:
+  push:
+    branches: [main]
+    tags-ignore: ['v*']
 
 permissions:
   contents: read
