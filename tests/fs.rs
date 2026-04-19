@@ -429,3 +429,186 @@ async fn test_fs_readdir_nonexistent() {
     let result = run_lua(r#"fs.readdir("/nonexistent/path")"#).await;
     assert!(result.is_err());
 }
+
+// ──────────────────────── fs.lines ────────────────────────
+
+#[tokio::test]
+async fn test_fs_lines_basic() {
+    let dir = std::env::temp_dir().join("assay_test_lines_basic");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("three.txt");
+    std::fs::write(&path, "alpha\nbeta\ngamma\n").unwrap();
+
+    let script = format!(
+        r#"
+            local out = {{}}
+            for line in fs.lines("{}") do
+                table.insert(out, line)
+            end
+            assert.eq(#out, 3)
+            assert.eq(out[1], "alpha")
+            assert.eq(out[2], "beta")
+            assert.eq(out[3], "gamma")
+        "#,
+        path.display().to_string().replace('\\', "\\\\")
+    );
+    run_lua(&script).await.unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_fs_lines_empty_file() {
+    let dir = std::env::temp_dir().join("assay_test_lines_empty");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("empty.txt");
+    std::fs::write(&path, "").unwrap();
+
+    let script = format!(
+        r#"
+            local count = 0
+            for _ in fs.lines("{}") do count = count + 1 end
+            assert.eq(count, 0, "empty file yields zero lines")
+        "#,
+        path.display().to_string().replace('\\', "\\\\")
+    );
+    run_lua(&script).await.unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_fs_lines_no_trailing_newline() {
+    let dir = std::env::temp_dir().join("assay_test_lines_no_trailing");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("no_trail.txt");
+    std::fs::write(&path, "one\ntwo").unwrap(); // no final \n
+
+    let script = format!(
+        r#"
+            local out = {{}}
+            for line in fs.lines("{}") do table.insert(out, line) end
+            assert.eq(#out, 2, "final line without trailing \\n still yielded")
+            assert.eq(out[1], "one")
+            assert.eq(out[2], "two")
+        "#,
+        path.display().to_string().replace('\\', "\\\\")
+    );
+    run_lua(&script).await.unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_fs_lines_nonexistent() {
+    let result = run_lua(r#"
+        for _ in fs.lines("/nonexistent/file.txt") do end
+    "#)
+    .await;
+    assert!(result.is_err());
+}
+
+// ──────────────────────── fs.sub_in_file ────────────────────────
+
+#[tokio::test]
+async fn test_fs_sub_in_file_basic() {
+    let dir = std::env::temp_dir().join("assay_test_sub_basic");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("conf.yaml");
+    std::fs::write(&path, "image: assay:v0.10.1\nother: unchanged\n").unwrap();
+
+    let script = format!(
+        r#"
+            local n = fs.sub_in_file("{}", "v0%.10%.1", "v0.12.1")
+            assert.eq(n, 1, "one substitution")
+            local after = fs.read("{}")
+            assert.contains(after, "assay:v0.12.1")
+            assert.contains(after, "other: unchanged")
+        "#,
+        path.display().to_string().replace('\\', "\\\\"),
+        path.display().to_string().replace('\\', "\\\\")
+    );
+    run_lua(&script).await.unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_fs_sub_in_file_no_match() {
+    let dir = std::env::temp_dir().join("assay_test_sub_no_match");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("conf.yaml");
+    std::fs::write(&path, "nothing to see\n").unwrap();
+    let original_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+    // tiny sleep so mtime comparison is meaningful on fast filesystems
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    let script = format!(
+        r#"
+            local n = fs.sub_in_file("{}", "v0%.11%.x", "v0.12.1")
+            assert.eq(n, 0, "no match = no substitution")
+        "#,
+        path.display().to_string().replace('\\', "\\\\")
+    );
+    run_lua(&script).await.unwrap();
+
+    // Verify the file wasn't rewritten (mtime unchanged when count==0).
+    let new_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+    assert_eq!(
+        original_mtime, new_mtime,
+        "file should not be rewritten when no match"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_fs_sub_in_file_multiple_occurrences() {
+    let dir = std::env::temp_dir().join("assay_test_sub_multi");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("conf.yaml");
+    std::fs::write(&path, "a: v0.10.1\nb: v0.10.1\nc: v0.10.1\n").unwrap();
+
+    let script = format!(
+        r#"
+            local n = fs.sub_in_file("{}", "v0%.10%.1", "v0.12.1")
+            assert.eq(n, 3, "three substitutions")
+        "#,
+        path.display().to_string().replace('\\', "\\\\")
+    );
+    run_lua(&script).await.unwrap();
+
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(after, "a: v0.12.1\nb: v0.12.1\nc: v0.12.1\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_fs_sub_in_file_backref() {
+    let dir = std::env::temp_dir().join("assay_test_sub_backref");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("conf.yaml");
+    std::fs::write(&path, "image: assay:v0.10.1\n").unwrap();
+
+    // Lua pattern: wrap the match in brackets via a capture group.
+    let script = format!(
+        r#"
+            local n = fs.sub_in_file("{}", "(v%d+%.%d+%.%d+)", "[%1]")
+            assert.eq(n, 1)
+            local after = fs.read("{}")
+            assert.contains(after, "[v0.10.1]")
+        "#,
+        path.display().to_string().replace('\\', "\\\\"),
+        path.display().to_string().replace('\\', "\\\\")
+    );
+    run_lua(&script).await.unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_fs_sub_in_file_nonexistent() {
+    let result = run_lua(r#"fs.sub_in_file("/nonexistent/file", "x", "y")"#).await;
+    assert!(result.is_err());
+}

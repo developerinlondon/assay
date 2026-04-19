@@ -38,6 +38,32 @@ This applies to all files in the repo: `stdlib/`, `src/`, `tests/`, `*.md`, `*.h
 `CHANGELOG.md`, and any commit/PR text. The only legitimate exception is the copyright holder's name
 in `LICENSE`/`NOTICE`/`CLA.md`.
 
+## Failing tests: never rewrite, always escalate
+
+**If a test is failing, the default is to fix the code under test — NOT the test.** Modifying a
+failing test (relaxing an assertion, changing an expected value, loosening a regex, adding
+`#[ignore]`, deleting the test, or narrowing its scope) requires **explicit approval from the human
+operator** before committing. No exceptions — not "while debugging", not "just to unblock CI", not
+"the test was wrong anyway". Ask, wait for a clear yes, then change.
+
+Why this rule exists: AI agents have a known failure mode where a failing assertion gets "solved"
+by weakening the check until it passes, masking the real regression behind green CI. The test is a
+specification the code is supposed to meet; weakening it silently changes the specification without
+the human realising the behavioural guarantee has shrunk.
+
+When a test fails, the expected agent workflow is:
+
+1. Report the failure verbatim (test name + failure message + relevant file:line).
+2. Explain what the test is checking and what the code actually did.
+3. Propose a fix — which is usually in the code under test, occasionally in the test (if the test
+   itself has a real bug), but never "just delete the assertion".
+4. Wait for approval before editing anything test-related.
+
+If the test genuinely has a bug (e.g. wrong assertion, stale fixture, pre-existing flake), that's
+also a conversation, not a silent rewrite. Flag it, describe the bug, propose the correction,
+wait for confirmation. Tests are the repo's behavioural contract; changes to them need the same
+care as changes to published API surface.
+
 ## Release docs checklist
 
 Every release (patch, minor, or major) must update **all** of the following before the PR merges —

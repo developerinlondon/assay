@@ -26,6 +26,34 @@ Filesystem operations. No `require()` needed.
 - `fs.glob(pattern)` → `[path]` — Glob pattern matching, returns array of path strings
 - `fs.tempdir()` → path — Create a temporary directory
 
+### Line Iteration & In-Place Editing
+
+- `fs.lines(path)` → iterator — Streaming line reader. Designed for
+  `for line in fs.lines(path) do … end`. Reads from a buffered reader
+  so multi-GB files never land in memory; each line is returned with
+  the trailing `\n` (or `\r\n`) stripped. Equivalent to `while read
+  line; do …; done < file` in bash.
+- `fs.sub_in_file(path, pattern, repl)` → count — In-place
+  search-and-replace; equivalent to `sed -i 's/pattern/repl/g' path`
+  but portable (no BSD-vs-GNU `sed -i` split). `pattern` uses Lua
+  patterns (same as `string.gsub`); `repl` can be a replacement
+  string with `%0`-`%9` backreferences OR a function per
+  `string.gsub`. Writes only when at least one match is found, so
+  repeated calls on an already-substituted file are no-ops on disk.
+
+```lua
+-- grep-equivalent: count lines matching a pattern
+local n = 0
+for line in fs.lines("/var/log/app.log") do
+  if line:match("ERROR") then n = n + 1 end
+end
+
+-- sed -i equivalent: bump a version string across every file
+for _, p in ipairs(fs.glob("apps/**/values.yaml")) do
+  fs.sub_in_file(p, "image: foo:v%d+%.%d+%.%d+", "image: foo:v1.2.3")
+end
+```
+
 ### Metadata
 
 - `fs.stat(path)` → `{size, type, modified, created, permissions}` — File metadata

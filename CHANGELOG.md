@@ -2,6 +2,55 @@
 
 All notable changes to Assay are documented here.
 
+## [0.12.1] - 2026-04-19
+
+Text-processing stdlib primitives + scratch-based image, so assay
+scripts don't need a shell in the container and the published image
+goes from ~25 MB back to ~10 MB.
+
+### Added
+
+- **`fs.lines(path)`** — streaming line iterator. Designed for
+  `for line in fs.lines(path) do … end`; reads from a buffered
+  reader so multi-GB files don't land in memory. Each line is
+  returned with the trailing `\n` (or `\r\n`) stripped. Equivalent
+  to `while read line; do …; done < file` in bash.
+- **`fs.sub_in_file(path, pattern, repl)`** — `sed -i`
+  equivalent, but portable (no BSD-vs-GNU `sed -i` dance) and
+  without the quoting traps of shell. Uses Lua patterns (same
+  engine as `string.gsub`); `repl` accepts a replacement string
+  with `%0`-`%9` backreferences OR a function. Writes only when
+  the substitution count is > 0, so repeated calls on an
+  already-substituted file are no-ops on disk.
+- **`string.split(s, sep?)`** — awk-style field split, extending
+  Lua's built-in `string` library. With no `sep`, splits on any run
+  of whitespace and drops leading/trailing empty fields (matches
+  awk default FS and Python `str.split()`). With a literal `sep`,
+  splits on that substring (not a Lua pattern — use
+  `string.gmatch` if you need pattern semantics). Pairs with
+  `fs.lines` so `awk '{print $2}'`-style pipelines become three
+  lines of Lua.
+
+### Changed
+
+- **Docker image runtime stage back to `FROM scratch`** (reverts the
+  Feb-2026 regression to alpine:3.21). The published
+  `ghcr.io/developerinlondon/assay` image is now the assay binary
+  plus `/etc/ssl/certs/ca-certificates.crt`, nothing else. About
+  40% smaller (~10 MB vs ~25 MB with Alpine), zero Alpine CVE
+  surface. Downstream images (anyone `FROM ghcr.io/developerinlondon/assay`)
+  inherit the slimming automatically on next rebuild. The
+  `command: ["/bin/sh", "-c", …]` wrapper that originally forced
+  Alpine has been removed from every usage in the gitops repo;
+  the new text-processing primitives above cover the shell-out
+  cases that used to need sed/awk.
+- **Regression guards on the Dockerfile** (`tests/dockerfile.rs`):
+  asserts the runtime stage is `FROM scratch`, that the CA bundle
+  is copied in, and that the ENTRYPOINT uses an absolute path
+  (`/assay`, not bare `assay` — scratch has no `$PATH`). These
+  fail CI loudly if anyone tries to flip the runtime back to
+  Alpine without justification.
+
 ## [0.12.0] - 2026-04-18
 
 This release combines a major dashboard upgrade (Steps tab + step-
