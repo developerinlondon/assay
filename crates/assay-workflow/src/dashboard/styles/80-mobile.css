@@ -1,0 +1,50 @@
+/* ── Mobile Sidebar ─────────────────────────────────── */
+
+.sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -220px;
+    height: calc(100vh - 32px);
+    z-index: 150;
+    transition: left 0.25s ease;
+  }
+
+  .sidebar.open {
+    left: 0;
+  }
+
+  .sidebar-toggle {
+    display: block;
+  }
+
+  .main-content {
+    padding: 16px;
+    padding-top: 48px;
+  }
+
+  .detail-panel {
+    width: 100%;
+    right: -100%;
+  }
+
+  .meta-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

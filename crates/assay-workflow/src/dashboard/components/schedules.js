@@ -113,6 +113,10 @@ var AssaySchedules = (function () {
         '</div>' +
       '</div>';
 
+    if (typeof AssaySelect !== 'undefined') {
+      AssaySelect.enhance(wrap.querySelector('#sched-overlap'));
+    }
+
     wrap.querySelector('#sched-submit-btn').addEventListener(
       'click',
       isEdit ? handlePatch : handleCreate

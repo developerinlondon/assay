@@ -1,0 +1,53 @@
+# Headless browser tests for the dashboard. Boots the assay binary
+# (built by assay-lua:build), starts a demo worker that emits the
+# canonical pipeline_state.steps[] shape, and drives the dashboard
+# with Playwright. The lifecycle script is `run.lua` in this dir,
+# written in assay Lua — see docs/modules/process.md for the
+# process.spawn API it uses.
+
+language: 'typescript'
+layer: 'automation'
+stack: 'frontend'
+
+tasks:
+  install:
+    command: 'npm install --no-audit --no-fund'
+    inputs:
+      - 'package.json'
+      - 'package-lock.json'
+    outputs:
+      - 'node_modules'
+    options:
+      cache: true
+      runInCI: true
+
+  install-browsers:
+    command: 'npx playwright install --with-deps chromium'
+    deps:
+      - 'install'
+    options:
+      # Browser binaries land in ~/.cache/ms-playwright (out of repo);
+      # CI caches that path explicitly via actions/cache.
+      cache: false
+      runInCI: true
+
+  test:
+    # The Lua runner does the engine + worker spawn, polling, seed,
+    # Playwright invocation, and cleanup in one script. moon's job is
+    # just to make sure the deps (engine binary, npm deps, browsers)
+    # are present first.
+    command: '../../../target/release/assay run run.lua'
+    deps:
+      - 'assay-lua:build'
+      - 'install-browsers'
+    inputs:
+      - '**/*.{ts,json,lua}'
+      - 'fixtures/**/*'
+      - '/crates/assay-workflow/src/dashboard/**/*'
+      - '/crates/assay-workflow/src/api/**/*'
+    env:
+      ASSAY_REPO_ROOT: '$workspaceRoot'
+    options:
+      cache: true
+      runInCI: true
+      retryCount: 1

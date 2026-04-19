@@ -1,4 +1,5 @@
 use mlua::Lua;
+use std::time::{Duration, Instant};
 
 /// Parse process list from /proc (Linux)
 #[cfg(target_os = "linux")]
@@ -168,6 +169,195 @@ pub fn register_process(lua: &Lua) -> mlua::Result<()> {
         }
     })?;
     process_table.set("kill", kill_fn)?;
+
+    // process.spawn(opts) — launch a detached child process, return its pid.
+    //
+    // opts table:
+    //   cmd      string  — required; binary path or name resolvable via PATH
+    //   args     table?  — positional args (no shell parsing; pass them as
+    //                      individual array elements)
+    //   cwd      string? — working directory; defaults to caller's
+    //   env      table?  — extra env vars merged onto the caller's environment
+    //   stdout   string? — file path to redirect stdout to; default = inherit
+    //   stderr   string? — file path to redirect stderr to; default = inherit
+    //
+    // Returns a table { pid = N }. The child runs detached — Rust's Child
+    // handle is forgotten so the OS process survives the spawn() return.
+    // Use process.wait(pid) to reap it later, or process.kill(pid) to
+    // terminate. NOT auto-reaped — every spawn() must be paired with a
+    // wait() to avoid zombies.
+    let spawn_fn = lua.create_function(|lua, opts: mlua::Table| {
+        let cmd: String = opts.get("cmd").map_err(|_| {
+            mlua::Error::runtime("process.spawn: opts.cmd (string) is required")
+        })?;
+
+        let args: Option<Vec<String>> = opts.get::<Option<mlua::Table>>("args")?.map(|t| {
+            t.sequence_values::<String>()
+                .filter_map(|v| v.ok())
+                .collect()
+        });
+
+        let cwd: Option<String> = opts.get("cwd")?;
+
+        let env_pairs: Option<Vec<(String, String)>> =
+            opts.get::<Option<mlua::Table>>("env")?.map(|t| {
+                let mut pairs = Vec::new();
+                for entry in t.pairs::<String, String>().flatten() {
+                    pairs.push(entry);
+                }
+                pairs
+            });
+
+        let stdout_path: Option<String> = opts.get("stdout")?;
+        let stderr_path: Option<String> = opts.get("stderr")?;
+
+        let mut command = std::process::Command::new(&cmd);
+        if let Some(a) = args {
+            command.args(a);
+        }
+        if let Some(ref d) = cwd {
+            command.current_dir(d);
+        }
+        if let Some(ref vars) = env_pairs {
+            for (k, v) in vars {
+                command.env(k, v);
+            }
+        }
+
+        // Stdin always /dev/null — a backgrounded process should never
+        // be expected to read from the caller's stdin, and inheriting it
+        // can lock the parent script.
+        command.stdin(std::process::Stdio::null());
+
+        if let Some(ref path) = stdout_path {
+            let file = std::fs::File::create(path).map_err(|e| {
+                mlua::Error::runtime(format!(
+                    "process.spawn: failed to open stdout file '{path}': {e}"
+                ))
+            })?;
+            command.stdout(std::process::Stdio::from(file));
+        }
+        if let Some(ref path) = stderr_path {
+            let file = std::fs::File::create(path).map_err(|e| {
+                mlua::Error::runtime(format!(
+                    "process.spawn: failed to open stderr file '{path}': {e}"
+                ))
+            })?;
+            command.stderr(std::process::Stdio::from(file));
+        }
+
+        let child = command.spawn().map_err(|e| {
+            mlua::Error::runtime(format!("process.spawn: failed to launch '{cmd}': {e}"))
+        })?;
+        let pid = child.id() as i32;
+
+        // Detach: drop the Child without trying to reap. On Unix, Drop
+        // doesn't kill the process; the OS keeps it running. The child
+        // will become a zombie when it exits unless someone wait()s for
+        // it — that's the caller's responsibility (process.wait below).
+        std::mem::forget(child);
+
+        let result = lua.create_table()?;
+        result.set("pid", pid)?;
+        Ok(result)
+    })?;
+    process_table.set("spawn", spawn_fn)?;
+
+    // process.wait(pid, opts?) — wait for a spawned process to exit.
+    //
+    // opts table (all optional):
+    //   timeout  number — seconds to wait before giving up (default: blocking)
+    //
+    // Returns: { status = N, exited = bool, signaled = bool, timed_out = bool }
+    //   status     — exit code (0..255), or 128+sig if killed by signal
+    //   exited     — true if the process called exit() normally
+    //   signaled   — true if the process was killed by a signal
+    //   timed_out  — true if `timeout` elapsed before the process exited
+    //                (the process is still running; status is meaningless)
+    //
+    // Since process.spawn forgets the Child, we reap via libc::waitpid
+    // directly. Calling wait() on a pid the caller didn't spawn is
+    // valid as long as the pid is still in the caller's process group.
+    let wait_fn = lua.create_function(|lua, args: mlua::MultiValue| {
+        let mut iter = args.into_iter();
+        let pid_v = iter
+            .next()
+            .ok_or_else(|| mlua::Error::runtime("process.wait: pid required"))?;
+        let pid: i32 = match pid_v {
+            mlua::Value::Integer(n) => n as i32,
+            mlua::Value::Number(n) => n as i32,
+            _ => return Err(mlua::Error::runtime("process.wait: pid must be a number")),
+        };
+        if pid <= 0 {
+            return Err(mlua::Error::runtime("process.wait: pid must be > 0"));
+        }
+
+        let mut timeout_secs: Option<f64> = None;
+        if let Some(mlua::Value::Table(opts)) = iter.next() {
+            timeout_secs = opts.get::<Option<f64>>("timeout")?;
+            if let Some(t) = timeout_secs
+                && (!t.is_finite() || t < 0.0)
+            {
+                return Err(mlua::Error::runtime(
+                    "process.wait: timeout must be a non-negative finite number",
+                ));
+            }
+        }
+
+        let deadline = timeout_secs.map(|s| Instant::now() + Duration::from_secs_f64(s));
+        let mut raw_status: i32 = 0;
+        loop {
+            let flags = if deadline.is_some() {
+                libc::WNOHANG
+            } else {
+                0
+            };
+            let ret = unsafe { libc::waitpid(pid, &mut raw_status, flags) };
+            if ret == pid {
+                break;
+            } else if ret == 0 && deadline.is_some() {
+                // WNOHANG: child not yet exited
+                if Instant::now() >= deadline.unwrap() {
+                    let result = lua.create_table()?;
+                    result.set("status", -1)?;
+                    result.set("exited", false)?;
+                    result.set("signaled", false)?;
+                    result.set("timed_out", true)?;
+                    return Ok(result);
+                }
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
+            } else if ret < 0 {
+                let err = std::io::Error::last_os_error();
+                return Err(mlua::Error::runtime(format!(
+                    "process.wait: waitpid({pid}) failed: {err}"
+                )));
+            } else {
+                // ret > 0 but != pid shouldn't happen with a specific pid.
+                return Err(mlua::Error::runtime(format!(
+                    "process.wait: waitpid({pid}) returned unexpected pid {ret}"
+                )));
+            }
+        }
+
+        let exited = libc::WIFEXITED(raw_status);
+        let signaled = libc::WIFSIGNALED(raw_status);
+        let status = if exited {
+            libc::WEXITSTATUS(raw_status)
+        } else if signaled {
+            128 + libc::WTERMSIG(raw_status)
+        } else {
+            -1
+        };
+
+        let result = lua.create_table()?;
+        result.set("status", status)?;
+        result.set("exited", exited)?;
+        result.set("signaled", signaled)?;
+        result.set("timed_out", false)?;
+        Ok(result)
+    })?;
+    process_table.set("wait", wait_fn)?;
 
     lua.globals().set("process", process_table)?;
 

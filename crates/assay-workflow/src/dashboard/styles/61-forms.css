@@ -1,0 +1,146 @@
+/* ── Forms ──────────────────────────────────────────── */
+
+.form-group {
+  margin-bottom: 12px;
+}
+
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.form-textarea {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.form-inline {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.form-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+/* ── Action buttons + inline forms (tier-1 dashboard) ───────────────
+   Reused across workflow detail, schedule rows, settings namespace
+   list. Minimal: outline by default, solid on primary action. */
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.btn-action {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.btn-action:hover {
+  background: var(--surface-hover);
+}
+
+.btn-action-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* Override the base .btn-action:hover (background → surface-hover,
+ * which goes white in light mode) so the primary variant stays
+ * accent-coloured on hover instead of turning white. brightness 1.1
+ * gives the visual feedback. */
+.btn-action-primary:hover {
+  background: var(--accent-hover, var(--accent));
+  border-color: var(--accent-hover, var(--accent));
+  color: #fff;
+  filter: brightness(1.05);
+}
+
+.btn-action-danger {
+  color: #d04040;
+  border-color: #d04040;
+}
+
+.btn-action-danger:hover {
+  background: rgba(208, 64, 64, 0.08);
+}
+
+.inline-form {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inline-form label {
+  font-size: 12px;
+  color: var(--text-muted, #888);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inline-form input[type="text"],
+.inline-form textarea,
+.inline-form select {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+}
+
+.inline-form textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.inline-form .form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}

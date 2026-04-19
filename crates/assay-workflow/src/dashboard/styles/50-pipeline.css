@@ -1,0 +1,222 @@
+/* ── Pipeline tab (v0.12.0) ────────────────────────────────────────
+ * AWE-side convention: any workflow that exposes a `pipeline_state`
+ * query with a `steps[]` array gets a Pipeline tab automatically.
+ * See docs/modules/workflow.md for the schema. The visual language
+ * (5 canonical statuses + state-aware connector fills) is hardcoded
+ * here on purpose — every consumer using assay sees the same circles,
+ * which is the cross-app glanceability the whole feature exists for.
+ */
+.pipeline-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 280px;
+}
+
+.pipeline-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding: 8px 0 4px;
+  overflow-x: auto;
+}
+
+.pipeline-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 84px;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 120ms ease;
+}
+
+.pipeline-step:hover {
+  background: var(--surface-hover);
+}
+
+.pipeline-step.selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.step-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.pipeline-step.waiting   .step-circle { color: var(--text-muted); }
+.pipeline-step.running   .step-circle {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: pipeline-spin 2s linear infinite;
+}
+.pipeline-step.done      .step-circle {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 18%, transparent);
+  color: var(--green);
+}
+.pipeline-step.failed    .step-circle {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  color: var(--red);
+}
+.pipeline-step.cancelled .step-circle {
+  border-color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 18%, transparent);
+  color: var(--orange);
+}
+
+/* Skipped — step never ran because the workflow ended before
+ * reaching it. Differs from `cancelled` (which marks the step that
+ * actively got cancelled): low-contrast outline, dimmed glyph, no
+ * fill. Reads as "ghosted out, not actually executed". */
+.pipeline-step.skipped { opacity: 0.45; }
+.pipeline-step.skipped .step-circle {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-style: dashed;
+}
+.pipeline-step.skipped .step-label,
+.pipeline-step.skipped .step-status {
+  color: var(--text-muted);
+}
+
+@keyframes pipeline-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.step-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  max-width: 96px;
+  word-break: break-word;
+}
+
+.step-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.pipeline-step-action {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border: 1px solid var(--accent);
+  background: var(--surface);
+  color: var(--accent);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.pipeline-step-action:hover {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+/* Connector lines between circles. State-aware fill is set by JS
+ * (see connectorFill in detail.js): full when both ends are done,
+ * partial when leading into a running step, muted past the cursor.
+ */
+.pipeline-connector {
+  flex: 1 1 auto;
+  height: 2px;
+  background: var(--border);
+  margin: 24px 4px 0; /* sit at the vertical centre of a 40px circle */
+  position: relative;
+  overflow: hidden;
+  min-width: 18px;
+}
+
+.pipeline-connector.full    { background: var(--green); }
+.pipeline-connector.partial {
+  background: linear-gradient(to right,
+    var(--green) 0%, var(--green) 50%,
+    var(--border) 50%, var(--border) 100%);
+}
+.pipeline-connector.muted   { background: var(--border); }
+
+.pipeline-log-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.pipeline-log-title {
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.pipeline-live {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.pipeline-live.on  { color: var(--green); }
+.pipeline-live.off { color: var(--text-muted); }
+
+.pipeline-log-spacer { flex: 1 1 auto; }
+
+.pipeline-scroll-lock {
+  font: inherit;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.pipeline-scroll-lock:hover { color: var(--text); border-color: var(--text-muted); }
+
+.pipeline-log {
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pipeline-log-line { display: flex; gap: 12px; padding: 1px 0; }
+.pipeline-log-line.hidden { display: none; }
+.pipeline-log-line .log-time { color: var(--text-muted); flex: 0 0 auto; }
+.pipeline-log-line .log-msg  { color: var(--text); word-break: break-word; }
+.pipeline-log-empty { color: var(--text-muted); font-style: italic; }
+

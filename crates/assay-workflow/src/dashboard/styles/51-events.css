@@ -1,0 +1,150 @@
+/* ── Events tab — master-detail layout (v0.12.0) ──────────────────
+ * Left column: chronological list of events with seq + type + time.
+ * Right column: the selected event's full payload. Much easier to
+ * scan than the previous stacked-expandable layout, and matches how
+ * operators actually read event history (pick one → inspect).
+ */
+.event-split {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 12px;
+  min-height: 280px;
+}
+@media (max-width: 720px) {
+  .event-split { grid-template-columns: 1fr; }
+}
+
+.event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  background: var(--surface);
+}
+
+.event-list-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 100ms ease, color 100ms ease;
+}
+.event-list-item:hover {
+  background: var(--surface-hover);
+}
+.event-list-item.active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.event-list-item .event-seq {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.event-list-item .event-type {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-list-item .event-time {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.event-detail {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  min-height: 200px;
+  overflow-y: auto;
+  max-height: 420px;
+}
+.event-detail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.event-detail-type {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+.event-detail-meta {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.event-detail-panel[hidden] { display: none; }
+
+/* ── Event Timeline ─────────────────────────────────── */
+
+.event-timeline {
+  border-left: 2px solid var(--border);
+  margin-left: 8px;
+  padding-left: 16px;
+}
+
+.event-item {
+  position: relative;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.event-item::before {
+  content: "";
+  position: absolute;
+  left: -21px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  border: 2px solid var(--surface);
+}
+
+.event-item .event-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.event-item .event-type {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.event-item .event-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.event-payload {
+  display: none;
+  margin-top: 6px;
+}
+
+.event-payload.open {
+  display: block;
+}
+
