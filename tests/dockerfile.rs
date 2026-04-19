@@ -20,11 +20,13 @@ fn dockerfile_runtime_stage_is_from_scratch() {
 
     // The runtime stage is the last `FROM` line in a multi-stage
     // build (earlier FROMs are builder/intermediate stages with `AS`).
+    // `next_back()` on the DoubleEndedIterator grabs it directly
+    // without walking the whole line stream (`Iterator::last` would).
     let last_from = content
         .lines()
         .map(str::trim_start)
         .filter(|l| l.starts_with("FROM "))
-        .last()
+        .next_back()
         .expect("Dockerfile must contain at least one FROM line");
 
     assert_eq!(
