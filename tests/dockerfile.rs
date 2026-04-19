@@ -20,13 +20,14 @@ fn dockerfile_runtime_stage_is_from_scratch() {
 
     // The runtime stage is the last `FROM` line in a multi-stage
     // build (earlier FROMs are builder/intermediate stages with `AS`).
-    // `next_back()` on the DoubleEndedIterator grabs it directly
-    // without walking the whole line stream (`Iterator::last` would).
+    // `rfind` on the DoubleEndedIterator is a one-pass reverse
+    // search — cheaper than `filter(..).next_back()` (clippy 1.95
+    // surfaces this via `clippy::filter_next`) and `Iterator::last`
+    // would walk the whole stream forwards.
     let last_from = content
         .lines()
         .map(str::trim_start)
-        .filter(|l| l.starts_with("FROM "))
-        .next_back()
+        .rfind(|l| l.starts_with("FROM "))
         .expect("Dockerfile must contain at least one FROM line");
 
     assert_eq!(
