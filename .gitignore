@@ -26,4 +26,3 @@ assay-workflow.db-*
 /crates/assay-workflow/tests-e2e/test-results/
 /crates/assay-workflow/tests-e2e/playwright-report/
 /crates/assay-workflow/tests-e2e/.last-run.json
-/crates/assay-workflow/tests-e2e/package-lock.json

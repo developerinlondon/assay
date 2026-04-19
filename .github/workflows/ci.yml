@@ -16,9 +16,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: moon ci (lint / test / build / e2e)
-    runs-on: ubuntu-latest
+  # Rust workspace: clippy + tests + e2e via `moon ci`, on both
+  # release targets. Job name `check` + the two matrix entries
+  # produce the status contexts `check (ubuntu-latest,
+  # x86_64-unknown-linux-gnu)` and `check (macos-14,
+  # aarch64-apple-darwin)`, matching branch protection on `main`.
+  # Matrix coverage exists because assay ships binaries for both
+  # targets via release.yml — CI must validate each on every PR.
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
 
     steps:
@@ -51,21 +65,25 @@ jobs:
 
       # Cargo's incremental build cache (target/, ~/.cargo/registry).
       # Independent of moon's task-output cache — they cover different
-      # layers (compile artifacts vs declared task results).
+      # layers (compile artifacts vs declared task results). Keyed on
+      # the matrix target so linux and macos have independent caches.
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: 'ci-rust-v3'
+          shared-key: 'ci-${{ matrix.target }}-v3'
           cache-all-crates: 'true'
           save-if: 'true'
 
-      # Cache the Playwright browser binaries (~150 MB) so we don't
-      # re-download chromium on every run. Key includes the e2e
-      # project's package.json so a Playwright bump invalidates the
-      # cache and forces a fresh install on the new version.
+      # Cache Playwright browser binaries (~150 MB). Playwright stores
+      # them under an OS-specific default path — list both so the
+      # cache action matches whichever the runner uses. Key includes
+      # the e2e project's package.json so a Playwright bump
+      # invalidates the cache and forces a fresh install.
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
-          path: ~/.cache/ms-playwright
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('crates/assay-workflow/tests-e2e/package.json') }}
           restore-keys: |
             playwright-${{ runner.os }}-
@@ -80,16 +98,16 @@ jobs:
         run: moon ci --color
         env:
           MOON_LOG: 'info'
-          PLAYWRIGHT_BROWSERS_PATH: '/home/runner/.cache/ms-playwright'
 
       # On failure, surface the Playwright HTML report + traces +
       # screenshots so the PR author can debug without rerunning
-      # locally.
+      # locally. Artifact name is per-OS so both matrix runs can
+      # upload without colliding.
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.os }}
           path: |
             crates/assay-workflow/tests-e2e/playwright-report
             crates/assay-workflow/tests-e2e/test-results
@@ -97,3 +115,28 @@ jobs:
             /tmp/assay-e2e-worker.log
           if-no-files-found: ignore
           retention-days: 7
+
+  # Dedicated openclaw-extension vitest gate. Ubuntu-only (pure node
+  # + vitest; no native deps). Kept as a distinct required check so a
+  # PR that only breaks the extension fails this job specifically,
+  # instead of hiding behind a generic "moon ci failed" in the matrix
+  # jobs. Moon's cache makes the task near-free when the extension
+  # isn't touched.
+  extension-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v2
+        with:
+          version: 2026.4.17
+          install: true
+          cache: true
+
+      - name: moon run openclaw-extension:test
+        run: moon run openclaw-extension:test --color
+        env:
+          MOON_LOG: 'info'
