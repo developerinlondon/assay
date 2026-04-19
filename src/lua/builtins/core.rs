@@ -365,7 +365,100 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     })?;
     fs_table.set("readdir", readdir_fn)?;
 
+    // fs.lines(path) — stateful iterator yielding one line per call.
+    // Designed for `for line in fs.lines(path) do ... end`. Streams via
+    // BufReader so multi-GB files don't land in memory. Lines are
+    // stripped of their trailing `\n` (and `\r\n` on Windows files).
+    // Returns an iterator function; Lua's for-loop calls it until nil.
+    let lines_fn = lua.create_function(|lua, path: String| {
+        use std::io::BufRead;
+        let file = std::fs::File::open(&path).map_err(|e| {
+            mlua::Error::runtime(format!("fs.lines: failed to open {path:?}: {e}"))
+        })?;
+        let iter = std::sync::Arc::new(std::sync::Mutex::new(
+            std::io::BufReader::new(file).lines(),
+        ));
+        lua.create_function(move |_, ()| {
+            let mut it = iter
+                .lock()
+                .map_err(|e| mlua::Error::runtime(format!("fs.lines: lock poisoned: {e}")))?;
+            match it.next() {
+                Some(Ok(line)) => Ok(Some(line)),
+                Some(Err(e)) => Err(mlua::Error::runtime(format!("fs.lines: read error: {e}"))),
+                None => Ok(None),
+            }
+        })
+    })?;
+    fs_table.set("lines", lines_fn)?;
+
+    // fs.sub_in_file(path, pattern, repl) — `sed -i` equivalent.
+    // In-place search-and-replace using Lua's native pattern engine
+    // (same semantics as string.gsub, including %0-%9 backreferences
+    // and function replacements). Reads the file, substitutes, and
+    // only writes back if at least one match was made — so repeated
+    // calls on an already-substituted file are a no-op on disk.
+    // Returns the count of substitutions.
+    let sub_in_file_fn =
+        lua.create_function(|lua, (path, pattern, repl): (String, String, mlua::Value)| {
+            let content = std::fs::read_to_string(&path).map_err(|e| {
+                mlua::Error::runtime(format!(
+                    "fs.sub_in_file: failed to read {path:?}: {e}"
+                ))
+            })?;
+            let string_table: mlua::Table = lua.globals().get("string")?;
+            let gsub: mlua::Function = string_table.get("gsub")?;
+            let (new_content, count): (String, u64) = gsub.call((content, pattern, repl))?;
+            if count > 0 {
+                std::fs::write(&path, &new_content).map_err(|e| {
+                    mlua::Error::runtime(format!(
+                        "fs.sub_in_file: failed to write {path:?}: {e}"
+                    ))
+                })?;
+            }
+            Ok(count)
+        })?;
+    fs_table.set("sub_in_file", sub_in_file_fn)?;
+
     lua.globals().set("fs", fs_table)?;
+    Ok(())
+}
+
+pub fn register_string_helpers(lua: &Lua) -> mlua::Result<()> {
+    let string_table: mlua::Table = lua.globals().get("string")?;
+
+    // string.split(s, sep?) — awk-style field split.
+    // When `sep` is nil or empty: splits on any run of whitespace and
+    // skips leading/trailing empty fields (matches awk default FS and
+    // Python's str.split() with no arg). When `sep` is provided: splits
+    // on the literal string (not a Lua pattern — use string.gmatch if
+    // you need pattern semantics). Returns a 1-indexed array table.
+    let split_fn = lua.create_function(|lua, args: mlua::MultiValue| {
+        let mut args_iter = args.into_iter();
+        let s: String = args_iter
+            .next()
+            .ok_or_else(|| mlua::Error::runtime("string.split: string required"))
+            .and_then(|v| lua.unpack(v))?;
+        let sep: Option<String> = match args_iter.next() {
+            Some(mlua::Value::Nil) | None => None,
+            Some(v) => Some(lua.unpack(v)?),
+        };
+        let results = lua.create_table()?;
+        match sep {
+            Some(ref sep_str) if !sep_str.is_empty() => {
+                for (i, part) in (1..).zip(s.split(sep_str.as_str())) {
+                    results.set(i, part)?;
+                }
+            }
+            _ => {
+                for (i, part) in (1..).zip(s.split_whitespace()) {
+                    results.set(i, part)?;
+                }
+            }
+        }
+        Ok(results)
+    })?;
+    string_table.set("split", split_fn)?;
+
     Ok(())
 }
 

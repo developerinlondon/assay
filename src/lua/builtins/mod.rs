@@ -25,6 +25,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     core::register_sleep(lua)?;
     core::register_time(lua)?;
     core::register_fs(lua)?;
+    core::register_string_helpers(lua)?;
     core::register_base64(lua)?;
     crypto::register_crypto(lua)?;
     core::register_regex(lua)?;
