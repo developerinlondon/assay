@@ -423,6 +423,114 @@ AND-join; unchanged keys are preserved across upserts.
 Status-bar footer always shows the engine version (fetched from `/api/v1/version`). Live list
 updates via SSE. Cache-busted asset URLs per startup.
 
+### Steps tab convention (v0.12.0+)
+
+Any workflow that exposes a `pipeline_state` query handler returning a `steps[]` array gets an
+automatic **Steps** tab in the dashboard's detail view. The tab is added at the front and
+default-selected when present, hidden otherwise. No new stdlib API — the convention is just a
+shape the dashboard recognises.
+
+The query name stays `pipeline_state` (for back-compat and because "pipeline state" reads
+naturally as "the current state of the run's sequence of operations") but the tab label and
+schema field both use "steps" — the neutral term that works for CI/CD, ETL, approval flows, and
+long-running background jobs alike.
+
+```lua
+ctx:register_query("pipeline_state", function()
+  return {
+    status = "running",      -- optional: overall pipeline status
+    current_step = 2,        -- optional: 1-indexed
+    steps = {                -- REQUIRED: array of steps
+      { name = "Approval",    status = "done",    started_at = "...", completed_at = "...",
+        actions = { "approve", "reject" } },                        -- optional, see below
+      { name = "Tag & Retag", status = "running", started_at = "..." },
+      { name = "GitOps",      status = "waiting" },
+      { name = "ArgoCD Sync", status = "waiting" },
+      { name = "Health Check", status = "waiting" },
+    },
+    log = {                  -- optional: append-only diagnostic log
+      { time = "14:32:01", msg = "Approved by alice", step = 1 },
+      { time = "14:32:02", msg = "Creating tag …",    step = 2 },
+    },
+  }
+end)
+```
+
+**Canonical step statuses.** The dashboard maps these to glyphs and colours; an unknown status
+falls back to `waiting` for the visual but the literal text is shown under the circle. Keep your
+workflows on this list so cross-app glanceability holds.
+
+| Status      | Glyph | Meaning                                                        |
+| ----------- | ----- | -------------------------------------------------------------- |
+| `waiting`   | `○`   | Step has not started yet                                       |
+| `running`   | `⟳`   | Step is in progress                                            |
+| `done`      | `✓`   | Step completed successfully                                    |
+| `failed`    | `✕`   | Step terminated with an error                                  |
+| `cancelled` | `⊘`   | Step actively got cancelled (e.g. an approval was rejected)    |
+| `skipped`   | `·`   | Step never ran because the workflow ended before reaching it   |
+
+The distinction between `cancelled` and `skipped` matters: a workflow that gets rejected at an approval
+gate has *one* cancelled step (the approval itself) and N skipped steps after it. Rendering them
+identically would mis-suggest that the engine actively cancelled five things; in reality four of them
+never ran. Authors should use `skipped` for the never-ran case.
+
+> **Naming.** The schema field is `steps`, not `stages`. CI/CD operators will still call them
+> stages colloquially — and that's fine — but the field name stays neutral so non-CI/CD consumers
+> (ETL pipelines, approval flows, long-running background jobs) can adopt the convention without
+> the framing feeling forced.
+
+**Live tail.** While the tab is open and the workflow is `RUNNING`, the dashboard polls
+`GET /workflows/{id}/state/pipeline_state` every 1s and diff-applies changes to the existing DOM:
+circles + connectors update in place, log entries append at the bottom. A scroll-lock toggle
+freezes auto-scroll for operators reading mid-log. Polling stops on tab switch, panel close, or
+when the run reaches a terminal status.
+
+**Step actions.** Each step may include an `actions = { "approve", "reject", … }` array. The
+dashboard renders one button per action under the step's circle. A click POSTs a `step_action`
+signal:
+
+```http
+POST /api/v1/workflows/{id}/signal/step_action
+Content-Type: application/json
+
+{ "payload": { "step": "Approval", "action": "approve", "user": "alice" } }
+```
+
+The workflow handler reads the signal and dispatches:
+
+```lua
+local s = ctx:wait_for_signal("step_action")
+if s.step == "Approval" and s.action == "approve" then
+  -- domain-specific behaviour lives here
+end
+```
+
+The engine routes the signal; the workflow decides what each action means. Pure plumbing on the
+engine side.
+
+**Step log filter.** Clicking a step circle filters the log below to entries where `step` matches
+that index. Click again to clear. Workflows opt in by setting the `step` field on each log entry;
+omitting it means the entry is always visible regardless of which step is selected.
+
+### Architectural boundary — engine vs consumer
+
+The Steps tab convention is the first concrete test of a rule that holds across the assay
+codebase: the engine and its built-in dashboard stay **domain-agnostic**, and consumers
+(applications using the engine) own everything **domain-specific**.
+
+| In **assay** (generic, every consumer benefits) | In the **consumer** (domain logic) |
+| ----------------------------------------------- | ---------------------------------- |
+| Steps tab + circles + connectors                | Workflow definitions that *write* the `pipeline_state` shape |
+| Live snapshot polling + diff-apply              | Activities that perform the actual side effects (deploys, retags, approvals) |
+| `step_action` signal routing                    | Workflow handlers that interpret the actions |
+| Whitelabel / favicon / CSS-override             | UI brand details specific to the deployment |
+| Namespace / queue / worker views                | RBAC, audit, business rules around who may signal what |
+
+A new feature lands in assay if and only if every consumer would benefit from it. Anything that
+encodes domain meaning (what "approve" means, which environments exist, how a tag is computed)
+belongs in the consumer. This split keeps assay reusable and consumers focused; it also lets a
+single assay release improve every consumer's dashboard without coupled rollouts.
+
 ### Concepts
 
 | Concept           | Meaning                                                                                                                               |

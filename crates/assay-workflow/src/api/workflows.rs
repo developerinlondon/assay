@@ -230,10 +230,19 @@ pub async fn send_signal<S: WorkflowStore>(
     Ok(axum::http::StatusCode::OK)
 }
 
+#[derive(Deserialize, ToSchema, Default)]
+pub struct CancelBody {
+    /// Why the workflow is being cancelled. Recorded in the
+    /// `WorkflowCancelRequested` event payload for audit. Symmetric
+    /// with the terminate endpoint's reason field.
+    pub reason: Option<String>,
+}
+
 #[utoipa::path(
     post, path = "/api/v1/workflows/{id}/cancel",
     tag = "workflows",
     params(("id" = String, Path, description = "Workflow ID")),
+    request_body = CancelBody,
     responses(
         (status = 200, description = "Workflow cancelled"),
         (status = 404, description = "Workflow not found or already terminal"),
@@ -242,8 +251,12 @@ pub async fn send_signal<S: WorkflowStore>(
 pub async fn cancel_workflow<S: WorkflowStore>(
     State(state): State<Arc<AppState<S>>>,
     Path(id): Path<String>,
+    body: Option<Json<CancelBody>>,
 ) -> Result<axum::http::StatusCode, AppError> {
-    let cancelled = state.engine.cancel_workflow(&id).await?;
+    // Accept either no body (back-compat with callers that just POST
+    // /cancel) or a body with optional reason.
+    let reason = body.and_then(|Json(b)| b.reason);
+    let cancelled = state.engine.cancel_workflow(&id, reason.as_deref()).await?;
     if cancelled {
         Ok(axum::http::StatusCode::OK)
     } else {
@@ -310,6 +323,11 @@ pub async fn list_children<S: WorkflowStore>(
 pub struct ContinueAsNewBody {
     /// New input for the continued workflow run
     pub input: Option<serde_json::Value>,
+    /// Optional explicit id for the new run. When omitted, the engine
+    /// derives one from the source workflow id + timestamp. Dashboard
+    /// users can override to keep ids sensible after several continues
+    /// (otherwise each run stacks `-continued-<ts>` suffixes forever).
+    pub workflow_id: Option<String>,
 }
 
 #[utoipa::path(
@@ -327,9 +345,13 @@ pub async fn continue_as_new<S: WorkflowStore>(
     Json(body): Json<ContinueAsNewBody>,
 ) -> Result<(axum::http::StatusCode, Json<WorkflowResponse>), AppError> {
     let input = body.input.map(|v| v.to_string());
+    let new_id = body
+        .workflow_id
+        .as_deref()
+        .filter(|s| !s.trim().is_empty());
     let wf = state
         .engine
-        .continue_as_new(&id, input.as_deref())
+        .continue_as_new(&id, input.as_deref(), new_id)
         .await?;
 
     Ok((

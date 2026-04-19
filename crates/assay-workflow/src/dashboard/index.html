@@ -103,6 +103,12 @@
   <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">&#9776;</button>
 
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- Modal + select must load before actions/workflows so the
+       AssayActions handlers + namespace selectors can reference
+       them during init. -->
+  <script src="/workflow/components/modal.js?v=__ASSETV__"></script>
+  <script src="/workflow/components/select.js?v=__ASSETV__"></script>
+  <script src="/workflow/components/actions.js?v=__ASSETV__"></script>
   <script src="/workflow/components/workflows.js?v=__ASSETV__"></script>
   <script src="/workflow/components/detail.js?v=__ASSETV__"></script>
   <script src="/workflow/components/schedules.js?v=__ASSETV__"></script>

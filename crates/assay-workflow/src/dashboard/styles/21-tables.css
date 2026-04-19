@@ -1,0 +1,90 @@
+/* ── Data Tables ────────────────────────────────────── */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+}
+
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.data-table tr:hover td {
+  background: var(--surface-hover);
+}
+
+.data-table .clickable {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+
+/* Hover uses a slightly darker accent rather than an underline — reads as
+   "interactive text" without the typographic jaggedness of an underline
+   under a monospace id string. The row-hover treatment (on the <tr>)
+   already gives an additional strong affordance so we don't need the
+   text itself to shout. */
+.data-table .clickable:hover {
+  color: var(--accent-hover);
+}
+
+.data-table .mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  /* Long workflow ids (`promo-…-v0.1.0-rc23-to-qa`) wrap at column
+     boundaries rather than forcing horizontal scroll on the whole
+     table. Since ids follow a consistent pattern, rows tend to wrap
+     to similar heights. */
+  word-break: break-all;
+  font-size: 12px;
+}
+
+/* ── Status Badges ──────────────────────────────────── */
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-pending   { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+.badge-running   { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.badge-completed { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-failed    { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge-waiting   { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.badge-cancelled { background: rgba(219,109,40,0.15); color: var(--orange); }
+
+/* ── Worker Status Dots ─────────────────────────────── */
+
+.worker-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.worker-dot.healthy  { background: var(--green); }
+.worker-dot.warning  { background: var(--yellow); }
+.worker-dot.stale    { background: var(--red); }
+

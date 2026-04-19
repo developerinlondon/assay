@@ -1,0 +1,19 @@
+# Workflow engine crate. Cargo handles compile + test for this crate
+# as part of the root project's `cargo test --workspace`, so this
+# project doesn't run anything of its own. It exists so that
+# dashboard-e2e (and any future consumer) can declare a typed
+# dependency on it for affected-graph detection — when the dashboard
+# JS / CSS / state API change, e2e re-runs.
+
+language: 'rust'
+layer: 'library'
+stack: 'systems'
+
+fileGroups:
+  # Anything under here can change rendered HTML/JS/CSS on the
+  # dashboard, which is exactly what the e2e suite covers. Tests-e2e
+  # itself is excluded so its own changes don't recursively trigger
+  # the engine's rebuild input set.
+  dashboard-sources:
+    - 'src/dashboard/**/*'
+    - 'src/api/**/*'

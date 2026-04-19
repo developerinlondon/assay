@@ -108,7 +108,29 @@ pub async fn serve_with_version<S: WorkflowStore + 'static>(
     auth_mode: AuthMode,
     binary_version: Option<&'static str>,
 ) -> anyhow::Result<()> {
-    let (event_tx, _) = broadcast::channel(1024);
+    // The SSE channel that dashboard browsers subscribe to. The
+    // engine pushes EngineEvents into the bridge below; the bridge
+    // converts each one to a BroadcastEvent and forwards to every
+    // connected dashboard.
+    let (event_tx, _) = broadcast::channel::<events::BroadcastEvent>(1024);
+    let (engine_tx, mut engine_rx) =
+        broadcast::channel::<crate::engine::EngineEvent>(1024);
+    let engine = engine.with_event_broadcaster(engine_tx);
+
+    {
+        let event_tx = event_tx.clone();
+        tokio::spawn(async move {
+            while let Ok(evt) = engine_rx.recv().await {
+                let _ = event_tx.send(events::BroadcastEvent {
+                    event_type: evt.event_type,
+                    workflow_id: evt.workflow_id,
+                    payload: Some(serde_json::json!({
+                        "namespace": evt.namespace,
+                    }).to_string()),
+                });
+            }
+        });
+    }
 
     let mode_desc = auth_mode.describe();
 

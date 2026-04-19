@@ -1,0 +1,35 @@
+/* Cross-navigation links inside detail panels (workers / queues /
+ * workflow Overview cross-link to each other via ctx.navigate).
+ * Uses pointer cursor so the affordance is clear. */
+.cross-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+.cross-link:hover { color: var(--accent-hover); text-decoration: underline; }
+
+/* ── Content links (v0.12.0) ──────────────────────────────────────
+ * Default browser link styling is ugly and low-contrast. Apply an
+ * accent-tinted color + hover underline across the main content
+ * area (settings, detail panel, etc.) without fighting the nav +
+ * table clickable-cell rules which have their own treatments above.
+ */
+.main-content a:not(.nav-link),
+.settings-content a,
+.settings-table a,
+.detail-body a:not(.wf-link):not(.child-link) {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  border-bottom: 1px solid transparent;
+  transition: color 120ms ease, border-bottom-color 120ms ease;
+}
+.main-content a:not(.nav-link):hover,
+.settings-content a:hover,
+.settings-table a:hover,
+.detail-body a:not(.wf-link):not(.child-link):hover {
+  color: var(--accent-hover);
+  border-bottom-color: currentColor;
+}
+

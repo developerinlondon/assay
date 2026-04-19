@@ -3,16 +3,66 @@
 (function () {
   'use strict';
 
-  // Default namespace comes from the whitelabel template (a data attribute
-  // on <body>). Operators running a single-tenant assay-as-a-product point
+  // Default namespace comes from the URL hash (so F5 restores), then
+  // the whitelabel template's data-default-namespace attribute, then
+  // "main". Operators running a single-tenant assay-as-a-product point
   // every user at the non-"main" namespace their own runs live in, so
-  // nobody has to change the dropdown on first load. Falls back to "main"
-  // for vanilla standalone deployments where the attribute isn't set.
+  // nobody has to change the dropdown on first load.
   let currentNamespace =
-    (document.body && document.body.dataset && document.body.dataset.defaultNamespace) ||
-    'main';
+    parseHash().namespace
+    || (document.body && document.body.dataset && document.body.dataset.defaultNamespace)
+    || 'main';
   let currentView = 'workflows';
   let eventSource = null;
+  // Suppress hash-write side effects when we're applying state read
+  // *from* the hash (e.g. on initial load or browser back/forward).
+  let suppressHashWrite = false;
+
+  // ── Hash router ────────────────────────────────────────
+  //
+  // URL hash format: `#ns=<namespace>&wf=<workflow_id>`. Both keys
+  // are optional; missing keys mean "no detail open" / "default
+  // namespace". We deliberately don't URL-encode the values
+  // aggressively — workflow ids and namespace names are URL-safe by
+  // design (engine validates).
+
+  function parseHash() {
+    var raw = (window.location.hash || '').replace(/^#/, '');
+    if (!raw) return {};
+    var out = {};
+    raw.split('&').forEach(function (pair) {
+      var eq = pair.indexOf('=');
+      if (eq <= 0) return;
+      var k = pair.substring(0, eq);
+      var v = decodeURIComponent(pair.substring(eq + 1));
+      if (k === 'ns') out.namespace = v;
+      else if (k === 'wf') out.wf = v;
+    });
+    return out;
+  }
+
+  function writeHash(state) {
+    var parts = [];
+    if (state && state.namespace) parts.push('ns=' + encodeURIComponent(state.namespace));
+    if (state && state.wf) parts.push('wf=' + encodeURIComponent(state.wf));
+    var next = parts.length ? '#' + parts.join('&') : '';
+    if (window.location.hash === next) return;
+    suppressHashWrite = true;
+    if (next) {
+      window.location.replace(window.location.pathname + window.location.search + next);
+    } else {
+      // Strip the hash without leaving a `#` in the URL.
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    suppressHashWrite = false;
+  }
+
+  // Called by detail.js when it opens or closes a workflow detail
+  // panel — keeps the URL hash in sync so F5 / share-link flows can
+  // restore the same view.
+  function setOpenWorkflow(id) {
+    writeHash({ namespace: currentNamespace, wf: id || null });
+  }
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -26,6 +76,25 @@
     if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
     if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
     return new Date(ts * 1000).toLocaleDateString();
+  }
+
+  // Wall-clock form of a timestamp. Events lists use this so
+  // operators can line engine events up against external logs by
+  // timestamp. formatTime's relative form is still the default
+  // elsewhere (row "created 2m ago" reads more naturally).
+  function formatExactTime(ts) {
+    if (!ts) return '-';
+    const d = new Date(ts * 1000);
+    const today = new Date();
+    const sameDay = d.toDateString() === today.toDateString();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    if (sameDay) return hh + ':' + mm + ':' + ss;
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0') + ' ' +
+      hh + ':' + mm + ':' + ss;
   }
 
   function truncate(str, len) {
@@ -145,6 +214,12 @@
       select.innerHTML = '<option value="main" selected>main</option>';
       if (statusSelect) statusSelect.innerHTML = '<option value="main" selected>main</option>';
     }
+    // Re-enhance to a styled custom dropdown — re-runs cleanly even
+    // after prior enhancement (rebuilds options in place).
+    if (typeof AssaySelect !== 'undefined') {
+      AssaySelect.enhance(select, { className: 'assay-select-sidebar' });
+      if (statusSelect) AssaySelect.enhance(statusSelect, { className: 'assay-select-statusbar' });
+    }
   }
 
   // ── SSE Connection ─────────────────────────────────────
@@ -172,14 +247,23 @@
       setTimeout(connectSSE, 5000);
     };
 
-    eventSource.onmessage = function () {
-      refreshCurrentView();
-    };
+    // `onmessage` fires for every SSE frame. We deliberately do NOT
+    // hook a blanket refresh here — most of our events are semantic
+    // (workflow_*, schedule_*) and listed below, and triggering a
+    // full table re-render on signal_received would blow away any
+    // inline-expanded detail panel the operator is actively using.
 
-    // Listen for specific event types
-    ['workflow_started', 'workflow_completed', 'workflow_failed',
-     'workflow_cancelled', 'task_completed', 'task_failed',
-     'signal_received', 'schedule_triggered'].forEach(function (evt) {
+    // Refresh the list only on events that actually change what the
+    // workflow row displays. `signal_received` is intentionally
+    // excluded — a signal arriving doesn't change engine status, and
+    // re-rendering the table would destroy inline row expansions
+    // (folding the operator's active Pipeline tab mid-interaction).
+    // The Pipeline tab has its own 1Hz poller that picks up app-level
+    // changes from register_query snapshots without touching the
+    // table markup.
+    ['workflow_started', 'workflow_running', 'workflow_completed',
+     'workflow_failed', 'workflow_cancelled', 'workflow_terminated',
+     'task_completed', 'task_failed', 'schedule_triggered'].forEach(function (evt) {
       eventSource.addEventListener(evt, function () {
         refreshCurrentView();
       });
@@ -214,24 +298,75 @@
     renderCurrentView();
   }
 
+  // Cross-navigate from one detail panel to another — e.g. from the
+  // Recent claimed runs table on a worker's detail to the workflow
+  // itself. Switches sidebar nav to the right view then pre-expands
+  // the target row via each component's setPendingExpand hook. Fire
+  // and forget — if the view can't find the row (e.g. the target
+  // isn't on the current page), the row expansion silently no-ops.
+  function navigate(kind, id) {
+    if (!kind || !id) return;
+    if (kind === 'workflow') {
+      if (window.AssayWorkflows && window.AssayWorkflows.setExpandedId) {
+        window.AssayWorkflows.setExpandedId(id);
+      }
+      switchView('workflows');
+      // Also open the side-panel detail so the workflow shows even
+      // if it's not on the current list page (claimed_by queries can
+      // point at old workflows that have paged out).
+      if (typeof AssayDetail !== 'undefined' && AssayDetail.showDetail) {
+        AssayDetail.showDetail(id, makeCtx());
+      }
+    } else if (kind === 'worker') {
+      if (window.AssayWorkers && window.AssayWorkers.setPendingExpand) {
+        window.AssayWorkers.setPendingExpand(id);
+      }
+      switchView('workers');
+    } else if (kind === 'queue') {
+      if (window.AssayQueues && window.AssayQueues.setPendingExpand) {
+        window.AssayQueues.setPendingExpand(id);
+      }
+      switchView('queues');
+    } else if (kind === 'workflow_type') {
+      // Filter the Workflows list to runs of a specific type (e.g.
+      // clicking the "DemoPipeline" chip on a worker's detail).
+      // Routes through the existing search box so the filter shows
+      // up visibly + the operator can clear it from the UI.
+      if (window.AssayWorkflows && window.AssayWorkflows.setSearchTerm) {
+        window.AssayWorkflows.setSearchTerm(id);
+      }
+      switchView('workflows');
+    }
+  }
+
+  // Shared context bag passed to every view + the modal-driven
+  // action handlers. Single source of truth so detail.js, workflows.js,
+  // and AssayActions all see the same helpers.
+  function makeCtx() {
+    return {
+      namespace: currentNamespace,
+      getNamespace: function () { return currentNamespace; },
+      apiFetch: apiFetch,
+      apiFetchRaw: apiFetchRaw,
+      toast: toast,
+      formatTime: formatTime,
+      formatExactTime: formatExactTime,
+      truncate: truncate,
+      isTerminal: isTerminal,
+      formatJson: formatJson,
+      badgeClass: badgeClass,
+      escapeHtml: escapeHtml,
+      refreshCurrentView: refreshCurrentView,
+      navigate: navigate,
+      showDetail: typeof AssayDetail !== 'undefined' ? AssayDetail.showDetail : null,
+      actions: typeof AssayActions !== 'undefined' ? AssayActions : null,
+    };
+  }
+
   function renderCurrentView() {
     const component = views[currentView];
     if (component && component.render) {
-      component.render(document.getElementById('content'), {
-        namespace: currentNamespace,
-        getNamespace: function () { return currentNamespace; },
-        apiFetch: apiFetch,
-        apiFetchRaw: apiFetchRaw,
-        toast: toast,
-        formatTime: formatTime,
-        truncate: truncate,
-        isTerminal: isTerminal,
-        formatJson: formatJson,
-        badgeClass: badgeClass,
-        escapeHtml: escapeHtml,
-        refreshCurrentView: refreshCurrentView,
-        showDetail: typeof AssayDetail !== 'undefined' ? AssayDetail.showDetail : null,
-      });
+      component.render(document.getElementById('content'), makeCtx());
     }
   }
 
@@ -334,6 +469,7 @@
     // Namespace change
     document.getElementById('namespace-select').addEventListener('change', function (e) {
       currentNamespace = e.target.value;
+      writeHash({ namespace: currentNamespace });
       connectSSE();
       refreshCurrentView();
     });
@@ -346,6 +482,7 @@
     if (statusSelectEl) {
       statusSelectEl.addEventListener('change', function (e) {
         currentNamespace = e.target.value;
+        writeHash({ namespace: currentNamespace });
         // Keep the sidebar select in sync.
         var sidebar = document.getElementById('namespace-select');
         if (sidebar && sidebar.value !== currentNamespace) {
@@ -356,11 +493,46 @@
       });
     }
 
-    // Load namespaces then render
+    // Browser back/forward — re-apply the hash. Skip our own writes
+    // (suppressHashWrite is set when we update the URL ourselves).
+    window.addEventListener('hashchange', function () {
+      if (suppressHashWrite) return;
+      var h = parseHash();
+      if (h.namespace && h.namespace !== currentNamespace) {
+        currentNamespace = h.namespace;
+        var sb = document.getElementById('namespace-select');
+        if (sb) sb.value = currentNamespace;
+        var ssb = document.getElementById('status-namespace-select');
+        if (ssb) ssb.value = currentNamespace;
+        connectSSE();
+        refreshCurrentView();
+      }
+      if (h.wf) {
+        if (typeof AssayDetail !== 'undefined') AssayDetail.showDetail(h.wf, makeCtx());
+      } else if (typeof AssayDetail !== 'undefined') {
+        AssayDetail.closeDetail();
+      }
+    });
+
+    // Wire the modal-driven action handlers (Signal/Cancel/Terminate
+    // /Continue-as-new). Workflows.js renders the row icons that
+    // call AssayActions; the actions themselves own the modal flows.
+    if (typeof AssayActions !== 'undefined') {
+      AssayActions.init(makeCtx());
+    }
+
+    // Snapshot the hash before any switchView() call — switchView
+    // fires closeDetail which clears the hash's `wf` key, so we need
+    // the initial value captured first to restore state on F5.
+    var initialHash = parseHash();
+
     loadNamespaces().then(function () {
       connectSSE();
       switchView('workflows');
       updateStatusBar();
+      if (initialHash.wf && typeof AssayDetail !== 'undefined') {
+        AssayDetail.showDetail(initialHash.wf, makeCtx());
+      }
     });
 
     // Stamp engine version in the status bar so operators know which
@@ -397,6 +569,7 @@
     badgeClass: badgeClass,
     escapeHtml: escapeHtml,
     refreshCurrentView: refreshCurrentView,
+    setOpenWorkflow: setOpenWorkflow,
   };
 
   if (document.readyState === 'loading') {

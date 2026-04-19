@@ -15,8 +15,20 @@ use crate::types::*;
 /// (scheduler, timer poller, health monitor).
 ///
 /// The API layer holds an `Arc<Engine<S>>` and delegates all operations here.
+/// Event the engine broadcasts when a workflow transitions through
+/// its lifecycle states. Subscribed to by the SSE stream (`/api/v1/
+/// events/stream`) so the dashboard can refresh live instead of
+/// requiring the operator to F5 after every action.
+#[derive(Clone, Debug)]
+pub struct EngineEvent {
+    pub event_type: String,
+    pub workflow_id: String,
+    pub namespace: String,
+}
+
 pub struct Engine<S: WorkflowStore> {
     store: Arc<S>,
+    event_tx: Option<tokio::sync::broadcast::Sender<EngineEvent>>,
     _scheduler: JoinHandle<()>,
     _timer_poller: JoinHandle<()>,
     _health_monitor: JoinHandle<()>,
@@ -46,6 +58,7 @@ impl<S: WorkflowStore> Engine<S> {
 
         Self {
             store,
+            event_tx: None,
             _scheduler,
             _timer_poller,
             _health_monitor,
@@ -55,9 +68,39 @@ impl<S: WorkflowStore> Engine<S> {
         }
     }
 
+    /// Attach an event broadcaster. The API layer sets this up so the
+    /// SSE stream (`/events/stream`) sees state transitions as they
+    /// happen — powers the dashboard's live list refresh, no F5 loop.
+    /// Returns the engine by value so callers can chain:
+    ///
+    /// ```ignore
+    /// let engine = Engine::start(store).with_event_broadcaster(tx);
+    /// ```
+    pub fn with_event_broadcaster(
+        mut self,
+        tx: tokio::sync::broadcast::Sender<EngineEvent>,
+    ) -> Self {
+        self.event_tx = Some(tx);
+        self
+    }
+
     /// Access the underlying store (for the API layer).
     pub fn store(&self) -> &S {
         &self.store
+    }
+
+    /// Broadcast a state-transition event. No-op when no broadcaster
+    /// is wired up (tests, embedders without an SSE surface). Errors
+    /// from a channel with zero subscribers are silently dropped —
+    /// that's the normal state between connections, not a failure.
+    fn broadcast(&self, event_type: &str, workflow_id: &str, namespace: &str) {
+        if let Some(tx) = &self.event_tx {
+            let _ = tx.send(EngineEvent {
+                event_type: event_type.to_string(),
+                workflow_id: workflow_id.to_string(),
+                namespace: namespace.to_string(),
+            });
+        }
     }
 
     // ── Workflow Operations ─────────────────────────────────
@@ -121,6 +164,9 @@ impl<S: WorkflowStore> Engine<S> {
         // that need a worker to replay against — make it dispatchable.
         self.store.mark_workflow_dispatchable(workflow_id).await?;
 
+        // Notify SSE subscribers so the dashboard row appears live.
+        self.broadcast("workflow_started", workflow_id, namespace);
+
         Ok(wf)
     }
 
@@ -159,7 +205,7 @@ impl<S: WorkflowStore> Engine<S> {
             .await
     }
 
-    pub async fn cancel_workflow(&self, id: &str) -> Result<bool> {
+    pub async fn cancel_workflow(&self, id: &str, reason: Option<&str>) -> Result<bool> {
         let wf = self.store.get_workflow(id).await?;
         match wf {
             None => Ok(false),
@@ -184,6 +230,14 @@ impl<S: WorkflowStore> Engine<S> {
                 self.store.cancel_pending_activities(id).await?;
                 self.store.cancel_pending_timers(id).await?;
 
+                // Operator-supplied reason rides along on the event
+                // payload so audit queries (and the dashboard's events
+                // tab) can show why a cancel happened. Symmetric with
+                // terminate, which has always taken a reason.
+                let payload = reason.map(|r| {
+                    serde_json::json!({ "reason": r }).to_string()
+                });
+
                 let seq = self.store.get_event_count(id).await? as i32 + 1;
                 self.store
                     .append_event(&WorkflowEvent {
@@ -191,17 +245,19 @@ impl<S: WorkflowStore> Engine<S> {
                         workflow_id: id.to_string(),
                         seq,
                         event_type: "WorkflowCancelRequested".to_string(),
-                        payload: None,
+                        payload,
                         timestamp: timestamp_now(),
                     })
                     .await?;
 
                 self.store.mark_workflow_dispatchable(id).await?;
 
-                // Propagate cancellation to all child workflows
+                // Propagate cancellation to all child workflows. Children
+                // inherit the reason so the audit trail explains the
+                // whole cascade in one place.
                 let children = self.store.list_child_workflows(id).await?;
                 for child in children {
-                    Box::pin(self.cancel_workflow(&child.id)).await?;
+                    Box::pin(self.cancel_workflow(&child.id, reason)).await?;
                 }
 
                 // For workflows that have NO worker registered (or no
@@ -237,6 +293,10 @@ impl<S: WorkflowStore> Engine<S> {
                         Some(reason.unwrap_or("terminated")),
                     )
                     .await?;
+
+                // Live-refresh the dashboard — no more F5 after
+                // Terminate.
+                self.broadcast("workflow_terminated", id, &wf.namespace);
 
                 Ok(true)
             }
@@ -288,6 +348,17 @@ impl<S: WorkflowStore> Engine<S> {
         // Phase 9: a workflow waiting on this signal needs to be re-dispatched
         // so the worker can replay and notice the signal in history.
         self.store.mark_workflow_dispatchable(workflow_id).await?;
+
+        // Broadcast so the dashboard can refresh the run's row (signal
+        // count bump, log-tail tick, etc.) without waiting for the
+        // next list poll.
+        let ns = self
+            .store
+            .get_workflow(workflow_id)
+            .await?
+            .map(|w| w.namespace)
+            .unwrap_or_default();
+        self.broadcast("signal_received", workflow_id, &ns);
 
         Ok(())
     }
@@ -553,6 +624,11 @@ impl<S: WorkflowStore> Engine<S> {
                 .update_workflow_status(&wf.id, WorkflowStatus::Running, None, None)
                 .await?;
             wf.status = "RUNNING".to_string();
+            // Live-update the dashboard so the row flips PENDING →
+            // RUNNING without requiring F5. Expected lifecycle for
+            // durable workflows is to start PENDING and advance once
+            // a worker claims, so this broadcast completes the loop.
+            self.broadcast("workflow_running", &wf.id, &wf.namespace);
         }
         let history = self.store.list_events(&wf.id).await?;
         Ok(Some((wf, history)))
@@ -747,7 +823,7 @@ impl<S: WorkflowStore> Engine<S> {
                     // `ctx:continue_as_new(input)` to reset event history
                     // when a handler would otherwise loop forever.
                     let input = cmd.get("input").map(|v| v.to_string());
-                    self.continue_as_new(workflow_id, input.as_deref())
+                    self.continue_as_new(workflow_id, input.as_deref(), None)
                         .await?;
                 }
                 "RecordSnapshot" => {
@@ -873,6 +949,13 @@ impl<S: WorkflowStore> Engine<S> {
                 timestamp: timestamp_now(),
             })
             .await?;
+        let ns = self
+            .store
+            .get_workflow(workflow_id)
+            .await?
+            .map(|w| w.namespace)
+            .unwrap_or_default();
+        self.broadcast("workflow_cancelled", workflow_id, &ns);
         Ok(())
     }
 
@@ -904,6 +987,13 @@ impl<S: WorkflowStore> Engine<S> {
             }),
         )
         .await?;
+        let ns = self
+            .store
+            .get_workflow(workflow_id)
+            .await?
+            .map(|w| w.namespace)
+            .unwrap_or_default();
+        self.broadcast("workflow_completed", workflow_id, &ns);
         Ok(())
     }
 
@@ -933,6 +1023,13 @@ impl<S: WorkflowStore> Engine<S> {
             }),
         )
         .await?;
+        let ns = self
+            .store
+            .get_workflow(workflow_id)
+            .await?
+            .map(|w| w.namespace)
+            .unwrap_or_default();
+        self.broadcast("workflow_failed", workflow_id, &ns);
         Ok(())
     }
 
@@ -1110,6 +1207,7 @@ impl<S: WorkflowStore> Engine<S> {
         &self,
         workflow_id: &str,
         input: Option<&str>,
+        explicit_new_id: Option<&str>,
     ) -> Result<WorkflowRecord> {
         let old_wf = self
             .store
@@ -1117,13 +1215,35 @@ impl<S: WorkflowStore> Engine<S> {
             .await?
             .ok_or_else(|| anyhow::anyhow!("workflow not found: {workflow_id}"))?;
 
-        // Complete the old workflow
-        self.store
-            .update_workflow_status(workflow_id, WorkflowStatus::Completed, None, None)
-            .await?;
+        let old_status = WorkflowStatus::from_str(&old_wf.status)
+            .map_err(|e| anyhow::anyhow!(e))?;
 
-        // Start a new run with the same type, namespace, and queue
-        let new_id = format!("{workflow_id}-continued-{}", timestamp_now() as u64);
+        // Only close the old run when it's still in-flight. A workflow
+        // that's already CANCELLED / FAILED / COMPLETED / TERMINATED
+        // stays that way — overwriting the terminal status would lose
+        // audit history (e.g. a cancelled run flipping to COMPLETED
+        // when the operator hits "Start a fresh run" on the row).
+        if !old_status.is_terminal() {
+            self.store
+                .update_workflow_status(workflow_id, WorkflowStatus::Completed, None, None)
+                .await?;
+        }
+
+        // Start a new run with the same type, namespace, and queue.
+        // Naming:
+        //   1. Caller-provided explicit id (e.g. dashboard combobox) —
+        //      honoured verbatim.
+        //   2. Otherwise derive: strip any existing `-continued-<digits>`
+        //      suffix from the source so sequential continues don't
+        //      stack (`demo-1` → `demo-1-continued-1` → `demo-1-continued-2`
+        //      instead of the compounding `demo-1-continued-1-continued-2`).
+        let new_id = match explicit_new_id {
+            Some(id) => id.to_string(),
+            None => {
+                let base = strip_continued_suffix(workflow_id);
+                format!("{base}-continued-{}", timestamp_now() as u64)
+            }
+        };
         self.start_workflow(
             &old_wf.namespace,
             &old_wf.workflow_type,
@@ -1178,6 +1298,22 @@ impl<S: WorkflowStore> Engine<S> {
     }
 }
 
+/// Strip a trailing `-continued-<digits>` from a workflow id so
+/// sequential continue-as-new calls don't pile up suffixes. Matches
+/// the pattern emitted by the default id-derivation path; returns the
+/// input unchanged if there's no such suffix.
+fn strip_continued_suffix(id: &str) -> &str {
+    if let Some(idx) = id.rfind("-continued-") {
+        let (head, tail) = id.split_at(idx);
+        // Only strip when the tail after "-continued-" is all digits.
+        let rest = &tail["-continued-".len()..];
+        if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+            return head;
+        }
+    }
+    id
+}
+
 fn timestamp_now() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1189,6 +1325,12 @@ fn timestamp_now() -> f64 {
 /// Stamped into every workflow's search_attributes at start so operators
 /// can correlate runs to the engine release that executed them.
 const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+// WorkflowStatus::from_str returns Result, re-export for convenience.
+// Hoisted above the test module so Rust 1.95's
+// `clippy::items_after_test_module` lint is satisfied — it requires
+// every non-test item to precede `#[cfg(test)] mod ...` blocks.
+use std::str::FromStr;
 
 /// Auto-stamp `assay_engine_version` into a workflow's search attributes.
 /// Returns `Some` JSON string for the caller to store in the record.
@@ -1253,6 +1395,3 @@ mod engine_version_stamp_tests {
         assert_eq!(out, "not json");
     }
 }
-
-// WorkflowStatus::from_str returns Result, re-export for convenience
-use std::str::FromStr;

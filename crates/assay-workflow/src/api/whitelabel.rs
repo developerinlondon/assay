@@ -16,7 +16,7 @@
 //! | `ASSAY_WHITELABEL_PARENT_NAME`  | Label for the back-link                              | `Back`                       |
 //! | `ASSAY_WHITELABEL_API_DOCS_URL` | Override (or hide) the API Docs sidebar link         | `/api/v1/docs`               |
 //! | `ASSAY_WHITELABEL_CSS_URL`      | Extra stylesheet loaded after assay's own CSS        | — (none)                     |
-//! | `ASSAY_WHITELABEL_SUBTITLE`     | Small muted line shown under the brand name          | — (none)                     |
+//! | `ASSAY_WHITELABEL_SUBTITLE`     | Small muted line shown under the brand name          | `Workflow Engine` (empty hides) |
 //! | `ASSAY_WHITELABEL_MARK`         | Single glyph for the always-visible badge square     | First char of NAME (upper)   |
 //! | `ASSAY_WHITELABEL_FAVICON_URL`  | Replace the browser-tab icon                         | Built-in `A`-mark SVG        |
 //! | `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | Namespace the dashboard opens on                | `main`                       |
@@ -136,8 +136,15 @@ impl WhitelabelConfig {
                     .map(|c| c.to_uppercase().to_string())
                     .unwrap_or_else(|| "A".to_string())
             });
-        let subtitle =
-            std::env::var("ASSAY_WHITELABEL_SUBTITLE").unwrap_or_default();
+        // Default subtitle is "Workflow Engine" so an unbranded
+        // deployment still reads as "Assay / Workflow Engine" in the
+        // sidebar — gives operators the canonical two-line brand
+        // without needing to set anything. Set to an empty string
+        // explicitly (`ASSAY_WHITELABEL_SUBTITLE=""`) to hide it.
+        let subtitle = match std::env::var("ASSAY_WHITELABEL_SUBTITLE") {
+            Ok(s) => s,
+            Err(_) => "Workflow Engine".to_string(),
+        };
         let logo_url = std::env::var("ASSAY_WHITELABEL_LOGO_URL")
             .ok()
             .filter(|s| !s.is_empty());

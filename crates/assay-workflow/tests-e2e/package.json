@@ -1,0 +1,14 @@
+{
+  "name": "assay-workflow-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "End-to-end browser tests for the assay-workflow dashboard. Run with `npm install && npx playwright install chromium && npx playwright test` from this directory after starting the engine + a demo worker (see README in this folder).",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.0.0"
+  }
+}

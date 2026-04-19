@@ -1,0 +1,241 @@
+/* ── Sidebar ────────────────────────────────────────── */
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.logo {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+/* Whitelabel logo image — when ASSAY_WHITELABEL_LOGO_URL is set it
+   replaces the mark-badge glyph; CSS below hides the badge in that case. */
+.logo-img {
+  height: 36px;
+  width: auto;
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.logo:has(.logo-img) .logo-mark {
+  /* An explicit logo image supersedes the generated letter-badge. */
+  display: none;
+}
+
+.sidebar.collapsed .logo-img {
+  height: 28px;
+}
+
+/* Always-visible brand badge: filled accent square with a single-letter
+   (or short) glyph derived from ASSAY_WHITELABEL_NAME (or overridden via
+   ASSAY_WHITELABEL_MARK). Replaces the old collapsed-only behaviour so
+   vanilla and whitelabel deployments alike get a proper brand block. */
+.logo-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sidebar.collapsed .logo-mark {
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+}
+
+/* Stacked name + subtitle on the right of the mark-badge. The subtitle
+   is a muted second line rendered when ASSAY_WHITELABEL_SUBTITLE is set;
+   when unset the span simply isn't emitted and the stack collapses to
+   the single bold name line. */
+.logo-text {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+  gap: 2px;
+}
+
+.logo-full {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0.2px;
+}
+
+.logo-subtitle {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.1px;
+}
+
+/* Collapsed sidebar hides the stacked text entirely — the mark-badge
+   is the whole brand identity in that state. */
+.sidebar.collapsed .logo-text {
+  display: none;
+}
+
+/* Parent-app back-link in the sidebar footer — only rendered when
+   ASSAY_WHITELABEL_PARENT_URL is set. Visually distinct from peer nav
+   links so it reads as "exit" rather than "section". */
+.nav-link-back {
+  border-top: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+  padding-top: 10px;
+  margin-top: 4px;
+  color: var(--text-muted, inherit);
+}
+
+.nav-link-back:hover {
+  color: var(--accent);
+}
+
+/* Small icon button used in the sidebar header (e.g. collapse toggle) */
+.header-icon-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 1px 4px;
+  font-size: 12px;
+  line-height: 1;
+  font-family: inherit;
+  flex: 0 0 auto;
+}
+
+.header-icon-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* Button styled as a nav-link (for the Theme toggle in the footer) */
+.nav-link-button {
+  width: 100%;
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Icon-only nav-link variant — centers the single icon in the row */
+.nav-link-icon {
+  justify-content: center;
+}
+
+.sidebar-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* Modern select trigger — flat, no OS chrome, custom chevron from
+   inline SVG data URI, accent ring on focus. Native dropdown list
+   is still rendered by the OS (no way to fully restyle that without
+   a custom combobox component), but the closed state matches the
+   rest of the dashboard. */
+.namespace-select {
+  width: 100%;
+  padding: 6px 28px 6px 10px;
+  background-color: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.namespace-select:hover {
+  border-color: var(--text-muted);
+}
+
+.namespace-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 8px 0;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  border-left: 3px solid transparent;
+}
+
+.nav-link:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.nav-link.active {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-left-color: var(--accent);
+}
+
+.nav-icon {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+}
+
+.sidebar-footer {
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+  display: flex;
+  align-items: stretch;
+}
+
+/* API Docs nav-link grows to fill the footer; theme toggle stays compact */
+.nav-link-grow { flex: 1; }
+.sidebar-footer .nav-link-icon { flex: 0 0 44px; }
+
+/* When collapsed, stack the footer vertically (API Docs + theme icon) */
+.sidebar.collapsed .sidebar-footer { flex-direction: column; }
+.sidebar.collapsed .sidebar-footer .nav-link-icon { flex: 0 0 auto; }
+

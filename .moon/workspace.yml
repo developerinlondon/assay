@@ -1,0 +1,36 @@
+# https://moonrepo.dev/docs/config/workspace
+#
+# Project graph for the assay repo. Five projects, all driven by
+# `moon ci` in GitHub Actions:
+#
+#   assay-lua          — root binary (Rust)
+#   assay-workflow     — workflow engine crate (Rust + JS dashboard)
+#   dashboard-e2e      — Playwright tests against the workflow dashboard
+#   site               — assay.rs static site (built via the assay binary)
+#   openclaw-extension — VS Code Lua extension (TypeScript + vitest)
+#
+# Each project's moon.yml declares its tasks, inputs, and cross-project
+# dependencies. `moon ci` walks the graph to figure out which tasks are
+# affected by a given diff and runs only those.
+
+projects:
+  # Explicit sources — globs would also work, but listing each project
+  # makes the graph self-documenting and stops moon from accidentally
+  # picking up unrelated subdirectories that happen to contain a
+  # moon.yml in the future.
+  assay-lua: '.'
+  assay-workflow: 'crates/assay-workflow'
+  dashboard-e2e: 'crates/assay-workflow/tests-e2e'
+  site: 'site'
+  openclaw-extension: 'openclaw-extension'
+
+vcs:
+  client: 'git'
+  defaultBranch: 'main'
+
+pipeline:
+  # Cache moon's task-output cache for a week. Cargo's incremental
+  # build cache (Swatinem/rust-cache) is independent and lives longer.
+  cacheLifetime: '7 days'
+  # Per-task `cache: true` in each moon.yml decides what's archived;
+  # moon 2.x removed the workspace-level `archivableTargets` knob.

@@ -1,0 +1,78 @@
+/* ── Status Bar ─────────────────────────────────────── */
+
+.status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 24px;
+  font-size: 12px;
+  color: var(--text-muted);
+  z-index: 100;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-version {
+  margin-left: auto;
+}
+
+/* "Powered by Assay" attribution link — only rendered in whitelabel
+   mode. Inherits the status-bar colour so it doesn't shout at the
+   user; accent on hover hints it's clickable. */
+.assay-attribution {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+
+.assay-attribution:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Status-bar namespace switcher — a native <select> styled to look
+   like plain text. The native dropdown therefore opens anchored to
+   the status bar (where the user clicked) instead of the sidebar
+   select's location at the top-left. */
+.status-namespace-select {
+  background: none;
+  border: none;
+  padding: 0 18px 0 4px;
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  /* Inline chevron as background — positioned on the right of the
+     displayed value so it reads as a dropdown indicator without
+     pushing the text around. */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+}
+
+.status-namespace-select:hover {
+  background-color: var(--surface-hover);
+  color: var(--accent);
+}
+
+.status-namespace-select:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+

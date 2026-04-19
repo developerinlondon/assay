@@ -1,0 +1,29 @@
+# VS Code extension — Lua language support backed by the assay
+# binary. Independent of the workflow crate; its own npm tree and
+# vitest suite.
+
+language: 'typescript'
+layer: 'application'
+stack: 'frontend'
+
+tasks:
+  install:
+    command: 'npm install --no-audit --no-fund'
+    inputs:
+      - 'package.json'
+      - 'package-lock.json'
+    outputs:
+      - 'node_modules'
+    options:
+      cache: true
+      runInCI: true
+
+  test:
+    command: 'npx vitest run'
+    deps:
+      - 'install'
+    inputs:
+      - '**/*.{ts,tsx,js,json}'
+    options:
+      cache: true
+      runInCI: true

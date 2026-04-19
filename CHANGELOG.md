@@ -2,6 +2,89 @@
 
 All notable changes to Assay are documented here.
 
+## [0.12.0] - 2026-04-18
+
+This release combines a major dashboard upgrade (Steps tab + step-
+action signal protocol + the AWE/consumer architectural-boundary
+documentation) with a substantial CI/CD overhaul (mise + moon + a
+checked-in Playwright e2e suite + the Rust 1.95 toolchain bump) and a
+new stdlib surface for orchestrating external processes.
+
+### Added
+
+- **`process.spawn(opts)` and `process.wait(pid, opts?)` Lua builtins.**
+  Launch detached child processes from any assay script and reap them
+  later, without dropping to bash. `process.spawn` accepts `cmd`,
+  `args`, `cwd`, `env`, `stdout`, `stderr` and returns `{ pid }`;
+  `process.wait` blocks (or polls until a `timeout`) and returns
+  `{ status, exited, signaled, timed_out }`. Pairs with the existing
+  `process.kill` for full lifecycle control. The dashboard e2e runner
+  at `crates/assay-workflow/tests-e2e/run.lua` is the canonical
+  example — boots engine + worker, polls `/version`, seeds a
+  workflow, drives Playwright, cleans up. See
+  `docs/modules/process.md` for the full surface.
+
+- **Steps tab.** Any workflow that exposes a `pipeline_state` query
+  with a `steps[]` array now gets an automatic "Pipeline" tab in the
+  dashboard's detail view. Renders each step as a circle with one of
+  five canonical statuses — `waiting ○`, `running ⟳`, `done ✓`,
+  `failed ✕`, `cancelled —` — and the connector lines between circles
+  fill state-aware so a glance tells you how far through the pipeline
+  the run is. The tab is added at the front and default-selected when
+  present, hidden entirely otherwise. See
+  `docs/modules/workflow.md#pipeline-tab-convention` for the schema.
+
+- **Live snapshot tail.** While the Steps tab is open and the
+  workflow is `RUNNING`, the dashboard polls
+  `GET /workflows/{id}/state/pipeline_state` every 1s and diff-applies
+  changes onto the existing DOM — circles and connectors update in
+  place, log entries append at the bottom, and animations on the
+  running step keep their state. Polling stops when the user switches
+  away from the tab, the panel closes, or the workflow reaches a
+  terminal status. Includes a scroll-lock toggle so operators reading
+  mid-log don't get yanked back to the bottom every second.
+
+- **Per-step actions via signals.** Each step in `steps[]` may include
+  an `actions = { "approve", "reject", ... }` array. Those render as
+  buttons under the step's circle; clicking one POSTs a `step_action`
+  signal to the engine with payload `{ step, action, user }`. The
+  engine routes the signal; the workflow handler decides what each
+  action means. AWE provides the plumbing, the consumer provides the
+  semantics — same architectural boundary that keeps the engine
+  domain-agnostic.
+
+- **Step log filter.** Clicking a step circle filters the log below to
+  just that step's entries (uses the optional `step` field on each log
+  entry). Click again to clear the filter.
+
+### Changed
+
+- **Slim detail layout.** Dropped the left "identity card" column from
+  the inline detail expansion — every field it carried (id, type,
+  status, queue, created) is already on the workflow row above or in
+  the namespace selector. The only field that wasn't redundant
+  (`completed_at`) now renders as a single meta line above the action
+  toolbar, only when the run is terminal. The action toolbar
+  (Signal / Cancel / Terminate / Continue-as-new) sits full-width
+  above the tabs, and the tabs themselves use the full horizontal
+  width of the expansion. Net effect: tighter detail block, more
+  room for the new Steps tab to breathe.
+
+- **Dropped Run ID from detail meta** — it's a near-duplicate of the
+  workflow id shown on the row directly above (run id is just the
+  workflow id prefixed with `run-` and suffixed with a timestamp).
+
+- **CI/CD overhaul: mise + moon + Playwright e2e + Rust 1.95.**
+  `.mise.toml` now pins rust 1.95.0, node 25.9.0, and moon 2.2.1 — one
+  source of truth for tool versions across local dev and CI. moon owns
+  the workspace's project graph (`assay-lua`, `assay-workflow`,
+  `dashboard-e2e`, `site`, `openclaw-extension`) and runs only the
+  affected tasks on each PR via `moon ci`. Shared task templates in
+  `.moon/tasks/tag-*.yml` keep per-project `moon.yml` minimal. New
+  `crates/assay-workflow/tests-e2e/` directory holds the dashboard's
+  Playwright suite, run automatically by CI whenever the workflow
+  crate changes.
+
 ## [0.11.15] - 2026-04-18
 
 ### Changed
