@@ -381,6 +381,58 @@ impl Harness {
     pub async fn try_acquire_scheduler_lock(&self) -> anyhow::Result<bool> {
         dispatch!(self, s => s.try_acquire_scheduler_lock().await)
     }
+
+    // ── Push streams ──────────────────────────────────────────────────────────
+
+    /// Returns a pinned, type-erased stream that emits workflow ids as they
+    /// become dispatchable.  The lifetime is tied to the harness borrow.
+    pub fn subscribe_runnable<'a>(
+        &'a self,
+        namespace: &'a str,
+    ) -> std::pin::Pin<Box<dyn futures_core::Stream<Item = String> + Send + 'a>> {
+        match self {
+            #[cfg(feature = "backend-postgres")]
+            Self::Postgres { store, .. } => {
+                use assay_workflow::WorkflowStore;
+                Box::pin(store.subscribe_runnable(namespace))
+            }
+            #[cfg(feature = "backend-sqlite")]
+            Self::Sqlite { store, .. } => {
+                use assay_workflow::WorkflowStore;
+                Box::pin(store.subscribe_runnable(namespace))
+            }
+            #[cfg(feature = "backend-surrealdb")]
+            Self::Surreal { store, .. } => {
+                use assay_workflow::WorkflowStore;
+                Box::pin(store.subscribe_runnable(namespace))
+            }
+        }
+    }
+
+    /// Returns a pinned, type-erased stream that emits activity ids as new
+    /// tasks arrive on any of the listed queues.
+    pub fn subscribe_tasks<'a>(
+        &'a self,
+        queue_names: &'a [&'a str],
+    ) -> std::pin::Pin<Box<dyn futures_core::Stream<Item = String> + Send + 'a>> {
+        match self {
+            #[cfg(feature = "backend-postgres")]
+            Self::Postgres { store, .. } => {
+                use assay_workflow::WorkflowStore;
+                Box::pin(store.subscribe_tasks(queue_names))
+            }
+            #[cfg(feature = "backend-sqlite")]
+            Self::Sqlite { store, .. } => {
+                use assay_workflow::WorkflowStore;
+                Box::pin(store.subscribe_tasks(queue_names))
+            }
+            #[cfg(feature = "backend-surrealdb")]
+            Self::Surreal { store, .. } => {
+                use assay_workflow::WorkflowStore;
+                Box::pin(store.subscribe_tasks(queue_names))
+            }
+        }
+    }
 }
 
 // ── Backend selector ──────────────────────────────────────────────────────────

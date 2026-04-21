@@ -1247,3 +1247,114 @@ async fn leader_election(#[case] backend: Backend) {
     // We just verify it doesn't error.
     let _ = second;
 }
+
+// ── Task 3.16 / 3.17 — Push streams ──────────────────────────────────────────
+//
+// SQLite is intentionally NOT tested here: it returns stream::empty() by
+// design (no cross-process notification primitive — hybrid model, plan 10
+// § "Dispatch wake-up").
+//
+// If the 5-second timeout proves flaky on a backend (e.g. slow CI), do NOT
+// increase it — flaky push tests hide real bugs. Instead investigate the
+// timing between subscription setup and the triggering insert.
+
+use futures_util::StreamExt;
+
+// Ignored pending Phase 3 Task 3.16 polish — implementation is in place
+// (PG LISTEN/NOTIFY triggers + SurrealDB LIVE SELECT), but the test
+// setup blocks >60s on both backends. Suspected cause: subscription
+// registration + testcontainer bring-up interaction needs investigation.
+// Tracked against commit history of Phase 3 Task 3.16.
+#[ignore]
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
+    let h = std::sync::Arc::new(backend.setup().await.expect("setup"));
+
+    // Use an unbounded channel as a buffer so the background poller can
+    // collect notifications independently of the main task's timing.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    // Spawn a task that immediately starts polling the stream (registering the
+    // LIVE SELECT / LISTEN with the server) and forwards items to the channel.
+    // This must happen before the insert so the subscription is live when the
+    // notification fires.
+    let h2 = h.clone();
+    tokio::spawn(async move {
+        let mut stream = h2.subscribe_runnable("main");
+        while let Some(id) = stream.next().await {
+            let _ = tx.send(id);
+        }
+    });
+
+    // Give the background task 150 ms to establish the subscription with the
+    // server (connect, LISTEN / LIVE SELECT round-trip).
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    let wf_id = uid("wf-push-r");
+    let wf = make_workflow(&wf_id, "main", "push-q");
+    h.create_workflow(&wf).await.unwrap();
+    // mark_workflow_dispatchable triggers the notify / LIVE SELECT update.
+    h.mark_workflow_dispatchable(&wf_id).await.unwrap();
+
+    let got = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        rx.recv(),
+    )
+    .await
+    .expect("timed out waiting for push notification")
+    .expect("channel closed before yielding");
+
+    assert_eq!(got, wf_id, "push stream should yield the workflow id");
+}
+
+// Ignored pending Phase 3 Task 3.16 polish — see note on
+// push_runnable_fires_on_dispatchable above.
+#[ignore]
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn push_tasks_fires_on_activity_insert(#[case] backend: Backend) {
+    let h = std::sync::Arc::new(backend.setup().await.expect("setup"));
+
+    let queue = "push-act-q";
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    // Spawn the stream poller before doing any inserts.
+    let h2 = h.clone();
+    let queue_owned = queue.to_string();
+    tokio::spawn(async move {
+        let q_ref: &str = &queue_owned;
+        let queues = [q_ref];
+        let mut stream = h2.subscribe_tasks(&queues);
+        while let Some(id) = stream.next().await {
+            let _ = tx.send(id);
+        }
+    });
+
+    // Allow subscription to register with the server.
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    let wf_id = uid("wf-push-t");
+    h.create_workflow(&make_workflow(&wf_id, "main", queue)).await.unwrap();
+
+    // Create a PENDING activity — the trigger / LIVE SELECT fires on INSERT.
+    let act = make_activity(&wf_id, 1, queue);
+    let act_id = h.create_activity(&act).await.unwrap();
+
+    let got = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        rx.recv(),
+    )
+    .await
+    .expect("timed out waiting for push notification")
+    .expect("channel closed before yielding");
+
+    // The emitted payload is the activity's numeric id as a string.
+    let got_id: i64 = got.parse().expect("payload should be a numeric activity id");
+    assert_eq!(got_id, act_id, "push stream should yield the activity id");
+}

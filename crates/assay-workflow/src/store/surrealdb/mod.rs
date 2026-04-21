@@ -9,6 +9,7 @@ mod activities;
 mod api_keys;
 mod child_workflows;
 mod leader;
+mod push;
 mod queue_stats;
 mod schedules;
 mod signals;
@@ -1135,15 +1136,15 @@ impl WorkflowStore for SurrealDbStore {
 
     fn subscribe_runnable(
         &self,
-        _namespace: &str,
+        namespace: &str,
     ) -> impl futures_core::Stream<Item = String> + Send + '_ {
-        futures_util::stream::empty()
+        self.subscribe_runnable_impl(namespace)
     }
 
     fn subscribe_tasks<'a>(
         &'a self,
-        _queue_names: &'a [&'a str],
+        queue_names: &'a [&'a str],
     ) -> impl futures_core::Stream<Item = String> + Send + 'a {
-        futures_util::stream::empty()
+        self.subscribe_tasks_impl(queue_names)
     }
 }
