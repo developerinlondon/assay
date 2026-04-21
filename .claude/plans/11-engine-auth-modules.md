@@ -412,7 +412,7 @@ OIDC client is done. F polishes at the end. With three concurrent agents, calend
 [dependencies]
 openidconnect = { version = "4", optional = true }
 oxide-auth = { version = "0.6", optional = true }
-askama = { version = "0.12", optional = true }
+askama = { version = "0.15", optional = true }
 webauthn-rs = { version = "0.5", optional = true }
 argon2 = { version = "0.5", optional = true } # RustCrypto stable pair with password-hash 0.5; track 0.6 still RC as of Apr 2026
 password-hash = { version = "0.5", optional = true }

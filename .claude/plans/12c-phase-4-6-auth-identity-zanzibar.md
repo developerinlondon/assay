@@ -85,7 +85,7 @@ assay-core = { path = "../assay-core", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 tokio = { version = "1", features = ["sync", "time", "rt"] }
 async-trait = "0.1"
@@ -116,7 +116,7 @@ surrealdb = { version = "3", default-features = false,
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 [dev-dependencies]
-rstest = "0.22"
+rstest = "0.26"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres", "surrealdb"] }
 tempfile = "3"

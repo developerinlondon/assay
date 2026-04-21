@@ -30,7 +30,7 @@ will fail until Phase 3 lands — that's the driving test suite for Phase 3.
 
 ```toml
 # crates/assay-workflow/Cargo.toml [dev-dependencies]
-rstest = "0.22"
+rstest = "0.26"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres", "surrealdb"] }
 tokio = { version = "1", features = ["full"] }
