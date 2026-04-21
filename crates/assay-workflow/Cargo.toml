@@ -9,6 +9,9 @@ repository = "https://github.com/developerinlondon/assay"
 description = "Durable workflow engine with REST+SSE API, PostgreSQL/SQLite backends. Embeddable library or standalone server."
 
 [dependencies]
+# Shared types + traits
+assay-core = { path = "../assay-core", version = "0.1" }
+
 # Async runtime
 tokio = { version = "1", features = ["rt", "time", "macros"] }
 

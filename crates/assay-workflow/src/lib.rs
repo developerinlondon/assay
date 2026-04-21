@@ -7,7 +7,10 @@ pub mod scheduler;
 pub mod state;
 pub mod store;
 pub mod timers;
-pub mod types;
+
+// Types live in assay-core; re-exported here so existing `crate::types::*`
+// paths continue to resolve.
+pub use assay_core::types;
 
 pub use engine::Engine;
 pub use store::postgres::PostgresStore;

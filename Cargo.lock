@@ -179,6 +179,7 @@ name = "assay-workflow"
 version = "0.1.8"
 dependencies = [
  "anyhow",
+ "assay-core",
  "aws-config",
  "aws-sdk-s3",
  "axum",

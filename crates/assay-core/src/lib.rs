@@ -2,3 +2,7 @@
 //!
 //! Consumers: `assay-workflow`, `assay-auth`, `assay-engine`.
 //! Backend impls live in the domain crates behind Cargo features.
+
+pub mod types;
+
+pub use types::*;
