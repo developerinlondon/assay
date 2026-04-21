@@ -53,6 +53,16 @@ tracing = "0.1"
 futures-core = "0.3"
 futures-util = "0.3"
 
+# SurrealDB remote client (ws/wss only — no embedded KV engines).
+# Optional: only compiled when `backend-surrealdb` feature is enabled.
+# Non-optional would unify feature flags across the workspace and enable
+# jsonwebtoken's aws-lc-rs backend transitively, conflicting with our
+# explicit rust_crypto feature (see 2026-04-21 debugging notes).
+surrealdb = { version = "3", default-features = false, features = ["protocol-ws", "protocol-http", "rustls"], optional = true }
+
+# Async generator streams (used by LIVE SELECT impls in Task 3.16)
+async-stream = "0.3"
+
 [features]
 default = []
 # Enable the S3 archival background task for completed workflows.
@@ -60,13 +70,13 @@ default = []
 # archival isn't needed.
 s3-archival = ["dep:aws-config", "dep:aws-sdk-s3"]
 
-# Stub backend features so downstream crates (assay-engine, assay) can
-# express their feature matrix today. Real feature-gating of the sqlx
-# backends lands in plan 12a Phase 1 Task 1.2 when the store trait
-# moves to assay-core.
+# Backend features. Postgres + SQLite are unconditionally compiled for now
+# (the source hasn't been feature-gated off sqlx yet — tracked in plan 12a).
+# SurrealDB is opt-in to avoid pulling jsonwebtoken/aws-lc-rs into default
+# builds (which would conflict with the rust_crypto path used by the runtime).
 backend-postgres = []
 backend-sqlite = []
-backend-surrealdb = []
+backend-surrealdb = ["dep:surrealdb"]
 
 [dependencies.aws-config]
 version = "1.8"

@@ -110,16 +110,22 @@ async fn sqlite_harness() -> anyhow::Result<Harness> {
 #[cfg(feature = "backend-surrealdb")]
 async fn surreal_harness() -> anyhow::Result<Harness> {
     use testcontainers::runners::AsyncRunner;
+    use testcontainers::ImageExt;
     use testcontainers_modules::surrealdb::SurrealDb;
 
-    let container = SurrealDb::default().start().await?;
+    // Pin to v3 — our surrealdb crate (3.x) speaks the v3 wire protocol.
+    // testcontainers-modules 0.15 default image tag is v2.x, which causes
+    // `Server sent no subprotocol` at handshake time.
+    let container = SurrealDb::default()
+        .with_tag("v3")
+        .with_env_var("SURREAL_USER", "root")
+        .with_env_var("SURREAL_PASS", "root")
+        .start()
+        .await?;
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(8000).await?;
     let url = format!("ws://{host}:{port}");
 
-    // connect_full bails with "not yet implemented" until Task 3.1.
-    // That error propagates up and causes the Surreal test case to fail —
-    // intentional; Phase 3 will fix it.
     let store = assay_workflow::SurrealDbStore::connect_full(
         &url,
         "assay",
@@ -128,7 +134,6 @@ async fn surreal_harness() -> anyhow::Result<Harness> {
         Some("root"),
     )
     .await?;
-    // "main" namespace will be created by the migration runner in Task 3.1.
 
     Ok(Harness::Surreal {
         _container: container,

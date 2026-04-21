@@ -24,7 +24,10 @@ default = [
   "dashboard",
   "backend-postgres",
   "backend-sqlite",
-  "backend-surrealdb",
+  # backend-surrealdb is opt-in: surrealdb's transitive jsonwebtoken/aws-lc-rs
+  # feature conflicts with rust_crypto used by assay-lua at workspace-wide
+  # feature unification time. Users who want SurrealDB support pass
+  # `--features backend-surrealdb` explicitly.
   "server",
 ]
 
