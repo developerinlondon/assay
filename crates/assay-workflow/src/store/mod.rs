@@ -6,6 +6,7 @@
 
 pub mod postgres;
 pub mod sqlite;
+pub mod surrealdb;
 
 pub use assay_core::store::WorkflowStore;
 pub use assay_core::{ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats};

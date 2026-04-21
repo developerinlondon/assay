@@ -81,7 +81,8 @@ features = ["behavior-version-latest"]
 [dev-dependencies]
 reqwest = { version = "0.13", features = ["json"], default-features = false }
 rsa = "0.9"
+rstest = "0.26"
 tempfile = "3.27.0"
 testcontainers = "0.27"
-testcontainers-modules = { version = "0.15", features = ["postgres"] }
+testcontainers-modules = { version = "0.15", features = ["postgres", "surrealdb"] }
 tokio = { version = "1", features = ["full"] }
