@@ -187,36 +187,68 @@ impl EngineConfig {
 This is the culmination of Phase 1's architectural work. `EngineState` owns the three (or more)
 module contexts. `axum::extract::FromRef` derives the sub-state extractors.
 
+> **Revision note (2026-04-21):** The original example below showed a non-generic `EngineState`.
+> Reality: `WorkflowCtx` is generic on `S: WorkflowStore` (trait has RPITIT, not dyn-compatible —
+> see plan 12 Architecture Principle 2). So `EngineState<S>` is also generic, and the engine's
+> `main()` picks the concrete `S` via a match on `cfg.backend`. Each backend compiles as a separate
+> monomorphisation; runtime cost zero, binary gains ~20-40 KB per backend.
+
 - [ ] **Step 1: EngineState**
 
 ```rust
 use axum::extract::FromRef;
+use assay_core::WorkflowStore;
+use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct EngineState {
+pub struct EngineState<S: WorkflowStore> {
     #[cfg(feature = "workflow")]
-    pub workflow: assay_workflow::WorkflowCtx,
+    pub workflow: Arc<assay_workflow::WorkflowCtx<S>>,
 
     #[cfg(feature = "auth")]
-    pub auth: assay_auth::AuthCtx,
+    pub auth: Arc<assay_auth::AuthCtx>,
 
     #[cfg(feature = "dashboard")]
-    pub dashboard: assay_dashboard::DashboardCtx,
+    pub dashboard: Arc<assay_dashboard::DashboardCtx>,
 }
 
 #[cfg(feature = "workflow")]
-impl FromRef<EngineState> for assay_workflow::WorkflowCtx {
-    fn from_ref(s: &EngineState) -> Self { s.workflow.clone() }
+impl<S: WorkflowStore> FromRef<EngineState<S>> for Arc<assay_workflow::WorkflowCtx<S>> {
+    fn from_ref(s: &EngineState<S>) -> Self { Arc::clone(&s.workflow) }
 }
 
 #[cfg(feature = "auth")]
-impl FromRef<EngineState> for assay_auth::AuthCtx {
-    fn from_ref(s: &EngineState) -> Self { s.auth.clone() }
+impl<S: WorkflowStore> FromRef<EngineState<S>> for Arc<assay_auth::AuthCtx> {
+    fn from_ref(s: &EngineState<S>) -> Self { Arc::clone(&s.auth) }
 }
 
 #[cfg(feature = "dashboard")]
-impl FromRef<EngineState> for assay_dashboard::DashboardCtx {
-    fn from_ref(s: &EngineState) -> Self { s.dashboard.clone() }
+impl<S: WorkflowStore> FromRef<EngineState<S>> for Arc<assay_dashboard::DashboardCtx> {
+    fn from_ref(s: &EngineState<S>) -> Self { Arc::clone(&s.dashboard) }
+}
+```
+
+**Engine main() backend selection (added):**
+
+```rust
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cfg = EngineConfig::from_file(&cli.config)?;
+    match cfg.backend.clone() {
+        #[cfg(feature = "backend-postgres")]
+        Backend::Postgres { .. } => run_engine::<assay_workflow::PostgresStore>(cfg).await,
+        #[cfg(feature = "backend-sqlite")]
+        Backend::Sqlite   { .. } => run_engine::<assay_workflow::SqliteStore>(cfg).await,
+        #[cfg(feature = "backend-surrealdb")]
+        Backend::Surreal  { .. } => run_engine::<assay_workflow::SurrealDbStore>(cfg).await,
+        #[allow(unreachable_patterns)]
+        _ => anyhow::bail!("backend feature not compiled in"),
+    }
+}
+
+async fn run_engine<S: WorkflowStore + 'static>(cfg: EngineConfig) -> anyhow::Result<()> {
+    let state: EngineState<S> = build_state(&cfg).await?;
+    server::run(cfg, state).await
 }
 ```
 

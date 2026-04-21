@@ -884,10 +884,18 @@ SurrealDbStore is a connect-only stub until Phase 3."
 >
 > Task 1.4 below is absorbed by this revised Task 1.3. Task 1.5 (dashboard extraction) stays as
 > planned. Task 1.6 (PG LISTEN/NOTIFY) stays as planned.
+>
+> **Second revision note (2026-04-21, during execution):** The `Arc<dyn WorkflowStore>` plan does
+> NOT work — `WorkflowStore` has `impl Future` return types (RPITIT) which make the trait
+> non-dyn-compatible on current Rust. Rather than rewrite every method to `Box<dyn Future>` returns
+> (one heap alloc per call, hot in replay), we **keep the generic parameter**:
+> `WorkflowCtx<S: WorkflowStore>` with `Arc<S>` inside. Engine picks `S` at startup via a
+> match-on-config (see plan 12 Architecture Principle 2). Struct merge + flattening still happens as
+> described below.
 
-**Goal:** one struct (`WorkflowCtx`) replaces both `WorkflowEngine<S>` and `AppState<S>`. `S`
-generic parameter goes away via `Arc<dyn WorkflowStore>`. Axum handlers use
-`State<Arc<WorkflowCtx>>`. Call sites keep method-style syntax (`ctx.start_workflow(...)`).
+**Goal:** one struct (`WorkflowCtx<S>`) replaces both `WorkflowEngine<S>` and `AppState<S>`. Generic
+parameter stays (RPITIT prevents dyn). Axum handlers use `State<Arc<WorkflowCtx<S>>>`. Call sites
+keep method-style syntax (`ctx.start_workflow(...)`).
 
 **Files created:**
 
