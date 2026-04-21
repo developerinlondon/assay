@@ -4,12 +4,9 @@
 //! and SurrealDB. The `Harness` enum wraps all three concrete store types
 //! and delegates `WorkflowStore` calls through explicit `match` arms, so
 //! test bodies remain backend-agnostic without requiring `dyn Trait`.
-//!
-//! The Surreal case fails until plan 12b Task 3.1 lands the real
-//! `connect_full` implementation — that failure is intentional and drives
-//! Phase 3's TDD cycle.
 
-use assay_core::NamespaceRecord;
+use assay_core::types::*;
+use assay_core::{NamespaceRecord, NamespaceStats};
 use assay_workflow::WorkflowStore;
 
 // ── Harness ───────────────────────────────────────────────────────────────────
@@ -32,16 +29,125 @@ pub enum Harness {
     },
 }
 
+macro_rules! dispatch {
+    ($self:expr, $store:ident => $body:expr) => {
+        match $self {
+            #[cfg(feature = "backend-postgres")]
+            Self::Postgres { store: $store, .. } => $body,
+            #[cfg(feature = "backend-sqlite")]
+            Self::Sqlite { store: $store, .. } => $body,
+            #[cfg(feature = "backend-surrealdb")]
+            Self::Surreal { store: $store, .. } => $body,
+        }
+    };
+}
+
 impl Harness {
     pub async fn list_namespaces(&self) -> anyhow::Result<Vec<NamespaceRecord>> {
-        match self {
-            #[cfg(feature = "backend-postgres")]
-            Self::Postgres { store, .. } => store.list_namespaces().await,
-            #[cfg(feature = "backend-sqlite")]
-            Self::Sqlite { store, .. } => store.list_namespaces().await,
-            #[cfg(feature = "backend-surrealdb")]
-            Self::Surreal { store, .. } => store.list_namespaces().await,
-        }
+        dispatch!(self, s => s.list_namespaces().await)
+    }
+
+    pub async fn create_namespace(&self, name: &str) -> anyhow::Result<()> {
+        dispatch!(self, s => s.create_namespace(name).await)
+    }
+
+    pub async fn delete_namespace(&self, name: &str) -> anyhow::Result<bool> {
+        dispatch!(self, s => s.delete_namespace(name).await)
+    }
+
+    pub async fn get_namespace_stats(&self, ns: &str) -> anyhow::Result<NamespaceStats> {
+        dispatch!(self, s => s.get_namespace_stats(ns).await)
+    }
+
+    pub async fn create_workflow(&self, wf: &WorkflowRecord) -> anyhow::Result<()> {
+        dispatch!(self, s => s.create_workflow(wf).await)
+    }
+
+    pub async fn get_workflow(&self, id: &str) -> anyhow::Result<Option<WorkflowRecord>> {
+        dispatch!(self, s => s.get_workflow(id).await)
+    }
+
+    pub async fn list_workflows(
+        &self,
+        namespace: &str,
+        status: Option<WorkflowStatus>,
+        workflow_type: Option<&str>,
+        search_attrs_filter: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> anyhow::Result<Vec<WorkflowRecord>> {
+        dispatch!(self, s => s.list_workflows(namespace, status, workflow_type, search_attrs_filter, limit, offset).await)
+    }
+
+    pub async fn update_workflow_status(
+        &self,
+        id: &str,
+        status: WorkflowStatus,
+        result: Option<&str>,
+        error: Option<&str>,
+    ) -> anyhow::Result<()> {
+        dispatch!(self, s => s.update_workflow_status(id, status, result, error).await)
+    }
+
+    pub async fn claim_workflow(&self, id: &str, worker_id: &str) -> anyhow::Result<bool> {
+        dispatch!(self, s => s.claim_workflow(id, worker_id).await)
+    }
+
+    pub async fn mark_workflow_dispatchable(&self, workflow_id: &str) -> anyhow::Result<()> {
+        dispatch!(self, s => s.mark_workflow_dispatchable(workflow_id).await)
+    }
+
+    pub async fn claim_workflow_task(
+        &self,
+        task_queue: &str,
+        worker_id: &str,
+    ) -> anyhow::Result<Option<WorkflowRecord>> {
+        dispatch!(self, s => s.claim_workflow_task(task_queue, worker_id).await)
+    }
+
+    pub async fn release_workflow_task(
+        &self,
+        workflow_id: &str,
+        worker_id: &str,
+    ) -> anyhow::Result<()> {
+        dispatch!(self, s => s.release_workflow_task(workflow_id, worker_id).await)
+    }
+
+    pub async fn append_event(&self, ev: &WorkflowEvent) -> anyhow::Result<i64> {
+        dispatch!(self, s => s.append_event(ev).await)
+    }
+
+    pub async fn list_events(&self, workflow_id: &str) -> anyhow::Result<Vec<WorkflowEvent>> {
+        dispatch!(self, s => s.list_events(workflow_id).await)
+    }
+
+    pub async fn get_event_count(&self, workflow_id: &str) -> anyhow::Result<i64> {
+        dispatch!(self, s => s.get_event_count(workflow_id).await)
+    }
+
+    pub async fn upsert_search_attributes(
+        &self,
+        workflow_id: &str,
+        patch_json: &str,
+    ) -> anyhow::Result<()> {
+        dispatch!(self, s => s.upsert_search_attributes(workflow_id, patch_json).await)
+    }
+
+    pub async fn list_archivable_workflows(
+        &self,
+        cutoff: f64,
+        limit: i64,
+    ) -> anyhow::Result<Vec<WorkflowRecord>> {
+        dispatch!(self, s => s.list_archivable_workflows(cutoff, limit).await)
+    }
+
+    pub async fn mark_archived_and_purge(
+        &self,
+        workflow_id: &str,
+        archive_uri: &str,
+        archived_at: f64,
+    ) -> anyhow::Result<()> {
+        dispatch!(self, s => s.mark_archived_and_purge(workflow_id, archive_uri, archived_at).await)
     }
 }
 
@@ -66,6 +172,51 @@ impl Backend {
             #[cfg(feature = "backend-surrealdb")]
             Self::Surreal => surreal_harness().await,
         }
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Build a minimal valid `WorkflowRecord` for test use.
+pub fn make_workflow(id: &str, namespace: &str, task_queue: &str) -> WorkflowRecord {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    WorkflowRecord {
+        id: id.to_string(),
+        namespace: namespace.to_string(),
+        run_id: format!("run-{id}"),
+        workflow_type: "test_wf".to_string(),
+        task_queue: task_queue.to_string(),
+        status: "PENDING".to_string(),
+        input: Some(r#"{"key":"val"}"#.to_string()),
+        result: None,
+        error: None,
+        parent_id: None,
+        claimed_by: None,
+        search_attributes: None,
+        archived_at: None,
+        archive_uri: None,
+        created_at: now,
+        updated_at: now,
+        completed_at: None,
+    }
+}
+
+/// Build a minimal valid `WorkflowEvent` for test use.
+pub fn make_event(workflow_id: &str, seq: i32) -> WorkflowEvent {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    WorkflowEvent {
+        id: None,
+        workflow_id: workflow_id.to_string(),
+        seq,
+        event_type: "WorkflowStarted".to_string(),
+        payload: Some(format!(r#"{{"seq":{seq}}}"#)),
+        timestamp: now,
     }
 }
 

@@ -349,7 +349,8 @@ impl WorkflowStore for SqliteStore {
     }
 
     async fn delete_namespace(&self, name: &str) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM namespaces WHERE name = ?")
+        // Mirror PG: 'main' is always available, can't be deleted.
+        let res = sqlx::query("DELETE FROM namespaces WHERE name = ? AND name != 'main'")
             .bind(name)
             .execute(&self.pool)
             .await?;

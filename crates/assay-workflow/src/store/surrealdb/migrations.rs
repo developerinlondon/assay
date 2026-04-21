@@ -6,10 +6,16 @@
 
 use super::SurrealDbStore;
 
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "00_init",
-    include_str!("../../../migrations/surrealdb/00_init.surql"),
-)];
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "00_init",
+        include_str!("../../../migrations/surrealdb/00_init.surql"),
+    ),
+    (
+        "01_workflow_fields",
+        include_str!("../../../migrations/surrealdb/01_workflow_fields.surql"),
+    ),
+];
 
 impl SurrealDbStore {
     pub(crate) async fn run_migrations(&self) -> anyhow::Result<()> {

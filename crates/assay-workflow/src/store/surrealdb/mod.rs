@@ -60,17 +60,117 @@ impl SurrealDbStore {
     }
 }
 
+// ── Helper utilities ─────────────────────────────────────────────────────────
+
+fn timestamp_now() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+}
+
+/// Convert a `serde_json::Value` (one row from a SurrealDB SELECT) to a
+/// `WorkflowRecord`.  All fields are optional in the JSON — we use defaults
+/// for missing ones so the conversion never fails.
+fn row_to_workflow(v: serde_json::Value) -> WorkflowRecord {
+    let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let namespace = v.get("namespace").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let run_id = v.get("run_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let workflow_type = v.get("workflow_type").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let task_queue = v.get("task_queue").and_then(|x| x.as_str()).unwrap_or("main").to_string();
+    let status = v.get("status").and_then(|x| x.as_str()).unwrap_or("PENDING").to_string();
+    let input = v.get("input").and_then(|x| if x.is_null() { None } else { x.as_str().map(|s| s.to_string()) });
+    let result = v.get("result").and_then(|x| if x.is_null() { None } else { x.as_str().map(|s| s.to_string()) });
+    let error = v.get("error").and_then(|x| if x.is_null() { None } else { x.as_str().map(|s| s.to_string()) });
+    let parent_id = v.get("parent_id").and_then(|x| if x.is_null() { None } else { x.as_str().map(|s| s.to_string()) });
+    let claimed_by = v.get("claimed_by").and_then(|x| if x.is_null() { None } else { x.as_str().map(|s| s.to_string()) });
+    // search_attributes is a native object in SurrealDB; convert to JSON string.
+    let search_attributes = v.get("search_attributes").and_then(|x| {
+        if x.is_null() {
+            None
+        } else {
+            Some(x.to_string())
+        }
+    });
+    let archived_at = v.get("archived_at").and_then(|x| if x.is_null() { None } else { x.as_f64() });
+    let archive_uri = v.get("archive_uri").and_then(|x| if x.is_null() { None } else { x.as_str().map(|s| s.to_string()) });
+    let created_at = v.get("created_at").and_then(|x| x.as_f64()).unwrap_or(0.0);
+    let updated_at = v.get("updated_at").and_then(|x| x.as_f64()).unwrap_or(0.0);
+    let completed_at = v.get("completed_at").and_then(|x| if x.is_null() { None } else { x.as_f64() });
+
+    WorkflowRecord {
+        id,
+        namespace,
+        run_id,
+        workflow_type,
+        task_queue,
+        status,
+        input,
+        result,
+        error,
+        parent_id,
+        claimed_by,
+        search_attributes,
+        archived_at,
+        archive_uri,
+        created_at,
+        updated_at,
+        completed_at,
+    }
+}
+
+/// Convert a serde_json::Value row to a WorkflowEvent.
+fn row_to_event(v: serde_json::Value) -> WorkflowEvent {
+    let workflow_id = v.get("workflow_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let seq = v.get("seq").and_then(|x| x.as_i64()).unwrap_or(0) as i32;
+    let event_type = v.get("event_type").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let payload = v.get("payload").and_then(|x| {
+        if x.is_null() {
+            None
+        } else if let Some(s) = x.as_str() {
+            Some(s.to_string())
+        } else {
+            // If stored as object, serialise back to string
+            Some(x.to_string())
+        }
+    });
+    let timestamp = v.get("created_at").and_then(|x| x.as_f64()).unwrap_or(0.0);
+    WorkflowEvent {
+        id: None,
+        workflow_id,
+        seq,
+        event_type,
+        payload,
+        timestamp,
+    }
+}
+
+// ── WorkflowStore impl ───────────────────────────────────────────────────────
+
 impl WorkflowStore for SurrealDbStore {
+    // ── Namespaces ─────────────────────────────────────────
+
     fn create_namespace(
         &self,
-        _name: &str,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
-        async { todo!("Task 3.2") }
+        name: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
+        let db = self.db.clone();
+        let name = name.to_string();
+        async move {
+            let now = timestamp_now();
+            db.query(
+                "CREATE namespace CONTENT { name: $name, created_at: $created_at }",
+            )
+            .bind(("name", name))
+            .bind(("created_at", now))
+            .await?;
+            Ok(())
+        }
     }
 
     fn list_namespaces(
         &self,
-    ) -> impl Future<Output = anyhow::Result<Vec<NamespaceRecord>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<NamespaceRecord>>> + Send {
         let db = self.db.clone();
         async move {
             let rows: Vec<serde_json::Value> = db
@@ -91,150 +191,665 @@ impl WorkflowStore for SurrealDbStore {
 
     fn delete_namespace(
         &self,
-        _name: &str,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send + '_ {
-        async { todo!("Task 3.2") }
+        name: &str,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send {
+        let db = self.db.clone();
+        let name = name.to_string();
+        async move {
+            // Protect the default "main" namespace — mirror PG behaviour.
+            if name == "main" {
+                return Ok(false);
+            }
+            let existing: Vec<serde_json::Value> = db
+                .query("SELECT name FROM namespace WHERE name = $name LIMIT 1")
+                .bind(("name", name.clone()))
+                .await?
+                .take(0)?;
+            if existing.is_empty() {
+                return Ok(false);
+            }
+            db.query("DELETE namespace WHERE name = $name")
+                .bind(("name", name))
+                .await?;
+            Ok(true)
+        }
     }
 
     fn get_namespace_stats(
         &self,
-        _namespace: &str,
-    ) -> impl Future<Output = anyhow::Result<NamespaceStats>> + Send + '_ {
-        async { todo!("Task 3.2") }
+        namespace: &str,
+    ) -> impl Future<Output = anyhow::Result<NamespaceStats>> + Send {
+        let db = self.db.clone();
+        let namespace = namespace.to_string();
+        async move {
+            let count_query = |status: Option<&str>| {
+                if let Some(s) = status {
+                    format!(
+                        "SELECT count() AS c FROM workflow WHERE namespace = '{}' AND status = '{}' GROUP ALL",
+                        namespace.replace('\'', "\\'"),
+                        s
+                    )
+                } else {
+                    format!(
+                        "SELECT count() AS c FROM workflow WHERE namespace = '{}' GROUP ALL",
+                        namespace.replace('\'', "\\'")
+                    )
+                }
+            };
+
+            let extract_count = |rows: Vec<serde_json::Value>| -> i64 {
+                rows.first()
+                    .and_then(|v| v.get("c"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0)
+            };
+
+            let total: i64 = extract_count(
+                db.query(&count_query(None)).await?.take(0)?
+            );
+            let running: i64 = extract_count(
+                db.query(&count_query(Some("RUNNING"))).await?.take(0)?
+            );
+            let pending: i64 = extract_count(
+                db.query(&count_query(Some("PENDING"))).await?.take(0)?
+            );
+            let completed: i64 = extract_count(
+                db.query(&count_query(Some("COMPLETED"))).await?.take(0)?
+            );
+            let failed: i64 = extract_count(
+                db.query(&count_query(Some("FAILED"))).await?.take(0)?
+            );
+
+            let schedules: i64 = {
+                let ns = namespace.replace('\'', "\\'");
+                let rows: Vec<serde_json::Value> = db
+                    .query(format!("SELECT count() AS c FROM schedule WHERE namespace = '{ns}' GROUP ALL"))
+                    .await?.take(0)?;
+                extract_count(rows)
+            };
+
+            let workers: i64 = {
+                let ns = namespace.replace('\'', "\\'");
+                let rows: Vec<serde_json::Value> = db
+                    .query(format!("SELECT count() AS c FROM worker WHERE namespace = '{ns}' GROUP ALL"))
+                    .await?.take(0)?;
+                extract_count(rows)
+            };
+
+            Ok(NamespaceStats {
+                namespace,
+                total_workflows: total,
+                running,
+                pending,
+                completed,
+                failed,
+                schedules,
+                workers,
+            })
+        }
     }
+
+    // ── Workflows ──────────────────────────────────────────
 
     fn create_workflow(
         &self,
-        _workflow: &WorkflowRecord,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
-        async { todo!("Task 3.3") }
+        workflow: &WorkflowRecord,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
+        let db = self.db.clone();
+        // Parse search_attributes from JSON string to Value so SurrealDB
+        // stores it as a native object (matching the `option<object>` schema).
+        let search_attributes: Option<serde_json::Value> = workflow
+            .search_attributes
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        let wf = workflow.clone();
+        async move {
+            db.query(
+                "CREATE type::record('workflow', $id) CONTENT {
+                    id:                      $id,
+                    namespace:               $namespace,
+                    run_id:                  $run_id,
+                    workflow_type:           $workflow_type,
+                    task_queue:              $task_queue,
+                    status:                  $status,
+                    input:                   $input,
+                    result:                  $result,
+                    error:                   $error,
+                    parent_id:               $parent_id,
+                    claimed_by:              $claimed_by,
+                    search_attributes:       $search_attributes,
+                    archived_at:             $archived_at,
+                    archive_uri:             $archive_uri,
+                    needs_dispatch:          false,
+                    dispatch_claimed_by:     NONE,
+                    dispatch_last_heartbeat: NONE,
+                    created_at:              $created_at,
+                    updated_at:              $updated_at,
+                    completed_at:            $completed_at
+                }",
+            )
+            .bind(("id", wf.id.clone()))
+            .bind(("namespace", wf.namespace.clone()))
+            .bind(("run_id", wf.run_id.clone()))
+            .bind(("workflow_type", wf.workflow_type.clone()))
+            .bind(("task_queue", wf.task_queue.clone()))
+            .bind(("status", wf.status.clone()))
+            .bind(("input", wf.input.clone()))
+            .bind(("result", wf.result.clone()))
+            .bind(("error", wf.error.clone()))
+            .bind(("parent_id", wf.parent_id.clone()))
+            .bind(("claimed_by", wf.claimed_by.clone()))
+            .bind(("search_attributes", search_attributes))
+            .bind(("archived_at", wf.archived_at))
+            .bind(("archive_uri", wf.archive_uri.clone()))
+            .bind(("created_at", wf.created_at))
+            .bind(("updated_at", wf.updated_at))
+            .bind(("completed_at", wf.completed_at))
+            .await
+            .map_err(|e| anyhow::anyhow!("create_workflow({}): {e}", wf.id))?;
+            Ok(())
+        }
     }
 
     fn get_workflow(
         &self,
-        _id: &str,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowRecord>>> + Send + '_ {
-        async { todo!("Task 3.3") }
+        id: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowRecord>>> + Send {
+        let db = self.db.clone();
+        let id = id.to_string();
+        async move {
+            let rows: Vec<serde_json::Value> = db
+                .query("SELECT record::id(id) AS id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, needs_dispatch, dispatch_claimed_by, dispatch_last_heartbeat, created_at, updated_at, completed_at FROM type::record('workflow', $id)")
+                .bind(("id", id))
+                .await?
+                .take(0)?;
+            Ok(rows.into_iter().next().map(row_to_workflow))
+        }
     }
 
     fn list_workflows(
         &self,
-        _namespace: &str,
-        _status: Option<WorkflowStatus>,
-        _workflow_type: Option<&str>,
-        _search_attrs_filter: Option<&str>,
-        _limit: i64,
-        _offset: i64,
-    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send + '_ {
-        async { todo!("Task 3.3") }
+        namespace: &str,
+        status: Option<WorkflowStatus>,
+        workflow_type: Option<&str>,
+        search_attrs_filter: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send {
+        let db = self.db.clone();
+        let namespace = namespace.to_string();
+        let status_str = status.map(|s| s.to_string());
+        let workflow_type = workflow_type.map(|s| s.to_string());
+        let filter_pairs: Vec<(String, serde_json::Value)> = search_attrs_filter
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| v.as_object().cloned())
+            .map(|m| m.into_iter().collect())
+            .unwrap_or_default();
+        async move {
+            let mut conditions = vec!["namespace = $ns".to_string()];
+            if status_str.is_some() {
+                conditions.push("status = $status".to_string());
+            }
+            if workflow_type.is_some() {
+                conditions.push("workflow_type = $wtype".to_string());
+            }
+            for (k, v) in &filter_pairs {
+                let v_str = match v {
+                    serde_json::Value::String(s) => format!("'{}'", s.replace('\'', "\\'")),
+                    other => other.to_string(),
+                };
+                conditions.push(format!(
+                    "search_attributes.`{}` = {}",
+                    k.replace('`', "\\`"),
+                    v_str
+                ));
+            }
+            let where_clause = conditions.join(" AND ");
+            let sql = format!(
+                "SELECT record::id(id) AS id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, needs_dispatch, dispatch_claimed_by, dispatch_last_heartbeat, created_at, updated_at, completed_at FROM workflow WHERE {where_clause} ORDER BY created_at DESC LIMIT $limit START $offset"
+            );
+            let mut q = db
+                .query(&sql)
+                .bind(("ns", namespace))
+                .bind(("limit", limit as u64))
+                .bind(("offset", offset as u64));
+            if let Some(s) = status_str {
+                q = q.bind(("status", s));
+            }
+            if let Some(wt) = workflow_type {
+                q = q.bind(("wtype", wt));
+            }
+            let rows: Vec<serde_json::Value> = q.await?.take(0)?;
+            Ok(rows.into_iter().map(row_to_workflow).collect())
+        }
     }
 
     fn list_archivable_workflows(
         &self,
-        _cutoff: f64,
-        _limit: i64,
-    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send + '_ {
-        async { todo!("Task 3.11") }
+        cutoff: f64,
+        limit: i64,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send {
+        let db = self.db.clone();
+        async move {
+            let rows: Vec<serde_json::Value> = db
+                .query(
+                    "SELECT record::id(id) AS id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, needs_dispatch, dispatch_claimed_by, dispatch_last_heartbeat, created_at, updated_at, completed_at FROM workflow
+                     WHERE status IN ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT']
+                       AND completed_at != NONE
+                       AND completed_at < $cutoff
+                       AND archived_at = NONE
+                     ORDER BY completed_at ASC
+                     LIMIT $limit",
+                )
+                .bind(("cutoff", cutoff))
+                .bind(("limit", limit as u64))
+                .await?
+                .take(0)?;
+            Ok(rows.into_iter().map(row_to_workflow).collect())
+        }
     }
 
     fn mark_archived_and_purge(
         &self,
-        _workflow_id: &str,
-        _archive_uri: &str,
-        _archived_at: f64,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
-        async { todo!("Task 3.11") }
+        workflow_id: &str,
+        archive_uri: &str,
+        archived_at: f64,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
+        let db = self.db.clone();
+        let workflow_id = workflow_id.to_string();
+        let archive_uri = archive_uri.to_string();
+        async move {
+            // SurrealDB doesn't have multi-statement transactions with ROLLBACK
+            // over the WS protocol the same way PG does. We run each DELETE
+            // individually. The workflow record update is last, so partial
+            // cleanup is idempotent — a retry simply re-runs the DELETEs on
+            // already-empty tables (no-ops) then updates the record.
+            db.query("DELETE event WHERE workflow_id = $wid")
+                .bind(("wid", workflow_id.clone()))
+                .await?;
+            db.query("DELETE activity WHERE workflow_id = $wid")
+                .bind(("wid", workflow_id.clone()))
+                .await?;
+            db.query("DELETE timer WHERE workflow_id = $wid")
+                .bind(("wid", workflow_id.clone()))
+                .await?;
+            db.query("DELETE signal WHERE workflow_id = $wid")
+                .bind(("wid", workflow_id.clone()))
+                .await?;
+            db.query("DELETE snapshot WHERE workflow_id = $wid")
+                .bind(("wid", workflow_id.clone()))
+                .await?;
+            db.query(
+                "UPDATE type::record('workflow', $wid) SET archived_at = $archived_at, archive_uri = $archive_uri",
+            )
+            .bind(("wid", workflow_id))
+            .bind(("archived_at", archived_at))
+            .bind(("archive_uri", archive_uri))
+            .await?;
+            Ok(())
+        }
     }
 
     fn upsert_search_attributes(
         &self,
-        _workflow_id: &str,
-        _patch_json: &str,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
-        async { todo!("Task 3.5") }
+        workflow_id: &str,
+        patch_json: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
+        let db = self.db.clone();
+        let workflow_id = workflow_id.to_string();
+        let patch_json = patch_json.to_string();
+        async move {
+            // Read current search_attributes, merge the patch, write back.
+            //
+            // Concurrency note: this is a read-modify-write, not atomic. Two
+            // concurrent upserts on the same workflow_id may produce a
+            // lost-update. In practice search_attribute updates are called from
+            // single-threaded workflow replays, so this is acceptable.
+            let rows: Vec<serde_json::Value> = db
+                .query("SELECT search_attributes FROM type::record('workflow', $wid)")
+                .bind(("wid", workflow_id.clone()))
+                .await?
+                .take(0)?;
+
+            let current_str: Option<String> = rows.first().and_then(|v| {
+                let sa = v.get("search_attributes")?;
+                if sa.is_null() {
+                    None
+                } else {
+                    Some(sa.to_string())
+                }
+            });
+
+            let merged_str = crate::store::sqlite::merge_search_attrs(
+                current_str.as_deref(),
+                &patch_json,
+            )?;
+            let merged_val: serde_json::Value = serde_json::from_str(&merged_str)
+                .unwrap_or(serde_json::Value::Object(Default::default()));
+
+            let _: Vec<serde_json::Value> = db
+                .query(
+                    "UPDATE type::record('workflow', $wid) SET search_attributes = $attrs",
+                )
+                .bind(("wid", workflow_id))
+                .bind(("attrs", merged_val))
+                .await?
+                .take(0)?;
+            Ok(())
+        }
     }
 
     fn update_workflow_status(
         &self,
-        _id: &str,
-        _status: WorkflowStatus,
-        _result: Option<&str>,
-        _error: Option<&str>,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
-        async { todo!("Task 3.3") }
+        id: &str,
+        status: WorkflowStatus,
+        result: Option<&str>,
+        error: Option<&str>,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
+        let db = self.db.clone();
+        let id = id.to_string();
+        let status_str = status.to_string();
+        let result = result.map(|s| s.to_string());
+        let error = error.map(|s| s.to_string());
+        async move {
+            let now = timestamp_now();
+            let completed_at: Option<f64> = if status.is_terminal() { Some(now) } else { None };
+
+            // Build a dynamic SET clause so we only overwrite non-None fields
+            // (mirrors PG COALESCE behaviour).
+            let mut sets = vec![
+                "status = $status".to_string(),
+                "updated_at = $updated_at".to_string(),
+            ];
+            if result.is_some() {
+                sets.push("result = $result".to_string());
+            }
+            if error.is_some() {
+                sets.push("error = $error".to_string());
+            }
+            if completed_at.is_some() {
+                sets.push("completed_at = $completed_at".to_string());
+            }
+            let sql = format!(
+                "UPDATE type::record('workflow', $id) SET {}",
+                sets.join(", ")
+            );
+            let mut q = db
+                .query(&sql)
+                .bind(("id", id))
+                .bind(("status", status_str))
+                .bind(("updated_at", now));
+            if let Some(r) = result {
+                q = q.bind(("result", r));
+            }
+            if let Some(e) = error {
+                q = q.bind(("error", e));
+            }
+            if let Some(ca) = completed_at {
+                q = q.bind(("completed_at", ca));
+            }
+            q.await?;
+            Ok(())
+        }
     }
 
     fn claim_workflow(
         &self,
-        _id: &str,
-        _worker_id: &str,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send + '_ {
-        async { todo!("Task 3.3") }
+        id: &str,
+        worker_id: &str,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send {
+        let db = self.db.clone();
+        let id = id.to_string();
+        let worker_id = worker_id.to_string();
+        async move {
+            // Optimistic claim: only update if claimed_by is currently NONE.
+            // We use RETURN BEFORE to detect whether the WHERE matched.
+            //
+            // SurrealDB lacks FOR UPDATE SKIP LOCKED; under a race, the last
+            // writer wins the field value, but we detect the claim failure via
+            // the pre-update state. See plan 10 § "Transactions and concurrency"
+            // for a future transaction-based improvement.
+            let now = timestamp_now();
+            let rows: Vec<serde_json::Value> = db
+                .query(
+                    "UPDATE type::record('workflow', $id)
+                     SET claimed_by = $worker, status = 'RUNNING', updated_at = $now
+                     WHERE claimed_by = NONE
+                     RETURN BEFORE",
+                )
+                .bind(("id", id))
+                .bind(("worker", worker_id))
+                .bind(("now", now))
+                .await?
+                .take(0)?;
+            Ok(!rows.is_empty())
+        }
     }
 
     fn mark_workflow_dispatchable(
         &self,
-        _workflow_id: &str,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
-        async { todo!("Task 3.3") }
+        workflow_id: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
+        let db = self.db.clone();
+        let workflow_id = workflow_id.to_string();
+        async move {
+            db.query(
+                "UPDATE type::record('workflow', $id) SET needs_dispatch = true",
+            )
+            .bind(("id", workflow_id))
+            .await?;
+            Ok(())
+        }
     }
 
     fn claim_workflow_task(
         &self,
-        _task_queue: &str,
-        _worker_id: &str,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowRecord>>> + Send + '_ {
-        async { todo!("Task 3.3") }
+        task_queue: &str,
+        worker_id: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowRecord>>> + Send {
+        let db = self.db.clone();
+        let task_queue = task_queue.to_string();
+        let worker_id = worker_id.to_string();
+        async move {
+            // Step 1: find the oldest dispatchable workflow on this queue.
+            let candidates: Vec<serde_json::Value> = db
+                .query(
+                    "SELECT record::id(id) AS id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, needs_dispatch, dispatch_claimed_by, dispatch_last_heartbeat, created_at, updated_at, completed_at FROM workflow
+                     WHERE task_queue = $tq
+                       AND needs_dispatch = true
+                       AND dispatch_claimed_by = NONE
+                       AND status NOT IN ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT']
+                     ORDER BY updated_at ASC
+                     LIMIT 1",
+                )
+                .bind(("tq", task_queue))
+                .await?
+                .take(0)?;
+
+            let candidate = match candidates.into_iter().next() {
+                Some(c) => c,
+                None => return Ok(None),
+            };
+
+            let wf_id = candidate
+                .get("id")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            if wf_id.is_empty() {
+                return Ok(None);
+            }
+
+            let now = timestamp_now();
+
+            // Step 2: atomically claim using a conditional UPDATE WHERE.
+            // RETURN AFTER gives us the updated row only when the WHERE matched.
+            let updated: Vec<serde_json::Value> = db
+                .query(
+                    "UPDATE type::record('workflow', $id)
+                     SET dispatch_claimed_by = $worker,
+                         dispatch_last_heartbeat = $now,
+                         needs_dispatch = false
+                     WHERE dispatch_claimed_by = NONE
+                     RETURN record::id(id) AS id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, needs_dispatch, dispatch_claimed_by, dispatch_last_heartbeat, created_at, updated_at, completed_at",
+                )
+                .bind(("id", wf_id))
+                .bind(("worker", worker_id))
+                .bind(("now", now))
+                .await?
+                .take(0)?;
+
+            Ok(updated.into_iter().next().map(row_to_workflow))
+        }
     }
 
     fn release_workflow_task(
         &self,
-        _workflow_id: &str,
-        _worker_id: &str,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
-        async { todo!("Task 3.3") }
+        workflow_id: &str,
+        worker_id: &str,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
+        let db = self.db.clone();
+        let workflow_id = workflow_id.to_string();
+        let worker_id = worker_id.to_string();
+        async move {
+            db.query(
+                "UPDATE type::record('workflow', $id)
+                 SET dispatch_claimed_by = NONE, dispatch_last_heartbeat = NONE
+                 WHERE dispatch_claimed_by = $worker",
+            )
+            .bind(("id", workflow_id))
+            .bind(("worker", worker_id))
+            .await?;
+            Ok(())
+        }
     }
 
     fn release_stale_dispatch_leases(
         &self,
-        _now: f64,
-        _timeout_secs: f64,
-    ) -> impl Future<Output = anyhow::Result<u64>> + Send + '_ {
-        async { todo!("Task 3.3") }
+        now: f64,
+        timeout_secs: f64,
+    ) -> impl Future<Output = anyhow::Result<u64>> + Send {
+        let db = self.db.clone();
+        async move {
+            // Count first, then update.
+            let stale: Vec<serde_json::Value> = db
+                .query(
+                    "SELECT id FROM workflow
+                     WHERE dispatch_claimed_by != NONE
+                       AND ($now - dispatch_last_heartbeat) > $timeout
+                       AND status NOT IN ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT']",
+                )
+                .bind(("now", now))
+                .bind(("timeout", timeout_secs))
+                .await?
+                .take(0)?;
+            let count = stale.len() as u64;
+            if count > 0 {
+                db.query(
+                    "UPDATE workflow
+                     SET dispatch_claimed_by = NONE,
+                         dispatch_last_heartbeat = NONE,
+                         needs_dispatch = true
+                     WHERE dispatch_claimed_by != NONE
+                       AND ($now - dispatch_last_heartbeat) > $timeout
+                       AND status NOT IN ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT']",
+                )
+                .bind(("now", now))
+                .bind(("timeout", timeout_secs))
+                .await?;
+            }
+            Ok(count)
+        }
     }
+
+    // ── Events ─────────────────────────────────────────────
 
     fn append_event(
         &self,
-        _event: &WorkflowEvent,
-    ) -> impl Future<Output = anyhow::Result<i64>> + Send + '_ {
-        async { todo!("Task 3.4") }
+        event: &WorkflowEvent,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send {
+        let db = self.db.clone();
+        let ev = event.clone();
+        async move {
+            // Use "{workflow_id}_{seq}" as the record ID — seq is already a
+            // monotonic unique counter per workflow.
+            let record_id = format!("{}_{}", ev.workflow_id, ev.seq);
+            db.query(
+                "CREATE type::record('event', $eid) CONTENT {
+                    workflow_id: $workflow_id,
+                    seq:         $seq,
+                    event_type:  $event_type,
+                    payload:     $payload,
+                    created_at:  $created_at
+                }",
+            )
+            .bind(("eid", record_id))
+            .bind(("workflow_id", ev.workflow_id.clone()))
+            .bind(("seq", ev.seq))
+            .bind(("event_type", ev.event_type.clone()))
+            .bind(("payload", ev.payload.clone()))
+            .bind(("created_at", ev.timestamp))
+            .await
+            .map_err(|e| anyhow::anyhow!("append_event({}:{}): {e}", ev.workflow_id, ev.seq))?;
+            // Return seq cast to i64 as a synthetic primary-key equivalent.
+            Ok(ev.seq as i64)
+        }
     }
 
     fn list_events(
         &self,
-        _workflow_id: &str,
-    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowEvent>>> + Send + '_ {
-        async { todo!("Task 3.4") }
+        workflow_id: &str,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowEvent>>> + Send {
+        let db = self.db.clone();
+        let workflow_id = workflow_id.to_string();
+        async move {
+            let rows: Vec<serde_json::Value> = db
+                .query(
+                    "SELECT workflow_id, seq, event_type, payload, created_at
+                     FROM event WHERE workflow_id = $wid ORDER BY seq ASC",
+                )
+                .bind(("wid", workflow_id))
+                .await?
+                .take(0)?;
+            Ok(rows.into_iter().map(row_to_event).collect())
+        }
     }
 
     fn get_event_count(
         &self,
-        _workflow_id: &str,
-    ) -> impl Future<Output = anyhow::Result<i64>> + Send + '_ {
-        async { todo!("Task 3.4") }
+        workflow_id: &str,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send {
+        let db = self.db.clone();
+        let workflow_id = workflow_id.to_string();
+        async move {
+            let rows: Vec<serde_json::Value> = db
+                .query(
+                    "SELECT count() AS c FROM event WHERE workflow_id = $wid GROUP ALL",
+                )
+                .bind(("wid", workflow_id))
+                .await?
+                .take(0)?;
+            Ok(rows
+                .first()
+                .and_then(|v| v.get("c"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0))
+        }
     }
+
+    // ── Activities (Task 3.6 — not yet implemented) ──────────
 
     fn create_activity(
         &self,
         _activity: &WorkflowActivity,
-    ) -> impl Future<Output = anyhow::Result<i64>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send {
         async { todo!("Task 3.6") }
     }
 
     fn get_activity(
         &self,
         _id: i64,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send {
         async { todo!("Task 3.6") }
     }
 
@@ -242,7 +857,7 @@ impl WorkflowStore for SurrealDbStore {
         &self,
         _workflow_id: &str,
         _seq: i32,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send {
         async { todo!("Task 3.6") }
     }
 
@@ -250,7 +865,7 @@ impl WorkflowStore for SurrealDbStore {
         &self,
         _task_queue: &str,
         _worker_id: &str,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send {
         async { todo!("Task 3.6") }
     }
 
@@ -259,7 +874,7 @@ impl WorkflowStore for SurrealDbStore {
         _id: i64,
         _next_attempt: i32,
         _next_scheduled_at: f64,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { todo!("Task 3.6") }
     }
 
@@ -269,7 +884,7 @@ impl WorkflowStore for SurrealDbStore {
         _result: Option<&str>,
         _error: Option<&str>,
         _failed: bool,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { todo!("Task 3.6") }
     }
 
@@ -277,35 +892,35 @@ impl WorkflowStore for SurrealDbStore {
         &self,
         _id: i64,
         _details: Option<&str>,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { todo!("Task 3.6") }
     }
 
     fn get_timed_out_activities(
         &self,
         _now: f64,
-    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowActivity>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowActivity>>> + Send {
         async { todo!("Task 3.6") }
     }
 
     fn cancel_pending_activities(
         &self,
         _workflow_id: &str,
-    ) -> impl Future<Output = anyhow::Result<u64>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<u64>> + Send {
         async { todo!("Task 3.6") }
     }
 
     fn cancel_pending_timers(
         &self,
         _workflow_id: &str,
-    ) -> impl Future<Output = anyhow::Result<u64>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<u64>> + Send {
         async { todo!("Task 3.7") }
     }
 
     fn create_timer(
         &self,
         _timer: &WorkflowTimer,
-    ) -> impl Future<Output = anyhow::Result<i64>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send {
         async { todo!("Task 3.7") }
     }
 
@@ -313,21 +928,21 @@ impl WorkflowStore for SurrealDbStore {
         &self,
         _workflow_id: &str,
         _seq: i32,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowTimer>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowTimer>>> + Send {
         async { todo!("Task 3.7") }
     }
 
     fn fire_due_timers(
         &self,
         _now: f64,
-    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowTimer>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowTimer>>> + Send {
         async { todo!("Task 3.7") }
     }
 
     fn send_signal(
         &self,
         _signal: &WorkflowSignal,
-    ) -> impl Future<Output = anyhow::Result<i64>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send {
         async { todo!("Task 3.8") }
     }
 
@@ -335,14 +950,14 @@ impl WorkflowStore for SurrealDbStore {
         &self,
         _workflow_id: &str,
         _name: &str,
-    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowSignal>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowSignal>>> + Send {
         async { todo!("Task 3.8") }
     }
 
     fn create_schedule(
         &self,
         _schedule: &WorkflowSchedule,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { todo!("Task 3.9") }
     }
 
@@ -350,14 +965,14 @@ impl WorkflowStore for SurrealDbStore {
         &self,
         _namespace: &str,
         _name: &str,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send {
         async { todo!("Task 3.9") }
     }
 
     fn list_schedules(
         &self,
         _namespace: &str,
-    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowSchedule>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowSchedule>>> + Send {
         async { todo!("Task 3.9") }
     }
 
@@ -368,7 +983,7 @@ impl WorkflowStore for SurrealDbStore {
         _last_run_at: f64,
         _next_run_at: f64,
         _workflow_id: &str,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { todo!("Task 3.9") }
     }
 
@@ -376,7 +991,7 @@ impl WorkflowStore for SurrealDbStore {
         &self,
         _namespace: &str,
         _name: &str,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send {
         async { todo!("Task 3.9") }
     }
 
@@ -385,7 +1000,7 @@ impl WorkflowStore for SurrealDbStore {
         _namespace: &str,
         _name: &str,
         _patch: &SchedulePatch,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send {
         async { todo!("Task 3.9") }
     }
 
@@ -394,14 +1009,14 @@ impl WorkflowStore for SurrealDbStore {
         _namespace: &str,
         _name: &str,
         _paused: bool,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send {
         async { todo!("Task 3.9") }
     }
 
     fn register_worker(
         &self,
         _worker: &WorkflowWorker,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { todo!("Task 3.12") }
     }
 
@@ -409,21 +1024,21 @@ impl WorkflowStore for SurrealDbStore {
         &self,
         _id: &str,
         _now: f64,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { todo!("Task 3.12") }
     }
 
     fn list_workers(
         &self,
         _namespace: &str,
-    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowWorker>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowWorker>>> + Send {
         async { todo!("Task 3.12") }
     }
 
     fn remove_dead_workers(
         &self,
         _cutoff: f64,
-    ) -> impl Future<Output = anyhow::Result<Vec<String>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<String>>> + Send {
         async { todo!("Task 3.12") }
     }
 
@@ -433,45 +1048,45 @@ impl WorkflowStore for SurrealDbStore {
         _prefix: &str,
         _label: Option<&str>,
         _created_at: f64,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { todo!("Task 3.13") }
     }
 
     fn validate_api_key(
         &self,
         _key_hash: &str,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send {
         async { todo!("Task 3.13") }
     }
 
     fn list_api_keys(
         &self,
-    ) -> impl Future<Output = anyhow::Result<Vec<ApiKeyRecord>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<ApiKeyRecord>>> + Send {
         async { todo!("Task 3.13") }
     }
 
     fn revoke_api_key(
         &self,
         _prefix: &str,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send {
         async { todo!("Task 3.13") }
     }
 
-    fn api_keys_empty(&self) -> impl Future<Output = anyhow::Result<bool>> + Send + '_ {
+    fn api_keys_empty(&self) -> impl Future<Output = anyhow::Result<bool>> + Send {
         async { todo!("Task 3.13") }
     }
 
     fn get_api_key_by_label(
         &self,
         _label: &str,
-    ) -> impl Future<Output = anyhow::Result<Option<ApiKeyRecord>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Option<ApiKeyRecord>>> + Send {
         async { todo!("Task 3.13") }
     }
 
     fn list_child_workflows(
         &self,
         _parent_id: &str,
-    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send {
         async { todo!("Task 3.14") }
     }
 
@@ -480,27 +1095,27 @@ impl WorkflowStore for SurrealDbStore {
         _workflow_id: &str,
         _event_seq: i32,
         _state_json: &str,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { todo!("Task 3.10") }
     }
 
     fn get_latest_snapshot(
         &self,
         _workflow_id: &str,
-    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSnapshot>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Option<WorkflowSnapshot>>> + Send {
         async { todo!("Task 3.10") }
     }
 
     fn get_queue_stats(
         &self,
         _namespace: &str,
-    ) -> impl Future<Output = anyhow::Result<Vec<QueueStats>>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<Vec<QueueStats>>> + Send {
         async { todo!("Task 3.14") }
     }
 
     fn try_acquire_scheduler_lock(
         &self,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send + '_ {
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send {
         async { todo!("Task 3.15") }
     }
 

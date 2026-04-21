@@ -13,7 +13,7 @@ DEFINE FIELD IF NOT EXISTS id ON workflow TYPE string;
 DEFINE FIELD IF NOT EXISTS namespace ON workflow TYPE string;
 DEFINE FIELD IF NOT EXISTS status ON workflow TYPE string;
 DEFINE FIELD IF NOT EXISTS workflow_type ON workflow TYPE string;
-DEFINE FIELD IF NOT EXISTS search_attributes ON workflow TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS search_attributes ON workflow TYPE option<object> FLEXIBLE;
 DEFINE FIELD IF NOT EXISTS next_dispatch_at ON workflow TYPE option<float>;
 DEFINE FIELD IF NOT EXISTS needs_dispatch ON workflow TYPE bool DEFAULT false;
 DEFINE FIELD IF NOT EXISTS dispatch_claimed_by ON workflow TYPE option<string>;
@@ -32,7 +32,7 @@ DEFINE TABLE IF NOT EXISTS event SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS workflow_id ON event TYPE string;
 DEFINE FIELD IF NOT EXISTS seq ON event TYPE int;
 DEFINE FIELD IF NOT EXISTS event_type ON event TYPE string;
-DEFINE FIELD IF NOT EXISTS payload ON event TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS payload ON event TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS created_at ON event TYPE float;
 DEFINE INDEX IF NOT EXISTS event_workflow ON event COLUMNS workflow_id, seq;
 
