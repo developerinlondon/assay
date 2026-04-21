@@ -360,3 +360,314 @@ async fn workflow_archival(#[case] backend: Backend) {
     let archivable2 = h.list_archivable_workflows(far_future, 10).await.unwrap();
     assert!(!archivable2.iter().any(|w| w.id == wf_id));
 }
+
+// ── Helpers for activities / timers / signals ────────────────────────────────
+
+fn make_activity(workflow_id: &str, seq: i32, task_queue: &str) -> assay_core::types::WorkflowActivity {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    assay_core::types::WorkflowActivity {
+        id: None,
+        workflow_id: workflow_id.to_string(),
+        seq,
+        name: format!("activity-{seq}"),
+        task_queue: task_queue.to_string(),
+        input: Some(r#"{"n":1}"#.to_string()),
+        status: "PENDING".to_string(),
+        result: None,
+        error: None,
+        attempt: 1,
+        max_attempts: 3,
+        initial_interval_secs: 1.0,
+        backoff_coefficient: 2.0,
+        start_to_close_secs: 300.0,
+        heartbeat_timeout_secs: None,
+        claimed_by: None,
+        scheduled_at: now,
+        started_at: None,
+        completed_at: None,
+        last_heartbeat: None,
+    }
+}
+
+fn make_timer(workflow_id: &str, seq: i32, fire_at: f64) -> assay_core::types::WorkflowTimer {
+    assay_core::types::WorkflowTimer {
+        id: None,
+        workflow_id: workflow_id.to_string(),
+        seq,
+        fire_at,
+        fired: false,
+    }
+}
+
+fn make_signal(workflow_id: &str, name: &str) -> assay_core::types::WorkflowSignal {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    assay_core::types::WorkflowSignal {
+        id: None,
+        workflow_id: workflow_id.to_string(),
+        name: name.to_string(),
+        payload: Some(r#"{"x":1}"#.to_string()),
+        consumed: false,
+        received_at: now,
+    }
+}
+
+// ── Task 3.6 — Activities ─────────────────────────────────────────────────────
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn activity_create_and_claim(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-act-cc");
+    h.create_workflow(&make_workflow(&wf_id, "main", "act-queue")).await.unwrap();
+
+    // Create activity seq=1
+    let act = make_activity(&wf_id, 1, "act-queue");
+    let id = h.create_activity(&act).await.unwrap();
+    assert!(id > 0, "create_activity should return positive id");
+
+    // get_activity
+    let got = h.get_activity(id).await.unwrap().expect("should exist");
+    assert_eq!(got.workflow_id, wf_id);
+    assert_eq!(got.seq, 1);
+    assert_eq!(got.status, "PENDING");
+
+    // get_activity_by_workflow_seq
+    let got2 = h.get_activity_by_workflow_seq(&wf_id, 1).await.unwrap().expect("should exist by seq");
+    assert_eq!(got2.id, Some(id));
+
+    // Two workers race: only one wins.
+    let w1 = h.claim_activity("act-queue", "worker-a").await.unwrap();
+    let w2 = h.claim_activity("act-queue", "worker-b").await.unwrap();
+
+    assert!(
+        (w1.is_some() && w2.is_none()) || (w1.is_none() && w2.is_some()),
+        "exactly one worker should win the claim race"
+    );
+    let winner = w1.or(w2).unwrap();
+    assert_eq!(winner.status, "RUNNING");
+    assert!(winner.claimed_by.is_some());
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn activity_retry_on_failure(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-act-rt");
+    h.create_workflow(&make_workflow(&wf_id, "main", "retry-q")).await.unwrap();
+
+    let act = make_activity(&wf_id, 1, "retry-q");
+    let id = h.create_activity(&act).await.unwrap();
+
+    // Claim and fail the first attempt.
+    let claimed = h.claim_activity("retry-q", "worker-x").await.unwrap().expect("should claim");
+    assert_eq!(claimed.id, Some(id));
+    h.complete_activity(id, None, Some("transient error"), true).await.unwrap();
+
+    let failed = h.get_activity(id).await.unwrap().unwrap();
+    assert_eq!(failed.status, "FAILED");
+
+    // Requeue with exponential backoff: attempt=2, next_at = now + 2^1 * 1s
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    let next_at = now + 2.0;
+    h.requeue_activity_for_retry(id, 2, next_at).await.unwrap();
+
+    let requeued = h.get_activity(id).await.unwrap().unwrap();
+    assert_eq!(requeued.status, "PENDING");
+    assert_eq!(requeued.attempt, 2);
+    assert!(requeued.error.is_none(), "error should be cleared on requeue");
+    assert!(requeued.claimed_by.is_none(), "claimed_by should be cleared on requeue");
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn activity_heartbeat_timeout(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-act-hb");
+    h.create_workflow(&make_workflow(&wf_id, "main", "hb-q")).await.unwrap();
+
+    let mut act = make_activity(&wf_id, 1, "hb-q");
+    act.heartbeat_timeout_secs = Some(30.0);
+    let id = h.create_activity(&act).await.unwrap();
+
+    // Claim it (puts it in RUNNING).
+    h.claim_activity("hb-q", "worker-hb").await.unwrap().expect("should claim");
+
+    // Record a heartbeat far in the past (simulate stalled).
+    // We do this by calling heartbeat_activity, then checking get_timed_out_activities
+    // with a "now" that's 60s after the heartbeat.
+    h.heartbeat_activity(id, None).await.unwrap();
+
+    // Verify heartbeat was recorded.
+    let a = h.get_activity(id).await.unwrap().unwrap();
+    assert!(a.last_heartbeat.is_some(), "last_heartbeat should be set");
+
+    // Simulate "now" = 60s after heartbeat → timeout (threshold 30s).
+    let fake_now = a.last_heartbeat.unwrap() + 60.0;
+    let timed_out = h.get_timed_out_activities(fake_now).await.unwrap();
+    assert!(
+        timed_out.iter().any(|a| a.id == Some(id)),
+        "stalled activity should be in timed-out list"
+    );
+
+    // Before the timeout: no timed-out activities.
+    let fresh_now = a.last_heartbeat.unwrap() + 1.0;
+    let not_timed_out = h.get_timed_out_activities(fresh_now).await.unwrap();
+    assert!(
+        !not_timed_out.iter().any(|a| a.id == Some(id)),
+        "activity should NOT be in timed-out list when heartbeat is recent"
+    );
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn activity_cancel_pending(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-act-cp");
+    h.create_workflow(&make_workflow(&wf_id, "main", "cancel-q")).await.unwrap();
+
+    // Activity 3 is on a separate queue so the claim is deterministic.
+    // Activities 1 and 2 stay PENDING on "cancel-q".
+    // Activity 3 is on "cancel-claim-q" so exactly it gets claimed.
+    let id1 = h.create_activity(&make_activity(&wf_id, 1, "cancel-q")).await.unwrap();
+    let id2 = h.create_activity(&make_activity(&wf_id, 2, "cancel-q")).await.unwrap();
+    let id3 = h.create_activity(&make_activity(&wf_id, 3, "cancel-claim-q")).await.unwrap();
+
+    // Claim activity 3 (on its own queue) → it becomes RUNNING.
+    let claimed = h.claim_activity("cancel-claim-q", "worker-z").await.unwrap();
+    assert!(claimed.is_some(), "should claim activity 3");
+    assert_eq!(claimed.unwrap().id, Some(id3));
+
+    // Cancel pending activities on this workflow (affects PENDING only).
+    let cancelled = h.cancel_pending_activities(&wf_id).await.unwrap();
+    assert_eq!(cancelled, 2, "should cancel exactly the 2 PENDING activities");
+
+    let a1 = h.get_activity(id1).await.unwrap().unwrap();
+    let a2 = h.get_activity(id2).await.unwrap().unwrap();
+    let a3 = h.get_activity(id3).await.unwrap().unwrap();
+
+    assert_eq!(a1.status, "CANCELLED");
+    assert_eq!(a2.status, "CANCELLED");
+    assert_eq!(a3.status, "RUNNING", "RUNNING activity must not be cancelled");
+}
+
+// ── Task 3.7 — Timers ─────────────────────────────────────────────────────────
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn timer_create_and_fire(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-tmr-cf");
+    h.create_workflow(&make_workflow(&wf_id, "main", "main")).await.unwrap();
+
+    let past = 1_000_000.0_f64; // fire_at in the past
+    let timer = make_timer(&wf_id, 1, past);
+    let id = h.create_timer(&timer).await.unwrap();
+    assert!(id > 0, "create_timer should return positive id");
+
+    // get_timer_by_workflow_seq
+    let got = h.get_timer_by_workflow_seq(&wf_id, 1).await.unwrap().expect("should exist");
+    assert_eq!(got.id, Some(id));
+    assert!(!got.fired, "should not be fired yet");
+
+    // fire_due_timers with "now" > fire_at
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    let fired = h.fire_due_timers(now).await.unwrap();
+    assert!(
+        fired.iter().any(|t| t.id == Some(id)),
+        "timer should appear in fire_due_timers result"
+    );
+
+    // Now fired=true
+    let after = h.get_timer_by_workflow_seq(&wf_id, 1).await.unwrap().unwrap();
+    assert!(after.fired, "timer should be marked fired");
+
+    // Second call to fire_due_timers should NOT return already-fired timer.
+    let second_fire = h.fire_due_timers(now + 1.0).await.unwrap();
+    assert!(
+        !second_fire.iter().any(|t| t.id == Some(id)),
+        "already-fired timer should not appear again"
+    );
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn timer_idempotent_on_seq(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-tmr-id");
+    h.create_workflow(&make_workflow(&wf_id, "main", "main")).await.unwrap();
+
+    let timer = make_timer(&wf_id, 1, 9_999_999_999.0);
+    let id1 = h.create_timer(&timer).await.unwrap();
+    let id2 = h.create_timer(&timer).await.unwrap(); // same seq → idempotent
+
+    assert_eq!(id1, id2, "creating the same (workflow_id, seq) timer twice should return same id");
+
+    // Only one timer row should exist.
+    let got = h.get_timer_by_workflow_seq(&wf_id, 1).await.unwrap().unwrap();
+    assert_eq!(got.id, Some(id1));
+}
+
+// ── Task 3.8 — Signals ────────────────────────────────────────────────────────
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn signal_send_and_consume(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-sig-sc");
+    h.create_workflow(&make_workflow(&wf_id, "main", "main")).await.unwrap();
+
+    // Send 2 signals with the same name.
+    let sig1 = make_signal(&wf_id, "my-signal");
+    let sig2 = make_signal(&wf_id, "my-signal");
+    let id1 = h.send_signal(&sig1).await.unwrap();
+    let id2 = h.send_signal(&sig2).await.unwrap();
+    assert_ne!(id1, id2, "two signals should get distinct ids");
+
+    // consume_signals returns both and marks them consumed.
+    let consumed = h.consume_signals(&wf_id, "my-signal").await.unwrap();
+    assert_eq!(consumed.len(), 2, "should consume both pending signals");
+    assert!(consumed.iter().all(|s| s.consumed), "all returned signals must be marked consumed");
+
+    // Second consume returns nothing.
+    let second = h.consume_signals(&wf_id, "my-signal").await.unwrap();
+    assert!(second.is_empty(), "second consume should return empty");
+
+    // Different signal name is not consumed.
+    let other_sig = make_signal(&wf_id, "other-signal");
+    h.send_signal(&other_sig).await.unwrap();
+    let other_consumed = h.consume_signals(&wf_id, "other-signal").await.unwrap();
+    assert_eq!(other_consumed.len(), 1);
+}

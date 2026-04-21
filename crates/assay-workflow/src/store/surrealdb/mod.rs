@@ -5,6 +5,9 @@
 //! and then runs the embedded SQL migrations (tracked via `_assay_migrations`).
 
 mod migrations;
+mod activities;
+mod timers;
+mod signals;
 
 use std::future::Future;
 
@@ -837,121 +840,125 @@ impl WorkflowStore for SurrealDbStore {
         }
     }
 
-    // ── Activities (Task 3.6 — not yet implemented) ──────────
+    // ── Activities (Task 3.6) ─────────────────────────────────
 
     fn create_activity(
         &self,
-        _activity: &WorkflowActivity,
+        activity: &WorkflowActivity,
     ) -> impl Future<Output = anyhow::Result<i64>> + Send {
-        async { todo!("Task 3.6") }
+        self.create_activity_impl(activity)
     }
 
     fn get_activity(
         &self,
-        _id: i64,
+        id: i64,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send {
-        async { todo!("Task 3.6") }
+        self.get_activity_impl(id)
     }
 
     fn get_activity_by_workflow_seq(
         &self,
-        _workflow_id: &str,
-        _seq: i32,
+        workflow_id: &str,
+        seq: i32,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send {
-        async { todo!("Task 3.6") }
+        self.get_activity_by_workflow_seq_impl(workflow_id, seq)
     }
 
     fn claim_activity(
         &self,
-        _task_queue: &str,
-        _worker_id: &str,
+        task_queue: &str,
+        worker_id: &str,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowActivity>>> + Send {
-        async { todo!("Task 3.6") }
+        self.claim_activity_impl(task_queue, worker_id)
     }
 
     fn requeue_activity_for_retry(
         &self,
-        _id: i64,
-        _next_attempt: i32,
-        _next_scheduled_at: f64,
+        id: i64,
+        next_attempt: i32,
+        next_scheduled_at: f64,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async { todo!("Task 3.6") }
+        self.requeue_activity_for_retry_impl(id, next_attempt, next_scheduled_at)
     }
 
     fn complete_activity(
         &self,
-        _id: i64,
-        _result: Option<&str>,
-        _error: Option<&str>,
-        _failed: bool,
+        id: i64,
+        result: Option<&str>,
+        error: Option<&str>,
+        failed: bool,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async { todo!("Task 3.6") }
+        self.complete_activity_impl(id, result, error, failed)
     }
 
     fn heartbeat_activity(
         &self,
-        _id: i64,
-        _details: Option<&str>,
+        id: i64,
+        details: Option<&str>,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async { todo!("Task 3.6") }
+        self.heartbeat_activity_impl(id, details)
     }
 
     fn get_timed_out_activities(
         &self,
-        _now: f64,
+        now: f64,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowActivity>>> + Send {
-        async { todo!("Task 3.6") }
+        self.get_timed_out_activities_impl(now)
     }
 
     fn cancel_pending_activities(
         &self,
-        _workflow_id: &str,
+        workflow_id: &str,
     ) -> impl Future<Output = anyhow::Result<u64>> + Send {
-        async { todo!("Task 3.6") }
+        self.cancel_pending_activities_impl(workflow_id)
     }
+
+    // ── Timers (Task 3.7) ─────────────────────────────────────
 
     fn cancel_pending_timers(
         &self,
-        _workflow_id: &str,
+        workflow_id: &str,
     ) -> impl Future<Output = anyhow::Result<u64>> + Send {
-        async { todo!("Task 3.7") }
+        self.cancel_pending_timers_impl(workflow_id)
     }
 
     fn create_timer(
         &self,
-        _timer: &WorkflowTimer,
+        timer: &WorkflowTimer,
     ) -> impl Future<Output = anyhow::Result<i64>> + Send {
-        async { todo!("Task 3.7") }
+        self.create_timer_impl(timer)
     }
 
     fn get_timer_by_workflow_seq(
         &self,
-        _workflow_id: &str,
-        _seq: i32,
+        workflow_id: &str,
+        seq: i32,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowTimer>>> + Send {
-        async { todo!("Task 3.7") }
+        self.get_timer_by_workflow_seq_impl(workflow_id, seq)
     }
 
     fn fire_due_timers(
         &self,
-        _now: f64,
+        now: f64,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowTimer>>> + Send {
-        async { todo!("Task 3.7") }
+        self.fire_due_timers_impl(now)
     }
+
+    // ── Signals (Task 3.8) ────────────────────────────────────
 
     fn send_signal(
         &self,
-        _signal: &WorkflowSignal,
+        signal: &WorkflowSignal,
     ) -> impl Future<Output = anyhow::Result<i64>> + Send {
-        async { todo!("Task 3.8") }
+        self.send_signal_impl(signal)
     }
 
     fn consume_signals(
         &self,
-        _workflow_id: &str,
-        _name: &str,
+        workflow_id: &str,
+        name: &str,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowSignal>>> + Send {
-        async { todo!("Task 3.8") }
+        self.consume_signals_impl(workflow_id, name)
     }
 
     fn create_schedule(

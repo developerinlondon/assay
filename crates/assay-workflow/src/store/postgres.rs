@@ -674,15 +674,33 @@ impl WorkflowStore for PostgresStore {
     // ── Timers ──────────────────────────────────────────────
 
     async fn create_timer(&self, timer: &WorkflowTimer) -> Result<i64> {
-        let row: (i64,) = sqlx::query_as(
-            "INSERT INTO workflow_timers (workflow_id, seq, fire_at, fired) VALUES ($1, $2, $3, FALSE) RETURNING id",
+        // Idempotent: ON CONFLICT (workflow_id, seq) DO NOTHING.
+        // If a row already exists, RETURNING produces no rows — fall back to SELECT.
+        let inserted: Option<(i64,)> = sqlx::query_as(
+            "INSERT INTO workflow_timers (workflow_id, seq, fire_at, fired)
+             VALUES ($1, $2, $3, FALSE)
+             ON CONFLICT (workflow_id, seq) DO NOTHING
+             RETURNING id",
         )
         .bind(&timer.workflow_id)
         .bind(timer.seq)
         .bind(timer.fire_at)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some((id,)) = inserted {
+            return Ok(id);
+        }
+
+        // Row already existed — return its id.
+        let (id,): (i64,) = sqlx::query_as(
+            "SELECT id FROM workflow_timers WHERE workflow_id = $1 AND seq = $2",
+        )
+        .bind(&timer.workflow_id)
+        .bind(timer.seq)
         .fetch_one(&self.pool)
         .await?;
-        Ok(row.0)
+        Ok(id)
     }
 
     async fn cancel_pending_activities(&self, workflow_id: &str) -> Result<u64> {

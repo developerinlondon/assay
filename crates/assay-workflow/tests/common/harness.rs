@@ -149,6 +149,99 @@ impl Harness {
     ) -> anyhow::Result<()> {
         dispatch!(self, s => s.mark_archived_and_purge(workflow_id, archive_uri, archived_at).await)
     }
+
+    // ── Activities ────────────────────────────────────────────────────────────
+
+    pub async fn create_activity(&self, act: &WorkflowActivity) -> anyhow::Result<i64> {
+        dispatch!(self, s => s.create_activity(act).await)
+    }
+
+    pub async fn get_activity(&self, id: i64) -> anyhow::Result<Option<WorkflowActivity>> {
+        dispatch!(self, s => s.get_activity(id).await)
+    }
+
+    pub async fn get_activity_by_workflow_seq(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+    ) -> anyhow::Result<Option<WorkflowActivity>> {
+        dispatch!(self, s => s.get_activity_by_workflow_seq(workflow_id, seq).await)
+    }
+
+    pub async fn claim_activity(
+        &self,
+        task_queue: &str,
+        worker_id: &str,
+    ) -> anyhow::Result<Option<WorkflowActivity>> {
+        dispatch!(self, s => s.claim_activity(task_queue, worker_id).await)
+    }
+
+    pub async fn requeue_activity_for_retry(
+        &self,
+        id: i64,
+        next_attempt: i32,
+        next_scheduled_at: f64,
+    ) -> anyhow::Result<()> {
+        dispatch!(self, s => s.requeue_activity_for_retry(id, next_attempt, next_scheduled_at).await)
+    }
+
+    pub async fn complete_activity(
+        &self,
+        id: i64,
+        result: Option<&str>,
+        error: Option<&str>,
+        failed: bool,
+    ) -> anyhow::Result<()> {
+        dispatch!(self, s => s.complete_activity(id, result, error, failed).await)
+    }
+
+    pub async fn heartbeat_activity(&self, id: i64, details: Option<&str>) -> anyhow::Result<()> {
+        dispatch!(self, s => s.heartbeat_activity(id, details).await)
+    }
+
+    pub async fn get_timed_out_activities(&self, now: f64) -> anyhow::Result<Vec<WorkflowActivity>> {
+        dispatch!(self, s => s.get_timed_out_activities(now).await)
+    }
+
+    pub async fn cancel_pending_activities(&self, workflow_id: &str) -> anyhow::Result<u64> {
+        dispatch!(self, s => s.cancel_pending_activities(workflow_id).await)
+    }
+
+    // ── Timers ────────────────────────────────────────────────────────────────
+
+    pub async fn create_timer(&self, timer: &WorkflowTimer) -> anyhow::Result<i64> {
+        dispatch!(self, s => s.create_timer(timer).await)
+    }
+
+    pub async fn get_timer_by_workflow_seq(
+        &self,
+        workflow_id: &str,
+        seq: i32,
+    ) -> anyhow::Result<Option<WorkflowTimer>> {
+        dispatch!(self, s => s.get_timer_by_workflow_seq(workflow_id, seq).await)
+    }
+
+    pub async fn fire_due_timers(&self, now: f64) -> anyhow::Result<Vec<WorkflowTimer>> {
+        dispatch!(self, s => s.fire_due_timers(now).await)
+    }
+
+    pub async fn cancel_pending_timers(&self, workflow_id: &str) -> anyhow::Result<u64> {
+        dispatch!(self, s => s.cancel_pending_timers(workflow_id).await)
+    }
+
+    // ── Signals ───────────────────────────────────────────────────────────────
+
+    pub async fn send_signal(&self, signal: &WorkflowSignal) -> anyhow::Result<i64> {
+        dispatch!(self, s => s.send_signal(signal).await)
+    }
+
+    pub async fn consume_signals(
+        &self,
+        workflow_id: &str,
+        name: &str,
+    ) -> anyhow::Result<Vec<WorkflowSignal>> {
+        dispatch!(self, s => s.consume_signals(workflow_id, name).await)
+    }
 }
 
 // ── Backend selector ──────────────────────────────────────────────────────────

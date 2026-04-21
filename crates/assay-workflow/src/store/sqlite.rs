@@ -806,15 +806,31 @@ impl WorkflowStore for SqliteStore {
     // ── Timers ──────────────────────────────────────────────
 
     async fn create_timer(&self, timer: &WorkflowTimer) -> Result<i64> {
+        // Idempotent: INSERT OR IGNORE on UNIQUE (workflow_id, seq).
+        // If the row already existed, last_insert_rowid() is 0 — fall back to SELECT.
         let res = sqlx::query(
-            "INSERT INTO workflow_timers (workflow_id, seq, fire_at, fired) VALUES (?, ?, ?, 0)",
+            "INSERT OR IGNORE INTO workflow_timers (workflow_id, seq, fire_at, fired) VALUES (?, ?, ?, 0)",
         )
         .bind(&timer.workflow_id)
         .bind(timer.seq)
         .bind(timer.fire_at)
         .execute(&self.pool)
         .await?;
-        Ok(res.last_insert_rowid())
+
+        let id = res.last_insert_rowid();
+        if id != 0 {
+            return Ok(id);
+        }
+
+        // Row already existed — return its id.
+        let (existing_id,): (i64,) = sqlx::query_as(
+            "SELECT id FROM workflow_timers WHERE workflow_id = ? AND seq = ?",
+        )
+        .bind(&timer.workflow_id)
+        .bind(timer.seq)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(existing_id)
     }
 
     async fn cancel_pending_activities(&self, workflow_id: &str) -> Result<u64> {
