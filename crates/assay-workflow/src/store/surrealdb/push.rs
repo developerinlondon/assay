@@ -181,12 +181,14 @@ fn extract_record_id_field(
     let s = val.as_str()?;
     // SurrealDB RecordId serialises as "table:key" e.g. "workflow:wf-xxx".
     let prefix = format!("{table_prefix}:");
-    if let Some(stripped) = s.strip_prefix(&prefix) {
-        Some(stripped.to_string())
-    } else {
-        // Unexpected format — return the whole string so the caller gets something.
-        Some(s.to_string())
-    }
+    let stripped = s.strip_prefix(&prefix).unwrap_or(s);
+    // SurrealDB v3 record IDs with non-trivial keys (hyphens, underscores)
+    // serialise the key as `` `key` `` — strip the wrapping backticks.
+    let unquoted = stripped
+        .strip_prefix('`')
+        .and_then(|s| s.strip_suffix('`'))
+        .unwrap_or(stripped);
+    Some(unquoted.to_string())
 }
 
 /// Extract any field from a Value::Object by converting it to JSON and

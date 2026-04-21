@@ -1260,43 +1260,36 @@ async fn leader_election(#[case] backend: Backend) {
 
 use futures_util::StreamExt;
 
-// Ignored pending Phase 3 Task 3.16 polish — implementation is in place
-// (PG LISTEN/NOTIFY triggers + SurrealDB LIVE SELECT), but the test
-// setup blocks >60s on both backends. Suspected cause: subscription
-// registration + testcontainer bring-up interaction needs investigation.
-// Tracked against commit history of Phase 3 Task 3.16.
-#[ignore]
+// Serial — push tests spin up testcontainers; running them concurrent
+// with other container-using tests sporadically conflicts on the
+// docker daemon's port allocation / container startup path.
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
 #[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
 async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
     let h = std::sync::Arc::new(backend.setup().await.expect("setup"));
 
-    // Use an unbounded channel as a buffer so the background poller can
-    // collect notifications independently of the main task's timing.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-    // Spawn a task that immediately starts polling the stream (registering the
-    // LIVE SELECT / LISTEN with the server) and forwards items to the channel.
-    // This must happen before the insert so the subscription is live when the
-    // notification fires.
+    // Capture the JoinHandle so we can abort the poller at the end. Without
+    // the abort, the spawned task holds an Arc<Harness> forever (stream.next
+    // never ends for PG LISTEN / SurrealDB LIVE), preventing the testcontainer
+    // from dropping and blocking process exit on its Drop.
     let h2 = h.clone();
-    tokio::spawn(async move {
+    let poller = tokio::spawn(async move {
         let mut stream = h2.subscribe_runnable("main");
         while let Some(id) = stream.next().await {
             let _ = tx.send(id);
         }
     });
 
-    // Give the background task 150 ms to establish the subscription with the
-    // server (connect, LISTEN / LIVE SELECT round-trip).
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     let wf_id = uid("wf-push-r");
     let wf = make_workflow(&wf_id, "main", "push-q");
     h.create_workflow(&wf).await.unwrap();
-    // mark_workflow_dispatchable triggers the notify / LIVE SELECT update.
     h.mark_workflow_dispatchable(&wf_id).await.unwrap();
 
     let got = tokio::time::timeout(
@@ -1306,17 +1299,16 @@ async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
     .await
     .expect("timed out waiting for push notification")
     .expect("channel closed before yielding");
+    poller.abort();
 
     assert_eq!(got, wf_id, "push stream should yield the workflow id");
 }
 
-// Ignored pending Phase 3 Task 3.16 polish — see note on
-// push_runnable_fires_on_dispatchable above.
-#[ignore]
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
 #[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
 async fn push_tasks_fires_on_activity_insert(#[case] backend: Backend) {
     let h = std::sync::Arc::new(backend.setup().await.expect("setup"));
 
@@ -1324,10 +1316,12 @@ async fn push_tasks_fires_on_activity_insert(#[case] backend: Backend) {
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-    // Spawn the stream poller before doing any inserts.
+    // Spawn the stream poller before doing any inserts. The JoinHandle is
+    // aborted at the end of the test so the testcontainer can drop cleanly
+    // (see note on push_runnable_fires_on_dispatchable).
     let h2 = h.clone();
     let queue_owned = queue.to_string();
-    tokio::spawn(async move {
+    let poller = tokio::spawn(async move {
         let q_ref: &str = &queue_owned;
         let queues = [q_ref];
         let mut stream = h2.subscribe_tasks(&queues);
@@ -1353,6 +1347,7 @@ async fn push_tasks_fires_on_activity_insert(#[case] backend: Backend) {
     .await
     .expect("timed out waiting for push notification")
     .expect("channel closed before yielding");
+    poller.abort();
 
     // The emitted payload is the activity's numeric id as a string.
     let got_id: i64 = got.parse().expect("payload should be a numeric activity id");
