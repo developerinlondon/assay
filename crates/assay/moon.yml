@@ -1,0 +1,51 @@
+# crates/assay — runtime binary (`assay-lua` on crates.io, `assay`
+# installed). Owns the workspace-wide cargo tasks: cargo treats the
+# workspace as one unit (single Cargo.lock, shared target/), so
+# building / testing / clippy-ing this project is the same as doing it
+# for every member crate. Per-crate moon.yml files (crates/assay-*)
+# exist for the project graph, not for running cargo a second time.
+
+language: "rust"
+layer: "application"
+stack: "systems"
+
+fileGroups:
+  # Paths resolve relative to this file (crates/assay/moon.yml).
+  rust-sources:
+    - "src/**/*"
+    - "stdlib/**/*"
+    - "Cargo.toml"
+    - "../*/src/**/*"
+    - "../*/Cargo.toml"
+    - "../../Cargo.toml"
+    - "../../Cargo.lock"
+
+tasks:
+  lint:
+    command: "cargo clippy --workspace --tests -- -D warnings"
+    inputs:
+      - "@group(rust-sources)"
+    options:
+      cache: true
+      runInCI: true
+
+  build:
+    command: "cargo build --release"
+    inputs:
+      - "@group(rust-sources)"
+    outputs:
+      # target/ sits at workspace root
+      - "../../target/release/assay"
+    options:
+      cache: true
+      runInCI: true
+
+  test:
+    command: "cargo test --workspace"
+    inputs:
+      - "@group(rust-sources)"
+      - "tests/**/*"
+      - "../*/tests/**/*"
+    options:
+      cache: true
+      runInCI: true
