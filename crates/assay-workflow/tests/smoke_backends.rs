@@ -671,3 +671,319 @@ async fn signal_send_and_consume(#[case] backend: Backend) {
     let other_consumed = h.consume_signals(&wf_id, "other-signal").await.unwrap();
     assert_eq!(other_consumed.len(), 1);
 }
+
+// ── Task 3.9 — Schedules ──────────────────────────────────────────────────────
+
+fn make_schedule(namespace: &str, name: &str) -> common::harness::WorkflowSchedule {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    common::harness::WorkflowSchedule {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        workflow_type: "cron_wf".to_string(),
+        cron_expr: "0 * * * *".to_string(),
+        timezone: "UTC".to_string(),
+        input: Some(r#"{"key":"val"}"#.to_string()),
+        task_queue: "main".to_string(),
+        overlap_policy: "skip".to_string(),
+        paused: false,
+        last_run_at: None,
+        next_run_at: None,
+        last_workflow_id: None,
+        created_at: now,
+    }
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn schedule_crud(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let sched_name = uid("sched-crud");
+    let sched = make_schedule("main", &sched_name);
+
+    // Create
+    h.create_schedule(&sched).await.unwrap();
+
+    // Get
+    let got = h.get_schedule("main", &sched_name).await.unwrap().expect("should exist");
+    assert_eq!(got.name, sched_name);
+    assert_eq!(got.cron_expr, "0 * * * *");
+    assert!(!got.paused);
+
+    // List
+    let list = h.list_schedules("main").await.unwrap();
+    assert!(list.iter().any(|s| s.name == sched_name), "should appear in list");
+
+    // Update via patch (cron_expr only)
+    let patch = common::harness::SchedulePatch {
+        cron_expr: Some("0 0 * * *".to_string()),
+        timezone: None,
+        input: None,
+        task_queue: None,
+        overlap_policy: None,
+    };
+    let updated = h.update_schedule("main", &sched_name, &patch).await.unwrap();
+    assert!(updated.is_some(), "update_schedule should return updated record");
+    assert_eq!(updated.unwrap().cron_expr, "0 0 * * *");
+
+    // set_paused = true
+    let paused = h.set_schedule_paused("main", &sched_name, true).await.unwrap();
+    assert!(paused.is_some());
+    assert!(paused.unwrap().paused, "should be paused after set_schedule_paused(true)");
+
+    // Verify via get
+    let got2 = h.get_schedule("main", &sched_name).await.unwrap().unwrap();
+    assert!(got2.paused);
+
+    // set_paused = false
+    let resumed = h.set_schedule_paused("main", &sched_name, false).await.unwrap();
+    assert!(!resumed.unwrap().paused);
+
+    // Delete
+    let deleted = h.delete_schedule("main", &sched_name).await.unwrap();
+    assert!(deleted, "delete should return true");
+
+    // Double-delete returns false
+    let deleted2 = h.delete_schedule("main", &sched_name).await.unwrap();
+    assert!(!deleted2, "second delete should return false");
+
+    // Get after delete returns None
+    let gone = h.get_schedule("main", &sched_name).await.unwrap();
+    assert!(gone.is_none());
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn schedule_last_run_update(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let sched_name = uid("sched-lru");
+    h.create_schedule(&make_schedule("main", &sched_name)).await.unwrap();
+
+    let last_run = 1_700_000_000.0_f64;
+    let next_run = 1_700_003_600.0_f64;
+    let wf_id    = uid("wf-last-run");
+
+    h.update_schedule_last_run("main", &sched_name, last_run, next_run, &wf_id)
+        .await
+        .unwrap();
+
+    let got = h.get_schedule("main", &sched_name).await.unwrap().unwrap();
+    assert_eq!(got.last_run_at, Some(last_run),   "last_run_at should be updated");
+    assert_eq!(got.next_run_at, Some(next_run),   "next_run_at should be updated");
+    assert_eq!(got.last_workflow_id.as_deref(), Some(wf_id.as_str()),
+               "last_workflow_id should be updated");
+}
+
+// ── Task 3.10 — Snapshots ─────────────────────────────────────────────────────
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn snapshot_create_and_get_latest(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-snap");
+    h.create_workflow(&make_workflow(&wf_id, "main", "main")).await.unwrap();
+
+    // No snapshot yet
+    let none = h.get_latest_snapshot(&wf_id).await.unwrap();
+    assert!(none.is_none(), "no snapshot before any create");
+
+    // Create three snapshots at different event_seqs
+    h.create_snapshot(&wf_id, 1, r#"{"step":1}"#).await.unwrap();
+    h.create_snapshot(&wf_id, 5, r#"{"step":5}"#).await.unwrap();
+    h.create_snapshot(&wf_id, 3, r#"{"step":3}"#).await.unwrap();
+
+    // get_latest should return seq=5 (highest)
+    let latest = h.get_latest_snapshot(&wf_id).await.unwrap().expect("should have latest");
+    assert_eq!(latest.event_seq, 5, "get_latest should return highest event_seq");
+    assert_eq!(latest.state_json, r#"{"step":5}"#);
+    assert_eq!(latest.workflow_id, wf_id);
+
+    // Idempotent: re-creating seq=5 with different state updates it
+    h.create_snapshot(&wf_id, 5, r#"{"step":5,"updated":true}"#).await.unwrap();
+    let updated = h.get_latest_snapshot(&wf_id).await.unwrap().unwrap();
+    assert_eq!(updated.event_seq, 5);
+    assert_eq!(updated.state_json, r#"{"step":5,"updated":true}"#);
+}
+
+// ── Task 3.11 — Archival end-to-end ──────────────────────────────────────────
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn archival_end_to_end(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-arch-e2e");
+    h.create_workflow(&make_workflow(&wf_id, "main", "main")).await.unwrap();
+
+    // Complete the workflow (sets completed_at to now)
+    h.update_workflow_status(&wf_id, assay_core::types::WorkflowStatus::Completed, None, None)
+        .await
+        .unwrap();
+
+    // Populate child rows that should be purged
+    h.append_event(&make_event(&wf_id, 1)).await.unwrap();
+    h.append_event(&make_event(&wf_id, 2)).await.unwrap();
+    h.create_activity(&make_activity(&wf_id, 1, "main")).await.unwrap();
+    h.create_timer(&make_timer(&wf_id, 1, 9_999_999_999.0)).await.unwrap();
+    h.send_signal(&make_signal(&wf_id, "done")).await.unwrap();
+    h.create_snapshot(&wf_id, 1, r#"{"s":1}"#).await.unwrap();
+
+    // list_archivable: cutoff far in the future → must include our workflow
+    let far_future = 9_999_999_999.0_f64;
+    let archivable = h.list_archivable_workflows(far_future, 100).await.unwrap();
+    assert!(
+        archivable.iter().any(|w| w.id == wf_id),
+        "completed workflow should be archivable"
+    );
+
+    // Purge
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    h.mark_archived_and_purge(&wf_id, "s3://bucket/e2e.json", now)
+        .await
+        .unwrap();
+
+    // Workflow record still exists with archive metadata
+    let wf = h.get_workflow(&wf_id).await.unwrap().expect("workflow record must remain");
+    assert!(wf.archived_at.is_some(), "archived_at should be set");
+    assert_eq!(wf.archive_uri.as_deref(), Some("s3://bucket/e2e.json"));
+
+    // All child rows purged
+    let events = h.list_events(&wf_id).await.unwrap();
+    assert!(events.is_empty(), "events should be purged");
+
+    let snap = h.get_latest_snapshot(&wf_id).await.unwrap();
+    assert!(snap.is_none(), "snapshots should be purged");
+
+    // No longer in archivable list
+    let archivable2 = h.list_archivable_workflows(far_future, 100).await.unwrap();
+    assert!(!archivable2.iter().any(|w| w.id == wf_id),
+            "archived workflow must not reappear in archivable list");
+}
+
+// ── Task 3.12 — Workers ───────────────────────────────────────────────────────
+
+fn make_worker(id: &str, namespace: &str, task_queue: &str) -> common::harness::WorkflowWorker {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    common::harness::WorkflowWorker {
+        id: id.to_string(),
+        namespace: namespace.to_string(),
+        identity: format!("worker-{id}@host"),
+        task_queue: task_queue.to_string(),
+        workflows: None,
+        activities: None,
+        max_concurrent_workflows: 10,
+        max_concurrent_activities: 10,
+        active_tasks: 0,
+        last_heartbeat: now,
+        registered_at: now,
+    }
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn worker_register_heartbeat_list(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+
+    let ns = uid("ns-wkr");
+    h.create_namespace(&ns).await.unwrap();
+
+    let id1 = uid("wkr-a");
+    let id2 = uid("wkr-b");
+    let w1 = make_worker(&id1, &ns, "main");
+    let w2 = make_worker(&id2, &ns, "main");
+
+    // Register both
+    h.register_worker(&w1).await.unwrap();
+    h.register_worker(&w2).await.unwrap();
+
+    // list_workers returns both
+    let workers = h.list_workers(&ns).await.unwrap();
+    assert_eq!(workers.len(), 2, "should have 2 workers");
+    let ids: Vec<&str> = workers.iter().map(|w| w.id.as_str()).collect();
+    assert!(ids.contains(&id1.as_str()), "w1 should be in list");
+    assert!(ids.contains(&id2.as_str()), "w2 should be in list");
+
+    // Heartbeat w1 with a newer timestamp
+    let future_hb = w1.last_heartbeat + 100.0;
+    h.heartbeat_worker(&id1, future_hb).await.unwrap();
+
+    // Re-list and verify w1 heartbeat updated
+    let workers2 = h.list_workers(&ns).await.unwrap();
+    let w1_after = workers2.iter().find(|w| w.id == id1).unwrap();
+    assert!(
+        (w1_after.last_heartbeat - future_hb).abs() < 1.0,
+        "heartbeat should be updated for w1"
+    );
+
+    // Idempotent register: re-registering w1 should not error
+    h.register_worker(&w1).await.unwrap();
+    let workers3 = h.list_workers(&ns).await.unwrap();
+    assert_eq!(workers3.len(), 2, "re-register should not duplicate");
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn worker_remove_dead(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+
+    let ns = uid("ns-dead");
+    h.create_namespace(&ns).await.unwrap();
+
+    // t=0: register both workers with heartbeat at epoch 1000
+    let base_time = 1_000.0_f64;
+    let id_live = uid("wkr-live");
+    let id_dead = uid("wkr-dead");
+
+    let mut w_live = make_worker(&id_live, &ns, "main");
+    w_live.last_heartbeat = base_time;
+    w_live.registered_at  = base_time;
+
+    let mut w_dead = make_worker(&id_dead, &ns, "main");
+    w_dead.last_heartbeat = base_time;
+    w_dead.registered_at  = base_time;
+
+    h.register_worker(&w_live).await.unwrap();
+    h.register_worker(&w_dead).await.unwrap();
+
+    // Advance live worker's heartbeat to base+200
+    h.heartbeat_worker(&id_live, base_time + 200.0).await.unwrap();
+    // Dead worker stays at base_time
+
+    // remove_dead_workers with cutoff = base+100:
+    // dead worker (heartbeat=base_time < base+100) should be removed
+    // live worker (heartbeat=base+200 >= base+100) should survive
+    let cutoff = base_time + 100.0;
+    let removed = h.remove_dead_workers(cutoff).await.unwrap();
+    assert_eq!(removed.len(), 1, "exactly one dead worker should be removed");
+    assert_eq!(removed[0], id_dead, "the removed id should be the dead worker");
+
+    // list_workers should only contain the live worker
+    let remaining = h.list_workers(&ns).await.unwrap();
+    assert_eq!(remaining.len(), 1, "only live worker should remain");
+    assert_eq!(remaining[0].id, id_live);
+}

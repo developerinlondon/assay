@@ -8,6 +8,8 @@
 use assay_core::types::*;
 use assay_core::{NamespaceRecord, NamespaceStats};
 use assay_workflow::WorkflowStore;
+// Re-export types used by new harness methods so tests don't need extra imports.
+pub use assay_core::types::{SchedulePatch, WorkflowSchedule, WorkflowSnapshot, WorkflowWorker};
 
 // ── Harness ───────────────────────────────────────────────────────────────────
 
@@ -241,6 +243,93 @@ impl Harness {
         name: &str,
     ) -> anyhow::Result<Vec<WorkflowSignal>> {
         dispatch!(self, s => s.consume_signals(workflow_id, name).await)
+    }
+
+    // ── Schedules ─────────────────────────────────────────────────────────────
+
+    pub async fn create_schedule(&self, sched: &WorkflowSchedule) -> anyhow::Result<()> {
+        dispatch!(self, s => s.create_schedule(sched).await)
+    }
+
+    pub async fn get_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> anyhow::Result<Option<WorkflowSchedule>> {
+        dispatch!(self, s => s.get_schedule(namespace, name).await)
+    }
+
+    pub async fn list_schedules(&self, namespace: &str) -> anyhow::Result<Vec<WorkflowSchedule>> {
+        dispatch!(self, s => s.list_schedules(namespace).await)
+    }
+
+    pub async fn update_schedule_last_run(
+        &self,
+        namespace: &str,
+        name: &str,
+        last_run_at: f64,
+        next_run_at: f64,
+        workflow_id: &str,
+    ) -> anyhow::Result<()> {
+        dispatch!(self, s => s.update_schedule_last_run(namespace, name, last_run_at, next_run_at, workflow_id).await)
+    }
+
+    pub async fn delete_schedule(&self, namespace: &str, name: &str) -> anyhow::Result<bool> {
+        dispatch!(self, s => s.delete_schedule(namespace, name).await)
+    }
+
+    pub async fn update_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+        patch: &SchedulePatch,
+    ) -> anyhow::Result<Option<WorkflowSchedule>> {
+        dispatch!(self, s => s.update_schedule(namespace, name, patch).await)
+    }
+
+    pub async fn set_schedule_paused(
+        &self,
+        namespace: &str,
+        name: &str,
+        paused: bool,
+    ) -> anyhow::Result<Option<WorkflowSchedule>> {
+        dispatch!(self, s => s.set_schedule_paused(namespace, name, paused).await)
+    }
+
+    // ── Snapshots ─────────────────────────────────────────────────────────────
+
+    pub async fn create_snapshot(
+        &self,
+        workflow_id: &str,
+        event_seq: i32,
+        state_json: &str,
+    ) -> anyhow::Result<()> {
+        dispatch!(self, s => s.create_snapshot(workflow_id, event_seq, state_json).await)
+    }
+
+    pub async fn get_latest_snapshot(
+        &self,
+        workflow_id: &str,
+    ) -> anyhow::Result<Option<WorkflowSnapshot>> {
+        dispatch!(self, s => s.get_latest_snapshot(workflow_id).await)
+    }
+
+    // ── Workers ───────────────────────────────────────────────────────────────
+
+    pub async fn register_worker(&self, worker: &WorkflowWorker) -> anyhow::Result<()> {
+        dispatch!(self, s => s.register_worker(worker).await)
+    }
+
+    pub async fn heartbeat_worker(&self, id: &str, now: f64) -> anyhow::Result<()> {
+        dispatch!(self, s => s.heartbeat_worker(id, now).await)
+    }
+
+    pub async fn list_workers(&self, namespace: &str) -> anyhow::Result<Vec<WorkflowWorker>> {
+        dispatch!(self, s => s.list_workers(namespace).await)
+    }
+
+    pub async fn remove_dead_workers(&self, cutoff: f64) -> anyhow::Result<Vec<String>> {
+        dispatch!(self, s => s.remove_dead_workers(cutoff).await)
     }
 }
 

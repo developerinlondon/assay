@@ -8,6 +8,9 @@ mod migrations;
 mod activities;
 mod timers;
 mod signals;
+mod schedules;
+mod snapshots;
+mod workers;
 
 use std::future::Future;
 
@@ -963,90 +966,90 @@ impl WorkflowStore for SurrealDbStore {
 
     fn create_schedule(
         &self,
-        _schedule: &WorkflowSchedule,
+        schedule: &WorkflowSchedule,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async { todo!("Task 3.9") }
+        self.create_schedule_impl(schedule)
     }
 
     fn get_schedule(
         &self,
-        _namespace: &str,
-        _name: &str,
+        namespace: &str,
+        name: &str,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send {
-        async { todo!("Task 3.9") }
+        self.get_schedule_impl(namespace, name)
     }
 
     fn list_schedules(
         &self,
-        _namespace: &str,
+        namespace: &str,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowSchedule>>> + Send {
-        async { todo!("Task 3.9") }
+        self.list_schedules_impl(namespace)
     }
 
     fn update_schedule_last_run(
         &self,
-        _namespace: &str,
-        _name: &str,
-        _last_run_at: f64,
-        _next_run_at: f64,
-        _workflow_id: &str,
+        namespace: &str,
+        name: &str,
+        last_run_at: f64,
+        next_run_at: f64,
+        workflow_id: &str,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async { todo!("Task 3.9") }
+        self.update_schedule_last_run_impl(namespace, name, last_run_at, next_run_at, workflow_id)
     }
 
     fn delete_schedule(
         &self,
-        _namespace: &str,
-        _name: &str,
+        namespace: &str,
+        name: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send {
-        async { todo!("Task 3.9") }
+        self.delete_schedule_impl(namespace, name)
     }
 
     fn update_schedule(
         &self,
-        _namespace: &str,
-        _name: &str,
-        _patch: &SchedulePatch,
+        namespace: &str,
+        name: &str,
+        patch: &SchedulePatch,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send {
-        async { todo!("Task 3.9") }
+        self.update_schedule_impl(namespace, name, patch)
     }
 
     fn set_schedule_paused(
         &self,
-        _namespace: &str,
-        _name: &str,
-        _paused: bool,
+        namespace: &str,
+        name: &str,
+        paused: bool,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowSchedule>>> + Send {
-        async { todo!("Task 3.9") }
+        self.set_schedule_paused_impl(namespace, name, paused)
     }
 
     fn register_worker(
         &self,
-        _worker: &WorkflowWorker,
+        worker: &WorkflowWorker,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async { todo!("Task 3.12") }
+        self.register_worker_impl(worker)
     }
 
     fn heartbeat_worker(
         &self,
-        _id: &str,
-        _now: f64,
+        id: &str,
+        now: f64,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async { todo!("Task 3.12") }
+        self.heartbeat_worker_impl(id, now)
     }
 
     fn list_workers(
         &self,
-        _namespace: &str,
+        namespace: &str,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowWorker>>> + Send {
-        async { todo!("Task 3.12") }
+        self.list_workers_impl(namespace)
     }
 
     fn remove_dead_workers(
         &self,
-        _cutoff: f64,
+        cutoff: f64,
     ) -> impl Future<Output = anyhow::Result<Vec<String>>> + Send {
-        async { todo!("Task 3.12") }
+        self.remove_dead_workers_impl(cutoff)
     }
 
     fn create_api_key(
@@ -1099,18 +1102,18 @@ impl WorkflowStore for SurrealDbStore {
 
     fn create_snapshot(
         &self,
-        _workflow_id: &str,
-        _event_seq: i32,
-        _state_json: &str,
+        workflow_id: &str,
+        event_seq: i32,
+        state_json: &str,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async { todo!("Task 3.10") }
+        self.create_snapshot_impl(workflow_id, event_seq, state_json)
     }
 
     fn get_latest_snapshot(
         &self,
-        _workflow_id: &str,
+        workflow_id: &str,
     ) -> impl Future<Output = anyhow::Result<Option<WorkflowSnapshot>>> + Send {
-        async { todo!("Task 3.10") }
+        self.get_latest_snapshot_impl(workflow_id)
     }
 
     fn get_queue_stats(

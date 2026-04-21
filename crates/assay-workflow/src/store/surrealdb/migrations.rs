@@ -19,6 +19,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "02_activity_timer_signal_fields",
         include_str!("../../../migrations/surrealdb/02_activity_timer_signal_fields.surql"),
     ),
+    (
+        "03_schedules_workers_snapshots",
+        include_str!("../../../migrations/surrealdb/03_schedules_workers_snapshots.surql"),
+    ),
 ];
 
 impl SurrealDbStore {
