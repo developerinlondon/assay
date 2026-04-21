@@ -1,5 +1,11 @@
 [workspace]
-members = [".", "crates/assay-auth", "crates/assay-core", "crates/assay-workflow"]
+members = [
+  ".",
+  "crates/assay-auth",
+  "crates/assay-core",
+  "crates/assay-dashboard",
+  "crates/assay-workflow",
+]
 
 [package]
 name = "assay-lua"

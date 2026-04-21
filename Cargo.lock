@@ -100,6 +100,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "assay-dashboard"
+version = "0.1.0"
+dependencies = [
+ "assay-core",
+ "axum",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "assay-lua"
 version = "0.12.1"
 dependencies = [
