@@ -483,61 +483,23 @@ logs in as admin, navigates each engine view, asserts expected table headers and
 
 ---
 
-### Task 8.5: Runtime dashboard restored
+### Task 8.5 — REMOVED (runtime dashboard retired in v0.13.0)
 
-**Files:** `crates/assay/src/...`.
-
-Phase 1 Task 1.5 took the runtime's dashboard offline. Now restore it — the runtime binary includes
-`assay-engine` (or the dashboard's composition helper) to serve a dashboard against its embedded
-PG/SQLite workflow.
-
-Two options; pick one:
-
-**Option A — runtime depends on assay-engine:** `crates/assay/Cargo.toml` adds
-`assay-engine = { path = "../assay-engine", features = ["workflow", "dashboard", "backend-sqlite", "backend-postgres"] }`.
-Runtime's server command uses `assay_engine::state::build` + `assay_engine::server::run`. Clean; one
-code path.
-
-**Option B — runtime has its own composition:** runtime implements its own smaller `RuntimeState`
-that only has workflow + dashboard. Skips the auth layer entirely. Slightly leaner build, but more
-duplicated wiring.
-
-Recommendation: **Option A.** Consistency wins; the runtime's `--features` already strips auth out
-of the engine crate.
-
-- [ ] **Step 1: Wire runtime to use assay-engine for its server feature**
-
-```toml
-# crates/assay/Cargo.toml [features]
-server = [
-  "dep:assay-engine",
-  "assay-engine/workflow",
-  "assay-engine/dashboard",
-  "assay-engine/server",
-  "assay-engine/backend-sqlite",
-  "assay-engine/backend-postgres",
-]
-```
-
-- [ ] **Step 2: Use the engine's builder in runtime's serve command**
-
-Runtime's `assay serve` / `assay http.serve` — build a minimal EngineConfig from runtime's CLI args,
-call `assay_engine::server::run`.
-
-- [ ] **Step 3: Un-ignore the Phase 1 dashboard tests**
-
-Any tests marked `#[ignore]` with "Phase 8" in the comment — remove the `#[ignore]`.
-
-- [ ] **Step 4: Smoke**
-
-```bash
-./target/release/assay serve --port 3000 &
-curl -s http://127.0.0.1:3000/ | grep -i 'assay'           # dashboard renders
-curl -s http://127.0.0.1:3000/api/v1/workflows              # workflow api
-kill %1
-```
-
-- [ ] **Step 5: Commit** — `feat(runtime): restore dashboard via assay-engine composition`.
+> **Decision (2026-04-21):** drop the runtime dashboard permanently instead of restoring it. The
+> 0.12 story where `assay serve --workflow` also served the dashboard was a legacy carry-over; plan
+> 10 § "Deployment shapes" always split it as Shape A (scripting, no HTTP) vs Shape B (server,
+> HTTP). v0.13.0 is the right moment to commit to that split.
+>
+> **Effect:**
+>
+> - `crates/assay/Cargo.toml` drops its dashboard / axum-router wiring. Keep `http.serve()` Lua
+>   stdlib (different feature — scripts exposing small HTTP endpoints).
+> - Users who want a dashboard run `assay-engine` instead.
+> - Plan 10 § "Shape A" is already accurate — runtime has no dashboard.
+> - CHANGELOG entry + migration notes must call out: 0.12 `assay serve --workflow` → 0.13
+>   `assay-engine --config <backend>.toml`.
+>
+> Saves ~1h on execution and keeps the product surface cleaner.
 
 ---
 

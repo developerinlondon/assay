@@ -1498,10 +1498,10 @@ git commit -m "refactor(dashboard): extract assay-dashboard crate with typed ass
 Static assets + axum router now live in assay-dashboard. DashboardCtx
 is the module's state type; handlers extract via State<DashboardCtx>.
 
-Runtime binary's dashboard is temporarily offline until Phase 8
-(assay-engine binary) wires EngineState with FromRef composition.
-Runtime tests that assert dashboard endpoints are #[ignore] with a
-reference to phase 8."
+Runtime binary's dashboard is permanently retired in v0.13.0 —
+dashboard now only ships with assay-engine (Shape B per plan 10).
+Users who want a dashboard run assay-engine. See plan 12e Task 8.5
+removal note for rationale."
 ```
 
 ---
@@ -1557,8 +1557,9 @@ state refactor ready for Phase 8's `FromRef` composition.
 - Does not add SurrealDB workflow methods (Phase 3).
 - Does not add auth modules (Phases 4–7).
 - Does not build the engine binary (Phase 8).
-- Does not change the runtime's behaviour except: temporarily takes the runtime dashboard offline
-  (restored in Phase 8).
+- Does change the runtime's behaviour: the runtime dashboard is permanently retired in v0.13.0
+  (Shape A / B split per plan 10). `assay serve --workflow` no longer ships; use `assay-engine` for
+  dashboard + HTTP API.
 
 ## Coordination with Phase 2
 
