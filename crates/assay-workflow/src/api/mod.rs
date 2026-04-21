@@ -1,7 +1,6 @@
 pub mod activities;
 pub mod api_keys;
 pub mod auth;
-pub mod dashboard;
 pub mod events;
 pub mod namespaces;
 pub mod openapi;
@@ -9,7 +8,6 @@ pub mod public;
 pub mod queues;
 pub mod schedules;
 pub mod tasks;
-pub mod whitelabel;
 pub mod workers;
 pub mod workflow_tasks;
 pub mod workflows;
@@ -56,7 +54,6 @@ pub fn router<S: WorkflowStore>(state: Arc<WorkflowCtx<S>>) -> Router {
 
     let app = authed_api
         .merge(public_api)
-        .merge(dashboard::router::<S>())
         .merge(openapi::router::<S>());
 
     app.with_state(state)

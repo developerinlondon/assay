@@ -62,7 +62,7 @@ use std::sync::LazyLock;
 /// Shared config read once from env on first dashboard request. The
 /// `LazyLock` ensures we never re-read env mid-flight if operators
 /// restart without changing values, and matches the pattern used by
-/// `ASSET_VERSION` in the dashboard module.
+/// `ASSET_VERSION` in the router module.
 pub static WHITELABEL: LazyLock<WhitelabelConfig> = LazyLock::new(WhitelabelConfig::from_env);
 
 /// Operator-configurable dashboard identity. Construct via
