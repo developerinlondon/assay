@@ -321,3 +321,42 @@ pub struct WorkflowSnapshot {
     pub state_json: String,
     pub created_at: f64,
 }
+
+// ── Store-level DTOs (moved from assay-workflow::store::mod) ────────
+
+/// API key metadata (hash is never exposed).
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct ApiKeyRecord {
+    pub prefix: String,
+    pub label: Option<String>,
+    pub created_at: f64,
+}
+
+/// Namespace record.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct NamespaceRecord {
+    pub name: String,
+    pub created_at: f64,
+}
+
+/// Namespace-level statistics.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct NamespaceStats {
+    pub namespace: String,
+    pub total_workflows: i64,
+    pub running: i64,
+    pub pending: i64,
+    pub completed: i64,
+    pub failed: i64,
+    pub schedules: i64,
+    pub workers: i64,
+}
+
+/// Task queue statistics.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct QueueStats {
+    pub queue: String,
+    pub pending_activities: i64,
+    pub running_activities: i64,
+    pub workers: i64,
+}

@@ -94,6 +94,7 @@ name = "assay-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures-core",
  "serde",
  "serde_json",
  "utoipa",
