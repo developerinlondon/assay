@@ -83,6 +83,183 @@ Store traits live in `assay-core`. Backend impls live alongside their domain cra
 (`assay-workflow/src/store/postgres.rs`, `assay-auth/src/store/surrealdb.rs`, etc.) and are gated by
 Cargo features.
 
+### Crate dependency graph
+
+Arrows point from consumer to dependency. `assay-core` sits at the bottom with no upward
+dependencies — it's pure types + trait signatures. Domain crates (`assay-workflow`, `assay-auth`)
+depend only on `assay-core`. The engine and dashboard layer on top.
+
+```
+                  ┌──────────────────────────────────────┐
+                  │           assay-core                 │
+                  │                                      │
+                  │   traits: WorkflowStore              │
+                  │           UserStore (0.14.0)         │
+                  │           SessionStore (0.14.0)      │
+                  │           ZanzibarStore (0.14.0)     │
+                  │                                      │
+                  │   types:  WorkflowRecord, Event,     │
+                  │           Activity, Timer, Signal,   │
+                  │           Schedule, Snapshot,        │
+                  │           NamespaceStats, QueueStats │
+                  │                                      │
+                  │   (no I/O, no HTTP, no backends)     │
+                  └──────────▲────────────▲──────────────┘
+                             │            │
+              ┌──────────────┘            └──────────────┐
+              │                                          │
+┌─────────────┴───────────────┐         ┌────────────────┴────────────┐
+│      assay-workflow         │         │        assay-auth           │
+│                             │         │       (0.14.0 scope)        │
+│  impl WorkflowStore for:    │         │                             │
+│    • PostgresStore  (feat)  │         │  impl UserStore for:        │
+│    • SqliteStore    (feat)  │         │    • PostgresUserStore      │
+│    • SurrealDbStore (feat)  │         │    • SqliteUserStore        │
+│                             │         │    • SurrealDbUserStore     │
+│  Engine, Scheduler,         │         │                             │
+│  Dispatcher, Archival,      │         │  OIDC client + provider,    │
+│  HTTP API (routes),         │         │  passkey, JWT, Biscuit,     │
+│  dispatch_recovery          │         │  session, Zanzibar          │
+└──────────────▲──────────────┘         └──────────────▲──────────────┘
+               │                                       │
+               └────────────────┬──────────────────────┘
+                                │
+             ┌──────────────────┴───────────────────┐
+             │                                      │
+┌────────────┴──────────────┐         ┌─────────────┴──────────────┐
+│     assay-dashboard       │         │       assay-engine         │
+│                           │         │    (both crate + binary)   │
+│  HTML/Askama templates,   │         │                            │
+│  CSS, htmx bits.          │         │  Library side:             │
+│                           │         │    re-exports workflow +   │
+│  feature = "workflow"     │         │    auth + dashboard +      │
+│    - run list, events,    │         │    core as submodules.     │
+│      timers, activities   │         │                            │
+│                           │         │  Binary side (src/bin/):   │
+│  feature = "auth" (0.14)  │         │    reads config, picks     │
+│    - users, sessions,     │         │    backend, wires axum     │
+│      Zanzibar tuples,     │         │    router, serves.         │
+│      client registry      │         │                            │
+└─────────────▲─────────────┘         └─────────────▲──────────────┘
+              │                                     │
+              └──────────────────┬──────────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    │          assay          │
+                    │  (runtime binary, Lua)  │
+                    │                         │
+                    │  Lua 5.5 VM             │
+                    │  stdlib (http, fs, sql, │
+                    │   workflow, auth HTTP   │
+                    │   wrapper)              │
+                    │  CLI                    │
+                    │                         │
+                    │  Embeds workflow engine │
+                    │  with backend-postgres  │
+                    │  + backend-sqlite only. │
+                    │  No SurrealDB backend.  │
+                    │                         │
+                    │  Auth: HTTP wrapper     │
+                    │  calls assay-engine.    │
+                    └─────────────────────────┘
+```
+
+**Why `assay-core`?** Matches the `sqlx-core` / `axum-core` convention: the crate everything depends
+on, nothing depends _through_. Required because `assay-workflow` and `assay-auth` both need shared
+types (user IDs, timestamps, errors) and neither should depend on the other. Keeping it
+dependency-free at the bottom also means fast compile and no backend code leaks into downstream
+crates that don't want it.
+
+### Deployment shapes
+
+The split produces two distinct binaries for two distinct use cases.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Shape A — scripting                            │
+│                                                                      │
+│     $ assay run my-script.lua                                        │
+│                                                                      │
+│   ┌─────────────────┐                                                │
+│   │  assay binary   │    embedded engine (PG/SQLite)                 │
+│   │                 │    workflows, events, timers persist locally   │
+│   │  Lua script ────┼──► workflow.start() — in-process call          │
+│   │                 │                                                │
+│   │  ~12–15 MB      │                                                │
+│   └─────────────────┘                                                │
+│                                                                      │
+│   No auth. No SurrealDB. Same footprint as today.                    │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Shape B — server + scripts                         │
+│                                                                      │
+│     $ assay-engine --config engine.toml                              │
+│                                                                      │
+│   ┌──────────────────────────────────┐                               │
+│   │        assay-engine binary       │                               │
+│   │                                  │                               │
+│   │  HTTP :3000                      │                               │
+│   │    /api/v1/workflows   ──►       │       ┌──────────────┐        │
+│   │    /api/v1/activities            │       │  Postgres    │        │
+│   │    /dashboard          ──►       ├──────►│   or SQLite  │        │
+│   │    /engine/queues                │       │   or Surreal │        │
+│   │    /authorize  (0.14.0)          │       └──────────────┘        │
+│   │    /token      (0.14.0)          │                               │
+│   │                                  │                               │
+│   │  ~20–38 MB                       │                               │
+│   └──────────────────────────────────┘                               │
+│           ▲                                                          │
+│           │ HTTP/2, ~0.5–2ms localhost                               │
+│           │                                                          │
+│   ┌───────┴─────────┐                                                │
+│   │  assay binary   │   thin Lua wrappers call over HTTP             │
+│   │  (script host)  │                                                │
+│   │                 │   auth.zanzibar.check(...) ──► engine          │
+│   │  Lua script ────┤   workflow.signal(...)     ──► engine          │
+│   │                 │                                                │
+│   │  ~12–15 MB      │                                                │
+│   └─────────────────┘                                                │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Request flow
+
+Handlers never name a specific backend. Backend is picked at `main()`, constructed once, wrapped in
+`Arc<dyn WorkflowStore>`, and passed to the router. Swapping PG → SurrealDB changes one line of
+config, recompiles, and runs.
+
+```
+Consumer app              assay-engine binary              Backend
+───────────────           ────────────────────             ────────
+HTTP POST
+/api/v1/workflows  ───►   axum route handler
+                          (in assay-workflow crate)
+                                 │
+                                 │ calls trait method
+                                 ▼
+                          WorkflowStore::create_workflow
+                          (trait in assay-core)
+                                 │
+                                 │ dispatched to impl
+                                 ▼
+                          ┌──────────────────────┐
+                          │ feature-gated at     │
+                          │ compile time:        │
+                          │                      │
+                          │ PostgresStore  ──────┼────►  postgres
+                          │ SqliteStore    ──────┼────►  sqlite file
+                          │ SurrealDbStore ──────┼────►  surreal (ws/http)
+                          └──────────────────────┘
+                                 │
+                                 ▼
+                          returns Result<()>
+                                 │
+                          ◄──────┘
+                          handler builds response
+HTTP 201 ◄─────────────── axum writes JSON
+```
+
 ### Store traits (shared)
 
 ```rust
@@ -441,7 +618,9 @@ here.
 With two agents concurrently (Phase 2 + Phase 3), calendar ≈ 14 hours.
 
 ## Open decisions
-he 
+
+he
+
 1. **Runtime with no auth — accepted.** Lua scripts needing auth call engine over HTTP (0.5–2 ms
    localhost). Revisit if batch permission audits become common.
 
