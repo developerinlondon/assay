@@ -25,16 +25,16 @@ federation to Google / Apple / GitHub / any OIDC-compliant provider, plus client
 Consumer apps get a complete self-hosted identity stack — they authenticate against _this_ IdP and
 never talk to upstream providers directly.
 
-| Module               | Crate / deps                    | Purpose                                              |
-| -------------------- | ------------------------------- | ---------------------------------------------------- |
-| `auth.oidc`          | `openidconnect` 4               | OIDC client — discovery, PKCE, callback, refresh     |
-| `auth.oidc.provider` | `oxide-auth` + custom           | OIDC provider — IdP endpoints, consent, SSO sessions |
-| `auth.passkey`       | `webauthn-rs` 0.5               | WebAuthn / FIDO2 registration and authentication     |
-| `auth.password`      | `argon2` + `password-hash`      | Argon2id hashing with sensible defaults              |
-| `auth.jwt`           | `jsonwebtoken` 10 (already used)| JWT issue and verify, JWKS fetch + rotation          |
-| `auth.biscuit`       | `biscuit-auth` 6                | Capability tokens — offline-verifiable, attenuable   |
-| `auth.session`       | custom                          | Session cookies, CSRF, rotating IDs                  |
-| `auth.zanzibar`      | custom — trait + backend impls  | Zanzibar semantics on pluggable storage              |
+| Module               | Crate / deps                     | Purpose                                              |
+| -------------------- | -------------------------------- | ---------------------------------------------------- |
+| `auth.oidc`          | `openidconnect` 4                | OIDC client — discovery, PKCE, callback, refresh     |
+| `auth.oidc.provider` | `oxide-auth` + custom            | OIDC provider — IdP endpoints, consent, SSO sessions |
+| `auth.passkey`       | `webauthn-rs` 0.5                | WebAuthn / FIDO2 registration and authentication     |
+| `auth.password`      | `argon2` + `password-hash`       | Argon2id hashing with sensible defaults              |
+| `auth.jwt`           | `jsonwebtoken` 10 (already used) | JWT issue and verify, JWKS fetch + rotation          |
+| `auth.biscuit`       | `biscuit-auth` 6                 | Capability tokens — offline-verifiable, attenuable   |
+| `auth.session`       | custom                           | Session cookies, CSRF, rotating IDs                  |
+| `auth.zanzibar`      | custom — trait + backend impls   | Zanzibar semantics on pluggable storage              |
 
 All eight live in `crates/assay-auth` (per plan 10). Consumer apps reach them via:
 
@@ -53,39 +53,39 @@ operable.
 reference today: Hydra + Kratos + Keto + Oathkeeper) plus capability tokens that Ory itself doesn't
 ship. Same job, one binary, Rust.
 
-| Capability                       | Ory stack                       | assay-auth                                     |
-| -------------------------------- | ------------------------------- | ---------------------------------------------- |
-| OIDC / OAuth2 provider (OP)      | Hydra                           | `auth.oidc.provider`                           |
-| OIDC client (RP)                 | (app-level lib)                 | `auth.oidc`                                    |
-| Identity mgmt + login flow       | Kratos                          | `auth.password` + `auth.passkey` + `auth.session` |
-| Passkey / WebAuthn (FIDO2)       | Kratos                          | `auth.passkey`                                 |
-| Password hashing (Argon2id)      | Kratos                          | `auth.password`                                |
-| Session mgmt + CSRF              | Kratos                          | `auth.session`                                 |
-| Federated upstream (Google, etc) | Kratos                          | `auth.oidc` + IdP registry                     |
-| Zanzibar ReBAC engine            | Keto                            | `auth.zanzibar` — full `check`/`expand`/`lookup_*` |
-| Relation schema DSL              | Keto (custom DSL)               | SpiceDB-compatible subset parser               |
-| Consistency tokens (zookies)     | Keto                            | `auth.zanzibar` zookies                        |
-| API policy enforcement gateway   | Oathkeeper                      | out of scope — use Axum middleware             |
-| Capability tokens w/ attenuation | — (not provided)                | `auth.biscuit` ✨                              |
-| SSO across client apps           | Hydra session store             | `auth.oidc.provider` session registry          |
-| MFA beyond passkey (TOTP, SMS)   | Kratos                          | V2                                             |
-| SCIM user provisioning           | Kratos                          | V2 or never                                    |
-| SAML                             | (paid add-on / external)        | V2 if asked for                                |
-| Admin UI                         | provided                        | V2 (primitives + HTTP admin API in V1)         |
+| Capability                       | Ory stack                | assay-auth                                         |
+| -------------------------------- | ------------------------ | -------------------------------------------------- |
+| OIDC / OAuth2 provider (OP)      | Hydra                    | `auth.oidc.provider`                               |
+| OIDC client (RP)                 | (app-level lib)          | `auth.oidc`                                        |
+| Identity mgmt + login flow       | Kratos                   | `auth.password` + `auth.passkey` + `auth.session`  |
+| Passkey / WebAuthn (FIDO2)       | Kratos                   | `auth.passkey`                                     |
+| Password hashing (Argon2id)      | Kratos                   | `auth.password`                                    |
+| Session mgmt + CSRF              | Kratos                   | `auth.session`                                     |
+| Federated upstream (Google, etc) | Kratos                   | `auth.oidc` + IdP registry                         |
+| Zanzibar ReBAC engine            | Keto                     | `auth.zanzibar` — full `check`/`expand`/`lookup_*` |
+| Relation schema DSL              | Keto (custom DSL)        | SpiceDB-compatible subset parser                   |
+| Consistency tokens (zookies)     | Keto                     | `auth.zanzibar` zookies                            |
+| API policy enforcement gateway   | Oathkeeper               | out of scope — use Axum middleware                 |
+| Capability tokens w/ attenuation | — (not provided)         | `auth.biscuit` ✨                                  |
+| SSO across client apps           | Hydra session store      | `auth.oidc.provider` session registry              |
+| MFA beyond passkey (TOTP, SMS)   | Kratos                   | V2                                                 |
+| SCIM user provisioning           | Kratos                   | V2 or never                                        |
+| SAML                             | (paid add-on / external) | V2 if asked for                                    |
+| Admin UI                         | provided                 | V2 (primitives + HTTP admin API in V1)             |
 
 **Deployment footprint:**
 
-|                           | Ory                                   | assay-auth in assay-engine               |
-| ------------------------- | ------------------------------------- | ---------------------------------------- |
-| Services to run           | 3–4 (Hydra, Kratos, Keto, Oathkeeper) | 1 (engine binary)                        |
-| Databases                 | 1–3 (each service has own schema)     | 1 (shared Postgres / SurrealDB / SQLite) |
-| Image / binary size       | ~300–450 MB (4 containers combined)   | ~30–38 MB single binary                  |
-| Inter-service auth        | needed (HTTP hop between services)    | in-process function calls                |
-| Language / runtime        | Go                                    | Rust, single static binary               |
+|                     | Ory                                   | assay-auth in assay-engine               |
+| ------------------- | ------------------------------------- | ---------------------------------------- |
+| Services to run     | 3–4 (Hydra, Kratos, Keto, Oathkeeper) | 1 (engine binary)                        |
+| Databases           | 1–3 (each service has own schema)     | 1 (shared Postgres / SurrealDB / SQLite) |
+| Image / binary size | ~300–450 MB (4 containers combined)   | ~30–38 MB single binary                  |
+| Inter-service auth  | needed (HTTP hop between services)    | in-process function calls                |
+| Language / runtime  | Go                                    | Rust, single static binary               |
 
-**Where V1 lags Ory:** MFA-beyond-passkey, SCIM, SAML, end-user admin UI.
-**Where V1 leads Ory:** capability tokens (Biscuit), single-binary ops, native SurrealDB graph-walk
-for Zanzibar checks, Rust.
+**Where V1 lags Ory:** MFA-beyond-passkey, SCIM, SAML, end-user admin UI. **Where V1 leads Ory:**
+capability tokens (Biscuit), single-binary ops, native SurrealDB graph-walk for Zanzibar checks,
+Rust.
 
 ## Own IdP with upstream federation
 
@@ -414,7 +414,7 @@ openidconnect = { version = "4", optional = true }
 oxide-auth = { version = "0.6", optional = true }
 askama = { version = "0.12", optional = true }
 webauthn-rs = { version = "0.5", optional = true }
-argon2 = { version = "0.5", optional = true }           # RustCrypto stable pair with password-hash 0.5; track 0.6 still RC as of Apr 2026
+argon2 = { version = "0.5", optional = true } # RustCrypto stable pair with password-hash 0.5; track 0.6 still RC as of Apr 2026
 password-hash = { version = "0.5", optional = true }
 biscuit-auth = { version = "6", optional = true }
 # jsonwebtoken, sqlx, surrealdb all come from workspace
@@ -443,10 +443,24 @@ backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 backend-surrealdb = ["dep:surrealdb"]
 ```
 
-## Prerequisite: plan 10
+## Prerequisite: plan 10 · executed via plan 12
 
 Plan 10 (assay-engine architecture) lands first. It establishes the `assay-auth` crate scaffold,
-shared `assay-core` traits, and the engine binary that wires auth modules in.
+shared `assay-core` traits, and the engine binary that wires auth modules in. Plan 10 also documents
+the **`FromRef` state composition pattern** (see § "State composition") — `assay-auth` exports
+`pub struct AuthCtx` and `pub fn router() -> Router<AuthCtx>`; the engine composes both into
+`EngineState` via `FromRef`. Every module in this plan follows that shape.
+
+Plan 12 (v0.13.0 execution) is the authoritative task list that sequences plans 10 + 11 into one
+release. Specifically:
+
+- Phase 4 (plan 12c) delivers auth primitives: session, password, JWT, Biscuit.
+- Phase 5 (plan 12c) delivers identity flows: OIDC client, passkey, Lua runtime wrappers.
+- Phase 6 (plan 12c) delivers Zanzibar core across PG / SQLite / SurrealDB backends.
+- Phase 7 (plan 12d) delivers the full OIDC provider.
+
+Phase-level hour estimates in this doc (Phase A–F) are conceptual; plan 12's sub-plans reorder them
+into executable task units.
 
 ## Out of scope for V1
 
@@ -473,11 +487,10 @@ shared `assay-core` traits, and the engine binary that wires auth modules in.
 
 4. **Biscuit vs Macaroons vs Paseto for capability tokens.** Biscuit.
 
-   - **Macaroons** (Google Research, 2014) — "cookies with caveats." A token holds an
-     appendable list of restrictions, verified via an HMAC chain. Originated the
-     attenuation-by-appending idea. Weakness: HMAC-based verification means every verifier either
-     shares the root secret with the issuer or calls a discharge service — no offline third-party
-     verification.
+   - **Macaroons** (Google Research, 2014) — "cookies with caveats." A token holds an appendable
+     list of restrictions, verified via an HMAC chain. Originated the attenuation-by-appending idea.
+     Weakness: HMAC-based verification means every verifier either shares the root secret with the
+     issuer or calls a discharge service — no offline third-party verification.
    - **Biscuit** (Clever Cloud / Eclipse, 2021+) — the modern successor. Public-key signed, so
      third-party verifiers don't need a shared secret. Restrictions are expressed in a Datalog
      dialect (strictly more expressive than Macaroon caveats). Offline verification is the default.

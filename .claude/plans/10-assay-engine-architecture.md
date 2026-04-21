@@ -406,6 +406,77 @@ assay-engine = { version = "0.1", default-features = false,
                  features = ["auth", "backend-postgres"] }
 ```
 
+## State composition
+
+The crate split determines _where code lives_. A second architectural decision determines _how state
+flows at runtime_: each module owns a context type, and the engine composes them via axum's
+`FromRef`.
+
+### The rule
+
+Every module crate (`assay-workflow`, `assay-auth`, future `assay-vault`, …) exports:
+
+- One plain struct holding the module's state. Convention: `<Module>Ctx` — `WorkflowCtx`, `AuthCtx`,
+  `DashboardCtx`.
+- One `pub fn router() -> Router<Self::Ctx>` that returns a router statically typed on the ctx.
+
+The engine composes:
+
+```rust
+#[derive(Clone)]
+pub struct EngineState {
+    pub workflow: WorkflowCtx,
+    pub auth:     AuthCtx,
+    pub dashboard: DashboardCtx,
+}
+
+impl FromRef<EngineState> for WorkflowCtx  { fn from_ref(s: &EngineState) -> Self { s.workflow.clone()  } }
+impl FromRef<EngineState> for AuthCtx      { fn from_ref(s: &EngineState) -> Self { s.auth.clone()      } }
+impl FromRef<EngineState> for DashboardCtx { fn from_ref(s: &EngineState) -> Self { s.dashboard.clone() } }
+
+Router::new()
+    .merge(assay_workflow::router())
+    .merge(assay_auth::router())
+    .merge(assay_dashboard::router())
+    .with_state(EngineState { /* ... */ })
+```
+
+Handlers in each module use `State<WorkflowCtx>`, `State<AuthCtx>`, etc. `FromRef` does the
+extraction transparently. Modules never import each other's `Ctx` types.
+
+### No generic cascade — `Arc<dyn Trait>` for backend dispatch
+
+`Engine<S>` becomes `Engine` with `store: Arc<dyn WorkflowStore>` inside. Handlers and module types
+never name a specific backend. The runtime cost is one `Arc` bump per store call — immeasurable next
+to DB round-trip latency.
+
+### Benefits
+
+| Concern                           | Result                                                                                                                       |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Adding a new module (vault, etc.) | New crate with its own `Ctx`. `EngineState` gains one field + one `FromRef` impl. Zero touching of existing modules.         |
+| Cross-module cycles               | None. `assay-auth` and `assay-workflow` never import each other.                                                             |
+| Testing a module in isolation     | Build a mock `Ctx` with mock stores; no transitive dep on other modules.                                                     |
+| Shared backend connection pool    | Engine opens one pool, hands clones to each module via `from_pool` constructors. Modules don't know or care they're sharing. |
+
+### Backend crate layout — "Layout 1"
+
+Backends live **inside** the domain crate, feature-gated:
+
+```
+crates/assay-workflow/src/store/
+├── mod.rs
+├── postgres.rs     #[cfg(feature = "backend-postgres")]
+├── sqlite.rs       #[cfg(feature = "backend-sqlite")]
+└── surrealdb.rs    #[cfg(feature = "backend-surrealdb")]
+```
+
+Not one crate per backend (the `sqlx-postgres` / `sqlx-sqlite` / `sqlx-mysql` approach). Reasoning:
+trait evolution dominates during 0.x — a new method on `WorkflowStore` requires updating all three
+backend impls in lockstep. Layout 1 keeps that change in one crate, one PR, one version bump. The
+`sqlx`-style split becomes valuable once the traits stabilise and third-party backend crates appear
+— not a 0.13.0 concern.
+
 ## SurrealDB backend specifics
 
 SurrealDB is always external — neither binary bundles embedded KV engines (`kv-mem`, `kv-surrealkv`,
@@ -575,6 +646,11 @@ includes both. Future engine-only features (metrics, alerting) land behind addit
 here.
 
 ## Migration phases
+
+> **Superseded by plan 12.** The phase breakdown below is the original high-level sketch for the
+> workflow-only scope. Plan 12 (and its sub-plans 12a–12e) is the authoritative execution plan
+> covering workflow + auth + SurrealDB + engine binary + CI for the v0.13.0 release. Consult plan 12
+> for current task ordering; the phases below remain useful as a conceptual overview.
 
 ### Phase 0 — scaffold crates (no behaviour change)
 
