@@ -4,6 +4,7 @@ members = [
   "crates/assay-auth",
   "crates/assay-core",
   "crates/assay-dashboard",
+  "crates/assay-engine",
   "crates/assay-workflow",
 ]
 

@@ -53,6 +53,14 @@ default = []
 # archival isn't needed.
 s3-archival = ["dep:aws-config", "dep:aws-sdk-s3"]
 
+# Stub backend features so downstream crates (assay-engine, assay) can
+# express their feature matrix today. Real feature-gating of the sqlx
+# backends lands in plan 12a Phase 1 Task 1.2 when the store trait
+# moves to assay-core.
+backend-postgres = []
+backend-sqlite = []
+backend-surrealdb = []
+
 [dependencies.aws-config]
 version = "1.8"
 optional = true

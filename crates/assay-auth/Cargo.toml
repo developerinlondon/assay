@@ -6,5 +6,12 @@ license = "Apache-2.0"
 repository = "https://github.com/developerinlondon/assay"
 description = "Authentication, OIDC, and Zanzibar authorization for assay-engine. Scaffold — see plan 11 for 0.14.0 scope."
 
+[features]
+# Stub backend features so downstream crates (assay-engine) can express
+# their feature matrix today. Real content lands in plan 12c Phase 4.
+backend-postgres = []
+backend-sqlite = []
+backend-surrealdb = []
+
 [dependencies]
 assay-core = { path = "../assay-core", version = "0.1" }

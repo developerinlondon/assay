@@ -1,0 +1,57 @@
+[package]
+name = "assay-engine"
+version = "0.1.0"
+categories = ["asynchronous", "database", "web-programming::http-server"]
+edition = "2024"
+keywords = ["workflow", "auth", "oidc", "zanzibar", "surrealdb"]
+license = "Apache-2.0"
+repository = "https://github.com/developerinlondon/assay"
+description = "Standalone workflow + auth + dashboard HTTP server. Embeddable as a library, or run as a binary with pluggable Postgres / SQLite / SurrealDB backends."
+
+[[bin]]
+name = "assay-engine"
+path = "src/bin/assay-engine.rs"
+required-features = ["server"]
+
+[lib]
+name = "assay_engine"
+path = "src/lib.rs"
+
+[features]
+default = [
+  "workflow",
+  "auth",
+  "dashboard",
+  "backend-postgres",
+  "backend-sqlite",
+  "backend-surrealdb",
+  "server",
+]
+
+workflow = ["dep:assay-workflow", "assay-dashboard?/workflow"]
+auth = ["dep:assay-auth", "assay-dashboard?/auth"]
+dashboard = ["dep:assay-dashboard"]
+server = ["dep:axum", "dep:tokio", "dep:tower-http", "dep:clap"]
+
+backend-postgres = ["assay-workflow?/backend-postgres", "assay-auth?/backend-postgres"]
+backend-sqlite = ["assay-workflow?/backend-sqlite", "assay-auth?/backend-sqlite"]
+backend-surrealdb = ["assay-workflow?/backend-surrealdb", "assay-auth?/backend-surrealdb"]
+
+[dependencies]
+assay-auth = { path = "../assay-auth", version = "0.0", optional = true }
+assay-core = { path = "../assay-core", version = "0.1" }
+assay-dashboard = { path = "../assay-dashboard", version = "0.1", optional = true }
+assay-workflow = { path = "../assay-workflow", version = "0.1", optional = true }
+
+axum = { version = "0.8", optional = true }
+clap = { version = "4", features = ["derive", "env"], optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+tower-http = { version = "0.6", features = ["cors", "trace"], optional = true }
+
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

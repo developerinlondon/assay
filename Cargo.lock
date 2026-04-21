@@ -110,6 +110,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "assay-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assay-auth",
+ "assay-core",
+ "assay-dashboard",
+ "assay-workflow",
+ "axum",
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "assay-lua"
 version = "0.12.1"
 dependencies = [
