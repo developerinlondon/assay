@@ -1242,6 +1242,21 @@ impl WorkflowStore for PostgresStore {
                 .await?;
         Ok(row.0)
     }
+
+    fn subscribe_runnable(
+        &self,
+        _namespace: &str,
+    ) -> impl futures_core::Stream<Item = String> + Send + '_ {
+        // Real LISTEN/NOTIFY impl lands in plan 12b Task 3.17.
+        futures_util::stream::empty()
+    }
+
+    fn subscribe_tasks<'a>(
+        &'a self,
+        _queue_names: &'a [&'a str],
+    ) -> impl futures_core::Stream<Item = String> + Send + 'a {
+        futures_util::stream::empty()
+    }
 }
 
 fn timestamp_now() -> f64 {

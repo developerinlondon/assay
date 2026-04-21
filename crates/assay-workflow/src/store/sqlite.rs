@@ -1392,6 +1392,24 @@ impl WorkflowStore for SqliteStore {
         self.refresh_engine_lock().await.ok();
         Ok(true)
     }
+
+    /// SQLite has no cross-process notification primitive. Single-process
+    /// deployments wanting push wake-ups should compose an in-memory
+    /// channel at the call site. The trait contract guarantees the
+    /// scheduler still wakes on its heap regardless.
+    fn subscribe_runnable(
+        &self,
+        _namespace: &str,
+    ) -> impl futures_core::Stream<Item = String> + Send + '_ {
+        futures_util::stream::empty()
+    }
+
+    fn subscribe_tasks<'a>(
+        &'a self,
+        _queue_names: &'a [&'a str],
+    ) -> impl futures_core::Stream<Item = String> + Send + 'a {
+        futures_util::stream::empty()
+    }
 }
 
 fn timestamp_now() -> f64 {

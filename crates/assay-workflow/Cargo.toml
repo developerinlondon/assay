@@ -46,6 +46,10 @@ anyhow = "1"
 # Logging
 tracing = "0.1"
 
+# Push-subscription stream types (Stream trait + empty-stream constructor)
+futures-core = "0.3"
+futures-util = "0.3"
+
 [features]
 default = []
 # Enable the S3 archival background task for completed workflows.

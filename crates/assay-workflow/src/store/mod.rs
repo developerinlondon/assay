@@ -424,6 +424,27 @@ pub trait WorkflowStore: Send + Sync + 'static {
     fn try_acquire_scheduler_lock(
         &self,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+
+    // ── Push subscriptions (hybrid wake-up) ───────────────────
+
+    /// Emits workflow IDs as they become runnable in the given namespace.
+    /// Backends without native push (SQLite) return an empty stream —
+    /// the scheduler falls back to its local timer heap.
+    ///
+    /// PG's real LISTEN/NOTIFY impl lands in plan 12b Task 3.17; the
+    /// SurrealDB LIVE SELECT impl lands in Task 3.16. Until then PG
+    /// stubs this to `stream::empty()`.
+    fn subscribe_runnable(
+        &self,
+        namespace: &str,
+    ) -> impl futures_core::Stream<Item = String> + Send + '_;
+
+    /// Emits workflow task IDs as new tasks arrive on any of the listed
+    /// queues. Backends without native push return an empty stream.
+    fn subscribe_tasks<'a>(
+        &'a self,
+        queue_names: &'a [&'a str],
+    ) -> impl futures_core::Stream<Item = String> + Send + 'a;
 }
 
 /// API key metadata (hash is never exposed).
