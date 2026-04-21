@@ -6,7 +6,7 @@
 //! test bodies remain backend-agnostic without requiring `dyn Trait`.
 
 use assay_core::types::*;
-use assay_core::{NamespaceRecord, NamespaceStats};
+use assay_core::{ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats};
 use assay_workflow::WorkflowStore;
 // Re-export types used by new harness methods so tests don't need extra imports.
 pub use assay_core::types::{SchedulePatch, WorkflowSchedule, WorkflowSnapshot, WorkflowWorker};
@@ -330,6 +330,56 @@ impl Harness {
 
     pub async fn remove_dead_workers(&self, cutoff: f64) -> anyhow::Result<Vec<String>> {
         dispatch!(self, s => s.remove_dead_workers(cutoff).await)
+    }
+
+    // ── API Keys ──────────────────────────────────────────────────────────────
+
+    pub async fn create_api_key(
+        &self,
+        key_hash: &str,
+        prefix: &str,
+        label: Option<&str>,
+        created_at: f64,
+    ) -> anyhow::Result<()> {
+        dispatch!(self, s => s.create_api_key(key_hash, prefix, label, created_at).await)
+    }
+
+    pub async fn validate_api_key(&self, key_hash: &str) -> anyhow::Result<bool> {
+        dispatch!(self, s => s.validate_api_key(key_hash).await)
+    }
+
+    pub async fn list_api_keys(&self) -> anyhow::Result<Vec<ApiKeyRecord>> {
+        dispatch!(self, s => s.list_api_keys().await)
+    }
+
+    pub async fn revoke_api_key(&self, prefix: &str) -> anyhow::Result<bool> {
+        dispatch!(self, s => s.revoke_api_key(prefix).await)
+    }
+
+    pub async fn api_keys_empty(&self) -> anyhow::Result<bool> {
+        dispatch!(self, s => s.api_keys_empty().await)
+    }
+
+    pub async fn get_api_key_by_label(&self, label: &str) -> anyhow::Result<Option<ApiKeyRecord>> {
+        dispatch!(self, s => s.get_api_key_by_label(label).await)
+    }
+
+    // ── Child Workflows ───────────────────────────────────────────────────────
+
+    pub async fn list_child_workflows(&self, parent_id: &str) -> anyhow::Result<Vec<WorkflowRecord>> {
+        dispatch!(self, s => s.list_child_workflows(parent_id).await)
+    }
+
+    // ── Queue Stats ───────────────────────────────────────────────────────────
+
+    pub async fn get_queue_stats(&self, namespace: &str) -> anyhow::Result<Vec<QueueStats>> {
+        dispatch!(self, s => s.get_queue_stats(namespace).await)
+    }
+
+    // ── Leader Election ───────────────────────────────────────────────────────
+
+    pub async fn try_acquire_scheduler_lock(&self) -> anyhow::Result<bool> {
+        dispatch!(self, s => s.try_acquire_scheduler_lock().await)
     }
 }
 

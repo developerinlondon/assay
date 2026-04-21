@@ -6,10 +6,14 @@
 
 mod migrations;
 mod activities;
-mod timers;
-mod signals;
+mod api_keys;
+mod child_workflows;
+mod leader;
+mod queue_stats;
 mod schedules;
+mod signals;
 mod snapshots;
+mod timers;
 mod workers;
 
 use std::future::Future;
@@ -1054,50 +1058,50 @@ impl WorkflowStore for SurrealDbStore {
 
     fn create_api_key(
         &self,
-        _key_hash: &str,
-        _prefix: &str,
-        _label: Option<&str>,
-        _created_at: f64,
+        key_hash: &str,
+        prefix: &str,
+        label: Option<&str>,
+        created_at: f64,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async { todo!("Task 3.13") }
+        self.create_api_key_impl(key_hash, prefix, label, created_at)
     }
 
     fn validate_api_key(
         &self,
-        _key_hash: &str,
+        key_hash: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send {
-        async { todo!("Task 3.13") }
+        self.validate_api_key_impl(key_hash)
     }
 
     fn list_api_keys(
         &self,
     ) -> impl Future<Output = anyhow::Result<Vec<ApiKeyRecord>>> + Send {
-        async { todo!("Task 3.13") }
+        self.list_api_keys_impl()
     }
 
     fn revoke_api_key(
         &self,
-        _prefix: &str,
+        prefix: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send {
-        async { todo!("Task 3.13") }
+        self.revoke_api_key_impl(prefix)
     }
 
     fn api_keys_empty(&self) -> impl Future<Output = anyhow::Result<bool>> + Send {
-        async { todo!("Task 3.13") }
+        self.api_keys_empty_impl()
     }
 
     fn get_api_key_by_label(
         &self,
-        _label: &str,
+        label: &str,
     ) -> impl Future<Output = anyhow::Result<Option<ApiKeyRecord>>> + Send {
-        async { todo!("Task 3.13") }
+        self.get_api_key_by_label_impl(label)
     }
 
     fn list_child_workflows(
         &self,
-        _parent_id: &str,
+        parent_id: &str,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowRecord>>> + Send {
-        async { todo!("Task 3.14") }
+        self.list_child_workflows_impl(parent_id)
     }
 
     fn create_snapshot(
@@ -1118,15 +1122,15 @@ impl WorkflowStore for SurrealDbStore {
 
     fn get_queue_stats(
         &self,
-        _namespace: &str,
+        namespace: &str,
     ) -> impl Future<Output = anyhow::Result<Vec<QueueStats>>> + Send {
-        async { todo!("Task 3.14") }
+        self.get_queue_stats_impl(namespace)
     }
 
     fn try_acquire_scheduler_lock(
         &self,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send {
-        async { todo!("Task 3.15") }
+        self.try_acquire_scheduler_lock_impl()
     }
 
     fn subscribe_runnable(

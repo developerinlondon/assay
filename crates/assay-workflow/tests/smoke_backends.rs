@@ -987,3 +987,263 @@ async fn worker_remove_dead(#[case] backend: Backend) {
     assert_eq!(remaining.len(), 1, "only live worker should remain");
     assert_eq!(remaining[0].id, id_live);
 }
+
+// ── Task 3.13 — API Keys ──────────────────────────────────────────────────────
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn api_key_crud(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+
+    let key_hash = uid("hash-crud");
+    let prefix = uid("ak-crud");
+
+    // Create with label
+    h.create_api_key(&key_hash, &prefix, Some("my-label"), now)
+        .await
+        .unwrap();
+
+    // list_api_keys returns it
+    let keys = h.list_api_keys().await.unwrap();
+    assert!(
+        keys.iter().any(|k| k.prefix == prefix),
+        "api key should appear in list after create"
+    );
+
+    // validate_api_key returns true for valid hash
+    let valid = h.validate_api_key(&key_hash).await.unwrap();
+    assert!(valid, "validate_api_key should return true for known hash");
+
+    // validate_api_key returns false for unknown hash
+    let invalid = h.validate_api_key("not-a-real-hash").await.unwrap();
+    assert!(!invalid, "validate_api_key should return false for unknown hash");
+
+    // revoke by prefix
+    let revoked = h.revoke_api_key(&prefix).await.unwrap();
+    assert!(revoked, "revoke_api_key should return true for known prefix");
+
+    // validate returns false after revoke
+    let after_revoke = h.validate_api_key(&key_hash).await.unwrap();
+    assert!(!after_revoke, "validate_api_key should return false after revoke");
+
+    // double-revoke returns false
+    let double_revoke = h.revoke_api_key(&prefix).await.unwrap();
+    assert!(!double_revoke, "second revoke should return false");
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn api_keys_empty_initially_true(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+
+    // Fresh harness — api_keys_empty() should return true.
+    let empty = h.api_keys_empty().await.unwrap();
+    assert!(empty, "api_keys_empty should be true on fresh harness");
+
+    // Create one key
+    let hash = uid("hash-empty");
+    let prefix = uid("ak-empty");
+    h.create_api_key(&hash, &prefix, None, now).await.unwrap();
+
+    // Now api_keys_empty() returns false
+    let not_empty = h.api_keys_empty().await.unwrap();
+    assert!(!not_empty, "api_keys_empty should be false after creating a key");
+}
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn api_key_idempotent_by_label(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+
+    let key_hash = uid("hash-lbl");
+    let prefix = uid("ak-lbl");
+    let label = uid("label-idem");
+
+    h.create_api_key(&key_hash, &prefix, Some(&label), now)
+        .await
+        .unwrap();
+
+    // get_api_key_by_label returns the existing key
+    let got = h.get_api_key_by_label(&label).await.unwrap();
+    assert!(got.is_some(), "get_api_key_by_label should return the key");
+    let rec = got.unwrap();
+    assert_eq!(rec.prefix, prefix);
+    assert_eq!(rec.label.as_deref(), Some(label.as_str()));
+
+    // Missing label returns None
+    let none = h.get_api_key_by_label("no-such-label").await.unwrap();
+    assert!(none.is_none(), "get_api_key_by_label should return None for unknown label");
+}
+
+// ── Task 3.14 — Queue Stats ───────────────────────────────────────────────────
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn queue_stats(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let ns = uid("ns-qs");
+    h.create_namespace(&ns).await.unwrap();
+
+    // Create two workflows on different task queues
+    let wf_id1 = uid("wf-qs1");
+    let wf_id2 = uid("wf-qs2");
+    let mut wf1 = make_workflow(&wf_id1, &ns, "queue-alpha");
+    wf1.task_queue = "queue-alpha".to_string();
+    let mut wf2 = make_workflow(&wf_id2, &ns, "queue-beta");
+    wf2.task_queue = "queue-beta".to_string();
+    h.create_workflow(&wf1).await.unwrap();
+    h.create_workflow(&wf2).await.unwrap();
+
+    // Add activities: 2 PENDING on alpha, 1 PENDING on beta
+    let a1 = make_activity(&wf_id1, 1, "queue-alpha");
+    let a2 = make_activity(&wf_id1, 2, "queue-alpha");
+    let a3 = make_activity(&wf_id2, 1, "queue-beta");
+    h.create_activity(&a1).await.unwrap();
+    h.create_activity(&a2).await.unwrap();
+    h.create_activity(&a3).await.unwrap();
+
+    // Register workers: 2 on alpha, 1 on beta
+    let w1 = make_worker(&uid("qs-w1"), &ns, "queue-alpha");
+    let w2 = make_worker(&uid("qs-w2"), &ns, "queue-alpha");
+    let w3 = make_worker(&uid("qs-w3"), &ns, "queue-beta");
+    h.register_worker(&w1).await.unwrap();
+    h.register_worker(&w2).await.unwrap();
+    h.register_worker(&w3).await.unwrap();
+
+    // Get queue stats
+    let stats = h.get_queue_stats(&ns).await.unwrap();
+
+    // Should have entries for both queues
+    let alpha = stats.iter().find(|s| s.queue == "queue-alpha");
+    let beta  = stats.iter().find(|s| s.queue == "queue-beta");
+
+    assert!(alpha.is_some(), "queue-alpha should appear in stats");
+    assert!(beta.is_some(),  "queue-beta should appear in stats");
+
+    let alpha = alpha.unwrap();
+    let beta  = beta.unwrap();
+
+    assert_eq!(alpha.pending_activities, 2, "queue-alpha should have 2 pending activities");
+    assert_eq!(alpha.running_activities, 0, "queue-alpha should have 0 running activities");
+    assert_eq!(alpha.workers, 2, "queue-alpha should have 2 workers");
+
+    assert_eq!(beta.pending_activities, 1, "queue-beta should have 1 pending activity");
+    assert_eq!(beta.running_activities, 0, "queue-beta should have 0 running activities");
+    assert_eq!(beta.workers, 1, "queue-beta should have 1 worker");
+}
+
+// ── Task 3.14 — Child Workflows ───────────────────────────────────────────────
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn child_workflows_listing(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+
+    // Create parent workflow
+    let parent_id = uid("wf-parent");
+    h.create_workflow(&make_workflow(&parent_id, "main", "main"))
+        .await
+        .unwrap();
+
+    // Create 3 child workflows with parent_id set
+    let child_ids: Vec<String> = (1..=3).map(|i| uid(&format!("wf-child{i}"))).collect();
+    for child_id in &child_ids {
+        let mut child = make_workflow(child_id, "main", "main");
+        child.parent_id = Some(parent_id.clone());
+        h.create_workflow(&child).await.unwrap();
+    }
+
+    // Create an unrelated workflow (no parent_id)
+    let unrelated = uid("wf-unrelated");
+    h.create_workflow(&make_workflow(&unrelated, "main", "main"))
+        .await
+        .unwrap();
+
+    // list_child_workflows returns exactly the 3 children
+    let children = h.list_child_workflows(&parent_id).await.unwrap();
+    assert_eq!(children.len(), 3, "should return exactly 3 children");
+    for child_id in &child_ids {
+        assert!(
+            children.iter().any(|c| &c.id == child_id),
+            "child {child_id} should appear in list"
+        );
+    }
+    // None of the children should be the unrelated workflow
+    assert!(
+        !children.iter().any(|c| c.id == unrelated),
+        "unrelated workflow must not appear in child list"
+    );
+
+    // Querying by a non-existent parent returns empty
+    let none = h.list_child_workflows("no-such-parent").await.unwrap();
+    assert!(none.is_empty(), "list_child_workflows with unknown parent should return empty");
+}
+
+// ── Task 3.15 — Leader Election ───────────────────────────────────────────────
+
+#[rstest]
+#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+#[tokio::test(flavor = "multi_thread")]
+async fn leader_election(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+
+    // First acquire from this store instance should always succeed.
+    let first = h.try_acquire_scheduler_lock().await.unwrap();
+    assert!(first, "first try_acquire_scheduler_lock should return true");
+
+    // Second call from the same store instance.
+    //
+    // Backend semantics differ:
+    //
+    // - SQLite:    always returns true (single-process leader).
+    // - SurrealDB: same holder (process ID) → refreshes TTL → true.
+    // - Postgres:  pg_try_advisory_lock is session-scoped. A connection pool
+    //              may route the second call to a different session, returning
+    //              false. We don't assert the second result for PG — the
+    //              contract only requires the first call to succeed and that
+    //              a concurrent *different* process would get false.
+    //
+    // For SQLite and SurrealDB we DO assert true on the second call.
+    let second = h.try_acquire_scheduler_lock().await.unwrap();
+    // Only assert for backends where re-acquisition is guaranteed.
+    #[cfg(feature = "backend-sqlite")]
+    if matches!(h, common::harness::Harness::Sqlite { .. }) {
+        assert!(second, "SQLite: second acquire should be true (always leader)");
+    }
+    #[cfg(feature = "backend-surrealdb")]
+    if matches!(h, common::harness::Harness::Surreal { .. }) {
+        assert!(second, "SurrealDB: second acquire from same process should be true (TTL refresh)");
+    }
+    // For Postgres: second call may be true or false depending on pool routing.
+    // We just verify it doesn't error.
+    let _ = second;
+}
