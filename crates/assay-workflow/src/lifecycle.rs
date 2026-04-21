@@ -5,12 +5,11 @@ use std::str::FromStr;
 
 use anyhow::Result;
 
-use super::WorkflowEngine;
-use super::{timestamp_now, inject_engine_version};
+use crate::ctx::{inject_engine_version, timestamp_now, WorkflowCtx};
 use crate::store::WorkflowStore;
 use crate::types::*;
 
-impl<S: WorkflowStore> WorkflowEngine<S> {
+impl<S: WorkflowStore> WorkflowCtx<S> {
     pub async fn start_workflow(
         &self,
         namespace: &str,

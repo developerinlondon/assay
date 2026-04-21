@@ -6,7 +6,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api::whitelabel::{render_index, WHITELABEL};
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 
 const INDEX_HTML: &str = include_str!("../dashboard/index.html");
@@ -55,7 +55,7 @@ const SELECT_JS: &str = include_str!("../dashboard/components/select.js");
 /// our visual identity.
 const FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#0d1117"/><text x="32" y="46" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="44" font-weight="800" fill="#e6662a" text-anchor="middle">A</text></svg>"##;
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/", get(redirect_to_dashboard))
         .route("/workflow", get(redirect_to_dashboard))

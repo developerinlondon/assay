@@ -5,7 +5,7 @@ use axum::Router;
 use std::sync::Arc;
 use utoipa::OpenApi;
 
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 
 /// Build the OpenAPI specification for the workflow engine.
@@ -82,7 +82,7 @@ use crate::store::WorkflowStore;
 )]
 pub struct ApiDoc;
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/api/v1/openapi.json", get(openapi_json))
         .route("/api/v1/docs", get(docs_page))

@@ -2,12 +2,11 @@
 
 use anyhow::Result;
 
-use super::WorkflowEngine;
-use super::timestamp_now;
+use crate::ctx::{timestamp_now, WorkflowCtx};
 use crate::store::WorkflowStore;
 use crate::types::*;
 
-impl<S: WorkflowStore> WorkflowEngine<S> {
+impl<S: WorkflowStore> WorkflowCtx<S> {
     /// Schedule an activity within a workflow.
     ///
     /// Idempotent on `(workflow_id, seq)` — if an activity with this sequence
@@ -118,7 +117,7 @@ impl<S: WorkflowStore> WorkflowEngine<S> {
     ///
     /// `failed=true` is preserved for legacy callers that go straight
     /// through complete with a non-retry path; new code should call
-    /// [`WorkflowEngine::fail_activity`] instead so retry policy is honored.
+    /// [`WorkflowCtx::fail_activity`] instead so retry policy is honored.
     pub async fn complete_activity(
         &self,
         id: i64,

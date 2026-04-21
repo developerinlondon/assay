@@ -22,10 +22,10 @@ use axum::{Json, Router};
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/health", get(health_check))
         .route("/version", get(version))
@@ -58,7 +58,7 @@ pub struct VersionInfo {
     responses((status = 200, description = "Engine version info", body = VersionInfo)),
 )]
 pub async fn version<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
 ) -> Json<VersionInfo> {
     let version = state
         .binary_version

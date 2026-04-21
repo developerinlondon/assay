@@ -6,10 +6,10 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use crate::api::workflows::AppError;
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new().route("/queues", get(get_queue_stats))
 }
 
@@ -32,10 +32,10 @@ fn default_namespace() -> String {
     ),
 )]
 pub async fn get_queue_stats<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Query(q): Query<NsQuery>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let stats = state.engine.get_queue_stats(&q.namespace).await?;
+    let stats = state.get_queue_stats(&q.namespace).await?;
     let json: Vec<serde_json::Value> = stats
         .into_iter()
         .map(|s| serde_json::to_value(s).unwrap_or_default())

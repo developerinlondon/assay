@@ -1,10 +1,9 @@
 use assay_workflow::api::auth::{generate_api_key, hash_api_key, AuthMode, JwksCache, JwtConfig};
-use assay_workflow::{WorkflowEngine, SqliteStore, WorkflowStore};
+use assay_workflow::{SqliteStore, WorkflowCtx, WorkflowStore};
 use jsonwebtoken::jwk::{
     CommonParameters, Jwk, JwkSet, KeyAlgorithm, PublicKeyUse, RSAKeyParameters, RSAKeyType,
 };
 use std::sync::Arc;
-use tokio::sync::broadcast;
 
 async fn start_server(auth_mode: AuthMode) -> (String, tokio::task::JoinHandle<()>) {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
@@ -15,14 +14,7 @@ async fn start_server_with_store(
     store: SqliteStore,
     auth_mode: AuthMode,
 ) -> (String, tokio::task::JoinHandle<()>) {
-    let engine = WorkflowEngine::start(store);
-    let (event_tx, _) = broadcast::channel(64);
-    let state = Arc::new(assay_workflow::api::AppState {
-        engine: Arc::new(engine),
-        event_tx,
-        auth_mode,
-        binary_version: None,
-    });
+    let state = Arc::new(WorkflowCtx::start(Arc::new(store)).with_auth_mode(auth_mode));
     let app = assay_workflow::api::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

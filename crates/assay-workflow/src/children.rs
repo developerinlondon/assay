@@ -4,12 +4,11 @@ use std::str::FromStr;
 
 use anyhow::Result;
 
-use super::WorkflowEngine;
-use super::{timestamp_now, strip_continued_suffix};
+use crate::ctx::{strip_continued_suffix, timestamp_now, WorkflowCtx};
 use crate::store::WorkflowStore;
 use crate::types::*;
 
-impl<S: WorkflowStore> WorkflowEngine<S> {
+impl<S: WorkflowStore> WorkflowCtx<S> {
     pub async fn start_child_workflow(
         &self,
         namespace: &str,

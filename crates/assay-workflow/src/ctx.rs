@@ -3,22 +3,13 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::info;
 
+use crate::auth_mode::AuthMode;
 use crate::dispatch_recovery;
 use crate::health;
 use crate::scheduler;
 use crate::store::WorkflowStore;
 use crate::timers;
 
-pub mod activities;
-pub mod children;
-pub mod collections;
-pub mod tasks;
-pub mod workflows;
-
-/// The workflow engine. Owns the store and manages background tasks
-/// (scheduler, timer poller, health monitor).
-///
-/// The API layer holds an `Arc<WorkflowEngine<S>>` and delegates all operations here.
 /// Event the engine broadcasts when a workflow transitions through
 /// its lifecycle states. Subscribed to by the SSE stream (`/api/v1/
 /// events/stream`) so the dashboard can refresh live instead of
@@ -30,9 +21,17 @@ pub struct EngineEvent {
     pub namespace: String,
 }
 
-pub struct WorkflowEngine<S: WorkflowStore> {
-    pub(crate) store: Arc<S>,
-    pub(crate) event_tx: Option<tokio::sync::broadcast::Sender<EngineEvent>>,
+/// SSE-level broadcast event forwarded to connected dashboard browsers.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct BroadcastEvent {
+    pub event_type: String,
+    pub workflow_id: String,
+    pub payload: Option<String>,
+}
+
+/// Holds the background-task JoinHandles. When the last Arc<BackgroundTasks>
+/// is dropped the tasks are abandoned (tokio will cancel them on shutdown).
+pub struct BackgroundTasks {
     _scheduler: JoinHandle<()>,
     _timer_poller: JoinHandle<()>,
     _health_monitor: JoinHandle<()>,
@@ -41,11 +40,31 @@ pub struct WorkflowEngine<S: WorkflowStore> {
     _archival: Option<JoinHandle<()>>,
 }
 
-impl<S: WorkflowStore> WorkflowEngine<S> {
-    /// Start the engine with all background tasks.
-    pub fn start(store: S) -> Self {
-        let store = Arc::new(store);
+/// The workflow context. Owns the store, background-task handles, and
+/// per-request config. Serves as both the orchestrator (all engine methods
+/// live as `impl WorkflowCtx<S>`) and the axum state (`Arc<WorkflowCtx<S>>`).
+///
+/// `S` is the concrete store backend (`SqliteStore` or `PostgresStore`).
+/// `WorkflowStore` uses RPIT futures and is not dyn-compatible, so the
+/// generic parameter is retained here to avoid boxing every async call.
+pub struct WorkflowCtx<S: WorkflowStore> {
+    pub(crate) store: Arc<S>,
+    /// Engine-level event sender — lifecycle methods push here;
+    /// the serve layer bridges to `sse_tx`.
+    pub(crate) event_tx: Option<tokio::sync::broadcast::Sender<EngineEvent>>,
+    /// SSE broadcast sender — the SSE handler subscribes here.
+    pub sse_tx: Option<tokio::sync::broadcast::Sender<BroadcastEvent>>,
+    pub(crate) _bg: Arc<BackgroundTasks>,
+    pub auth_mode: AuthMode,
+    /// Version of the containing binary (e.g. the `assay-lua` CLI) — set
+    /// by embedders so `/api/v1/version` reflects the user-facing
+    /// binary, not this internal engine-crate version.
+    pub binary_version: Option<&'static str>,
+}
 
+impl<S: WorkflowStore> WorkflowCtx<S> {
+    /// Start the context with all background tasks.
+    pub fn start(store: Arc<S>) -> Self {
         let _scheduler = tokio::spawn(scheduler::run_scheduler(Arc::clone(&store)));
         let _timer_poller = tokio::spawn(timers::run_timer_poller(Arc::clone(&store)));
         let _health_monitor = tokio::spawn(health::run_health_monitor(Arc::clone(&store)));
@@ -63,22 +82,27 @@ impl<S: WorkflowStore> WorkflowEngine<S> {
         Self {
             store,
             event_tx: None,
-            _scheduler,
-            _timer_poller,
-            _health_monitor,
-            _dispatch_recovery,
-            #[cfg(feature = "s3-archival")]
-            _archival,
+            sse_tx: None,
+            _bg: Arc::new(BackgroundTasks {
+                _scheduler,
+                _timer_poller,
+                _health_monitor,
+                _dispatch_recovery,
+                #[cfg(feature = "s3-archival")]
+                _archival,
+            }),
+            auth_mode: AuthMode::default(),
+            binary_version: None,
         }
     }
 
     /// Attach an event broadcaster. The API layer sets this up so the
     /// SSE stream (`/events/stream`) sees state transitions as they
     /// happen — powers the dashboard's live list refresh, no F5 loop.
-    /// Returns the engine by value so callers can chain:
+    /// Returns the context by value so callers can chain:
     ///
     /// ```ignore
-    /// let engine = WorkflowEngine::start(store).with_event_broadcaster(tx);
+    /// let ctx = WorkflowCtx::start(store).with_event_broadcaster(tx);
     /// ```
     pub fn with_event_broadcaster(
         mut self,
@@ -88,9 +112,30 @@ impl<S: WorkflowStore> WorkflowEngine<S> {
         self
     }
 
+    /// Attach the SSE broadcast sender so the event stream handler can subscribe.
+    pub fn with_sse_tx(
+        mut self,
+        tx: tokio::sync::broadcast::Sender<BroadcastEvent>,
+    ) -> Self {
+        self.sse_tx = Some(tx);
+        self
+    }
+
+    /// Set the auth mode.
+    pub fn with_auth_mode(mut self, auth_mode: AuthMode) -> Self {
+        self.auth_mode = auth_mode;
+        self
+    }
+
+    /// Set the binary version string surfaced by `/api/v1/version`.
+    pub fn with_binary_version(mut self, version: &'static str) -> Self {
+        self.binary_version = Some(version);
+        self
+    }
+
     /// Access the underlying store (for the API layer).
     pub fn store(&self) -> &S {
-        &self.store
+        &*self.store
     }
 
     /// Broadcast a state-transition event. No-op when no broadcaster
@@ -131,7 +176,7 @@ pub(crate) fn timestamp_now() -> f64 {
         .as_secs_f64()
 }
 
-/// WorkflowEngine version (the binary version pulled from Cargo at build time).
+/// WorkflowCtx version (the binary version pulled from Cargo at build time).
 /// Stamped into every workflow's search_attributes at start so operators
 /// can correlate runs to the engine release that executed them.
 pub(crate) const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");

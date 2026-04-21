@@ -2,12 +2,11 @@
 
 use anyhow::Result;
 
-use super::WorkflowEngine;
-use super::timestamp_now;
+use crate::ctx::{timestamp_now, WorkflowCtx};
 use crate::store::WorkflowStore;
 use crate::types::*;
 
-impl<S: WorkflowStore> WorkflowEngine<S> {
+impl<S: WorkflowStore> WorkflowCtx<S> {
     /// Claim a dispatchable workflow task on a queue. Returns the workflow
     /// record + full event history so the worker can replay the handler
     /// deterministically. Atomic — multiple workers polling the same queue

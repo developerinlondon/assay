@@ -763,9 +763,8 @@ async fn serve_with_store<S: assay_workflow::WorkflowStore>(
         return ExitCode::SUCCESS;
     }
 
-    let engine = assay_workflow::WorkflowEngine::start(store);
     if let Err(e) = assay_workflow::api::serve_with_version(
-        engine,
+        store,
         port,
         auth_mode,
         Some(env!("CARGO_PKG_VERSION")),
