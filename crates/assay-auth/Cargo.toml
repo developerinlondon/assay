@@ -1,0 +1,10 @@
+[package]
+name = "assay-auth"
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/developerinlondon/assay"
+description = "Authentication, OIDC, and Zanzibar authorization for assay-engine. Scaffold — see plan 11 for 0.14.0 scope."
+
+[dependencies]
+assay-core = { path = "../assay-core", version = "0.1" }
