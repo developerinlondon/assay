@@ -763,7 +763,7 @@ async fn serve_with_store<S: assay_workflow::WorkflowStore>(
         return ExitCode::SUCCESS;
     }
 
-    let engine = assay_workflow::Engine::start(store);
+    let engine = assay_workflow::WorkflowEngine::start(store);
     if let Err(e) = assay_workflow::api::serve_with_version(
         engine,
         port,
@@ -772,7 +772,7 @@ async fn serve_with_store<S: assay_workflow::WorkflowStore>(
     )
     .await
     {
-        error!("Engine server error: {e}");
+        error!("WorkflowEngine server error: {e}");
         return ExitCode::from(1);
     }
     ExitCode::SUCCESS

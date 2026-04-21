@@ -1,5 +1,5 @@
 use assay_workflow::api::auth::{generate_api_key, hash_api_key, AuthMode, JwksCache, JwtConfig};
-use assay_workflow::{Engine, SqliteStore, WorkflowStore};
+use assay_workflow::{WorkflowEngine, SqliteStore, WorkflowStore};
 use jsonwebtoken::jwk::{
     CommonParameters, Jwk, JwkSet, KeyAlgorithm, PublicKeyUse, RSAKeyParameters, RSAKeyType,
 };
@@ -15,7 +15,7 @@ async fn start_server_with_store(
     store: SqliteStore,
     auth_mode: AuthMode,
 ) -> (String, tokio::task::JoinHandle<()>) {
-    let engine = Engine::start(store);
+    let engine = WorkflowEngine::start(store);
     let (event_tx, _) = broadcast::channel(64);
     let state = Arc::new(assay_workflow::api::AppState {
         engine: Arc::new(engine),

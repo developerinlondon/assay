@@ -1,11 +1,11 @@
-use assay_workflow::{Engine, SqliteStore};
+use assay_workflow::{WorkflowEngine, SqliteStore};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
 /// Helper: start engine + API on a random port, return the base URL.
 async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
-    let engine = Engine::start(store);
+    let engine = WorkflowEngine::start(store);
 
     let (event_tx, _) = broadcast::channel(64);
     let state = Arc::new(assay_workflow::api::AppState {

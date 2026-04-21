@@ -14,7 +14,7 @@ use crate::types::*;
 /// The workflow engine. Owns the store and manages background tasks
 /// (scheduler, timer poller, health monitor).
 ///
-/// The API layer holds an `Arc<Engine<S>>` and delegates all operations here.
+/// The API layer holds an `Arc<WorkflowEngine<S>>` and delegates all operations here.
 /// Event the engine broadcasts when a workflow transitions through
 /// its lifecycle states. Subscribed to by the SSE stream (`/api/v1/
 /// events/stream`) so the dashboard can refresh live instead of
@@ -26,7 +26,7 @@ pub struct EngineEvent {
     pub namespace: String,
 }
 
-pub struct Engine<S: WorkflowStore> {
+pub struct WorkflowEngine<S: WorkflowStore> {
     store: Arc<S>,
     event_tx: Option<tokio::sync::broadcast::Sender<EngineEvent>>,
     _scheduler: JoinHandle<()>,
@@ -37,7 +37,7 @@ pub struct Engine<S: WorkflowStore> {
     _archival: Option<JoinHandle<()>>,
 }
 
-impl<S: WorkflowStore> Engine<S> {
+impl<S: WorkflowStore> WorkflowEngine<S> {
     /// Start the engine with all background tasks.
     pub fn start(store: S) -> Self {
         let store = Arc::new(store);
@@ -74,7 +74,7 @@ impl<S: WorkflowStore> Engine<S> {
     /// Returns the engine by value so callers can chain:
     ///
     /// ```ignore
-    /// let engine = Engine::start(store).with_event_broadcaster(tx);
+    /// let engine = WorkflowEngine::start(store).with_event_broadcaster(tx);
     /// ```
     pub fn with_event_broadcaster(
         mut self,
@@ -495,7 +495,7 @@ impl<S: WorkflowStore> Engine<S> {
     ///
     /// `failed=true` is preserved for legacy callers that go straight
     /// through complete with a non-retry path; new code should call
-    /// [`Engine::fail_activity`] instead so retry policy is honored.
+    /// [`WorkflowEngine::fail_activity`] instead so retry policy is honored.
     pub async fn complete_activity(
         &self,
         id: i64,
@@ -1321,7 +1321,7 @@ fn timestamp_now() -> f64 {
         .as_secs_f64()
 }
 
-/// Engine version (the binary version pulled from Cargo at build time).
+/// WorkflowEngine version (the binary version pulled from Cargo at build time).
 /// Stamped into every workflow's search_attributes at start so operators
 /// can correlate runs to the engine release that executed them.
 const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");

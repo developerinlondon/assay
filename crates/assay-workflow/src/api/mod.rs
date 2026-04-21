@@ -22,12 +22,12 @@ use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::api::auth::AuthMode;
-use crate::engine::Engine;
+use crate::engine::WorkflowEngine;
 use crate::store::WorkflowStore;
 
 /// Shared state for all API handlers.
 pub struct AppState<S: WorkflowStore> {
-    pub engine: Arc<Engine<S>>,
+    pub engine: Arc<WorkflowEngine<S>>,
     pub event_tx: broadcast::Sender<events::BroadcastEvent>,
     pub auth_mode: AuthMode,
     /// Version of the containing binary (e.g. the `assay-lua` CLI) — set
@@ -90,7 +90,7 @@ fn api_v1_router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
 
 /// Start the HTTP server on the given port.
 pub async fn serve<S: WorkflowStore + 'static>(
-    engine: Engine<S>,
+    engine: WorkflowEngine<S>,
     port: u16,
     auth_mode: AuthMode,
 ) -> anyhow::Result<()> {
@@ -103,7 +103,7 @@ pub async fn serve<S: WorkflowStore + 'static>(
 /// version. Without this, the dashboard would show a misleading
 /// "engine crate" version to operators.
 pub async fn serve_with_version<S: WorkflowStore + 'static>(
-    engine: Engine<S>,
+    engine: WorkflowEngine<S>,
     port: u16,
     auth_mode: AuthMode,
     binary_version: Option<&'static str>,

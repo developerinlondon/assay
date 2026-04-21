@@ -1,7 +1,7 @@
 //! Activity scheduling and lookup endpoints.
 //!
-//! These endpoints are the public face of `Engine::schedule_activity` and
-//! `Engine::get_activity` — workflows (running on a worker) call POST to
+//! These endpoints are the public face of `WorkflowEngine::schedule_activity` and
+//! `WorkflowEngine::get_activity` — workflows (running on a worker) call POST to
 //! schedule the next activity, and the worker polls GET while waiting for
 //! the result. Idempotency on `(workflow_id, seq)` makes it safe to retry.
 

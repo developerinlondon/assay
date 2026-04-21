@@ -12,7 +12,7 @@ pub mod timers;
 // paths continue to resolve.
 pub use assay_core::types;
 
-pub use engine::Engine;
+pub use engine::WorkflowEngine;
 pub use store::postgres::PostgresStore;
 pub use store::sqlite::SqliteStore;
 pub use store::WorkflowStore;
