@@ -870,10 +870,139 @@ SurrealDbStore is a connect-only stub until Phase 3."
 
 ---
 
-### Task 1.3: De-generalise `Engine<S>` to use `Arc<dyn WorkflowStore>`
+### Task 1.3 (REVISED): Merge WorkflowEngine + AppState into WorkflowCtx (Shape 2B)
 
-**Goal:** remove the `S` type parameter from `Engine`, from handlers, from `AppState`. After this,
-there's one handler signature per route, not N (one per backend).
+> **Revision note (2026-04-21):** Originally Tasks 1.3 and 1.4 were separate ("de-generalise
+> `Engine<S>`" + "rename AppState → WorkflowCtx"). During Phase 1 we realised `WorkflowEngine<S>`
+> and `AppState<S>` together create redundant indirection (`ctx.engine.start_workflow(...)`). Shape
+> 2B merges them: **`WorkflowCtx` IS the orchestrator AND the axum state.** One struct holds the
+> store, broadcaster, background-task handles, and per-request config. Axum state is
+> `Arc<WorkflowCtx>` (not Clone — 1 atomic bump per request, matches the existing AppState pattern).
+> The `engine/` submodule directory flattens to top-level files with more descriptive names
+> (`lifecycle.rs`, `children.rs`, `activities.rs`, `tasks.rs`, `signals.rs`, `workers.rs`,
+> `schedules.rs`, `namespaces.rs`).
+>
+> Task 1.4 below is absorbed by this revised Task 1.3. Task 1.5 (dashboard extraction) stays as
+> planned. Task 1.6 (PG LISTEN/NOTIFY) stays as planned.
+
+**Goal:** one struct (`WorkflowCtx`) replaces both `WorkflowEngine<S>` and `AppState<S>`. `S`
+generic parameter goes away via `Arc<dyn WorkflowStore>`. Axum handlers use
+`State<Arc<WorkflowCtx>>`. Call sites keep method-style syntax (`ctx.start_workflow(...)`).
+
+**Files created:**
+
+- `crates/assay-workflow/src/ctx.rs` — struct def, `WorkflowCtx::start()`,
+  `with_event_broadcaster()`, `broadcast()` helper, `BackgroundTasks` wrapper, bottom helpers
+  (`strip_continued_suffix`, `timestamp_now`, `ENGINE_VERSION`, `inject_engine_version`) + the
+  `engine_version_stamp_tests` module.
+
+**Files renamed + flattened (git mv):**
+
+- `crates/assay-workflow/src/engine/workflows.rs` → `crates/assay-workflow/src/lifecycle.rs`
+- `crates/assay-workflow/src/engine/children.rs` → `crates/assay-workflow/src/children.rs`
+- `crates/assay-workflow/src/engine/activities.rs` → `crates/assay-workflow/src/activities.rs`
+- `crates/assay-workflow/src/engine/tasks.rs` → `crates/assay-workflow/src/tasks.rs`
+- Split `crates/assay-workflow/src/engine/collections.rs` into: `signals.rs`, `workers.rs`,
+  `schedules.rs`, `namespaces.rs` (each contains the relevant methods; `namespaces.rs` also holds
+  snapshot methods as they share namespace scope).
+
+**Files deleted:**
+
+- `crates/assay-workflow/src/engine/mod.rs` (content moves to `ctx.rs`).
+- The `crates/assay-workflow/src/engine/` directory after the moves.
+- `AppState<S>` struct in `crates/assay-workflow/src/api/mod.rs` (replaced by `WorkflowCtx`).
+
+**Per-file impl transformation:**
+
+Every moved file currently has:
+
+```rust
+impl<S: WorkflowStore> WorkflowEngine<S> { /* methods */ }
+```
+
+Becomes:
+
+```rust
+impl WorkflowCtx { /* same methods; self.store now Arc<dyn WorkflowStore> */ }
+```
+
+No method body changes — just the impl header and the struct reference change.
+
+**Handler signature transformation (~15 files in `crates/assay-workflow/src/api/`):**
+
+```rust
+// Before:
+async fn handler<S: WorkflowStore>(
+    State(state): State<Arc<AppState<S>>>, ...
+) { state.engine.start_workflow(...).await }
+
+// After:
+async fn handler(
+    State(ctx): State<Arc<WorkflowCtx>>, ...
+) { ctx.start_workflow(...).await }
+```
+
+Every `<S: WorkflowStore>` in handler signatures disappears. Every `state.engine.foo()` becomes
+`ctx.foo()`. Every `Arc<AppState<S>>` becomes `Arc<WorkflowCtx>`.
+
+**Router signature transformation:**
+
+```rust
+// Before:
+pub fn router<S: WorkflowStore + 'static>(state: Arc<AppState<S>>) -> Router { ... }
+
+// After:
+pub fn router(ctx: Arc<WorkflowCtx>) -> Router { ... }
+```
+
+**`crates/assay/src/main.rs` transformation:**
+
+```rust
+// Before:
+let engine = assay_workflow::WorkflowEngine::start(store);
+
+// After:
+let ctx = assay_workflow::WorkflowCtx::start(Arc::new(store));
+```
+
+**Tests transformation (`crates/assay-workflow/tests/*.rs`):**
+
+```rust
+// Before:
+let engine = WorkflowEngine::start(store);
+let state = Arc::new(AppState { engine: Arc::new(engine), ... });
+
+// After:
+let ctx = Arc::new(WorkflowCtx::start(Arc::new(store)));
+```
+
+**Verification:**
+
+- `cargo check --workspace` — clean.
+- `cargo test --workspace` — must pass with **1092 passing / 0 failing / 1 ignored** (current
+  baseline, unchanged).
+- `cargo check -p assay-workflow --no-default-features --features backend-postgres` — clean.
+- `cargo check -p assay-workflow --no-default-features --features backend-sqlite` — clean.
+
+**Commit message:**
+
+```
+refactor(workflow): merge WorkflowEngine + AppState into WorkflowCtx
+
+Collapses the redundant two-struct indirection into one orchestrator type
+that also serves as the axum state (Arc<WorkflowCtx>). Drops the S
+generic parameter via Arc<dyn WorkflowStore>. Flattens engine/ submodule
+dir into top-level files with descriptive names (lifecycle/children/
+activities/tasks/signals/workers/schedules/namespaces).
+
+Zero behaviour change. All 1092 tests pass.
+```
+
+**Historical detail below** — preserved for reference, but superseded by the revision note above.
+
+---
+
+**[ORIGINAL TASK 1.3 — SUPERSEDED]**
 
 **Files:**
 
@@ -1022,7 +1151,12 @@ compile-time monomorphisation. See plan 12 § Architecture principle 2."
 
 ---
 
-### Task 1.4: Rename `AppState` → `WorkflowCtx`; make it the workflow module's public state type
+### Task 1.4 [ABSORBED by revised Task 1.3]: Rename `AppState` → `WorkflowCtx`
+
+> This task is merged into the revised Task 1.3 above. The rename is part of the same single-struct
+> merge. Content below kept for reference.
+>
+> **[SUPERSEDED]**
 
 **Files:**
 
