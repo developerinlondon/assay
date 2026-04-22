@@ -24,7 +24,12 @@ pub use assay_domain::types::{SchedulePatch, WorkflowSchedule, WorkflowSnapshot,
 pub enum Harness {
     #[cfg(feature = "backend-postgres")]
     Postgres {
-        _container: testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>,
+        // Held only when this test owns a dedicated testcontainer (local dev
+        // path). In CI, `TEST_DATABASE_URL` points to a shared Postgres
+        // service and this is `None`; the per-test database that the harness
+        // creates leaks harmlessly inside the shared container for the
+        // remainder of the job.
+        _container: Option<testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>>,
         store: assay_workflow::PostgresStore,
     },
     #[cfg(feature = "backend-sqlite")]
@@ -385,9 +390,11 @@ impl Harness {
 
     // ── Push streams ──────────────────────────────────────────────────────────
 
-    /// Returns a pinned, type-erased stream that emits workflow ids as they
-    /// become dispatchable.  The lifetime is tied to the harness borrow.
-    pub fn subscribe_runnable<'a>(
+    /// Awaits subscription setup, then returns a pinned, type-erased stream
+    /// that emits workflow ids as they become dispatchable. Lifetime tied to
+    /// the harness borrow. The `.await` is the contract that the underlying
+    /// `LISTEN` (or equivalent) is active before the caller proceeds.
+    pub async fn subscribe_runnable<'a>(
         &'a self,
         namespace: &'a str,
     ) -> std::pin::Pin<Box<dyn futures_core::Stream<Item = String> + Send + 'a>> {
@@ -395,19 +402,20 @@ impl Harness {
             #[cfg(feature = "backend-postgres")]
             Self::Postgres { store, .. } => {
                 use assay_workflow::WorkflowStore;
-                Box::pin(store.subscribe_runnable(namespace))
+                store.subscribe_runnable(namespace).await
             }
             #[cfg(feature = "backend-sqlite")]
             Self::Sqlite { store, .. } => {
                 use assay_workflow::WorkflowStore;
-                Box::pin(store.subscribe_runnable(namespace))
+                store.subscribe_runnable(namespace).await
             }
         }
     }
 
-    /// Returns a pinned, type-erased stream that emits activity ids as new
-    /// tasks arrive on any of the listed queues.
-    pub fn subscribe_tasks<'a>(
+    /// Awaits subscription setup, then returns a pinned, type-erased stream
+    /// that emits activity ids as new tasks arrive on any of the listed
+    /// queues.
+    pub async fn subscribe_tasks<'a>(
         &'a self,
         queue_names: &'a [&'a str],
     ) -> std::pin::Pin<Box<dyn futures_core::Stream<Item = String> + Send + 'a>> {
@@ -415,12 +423,12 @@ impl Harness {
             #[cfg(feature = "backend-postgres")]
             Self::Postgres { store, .. } => {
                 use assay_workflow::WorkflowStore;
-                Box::pin(store.subscribe_tasks(queue_names))
+                store.subscribe_tasks(queue_names).await
             }
             #[cfg(feature = "backend-sqlite")]
             Self::Sqlite { store, .. } => {
                 use assay_workflow::WorkflowStore;
-                Box::pin(store.subscribe_tasks(queue_names))
+                store.subscribe_tasks(queue_names).await
             }
         }
     }
@@ -495,10 +503,36 @@ pub fn make_event(workflow_id: &str, seq: i32) -> WorkflowEvent {
 
 #[cfg(feature = "backend-postgres")]
 async fn postgres_harness() -> anyhow::Result<Harness> {
+    // CI path: shared Postgres service container, one database per test.
+    // Eliminates ~2s-per-test of docker container spin-up plus the drop-time
+    // synchronous `docker stop` that previously deadlocked on test panic.
+    if let Ok(admin_url) = std::env::var("TEST_DATABASE_URL") {
+        use sqlx::postgres::{PgConnectOptions, PgPool};
+        use std::str::FromStr;
+
+        let admin_opts = PgConnectOptions::from_str(&admin_url)?;
+        let admin_pool = PgPool::connect_with(admin_opts.clone()).await?;
+
+        let db_name = unique_db_name();
+        sqlx::query(&format!(r#"CREATE DATABASE "{db_name}""#))
+            .execute(&admin_pool)
+            .await?;
+        admin_pool.close().await;
+
+        let test_pool = PgPool::connect_with(admin_opts.database(&db_name)).await?;
+        let store = assay_workflow::PostgresStore::from_pool(test_pool).await?;
+        return Ok(Harness::Postgres {
+            _container: None,
+            store,
+        });
+    }
+
+    // Local-dev path: spin up a dedicated testcontainer for this test.
     use testcontainers::runners::AsyncRunner;
+    use testcontainers::ImageExt;
     use testcontainers_modules::postgres::Postgres as PgImage;
 
-    let container = PgImage::default().start().await?;
+    let container = PgImage::default().with_tag("18-alpine").start().await?;
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(5432).await?;
     let url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
@@ -508,9 +542,24 @@ async fn postgres_harness() -> anyhow::Result<Harness> {
     let store = assay_workflow::PostgresStore::new(&url).await?;
 
     Ok(Harness::Postgres {
-        _container: container,
+        _container: Some(container),
         store,
     })
+}
+
+/// Produce a database name unique across tests within this process. Nanos + a
+/// local atomic counter avoid collisions both across parallel test threads and
+/// across runs that might rehydrate nanosecond-precision timestamps.
+fn unique_db_name() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("assay_test_{t}_{n}")
 }
 
 #[cfg(feature = "backend-sqlite")]

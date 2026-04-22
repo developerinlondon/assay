@@ -215,6 +215,14 @@ pub struct PostgresStore {
 impl PostgresStore {
     pub async fn new(url: &str) -> Result<Self> {
         let pool = PgPool::connect(url).await?;
+        Self::from_pool(pool).await
+    }
+
+    /// Build a store from an existing pool. Runs migrations on the target
+    /// database. Useful when the engine owns the pool (shared with other
+    /// modules) and hands a clone to the workflow module, or for tests that
+    /// point many stores at different databases in the same Postgres server.
+    pub async fn from_pool(pool: PgPool) -> Result<Self> {
         let store = Self { pool };
         store.migrate().await?;
         Ok(store)
@@ -1296,76 +1304,89 @@ impl WorkflowStore for PostgresStore {
         Ok(row.0)
     }
 
-    fn subscribe_runnable(
-        &self,
-        namespace: &str,
-    ) -> impl futures_core::Stream<Item = String> + Send + '_ {
+    fn subscribe_runnable<'a>(
+        &'a self,
+        namespace: &'a str,
+    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
+           + Send
+           + 'a {
+        use futures_util::StreamExt;
         let pool = self.pool.clone();
         let ns = namespace.to_string();
-        async_stream::stream! {
+        async move {
+            let channel = format!("assay_runnable_{ns}");
             let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
                 Ok(l) => l,
                 Err(e) => {
                     tracing::error!(?e, "subscribe_runnable: pg listener connect failed");
-                    return;
+                    return futures_util::stream::empty().boxed();
                 }
             };
-            let channel = format!("assay_runnable_{ns}");
             if let Err(e) = listener.listen(&channel).await {
                 tracing::error!(?e, %channel, "subscribe_runnable: LISTEN failed");
-                return;
+                return futures_util::stream::empty().boxed();
             }
-            loop {
-                match listener.recv().await {
-                    Ok(n) => yield n.payload().to_string(),
-                    Err(e) => {
-                        tracing::warn!(?e, "subscribe_runnable: recv error, reconnecting");
-                        // PgListener handles reconnection internally; a recv error
-                        // means the connection was dropped. Break to let the caller
-                        // decide whether to re-subscribe. The stream ends here so
-                        // the scheduler falls back to its timer-heap wake-up.
-                        break;
+            // LISTEN is now registered. From here any `pg_notify` on this
+            // channel reaches us — hand the caller a stream that just reads.
+            async_stream::stream! {
+                loop {
+                    match listener.recv().await {
+                        Ok(n) => yield n.payload().to_string(),
+                        Err(e) => {
+                            tracing::warn!(?e, "subscribe_runnable: recv error, reconnecting");
+                            // PgListener handles reconnection internally; a
+                            // recv error means the connection was dropped.
+                            // End the stream so the scheduler falls back to
+                            // its timer-heap wake-up.
+                            break;
+                        }
                     }
                 }
             }
+            .boxed()
         }
     }
 
     fn subscribe_tasks<'a>(
         &'a self,
         queue_names: &'a [&'a str],
-    ) -> impl futures_core::Stream<Item = String> + Send + 'a {
+    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
+           + Send
+           + 'a {
+        use futures_util::StreamExt;
         let pool = self.pool.clone();
-        let queues: Vec<String> = queue_names.iter().map(|q| q.to_string()).collect();
-        async_stream::stream! {
-            if queues.is_empty() {
-                return;
+        let channels: Vec<String> = queue_names
+            .iter()
+            .map(|q| format!("assay_task_{q}"))
+            .collect();
+        async move {
+            if channels.is_empty() {
+                return futures_util::stream::empty().boxed();
             }
             let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
                 Ok(l) => l,
                 Err(e) => {
                     tracing::error!(?e, "subscribe_tasks: pg listener connect failed");
-                    return;
+                    return futures_util::stream::empty().boxed();
                 }
             };
-            let channels: Vec<String> = queues
-                .iter()
-                .map(|q| format!("assay_task_{q}"))
-                .collect();
             let channel_refs: Vec<&str> = channels.iter().map(|s| s.as_str()).collect();
             if let Err(e) = listener.listen_all(channel_refs).await {
                 tracing::error!(?e, "subscribe_tasks: LISTEN failed");
-                return;
+                return futures_util::stream::empty().boxed();
             }
-            loop {
-                match listener.recv().await {
-                    Ok(n) => yield n.payload().to_string(),
-                    Err(e) => {
-                        tracing::warn!(?e, "subscribe_tasks: recv error");
-                        break;
+            async_stream::stream! {
+                loop {
+                    match listener.recv().await {
+                        Ok(n) => yield n.payload().to_string(),
+                        Err(e) => {
+                            tracing::warn!(?e, "subscribe_tasks: recv error");
+                            break;
+                        }
                     }
                 }
             }
+            .boxed()
         }
     }
 }

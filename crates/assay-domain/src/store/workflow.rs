@@ -427,18 +427,33 @@ pub trait WorkflowStore: Send + Sync + 'static {
     // ── Push subscriptions (hybrid wake-up) ───────────────────
 
     /// Emits workflow IDs as they become runnable in the given namespace.
-    /// PG implements this via `LISTEN/NOTIFY`. SQLite returns an empty
-    /// stream — the scheduler falls back to its local timer heap on
-    /// backends without a native push primitive.
-    fn subscribe_runnable(
-        &self,
-        namespace: &str,
-    ) -> impl futures_core::Stream<Item = String> + Send + '_;
+    /// The subscription primitive (e.g. PG `LISTEN`) is registered inside
+    /// the returned future so the stream is guaranteed active by the time
+    /// the caller receives it — later `pg_notify`s cannot race ahead of
+    /// setup. PG implements this via `LISTEN/NOTIFY`; SQLite returns an
+    /// empty stream (the scheduler falls back to its local timer heap on
+    /// backends without a native push primitive).
+    fn subscribe_runnable<'a>(
+        &'a self,
+        namespace: &'a str,
+    ) -> impl std::future::Future<
+        Output = std::pin::Pin<
+            Box<dyn futures_core::Stream<Item = String> + Send + 'a>,
+        >,
+    > + Send
+           + 'a;
 
     /// Emits workflow task IDs as new tasks arrive on any of the listed
-    /// queues. Backends without native push return an empty stream.
+    /// queues. Subscription is registered before the stream is handed back
+    /// (see `subscribe_runnable` for why). Empty-stream fallback for
+    /// backends without native push.
     fn subscribe_tasks<'a>(
         &'a self,
         queue_names: &'a [&'a str],
-    ) -> impl futures_core::Stream<Item = String> + Send + 'a;
+    ) -> impl std::future::Future<
+        Output = std::pin::Pin<
+            Box<dyn futures_core::Stream<Item = String> + Send + 'a>,
+        >,
+    > + Send
+           + 'a;
 }

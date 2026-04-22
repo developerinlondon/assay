@@ -1,19 +1,19 @@
 //! Compile-time assertion that subscribe_runnable + subscribe_tasks
-//! exist on WorkflowStore and produce Send streams.
+//! exist on WorkflowStore and produce Send streams after awaiting setup.
 //!
 //! Runtime behaviour is tested per-backend in Phase 3.
 
 use assay_workflow::store::WorkflowStore;
 use futures_core::Stream;
 
-fn _assert_runnable<S: WorkflowStore>(s: &S, ns: &str) {
-    let _: std::pin::Pin<Box<dyn Stream<Item = String> + Send>> =
-        Box::pin(s.subscribe_runnable(ns));
+async fn _assert_runnable<S: WorkflowStore>(s: &S, ns: &str) {
+    let _: std::pin::Pin<Box<dyn Stream<Item = String> + Send + '_>> =
+        s.subscribe_runnable(ns).await;
 }
 
-fn _assert_tasks<S: WorkflowStore>(s: &S, queues: &[&str]) {
-    let _: std::pin::Pin<Box<dyn Stream<Item = String> + Send>> =
-        Box::pin(s.subscribe_tasks(queues));
+async fn _assert_tasks<S: WorkflowStore>(s: &S, queues: &[&str]) {
+    let _: std::pin::Pin<Box<dyn Stream<Item = String> + Send + '_>> =
+        s.subscribe_tasks(queues).await;
 }
 
 #[test]

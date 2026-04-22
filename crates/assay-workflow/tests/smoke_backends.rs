@@ -1270,23 +1270,11 @@ use futures_util::StreamExt;
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
 async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
-    let h = std::sync::Arc::new(backend.setup().await.expect("setup"));
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-
-    // Capture the JoinHandle so we can abort the poller at the end. Without
-    // the abort, the spawned task holds an Arc<Harness> forever (stream.next
-    // never ends for PG LISTEN), preventing the testcontainer from dropping
-    // and blocking process exit on its Drop.
-    let h2 = h.clone();
-    let poller = tokio::spawn(async move {
-        let mut stream = h2.subscribe_runnable("main");
-        while let Some(id) = stream.next().await {
-            let _ = tx.send(id);
-        }
-    });
-
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    let h = backend.setup().await.expect("setup");
+    // `subscribe_runnable` awaits `LISTEN` registration internally — by the
+    // time it returns the stream, the server is forwarding notifications
+    // on our channel. No race window between setup and the trigger.
+    let mut stream = h.subscribe_runnable("main").await;
 
     let wf_id = uid("wf-push-r");
     let wf = make_workflow(&wf_id, "main", "push-q");
@@ -1295,12 +1283,11 @@ async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
 
     let got = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        rx.recv(),
+        stream.next(),
     )
     .await
     .expect("timed out waiting for push notification")
-    .expect("channel closed before yielding");
-    poller.abort();
+    .expect("stream ended before yielding");
 
     assert_eq!(got, wf_id, "push stream should yield the workflow id");
 }
@@ -1312,44 +1299,26 @@ async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
 async fn push_tasks_fires_on_activity_insert(#[case] backend: Backend) {
-    let h = std::sync::Arc::new(backend.setup().await.expect("setup"));
-
+    let h = backend.setup().await.expect("setup");
     let queue = "push-act-q";
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-
-    // Spawn the stream poller before doing any inserts. The JoinHandle is
-    // aborted at the end of the test so the testcontainer can drop cleanly
-    // (see note on push_runnable_fires_on_dispatchable).
-    let h2 = h.clone();
-    let queue_owned = queue.to_string();
-    let poller = tokio::spawn(async move {
-        let q_ref: &str = &queue_owned;
-        let queues = [q_ref];
-        let mut stream = h2.subscribe_tasks(&queues);
-        while let Some(id) = stream.next().await {
-            let _ = tx.send(id);
-        }
-    });
-
-    // Allow subscription to register with the server.
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    let queues = [queue];
+    // See `push_runnable_fires_on_dispatchable` for why the `.await` matters.
+    let mut stream = h.subscribe_tasks(&queues).await;
 
     let wf_id = uid("wf-push-t");
     h.create_workflow(&make_workflow(&wf_id, "main", queue)).await.unwrap();
 
-    // Create a PENDING activity — the trigger / LIVE SELECT fires on INSERT.
+    // Create a PENDING activity — the trigger fires on INSERT.
     let act = make_activity(&wf_id, 1, queue);
     let act_id = h.create_activity(&act).await.unwrap();
 
     let got = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        rx.recv(),
+        stream.next(),
     )
     .await
     .expect("timed out waiting for push notification")
-    .expect("channel closed before yielding");
-    poller.abort();
+    .expect("stream ended before yielding");
 
     // The emitted payload is the activity's numeric id as a string.
     let got_id: i64 = got.parse().expect("payload should be a numeric activity id");
