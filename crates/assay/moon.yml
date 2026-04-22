@@ -41,10 +41,11 @@ tasks:
     command: "cargo build --release"
     inputs:
       - "@group(rust-sources)"
-    outputs:
-      # target/ sits at workspace root
-      - "../../target/release/assay"
     options:
+      # `outputs` would need to point at ../../target/release/assay, but
+      # moon disallows `..`. We skip declaring outputs and let cargo's
+      # own incremental cache handle rebuild avoidance — fine because
+      # this task already relies on Swatinem/rust-cache for CI.
       cache: true
       runInCI: true
 
@@ -53,7 +54,8 @@ tasks:
     inputs:
       - "@group(rust-sources)"
       - "tests/**/*"
-      - "../*/tests/**/*"
     options:
+      # Cross-crate test changes are picked up via `dependsOn` on the
+      # project itself — moon walks project deps for affected detection.
       cache: true
       runInCI: true
