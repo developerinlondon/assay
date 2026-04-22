@@ -19,7 +19,7 @@ fn uid(prefix: &str) -> String {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn namespace_roundtrip(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -33,7 +33,7 @@ async fn namespace_roundtrip(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn namespace_delete_and_stats(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -76,7 +76,7 @@ async fn namespace_delete_and_stats(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn workflow_create_get_roundtrip(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -101,7 +101,7 @@ async fn workflow_create_get_roundtrip(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn workflow_status_transitions(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -134,7 +134,7 @@ async fn workflow_status_transitions(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn workflow_claim(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -158,7 +158,7 @@ async fn workflow_claim(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn workflow_list_with_filters(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -207,7 +207,7 @@ async fn workflow_list_with_filters(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn workflow_task_dispatch(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -247,7 +247,7 @@ async fn workflow_task_dispatch(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn events_append_and_list(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -284,7 +284,7 @@ async fn events_append_and_list(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn search_attrs_upsert(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -318,7 +318,7 @@ async fn search_attrs_upsert(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn workflow_archival(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -422,7 +422,7 @@ fn make_signal(workflow_id: &str, name: &str) -> assay_core::types::WorkflowSign
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn activity_create_and_claim(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -460,7 +460,7 @@ async fn activity_create_and_claim(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn activity_retry_on_failure(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -496,7 +496,7 @@ async fn activity_retry_on_failure(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn activity_heartbeat_timeout(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -539,7 +539,7 @@ async fn activity_heartbeat_timeout(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn activity_cancel_pending(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -576,7 +576,7 @@ async fn activity_cancel_pending(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn timer_create_and_fire(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -619,7 +619,7 @@ async fn timer_create_and_fire(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn timer_idempotent_on_seq(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -642,7 +642,7 @@ async fn timer_idempotent_on_seq(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn signal_send_and_consume(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -699,7 +699,7 @@ fn make_schedule(namespace: &str, name: &str) -> common::harness::WorkflowSchedu
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn schedule_crud(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -760,7 +760,7 @@ async fn schedule_crud(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn schedule_last_run_update(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -787,7 +787,7 @@ async fn schedule_last_run_update(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn snapshot_create_and_get_latest(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -821,7 +821,7 @@ async fn snapshot_create_and_get_latest(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn archival_end_to_end(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -901,7 +901,7 @@ fn make_worker(id: &str, namespace: &str, task_queue: &str) -> common::harness::
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn worker_register_heartbeat_list(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -946,7 +946,7 @@ async fn worker_register_heartbeat_list(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn worker_remove_dead(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -993,7 +993,7 @@ async fn worker_remove_dead(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn api_key_crud(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -1041,7 +1041,7 @@ async fn api_key_crud(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn api_keys_empty_initially_true(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -1067,7 +1067,7 @@ async fn api_keys_empty_initially_true(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn api_key_idempotent_by_label(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -1101,7 +1101,7 @@ async fn api_key_idempotent_by_label(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn queue_stats(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -1161,7 +1161,7 @@ async fn queue_stats(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn child_workflows_listing(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -1211,7 +1211,7 @@ async fn child_workflows_listing(#[case] backend: Backend) {
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 async fn leader_election(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
@@ -1224,24 +1224,18 @@ async fn leader_election(#[case] backend: Backend) {
     //
     // Backend semantics differ:
     //
-    // - SQLite:    always returns true (single-process leader).
-    // - SurrealDB: same holder (process ID) → refreshes TTL → true.
-    // - Postgres:  pg_try_advisory_lock is session-scoped. A connection pool
-    //              may route the second call to a different session, returning
-    //              false. We don't assert the second result for PG — the
-    //              contract only requires the first call to succeed and that
-    //              a concurrent *different* process would get false.
+    // - SQLite:   always returns true (single-process leader).
+    // - Postgres: pg_try_advisory_lock is session-scoped. A connection pool
+    //             may route the second call to a different session, returning
+    //             false. We don't assert the second result for PG — the
+    //             contract only requires the first call to succeed and that
+    //             a concurrent *different* process would get false.
     //
-    // For SQLite and SurrealDB we DO assert true on the second call.
+    // For SQLite we DO assert true on the second call.
     let second = h.try_acquire_scheduler_lock().await.unwrap();
-    // Only assert for backends where re-acquisition is guaranteed.
     #[cfg(feature = "backend-sqlite")]
     if matches!(h, common::harness::Harness::Sqlite { .. }) {
         assert!(second, "SQLite: second acquire should be true (always leader)");
-    }
-    #[cfg(feature = "backend-surrealdb")]
-    if matches!(h, common::harness::Harness::Surreal { .. }) {
-        assert!(second, "SurrealDB: second acquire from same process should be true (TTL refresh)");
     }
     // For Postgres: second call may be true or false depending on pool routing.
     // We just verify it doesn't error.
@@ -1265,7 +1259,7 @@ use futures_util::StreamExt;
 // docker daemon's port allocation / container startup path.
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
 async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
@@ -1275,8 +1269,8 @@ async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
 
     // Capture the JoinHandle so we can abort the poller at the end. Without
     // the abort, the spawned task holds an Arc<Harness> forever (stream.next
-    // never ends for PG LISTEN / SurrealDB LIVE), preventing the testcontainer
-    // from dropping and blocking process exit on its Drop.
+    // never ends for PG LISTEN), preventing the testcontainer from dropping
+    // and blocking process exit on its Drop.
     let h2 = h.clone();
     let poller = tokio::spawn(async move {
         let mut stream = h2.subscribe_runnable("main");
@@ -1306,7 +1300,7 @@ async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
 
 #[rstest]
 #[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
-#[cfg_attr(feature = "backend-surrealdb", case::surreal(Backend::Surreal))]
+
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
 async fn push_tasks_fires_on_activity_insert(#[case] backend: Backend) {

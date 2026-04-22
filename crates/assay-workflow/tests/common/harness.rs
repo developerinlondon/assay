@@ -1,9 +1,9 @@
 //! Parametrised backend harness.
 //!
-//! Each test function is decorated with rstest cases for Postgres, SQLite,
-//! and SurrealDB. The `Harness` enum wraps all three concrete store types
-//! and delegates `WorkflowStore` calls through explicit `match` arms, so
-//! test bodies remain backend-agnostic without requiring `dyn Trait`.
+//! Each test function is decorated with rstest cases for Postgres and SQLite.
+//! The `Harness` enum wraps both concrete store types and delegates
+//! `WorkflowStore` calls through explicit `match` arms, so test bodies remain
+//! backend-agnostic without requiring `dyn Trait`.
 
 use assay_core::types::*;
 use assay_core::{ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats};
@@ -24,11 +24,6 @@ pub enum Harness {
         _tempdir: tempfile::TempDir,
         store: assay_workflow::SqliteStore,
     },
-    #[cfg(feature = "backend-surrealdb")]
-    Surreal {
-        _container: testcontainers::ContainerAsync<testcontainers_modules::surrealdb::SurrealDb>,
-        store: assay_workflow::SurrealDbStore,
-    },
 }
 
 macro_rules! dispatch {
@@ -38,8 +33,6 @@ macro_rules! dispatch {
             Self::Postgres { store: $store, .. } => $body,
             #[cfg(feature = "backend-sqlite")]
             Self::Sqlite { store: $store, .. } => $body,
-            #[cfg(feature = "backend-surrealdb")]
-            Self::Surreal { store: $store, .. } => $body,
         }
     };
 }
@@ -401,11 +394,6 @@ impl Harness {
                 use assay_workflow::WorkflowStore;
                 Box::pin(store.subscribe_runnable(namespace))
             }
-            #[cfg(feature = "backend-surrealdb")]
-            Self::Surreal { store, .. } => {
-                use assay_workflow::WorkflowStore;
-                Box::pin(store.subscribe_runnable(namespace))
-            }
         }
     }
 
@@ -426,11 +414,6 @@ impl Harness {
                 use assay_workflow::WorkflowStore;
                 Box::pin(store.subscribe_tasks(queue_names))
             }
-            #[cfg(feature = "backend-surrealdb")]
-            Self::Surreal { store, .. } => {
-                use assay_workflow::WorkflowStore;
-                Box::pin(store.subscribe_tasks(queue_names))
-            }
         }
     }
 }
@@ -442,8 +425,6 @@ pub enum Backend {
     Postgres,
     #[cfg(feature = "backend-sqlite")]
     Sqlite,
-    #[cfg(feature = "backend-surrealdb")]
-    Surreal,
 }
 
 impl Backend {
@@ -453,8 +434,6 @@ impl Backend {
             Self::Postgres => postgres_harness().await,
             #[cfg(feature = "backend-sqlite")]
             Self::Sqlite => sqlite_harness().await,
-            #[cfg(feature = "backend-surrealdb")]
-            Self::Surreal => surreal_harness().await,
         }
     }
 }
@@ -542,36 +521,3 @@ async fn sqlite_harness() -> anyhow::Result<Harness> {
     })
 }
 
-#[cfg(feature = "backend-surrealdb")]
-async fn surreal_harness() -> anyhow::Result<Harness> {
-    use testcontainers::runners::AsyncRunner;
-    use testcontainers::ImageExt;
-    use testcontainers_modules::surrealdb::SurrealDb;
-
-    // Pin to v3 — our surrealdb crate (3.x) speaks the v3 wire protocol.
-    // testcontainers-modules 0.15 default image tag is v2.x, which causes
-    // `Server sent no subprotocol` at handshake time.
-    let container = SurrealDb::default()
-        .with_tag("v3")
-        .with_env_var("SURREAL_USER", "root")
-        .with_env_var("SURREAL_PASS", "root")
-        .start()
-        .await?;
-    let host = container.get_host().await?;
-    let port = container.get_host_port_ipv4(8000).await?;
-    let url = format!("ws://{host}:{port}");
-
-    let store = assay_workflow::SurrealDbStore::connect_full(
-        &url,
-        "assay",
-        "workflow",
-        Some("root"),
-        Some("root"),
-    )
-    .await?;
-
-    Ok(Harness::Surreal {
-        _container: container,
-        store,
-    })
-}

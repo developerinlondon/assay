@@ -248,7 +248,7 @@ CREATE TABLE oidc_refresh_tokens (
 CREATE INDEX oidc_refresh_user ON oidc_refresh_tokens (user_id);
 ```
 
-- [ ] **Step 4: PG + SQLite + Surreal impls**
+- [ ] **Step 4: PG + SQLite impls**
 
 Mirror the pattern from Phase 4 Task 4.6 + Phase 6 Task 6.7.
 

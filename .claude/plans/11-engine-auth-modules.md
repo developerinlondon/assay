@@ -1,8 +1,16 @@
 # 11 — engine-auth Modules
 
+> **STATUS — REV 2 (2026-04-22):** This plan is authoritative for auth module rationale and
+> technology choices. The prior "Zanzibar SurrealDB backend" content is obsolete — the
+> `ZanzibarStore` trait stays, implementations are PG18 + SQLite only, both additive features, both
+> default. See plan 12 Revision log for the drop rationale (compile cost tripling + no capability
+> loss). All "Phase D — Zanzibar SurrealDB impl" hours are removed; those are Phase 6 rolled into
+> PG18-native tuple + recursive CTE work per plan 12c.
+
 Add a complete authentication and authorization layer to `assay-engine`: OIDC client, full OIDC
 provider (self-hosted IdP) with upstream federation, WebAuthn/passkey, Argon2 password, JWT, Biscuit
-capability tokens, session management, and Google Zanzibar semantics over pluggable storage.
+capability tokens, session management, and Google Zanzibar semantics over pluggable PG18 / SQLite
+storage.
 
 ## Motivation
 
@@ -75,17 +83,17 @@ ship. Same job, one binary, Rust.
 
 **Deployment footprint:**
 
-|                     | Ory                                   | assay-auth in assay-engine               |
-| ------------------- | ------------------------------------- | ---------------------------------------- |
-| Services to run     | 3–4 (Hydra, Kratos, Keto, Oathkeeper) | 1 (engine binary)                        |
-| Databases           | 1–3 (each service has own schema)     | 1 (shared Postgres / SurrealDB / SQLite) |
-| Image / binary size | ~300–450 MB (4 containers combined)   | ~30–38 MB single binary                  |
-| Inter-service auth  | needed (HTTP hop between services)    | in-process function calls                |
-| Language / runtime  | Go                                    | Rust, single static binary               |
+|                     | Ory                                   | assay-auth in assay-engine    |
+| ------------------- | ------------------------------------- | ----------------------------- |
+| Services to run     | 3–4 (Hydra, Kratos, Keto, Oathkeeper) | 1 (engine binary)             |
+| Databases           | 1–3 (each service has own schema)     | 1 (shared Postgres or SQLite) |
+| Image / binary size | ~300–450 MB (4 containers combined)   | ~30–38 MB single binary       |
+| Inter-service auth  | needed (HTTP hop between services)    | in-process function calls     |
+| Language / runtime  | Go                                    | Rust, single static binary    |
 
 **Where V1 lags Ory:** MFA-beyond-passkey, SCIM, SAML, end-user admin UI. **Where V1 leads Ory:**
-capability tokens (Biscuit), single-binary ops, native SurrealDB graph-walk for Zanzibar checks,
-Rust.
+capability tokens (Biscuit), single-binary ops, PG18 skip-scan composite index + recursive CTEs for
+Zanzibar reachability, Rust.
 
 ## Own IdP with upstream federation
 
@@ -158,41 +166,30 @@ object # relation @ subject [# subject_relation]
         tree:ahmed # viewer @ circle:immediate # member
 ```
 
-SurrealDB's `RELATE` edge is the same data structure, expressed natively. Postgres stores it as rows
-and walks it with recursive CTEs — the pattern SpiceDB uses. `ZanzibarStore` is a trait; backend
-selected by Cargo feature.
+Tuples are rows; the permission graph is walked with recursive CTEs — the pattern SpiceDB uses.
+`ZanzibarStore` is a trait in `assay-core`; implementations live in `assay-auth` behind the
+`backend-postgres` and `backend-sqlite` features (both additive, both default).
 
-### SurrealDB backend — natural fit
-
-```surql
--- write
-RELATE $subject -> $relation -> $object;
-
--- check(document:x, view, user:bob)
---   walk from user:bob forward along any edge chain
-SELECT ->?->? FROM $subject FETCH object
-WHERE object = $object AND relation IN $viewset;
-```
-
-1:1 mapping of tuples to RELATE edges. Native graph traversal. Single database engine for
-everything. Primary implementation when the consumer already runs SurrealDB (like jeebon).
-
-### Postgres backend — SpiceDB-proven
+### Postgres backend — SpiceDB-proven, PG18-optimised
 
 ```sql
 CREATE TABLE zanzibar_tuple (
+  id            UUID PRIMARY KEY DEFAULT uuidv7(),          -- PG18 built-in
   object_type   TEXT NOT NULL,
   object_id     TEXT NOT NULL,
   relation      TEXT NOT NULL,
   subject_type  TEXT NOT NULL,
   subject_id    TEXT NOT NULL,
   subject_rel   TEXT,            -- NULL = direct, set = userset
-  PRIMARY KEY (object_type, object_id, relation,
-               subject_type, subject_id, subject_rel),
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (object_type, object_id, relation,
+          subject_type, subject_id, subject_rel)
 );
 
-CREATE INDEX idx_rev ON zanzibar_tuple
+-- PG18 skip-scan: one composite serves forward (check) + inverse (lookup) queries
+CREATE INDEX zanzibar_tuple_forward ON zanzibar_tuple
+  (object_type, object_id, relation, subject_type, subject_id);
+CREATE INDEX zanzibar_tuple_reverse ON zanzibar_tuple
   (subject_type, subject_id, relation);
 
 -- check — recursive CTE over the userset DAG, depth-limited
@@ -217,7 +214,9 @@ SELECT EXISTS (
 ```
 
 Battle-tested pattern (SpiceDB's canonical backend). Handles millions of tuples with proper indexes.
-1–5 ms checks at typical depth.
+1–5 ms checks at typical depth. PG18's skip-scan means the composite index covers both forward
+(`check`) and subject-leading (`lookup_*`) queries without needing two separate indexes for leading
+columns.
 
 ### SQLite backend — same CTE
 
@@ -257,8 +256,9 @@ Cycle detection via visited-set per check call. Depth limit configurable, defaul
 
 Zookie tokens encode the commit time of the last write the caller observed. A subsequent `check`
 with the zookie guarantees it sees at least that write. Backed by Postgres `xmin` /
-`pg_snapshot_xmin` or SurrealDB transaction timestamps. Default consistency = "minimum"
-(best-effort). Opt in to `at_exact_snapshot` via zookie when the caller needs read-your-writes.
+`pg_snapshot_xmin` (PG) or a monotonic revision counter maintained by the write path (SQLite).
+Default consistency = "minimum" (best-effort). Opt in to `at_exact_snapshot` via zookie when the
+caller needs read-your-writes.
 
 ## Module API sketches
 
@@ -318,20 +318,18 @@ HTTP/2 connection. Typical call latency on localhost: 0.5–2 ms.
 
 Engine-embedded configurations:
 
-| Config                                                       | Engine binary add                                    |
-| ------------------------------------------------------------ | ---------------------------------------------------- |
-| Full `auth` feature, Postgres Zanzibar backend, no SurrealDB | +11–15 MB                                            |
-| Full `auth` feature, SurrealDB Zanzibar backend              | +11–15 MB auth + client cost amortised with workflow |
-| `auth` without `auth.oidc.provider`                          | –3 MB                                                |
-| `auth` without `auth.passkey`                                | –2–3 MB                                              |
-| `auth` without `auth.biscuit`                                | –2–3 MB                                              |
+| Config                                      | Engine binary add |
+| ------------------------------------------- | ----------------- |
+| Full `auth` feature, PG18 + SQLite backends | +11–15 MB         |
+| `auth` without `auth.oidc.provider`         | –3 MB             |
+| `auth` without `auth.passkey`               | –2–3 MB           |
+| `auth` without `auth.biscuit`               | –2–3 MB           |
 
 Runtime memory with full auth + IdP + Zanzibar: ~35–45 MB RSS under typical load.
 
-**`assay-engine` binary with plan 10 defaults + plan 11 full auth (Postgres backend):** ~28–33 MB
-compressed, ~40 MB on disk, 50–70 MB RSS. With SurrealDB backend: +8–14 MB. Still a single binary.
-Still small compared to Keycloak (150+ MB container), Zitadel (80+ MB image plus DB), or the Ory
-stack (four services).
+**`assay-engine` binary with plan 10 defaults + plan 11 full auth (PG18 + SQLite backends):** ~28–33
+MB compressed, ~40 MB on disk, 50–70 MB RSS. Still a single binary. Still small compared to Keycloak
+(150+ MB container), Zitadel (80+ MB image plus DB), or the Ory stack (four services).
 
 ## Phased plan
 
@@ -366,12 +364,9 @@ stack (four services).
 | `lookup_resources` + `lookup_subjects`           | 1.5   |
 | Zookies / consistency tokens                     | 0.5   |
 
-### Phase D — Zanzibar SurrealDB impl (~4 h)
+### Phase D — REMOVED per plan 12 rev 2
 
-| Task                                              | Hours |
-| ------------------------------------------------- | ----- |
-| SurrealDB impl — RELATE write + traversal queries | 2.5   |
-| Integration tests parametrised over backend       | 1.5   |
+Was "Zanzibar SurrealDB impl." Dropped — see plan 12 Revision log.
 
 ### Phase E — OIDC Provider (~25.5 h)
 
@@ -417,7 +412,7 @@ webauthn-rs = { version = "0.5", optional = true }
 argon2 = { version = "0.5", optional = true } # RustCrypto stable pair with password-hash 0.5; track 0.6 still RC as of Apr 2026
 password-hash = { version = "0.5", optional = true }
 biscuit-auth = { version = "6", optional = true }
-# jsonwebtoken, sqlx, surrealdb all come from workspace
+# jsonwebtoken, sqlx come from workspace
 
 [features]
 auth = [
@@ -440,8 +435,10 @@ auth-zanzibar = [] # backend selected via engine's backend-* feature
 
 backend-postgres = ["dep:sqlx", "sqlx/postgres"]
 backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
-backend-surrealdb = ["dep:surrealdb"]
 ```
+
+Backends are additive (both in default) — runtime selects one via `EngineConfig.backend`. See plan
+12 Principle 3.
 
 ## Prerequisite: plan 10 · executed via plan 12
 
@@ -456,7 +453,7 @@ release. Specifically:
 
 - Phase 4 (plan 12c) delivers auth primitives: session, password, JWT, Biscuit.
 - Phase 5 (plan 12c) delivers identity flows: OIDC client, passkey, Lua runtime wrappers.
-- Phase 6 (plan 12c) delivers Zanzibar core across PG / SQLite / SurrealDB backends.
+- Phase 6 (plan 12c) delivers Zanzibar core across PG18 + SQLite backends.
 - Phase 7 (plan 12d) delivers the full OIDC provider.
 
 Phase-level hour estimates in this doc (Phase A–F) are conceptual; plan 12's sub-plans reorder them
@@ -478,9 +475,10 @@ into executable task units.
 1. **Engine-resident, not runtime stdlib.** Lua scripts access auth over HTTP via thin wrappers in
    the runtime stdlib. Accepted.
 
-2. **Zanzibar backends: Postgres + SurrealDB + SQLite.** Implement all three. Postgres is the
-   SpiceDB-proven default for non-SurrealDB consumers. SurrealDB is natural for RELATE-native
-   consumers (jeebon). SQLite gets it free via the same recursive CTE.
+2. **Zanzibar backends: PG18 + SQLite.** Both compiled in by default, additive features, runtime
+   selection via `EngineConfig.backend`. PG18 is the SpiceDB-proven default; SQLite gets the same
+   recursive CTE semantics for embedded / dev / test deployments. SurrealDB was evaluated and
+   dropped in rev 2 — see plan 12 Revision log.
 
 3. **Session storage.** Opaque session ID + DB lookup per request, not encrypted JWE. Revocation
    matters for an auth stdlib.
@@ -506,5 +504,5 @@ into executable task units.
 
 ---
 
-_Prerequisite: 10-assay-engine-architecture.md._ _Consumed by: the jeebon plan (imports
-`assay-engine` crate with `features = ["workflow", "auth", "backend-surrealdb"]`)._
+_Prerequisite: 10-assay-engine-architecture.md._ _Consumed by: the jeebonV3 plan (imports
+`assay-engine` crate with `features = ["workflow", "auth", "backend-postgres", "backend-sqlite"]`)._

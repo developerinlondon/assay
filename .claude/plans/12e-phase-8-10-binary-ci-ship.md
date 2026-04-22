@@ -7,8 +7,8 @@
 runs migrations, composes module routers via `FromRef`, and serves workflow + auth + dashboard on
 one port. Runtime binary's dashboard is restored (via engine's composition helper).
 
-**Phase 9 goal:** CI publishes per-crate tags with no manual work. SurrealDB tests run against a
-service container. Docker images ship for both binaries.
+**Phase 9 goal:** CI publishes per-crate tags with no manual work. Tests run against a PostgreSQL 18
+service container and in-process SQLite. Docker images ship for both binaries.
 
 **Phase 10 goal:** Docs cover the runtime/engine split, CHANGELOGs are complete, migration notes
 help 0.12 consumers land on 0.13, and v0.13.0 tags are pushed.
@@ -30,10 +30,9 @@ bind_addr = "0.0.0.0:3000"
 public_url = "https://auth.example.com" # used for issuer in OIDC provider
 
 [backend]
-type = "postgres" # "postgres" | "sqlite" | "surreal"
+type = "postgres" # "postgres" | "sqlite"
 url = "postgres://postgres:postgres@localhost/assay"
-# For sqlite:   path = "/var/lib/assay/engine.db"
-# For surreal:  url, namespace, database, username, password
+# For sqlite: path = "/var/lib/assay/engine.db"
 
 [workflow]
 enabled = true
@@ -90,13 +89,6 @@ pub struct ServerConfig {
 pub enum Backend {
     Postgres { url: String },
     Sqlite   { path: String },
-    Surreal  {
-        url: String,
-        namespace: String,
-        database: String,
-        username: Option<String>,
-        password: Option<String>,
-    },
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -169,7 +161,7 @@ impl EngineConfig {
 
 - [ ] **Step 2: Example configs in `crates/assay-engine/examples/`**
 
-`sqlite.toml`, `postgres.toml`, `surreal.toml` — minimum viable configs for each backend.
+`sqlite.toml`, `postgres.toml` — minimum viable configs for each backend.
 
 - [ ] **Step 3: Tests**
 
@@ -239,8 +231,6 @@ async fn main() -> anyhow::Result<()> {
         Backend::Postgres { .. } => run_engine::<assay_workflow::PostgresStore>(cfg).await,
         #[cfg(feature = "backend-sqlite")]
         Backend::Sqlite   { .. } => run_engine::<assay_workflow::SqliteStore>(cfg).await,
-        #[cfg(feature = "backend-surrealdb")]
-        Backend::Surreal  { .. } => run_engine::<assay_workflow::SurrealDbStore>(cfg).await,
         #[allow(unreachable_patterns)]
         _ => anyhow::bail!("backend feature not compiled in"),
     }
@@ -272,13 +262,6 @@ pub async fn build(cfg: &EngineConfig) -> anyhow::Result<EngineState> {
         }
         #[cfg(feature = "backend-sqlite")]
         Backend::Sqlite { path } => { /* parallel */ todo!() }
-        #[cfg(feature = "backend-surrealdb")]
-        Backend::Surreal { url, namespace, database, username, password } => {
-            let db = assay_core::surreal_pool::connect(url, namespace, database,
-                username.as_deref(), password.as_deref()).await?;
-            // workflow + auth share the same Surreal connection
-            todo!()
-        }
         #[allow(unreachable_patterns)] _ => anyhow::bail!("backend compiled out"),
     };
 
@@ -559,7 +542,7 @@ For `assay`, the crate name is `assay-lua`, not matching the dir — override wi
 
 ---
 
-### Task 9.2: CI test matrix — SurrealDB service
+### Task 9.2: CI test matrix — PG18 + SQLite
 
 **Files:** `.github/workflows/ci.yml`.
 
@@ -570,7 +553,7 @@ test-workflow-pg:
   runs-on: ubuntu-latest
   services:
     postgres:
-      image: postgres:16
+      image: postgres:18-alpine
       env: { POSTGRES_PASSWORD: postgres }
       ports: ["5432:5432"]
       options: >-
@@ -590,34 +573,16 @@ test-workflow-sqlite:
     - uses: Swatinem/rust-cache@v2
     - run: cargo test -p assay-workflow --features backend-sqlite --test '*'
 
-test-workflow-surreal:
-  runs-on: ubuntu-latest
-  services:
-    surrealdb:
-      image: surrealdb/surrealdb:v3
-      ports: ["8000:8000"]
-      options: >-
-        --health-cmd "curl -f http://localhost:8000/health || exit 1"
-        --health-interval 10s
-  steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo test -p assay-workflow --features backend-surrealdb --test '*'
-      env: { SURREAL_URL: ws://localhost:8000 }
-
 test-auth-pg:
-  # same pattern against assay-auth
+  # same pattern against assay-auth, postgres:18-alpine service
   ...
 test-auth-sqlite:
   ...
-test-auth-surreal:
-  ...
 ```
 
-- [ ] **Step 2: Parallelise** — all nine jobs run concurrently on a single PR push.
+- [ ] **Step 2: Parallelise** — all four jobs run concurrently on a single PR push.
 
-- [ ] **Step 3: Commit** — `ci: parametrised backend test matrix + SurrealDB service`.
+- [ ] **Step 3: Commit** — `ci: parametrised backend test matrix (PG18 + SQLite)`.
 
 ---
 
@@ -839,7 +804,7 @@ Or delete the root Dockerfile entirely and document the two in README.
 - Tagging `assay-workflow-v0.2.0` publishes only the workflow crate (no binary, no Docker).
 - Tagging `assay-engine-v0.1.0` publishes the crate + binary + Docker image.
 - Tagging `assay-v0.13.0` publishes the `assay-lua` crate + `assay` binary + Docker image.
-- CI test matrix runs PG/SQLite/SurrealDB in parallel on every PR.
+- CI test matrix runs PG18 + SQLite in parallel on every PR.
 - A synthetic tag push on a test branch successfully produces all expected artefacts.
 
 ---
@@ -888,8 +853,8 @@ Root `CHANGELOG.md` has a "## v0.13.0 (2026-MM-DD)" section pointing to each per
 
 - `assay` runs Lua scripts with embedded workflow engine (PG/SQLite). Call `assay-engine` over HTTP
   for auth.
-- `assay-engine` is a standalone HTTP server with workflow + auth + dashboard, pluggable across PG,
-  SQLite, and SurrealDB.
+- `assay-engine` is a standalone HTTP server with workflow + auth + dashboard, pluggable across PG
+  (default, PG18 minimum) and SQLite — both backends compiled in, runtime-selected via config.
 
 See [docs/migration-to-0.13.0.md](./docs/migration-to-0.13.0.md) for the upgrade path from older
 versions.
@@ -986,7 +951,7 @@ Get a second pair of eyes or use code-reviewer agent. Fix feedback.
 Prefer squash merge so main has one commit per logical unit. Commit message:
 
 ```
-feat: v0.13.0 — engine split + auth + SurrealDB backend (#XXX)
+feat: v0.13.0 — engine split + auth (PG18 + SQLite) (#XXX)
 
 See plan 12 and sub-plans 12a-12e for full architecture details.
 ```

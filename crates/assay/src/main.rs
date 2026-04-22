@@ -87,36 +87,6 @@ enum Commands {
         #[arg(long, default_value = "3600")]
         resume_ttl: Option<u64>,
     },
-    /// Start the assay workflow engine server
-    Serve {
-        /// Database backend URL (sqlite:// or postgres://).
-        /// Can also be set via DATABASE_URL env var to avoid exposing credentials.
-        #[arg(long, env = "DATABASE_URL", default_value = "sqlite://assay-workflow.db?mode=rwc")]
-        backend: String,
-        /// Port to listen on
-        #[arg(long, default_value = "8080")]
-        port: u16,
-        /// Disable authentication (open access, default)
-        #[arg(long)]
-        no_auth: bool,
-        /// OIDC issuer URL for JWT validation. May be combined with `--auth-api-key`:
-        /// tokens that parse as JWTs take the JWT path, everything else the API-key path.
-        #[arg(long)]
-        auth_issuer: Option<String>,
-        /// Expected JWT audience (required only when your tokens set the `aud` claim).
-        #[arg(long)]
-        auth_audience: Option<String>,
-        /// Enable API-key authentication. May be combined with `--auth-issuer` to run both
-        /// modes simultaneously (see `--auth-issuer`).
-        #[arg(long)]
-        auth_api_key: bool,
-        /// Generate a new API key and exit
-        #[arg(long)]
-        generate_api_key: bool,
-        /// List existing API keys and exit
-        #[arg(long)]
-        list_api_keys: bool,
-    },
     /// Manage workflows
     Workflow {
         #[command(flatten)]
@@ -499,49 +469,6 @@ async fn main() -> ExitCode {
             approve,
             resume_ttl,
         }) => resume_tool_execution(&token, &approve, resume_ttl).await,
-        #[cfg(feature = "workflow")]
-        Some(Commands::Serve {
-            backend,
-            port,
-            no_auth,
-            auth_issuer,
-            auth_audience,
-            auth_api_key,
-            generate_api_key,
-            list_api_keys,
-        }) => {
-            let auth_mode = match (auth_issuer, auth_api_key) {
-                (Some(issuer), true) => {
-                    assay_workflow::api::auth::AuthMode::combined(issuer, auth_audience)
-                }
-                (Some(issuer), false) => {
-                    assay_workflow::api::auth::AuthMode::jwt(issuer, auth_audience)
-                }
-                (None, true) => assay_workflow::api::auth::AuthMode::api_key(),
-                (None, false) => assay_workflow::api::auth::AuthMode::no_auth(),
-            };
-
-            if no_auth && auth_mode.is_enabled() {
-                eprintln!("Warning: --no-auth is redundant when --auth-issuer or --auth-api-key is set");
-            }
-
-            if backend.starts_with("postgres://") || backend.starts_with("postgresql://") {
-                serve_with_postgres(
-                    &backend, port, auth_mode, generate_api_key, list_api_keys,
-                )
-                .await
-            } else {
-                serve_with_sqlite(
-                    &backend, port, auth_mode, generate_api_key, list_api_keys,
-                )
-                .await
-            }
-        }
-        #[cfg(not(feature = "workflow"))]
-        Some(Commands::Serve { .. }) => {
-            eprintln!("assay serve: workflow engine not compiled (enable 'workflow' feature)");
-            ExitCode::from(1)
-        }
         Some(Commands::Workflow { global, command }) => {
             let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
                 Ok(o) => o,
@@ -716,115 +643,6 @@ async fn main() -> ExitCode {
             }
         }
     }
-}
-
-#[cfg(feature = "workflow")]
-async fn serve_with_store<S: assay_workflow::WorkflowStore>(
-    store: S,
-    port: u16,
-    auth_mode: assay_workflow::api::auth::AuthMode,
-    generate_api_key: bool,
-    list_api_keys: bool,
-) -> ExitCode {
-    if generate_api_key {
-        let key = assay_workflow::api::auth::generate_api_key();
-        let hash = assay_workflow::api::auth::hash_api_key(&key);
-        let prefix = assay_workflow::api::auth::key_prefix(&key);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
-        if let Err(e) = store.create_api_key(&hash, &prefix, None, now).await {
-            error!("Failed to store API key: {e}");
-            return ExitCode::from(1);
-        }
-        println!("{key}");
-        eprintln!("API key created (prefix: {prefix}). Store it securely — it cannot be recovered.");
-        return ExitCode::SUCCESS;
-    }
-
-    if list_api_keys {
-        match store.list_api_keys().await {
-            Ok(keys) => {
-                if keys.is_empty() {
-                    println!("No API keys configured.");
-                } else {
-                    for k in keys {
-                        let label = k.label.unwrap_or_default();
-                        println!("  {} {label}", k.prefix);
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Failed to list API keys: {e}");
-                return ExitCode::from(1);
-            }
-        }
-        return ExitCode::SUCCESS;
-    }
-
-    if let Err(e) = assay_workflow::api::serve_with_version(
-        store,
-        port,
-        auth_mode,
-        Some(env!("CARGO_PKG_VERSION")),
-    )
-    .await
-    {
-        error!("WorkflowEngine server error: {e}");
-        return ExitCode::from(1);
-    }
-    ExitCode::SUCCESS
-}
-
-#[cfg(feature = "workflow")]
-async fn serve_with_sqlite(
-    backend: &str,
-    port: u16,
-    auth_mode: assay_workflow::api::auth::AuthMode,
-    generate_api_key: bool,
-    list_api_keys: bool,
-) -> ExitCode {
-    info!("Starting assay workflow engine on port {port} with SQLite backend");
-    eprintln!("Note: SQLite supports a single engine instance only.");
-    eprintln!("      For multi-instance (Kubernetes), use: --backend postgres://...");
-    let store = match assay_workflow::SqliteStore::new(backend).await {
-        Ok(s) => s,
-        Err(e) => {
-            error!("Failed to connect to SQLite backend: {e}");
-            return ExitCode::from(1);
-        }
-    };
-
-    // Acquire single-instance lock (prevents duplicate engines on same DB)
-    if !generate_api_key
-        && !list_api_keys
-        && let Err(e) = store.acquire_engine_lock().await
-    {
-        error!("{e}");
-        return ExitCode::from(1);
-    }
-
-    serve_with_store(store, port, auth_mode, generate_api_key, list_api_keys).await
-}
-
-#[cfg(feature = "workflow")]
-async fn serve_with_postgres(
-    backend: &str,
-    port: u16,
-    auth_mode: assay_workflow::api::auth::AuthMode,
-    generate_api_key: bool,
-    list_api_keys: bool,
-) -> ExitCode {
-    info!("Starting assay workflow engine on port {port} with PostgreSQL backend");
-    let store = match assay_workflow::PostgresStore::new(backend).await {
-        Ok(s) => s,
-        Err(e) => {
-            error!("Failed to connect to PostgreSQL backend: {e}");
-            return ExitCode::from(1);
-        }
-    };
-    serve_with_store(store, port, auth_mode, generate_api_key, list_api_keys).await
 }
 
 fn resolve_script_mode(cli_mode: Option<&str>) -> ScriptMode {

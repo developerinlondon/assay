@@ -11,7 +11,6 @@ description = "Authentication, OIDC, and Zanzibar authorization for assay-engine
 # their feature matrix today. Real content lands in plan 12c Phase 4.
 backend-postgres = []
 backend-sqlite = []
-backend-surrealdb = []
 
 [dependencies]
 assay-core = { path = "../assay-core", version = "0.1" }

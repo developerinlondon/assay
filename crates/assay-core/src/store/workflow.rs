@@ -427,12 +427,9 @@ pub trait WorkflowStore: Send + Sync + 'static {
     // ── Push subscriptions (hybrid wake-up) ───────────────────
 
     /// Emits workflow IDs as they become runnable in the given namespace.
-    /// Backends without native push (SQLite) return an empty stream —
-    /// the scheduler falls back to its local timer heap.
-    ///
-    /// PG's real LISTEN/NOTIFY impl lands in plan 12b Task 3.17; the
-    /// SurrealDB LIVE SELECT impl lands in Task 3.16. Until then PG
-    /// stubs this to `stream::empty()`.
+    /// PG implements this via `LISTEN/NOTIFY`. SQLite returns an empty
+    /// stream — the scheduler falls back to its local timer heap on
+    /// backends without a native push primitive.
     fn subscribe_runnable(
         &self,
         namespace: &str,

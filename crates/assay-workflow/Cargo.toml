@@ -6,7 +6,7 @@ edition = "2024"
 keywords = ["workflow", "durable-execution", "orchestration", "task-queue"]
 license = "Apache-2.0"
 repository = "https://github.com/developerinlondon/assay"
-description = "Durable workflow engine with REST+SSE API, PostgreSQL/SQLite backends. Embeddable library or standalone server."
+description = "Durable workflow engine with REST+SSE API on PostgreSQL 18 and SQLite backends. Embeddable library or standalone server (via assay-engine)."
 
 [dependencies]
 # Shared types + traits
@@ -53,18 +53,11 @@ tracing = "0.1"
 futures-core = "0.3"
 futures-util = "0.3"
 
-# SurrealDB remote client (ws/wss only — no embedded KV engines).
-# Optional: only compiled when `backend-surrealdb` feature is enabled.
-# Non-optional would unify feature flags across the workspace and enable
-# jsonwebtoken's aws-lc-rs backend transitively, conflicting with our
-# explicit rust_crypto feature (see 2026-04-21 debugging notes).
-surrealdb = { version = "3", default-features = false, features = ["protocol-ws", "protocol-http", "rustls"], optional = true }
-
-# Async generator streams (used by LIVE SELECT impls in Task 3.16)
+# Async generator streams (used by push-stream impls)
 async-stream = "0.3"
 
 [features]
-default = []
+default = ["backend-postgres", "backend-sqlite"]
 # Enable the S3 archival background task for completed workflows.
 # Adds the AWS SDK dependency (~5MB of binary size); leave off when
 # archival isn't needed.
@@ -72,11 +65,9 @@ s3-archival = ["dep:aws-config", "dep:aws-sdk-s3"]
 
 # Backend features. Postgres + SQLite are unconditionally compiled for now
 # (the source hasn't been feature-gated off sqlx yet — tracked in plan 12a).
-# SurrealDB is opt-in to avoid pulling jsonwebtoken/aws-lc-rs into default
-# builds (which would conflict with the rust_crypto path used by the runtime).
+# Both are additive; runtime backend selection happens via EngineConfig.backend.
 backend-postgres = []
 backend-sqlite = []
-backend-surrealdb = ["dep:surrealdb"]
 
 [dependencies.aws-config]
 version = "1.8"
@@ -95,5 +86,5 @@ rstest = "0.26"
 serial_test = "3"
 tempfile = "3.27.0"
 testcontainers = "0.27"
-testcontainers-modules = { version = "0.15", features = ["postgres", "surrealdb"] }
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tokio = { version = "1", features = ["full"] }

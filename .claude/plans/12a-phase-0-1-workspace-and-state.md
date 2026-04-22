@@ -108,9 +108,9 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/developerinlondon/assay"
-description = "Standalone workflow + auth + dashboard HTTP server. Embeddable as a library, or run as a binary with pluggable Postgres / SQLite / SurrealDB backends."
+description = "Standalone workflow + auth + dashboard HTTP server. Embeddable as a library, or run as a binary with pluggable Postgres / SQLite backends."
 categories = ["asynchronous", "database", "web-programming::http-server"]
-keywords = ["workflow", "auth", "oidc", "zanzibar", "surrealdb"]
+keywords = ["workflow", "auth", "oidc", "zanzibar", "postgres"]
 
 [[bin]]
 name = "assay-engine"
@@ -128,7 +128,6 @@ default = [
   "dashboard",
   "backend-postgres",
   "backend-sqlite",
-  "backend-surrealdb",
   "server",
 ]
 
@@ -144,10 +143,6 @@ backend-postgres = [
 backend-sqlite = [
   "assay-workflow?/backend-sqlite",
   "assay-auth?/backend-sqlite",
-]
-backend-surrealdb = [
-  "assay-workflow?/backend-surrealdb",
-  "assay-auth?/backend-surrealdb",
 ]
 
 [dependencies]
@@ -612,7 +607,7 @@ git add -A
 git commit -m "feat(workflow): add subscribe_runnable + subscribe_tasks trait methods
 
 Signatures only; PG and SQLite stub as empty streams. Real push impls
-land in Phase 3 (SurrealDB via LIVE SELECT, PG via LISTEN/NOTIFY)."
+land in later phases (PG via LISTEN/NOTIFY, SQLite via polling)."
 ```
 
 ---
@@ -782,34 +777,15 @@ pub mod postgres;
 #[cfg(feature = "backend-sqlite")]
 pub mod sqlite;
 
-#[cfg(feature = "backend-surrealdb")]
-pub mod surrealdb;
-
 pub use assay_core::store::WorkflowStore;
 pub use assay_core::{
     ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats,
 };
 ```
 
-(Keep `surrealdb` feature-gated — its file is an empty stub until Phase 3.)
+- [ ] **Step 5 — REMOVED per plan 12 rev 2 (2026-04-22)**
 
-- [ ] **Step 5: Create stub `crates/assay-workflow/src/store/surrealdb.rs`**
-
-```rust
-//! SurrealDB backend. Full implementation lands in Phase 3 (plan 12b).
-
-pub struct SurrealDbStore {
-    _private: (),
-}
-
-impl SurrealDbStore {
-    pub async fn connect(_dsn: &str) -> anyhow::Result<Self> {
-        anyhow::bail!("SurrealDbStore::connect — not yet implemented (plan 12b Phase 3)")
-    }
-}
-
-// The WorkflowStore impl lands in Phase 3.
-```
+Was a third-backend stub module. Dropped. See plan 12 Revision log for rationale.
 
 - [ ] **Step 6: Gate sqlx feature in Cargo.toml**
 
@@ -820,15 +796,11 @@ default = ["backend-postgres", "backend-sqlite"]
 
 backend-postgres = ["dep:sqlx", "sqlx/postgres"]
 backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
-backend-surrealdb = ["dep:surrealdb"]
 
 s3-archival = ["dep:aws-config", "dep:aws-sdk-s3"]
 
 [dependencies]
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "any"], optional = true }
-surrealdb = { version = "3", default-features = false,
-              features = ["protocol-ws", "protocol-http", "rustls"],
-              optional = true }
 # ... rest unchanged
 ```
 
@@ -840,9 +812,6 @@ pub use store::postgres::PostgresStore;
 
 #[cfg(feature = "backend-sqlite")]
 pub use store::sqlite::SqliteStore;
-
-#[cfg(feature = "backend-surrealdb")]
-pub use store::surrealdb::SurrealDbStore;
 ```
 
 - [ ] **Step 8: Per-feature verification**
@@ -850,7 +819,6 @@ pub use store::surrealdb::SurrealDbStore;
 ```bash
 cargo check -p assay-workflow --no-default-features --features backend-postgres
 cargo check -p assay-workflow --no-default-features --features backend-sqlite
-cargo check -p assay-workflow --no-default-features --features backend-surrealdb
 cargo check -p assay-workflow
 cargo check --workspace
 cargo test -p assay-workflow 2>&1 | tail -5
@@ -864,8 +832,9 @@ All green.
 git add -A
 git commit -m "refactor(core): move WorkflowStore trait + shared DTOs to assay-core
 
-Feature-gate PG / SQLite / SurrealDB backends in assay-workflow.
-SurrealDbStore is a connect-only stub until Phase 3."
+Feature-gate PG / SQLite backends in assay-workflow. Backends are
+additive — both compile into the binary by default; runtime picks
+one via EngineConfig.backend."
 ```
 
 ---
@@ -1508,8 +1477,8 @@ removal note for rationale."
 
 ### Task 1.6: PG `LISTEN/NOTIFY` implementation for push streams (optional 1-h add)
 
-**Scope decision:** optional in Phase 1. Phase 3 has a parallel SurrealDB LIVE SELECT impl; landing
-PG's here lets the scheduler gain push wake-ups for PG deployments without waiting for Phase 3.
+**Scope decision:** optional in Phase 1. Landing PG's `LISTEN/NOTIFY` push here lets the scheduler
+gain push wake-ups for PG deployments immediately, rather than waiting behind Phase 4+ auth work.
 
 Skip this task if Phase 1 is running long — it doesn't block anything else.
 
@@ -1535,7 +1504,6 @@ cargo test --workspace 2>&1 | tail -10
 # Per-feature:
 cargo check -p assay-workflow --no-default-features --features backend-postgres
 cargo check -p assay-workflow --no-default-features --features backend-sqlite
-cargo check -p assay-workflow --no-default-features --features backend-surrealdb
 
 # No generics remain:
 ! grep -rn 'Engine<' crates/assay-workflow/src/  # should produce no hits
@@ -1554,7 +1522,6 @@ state refactor ready for Phase 8's `FromRef` composition.
 
 ## What Phase 0+1 does not do
 
-- Does not add SurrealDB workflow methods (Phase 3).
 - Does not add auth modules (Phases 4–7).
 - Does not build the engine binary (Phase 8).
 - Does change the runtime's behaviour: the runtime dashboard is permanently retired in v0.13.0
@@ -1563,6 +1530,6 @@ state refactor ready for Phase 8's `FromRef` composition.
 
 ## Coordination with Phase 2
 
-Phase 2 (push streams + feature gates) is partially absorbed into Phase 0 (Task 0.6) and Phase 1
-(Task 1.2). After 12a ships, plan 12b starts with Phase 3 (SurrealDB workflow backend) directly;
-Phase 2's ceremonial work is already done.
+Phase 2 (push streams + PG/SQLite feature gates) is partially absorbed into Phase 0 (Task 0.6) and
+Phase 1 (Task 1.2). After 12a ships, plan 12b starts with Phase 4 (auth primitives) per the rev-2
+phase map. Phase 3 (third-backend workflow impl) is REMOVED per plan 12 rev 2 (2026-04-22).

@@ -24,6 +24,4 @@ pub use assay_core::types;
 pub use ctx::{EngineEvent, WorkflowCtx};
 pub use store::postgres::PostgresStore;
 pub use store::sqlite::SqliteStore;
-#[cfg(feature = "backend-surrealdb")]
-pub use store::surrealdb::SurrealDbStore;
 pub use store::WorkflowStore;

@@ -17,9 +17,10 @@ issue/verify with JWKS rotation, Biscuit capability tokens. Each is a small, foc
 Google-like upstream), WebAuthn/passkey register + auth, Lua runtime wrappers that call
 `assay-engine` over HTTP.
 
-**Phase 6 goal:** Zanzibar trait defined; Postgres + SQLite backends operational (recursive-CTE
-walk); `check`, `expand`, `lookup_resources`, `lookup_subjects` all correct. SurrealDB backend lands
-in Phase 6.7 using native `RELATE` graph traversal.
+**Phase 6 goal:** Zanzibar trait defined in `assay-core`; PG18 + SQLite backends operational
+(recursive-CTE walk); `check`, `expand`, `lookup_resources`, `lookup_subjects` all correct on both
+backends. Both backends are additive features (default includes both) with runtime selection via
+`EngineConfig.backend`.
 
 ---
 
@@ -47,36 +48,34 @@ keywords = ["oidc", "zanzibar", "passkey", "biscuit", "auth"]
 
 [features]
 default = [
-    "auth",
-    "backend-postgres",
-    "backend-sqlite",
-    "backend-surrealdb",
+  "auth",
+  "backend-postgres",
+  "backend-sqlite",
 ]
 
 # Meta-feature pulling every module in.
 auth = [
-    "auth-oidc",
-    "auth-oidc-provider",
-    "auth-passkey",
-    "auth-password",
-    "auth-jwt",
-    "auth-biscuit",
-    "auth-session",
-    "auth-zanzibar",
+  "auth-oidc",
+  "auth-oidc-provider",
+  "auth-passkey",
+  "auth-password",
+  "auth-jwt",
+  "auth-biscuit",
+  "auth-session",
+  "auth-zanzibar",
 ]
 
-auth-oidc          = ["dep:openidconnect", "auth-session"]
+auth-oidc = ["dep:openidconnect", "auth-session"]
 auth-oidc-provider = ["auth-oidc", "dep:oxide-auth", "dep:askama"]
-auth-passkey       = ["dep:webauthn-rs", "auth-session"]
-auth-password      = ["dep:argon2", "dep:password-hash"]
-auth-jwt           = ["dep:jsonwebtoken"]
-auth-biscuit       = ["dep:biscuit-auth"]
-auth-session       = []
-auth-zanzibar      = []
+auth-passkey = ["dep:webauthn-rs", "auth-session"]
+auth-password = ["dep:argon2", "dep:password-hash"]
+auth-jwt = ["dep:jsonwebtoken"]
+auth-biscuit = ["dep:biscuit-auth"]
+auth-session = []
+auth-zanzibar = []
 
-backend-postgres   = ["dep:sqlx", "sqlx/postgres"]
-backend-sqlite     = ["dep:sqlx", "sqlx/sqlite"]
-backend-surrealdb  = ["dep:surrealdb"]
+backend-postgres = ["dep:sqlx", "sqlx/postgres"]
+backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 
 [dependencies]
 assay-core = { path = "../assay-core", version = "0.1" }
@@ -108,9 +107,6 @@ jsonwebtoken = { version = "10", optional = true, features = ["rust_crypto"] }
 biscuit-auth = { version = "6", optional = true }
 
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "any"], optional = true }
-surrealdb = { version = "3", default-features = false,
-              features = ["protocol-ws", "protocol-http", "rustls"],
-              optional = true }
 
 # HTTP client for OIDC discovery / userinfo / JWKS fetch
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
@@ -118,7 +114,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 [dev-dependencies]
 rstest = "0.26"
 testcontainers = "0.27"
-testcontainers-modules = { version = "0.15", features = ["postgres", "surrealdb"] }
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tempfile = "3"
 tokio = { version = "1", features = ["full"] }
 wiremock = "0.6"
@@ -828,7 +824,7 @@ Same pattern; sqlx dialect differences minimal here.
 - [ ] **Step 4: Parametrised integration tests**
 
 Mirror the Phase 2 workflow harness pattern — rstest cases for `backend-postgres` +
-`backend-sqlite`. Surreal is added in Phase 6 Task 6.7.
+`backend-sqlite`.
 
 - [ ] **Step 5: Commit**
 
@@ -1091,8 +1087,12 @@ git commit -m "feat(runtime): auth.* Lua wrappers calling assay-engine"
 ## Phase 6 — Zanzibar core
 
 Plan 11 lines 136–260 cover Zanzibar rationale, backend selection, check pipeline, and consistency.
-This phase delivers the `ZanzibarStore` trait, PG + SQLite impls (recursive CTE),
-`check`/`expand`/`lookup_*` algorithms, and zookies. SurrealDB impl follows as Task 6.7.
+This phase delivers the `ZanzibarStore` trait (in `assay-core`), PG18 + SQLite impls (recursive
+CTE), `check`/`expand`/`lookup_*` algorithms, and zookies. PG18 specifics: UUIDv7 PKs via
+`uuidv7()`, skip-scan composite index on
+`(object_type, object_id, relation, subject_type,
+subject_id)` serving both forward and inverse
+queries.
 
 ### Task 6.1: `ZanzibarStore` trait + schema parser
 
@@ -1321,79 +1321,24 @@ git commit -m "feat(auth/zanzibar): PG backend with recursive-CTE check"
 
 ---
 
-### Task 6.7: SurrealDB Zanzibar backend (native RELATE)
+### Task 6.7 — REMOVED per plan 12 rev 2
 
-Plan 11 lines 166–180: `RELATE` edges match the tuple data model 1:1.
-
-- [ ] **Step 1: Schema**
-
-```surql
-DEFINE TABLE IF NOT EXISTS zanzibar_user SCHEMAFULL;
-DEFINE FIELD id ON zanzibar_user TYPE string;
-
--- Generic object table that each object_type record points to via `kind` field,
--- or separate tables per object_type if typed RELATEs are desired.
-DEFINE TABLE IF NOT EXISTS zanzibar_object SCHEMAFULL;
-DEFINE FIELD kind ON zanzibar_object TYPE string;
-
--- Edge table: one row per tuple, with the relation name as the `relation` field.
-DEFINE TABLE IF NOT EXISTS zanzibar_edge SCHEMAFULL TYPE RELATION
-  FROM zanzibar_object | zanzibar_user
-  TO   zanzibar_object | zanzibar_user;
-DEFINE FIELD relation   ON zanzibar_edge TYPE string;
-DEFINE FIELD created_at ON zanzibar_edge TYPE float;
-```
-
-- [ ] **Step 2: `write_tuple` via RELATE**
-
-```rust
-async fn write_tuple(&self, t: &Tuple) -> anyhow::Result<()> {
-    let subject_rel_clause = match &t.subject.relation {
-        Some(r) => format!("# {r}"),
-        None => String::new(),
-    };
-    self.db.query(format!(
-        "RELATE (SELECT * FROM zanzibar_user WHERE id = $sid LIMIT 1) -> zanzibar_edge -> \
-         (SELECT * FROM zanzibar_object WHERE kind = $otype AND id = $oid LIMIT 1) \
-         SET relation = $rel, created_at = time::now()"
-    ))
-    // binds: sid, otype, oid, rel — plus subject_type disambiguation
-    .await?;
-    Ok(())
-}
-```
-
-(Exact query shape depends on how objects are modelled. Prototype against a real DB and adjust — the
-relate semantics are straightforward but SurrealDB's type system on RELATE has edge cases.)
-
-- [ ] **Step 3: `check` via graph walk**
-
-```surql
--- starting from the subject side, walk any edge chain whose `relation` is in the
--- permission's userset expansion, stopping at the object.
-SELECT ->zanzibar_edge[?relation IN $viewset]->?->zanzibar_edge* FROM zanzibar_user:⟨$sid⟩
-  WHERE ->?[?kind = $otype AND id = $oid];
-```
-
-Implementation detail: SurrealDB's graph syntax `->?->?` walks arbitrary depth. Use the
-namespace-schema-derived `$viewset` (the set of relations expanding the requested permission).
-
-- [ ] **Step 4: Extend harness + run parametrised tests**
-
-Every test from Tasks 6.2–6.6 now runs against SurrealDB too.
-
-- [ ] **Step 5: Commit** — `feat(auth/zanzibar): SurrealDB backend via RELATE graph walk`.
+Was "SurrealDB Zanzibar backend (native RELATE)". Dropped — SurrealDB removed from v0.13.0 entirely.
+See plan 12 Revision log for rationale. `ZanzibarStore` trait abstraction stays, so a third backend
+can be added by a future plan without touching Phase 6 architecture.
 
 ---
 
 ### Phase 6 exit criteria
 
 - `check`, `expand`, `lookup_resources`, `lookup_subjects` all correct against the plan 11 reference
-  example on PG, SQLite, and SurrealDB.
+  example on both PG18 and SQLite.
 - Zookies functional; depth limit + cycle detection reject pathological inputs.
-- Integration tests parametrised over the three backends green.
-- A script: `zanzibar.define_namespace(...)`, write ~1000 tuples, run 100 checks → all three
-  backends report identical results.
+- Integration tests parametrised over both backends green.
+- A script: `zanzibar.define_namespace(...)`, write ~1000 tuples, run 100 checks → both backends
+  report identical results.
+- PG18-specific sanity: `EXPLAIN (ANALYZE)` confirms the composite skip-scan index is chosen for
+  both forward (`check`) and reverse (`lookup_*`) queries.
 
 ---
 

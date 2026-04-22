@@ -1,9 +1,13 @@
+> **STATUS — REV 2 (2026-04-22):** This plan is authoritative for the engine's target architecture
+> (module composition, `FromRef`, trait abstractions). References to SurrealDB are obsolete —
+> backends are now PG18 + SQLite only. See plan 12 Revision log for the drop rationale.
+
 # 10 — assay-engine Architecture
 
 Split assay into two publications: a lean scripting runtime (`assay`) and a stateful engine
 (`assay-engine`) shipped as both a crate and a binary. Introduce pluggable backend traits so
-workflow state, users, sessions, and Zanzibar tuples can live on PostgreSQL, SQLite, or SurrealDB,
-selected at compile time by Cargo feature.
+workflow state, users, sessions, and Zanzibar tuples can live on PostgreSQL 18 or SQLite,
+selected at runtime via `EngineConfig.backend`.
 
 ## Motivation
 
@@ -18,10 +22,9 @@ The split solves three problems:
   - stdlib + workflow on PG/SQLite). Auth is reached over HTTP only when a script actually needs it.
 - **Server consumers** (jeebon and similar) get an embeddable crate that bundles workflow + auth +
   dashboard. Pick the backend you already run.
-- **SurrealDB is first-class and on by default in `assay-engine`.** The engine ships all three
-  backends (PG + SQLite + SurrealDB) out of the box; consumers who want a leaner build opt out via
-  `default-features = false`. The `assay` runtime remains PG + SQLite only — it doesn't run
-  workflows against SurrealDB, and the Lua stdlib reaches auth over HTTP regardless of backend.
+- **Both backends ship by default in `assay-engine`.** PG18 and SQLite compile into the binary
+  together; the active backend is selected at startup from `EngineConfig.backend`. The `assay`
+  runtime also uses PG + SQLite only — the Lua stdlib reaches auth over HTTP regardless of backend.
 
 ## Current state
 
@@ -54,10 +57,10 @@ One binary (`assay`), ~9–10 MB compressed.
 │  │    (PG/SQLite only)      │  │    Zanzibar)                 │  │
 │  │  • Dashboard             │  │  • Dashboard (full)          │  │
 │  │    (workflow views)      │  │  • Backends via traits:      │  │
-│  │  • CLI                   │  │    PG / SQLite / SurrealDB   │  │
+│  │  • CLI                   │  │    PG18 / SQLite             │  │
 │  │                          │  │                              │  │
-│  │  ~12–15 MB               │  │  Binary: 20–38 MB            │  │
-│  │                          │  │  Crate embed: +20–28 MB      │  │
+│  │  ~12–15 MB               │  │  Binary: ≤ 20 MB stripped    │  │
+│  │                          │  │  Crate embed: +14–16 MB      │  │
 │  │                          │  │                              │  │
 │  │  Auth → HTTP to engine   │  │                              │  │
 │  └──────────────────────────┘  └──────────────────────────────┘  │
@@ -80,7 +83,7 @@ assay/ (monorepo)
 ```
 
 Store traits live in `assay-core`. Backend impls live alongside their domain crate
-(`assay-workflow/src/store/postgres.rs`, `assay-auth/src/store/surrealdb.rs`, etc.) and are gated by
+(`assay-workflow/src/store/postgres.rs`, `assay-auth/src/store/sqlite.rs`, etc.) and are gated by
 Cargo features.
 
 ### Crate dependency graph
@@ -114,8 +117,7 @@ depend only on `assay-core`. The engine and dashboard layer on top.
 │  impl WorkflowStore for:    │         │                             │
 │    • PostgresStore  (feat)  │         │  impl UserStore for:        │
 │    • SqliteStore    (feat)  │         │    • PostgresUserStore      │
-│    • SurrealDbStore (feat)  │         │    • SqliteUserStore        │
-│                             │         │    • SurrealDbUserStore     │
+│                             │         │    • SqliteUserStore        │
 │  Engine, Scheduler,         │         │                             │
 │  Dispatcher, Archival,      │         │  OIDC client + provider,    │
 │  HTTP API (routes),         │         │  passkey, JWT, Biscuit,     │
@@ -157,7 +159,7 @@ depend only on `assay-core`. The engine and dashboard layer on top.
                     │  Embeds workflow engine │
                     │  with backend-postgres  │
                     │  + backend-sqlite only. │
-                    │  No SurrealDB backend.  │
+                    │  PG18 + SQLite backends.│
                     │                         │
                     │  Auth: HTTP wrapper     │
                     │  calls assay-engine.    │
@@ -188,7 +190,7 @@ The split produces two distinct binaries for two distinct use cases.
 │   │  ~12–15 MB      │                                                │
 │   └─────────────────┘                                                │
 │                                                                      │
-│   No auth. No SurrealDB. Same footprint as today.                    │
+│   No auth. PG18 or SQLite backend. Same footprint as today.          │
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -203,11 +205,11 @@ The split produces two distinct binaries for two distinct use cases.
 │   │    /api/v1/workflows   ──►       │       ┌──────────────┐        │
 │   │    /api/v1/activities            │       │  Postgres    │        │
 │   │    /dashboard          ──►       ├──────►│   or SQLite  │        │
-│   │    /engine/queues                │       │   or Surreal │        │
-│   │    /authorize  (0.14.0)          │       └──────────────┘        │
+│   │    /engine/queues                │       └──────────────┘        │
+│   │    /authorize  (0.14.0)          │                               │
 │   │    /token      (0.14.0)          │                               │
 │   │                                  │                               │
-│   │  ~20–38 MB                       │                               │
+│   │  ≤ 20 MB stripped               │                               │
 │   └──────────────────────────────────┘                               │
 │           ▲                                                          │
 │           │ HTTP/2, ~0.5–2ms localhost                               │
@@ -226,8 +228,8 @@ The split produces two distinct binaries for two distinct use cases.
 ### Request flow
 
 Handlers never name a specific backend. Backend is picked at `main()`, constructed once, wrapped in
-`Arc<dyn WorkflowStore>`, and passed to the router. Swapping PG → SurrealDB changes one line of
-config, recompiles, and runs.
+`Arc<dyn WorkflowStore>`, and passed to the router. Swapping PG18 → SQLite changes one line of
+config and restarts.
 
 ```
 Consumer app              assay-engine binary              Backend
@@ -249,7 +251,6 @@ HTTP POST
                           │                      │
                           │ PostgresStore  ──────┼────►  postgres
                           │ SqliteStore    ──────┼────►  sqlite file
-                          │ SurrealDbStore ──────┼────►  surreal (ws/http)
                           └──────────────────────┘
                                  │
                                  ▼
@@ -356,13 +357,11 @@ Key properties:
   tasks go back to the queue (with retry delay for activities via `requeue_activity_for_retry`).
 - **Hybrid wake-up applies here too.** Workers don't poll — they use `subscribe_tasks(queue_names)`.
   Each backend implements it the same way as `subscribe_runnable`:
-  - SurrealDB → `LIVE SELECT * FROM workflow_task WHERE queue IN $queues`
   - Postgres → `LISTEN assay_task_<queue>` via INSERT trigger
   - SQLite → empty stream; single-process workers use an in-memory channel
 - **Leader election for the scheduler.** `try_acquire_scheduler_lock` — Postgres uses
-  `pg_try_advisory_lock` (one instance wins); SQLite always returns true (single-instance);
-  SurrealDB uses a `scheduler_lock` record with a TTL and compare-and-swap. Workers don't need
-  leader election — they compete on `claim_workflow_task` instead.
+  `pg_try_advisory_lock` (one instance wins); SQLite always returns true (single-instance).
+  Workers don't need leader election — they compete on `claim_workflow_task` instead.
 
 Queue stats (`get_queue_stats`) surface in the engine dashboard: pending depth per queue,
 claimed-but-not-completed count, oldest task age, worker count. Required for diagnosing
@@ -378,7 +377,6 @@ default = [
   "dashboard",
   "backend-postgres",
   "backend-sqlite",
-  "backend-surrealdb",
 ]
 
 workflow = ["assay-workflow"]
@@ -386,24 +384,34 @@ auth = ["assay-auth"]
 dashboard = ["assay-dashboard"]
 server = ["dep:axum", "dep:tower"] # standalone binary mode
 
+# Both backends are ADDITIVE (not mutually exclusive) and both ship in default.
 backend-postgres = ["assay-workflow/backend-postgres", "assay-auth/backend-postgres"]
 backend-sqlite = ["assay-workflow/backend-sqlite", "assay-auth/backend-sqlite"]
-backend-surrealdb = ["assay-workflow/backend-surrealdb", "assay-auth/backend-surrealdb"]
 ```
 
 Consumer examples:
 
 ```toml
-# jeebon-api (embeds engine as crate, defaults — all backends available)
+# jeebon-api (embeds engine as crate, defaults — both backends compiled in)
 assay-engine = "0.1"
 
-# lean embed: workflow only, SQLite only (explicit opt-out)
+# lean embed: workflow only, SQLite only (explicit opt-out of PG)
 assay-engine = { version = "0.1", default-features = false,
                  features = ["workflow", "backend-sqlite"] }
 
-# auth-only, Postgres (explicit opt-out)
+# auth-only, Postgres (explicit opt-out of SQLite)
 assay-engine = { version = "0.1", default-features = false,
                  features = ["auth", "backend-postgres"] }
+```
+
+Runtime backend selection:
+
+```rust
+// crates/assay-engine/src/main.rs
+match cfg.backend {
+    Backend::Postgres { url }  => run_engine::<PostgresStore>(cfg).await,
+    Backend::Sqlite   { path } => run_engine::<SqliteStore>(cfg).await,
+}
 ```
 
 ## State composition
@@ -467,87 +475,21 @@ Backends live **inside** the domain crate, feature-gated:
 crates/assay-workflow/src/store/
 ├── mod.rs
 ├── postgres.rs     #[cfg(feature = "backend-postgres")]
-├── sqlite.rs       #[cfg(feature = "backend-sqlite")]
-└── surrealdb.rs    #[cfg(feature = "backend-surrealdb")]
+└── sqlite.rs       #[cfg(feature = "backend-sqlite")]
 ```
 
 Not one crate per backend (the `sqlx-postgres` / `sqlx-sqlite` / `sqlx-mysql` approach). Reasoning:
-trait evolution dominates during 0.x — a new method on `WorkflowStore` requires updating all three
+trait evolution dominates during 0.x — a new method on `WorkflowStore` requires updating both
 backend impls in lockstep. Layout 1 keeps that change in one crate, one PR, one version bump. The
 `sqlx`-style split becomes valuable once the traits stabilise and third-party backend crates appear
 — not a 0.13.0 concern.
 
-## SurrealDB backend specifics
+## Dispatch wake-up — hybrid model (from day one)
 
-SurrealDB is always external — neither binary bundles embedded KV engines (`kv-mem`, `kv-surrealkv`,
-`kv-rocksdb`). The dependency is remote-only:
-
-```toml
-surrealdb = { version = "3", default-features = false,
-              features = ["protocol-ws", "protocol-http", "rustls"],
-              optional = true }
-```
-
-`rustls` is explicit because it is a default feature the crate otherwise turns on silently; with
-`default-features = false` its absence would silently break `wss://` and `https://` endpoints.
-
-3.x introduces `surrealdb-protocol` (flatbuffers) as a mandatory transitive dependency, plus an
-unchanged `surrealdb-core` with `ndarray`, `geo`, `fst`, `roaring`, `fastnum`. All baked into the
-remote-transport weight in the size table below.
-
-### Schema for the workflow backend
-
-```
-PostgreSQL / SQLite              SurrealDB
-──────────────────────           ────────────────────────────────
-namespaces (name PK)             namespace:<name>
-workflows  (id PK)               workflow:<id>
-events     (id PK)               event:<id>
-activities (id PK)               activity:<id>
-timers     (id PK)               timer:<id>
-signals    (id PK)               signal:<id>
-snapshots  (id PK)               snapshot:<id>
-
-JSON columns                     native SurrealDB object fields
-search_attrs, metadata           (no json_extract)
-workflow_id FK links             RELATE edges for fan-out queries
-```
-
-Indexes:
-
-```surql
-DEFINE INDEX workflow_dispatch ON TABLE workflow
-  COLUMNS namespace, status, next_dispatch_at;
-DEFINE INDEX event_workflow    ON TABLE event    COLUMNS workflow;
-DEFINE INDEX timer_fire_at     ON TABLE timer    COLUMNS fire_at;
-DEFINE INDEX search_attrs      ON TABLE workflow COLUMNS search_attributes;
-```
-
-### Transactions and concurrency
-
-SurrealDB supports transactions via `BEGIN TRANSACTION; ...; COMMIT;` but does not offer
-SERIALIZABLE isolation. Patterns that require atomicity in Postgres (e.g.
-`insert_events_and_update_status`) combine SurrealDB transactions with an optimistic-concurrency
-`version` column. The `WorkflowStore` contract is already retry-tolerant.
-
-### Dispatch query
-
-```surql
-SELECT * FROM workflow
-WHERE namespace = $ns AND status = 'runnable'
-  AND next_dispatch_at <= time::now()
-ORDER BY next_dispatch_at
-LIMIT $limit;
-```
-
-Indexed by `workflow_dispatch`, sub-millisecond up to ~100 K runnable workflows per namespace.
-
-### Dispatch wake-up — hybrid model (from day one)
-
-`LIVE SELECT` alone doesn't solve dispatch because `next_dispatch_at <= now()` is a wall-clock
-condition — a workflow doesn't emit an event when its dispatch time _arrives_. Same for Postgres.
-The scheduler always needs time-based triggering; push notifications are an optimisation that avoids
-waking it for nothing when nothing has changed.
+`LISTEN/NOTIFY` alone doesn't solve dispatch because `next_dispatch_at <= now()` is a wall-clock
+condition — a workflow doesn't emit an event when its dispatch time _arrives_. The scheduler always
+needs time-based triggering; push notifications are an optimisation that avoids waking it for
+nothing when nothing has changed.
 
 The design from day one, baked into `WorkflowStore::subscribe_runnable`:
 
@@ -569,8 +511,6 @@ The design from day one, baked into `WorkflowStore::subscribe_runnable`:
 
 Backend impls of `subscribe_runnable`:
 
-- **SurrealDB** — `LIVE SELECT * FROM workflow WHERE status = 'runnable'`. Native push, sub-ms
-  delivery.
 - **Postgres** — trigger on `workflow` INSERT/UPDATE emits `pg_notify('assay_runnable', id)`;
   scheduler holds one `LISTEN assay_runnable` connection. Sub-ms delivery.
 - **SQLite** — no cross-process push; returns an empty stream. Scheduler relies purely on its heap.
@@ -579,25 +519,15 @@ Backend impls of `subscribe_runnable`:
 The scheduler is never busy-polling. It sleeps until the heap's next timestamp OR a push
 notification wakes it. Idle cost ≈ zero regardless of backend.
 
-### Migration tool
-
-Embedded `.surql` files + a `migrations` tracker table applied at startup — same pattern as
-`sqlx::migrate!`, hand-rolled for SurrealDB.
-
 ## Size, memory, and build cost
 
 Estimates. Measure before publishing final numbers.
 
-| Artifact / features                                        | Binary    | Cold build             |
-| ---------------------------------------------------------- | --------- | ---------------------- |
-| `assay` runtime (pg + sqlite, workflow, dashboard)         | 12–15 MB  | same as today + <30 s  |
-| `assay-engine` binary, **default** (pg + sqlite + surreal) | 30–38 MB  | +4–6 min from pristine |
-| `assay-engine` binary, lean (pg + sqlite only, opt-out)    | 20–25 MB  | +2–3 min               |
-| `assay-engine` crate embedded in jeebon-api (default)      | +25–28 MB | +3–5 min               |
-
-The remote-only SurrealDB client (`protocol-ws` + `protocol-http` + `rustls`) accounts for +8–14 MB
-on top of the PG/SQLite-only engine — unchanged whether SurrealDB backs workflow, auth, or both.
-It's the client's transport stack, not per-domain.
+| Artifact / features                                              | Binary (stripped) | Cold build             |
+| ---------------------------------------------------------------- | ----------------- | ---------------------- |
+| `assay-lua` runtime (pg + sqlite, workflow, dashboard)           | ≤ 15 MB           | same as today + <30 s  |
+| `assay-engine` binary, **default** (both backends: PG18 + SQLite) | ≤ 20 MB          | +2–3 min from pristine |
+| `assay-engine` crate embedded in jeebon-api (default)            | +14–16 MB         | +2–3 min               |
 
 Against a typical production stack `assay-engine` replaces:
 
@@ -608,7 +538,7 @@ Against a typical production stack `assay-engine` replaces:
 | Temporal worker stack    | 100+ MB per pod     |
 | **Total replaced**       | **~220–290 MB**     |
 
-A ~35 MB assay-engine binary is a net reduction of ~185 MB and two fewer services to operate.
+A ≤ 20 MB assay-engine binary is a net reduction of ~200 MB and two fewer services to operate.
 
 ## Versioning
 
@@ -649,7 +579,7 @@ here.
 
 > **Superseded by plan 12.** The phase breakdown below is the original high-level sketch for the
 > workflow-only scope. Plan 12 (and its sub-plans 12a–12e) is the authoritative execution plan
-> covering workflow + auth + SurrealDB + engine binary + CI for the v0.13.0 release. Consult plan 12
+> covering workflow + auth + engine binary + CI for the v0.13.0 release. Consult plan 12
 > for current task ordering; the phases below remain useful as a conceptual overview.
 
 ### Phase 0 — scaffold crates (no behaviour change)
@@ -667,17 +597,12 @@ here.
    `assay-workflow/src/store/`.
 7. Re-wire scheduler + dispatcher to `&dyn WorkflowStore`.
 
-### Phase 2 — SurrealDB workflow backend
+### Phase 2 — engine binary
 
-8. `store/surrealdb.rs` behind `backend-surrealdb` feature.
-9. Embedded `.surql` migrations + tracker.
-
-### Phase 3 — engine binary
-
-10. `bin/assay-engine.rs` with config file, backend selection, HTTP bind address.
+8. `bin/assay-engine.rs` with config file, backend selection, HTTP bind address.
 11. Dashboard `full` feature; wire auth views stubs (filled by plan 11).
 
-### Phase 4 — plan 11 auth lands on top
+### Phase 3 — plan 11 auth lands on top
 
 ## AI-agent time estimate
 
@@ -685,13 +610,12 @@ here.
 | ------------------------------------------------------------ | ------ |
 | Phase 0 — scaffold crates, move types                        | 3      |
 | Phase 1 — extract `WorkflowStore` trait, feature-gate impls  | 3      |
-| Phase 2 — SurrealDB workflow backend + migrations            | 12     |
-| Phase 3 — engine binary + dashboard feature-gating           | 6      |
+| Phase 2 — engine binary + dashboard feature-gating           | 6      |
 | CI + release tooling (cargo-workspaces, independent publish) | 2      |
 | Documentation (README, CHANGELOG, llms.txt)                  | 2      |
-| **Total, before plan 11**                                    | **28** |
+| **Total, before plan 11**                                    | **16** |
 
-With two agents concurrently (Phase 2 + Phase 3), calendar ≈ 14 hours.
+With two agents concurrently (Phase 1 + Phase 2), calendar ≈ 8 hours.
 
 ## Open decisions
 
@@ -702,19 +626,17 @@ he
 
 2. **Dashboard as one feature-gated crate — accepted.** Single source for templates and CSS.
 
-3. **SurrealDB always external, never embedded.** Confirmed. No `kv-mem` / `kv-surrealkv` /
-   `kv-rocksdb` in either binary.
+3. **Independent crate versions.** Confirmed. Monorepo workspace, separate lifecycles.
 
-4. **Independent crate versions.** Confirmed. Monorepo workspace, separate lifecycles.
+4. **Hybrid dispatch wake-up from day one.** Scheduler owns a local timer heap; each backend
+   supplies a push stream (`LISTEN/NOTIFY` for Postgres, empty for SQLite). No polling loop;
+   no V2 migration.
 
-5. **Hybrid dispatch wake-up from day one.** Scheduler owns a local timer heap; each backend
-   supplies a push stream (`LIVE SELECT` for SurrealDB, `LISTEN/NOTIFY` for Postgres, empty for
-   SQLite). No polling loop; no V2 migration.
+5. **PostgreSQL 18 is the minimum supported PostgreSQL version.** PG18 features leveraged include
+   `uuidv7()` for time-ordered PKs, skip-scan composite indexes, and io_uring AIO. Earlier PG
+   versions are not supported and not tested.
 
-6. **SurrealDB Cloud support.** Free — the crate treats cloud endpoints as DSN. Document and test
-   with a cloud instance before advertising.
-
-7. **Task visibility timeout + worker liveness.** Default visibility timeout 60 s (worker must
+6. **Task visibility timeout + worker liveness.** Default visibility timeout 60 s (worker must
    heartbeat before it expires or the task is released). Dead-worker sweep every 30 s with cutoff 90
    s (i.e. missed 1.5 heartbeat intervals). Both configurable per namespace. Measure before locking
    defaults.
