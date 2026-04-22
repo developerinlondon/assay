@@ -8,7 +8,7 @@
 > land a parametrised test harness over both backends.
 
 **Phase 2 goal:** ensure `WorkflowStore` contract is complete and parametrised testing is ready
-across PG18 + SQLite. Most of Phase 2 was absorbed into Phase 1 (trait moved to `assay-core`,
+across PG18 + SQLite. Most of Phase 2 was absorbed into Phase 1 (trait moved to `assay-domain`,
 push-stream signatures added, backends feature-gated). What remains is a parametrised test harness.
 
 ---
@@ -46,7 +46,7 @@ tempfile = "3"
 //! `&dyn WorkflowStore`.
 
 use std::sync::Arc;
-use assay_core::WorkflowStore;
+use assay_domain::WorkflowStore;
 
 #[cfg(feature = "backend-postgres")]
 use assay_workflow::PostgresStore;
@@ -184,7 +184,7 @@ Phase 3 was "Third workflow backend" — 15 sub-tasks implementing `WorkflowStor
 document store (native graph edges, live subscriptions, transaction snapshots). This phase is
 **dropped** per plan 12 rev 2.
 
-**What was kept:** the trait abstraction result. `WorkflowStore` (in `assay-core`) is backend-
+**What was kept:** the trait abstraction result. `WorkflowStore` (in `assay-domain`) is backend-
 agnostic — if a future plan wants to add a third backend, it lands as a pure addition: new
 `src/store/<name>.rs`, new feature flag, extend the `Backend` enum, reuse the Phase 2 harness.
 

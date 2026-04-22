@@ -109,7 +109,7 @@ async fn workflow_status_transitions(#[case] backend: Backend) {
     h.create_workflow(&make_workflow(&id, "main", "main")).await.unwrap();
 
     // PENDING → RUNNING
-    h.update_workflow_status(&id, assay_core::types::WorkflowStatus::Running, None, None)
+    h.update_workflow_status(&id, assay_domain::types::WorkflowStatus::Running, None, None)
         .await
         .unwrap();
     let wf = h.get_workflow(&id).await.unwrap().unwrap();
@@ -119,7 +119,7 @@ async fn workflow_status_transitions(#[case] backend: Backend) {
     // RUNNING → COMPLETED (terminal)
     h.update_workflow_status(
         &id,
-        assay_core::types::WorkflowStatus::Completed,
+        assay_domain::types::WorkflowStatus::Completed,
         Some(r#"{"ok":true}"#),
         None,
     )
@@ -187,17 +187,17 @@ async fn workflow_list_with_filters(#[case] backend: Backend) {
 
     // Filter by status (PENDING)
     let pending = h
-        .list_workflows(&ns, Some(assay_core::types::WorkflowStatus::Pending), None, None, 100, 0)
+        .list_workflows(&ns, Some(assay_domain::types::WorkflowStatus::Pending), None, None, 100, 0)
         .await
         .unwrap();
     assert_eq!(pending.len(), 2);
 
     // Update one to RUNNING, then filter
-    h.update_workflow_status(&id1, assay_core::types::WorkflowStatus::Running, None, None)
+    h.update_workflow_status(&id1, assay_domain::types::WorkflowStatus::Running, None, None)
         .await
         .unwrap();
     let running = h
-        .list_workflows(&ns, Some(assay_core::types::WorkflowStatus::Running), None, None, 100, 0)
+        .list_workflows(&ns, Some(assay_domain::types::WorkflowStatus::Running), None, None, 100, 0)
         .await
         .unwrap();
     assert_eq!(running.len(), 1);
@@ -326,7 +326,7 @@ async fn workflow_archival(#[case] backend: Backend) {
     h.create_workflow(&make_workflow(&wf_id, "main", "main")).await.unwrap();
 
     // Complete the workflow so it's eligible for archival
-    h.update_workflow_status(&wf_id, assay_core::types::WorkflowStatus::Completed, None, None)
+    h.update_workflow_status(&wf_id, assay_domain::types::WorkflowStatus::Completed, None, None)
         .await
         .unwrap();
 
@@ -363,12 +363,12 @@ async fn workflow_archival(#[case] backend: Backend) {
 
 // ── Helpers for activities / timers / signals ────────────────────────────────
 
-fn make_activity(workflow_id: &str, seq: i32, task_queue: &str) -> assay_core::types::WorkflowActivity {
+fn make_activity(workflow_id: &str, seq: i32, task_queue: &str) -> assay_domain::types::WorkflowActivity {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs_f64();
-    assay_core::types::WorkflowActivity {
+    assay_domain::types::WorkflowActivity {
         id: None,
         workflow_id: workflow_id.to_string(),
         seq,
@@ -392,8 +392,8 @@ fn make_activity(workflow_id: &str, seq: i32, task_queue: &str) -> assay_core::t
     }
 }
 
-fn make_timer(workflow_id: &str, seq: i32, fire_at: f64) -> assay_core::types::WorkflowTimer {
-    assay_core::types::WorkflowTimer {
+fn make_timer(workflow_id: &str, seq: i32, fire_at: f64) -> assay_domain::types::WorkflowTimer {
+    assay_domain::types::WorkflowTimer {
         id: None,
         workflow_id: workflow_id.to_string(),
         seq,
@@ -402,12 +402,12 @@ fn make_timer(workflow_id: &str, seq: i32, fire_at: f64) -> assay_core::types::W
     }
 }
 
-fn make_signal(workflow_id: &str, name: &str) -> assay_core::types::WorkflowSignal {
+fn make_signal(workflow_id: &str, name: &str) -> assay_domain::types::WorkflowSignal {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs_f64();
-    assay_core::types::WorkflowSignal {
+    assay_domain::types::WorkflowSignal {
         id: None,
         workflow_id: workflow_id.to_string(),
         name: name.to_string(),
@@ -829,7 +829,7 @@ async fn archival_end_to_end(#[case] backend: Backend) {
     h.create_workflow(&make_workflow(&wf_id, "main", "main")).await.unwrap();
 
     // Complete the workflow (sets completed_at to now)
-    h.update_workflow_status(&wf_id, assay_core::types::WorkflowStatus::Completed, None, None)
+    h.update_workflow_status(&wf_id, assay_domain::types::WorkflowStatus::Completed, None, None)
         .await
         .unwrap();
 

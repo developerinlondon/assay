@@ -10,7 +10,7 @@ clean, existing `assay` behaviour is unchanged.
 `FromRef` is wired so the forthcoming `assay-engine` composition is just `.merge(...)` calls. Still
 single-crate by backend at this point — nothing has moved yet.
 
-**Prior work already on this branch** (commits `5bbded2`, `71a8abb`): `crates/assay-core` and
+**Prior work already on this branch** (commits `5bbded2`, `71a8abb`): `crates/assay-domain` and
 `crates/assay-auth` scaffolds are live. Tasks 0.1 and 0.2 from the earlier plan draft are done;
 skip.
 
@@ -50,7 +50,7 @@ workflow = []
 auth = []
 
 [dependencies]
-assay-core = { path = "../assay-core", version = "0.1" }
+assay-domain = { path = "../assay-domain", version = "0.1" }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -146,7 +146,7 @@ backend-sqlite = [
 ]
 
 [dependencies]
-assay-core = { path = "../assay-core", version = "0.1" }
+assay-domain = { path = "../assay-domain", version = "0.1" }
 assay-workflow = { path = "../assay-workflow", version = "0.2", optional = true }
 assay-auth = { path = "../assay-auth", version = "0.1", optional = true }
 assay-dashboard = { path = "../assay-dashboard", version = "0.1", optional = true }
@@ -166,7 +166,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 ```
 
 Note the `?` syntax on feature deps — `assay-workflow?/backend-postgres` means "if assay-workflow
-feature is enabled, also enable its backend-postgres feature." This keeps the `assay-core`-only
+feature is enabled, also enable its backend-postgres feature." This keeps the `assay-domain`-only
 build path working.
 
 - [ ] **Step 2: Stub lib.rs**
@@ -187,7 +187,7 @@ pub use assay_auth as auth;
 #[cfg(feature = "dashboard")]
 pub use assay_dashboard as dashboard;
 
-pub use assay_core as core;
+pub use assay_domain as core;
 
 pub mod config;
 pub mod state;
@@ -336,7 +336,7 @@ The `include_dir!` macro paths inside `src/` use `$CARGO_MANIFEST_DIR` which now
 resolver = "2"
 members = [
   "crates/assay",
-  "crates/assay-core",
+  "crates/assay-domain",
   "crates/assay-auth",
   "crates/assay-dashboard",
   "crates/assay-engine",
@@ -364,7 +364,7 @@ blocks from root — they now live at `crates/assay/Cargo.toml`.)
 ```yaml
 projects:
   assay-lua: "crates/assay"
-  assay-core: "crates/assay-core"
+  assay-domain: "crates/assay-domain"
   assay-workflow: "crates/assay-workflow"
   assay-dashboard: "crates/assay-dashboard"
   assay-auth: "crates/assay-auth"
@@ -635,7 +635,7 @@ Zero regressions. All six crates present. Root is workspace-only.
 
 **What changes:** `Engine<S>` becomes `Engine` backed by `Arc<dyn WorkflowStore>`. `AppState<S>`
 becomes `WorkflowCtx`. The api router moves from `Router<Arc<AppState<S>>>` to
-`Router<WorkflowCtx>`. Types move to `assay-core`. Dashboard assets move to `assay-dashboard` with a
+`Router<WorkflowCtx>`. Types move to `assay-domain`. Dashboard assets move to `assay-dashboard` with a
 `DashboardCtx`.
 
 **What doesn't change:** behaviour. Every existing integration test still passes without
@@ -644,16 +644,16 @@ modification.
 **Sequencing:** the changes below must land in order — each unblocks the next and keeps the branch
 compilable after every commit.
 
-### Task 1.1: Move `types.rs` to `assay-core`
+### Task 1.1: Move `types.rs` to `assay-domain`
 
 **Files:**
 
-- Move: `crates/assay-workflow/src/types.rs` → `crates/assay-core/src/types/workflow.rs`
-- Create: `crates/assay-core/src/types/mod.rs`
-- Modify: `crates/assay-core/src/lib.rs`
-- Modify: `crates/assay-core/Cargo.toml` (ensure deps are sufficient)
+- Move: `crates/assay-workflow/src/types.rs` → `crates/assay-domain/src/types/workflow.rs`
+- Create: `crates/assay-domain/src/types/mod.rs`
+- Modify: `crates/assay-domain/src/lib.rs`
+- Modify: `crates/assay-domain/Cargo.toml` (ensure deps are sufficient)
 - Modify: `crates/assay-workflow/src/lib.rs` (re-export from core)
-- Modify: `crates/assay-workflow/Cargo.toml` (add `assay-core` dep)
+- Modify: `crates/assay-workflow/Cargo.toml` (add `assay-domain` dep)
 
 - [ ] **Step 1: Inspect types.rs for external dependencies**
 
@@ -662,19 +662,19 @@ grep -E '^use |^pub use' crates/assay-workflow/src/types.rs
 ```
 
 Note every external dep. Typical suspects: `serde`, `serde_json`, `utoipa`, `chrono`. All present in
-`assay-core/Cargo.toml` already.
+`assay-domain/Cargo.toml` already.
 
 - [ ] **Step 2: Move the file**
 
 ```bash
-mkdir -p crates/assay-core/src/types
-git mv crates/assay-workflow/src/types.rs crates/assay-core/src/types/workflow.rs
+mkdir -p crates/assay-domain/src/types
+git mv crates/assay-workflow/src/types.rs crates/assay-domain/src/types/workflow.rs
 ```
 
 - [ ] **Step 3: Create types module root**
 
 ```rust
-// crates/assay-core/src/types/mod.rs
+// crates/assay-domain/src/types/mod.rs
 pub mod workflow;
 pub use workflow::*;
 ```
@@ -682,7 +682,7 @@ pub use workflow::*;
 - [ ] **Step 4: Update core lib.rs**
 
 ```rust
-// crates/assay-core/src/lib.rs
+// crates/assay-domain/src/lib.rs
 //! Shared types and storage traits used across assay crates.
 
 pub mod types;
@@ -695,7 +695,7 @@ Edit `crates/assay-workflow/Cargo.toml`:
 
 ```toml
 [dependencies]
-assay-core = { path = "../assay-core", version = "0.1" }
+assay-domain = { path = "../assay-domain", version = "0.1" }
 ```
 
 - [ ] **Step 6: Update `assay-workflow/src/lib.rs`**
@@ -705,19 +705,19 @@ assay-core = { path = "../assay-core", version = "0.1" }
 
 // Was: pub mod types;
 // Now:
-pub use assay_core::types as types;
+pub use assay_domain::types as types;
 ```
 
 - [ ] **Step 7: Fix imports across the workflow crate**
 
 Any `use crate::types::` imports in `engine.rs`, `scheduler.rs`, `api/*.rs`, `store/*.rs` — either
-leave them (the re-export above preserves the path) OR update to `use assay_core::...`. Prefer
+leave them (the re-export above preserves the path) OR update to `use assay_domain::...`. Prefer
 leaving intact to minimise diff.
 
 - [ ] **Step 8: Verify**
 
 ```bash
-cargo check -p assay-core
+cargo check -p assay-domain
 cargo check -p assay-workflow
 cargo check --workspace
 cargo test -p assay-workflow 2>&1 | tail -5
@@ -729,36 +729,36 @@ All green.
 
 ```bash
 git add -A
-git commit -m "refactor(core): move workflow types from assay-workflow to assay-core"
+git commit -m "refactor(core): move workflow types from assay-workflow to assay-domain"
 ```
 
 ---
 
-### Task 1.2: Move `WorkflowStore` trait to `assay-core`
+### Task 1.2: Move `WorkflowStore` trait to `assay-domain`
 
 **Files:**
 
 - Modify: `crates/assay-workflow/src/store/mod.rs` (keep module declarations, move trait body out)
-- Create: `crates/assay-core/src/store/mod.rs`
-- Create: `crates/assay-core/src/store/workflow.rs`
+- Create: `crates/assay-domain/src/store/mod.rs`
+- Create: `crates/assay-domain/src/store/workflow.rs`
 
 - [ ] **Step 1: Move the trait body**
 
-Create `crates/assay-core/src/store/workflow.rs` — move the full `pub trait WorkflowStore { ... }`
+Create `crates/assay-domain/src/store/workflow.rs` — move the full `pub trait WorkflowStore { ... }`
 block from `crates/assay-workflow/src/store/mod.rs` into this new file.
 
 Also move the `ApiKeyRecord`, `NamespaceRecord`, `NamespaceStats`, `QueueStats` structs (currently
-at the bottom of `store/mod.rs`, lines ~428–465) into `crates/assay-core/src/types/workflow.rs`.
+at the bottom of `store/mod.rs`, lines ~428–465) into `crates/assay-domain/src/types/workflow.rs`.
 They are shared DTOs, not trait code.
 
-- [ ] **Step 2: Create `crates/assay-core/src/store/mod.rs`**
+- [ ] **Step 2: Create `crates/assay-domain/src/store/mod.rs`**
 
 ```rust
 pub mod workflow;
 pub use workflow::WorkflowStore;
 ```
 
-- [ ] **Step 3: Update `crates/assay-core/src/lib.rs`**
+- [ ] **Step 3: Update `crates/assay-domain/src/lib.rs`**
 
 ```rust
 pub mod store;
@@ -777,8 +777,8 @@ pub mod postgres;
 #[cfg(feature = "backend-sqlite")]
 pub mod sqlite;
 
-pub use assay_core::store::WorkflowStore;
-pub use assay_core::{
+pub use assay_domain::store::WorkflowStore;
+pub use assay_domain::{
     ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats,
 };
 ```
@@ -830,7 +830,7 @@ All green.
 
 ```bash
 git add -A
-git commit -m "refactor(core): move WorkflowStore trait + shared DTOs to assay-core
+git commit -m "refactor(core): move WorkflowStore trait + shared DTOs to assay-domain
 
 Feature-gate PG / SQLite backends in assay-workflow. Backends are
 additive — both compile into the binary by default; runtime picks
@@ -998,7 +998,7 @@ Zero behaviour change. All 1092 tests pass.
 // crates/assay-workflow/src/engine.rs
 
 use std::sync::Arc;
-use assay_core::WorkflowStore;
+use assay_domain::WorkflowStore;
 
 pub struct Engine {
     pub store: Arc<dyn WorkflowStore>,

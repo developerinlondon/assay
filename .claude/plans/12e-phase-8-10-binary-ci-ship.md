@@ -189,7 +189,7 @@ module contexts. `axum::extract::FromRef` derives the sub-state extractors.
 
 ```rust
 use axum::extract::FromRef;
-use assay_core::WorkflowStore;
+use assay_domain::WorkflowStore;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -502,7 +502,7 @@ logs in as admin, navigates each engine view, asserts expected table headers and
 ### Task 9.1: Per-crate moon.yml release tasks
 
 **Files:**
-`crates/{assay,assay-core,assay-workflow,assay-dashboard,assay-engine,assay-auth}/moon.yml`.
+`crates/{assay,assay-domain,assay-workflow,assay-dashboard,assay-engine,assay-auth}/moon.yml`.
 
 - [ ] **Step 1: Template** — see [plan 12 main doc](./12-v0.13.0-execution.md#release-gate-flow) for
       the task shape.
@@ -821,7 +821,7 @@ Follow plan 09 format (changelog-per-release-files).
 CHANGELOG/
 ├── assay-0.13.0.md
 ├── assay-workflow-0.2.0.md
-├── assay-core-0.1.0.md
+├── assay-domain-0.1.0.md
 ├── assay-dashboard-0.1.0.md
 ├── assay-engine-0.1.0.md
 └── assay-auth-0.1.0.md
@@ -879,8 +879,8 @@ Key messages:
 - **Crate consumers of `assay` lib:** the crate is renamed from `assay-lua` to `assay-lua`
   (unchanged); internal module paths changed. Update `use assay_workflow::...` imports (previously
   `use assay::workflow::...`).
-- **`assay-workflow` 0.1 embedders:** the workflow store trait moved to `assay-core`. Update
-  imports: `use assay_workflow::WorkflowStore` → `use assay_core::WorkflowStore`. The `Engine` is no
+- **`assay-workflow` 0.1 embedders:** the workflow store trait moved to `assay-domain`. Update
+  imports: `use assay_workflow::WorkflowStore` → `use assay_domain::WorkflowStore`. The `Engine` is no
   longer generic — drop the type parameter.
 - **New engine consumers:** follow `docs/engine-quickstart.md` (to be written).
 
@@ -961,7 +961,7 @@ See plan 12 and sub-plans 12a-12e for full architecture details.
 ```bash
 git checkout main
 git pull
-git tag assay-core-v0.1.0
+git tag assay-domain-v0.1.0
 git tag assay-workflow-v0.2.0
 git tag assay-dashboard-v0.1.0
 git tag assay-auth-v0.1.0
@@ -976,7 +976,7 @@ complete within ~20 min.
 - [ ] **Step 4: Verify publishes**
 
 ```bash
-cargo search assay-core assay-workflow assay-dashboard assay-auth assay-engine assay-lua
+cargo search assay-domain assay-workflow assay-dashboard assay-auth assay-engine assay-lua
 ```
 
 Versions should match. Hit `ghcr.io/developerinlondon/assay:0.13.0` and

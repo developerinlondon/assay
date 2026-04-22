@@ -5,11 +5,11 @@
 //! `WorkflowStore` calls through explicit `match` arms, so test bodies remain
 //! backend-agnostic without requiring `dyn Trait`.
 
-use assay_core::types::*;
-use assay_core::{ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats};
+use assay_domain::types::*;
+use assay_domain::{ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats};
 use assay_workflow::WorkflowStore;
 // Re-export types used by new harness methods so tests don't need extra imports.
-pub use assay_core::types::{SchedulePatch, WorkflowSchedule, WorkflowSnapshot, WorkflowWorker};
+pub use assay_domain::types::{SchedulePatch, WorkflowSchedule, WorkflowSnapshot, WorkflowWorker};
 
 // ── Harness ───────────────────────────────────────────────────────────────────
 

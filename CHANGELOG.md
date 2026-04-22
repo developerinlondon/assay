@@ -20,18 +20,18 @@ Six crates go out together:
 | ----------------- | ------- | --------------------- |
 | `assay-lua`       | 0.13.0  | Bumped (runtime only) |
 | `assay-workflow`  | 0.2.0   | Bumped (breaking)     |
-| `assay-core`      | 0.1.0   | New                   |
+| `assay-domain`      | 0.1.0   | New                   |
 | `assay-auth`      | 0.1.0   | New (scaffold)        |
 | `assay-dashboard` | 0.1.0   | New                   |
 | `assay-engine`    | 0.1.0   | New                   |
 
-`assay-workflow` is the only breaking bump — the trait moved to `assay-core`, `WorkflowCtx<S>`
+`assay-workflow` is the only breaking bump — the trait moved to `assay-domain`, `WorkflowCtx<S>`
 replaces `Engine<S>`, and backends are now feature-gated additive flags rather than unconditional
 compile. `assay-auth` is a scaffold only in this release; its real content ships in v0.14.0.
 
 The root workspace no longer has a `[package]`; it's workspace-only. What used to be the top-level
 `assay` binary moved to `crates/assay/` and publishes to crates.io as `assay-lua`. Every domain
-concern lives under `crates/<name>/`. `assay-core` holds the shared `WorkflowStore` trait and DTO
+concern lives under `crates/<name>/`. `assay-domain` holds the shared `WorkflowStore` trait and DTO
 types so any crate can depend on the trait without pulling the whole workflow engine.
 `assay-dashboard` holds the HTML/JS/CSS assets that used to live inside `assay-workflow`, exposed
 through a thin axum router. The dashboard is now served only by `assay-engine`; the retired runtime
@@ -66,8 +66,8 @@ be a separately deployed `assay-engine` instead of whatever `assay serve` was pr
 Operators pick the engine URL via `$ASSAY_ENGINE_URL` or `--engine URL` as before.
 
 Library consumers who embedded `assay-workflow` as a crate need to update their imports.
-`WorkflowStore` lives in `assay_core` now; DTOs like `WorkflowRecord` and `WorkflowEvent` live in
-`assay_core::types`. The `Engine<S>` generic is gone — its role is merged into `WorkflowCtx<S>`,
+`WorkflowStore` lives in `assay_domain` now; DTOs like `WorkflowRecord` and `WorkflowEvent` live in
+`assay_domain::types`. The `Engine<S>` generic is gone — its role is merged into `WorkflowCtx<S>`,
 which is simultaneously the axum state and the orchestrator (Shape 2B from plan 12a Task 1.3
 revised). Call sites go from `Engine::<PostgresStore>::new(store)` to
 `WorkflowCtx::start(Arc::new(store))`. Features are now additive, not mutually exclusive:

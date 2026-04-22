@@ -13,4 +13,4 @@ backend-postgres = []
 backend-sqlite = []
 
 [dependencies]
-assay-core = { path = "../assay-core", version = "0.1" }
+assay-domain = { path = "../assay-domain", version = "0.1" }

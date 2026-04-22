@@ -17,7 +17,7 @@ issue/verify with JWKS rotation, Biscuit capability tokens. Each is a small, foc
 Google-like upstream), WebAuthn/passkey register + auth, Lua runtime wrappers that call
 `assay-engine` over HTTP.
 
-**Phase 6 goal:** Zanzibar trait defined in `assay-core`; PG18 + SQLite backends operational
+**Phase 6 goal:** Zanzibar trait defined in `assay-domain`; PG18 + SQLite backends operational
 (recursive-CTE walk); `check`, `expand`, `lookup_resources`, `lookup_subjects` all correct on both
 backends. Both backends are additive features (default includes both) with runtime selection via
 `EngineConfig.backend`.
@@ -78,7 +78,7 @@ backend-postgres = ["dep:sqlx", "sqlx/postgres"]
 backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 
 [dependencies]
-assay-core = { path = "../assay-core", version = "0.1" }
+assay-domain = { path = "../assay-domain", version = "0.1" }
 
 # Shared
 serde = { version = "1", features = ["derive"] }
@@ -1087,7 +1087,7 @@ git commit -m "feat(runtime): auth.* Lua wrappers calling assay-engine"
 ## Phase 6 — Zanzibar core
 
 Plan 11 lines 136–260 cover Zanzibar rationale, backend selection, check pipeline, and consistency.
-This phase delivers the `ZanzibarStore` trait (in `assay-core`), PG18 + SQLite impls (recursive
+This phase delivers the `ZanzibarStore` trait (in `assay-domain`), PG18 + SQLite impls (recursive
 CTE), `check`/`expand`/`lookup_*` algorithms, and zookies. PG18 specifics: UUIDv7 PKs via
 `uuidv7()`, skip-scan composite index on
 `(object_type, object_id, relation, subject_type,

@@ -73,7 +73,7 @@ One binary (`assay`), ~9–10 MB compressed.
 assay/ (monorepo)
 ├── Cargo.toml                (workspace root)
 ├── crates/
-│   ├── assay-core/           Shared types, errors, store traits.
+│   ├── assay-domain/           Shared types, errors, store traits.
 │   ├── assay-workflow/       Workflow engine + WorkflowStore impls.
 │   ├── assay-auth/           Auth modules + OIDC provider + Zanzibar + impls.
 │   ├── assay-dashboard/      Web UI, feature-gated views (workflow / auth).
@@ -82,19 +82,19 @@ assay/ (monorepo)
 │   └── assay/                Runtime binary + Lua stdlib.
 ```
 
-Store traits live in `assay-core`. Backend impls live alongside their domain crate
+Store traits live in `assay-domain`. Backend impls live alongside their domain crate
 (`assay-workflow/src/store/postgres.rs`, `assay-auth/src/store/sqlite.rs`, etc.) and are gated by
 Cargo features.
 
 ### Crate dependency graph
 
-Arrows point from consumer to dependency. `assay-core` sits at the bottom with no upward
+Arrows point from consumer to dependency. `assay-domain` sits at the bottom with no upward
 dependencies — it's pure types + trait signatures. Domain crates (`assay-workflow`, `assay-auth`)
-depend only on `assay-core`. The engine and dashboard layer on top.
+depend only on `assay-domain`. The engine and dashboard layer on top.
 
 ```
                   ┌──────────────────────────────────────┐
-                  │           assay-core                 │
+                  │           assay-domain                 │
                   │                                      │
                   │   traits: WorkflowStore              │
                   │           UserStore (0.14.0)         │
@@ -166,7 +166,7 @@ depend only on `assay-core`. The engine and dashboard layer on top.
                     └─────────────────────────┘
 ```
 
-**Why `assay-core`?** Matches the `sqlx-core` / `axum-core` convention: the crate everything depends
+**Why `assay-domain`?** Matches the `sqlx-core` / `axum-core` convention: the crate everything depends
 on, nothing depends _through_. Required because `assay-workflow` and `assay-auth` both need shared
 types (user IDs, timestamps, errors) and neither should depend on the other. Keeping it
 dependency-free at the bottom also means fast compile and no backend code leaks into downstream
@@ -241,7 +241,7 @@ HTTP POST
                                  │ calls trait method
                                  ▼
                           WorkflowStore::create_workflow
-                          (trait in assay-core)
+                          (trait in assay-domain)
                                  │
                                  │ dispatched to impl
                                  ▼
@@ -264,7 +264,7 @@ HTTP 201 ◄─────────────── axum writes JSON
 ### Store traits (shared)
 
 ```rust
-// assay-core/src/store.rs
+// assay-domain/src/store.rs
 
 pub trait WorkflowStore: Send + Sync + 'static {
     // ── Namespaces / workflows / events / activities /
@@ -547,7 +547,7 @@ Monorepo workspace, **independent crate versions** (tokio / serde / hyper preced
 - Each crate has its own version field in its own `Cargo.toml`.
 - `cargo-workspaces` (or `cargo-release`) drives per-crate publishing.
 - Breaking change in one crate doesn't force bumps in unrelated crates.
-- Shared traits in `assay-core` stabilise first (`0.x` during early development); downstream crates
+- Shared traits in `assay-domain` stabilise first (`0.x` during early development); downstream crates
   re-export and rely on pinned ranges.
 
 Consumer pinning works independently:
@@ -584,7 +584,7 @@ here.
 
 ### Phase 0 — scaffold crates (no behaviour change)
 
-1. Create `crates/assay-core` with shared types (move from `assay-workflow::types`).
+1. Create `crates/assay-domain` with shared types (move from `assay-workflow::types`).
 2. Create empty `crates/assay-auth` and `crates/assay-engine`.
 3. Extract current dashboard module from `assay-workflow` to `crates/assay-dashboard` (behind
    `workflow` feature).
@@ -592,7 +592,7 @@ here.
 
 ### Phase 1 — workflow storage as trait
 
-5. Define `WorkflowStore` trait in `assay-core`.
+5. Define `WorkflowStore` trait in `assay-domain`.
 6. Move existing `postgres.rs` / `sqlite.rs` into feature-gated modules in
    `assay-workflow/src/store/`.
 7. Re-wire scheduler + dispatcher to `&dyn WorkflowStore`.

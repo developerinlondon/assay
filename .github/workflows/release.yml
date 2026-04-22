@@ -142,14 +142,14 @@ jobs:
           EOF
           chmod +x /tmp/publish-crate.sh
 
-      # Dependency order: assay-core (no assay-* deps) first, then crates that
-      # depend only on assay-core (workflow, dashboard, auth), then assay-engine
+      # Dependency order: assay-domain (no assay-* deps) first, then crates that
+      # depend only on assay-domain (workflow, dashboard, auth), then assay-engine
       # which composes them, then assay-lua (standalone — pure runtime, no
       # workspace-crate deps since v0.13.0 rev 2).
-      - name: Publish assay-core
+      - name: Publish assay-domain
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: /tmp/publish-crate.sh assay-core
+        run: /tmp/publish-crate.sh assay-domain
 
       - name: Publish assay-workflow
         env:

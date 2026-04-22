@@ -17,9 +17,9 @@ pub mod tasks;
 pub mod timers;
 pub mod workers;
 
-// Types live in assay-core; re-exported here so existing `crate::types::*`
+// Types live in assay-domain; re-exported here so existing `crate::types::*`
 // paths continue to resolve.
-pub use assay_core::types;
+pub use assay_domain::types;
 
 pub use ctx::{EngineEvent, WorkflowCtx};
 pub use store::postgres::PostgresStore;

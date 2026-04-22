@@ -10,7 +10,7 @@ description = "Durable workflow engine with REST+SSE API on PostgreSQL 18 and SQ
 
 [dependencies]
 # Shared types + traits
-assay-core = { path = "../assay-core", version = "0.1" }
+assay-domain = { path = "../assay-domain", version = "0.1" }
 
 # Async runtime
 tokio = { version = "1", features = ["rt", "time", "macros"] }

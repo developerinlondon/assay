@@ -52,7 +52,7 @@ lands on `main`, cut `feature/0.14.0-auth` for the auth work.
    description, etc.).
 3. **Merge PR #65** after CI is green.
 4. **Tag** six per-crate tags: `assay-v0.13.0`, `assay-engine-v0.1.0`, `assay-workflow-v0.2.0`,
-   `assay-core-v0.1.0`, `assay-dashboard-v0.1.0`, `assay-auth-v0.1.0`. CI publish-on-tag does the
+   `assay-domain-v0.1.0`, `assay-dashboard-v0.1.0`, `assay-auth-v0.1.0`. CI publish-on-tag does the
    crates.io upload + GitHub release artefacts per existing `release.yml` pattern.
 
 ### Next session (v0.14.0, new branch)

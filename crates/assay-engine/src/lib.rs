@@ -17,7 +17,7 @@ pub mod config;
 pub mod server;
 pub mod state;
 
-pub use assay_core as core;
+pub use assay_domain as core;
 pub use assay_dashboard as dashboard;
 pub use assay_workflow as workflow;
 

@@ -167,7 +167,7 @@ object # relation @ subject [# subject_relation]
 ```
 
 Tuples are rows; the permission graph is walked with recursive CTEs — the pattern SpiceDB uses.
-`ZanzibarStore` is a trait in `assay-core`; implementations live in `assay-auth` behind the
+`ZanzibarStore` is a trait in `assay-domain`; implementations live in `assay-auth` behind the
 `backend-postgres` and `backend-sqlite` features (both additive, both default).
 
 ### Postgres backend — SpiceDB-proven, PG18-optimised
@@ -443,7 +443,7 @@ Backends are additive (both in default) — runtime selects one via `EngineConfi
 ## Prerequisite: plan 10 · executed via plan 12
 
 Plan 10 (assay-engine architecture) lands first. It establishes the `assay-auth` crate scaffold,
-shared `assay-core` traits, and the engine binary that wires auth modules in. Plan 10 also documents
+shared `assay-domain` traits, and the engine binary that wires auth modules in. Plan 10 also documents
 the **`FromRef` state composition pattern** (see § "State composition") — `assay-auth` exports
 `pub struct AuthCtx` and `pub fn router() -> Router<AuthCtx>`; the engine composes both into
 `EngineState` via `FromRef`. Every module in this plan follows that shape.

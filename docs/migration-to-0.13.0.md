@@ -10,7 +10,7 @@ If something here isn't clear, open an issue.
 
 - `assay serve` is gone. Run `assay-engine serve --config <path.toml>` instead.
 - SurrealDB backend removed. PG18 + SQLite only.
-- Library imports changed: `WorkflowStore` is in `assay-core` now, not `assay-workflow`. `Engine<S>`
+- Library imports changed: `WorkflowStore` is in `assay-domain` now, not `assay-workflow`. `Engine<S>`
   dropped its generic.
 - `assay-lua` (the runtime binary) no longer embeds workflow. It's a pure Lua runtime + HTTP client
   that talks to a deployed `assay-engine`.
@@ -72,7 +72,7 @@ Rationale for dropping SurrealDB: plan 12 Revision log in `.claude/plans/12-v0.1
 use assay_workflow::{WorkflowStore, WorkflowRecord, WorkflowEvent, Engine};
 
 // New (0.2.0)
-use assay_core::{WorkflowStore, types::{WorkflowRecord, WorkflowEvent}};
+use assay_domain::{WorkflowStore, types::{WorkflowRecord, WorkflowEvent}};
 use assay_workflow::WorkflowCtx;
 ```
 

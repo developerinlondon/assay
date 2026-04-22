@@ -86,11 +86,21 @@ checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 name = "assay-auth"
 version = "0.1.0"
 dependencies = [
- "assay-core",
+ "assay-domain",
 ]
 
 [[package]]
-name = "assay-core"
+name = "assay-dashboard"
+version = "0.1.0"
+dependencies = [
+ "assay-domain",
+ "axum",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "assay-domain"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -101,23 +111,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "assay-dashboard"
-version = "0.1.0"
-dependencies = [
- "assay-core",
- "axum",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "assay-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "assay-auth",
- "assay-core",
  "assay-dashboard",
+ "assay-domain",
  "assay-workflow",
  "axum",
  "clap",
@@ -181,7 +181,7 @@ name = "assay-workflow"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "assay-core",
+ "assay-domain",
  "async-stream",
  "aws-config",
  "aws-sdk-s3",
