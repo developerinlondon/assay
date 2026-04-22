@@ -37,7 +37,10 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Postgres testcontainer tests spin up a fresh PG instance per case,
+    # so the full workflow test suite can take 30+ min on Ubuntu. 60 min
+    # gives headroom for macOS too (SQLite-only path but slower compile).
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -73,9 +76,9 @@ jobs:
       # the matrix target so linux and macos have independent caches.
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: 'ci-${{ matrix.target }}-v3'
-          cache-all-crates: 'true'
-          save-if: 'true'
+          shared-key: "ci-${{ matrix.target }}-v3"
+          cache-all-crates: "true"
+          save-if: "true"
 
       # Cache Playwright browser binaries (~150 MB). Playwright stores
       # them under an OS-specific default path — list both so the
@@ -101,7 +104,7 @@ jobs:
       - name: moon ci
         run: moon ci --color
         env:
-          MOON_LOG: 'info'
+          MOON_LOG: "info"
 
       # On failure, surface the Playwright HTML report + traces +
       # screenshots so the PR author can debug without rerunning
@@ -143,4 +146,4 @@ jobs:
       - name: moon run openclaw-extension:test
         run: moon run openclaw-extension:test --color
         env:
-          MOON_LOG: 'info'
+          MOON_LOG: "info"

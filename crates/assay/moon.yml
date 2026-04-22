@@ -42,11 +42,14 @@ tasks:
     inputs:
       - "@group(rust-sources)"
     options:
-      # `outputs` would need to point at ../../target/release/assay, but
-      # moon disallows `..`. We skip declaring outputs and let cargo's
-      # own incremental cache handle rebuild avoidance — fine because
-      # this task already relies on Swatinem/rust-cache for CI.
-      cache: true
+      # Moon's task cache can't capture workspace-release outputs (target/
+      # lives outside this project, and `outputs:` forbids `..`). Without
+      # captured outputs, a cache hit skips the build command but can't
+      # restore the binaries — downstream tasks (e.g. dashboard-e2e) then
+      # fail looking for target/release/assay-engine. Disable moon's
+      # task cache here and let cargo's incremental + Swatinem/rust-cache
+      # handle rebuild avoidance on CI.
+      cache: false
       runInCI: true
 
   test:
