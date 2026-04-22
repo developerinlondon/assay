@@ -10,15 +10,23 @@ layer: "application"
 stack: "systems"
 
 fileGroups:
-  # Paths resolve relative to this file (crates/assay/moon.yml).
+  # Paths resolve relative to this file (crates/assay/moon.yml). Moon no
+  # longer accepts `..` parent-directory traversal, so cross-crate
+  # invalidation is expressed via `dependsOn` below (moon's
+  # affected-graph picks up changes in dependent projects
+  # automatically). Workspace-wide `cargo test --workspace` still
+  # exercises every crate regardless.
   rust-sources:
     - "src/**/*"
     - "stdlib/**/*"
     - "Cargo.toml"
-    - "../*/src/**/*"
-    - "../*/Cargo.toml"
-    - "../../Cargo.toml"
-    - "../../Cargo.lock"
+
+dependsOn:
+  - "assay-domain"
+  - "assay-workflow"
+  - "assay-dashboard"
+  - "assay-auth"
+  - "assay-engine"
 
 tasks:
   lint:
