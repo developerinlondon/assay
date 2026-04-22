@@ -1252,6 +1252,9 @@ async fn leader_election(#[case] backend: Backend) {
 // increase it — flaky push tests hide real bugs. Instead investigate the
 // timing between subscription setup and the triggering insert.
 
+// Only the two PG-only push-stream tests below use this; on macOS those
+// tests are cfg-gated out, which would make this import unused.
+#[cfg(all(feature = "backend-postgres", target_os = "linux"))]
 use futures_util::StreamExt;
 
 // Serial — push tests spin up testcontainers; running them concurrent
