@@ -38,17 +38,20 @@ tasks:
       runInCI: true
 
   build:
-    command: "cargo build --release"
+    # `cargo build --release` at workspace level builds libs but SKIPS
+    # any bin with `required-features` that aren't in the top-level
+    # feature set. `assay-engine` has `required-features = ["server"]`
+    # so the engine binary wasn't being built by the default command —
+    # downstream dashboard-e2e then failed with "target/release/
+    # assay-engine: No such file or directory". Build both bins
+    # explicitly.
+    command: 'bash -c "cargo build --release -p assay-lua --bin assay && cargo build --release -p assay-engine --bin assay-engine"'
     inputs:
       - "@group(rust-sources)"
     options:
       # Moon's task cache can't capture workspace-release outputs (target/
-      # lives outside this project, and `outputs:` forbids `..`). Without
-      # captured outputs, a cache hit skips the build command but can't
-      # restore the binaries — downstream tasks (e.g. dashboard-e2e) then
-      # fail looking for target/release/assay-engine. Disable moon's
-      # task cache here and let cargo's incremental + Swatinem/rust-cache
-      # handle rebuild avoidance on CI.
+      # lives outside this project, and `outputs:` forbids `..`). Cargo's
+      # incremental + Swatinem/rust-cache handle rebuild avoidance.
       cache: false
       runInCI: true
 
