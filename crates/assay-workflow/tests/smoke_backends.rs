@@ -17,7 +17,7 @@ fn uid(prefix: &str) -> String {
 // ── Task 3.1 (baseline) ───────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -31,7 +31,7 @@ async fn namespace_roundtrip(#[case] backend: Backend) {
 // ── Task 3.2 — Namespaces ─────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -74,7 +74,7 @@ async fn namespace_delete_and_stats(#[case] backend: Backend) {
 // ── Task 3.3 — Workflows ──────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -99,7 +99,7 @@ async fn workflow_create_get_roundtrip(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -132,7 +132,7 @@ async fn workflow_status_transitions(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -156,7 +156,7 @@ async fn workflow_claim(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -205,7 +205,7 @@ async fn workflow_list_with_filters(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -245,7 +245,7 @@ async fn workflow_task_dispatch(#[case] backend: Backend) {
 // ── Task 3.4 — Events ─────────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -282,7 +282,7 @@ async fn events_append_and_list(#[case] backend: Backend) {
 // ── Task 3.5 — Search attributes ──────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -316,7 +316,7 @@ async fn search_attrs_upsert(#[case] backend: Backend) {
 // ── Task 3.3 archival ─────────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -420,7 +420,7 @@ fn make_signal(workflow_id: &str, name: &str) -> assay_domain::types::WorkflowSi
 // ── Task 3.6 — Activities ─────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -458,7 +458,7 @@ async fn activity_create_and_claim(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -494,7 +494,7 @@ async fn activity_retry_on_failure(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -537,7 +537,7 @@ async fn activity_heartbeat_timeout(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -574,7 +574,7 @@ async fn activity_cancel_pending(#[case] backend: Backend) {
 // ── Task 3.7 — Timers ─────────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -617,7 +617,7 @@ async fn timer_create_and_fire(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -640,7 +640,7 @@ async fn timer_idempotent_on_seq(#[case] backend: Backend) {
 // ── Task 3.8 — Signals ────────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -697,7 +697,7 @@ fn make_schedule(namespace: &str, name: &str) -> common::harness::WorkflowSchedu
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -758,7 +758,7 @@ async fn schedule_crud(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -785,7 +785,7 @@ async fn schedule_last_run_update(#[case] backend: Backend) {
 // ── Task 3.10 — Snapshots ─────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -819,7 +819,7 @@ async fn snapshot_create_and_get_latest(#[case] backend: Backend) {
 // ── Task 3.11 — Archival end-to-end ──────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -899,7 +899,7 @@ fn make_worker(id: &str, namespace: &str, task_queue: &str) -> common::harness::
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -944,7 +944,7 @@ async fn worker_register_heartbeat_list(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -991,7 +991,7 @@ async fn worker_remove_dead(#[case] backend: Backend) {
 // ── Task 3.13 — API Keys ──────────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1039,7 +1039,7 @@ async fn api_key_crud(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1065,7 +1065,7 @@ async fn api_keys_empty_initially_true(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1099,7 +1099,7 @@ async fn api_key_idempotent_by_label(#[case] backend: Backend) {
 // ── Task 3.14 — Queue Stats ───────────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1159,7 +1159,7 @@ async fn queue_stats(#[case] backend: Backend) {
 // ── Task 3.14 — Child Workflows ───────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1209,7 +1209,7 @@ async fn child_workflows_listing(#[case] backend: Backend) {
 // ── Task 3.15 — Leader Election ───────────────────────────────────────────────
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1258,7 +1258,7 @@ use futures_util::StreamExt;
 // with other container-using tests sporadically conflicts on the
 // docker daemon's port allocation / container startup path.
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
@@ -1299,7 +1299,7 @@ async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "backend-postgres", case::pg(Backend::Postgres))]
+#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
