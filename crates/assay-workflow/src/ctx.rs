@@ -135,7 +135,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
 
     /// Access the underlying store (for the API layer).
     pub fn store(&self) -> &S {
-        &*self.store
+        &self.store
     }
 
     /// Broadcast a state-transition event. No-op when no broadcaster

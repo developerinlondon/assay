@@ -1,7 +1,7 @@
-/// Typed asset bundle for the workflow dashboard.
-///
-/// Every asset is baked into the binary at compile time via `include_str!`.
-/// Served by the router in `crate::router`.
+//! Typed asset bundle for the workflow dashboard.
+//!
+//! Every asset is baked into the binary at compile time via `include_str!`.
+//! Served by the router in `crate::router`.
 
 pub const INDEX_HTML: &str = include_str!("../assets/workflow/index.html");
 pub const THEME_CSS: &str = include_str!("../assets/workflow/theme.css");
