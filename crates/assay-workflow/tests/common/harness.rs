@@ -503,48 +503,65 @@ pub fn make_event(workflow_id: &str, seq: i32) -> WorkflowEvent {
 
 #[cfg(feature = "backend-postgres")]
 async fn postgres_harness() -> anyhow::Result<Harness> {
-    // CI path: shared Postgres service container, one database per test.
-    // Eliminates ~2s-per-test of docker container spin-up plus the drop-time
-    // synchronous `docker stop` that previously deadlocked on test panic.
-    if let Ok(admin_url) = std::env::var("TEST_DATABASE_URL") {
-        use sqlx::postgres::{PgConnectOptions, PgPool};
-        use std::str::FromStr;
+    use sqlx::postgres::{PgConnectOptions, PgPool};
+    use std::str::FromStr;
 
-        let admin_opts = PgConnectOptions::from_str(&admin_url)?;
-        let admin_pool = PgPool::connect_with(admin_opts.clone()).await?;
+    // Both CI and local dev share a single Postgres server and carve out a
+    // fresh database per test. On CI, the server is a `docker run` pre-step
+    // that exposes `TEST_DATABASE_URL`. Locally, a testcontainer is started
+    // on the first test that needs it and reused for the rest of the
+    // process — eliminating both per-test container spin-up and the Drop
+    // deadlock that used to turn a timeout-panic into a 60-min silent hang.
+    // `env::var` returns `Ok("")` when the variable is set but empty — treat
+    // that the same as unset so callers can "clear" the URL with
+    // `TEST_DATABASE_URL=` without falling through to a broken connect.
+    let admin_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) if !url.is_empty() => url,
+        _ => shared_local_pg_url().await?,
+    };
 
-        let db_name = unique_db_name();
-        sqlx::query(&format!(r#"CREATE DATABASE "{db_name}""#))
-            .execute(&admin_pool)
-            .await?;
-        admin_pool.close().await;
+    let admin_opts = PgConnectOptions::from_str(&admin_url)?;
+    let admin_pool = PgPool::connect_with(admin_opts.clone()).await?;
 
-        let test_pool = PgPool::connect_with(admin_opts.database(&db_name)).await?;
-        let store = assay_workflow::PostgresStore::from_pool(test_pool).await?;
-        return Ok(Harness::Postgres {
-            _container: None,
-            store,
-        });
-    }
+    let db_name = unique_db_name();
+    sqlx::query(&format!(r#"CREATE DATABASE "{db_name}""#))
+        .execute(&admin_pool)
+        .await?;
+    admin_pool.close().await;
 
-    // Local-dev path: spin up a dedicated testcontainer for this test.
-    use testcontainers::runners::AsyncRunner;
-    use testcontainers::ImageExt;
-    use testcontainers_modules::postgres::Postgres as PgImage;
-
-    let container = PgImage::default().with_tag("18-alpine").start().await?;
-    let host = container.get_host().await?;
-    let port = container.get_host_port_ipv4(5432).await?;
-    let url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
-
-    // The PG schema migration inserts "main" automatically; no need to call
-    // create_namespace here — it would fail with a unique-key violation.
-    let store = assay_workflow::PostgresStore::new(&url).await?;
-
+    let test_pool = PgPool::connect_with(admin_opts.database(&db_name)).await?;
+    let store = assay_workflow::PostgresStore::from_pool(test_pool).await?;
     Ok(Harness::Postgres {
-        _container: Some(container),
+        _container: None,
         store,
     })
+}
+
+/// Start (or return the already-started) testcontainer that backs local test
+/// runs when `TEST_DATABASE_URL` is not set. The container is intentionally
+/// leaked via `mem::forget` once its URL is known — its `Drop` impl
+/// synchronously calls `docker stop` through `Handle::block_on`, which is
+/// unsafe during process teardown after the test runtime has shut down.
+/// testcontainers' ryuk reaper cleans up abandoned containers after the test
+/// process exits, so nothing stays resident long-term.
+#[cfg(feature = "backend-postgres")]
+pub async fn shared_local_pg_url() -> anyhow::Result<String> {
+    use tokio::sync::OnceCell;
+    static URL: OnceCell<String> = OnceCell::const_new();
+    URL.get_or_try_init(|| async {
+        use testcontainers::runners::AsyncRunner;
+        use testcontainers::ImageExt;
+        use testcontainers_modules::postgres::Postgres as PgImage;
+
+        let container = PgImage::default().with_tag("18-alpine").start().await?;
+        let host = container.get_host().await?;
+        let port = container.get_host_port_ipv4(5432).await?;
+        let url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
+        std::mem::forget(container);
+        Ok::<_, anyhow::Error>(url)
+    })
+    .await
+    .cloned()
 }
 
 /// Produce a database name unique across tests within this process. Nanos + a

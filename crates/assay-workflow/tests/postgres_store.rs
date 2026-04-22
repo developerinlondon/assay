@@ -1,17 +1,19 @@
 /// PostgresStore integration tests.
 ///
-/// These tests spin up a real Postgres container via testcontainers
-/// and run the full store contract against it. Requires Docker.
+/// These tests connect to a shared Postgres server (CI provides one via
+/// `TEST_DATABASE_URL`; locally a testcontainer is started on first use and
+/// reused for the rest of the process) and run the full store contract
+/// against a fresh database per test.
 ///
 /// Run with: cargo test -p assay-workflow --test postgres_store
 ///
-/// Skipped automatically when Docker is not available (e.g. macOS CI).
+/// Skipped automatically when Docker is not available and
+/// `TEST_DATABASE_URL` is not set (e.g. macOS CI).
+mod common;
+
 use assay_workflow::store::postgres::PostgresStore;
 use assay_workflow::store::WorkflowStore;
 use assay_workflow::types::*;
-use testcontainers::runners::AsyncRunner;
-use testcontainers::ImageExt;
-use testcontainers_modules::postgres::Postgres;
 
 fn docker_available() -> bool {
     std::process::Command::new("docker")
@@ -23,37 +25,36 @@ fn docker_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Returns `(store, optional container)`. If `TEST_DATABASE_URL` is set
-/// (CI path), uses a shared Postgres service with a per-test database. Falls
-/// back to a dedicated testcontainer for local dev. `None` signals skip when
-/// Docker is unavailable and no shared URL is configured.
-async fn create_store() -> Option<(PostgresStore, Option<testcontainers::ContainerAsync<Postgres>>)> {
-    if let Ok(admin_url) = std::env::var("TEST_DATABASE_URL") {
-        use sqlx::postgres::{PgConnectOptions, PgPool};
-        use std::str::FromStr;
-        let admin_opts = PgConnectOptions::from_str(&admin_url).unwrap();
-        let admin_pool = PgPool::connect_with(admin_opts.clone()).await.unwrap();
-        let db_name = unique_db_name();
-        sqlx::query(&format!(r#"CREATE DATABASE "{db_name}""#))
-            .execute(&admin_pool)
-            .await
-            .unwrap();
-        admin_pool.close().await;
-        let pool = PgPool::connect_with(admin_opts.database(&db_name))
-            .await
-            .unwrap();
-        let store = PostgresStore::from_pool(pool).await.unwrap();
-        return Some((store, None));
-    }
-    if !docker_available() {
-        eprintln!("Skipping: Docker not available and TEST_DATABASE_URL unset");
-        return None;
-    }
-    let container = Postgres::default().with_tag("18-alpine").start().await.unwrap();
-    let port = container.get_host_port_ipv4(5432).await.unwrap();
-    let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
-    let store = PostgresStore::new(&url).await.unwrap();
-    Some((store, Some(container)))
+/// Returns a fresh `PostgresStore` for this test — its own database on the
+/// shared server. `None` signals skip when Docker is unavailable and no
+/// shared URL is configured.
+async fn create_store() -> Option<PostgresStore> {
+    let admin_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) if !url.is_empty() => url,
+        _ => {
+            if !docker_available() {
+                eprintln!("Skipping: Docker not available and TEST_DATABASE_URL unset");
+                return None;
+            }
+            common::harness::shared_local_pg_url().await.ok()?
+        }
+    };
+
+    use sqlx::postgres::{PgConnectOptions, PgPool};
+    use std::str::FromStr;
+    let admin_opts = PgConnectOptions::from_str(&admin_url).unwrap();
+    let admin_pool = PgPool::connect_with(admin_opts.clone()).await.unwrap();
+    let db_name = unique_db_name();
+    sqlx::query(&format!(r#"CREATE DATABASE "{db_name}""#))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+    admin_pool.close().await;
+    let pool = PgPool::connect_with(admin_opts.database(&db_name))
+        .await
+        .unwrap();
+    let store = PostgresStore::from_pool(pool).await.unwrap();
+    Some(store)
 }
 
 fn unique_db_name() -> String {
@@ -68,14 +69,15 @@ fn unique_db_name() -> String {
     format!("assay_test_{t}_{n}")
 }
 
-/// Macro to skip tests when Docker is unavailable.
+/// Macro to skip tests when no Postgres is available. The second argument
+/// is a vestigial name — tests used to receive a per-test testcontainer to
+/// hold alive. With the shared-server pattern there's no container to
+/// hold, so the second name expands to `_` and is ignored.
 macro_rules! require_docker {
-    ($store:ident, $container:ident) => {
-        let Some(($store, $container)) = create_store().await else {
+    ($store:ident, $_container:ident) => {
+        let Some($store) = create_store().await else {
             return;
         };
-        // Keep container alive for the test duration
-        let _ = &$container;
     };
 }
 
