@@ -5,26 +5,26 @@
 # written in assay Lua — see docs/modules/process.md for the
 # process.spawn API it uses.
 
-language: 'typescript'
-layer: 'automation'
-stack: 'frontend'
+language: "typescript"
+layer: "automation"
+stack: "frontend"
 
 tasks:
   install:
-    command: 'npm install --no-audit --no-fund'
+    command: "npm install --no-audit --no-fund"
     inputs:
-      - 'package.json'
-      - 'package-lock.json'
+      - "package.json"
+      - "package-lock.json"
     outputs:
-      - 'node_modules'
+      - "node_modules"
     options:
       cache: true
       runInCI: true
 
   install-browsers:
-    command: 'npx playwright install --with-deps chromium'
+    command: "npx playwright install --with-deps chromium"
     deps:
-      - 'install'
+      - "install"
     options:
       # Browser binaries land in ~/.cache/ms-playwright (out of repo);
       # CI caches that path explicitly via actions/cache.
@@ -32,21 +32,23 @@ tasks:
       runInCI: true
 
   test:
-    # The Lua runner does the engine + worker spawn, polling, seed,
-    # Playwright invocation, and cleanup in one script. moon's job is
-    # just to make sure the deps (engine binary, npm deps, browsers)
-    # are present first.
-    command: '../../../target/release/assay run run.lua'
+    # The Lua runner (v0.13.0+) boots the `assay-engine` HTTP server
+    # against an ephemeral SQLite, spawns the worker via `assay` (Lua
+    # runtime), and drives the dashboard with Playwright. assay-lua:build
+    # builds the whole workspace-release target, so both binaries are
+    # ready when this runs.
+    command: "../../../target/release/assay run run.lua"
     deps:
-      - 'assay-lua:build'
-      - 'install-browsers'
+      - "assay-lua:build"
+      - "install-browsers"
     inputs:
-      - '**/*.{ts,json,lua}'
-      - 'fixtures/**/*'
-      - '/crates/assay-workflow/src/dashboard/**/*'
-      - '/crates/assay-workflow/src/api/**/*'
+      - "**/*.{ts,json,lua}"
+      - "fixtures/**/*"
+      - "/crates/assay-dashboard/src/**/*"
+      - "/crates/assay-workflow/src/api/**/*"
+      - "/crates/assay-engine/src/**/*"
     env:
-      ASSAY_REPO_ROOT: '$workspaceRoot'
+      ASSAY_REPO_ROOT: "$workspaceRoot"
     options:
       cache: true
       runInCI: true
