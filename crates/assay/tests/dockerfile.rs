@@ -15,8 +15,13 @@
 
 #[test]
 fn dockerfile_runtime_stage_is_from_scratch() {
-    let content =
-        std::fs::read_to_string("Dockerfile").expect("Dockerfile must exist at repo root");
+    // CARGO_MANIFEST_DIR is crates/assay/ (post-0.13.0 workspace move);
+    // the repo-root Dockerfile sits two levels up.
+    let content = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../Dockerfile"
+    ))
+    .expect("Dockerfile must exist at repo root");
 
     // The runtime stage is the last `FROM` line in a multi-stage
     // build (earlier FROMs are builder/intermediate stages with `AS`).
@@ -43,8 +48,13 @@ fn dockerfile_runtime_stage_is_from_scratch() {
 
 #[test]
 fn dockerfile_copies_ca_bundle() {
-    let content =
-        std::fs::read_to_string("Dockerfile").expect("Dockerfile must exist at repo root");
+    // CARGO_MANIFEST_DIR is crates/assay/ (post-0.13.0 workspace move);
+    // the repo-root Dockerfile sits two levels up.
+    let content = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../Dockerfile"
+    ))
+    .expect("Dockerfile must exist at repo root");
 
     assert!(
         content.contains("ca-certificates.crt"),
@@ -59,8 +69,13 @@ fn dockerfile_copies_ca_bundle() {
 
 #[test]
 fn dockerfile_entrypoint_uses_absolute_path() {
-    let content =
-        std::fs::read_to_string("Dockerfile").expect("Dockerfile must exist at repo root");
+    // CARGO_MANIFEST_DIR is crates/assay/ (post-0.13.0 workspace move);
+    // the repo-root Dockerfile sits two levels up.
+    let content = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../Dockerfile"
+    ))
+    .expect("Dockerfile must exist at repo root");
 
     // On a scratch image there is no $PATH resolution (no shell, no
     // system PATH). The ENTRYPOINT must be an absolute filesystem

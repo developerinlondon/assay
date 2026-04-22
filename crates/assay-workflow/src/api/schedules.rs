@@ -7,11 +7,11 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::api::workflows::AppError;
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 use crate::types::{SchedulePatch, WorkflowSchedule};
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/schedules", post(create_schedule).get(list_schedules))
         .route(
@@ -75,7 +75,7 @@ fn default_timezone() -> String {
     ),
 )]
 pub async fn create_schedule<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<CreateScheduleRequest>,
 ) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
     let now = timestamp_now();
@@ -107,7 +107,7 @@ pub async fn create_schedule<S: WorkflowStore>(
         created_at: now,
     };
 
-    state.engine.create_schedule(&schedule).await?;
+    state.create_schedule(&schedule).await?;
 
     Ok((
         axum::http::StatusCode::CREATED,
@@ -128,10 +128,10 @@ pub struct NsQuery {
     responses((status = 200, description = "List of schedules", body = Vec<WorkflowSchedule>)),
 )]
 pub async fn list_schedules<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Query(q): Query<NsQuery>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let schedules = state.engine.list_schedules(&q.namespace).await?;
+    let schedules = state.list_schedules(&q.namespace).await?;
     let json: Vec<serde_json::Value> = schedules
         .into_iter()
         .map(|s| serde_json::to_value(s).unwrap_or_default())
@@ -149,12 +149,11 @@ pub async fn list_schedules<S: WorkflowStore>(
     ),
 )]
 pub async fn get_schedule<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(name): Path<String>,
     Query(q): Query<NsQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let schedule = state
-        .engine
         .get_schedule(&q.namespace, &name)
         .await?
         .ok_or(AppError::NotFound(format!("schedule {name}")))?;
@@ -172,11 +171,11 @@ pub async fn get_schedule<S: WorkflowStore>(
     ),
 )]
 pub async fn delete_schedule<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(name): Path<String>,
     Query(q): Query<NsQuery>,
 ) -> Result<axum::http::StatusCode, AppError> {
-    let deleted = state.engine.delete_schedule(&q.namespace, &name).await?;
+    let deleted = state.delete_schedule(&q.namespace, &name).await?;
     if deleted {
         Ok(axum::http::StatusCode::OK)
     } else {
@@ -213,7 +212,7 @@ pub struct PatchScheduleRequest {
     ),
 )]
 pub async fn patch_schedule<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(name): Path<String>,
     Query(q): Query<NsQuery>,
     Json(req): Json<PatchScheduleRequest>,
@@ -237,7 +236,6 @@ pub async fn patch_schedule<S: WorkflowStore>(
     };
 
     let updated = state
-        .engine
         .update_schedule(&q.namespace, &name, &patch)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("schedule {name}")))?;
@@ -258,12 +256,11 @@ pub async fn patch_schedule<S: WorkflowStore>(
     ),
 )]
 pub async fn pause_schedule<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(name): Path<String>,
     Query(q): Query<NsQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let updated = state
-        .engine
         .set_schedule_paused(&q.namespace, &name, true)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("schedule {name}")))?;
@@ -283,12 +280,11 @@ pub async fn pause_schedule<S: WorkflowStore>(
     ),
 )]
 pub async fn resume_schedule<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(name): Path<String>,
     Query(q): Query<NsQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let updated = state
-        .engine
         .set_schedule_paused(&q.namespace, &name, false)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("schedule {name}")))?;

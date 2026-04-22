@@ -1,0 +1,21 @@
+# assay-engine PostgreSQL 18 example config (Phase 3 — workflow + dashboard, no auth)
+
+[server]
+bind_addr = "0.0.0.0:3000"
+
+[backend]
+type = "postgres"
+# PG18 minimum. Set DATABASE_URL via environment variable in production to
+# avoid exposing credentials in config files:
+#   url = "$DATABASE_URL"  (not yet; substitute manually for now)
+url = "postgres://postgres:postgres@localhost:5432/assay"
+
+[workflow]
+enabled = true
+
+[dashboard]
+enabled = true
+
+[logging]
+level = "info"
+format = "json"

@@ -17,13 +17,17 @@
 -- The script is invoked as `assay run crates/assay-workflow/tests-e2e/run.lua`
 -- from the repo root (mise + moon both set cwd to the workspace root).
 local ROOT = env.get("ASSAY_REPO_ROOT") or "."
-local BIN = ROOT .. "/target/release/assay"
+-- v0.13.0: runtime + engine are two binaries. Engine runs the HTTP API;
+-- `assay` runs the worker Lua script.
+local ASSAY_BIN = ROOT .. "/target/release/assay"
+local ENGINE_BIN = ROOT .. "/target/release/assay-engine"
 local HERE = ROOT .. "/crates/assay-workflow/tests-e2e"
 local WORKER = HERE .. "/fixtures/demo-worker.lua"
 
 local PORT = tonumber(env.get("ASSAY_E2E_PORT") or "8080")
 local BASE = "http://localhost:" .. PORT
 local DB = env.get("ASSAY_E2E_DB") or "/tmp/assay-e2e.sqlite"
+local ENGINE_CONFIG = env.get("ASSAY_E2E_ENGINE_CONFIG") or "/tmp/assay-e2e-engine.toml"
 local ENGINE_LOG = env.get("ASSAY_E2E_ENGINE_LOG") or "/tmp/assay-e2e-engine.log"
 local WORKER_LOG = env.get("ASSAY_E2E_WORKER_LOG") or "/tmp/assay-e2e-worker.log"
 
@@ -48,6 +52,25 @@ end
 local function reset_db()
   pcall(fs.remove, DB)
   fs.write(DB, "")
+end
+
+-- Write the engine config file pointing at our ephemeral SQLite DB +
+-- the port under test. Matches the schema in
+-- crates/assay-engine/src/config.rs (v0.13.0 format).
+local function write_engine_config()
+  local toml = string.format([[
+[server]
+bind_addr = "127.0.0.1:%d"
+
+[backend]
+type = "sqlite"
+path = "%s"
+
+[logging]
+level = "info"
+format = "pretty"
+]], PORT, DB)
+  fs.write(ENGINE_CONFIG, toml)
 end
 
 -- Poll /api/v1/version until the engine answers (or give up after 15s).
@@ -75,11 +98,12 @@ end
 
 local ok, err = pcall(function()
   reset_db()
+  write_engine_config()
 
-  log("starting engine on :" .. PORT)
+  log("starting assay-engine on :" .. PORT)
   local h = process.spawn({
-    cmd = BIN,
-    args = { "serve", "--port", tostring(PORT), "--backend", "sqlite://" .. DB },
+    cmd = ENGINE_BIN,
+    args = { "serve", "--config", ENGINE_CONFIG },
     stdout = ENGINE_LOG,
     stderr = ENGINE_LOG,
   })
@@ -96,9 +120,9 @@ local ok, err = pcall(function()
     fail("namespace create failed: " .. r.status .. " " .. (r.body or ""))
   end
 
-  log("starting demo worker")
+  log("starting demo worker (assay runtime)")
   local hw = process.spawn({
-    cmd = BIN,
+    cmd = ASSAY_BIN,
     args = { "run", WORKER },
     stdout = WORKER_LOG,
     stderr = WORKER_LOG,

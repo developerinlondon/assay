@@ -1,0 +1,58 @@
+[package]
+name = "assay-engine"
+version = "0.1.0"
+categories = ["asynchronous", "database", "web-programming::http-server"]
+edition = "2024"
+keywords = ["workflow", "auth", "oidc", "zanzibar", "postgres"]
+license = "Apache-2.0"
+repository = "https://github.com/developerinlondon/assay"
+description = "Standalone workflow + auth + dashboard HTTP server on PostgreSQL 18 + SQLite. Embeddable as a library, or run as a binary."
+
+[[bin]]
+name = "assay-engine"
+path = "src/bin/assay-engine.rs"
+required-features = ["server"]
+
+[lib]
+name = "assay_engine"
+path = "src/lib.rs"
+
+[features]
+# Phase 3 defaults: workflow + dashboard + both backends, no auth. Auth
+# is feature-gated so the crate compiles with or without `assay-auth`
+# until Phase 8 composes it in.
+default = [
+  "backend-postgres",
+  "backend-sqlite",
+  "server",
+]
+
+auth = ["dep:assay-auth"]
+server = ["dep:clap"]
+
+backend-postgres = ["assay-workflow/backend-postgres", "assay-auth?/backend-postgres"]
+backend-sqlite = ["assay-workflow/backend-sqlite", "assay-auth?/backend-sqlite"]
+
+[dependencies]
+assay-auth = { path = "../assay-auth", version = "0.1", optional = true }
+assay-domain = { path = "../assay-domain", version = "0.1" }
+assay-dashboard = { path = "../assay-dashboard", version = "0.1" }
+assay-workflow = { path = "../assay-workflow", version = "0.2" }
+
+axum = "0.8"
+clap = { version = "4", features = ["derive", "env"], optional = true }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }

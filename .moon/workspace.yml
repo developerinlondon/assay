@@ -18,19 +18,23 @@ projects:
   # makes the graph self-documenting and stops moon from accidentally
   # picking up unrelated subdirectories that happen to contain a
   # moon.yml in the future.
-  assay-lua: '.'
-  assay-workflow: 'crates/assay-workflow'
-  dashboard-e2e: 'crates/assay-workflow/tests-e2e'
-  site: 'site'
-  openclaw-extension: 'openclaw-extension'
+  assay-lua: "crates/assay"
+  assay-domain: "crates/assay-domain"
+  assay-auth: "crates/assay-auth"
+  assay-dashboard: "crates/assay-dashboard"
+  assay-engine: "crates/assay-engine"
+  assay-workflow: "crates/assay-workflow"
+  dashboard-e2e: "crates/assay-workflow/tests-e2e"
+  site: "site"
+  openclaw-extension: "openclaw-extension"
 
 vcs:
-  client: 'git'
-  defaultBranch: 'main'
+  client: "git"
+  defaultBranch: "main"
 
 pipeline:
   # Cache moon's task-output cache for a week. Cargo's incremental
   # build cache (Swatinem/rust-cache) is independent and lives longer.
-  cacheLifetime: '7 days'
+  cacheLifetime: "7 days"
   # Per-task `cache: true` in each moon.yml decides what's archived;
   # moon 2.x removed the workspace-level `archivableTargets` knob.

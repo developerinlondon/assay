@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::workflows::AppError;
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 use crate::types::WorkflowWorker;
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/workers/register", post(register_worker))
         .route("/workers/heartbeat", post(worker_heartbeat))
@@ -63,7 +63,7 @@ pub struct RegisterWorkerResponse {
     ),
 )]
 pub async fn register_worker<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<RegisterWorkerRequest>,
 ) -> Result<Json<RegisterWorkerResponse>, AppError> {
     let now = timestamp_now();
@@ -83,7 +83,7 @@ pub async fn register_worker<S: WorkflowStore>(
         registered_at: now,
     };
 
-    state.engine.register_worker(&worker).await?;
+    state.register_worker(&worker).await?;
     Ok(Json(RegisterWorkerResponse { worker_id }))
 }
 
@@ -98,10 +98,10 @@ pub struct HeartbeatRequest {
     responses((status = 200, description = "Heartbeat recorded")),
 )]
 pub async fn worker_heartbeat<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<HeartbeatRequest>,
 ) -> Result<axum::http::StatusCode, AppError> {
-    state.engine.heartbeat_worker(&req.worker_id).await?;
+    state.heartbeat_worker(&req.worker_id).await?;
     Ok(axum::http::StatusCode::OK)
 }
 
@@ -122,11 +122,10 @@ pub struct PollRequest {
     ),
 )]
 pub async fn poll_task<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<PollRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let activity = state
-        .engine
         .claim_activity(&req.queue, &req.worker_id)
         .await?;
 
@@ -150,13 +149,12 @@ pub struct CompleteTaskBody {
     responses((status = 200, description = "Task completed")),
 )]
 pub async fn complete_task<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<i64>,
     Json(body): Json<CompleteTaskBody>,
 ) -> Result<axum::http::StatusCode, AppError> {
     let result = body.result.map(|v| v.to_string());
     state
-        .engine
         .complete_activity(id, result.as_deref(), None, false)
         .await?;
     Ok(axum::http::StatusCode::OK)
@@ -176,14 +174,14 @@ pub struct FailTaskBody {
     responses((status = 200, description = "Task marked as failed")),
 )]
 pub async fn fail_task<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<i64>,
     Json(body): Json<FailTaskBody>,
 ) -> Result<axum::http::StatusCode, AppError> {
     // fail_activity honors the activity's retry policy: re-queues with
     // backoff while attempts remain, otherwise marks FAILED + appends
     // ActivityFailed event.
-    state.engine.fail_activity(id, &body.error).await?;
+    state.fail_activity(id, &body.error).await?;
     Ok(axum::http::StatusCode::OK)
 }
 
@@ -199,12 +197,11 @@ pub struct HeartbeatTaskBody {
     responses((status = 200, description = "Heartbeat recorded")),
 )]
 pub async fn heartbeat_task<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<i64>,
     Json(body): Json<HeartbeatTaskBody>,
 ) -> Result<axum::http::StatusCode, AppError> {
     state
-        .engine
         .heartbeat_activity(id, body.details.as_deref())
         .await?;
     Ok(axum::http::StatusCode::OK)

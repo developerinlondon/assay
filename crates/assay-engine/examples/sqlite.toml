@@ -1,0 +1,18 @@
+# assay-engine SQLite example config (Phase 3 — workflow + dashboard, no auth)
+
+[server]
+bind_addr = "127.0.0.1:3000"
+
+[backend]
+type = "sqlite"
+path = "/tmp/assay-engine-dev.db"
+
+[workflow]
+enabled = true
+
+[dashboard]
+enabled = true
+
+[logging]
+level = "info"
+format = "pretty"

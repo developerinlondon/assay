@@ -7,10 +7,10 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::api::workflows::AppError;
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/namespaces", post(create_namespace).get(list_namespaces))
         .route(
@@ -34,10 +34,10 @@ pub struct CreateNamespaceRequest {
     ),
 )]
 pub async fn create_namespace<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<CreateNamespaceRequest>,
 ) -> Result<axum::http::StatusCode, AppError> {
-    state.engine.create_namespace(&req.name).await?;
+    state.create_namespace(&req.name).await?;
     Ok(axum::http::StatusCode::CREATED)
 }
 
@@ -49,9 +49,9 @@ pub async fn create_namespace<S: WorkflowStore>(
     ),
 )]
 pub async fn list_namespaces<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let namespaces = state.engine.list_namespaces().await?;
+    let namespaces = state.list_namespaces().await?;
     let json: Vec<serde_json::Value> = namespaces
         .into_iter()
         .map(|n| serde_json::to_value(n).unwrap_or_default())
@@ -68,10 +68,10 @@ pub async fn list_namespaces<S: WorkflowStore>(
     ),
 )]
 pub async fn get_namespace_stats<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let stats = state.engine.get_namespace_stats(&name).await?;
+    let stats = state.get_namespace_stats(&name).await?;
     Ok(Json(serde_json::to_value(stats)?))
 }
 
@@ -85,7 +85,7 @@ pub async fn get_namespace_stats<S: WorkflowStore>(
     ),
 )]
 pub async fn delete_namespace<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(name): Path<String>,
 ) -> Result<axum::http::StatusCode, AppError> {
     if name == "main" {
@@ -93,7 +93,7 @@ pub async fn delete_namespace<S: WorkflowStore>(
             "cannot delete the 'main' namespace".to_string(),
         ));
     }
-    let deleted = state.engine.delete_namespace(&name).await?;
+    let deleted = state.delete_namespace(&name).await?;
     if deleted {
         Ok(axum::http::StatusCode::OK)
     } else {

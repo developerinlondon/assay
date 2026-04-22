@@ -1,0 +1,67 @@
+# crates/assay — runtime binary (`assay-lua` on crates.io, `assay`
+# installed). Owns the workspace-wide cargo tasks: cargo treats the
+# workspace as one unit (single Cargo.lock, shared target/), so
+# building / testing / clippy-ing this project is the same as doing it
+# for every member crate. Per-crate moon.yml files (crates/assay-*)
+# exist for the project graph, not for running cargo a second time.
+
+language: "rust"
+layer: "application"
+stack: "systems"
+
+fileGroups:
+  # Paths resolve relative to this file (crates/assay/moon.yml). Moon no
+  # longer accepts `..` parent-directory traversal, so cross-crate
+  # invalidation is expressed via `dependsOn` below (moon's
+  # affected-graph picks up changes in dependent projects
+  # automatically). Workspace-wide `cargo test --workspace` still
+  # exercises every crate regardless.
+  rust-sources:
+    - "src/**/*"
+    - "stdlib/**/*"
+    - "Cargo.toml"
+
+dependsOn:
+  - "assay-domain"
+  - "assay-workflow"
+  - "assay-dashboard"
+  - "assay-auth"
+  - "assay-engine"
+
+tasks:
+  lint:
+    command: "cargo clippy --workspace --tests -- -D warnings"
+    inputs:
+      - "@group(rust-sources)"
+    options:
+      cache: true
+      runInCI: true
+
+  build:
+    # `cargo build --release` at workspace level builds libs but SKIPS
+    # any bin with `required-features` that aren't in the top-level
+    # feature set. `assay-engine` has `required-features = ["server"]`
+    # so the engine binary wasn't being built by the default command —
+    # downstream dashboard-e2e then failed with "target/release/
+    # assay-engine: No such file or directory". Build both bins
+    # explicitly.
+    command: 'bash -c "cargo build --release -p assay-lua --bin assay && cargo build --release -p assay-engine --bin assay-engine"'
+    inputs:
+      - "@group(rust-sources)"
+    options:
+      # Moon's task cache can't capture workspace-release outputs (target/
+      # lives outside this project, and `outputs:` forbids `..`). Cargo's
+      # incremental + Swatinem/rust-cache handle rebuild avoidance.
+      cache: false
+      runInCI: true
+
+  test:
+    command: "cargo test --workspace"
+    inputs:
+      - "@group(rust-sources)"
+      - "tests/**/*"
+    options:
+      # Cross-crate test changes are picked up via `dependsOn` on the
+      # project itself — moon walks project deps for affected detection.
+      cache: true
+      runInCI: true

@@ -24,10 +24,11 @@ use utoipa::ToSchema;
 
 use crate::api::auth::{generate_api_key, hash_api_key, key_prefix};
 use crate::api::workflows::AppError;
-use crate::api::AppState;
-use crate::store::{ApiKeyRecord, WorkflowStore};
+use crate::ctx::WorkflowCtx;
+use crate::store::ApiKeyRecord;
+use crate::store::WorkflowStore;
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/api-keys", post(create_api_key).get(list_api_keys))
         .route("/api-keys/{prefix}", delete(revoke_api_key))
@@ -71,12 +72,12 @@ pub struct CreateApiKeyResponse {
     ),
 )]
 pub async fn create_api_key<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<CreateApiKeyRequest>,
 ) -> Result<(axum::http::StatusCode, Json<CreateApiKeyResponse>), AppError> {
     if req.idempotent
         && let Some(label) = req.label.as_deref()
-        && let Some(existing) = state.engine.store().get_api_key_by_label(label).await?
+        && let Some(existing) = state.store().get_api_key_by_label(label).await?
     {
         return Ok((
             axum::http::StatusCode::OK,
@@ -98,7 +99,6 @@ pub async fn create_api_key<S: WorkflowStore>(
         .unwrap_or(0.0);
 
     state
-        .engine
         .store()
         .create_api_key(&hash, &prefix, req.label.as_deref(), now)
         .await?;
@@ -122,9 +122,9 @@ pub async fn create_api_key<S: WorkflowStore>(
     ),
 )]
 pub async fn list_api_keys<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
 ) -> Result<Json<Vec<ApiKeyRecord>>, AppError> {
-    let keys = state.engine.store().list_api_keys().await?;
+    let keys = state.store().list_api_keys().await?;
     Ok(Json(keys))
 }
 
@@ -138,10 +138,10 @@ pub async fn list_api_keys<S: WorkflowStore>(
     ),
 )]
 pub async fn revoke_api_key<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     axum::extract::Path(prefix): axum::extract::Path<String>,
 ) -> Result<axum::http::StatusCode, AppError> {
-    let removed = state.engine.store().revoke_api_key(&prefix).await?;
+    let removed = state.store().revoke_api_key(&prefix).await?;
     if removed {
         Ok(axum::http::StatusCode::NO_CONTENT)
     } else {
