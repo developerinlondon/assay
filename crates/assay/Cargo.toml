@@ -19,15 +19,13 @@ name = "assay"
 path = "src/lib.rs"
 
 [features]
-default = ["db", "server", "cli", "workflow"]
+# assay-lua (v0.13.0+, rev 2) is a pure Lua runtime + HTTP client. Workflow
+# and auth live in `assay-engine`; this binary talks to a deployed engine over
+# HTTP (see plan 12 Architecture Principle 8).
+default = ["db", "server", "cli"]
 db = ["dep:sqlx"]
 server = ["dep:http-body-util", "dep:hyper", "dep:hyper-util"]
 cli = ["dep:clap", "dep:clap_complete", "dep:tracing-subscriber"]
-workflow = [
-  "dep:assay-workflow",
-  "assay-workflow/backend-postgres",
-  "assay-workflow/backend-sqlite",
-]
 
 [dependencies]
 # Lua scripting engine
@@ -97,9 +95,6 @@ minijinja = "2.15.1"
 
 # Markdown to HTML conversion
 pulldown-cmark = "0.13"
-
-# Workflow engine (separate crate, same workspace)
-assay-workflow = { path = "../assay-workflow", version = "0.1", optional = true }
 
 # URL parsing/encoding (used by http server query string decoding)
 url = "2"

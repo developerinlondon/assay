@@ -34,10 +34,10 @@ backend-postgres = ["assay-workflow/backend-postgres", "assay-auth?/backend-post
 backend-sqlite = ["assay-workflow/backend-sqlite", "assay-auth?/backend-sqlite"]
 
 [dependencies]
-assay-auth = { path = "../assay-auth", version = "0.0", optional = true }
+assay-auth = { path = "../assay-auth", version = "0.1", optional = true }
 assay-core = { path = "../assay-core", version = "0.1" }
 assay-dashboard = { path = "../assay-dashboard", version = "0.1" }
-assay-workflow = { path = "../assay-workflow", version = "0.1" }
+assay-workflow = { path = "../assay-workflow", version = "0.2" }
 
 axum = "0.8"
 clap = { version = "4", features = ["derive", "env"], optional = true }

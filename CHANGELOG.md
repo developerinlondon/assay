@@ -2,369 +2,384 @@
 
 All notable changes to Assay are documented here.
 
+## [0.13.0] - 2026-04-22
+
+The monolithic `assay` binary is decomposed into six crates. `assay-lua` becomes a pure Lua runtime
+and HTTP client; `assay-engine` becomes a standalone HTTP server that composes `assay-workflow`,
+`assay-dashboard`, and (in v0.14.0) `assay-auth` behind one port. SurrealDB is dropped entirely in
+favour of PostgreSQL 18 + SQLite, on the evidence of a measured 3× clean build time and 3× peak
+compile RAM with no capability gain over PG18 + `pgvector` + recursive CTEs. Auth primitives, the
+full OIDC provider, passkey, and Zanzibar ship in v0.14.0 — Phases 4–7 of
+`.claude/plans/12-v0.13.0-execution.md` — so this release is deliberately narrower than the original
+plan 12 scope. Full upgrade steps live in
+[docs/migration-to-0.13.0.md](./docs/migration-to-0.13.0.md).
+
+Six crates go out together:
+
+| Crate             | Version | New / Bumped          |
+| ----------------- | ------- | --------------------- |
+| `assay-lua`       | 0.13.0  | Bumped (runtime only) |
+| `assay-workflow`  | 0.2.0   | Bumped (breaking)     |
+| `assay-core`      | 0.1.0   | New                   |
+| `assay-auth`      | 0.1.0   | New (scaffold)        |
+| `assay-dashboard` | 0.1.0   | New                   |
+| `assay-engine`    | 0.1.0   | New                   |
+
+`assay-workflow` is the only breaking bump — the trait moved to `assay-core`, `WorkflowCtx<S>`
+replaces `Engine<S>`, and backends are now feature-gated additive flags rather than unconditional
+compile. `assay-auth` is a scaffold only in this release; its real content ships in v0.14.0.
+
+The root workspace no longer has a `[package]`; it's workspace-only. What used to be the top-level
+`assay` binary moved to `crates/assay/` and publishes to crates.io as `assay-lua`. Every domain
+concern lives under `crates/<name>/`. `assay-core` holds the shared `WorkflowStore` trait and DTO
+types so any crate can depend on the trait without pulling the whole workflow engine.
+`assay-dashboard` holds the HTML/JS/CSS assets that used to live inside `assay-workflow`, exposed
+through a thin axum router. The dashboard is now served only by `assay-engine`; the retired runtime
+dashboard is gone for good.
+
+The new `assay-engine` binary is the operational heart: `assay-engine serve --config engine.toml`
+loads a TOML config, connects to PG18 or SQLite, runs migrations, and serves the workflow API plus
+the dashboard on one port. Backend selection is runtime-configurable via
+`[backend] type = "postgres" | "sqlite"`, not a build-time feature switch — both drivers compile
+into the same binary by default. Example configs live in `crates/assay-engine/examples/` and the
+`crates/assay-engine/tests/engine_smoke.rs` integration test proves the full pipeline end-to-end.
+
+PostgreSQL 18 is the minimum supported version. Migrations use the PG18 `uuidv7()` built-in and the
+schema is laid out to take advantage of PG18 skip-scan composite indexes (which the Zanzibar tuple
+store in v0.14.0 will lean on). Consumers on older Postgres must upgrade before running 0.13.0
+migrations.
+
+The SurrealDB backend is removed everywhere — the `backend-surrealdb` Cargo feature, the `surrealdb`
+crate dependency, roughly 2400 lines of `src/store/surrealdb/*` impls, and four SurrealQL migration
+files are all gone. The measured cost was compile-time pain — 91 s → 281 s clean release build and
+1.3 GB → 3.7 GB peak compile RAM — and no production value that PG18 plus `pgvector` plus recursive
+CTEs doesn't cover. The full measurement and rationale live in plan 12's revision log. There is no
+in-place data migration path from SurrealDB; move to PG18 or SQLite via a clean re-seed or a one-off
+replay script.
+
+Embedding the workflow engine inside `assay-lua` is also retired. The runtime binary no longer
+depends on `assay-workflow` or `sqlx`, no longer accepts the `assay serve` command, and no longer
+runs an internal scheduler. Scripts that need workflow functionality keep using the same HTTP
+subcommands they used in 0.12 (`assay workflow start / list / describe / …`) — those commands were
+always HTTP clients and they are unchanged. The only difference is that the HTTP endpoint now has to
+be a separately deployed `assay-engine` instead of whatever `assay serve` was producing in-process.
+Operators pick the engine URL via `$ASSAY_ENGINE_URL` or `--engine URL` as before.
+
+Library consumers who embedded `assay-workflow` as a crate need to update their imports.
+`WorkflowStore` lives in `assay_core` now; DTOs like `WorkflowRecord` and `WorkflowEvent` live in
+`assay_core::types`. The `Engine<S>` generic is gone — its role is merged into `WorkflowCtx<S>`,
+which is simultaneously the axum state and the orchestrator (Shape 2B from plan 12a Task 1.3
+revised). Call sites go from `Engine::<PostgresStore>::new(store)` to
+`WorkflowCtx::start(Arc::new(store))`. Features are now additive, not mutually exclusive:
+`backend-postgres` and `backend-sqlite` can both compile into the same binary and the engine picks
+one at startup.
+
+The engine in 0.13.0 runs with `AuthMode::no_auth()` — there is no JWT or API-key gate on the
+workflow API in this release. Do not expose a 0.13.0 engine on the public internet without a network
+gatekeeper (Cloudflare Access, Tailscale, VPN, or similar). v0.14.0 wires the full IdP stack in and
+flips the default AuthMode to JWT validation against the engine's own OIDC provider.
+
+The runtime `workflow` feature and its embedded-sqlx surface are gone from `assay-lua`'s Cargo
+manifest. The redundant `crates/assay/tests/workflow_store.rs` test was deleted — the new
+`crates/assay-workflow/tests/smoke_backends.rs` covers the same ground against both backends and
+runs in CI. No behaviour loss.
+
+Plan 12's revision log, written inline in the plan file, documents the SurrealDB drop decision with
+the measured evidence and documents the 0.13.0 → 0.14.0 scope split so future sessions don't
+relitigate either. A backend-parity matrix in the same plan spells out, for every workflow and authz
+capability, what differs between PG18 and SQLite so the trait-abstraction contract stays honest
+across the two backends.
+
 ## [0.12.1] - 2026-04-19
 
-Text-processing stdlib primitives + scratch-based image, so assay
-scripts don't need a shell in the container and the published image
-goes from ~25 MB back to ~10 MB.
+Text-processing stdlib primitives + scratch-based image, so assay scripts don't need a shell in the
+container and the published image goes from ~25 MB back to ~10 MB.
 
 ### Added
 
 - **`fs.lines(path)`** — streaming line iterator. Designed for
-  `for line in fs.lines(path) do … end`; reads from a buffered
-  reader so multi-GB files don't land in memory. Each line is
-  returned with the trailing `\n` (or `\r\n`) stripped. Equivalent
-  to `while read line; do …; done < file` in bash.
-- **`fs.sub_in_file(path, pattern, repl)`** — `sed -i`
-  equivalent, but portable (no BSD-vs-GNU `sed -i` dance) and
-  without the quoting traps of shell. Uses Lua patterns (same
-  engine as `string.gsub`); `repl` accepts a replacement string
-  with `%0`-`%9` backreferences OR a function. Writes only when
-  the substitution count is > 0, so repeated calls on an
-  already-substituted file are no-ops on disk.
-- **`string.split(s, sep?)`** — awk-style field split, extending
-  Lua's built-in `string` library. With no `sep`, splits on any run
-  of whitespace and drops leading/trailing empty fields (matches
-  awk default FS and Python `str.split()`). With a literal `sep`,
-  splits on that substring (not a Lua pattern — use
-  `string.gmatch` if you need pattern semantics). Pairs with
-  `fs.lines` so `awk '{print $2}'`-style pipelines become three
-  lines of Lua.
+  `for line in fs.lines(path) do … end`; reads from a buffered reader so multi-GB files don't land
+  in memory. Each line is returned with the trailing `\n` (or `\r\n`) stripped. Equivalent to
+  `while read line; do …; done < file` in bash.
+- **`fs.sub_in_file(path, pattern, repl)`** — `sed -i` equivalent, but portable (no BSD-vs-GNU
+  `sed -i` dance) and without the quoting traps of shell. Uses Lua patterns (same engine as
+  `string.gsub`); `repl` accepts a replacement string with `%0`-`%9` backreferences OR a function.
+  Writes only when the substitution count is > 0, so repeated calls on an already-substituted file
+  are no-ops on disk.
+- **`string.split(s, sep?)`** — awk-style field split, extending Lua's built-in `string` library.
+  With no `sep`, splits on any run of whitespace and drops leading/trailing empty fields (matches
+  awk default FS and Python `str.split()`). With a literal `sep`, splits on that substring (not a
+  Lua pattern — use `string.gmatch` if you need pattern semantics). Pairs with `fs.lines` so
+  `awk '{print $2}'`-style pipelines become three lines of Lua.
 
 ### Changed
 
-- **Docker image runtime stage back to `FROM scratch`** (reverts the
-  Feb-2026 regression to alpine:3.21). The published
-  `ghcr.io/developerinlondon/assay` image is now the assay binary
-  plus `/etc/ssl/certs/ca-certificates.crt`, nothing else. About
-  40% smaller (~10 MB vs ~25 MB with Alpine), zero Alpine CVE
-  surface. Downstream images (anyone `FROM ghcr.io/developerinlondon/assay`)
-  inherit the slimming automatically on next rebuild. The
-  `command: ["/bin/sh", "-c", …]` wrapper that originally forced
-  Alpine has been removed from every usage in the gitops repo;
-  the new text-processing primitives above cover the shell-out
-  cases that used to need sed/awk.
-- **Regression guards on the Dockerfile** (`tests/dockerfile.rs`):
-  asserts the runtime stage is `FROM scratch`, that the CA bundle
-  is copied in, and that the ENTRYPOINT uses an absolute path
-  (`/assay`, not bare `assay` — scratch has no `$PATH`). These
-  fail CI loudly if anyone tries to flip the runtime back to
-  Alpine without justification.
+- **Docker image runtime stage back to `FROM scratch`** (reverts the Feb-2026 regression to
+  alpine:3.21). The published `ghcr.io/developerinlondon/assay` image is now the assay binary plus
+  `/etc/ssl/certs/ca-certificates.crt`, nothing else. About 40% smaller (~10 MB vs ~25 MB with
+  Alpine), zero Alpine CVE surface. Downstream images (anyone
+  `FROM ghcr.io/developerinlondon/assay`) inherit the slimming automatically on next rebuild. The
+  `command: ["/bin/sh", "-c", …]` wrapper that originally forced Alpine has been removed from every
+  usage in the gitops repo; the new text-processing primitives above cover the shell-out cases that
+  used to need sed/awk.
+- **Regression guards on the Dockerfile** (`tests/dockerfile.rs`): asserts the runtime stage is
+  `FROM scratch`, that the CA bundle is copied in, and that the ENTRYPOINT uses an absolute path
+  (`/assay`, not bare `assay` — scratch has no `$PATH`). These fail CI loudly if anyone tries to
+  flip the runtime back to Alpine without justification.
 
 ## [0.12.0] - 2026-04-18
 
-This release combines a major dashboard upgrade (Steps tab + step-
-action signal protocol + the AWE/consumer architectural-boundary
-documentation) with a substantial CI/CD overhaul (mise + moon + a
-checked-in Playwright e2e suite + the Rust 1.95 toolchain bump) and a
-new stdlib surface for orchestrating external processes.
+This release combines a major dashboard upgrade (Steps tab + step- action signal protocol + the
+AWE/consumer architectural-boundary documentation) with a substantial CI/CD overhaul (mise + moon +
+a checked-in Playwright e2e suite + the Rust 1.95 toolchain bump) and a new stdlib surface for
+orchestrating external processes.
 
 ### Added
 
-- **`process.spawn(opts)` and `process.wait(pid, opts?)` Lua builtins.**
-  Launch detached child processes from any assay script and reap them
-  later, without dropping to bash. `process.spawn` accepts `cmd`,
-  `args`, `cwd`, `env`, `stdout`, `stderr` and returns `{ pid }`;
-  `process.wait` blocks (or polls until a `timeout`) and returns
-  `{ status, exited, signaled, timed_out }`. Pairs with the existing
-  `process.kill` for full lifecycle control. The dashboard e2e runner
-  at `crates/assay-workflow/tests-e2e/run.lua` is the canonical
-  example — boots engine + worker, polls `/version`, seeds a
-  workflow, drives Playwright, cleans up. See
-  `docs/modules/process.md` for the full surface.
+- **`process.spawn(opts)` and `process.wait(pid, opts?)` Lua builtins.** Launch detached child
+  processes from any assay script and reap them later, without dropping to bash. `process.spawn`
+  accepts `cmd`, `args`, `cwd`, `env`, `stdout`, `stderr` and returns `{ pid }`; `process.wait`
+  blocks (or polls until a `timeout`) and returns `{ status, exited, signaled, timed_out }`. Pairs
+  with the existing `process.kill` for full lifecycle control. The dashboard e2e runner at
+  `crates/assay-workflow/tests-e2e/run.lua` is the canonical example — boots engine + worker, polls
+  `/version`, seeds a workflow, drives Playwright, cleans up. See `docs/modules/process.md` for the
+  full surface.
 
-- **Steps tab.** Any workflow that exposes a `pipeline_state` query
-  with a `steps[]` array now gets an automatic "Pipeline" tab in the
-  dashboard's detail view. Renders each step as a circle with one of
-  five canonical statuses — `waiting ○`, `running ⟳`, `done ✓`,
-  `failed ✕`, `cancelled —` — and the connector lines between circles
-  fill state-aware so a glance tells you how far through the pipeline
-  the run is. The tab is added at the front and default-selected when
-  present, hidden entirely otherwise. See
-  `docs/modules/workflow.md#pipeline-tab-convention` for the schema.
+- **Steps tab.** Any workflow that exposes a `pipeline_state` query with a `steps[]` array now gets
+  an automatic "Pipeline" tab in the dashboard's detail view. Renders each step as a circle with one
+  of five canonical statuses — `waiting ○`, `running ⟳`, `done ✓`, `failed ✕`, `cancelled —` — and
+  the connector lines between circles fill state-aware so a glance tells you how far through the
+  pipeline the run is. The tab is added at the front and default-selected when present, hidden
+  entirely otherwise. See `docs/modules/workflow.md#pipeline-tab-convention` for the schema.
 
-- **Live snapshot tail.** While the Steps tab is open and the
-  workflow is `RUNNING`, the dashboard polls
-  `GET /workflows/{id}/state/pipeline_state` every 1s and diff-applies
-  changes onto the existing DOM — circles and connectors update in
-  place, log entries append at the bottom, and animations on the
-  running step keep their state. Polling stops when the user switches
-  away from the tab, the panel closes, or the workflow reaches a
-  terminal status. Includes a scroll-lock toggle so operators reading
-  mid-log don't get yanked back to the bottom every second.
+- **Live snapshot tail.** While the Steps tab is open and the workflow is `RUNNING`, the dashboard
+  polls `GET /workflows/{id}/state/pipeline_state` every 1s and diff-applies changes onto the
+  existing DOM — circles and connectors update in place, log entries append at the bottom, and
+  animations on the running step keep their state. Polling stops when the user switches away from
+  the tab, the panel closes, or the workflow reaches a terminal status. Includes a scroll-lock
+  toggle so operators reading mid-log don't get yanked back to the bottom every second.
 
-- **Per-step actions via signals.** Each step in `steps[]` may include
-  an `actions = { "approve", "reject", ... }` array. Those render as
-  buttons under the step's circle; clicking one POSTs a `step_action`
-  signal to the engine with payload `{ step, action, user }`. The
-  engine routes the signal; the workflow handler decides what each
-  action means. AWE provides the plumbing, the consumer provides the
-  semantics — same architectural boundary that keeps the engine
+- **Per-step actions via signals.** Each step in `steps[]` may include an
+  `actions = { "approve", "reject", ... }` array. Those render as buttons under the step's circle;
+  clicking one POSTs a `step_action` signal to the engine with payload `{ step, action, user }`. The
+  engine routes the signal; the workflow handler decides what each action means. AWE provides the
+  plumbing, the consumer provides the semantics — same architectural boundary that keeps the engine
   domain-agnostic.
 
-- **Step log filter.** Clicking a step circle filters the log below to
-  just that step's entries (uses the optional `step` field on each log
-  entry). Click again to clear the filter.
+- **Step log filter.** Clicking a step circle filters the log below to just that step's entries
+  (uses the optional `step` field on each log entry). Click again to clear the filter.
 
 ### Changed
 
-- **Slim detail layout.** Dropped the left "identity card" column from
-  the inline detail expansion — every field it carried (id, type,
-  status, queue, created) is already on the workflow row above or in
-  the namespace selector. The only field that wasn't redundant
-  (`completed_at`) now renders as a single meta line above the action
-  toolbar, only when the run is terminal. The action toolbar
-  (Signal / Cancel / Terminate / Continue-as-new) sits full-width
-  above the tabs, and the tabs themselves use the full horizontal
-  width of the expansion. Net effect: tighter detail block, more
+- **Slim detail layout.** Dropped the left "identity card" column from the inline detail expansion —
+  every field it carried (id, type, status, queue, created) is already on the workflow row above or
+  in the namespace selector. The only field that wasn't redundant (`completed_at`) now renders as a
+  single meta line above the action toolbar, only when the run is terminal. The action toolbar
+  (Signal / Cancel / Terminate / Continue-as-new) sits full-width above the tabs, and the tabs
+  themselves use the full horizontal width of the expansion. Net effect: tighter detail block, more
   room for the new Steps tab to breathe.
 
-- **Dropped Run ID from detail meta** — it's a near-duplicate of the
-  workflow id shown on the row directly above (run id is just the
-  workflow id prefixed with `run-` and suffixed with a timestamp).
+- **Dropped Run ID from detail meta** — it's a near-duplicate of the workflow id shown on the row
+  directly above (run id is just the workflow id prefixed with `run-` and suffixed with a
+  timestamp).
 
-- **CI/CD overhaul: mise + moon + Playwright e2e + Rust 1.95.**
-  `.mise.toml` now pins rust 1.95.0, node 25.9.0, and moon 2.2.1 — one
-  source of truth for tool versions across local dev and CI. moon owns
-  the workspace's project graph (`assay-lua`, `assay-workflow`,
-  `dashboard-e2e`, `site`, `openclaw-extension`) and runs only the
-  affected tasks on each PR via `moon ci`. Shared task templates in
-  `.moon/tasks/tag-*.yml` keep per-project `moon.yml` minimal. New
-  `crates/assay-workflow/tests-e2e/` directory holds the dashboard's
-  Playwright suite, run automatically by CI whenever the workflow
-  crate changes.
+- **CI/CD overhaul: mise + moon + Playwright e2e + Rust 1.95.** `.mise.toml` now pins rust 1.95.0,
+  node 25.9.0, and moon 2.2.1 — one source of truth for tool versions across local dev and CI. moon
+  owns the workspace's project graph (`assay-lua`, `assay-workflow`, `dashboard-e2e`, `site`,
+  `openclaw-extension`) and runs only the affected tasks on each PR via `moon ci`. Shared task
+  templates in `.moon/tasks/tag-*.yml` keep per-project `moon.yml` minimal. New
+  `crates/assay-workflow/tests-e2e/` directory holds the dashboard's Playwright suite, run
+  automatically by CI whenever the workflow crate changes.
 
 ## [0.11.15] - 2026-04-18
 
 ### Changed
 
-- **Inline row-expansion hides the detail-header entirely.** Previously
-  the inline expansion still rendered the `.detail-header` block (with
-  the h2 hidden but the `✕` close button visible on the right), leaving
-  ~40px of whitespace above the actual content. The close button was
-  redundant anyway — clicking the row itself toggles expand/collapse —
-  so the whole header block is now `display: none` in inline mode. The
-  right-hand side panel still renders its header (no row-above context
-  there, no row-click toggle). Detail-body and detail-grid top padding
-  / margin also zeroed for inline mode so content sits flush with the
-  top of the expansion.
+- **Inline row-expansion hides the detail-header entirely.** Previously the inline expansion still
+  rendered the `.detail-header` block (with the h2 hidden but the `✕` close button visible on the
+  right), leaving ~40px of whitespace above the actual content. The close button was redundant
+  anyway — clicking the row itself toggles expand/collapse — so the whole header block is now
+  `display: none` in inline mode. The right-hand side panel still renders its header (no row-above
+  context there, no row-click toggle). Detail-body and detail-grid top padding / margin also zeroed
+  for inline mode so content sits flush with the top of the expansion.
 
-Cuts another ~40-60px of vertical space per expanded row on top of
-v0.11.14's id-header hide.
+Cuts another ~40-60px of vertical space per expanded row on top of v0.11.14's id-header hide.
 
 ## [0.11.14] - 2026-04-18
 
 ### Fixed
 
-- **Worker resilience — don't crash on transient HTTP errors.** The
-  `workflow.listen()` poll loop now wraps each heartbeat + task-poll
-  call in `pcall` and backs off exponentially (1s → 2s → 4s → 8s → 16s,
-  capped at 30s) on failure. Previously a single DNS blip, engine pod
-  restart, or kube-proxy hiccup would propagate an error out of the
-  loop, kill the worker, and leave the worker row stale until the
-  consumer's pod was restarted — downstream effects included empty
-  Queues view, empty Workers view (the registered worker had stopped
-  heartbeating), and silently-dropped workflow tasks.
+- **Worker resilience — don't crash on transient HTTP errors.** The `workflow.listen()` poll loop
+  now wraps each heartbeat + task-poll call in `pcall` and backs off exponentially (1s → 2s → 4s →
+  8s → 16s, capped at 30s) on failure. Previously a single DNS blip, engine pod restart, or
+  kube-proxy hiccup would propagate an error out of the loop, kill the worker, and leave the worker
+  row stale until the consumer's pod was restarted — downstream effects included empty Queues view,
+  empty Workers view (the registered worker had stopped heartbeating), and silently-dropped workflow
+  tasks.
 
-  First successful call after a failure resets the backoff to the
-  baseline so recovery is instant once connectivity returns. Warn-
-  level log on each failure includes the backoff duration and error
-  message so operators can tell from logs whether a worker is cleanly
-  weathering a blip vs. persistently broken.
+  First successful call after a failure resets the backoff to the baseline so recovery is instant
+  once connectivity returns. Warn- level log on each failure includes the backoff duration and error
+  message so operators can tell from logs whether a worker is cleanly weathering a blip vs.
+  persistently broken.
 
 ### Changed
 
-- **Two-column detail layout.** The workflow detail block is now a
-  grid: left column is a fixed-width identity card (status badge, meta
-  items stacked as `<dl>`, actions at the bottom) that stays visible
-  regardless of which tab is selected; right column gets the rest of
-  the horizontal space for tab content. Previously meta + actions ran
-  horizontally above the tabs, which left tab content cramped on any
-  single run with more than a few events. Stacks to a single column on
+- **Two-column detail layout.** The workflow detail block is now a grid: left column is a
+  fixed-width identity card (status badge, meta items stacked as `<dl>`, actions at the bottom) that
+  stays visible regardless of which tab is selected; right column gets the rest of the horizontal
+  space for tab content. Previously meta + actions ran horizontally above the tabs, which left tab
+  content cramped on any single run with more than a few events. Stacks to a single column on
   viewports narrower than 720px.
 
-- **Full workflow IDs in the list view.** Removed the 32-char
-  truncation on the workflow id column; long ids wrap at column
-  boundaries via `word-break: break-all`. Makes the id the first thing
-  an operator can read and copy without opening the detail view. Since
-  ids follow a consistent pattern (`promo-{ts}-{version}-to-{env}`),
-  rows wrap to similar heights — the table doesn't become ragged.
+- **Full workflow IDs in the list view.** Removed the 32-char truncation on the workflow id column;
+  long ids wrap at column boundaries via `word-break: break-all`. Makes the id the first thing an
+  operator can read and copy without opening the detail view. Since ids follow a consistent pattern
+  (`promo-{ts}-{version}-to-{env}`), rows wrap to similar heights — the table doesn't become ragged.
 
-- **Inline detail hides its id header.** When a row is expanded inline,
-  the detail block no longer repeats the workflow id as an h2 — the
-  row above already shows the full id, repeating it wastes vertical
-  space. The right-hand side panel (used by child-workflow navigation)
-  keeps the h2 because there's no row-above context there.
+- **Inline detail hides its id header.** When a row is expanded inline, the detail block no longer
+  repeats the workflow id as an h2 — the row above already shows the full id, repeating it wastes
+  vertical space. The right-hand side panel (used by child-workflow navigation) keeps the h2 because
+  there's no row-above context there.
 
-Together the two-column restructure and the header-hide cut ~60px of
-vertical noise per expanded row while making the list view more
-scannable in the collapsed state.
+Together the two-column restructure and the header-hide cut ~60px of vertical noise per expanded row
+while making the list view more scannable in the collapsed state.
 
 ## [0.11.13] - 2026-04-17
 
 ### Changed
 
-- **Full workflow IDs in the detail view.** The detail-view header and
-  Run ID meta field no longer truncate — the detail panel has the
-  horizontal space for the full id, and operators consulting this panel
-  are usually trying to read or copy the id anyway. Long ids wrap
-  cleanly on column boundaries via `word-break: break-all`. List-view
-  and children-table truncation retained (density matters there).
+- **Full workflow IDs in the detail view.** The detail-view header and Run ID meta field no longer
+  truncate — the detail panel has the horizontal space for the full id, and operators consulting
+  this panel are usually trying to read or copy the id anyway. Long ids wrap cleanly on column
+  boundaries via `word-break: break-all`. List-view and children-table truncation retained (density
+  matters there).
 
-- **Smart truncate.** The `truncate(str, len)` helper now requires at
-  least 4 chars of actual savings before it adds `"..."`. Previously a
-  34-char id in a 32-char column showed `"thirty-two-char-id-exactly-thi..."`
-  — lossy for barely any column gain. Now it just shows the full string
-  when trimming wouldn't materially help.
+- **Smart truncate.** The `truncate(str, len)` helper now requires at least 4 chars of actual
+  savings before it adds `"..."`. Previously a 34-char id in a 32-char column showed
+  `"thirty-two-char-id-exactly-thi..."` — lossy for barely any column gain. Now it just shows the
+  full string when trimming wouldn't materially help.
 
-- **Row-click expansion.** Clicking *anywhere* on a workflow row now
-  toggles the inline detail — not just on the id link. Buttons
-  (Signal / Cancel / Terminate) still have their own click behaviour
-  and don't trigger expansion. Cursor pointer + hover feedback across
-  the row so the affordance is obvious.
+- **Row-click expansion.** Clicking _anywhere_ on a workflow row now toggles the inline detail — not
+  just on the id link. Buttons (Signal / Cancel / Terminate) still have their own click behaviour
+  and don't trigger expansion. Cursor pointer + hover feedback across the row so the affordance is
+  obvious.
 
-- **Modern link hover.** `.data-table .clickable:hover` no longer
-  underlines — it shifts to the accent-hover colour instead. Cleaner
-  under monospace id strings where typographic underlines on numbers
-  and dashes can look jagged. Row-hover still provides a strong visual
-  affordance.
+- **Modern link hover.** `.data-table .clickable:hover` no longer underlines — it shifts to the
+  accent-hover colour instead. Cleaner under monospace id strings where typographic underlines on
+  numbers and dashes can look jagged. Row-hover still provides a strong visual affordance.
 
-- **Inline namespace switcher in the status bar.** Replaced the button
-  that opened the sidebar's dropdown with its own native `<select>`,
-  styled to look like plain text. The native dropdown now opens
-  anchored at the status bar (where the user clicked), not at the
-  top-left sidebar. Mirrors the sidebar select's options — switching
-  either keeps both in sync.
+- **Inline namespace switcher in the status bar.** Replaced the button that opened the sidebar's
+  dropdown with its own native `<select>`, styled to look like plain text. The native dropdown now
+  opens anchored at the status bar (where the user clicked), not at the top-left sidebar. Mirrors
+  the sidebar select's options — switching either keeps both in sync.
 
-- **Modern select trigger.** Both the sidebar namespace select and the
-  new status-bar select got flat, OS-chrome-free styling with an inline
-  SVG chevron, accent ring on focus, subtle border darken on hover.
-  Native dropdown list still renders OS-default (no way to restyle
-  that without a custom combobox).
+- **Modern select trigger.** Both the sidebar namespace select and the new status-bar select got
+  flat, OS-chrome-free styling with an inline SVG chevron, accent ring on focus, subtle border
+  darken on hover. Native dropdown list still renders OS-default (no way to restyle that without a
+  custom combobox).
 
 ### Tests
 
-- 32 lib + 40 orchestration tests still pass. Clippy clean with
-  -D warnings.
+- 32 lib + 40 orchestration tests still pass. Clippy clean with -D warnings.
 
 ## [0.11.12] - 2026-04-17
 
 ### Added
 
-- **Per-run engine-version stamp.** `start_workflow` now auto-stamps the
-  running engine's version into each workflow's `search_attributes` as
-  `assay_engine_version`. Triages "which engine started this run" without
-  operators having to keep their own bookkeeping — searchable via
-  `workflow.list({ search_attrs = { assay_engine_version = "0.11.12" } })`.
-  Caller-supplied `assay_engine_version` wins on conflict (explicit
-  override preserved for replay / testing scenarios).
+- **Per-run engine-version stamp.** `start_workflow` now auto-stamps the running engine's version
+  into each workflow's `search_attributes` as `assay_engine_version`. Triages "which engine started
+  this run" without operators having to keep their own bookkeeping — searchable via
+  `workflow.list({ search_attrs = { assay_engine_version = "0.11.12" } })`. Caller-supplied
+  `assay_engine_version` wins on conflict (explicit override preserved for replay / testing
+  scenarios).
 
 - **More whitelabel knobs:**
-  | Variable                             | Purpose                                      | Default        |
-  | ------------------------------------ | -------------------------------------------- | -------------- |
-  | `ASSAY_WHITELABEL_FAVICON_URL`       | Replace the browser-tab icon                 | Built-in SVG   |
-  | `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | Namespace the dashboard opens on             | `main`         |
+  | Variable                             | Purpose                          | Default      |
+  | ------------------------------------ | -------------------------------- | ------------ |
+  | `ASSAY_WHITELABEL_FAVICON_URL`       | Replace the browser-tab icon     | Built-in SVG |
+  | `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | Namespace the dashboard opens on | `main`       |
 
-- **Tabbed detail view.** The workflow detail block is now organised into
-  tabs — Overview (input/result/error), State (register_query snapshot),
-  Events, Children, Attributes. Variable-height sections live behind tabs
-  so the meta grid + actions stay compact and scannable regardless of how
-  much a run has accumulated. Empty tabs (no state snapshot, no children,
-  no search attrs) dim rather than hide, so operators see a consistent
-  shape across runs.
+- **Tabbed detail view.** The workflow detail block is now organised into tabs — Overview
+  (input/result/error), State (register_query snapshot), Events, Children, Attributes.
+  Variable-height sections live behind tabs so the meta grid + actions stay compact and scannable
+  regardless of how much a run has accumulated. Empty tabs (no state snapshot, no children, no
+  search attrs) dim rather than hide, so operators see a consistent shape across runs.
 
-- **Inline row-expansion.** Clicking a row in the workflows list toggles
-  an inline detail block beneath it. Click again to collapse. Opening a
-  new row auto-collapses the previous one. The right-hand detail panel
-  is retained for child-workflow click-through navigation. Matches the
+- **Inline row-expansion.** Clicking a row in the workflows list toggles an inline detail block
+  beneath it. Click again to collapse. Opening a new row auto-collapses the previous one. The
+  right-hand detail panel is retained for child-workflow click-through navigation. Matches the
   "drill into one run while keeping context above/below visible" pattern.
 
 ### Changed
 
-- **Footer attribution wording** — whitelabel mode now says "Powered by
-  Assay" with a link to https://assay.rs, not "Powered by Assay Workflow
-  Engine". Less redundant when the operator's own `_SUBTITLE` already
-  includes "Workflow Engine" (e.g. CC embeds).
+- **Footer attribution wording** — whitelabel mode now says "Powered by Assay" with a link to
+  https://assay.rs, not "Powered by Assay Workflow Engine". Less redundant when the operator's own
+  `_SUBTITLE` already includes "Workflow Engine" (e.g. CC embeds).
 
-- **Clickable namespace in the status bar.** The footer's current
-  namespace value is now a button that focuses / opens the sidebar's
-  namespace dropdown — saves a trip to the top of the sidebar when the
-  user's already looking at the footer.
+- **Clickable namespace in the status bar.** The footer's current namespace value is now a button
+  that focuses / opens the sidebar's namespace dropdown — saves a trip to the top of the sidebar
+  when the user's already looking at the footer.
 
-- **Collapse-arrow SVGs** replacing the ASCII `<` / `>` chars in the
-  sidebar toggle. Same toggle behaviour, cleaner visual, aligned to the
-  rest of assay's outlined-stroke icon set.
+- **Collapse-arrow SVGs** replacing the ASCII `<` / `>` chars in the sidebar toggle. Same toggle
+  behaviour, cleaner visual, aligned to the rest of assay's outlined-stroke icon set.
 
-- **Workflow IDs get a `title=` tooltip** everywhere they're truncated
-  in the dashboard (workflows list, workers list, detail header, run
-  ID, children table). Hover reveals the full ID without operators
-  having to open the detail panel to see it.
+- **Workflow IDs get a `title=` tooltip** everywhere they're truncated in the dashboard (workflows
+  list, workers list, detail header, run ID, children table). Hover reveals the full ID without
+  operators having to open the detail panel to see it.
 
-- **Pagination hides on single-page lists.** The "Prev / Page 1 / Next"
-  chrome used to render even when there was only one page; now it
-  renders only when there's actually content to page through.
+- **Pagination hides on single-page lists.** The "Prev / Page 1 / Next" chrome used to render even
+  when there was only one page; now it renders only when there's actually content to page through.
 
 ### Fixed
 
-- **Undefined CSS custom properties** `--surface-1`, `--surface-2`, and
-  `--text-primary` referenced by `.btn-action:hover`, `.inline-form`,
-  and the toast component fell back to `transparent` / `initial`, which
-  made buttons appear "completely white" on hover against a white page.
-  All three references renamed to their defined counterparts
-  (`--surface`, `--surface-hover`, `--text`) — 37 references now point
-  at defined tokens, zero undefined references remaining.
+- **Undefined CSS custom properties** `--surface-1`, `--surface-2`, and `--text-primary` referenced
+  by `.btn-action:hover`, `.inline-form`, and the toast component fell back to `transparent` /
+  `initial`, which made buttons appear "completely white" on hover against a white page. All three
+  references renamed to their defined counterparts (`--surface`, `--surface-hover`, `--text`) — 37
+  references now point at defined tokens, zero undefined references remaining.
 
 ### Tests
 
-- 5 new whitelabel render tests: favicon URL override, default-namespace
-  data-attribute, "Powered by Assay" wording (not Workflow Engine),
-  attribution link presence, favicon-only customisation flipping the
-  footer. Total whitelabel unit coverage: 18 tests.
-- 5 new `inject_engine_version` unit tests: default (no attrs), existing
-  attrs gain the field, caller override wins, non-object JSON preserved,
-  unparsable JSON preserved.
+- 5 new whitelabel render tests: favicon URL override, default-namespace data-attribute, "Powered by
+  Assay" wording (not Workflow Engine), attribution link presence, favicon-only customisation
+  flipping the footer. Total whitelabel unit coverage: 18 tests.
+- 5 new `inject_engine_version` unit tests: default (no attrs), existing attrs gain the field,
+  caller override wins, non-object JSON preserved, unparsable JSON preserved.
 - 40 orchestration + 32 lib tests all pass. Clippy clean with -D warnings.
 
 ## [0.11.11] - 2026-04-17
 
 ### Added
 
-- **Whitelabel: subtitle + mark-badge + two-line brand layout.** The
-  dashboard sidebar header now renders a mark-badge (filled accent
-  square with a single-letter glyph), a bold brand name, and an optional
-  muted subtitle underneath — giving operators the canonical two-line
-  brand block without needing a bespoke logo SVG. The mark-badge is now
-  always visible (previously only when the sidebar was collapsed), so
-  standalone and whitelabel dashboards alike get a proper brand block.
+- **Whitelabel: subtitle + mark-badge + two-line brand layout.** The dashboard sidebar header now
+  renders a mark-badge (filled accent square with a single-letter glyph), a bold brand name, and an
+  optional muted subtitle underneath — giving operators the canonical two-line brand block without
+  needing a bespoke logo SVG. The mark-badge is now always visible (previously only when the sidebar
+  was collapsed), so standalone and whitelabel dashboards alike get a proper brand block.
 
   Two new env vars:
 
-  | Variable                    | Purpose                                                    | Default                      |
-  | --------------------------- | ---------------------------------------------------------- | ---------------------------- |
-  | `ASSAY_WHITELABEL_SUBTITLE` | Small muted line under the brand name                      | — (no subtitle rendered)     |
+  | Variable                    | Purpose                                                           | Default                         |
+  | --------------------------- | ----------------------------------------------------------------- | ------------------------------- |
+  | `ASSAY_WHITELABEL_SUBTITLE` | Small muted line under the brand name                             | — (no subtitle rendered)        |
   | `ASSAY_WHITELABEL_MARK`     | Glyph in the badge; override when `NAME`'s first char isn't right | First char of `NAME` uppercased |
 
-  When `ASSAY_WHITELABEL_LOGO_URL` is set, the supplied image replaces
-  the badge glyph entirely via `:has(.logo-img)` targeting.
+  When `ASSAY_WHITELABEL_LOGO_URL` is set, the supplied image replaces the badge glyph entirely via
+  `:has(.logo-img)` targeting.
 
-- **Footer attribution: "Powered by" in whitelabel mode.** Any
-  customised identity (non-default `NAME`, non-empty `SUBTITLE`, or a
-  `LOGO_URL` / `CSS_URL` set) flips the status-bar engine line from
-  `Assay Workflow Engine vX.Y.Z` to
-  `Powered by Assay Workflow Engine vX.Y.Z`, with "Assay Workflow
-  Engine" linked to https://assay.rs. Attribution without burying the
-  engine. Non-whitelabel deployments see no change.
+- **Footer attribution: "Powered by" in whitelabel mode.** Any customised identity (non-default
+  `NAME`, non-empty `SUBTITLE`, or a `LOGO_URL` / `CSS_URL` set) flips the status-bar engine line
+  from `Assay Workflow Engine vX.Y.Z` to `Powered by Assay Workflow Engine vX.Y.Z`, with "Assay
+  Workflow Engine" linked to https://assay.rs. Attribution without burying the engine.
+  Non-whitelabel deployments see no change.
 
-- **`ctx:cancel(reason)` — workflows can land themselves in CANCELLED.**
-  Raises the internal cancellation sentinel the task runner already
-  handles, so a workflow that decides it should stop early (human
-  approver rejected, preconditions fail) transitions to engine-level
-  `CANCELLED` instead of `COMPLETED`. Previously the only way to reach
-  that status was an external `POST /workflows/{id}/cancel`, which
-  forced workflow authors to either return normally (wrong status
-  surfaced in dashboards) or raise a generic error (status became
-  `FAILED`, also wrong). Distinct from an externally-requested cancel —
-  same terminal state.
+- **`ctx:cancel(reason)` — workflows can land themselves in CANCELLED.** Raises the internal
+  cancellation sentinel the task runner already handles, so a workflow that decides it should stop
+  early (human approver rejected, preconditions fail) transitions to engine-level `CANCELLED`
+  instead of `COMPLETED`. Previously the only way to reach that status was an external
+  `POST /workflows/{id}/cancel`, which forced workflow authors to either return normally (wrong
+  status surfaced in dashboards) or raise a generic error (status became `FAILED`, also wrong).
+  Distinct from an externally-requested cancel — same terminal state.
 
   ```lua
   workflow.define("ApproveAndDeploy", function(ctx, input)
@@ -379,176 +394,151 @@ scannable in the collapsed state.
 
 ### Tests
 
-- 5 new whitelabel render tests: subtitle rendering (set + unset),
-  mark override, "Powered by"-footer variant, and the `is_customised()`
-  detection that drives it. Total whitelabel coverage: 15 tests.
-- New orchestration test `lua_workflow_ctx_cancel_lands_in_cancelled_status`
-  verifies a workflow calling `ctx:cancel("reason")` ends with
-  `status = "CANCELLED"` and no result payload.
+- 5 new whitelabel render tests: subtitle rendering (set + unset), mark override, "Powered
+  by"-footer variant, and the `is_customised()` detection that drives it. Total whitelabel coverage:
+  15 tests.
+- New orchestration test `lua_workflow_ctx_cancel_lands_in_cancelled_status` verifies a workflow
+  calling `ctx:cancel("reason")` ends with `status = "CANCELLED"` and no result payload.
 
 ## [0.11.10] - 2026-04-17
 
 ### Added
 
-- **Dashboard whitelabel support** — six optional env vars let operators
-  rebrand the embedded `/workflow` dashboard per-deployment, so a platform
-  team can surface assay inside their own admin UI under their own company
-  name, logo, and browser title without forking the binary. Every knob
-  defaults to assay's built-in identity, so an unset env keeps the
-  standalone experience unchanged.
+- **Dashboard whitelabel support** — six optional env vars let operators rebrand the embedded
+  `/workflow` dashboard per-deployment, so a platform team can surface assay inside their own admin
+  UI under their own company name, logo, and browser title without forking the binary. Every knob
+  defaults to assay's built-in identity, so an unset env keeps the standalone experience unchanged.
 
-  | Variable                          | Purpose                                              | Default                      |
-  | --------------------------------- | ---------------------------------------------------- | ---------------------------- |
-  | `ASSAY_WHITELABEL_NAME`           | Text in the sidebar header                           | `Assay`                      |
-  | `ASSAY_WHITELABEL_LOGO_URL`       | Image URL rendered before the brand text             | — (no image)                 |
-  | `ASSAY_WHITELABEL_PAGE_TITLE`     | Browser tab title                                    | `Assay Workflow Dashboard`   |
-  | `ASSAY_WHITELABEL_PARENT_URL`     | Back-link URL in the sidebar footer                  | — (hidden)                   |
-  | `ASSAY_WHITELABEL_PARENT_NAME`    | Label for the back-link                              | `Back`                       |
-  | `ASSAY_WHITELABEL_API_DOCS_URL`   | Override / hide the sidebar API Docs link            | `/api/v1/docs`               |
-  | `ASSAY_WHITELABEL_CSS_URL`        | Extra stylesheet loaded after assay's own CSS        | — (no extra sheet)           |
+  | Variable                        | Purpose                                       | Default                    |
+  | ------------------------------- | --------------------------------------------- | -------------------------- |
+  | `ASSAY_WHITELABEL_NAME`         | Text in the sidebar header                    | `Assay`                    |
+  | `ASSAY_WHITELABEL_LOGO_URL`     | Image URL rendered before the brand text      | — (no image)               |
+  | `ASSAY_WHITELABEL_PAGE_TITLE`   | Browser tab title                             | `Assay Workflow Dashboard` |
+  | `ASSAY_WHITELABEL_PARENT_URL`   | Back-link URL in the sidebar footer           | — (hidden)                 |
+  | `ASSAY_WHITELABEL_PARENT_NAME`  | Label for the back-link                       | `Back`                     |
+  | `ASSAY_WHITELABEL_API_DOCS_URL` | Override / hide the sidebar API Docs link     | `/api/v1/docs`             |
+  | `ASSAY_WHITELABEL_CSS_URL`      | Extra stylesheet loaded after assay's own CSS | — (no extra sheet)         |
 
-  `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link
-  entirely — useful when the embedding app's ingress doesn't route the
-  OpenAPI path or the docs are provided elsewhere. Any other value
-  redirects the link to that URL.
+  `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link entirely — useful when the
+  embedding app's ingress doesn't route the OpenAPI path or the docs are provided elsewhere. Any
+  other value redirects the link to that URL.
 
-  `ASSAY_WHITELABEL_CSS_URL` lets operators re-skin the dashboard
-  without forking. The extra stylesheet loads at the end of `<head>`,
-  after assay's `theme.css` + `style.css`, so source-order specificity
-  lets it override any CSS custom property (e.g. `--accent`, `--bg`,
-  `--text`) or specific selector. Full design-token list in
-  `docs/modules/workflow.md#dashboard-whitelabel`. Asset-version is
-  appended automatically so a redeploy that changes the stylesheet
-  forces a browser re-fetch.
+  `ASSAY_WHITELABEL_CSS_URL` lets operators re-skin the dashboard without forking. The extra
+  stylesheet loads at the end of `<head>`, after assay's `theme.css` + `style.css`, so source-order
+  specificity lets it override any CSS custom property (e.g. `--accent`, `--bg`, `--text`) or
+  specific selector. Full design-token list in `docs/modules/workflow.md#dashboard-whitelabel`.
+  Asset-version is appended automatically so a redeploy that changes the stylesheet forces a browser
+  re-fetch.
 
-  Hosting the logo: if assay is mounted on the same origin as the
-  embedding app (e.g. behind a reverse proxy at `/workflow/*`), a
-  path-absolute URL like `/static/my-logo.svg` loads from the host app
-  with no CORS plumbing.
+  Hosting the logo: if assay is mounted on the same origin as the embedding app (e.g. behind a
+  reverse proxy at `/workflow/*`), a path-absolute URL like `/static/my-logo.svg` loads from the
+  host app with no CORS plumbing.
 
-- **`workflow.start({namespace, search_attributes})` — full engine parity.**
-  `workflow.start()` now passes `opts.namespace` and `opts.search_attributes`
-  through to the engine, so Lua callers can scope workflows to a non-default
-  namespace and seed indexed metadata at start time. Previously these fields
-  were accepted by `POST /api/v1/workflows` but silently dropped by the Lua
-  stdlib client, forcing callers to hit the REST API directly for any
-  multi-tenant deployment.
+- **`workflow.start({namespace, search_attributes})` — full engine parity.** `workflow.start()` now
+  passes `opts.namespace` and `opts.search_attributes` through to the engine, so Lua callers can
+  scope workflows to a non-default namespace and seed indexed metadata at start time. Previously
+  these fields were accepted by `POST /api/v1/workflows` but silently dropped by the Lua stdlib
+  client, forcing callers to hit the REST API directly for any multi-tenant deployment.
 
-- **`workflow.listen({namespace})` — namespace-scoped workers.** Workers
-  register into `opts.namespace` (default `"main"`) on `POST /workers/register`,
-  so a worker pool in one namespace no longer accidentally picks up tasks
-  from a sibling namespace that happens to share its queue name. The
-  startup log line now carries the namespace alongside the queue for easy
-  `kubectl logs` triage.
+- **`workflow.listen({namespace})` — namespace-scoped workers.** Workers register into
+  `opts.namespace` (default `"main"`) on `POST /workers/register`, so a worker pool in one namespace
+  no longer accidentally picks up tasks from a sibling namespace that happens to share its queue
+  name. The startup log line now carries the namespace alongside the queue for easy `kubectl logs`
+  triage.
 
-Both changes close a gap surfaced by consumers building multi-tenant
-deployment pipelines on top of the engine (e.g. a platform-engineering
-namespace for promotions, a data-engineering namespace for backfills,
-both sharing one assay-serve instance). No engine changes — the engine
-already supported namespace on these endpoints; only the stdlib was missing.
+Both changes close a gap surfaced by consumers building multi-tenant deployment pipelines on top of
+the engine (e.g. a platform-engineering namespace for promotions, a data-engineering namespace for
+backfills, both sharing one assay-serve instance). No engine changes — the engine already supported
+namespace on these endpoints; only the stdlib was missing.
 
 ### Tests
 
-- New orchestration test (`orchestration.rs`):
-  `lua_workflow_namespace_scoping_end_to_end` — creates a non-default
-  namespace via the engine API, starts a worker with `namespace="deployments"`,
-  starts a workflow in the same namespace, and asserts the completed
-  record carries `namespace: "deployments"` and the expected result.
+- New orchestration test (`orchestration.rs`): `lua_workflow_namespace_scoping_end_to_end` — creates
+  a non-default namespace via the engine API, starts a worker with `namespace="deployments"`, starts
+  a workflow in the same namespace, and asserts the completed record carries
+  `namespace: "deployments"` and the expected result.
 
 ## [0.11.9] - 2026-04-17
 
 ### Added
 
-- **`ctx:wait_for_signal(name, { timeout = seconds })` — bounded signal wait.**
-  Returns the signal's JSON payload when a matching signal arrives within the
-  timeout, or `nil` when the timer expires first. Enables approval gates,
-  external-callback waits, and any workflow that must abandon its wait after a
-  deadline — without a side-channel timer or manual race logic in user code.
+- **`ctx:wait_for_signal(name, { timeout = seconds })` — bounded signal wait.** Returns the signal's
+  JSON payload when a matching signal arrives within the timeout, or `nil` when the timer expires
+  first. Enables approval gates, external-callback waits, and any workflow that must abandon its
+  wait after a deadline — without a side-channel timer or manual race logic in user code.
 
-  The call yields a batch of two commands (`ScheduleTimer` + `WaitForSignal`);
-  on replay the winner is decided by comparing history event seqs of the next
-  unconsumed `SignalReceived` against the paired `TimerFired`. Determinism
-  matches `ctx:sleep` and `ctx:execute_parallel`.
+  The call yields a batch of two commands (`ScheduleTimer` + `WaitForSignal`); on replay the winner
+  is decided by comparing history event seqs of the next unconsumed `SignalReceived` against the
+  paired `TimerFired`. Determinism matches `ctx:sleep` and `ctx:execute_parallel`.
 
   Backward compatible: `ctx:wait_for_signal(name)` without opts is unchanged.
 
 ### Changed
 
-- `WaitForSignal` engine command accepts an optional `timer_seq`. When present,
-  it is recorded in the `WorkflowAwaitingSignal` event payload so the dashboard
-  can show which timer is racing the wait.
+- `WaitForSignal` engine command accepts an optional `timer_seq`. When present, it is recorded in
+  the `WorkflowAwaitingSignal` event payload so the dashboard can show which timer is racing the
+  wait.
 
 ### Tests
 
 - Two new orchestration tests (`orchestration.rs`):
-  - `lua_workflow_wait_for_signal_timeout_signal_wins` — signal arrives before
-    the 30s timer; workflow completes with the payload.
-  - `lua_workflow_wait_for_signal_timeout_timer_wins` — no signal sent; the 1s
-    timer fires and the workflow completes with the timeout branch.
+  - `lua_workflow_wait_for_signal_timeout_signal_wins` — signal arrives before the 30s timer;
+    workflow completes with the payload.
+  - `lua_workflow_wait_for_signal_timeout_timer_wins` — no signal sent; the 1s timer fires and the
+    workflow completes with the timeout branch.
 
 ## [0.11.8] - 2026-04-17
 
 ### Changed
 
-- **`GET /api/v1/health` and `GET /api/v1/version` are now always
-  unauthenticated,** regardless of whether `--auth-issuer` or
-  `--auth-api-key` is set. Standard practice for liveness/readiness
-  probes and version discovery — Kubernetes kubelet, load balancers,
-  third-party monitors, and the CLI can now reach these endpoints
-  without a bearer token.
+- **`GET /api/v1/health` and `GET /api/v1/version` are now always unauthenticated,** regardless of
+  whether `--auth-issuer` or `--auth-api-key` is set. Standard practice for liveness/readiness
+  probes and version discovery — Kubernetes kubelet, load balancers, third-party monitors, and the
+  CLI can now reach these endpoints without a bearer token.
 
-  Previously both endpoints lived inside the auth-gated `/api/v1/*`
-  surface, which forced `workflow.connect()`'s connectivity probe and
-  kubelet probes to carry a valid credential. That blocked legitimate
-  first-boot bootstrap flows (e.g. the gitops reconcile script trying
-  to `POST /api/v1/api-keys` through the unauth bootstrap window had
-  to sidestep `workflow.connect` entirely).
+  Previously both endpoints lived inside the auth-gated `/api/v1/*` surface, which forced
+  `workflow.connect()`'s connectivity probe and kubelet probes to carry a valid credential. That
+  blocked legitimate first-boot bootstrap flows (e.g. the gitops reconcile script trying to
+  `POST /api/v1/api-keys` through the unauth bootstrap window had to sidestep `workflow.connect`
+  entirely).
 
-  All other `/api/v1/*` endpoints remain authenticated when auth is
-  enabled.
+  All other `/api/v1/*` endpoints remain authenticated when auth is enabled.
 
 ### Internal
 
-- `api/public.rs` — new module that owns the public (unauth) sub-router
-  at `/api/v1/*`. Holds `health_check` + `version`.
-- `api/meta.rs` deleted — its single `/version` route moved to
-  `api/public.rs`. The `VersionInfo` struct moved with it.
-- `api/workers.rs` no longer registers `/health`. Its single responsibility
-  is `/workers` now.
-- `api/mod.rs` `router()` grew a third tier alongside
-  "authenticated /api/v1/*" and "dashboard + openapi": "public /api/v1/*",
-  merged outside the auth middleware layer by construction.
+- `api/public.rs` — new module that owns the public (unauth) sub-router at `/api/v1/*`. Holds
+  `health_check` + `version`.
+- `api/meta.rs` deleted — its single `/version` route moved to `api/public.rs`. The `VersionInfo`
+  struct moved with it.
+- `api/workers.rs` no longer registers `/health`. Its single responsibility is `/workers` now.
+- `api/mod.rs` `router()` grew a third tier alongside "authenticated /api/v1/_" and "dashboard +
+  openapi": "public /api/v1/_", merged outside the auth middleware layer by construction.
 
 ### Tests
 
-- Five new auth tests (`auth_test.rs`) verify `/api/v1/health` returns
-  200 unauth in api-key / jwt / combined modes, that `/api/v1/version`
-  is unauth in api-key mode, and that other `/api/v1/*` paths still
-  require auth (regression guard against accidentally opening up more
-  of the surface).
+- Five new auth tests (`auth_test.rs`) verify `/api/v1/health` returns 200 unauth in api-key / jwt /
+  combined modes, that `/api/v1/version` is unauth in api-key mode, and that other `/api/v1/*` paths
+  still require auth (regression guard against accidentally opening up more of the surface).
 
 ## [0.11.7] - 2026-04-17
 
 ### Added
 
-- **`POST /api/v1/api-keys` endpoint** — REST alternative to the
-  `assay serve --generate-api-key` CLI subcommand. Accepts
-  `{ label?, idempotent? }`. With `idempotent=true` and a key matching
-  the label already exists, returns `200 OK` with the existing record's
-  metadata (no plaintext). Otherwise mints a fresh key and returns
-  `201 Created` with the plaintext.
+- **`POST /api/v1/api-keys` endpoint** — REST alternative to the `assay serve --generate-api-key`
+  CLI subcommand. Accepts `{ label?, idempotent? }`. With `idempotent=true` and a key matching the
+  label already exists, returns `200 OK` with the existing record's metadata (no plaintext).
+  Otherwise mints a fresh key and returns `201 Created` with the plaintext.
 
   **Bootstrap window:** when the `api_keys` table is empty, `POST
-  /api/v1/api-keys` is callable without authentication. This is the
-  only way a freshly deployed server running in API-key or combined
-  mode can receive its first credential without operator shell access.
-  The window closes the moment any key exists.
+  /api/v1/api-keys` is callable
+  without authentication. This is the only way a freshly deployed server running in API-key or
+  combined mode can receive its first credential without operator shell access. The window closes
+  the moment any key exists.
 
-- **`GET /api/v1/api-keys`** and **`DELETE /api/v1/api-keys/{prefix}`** —
-  list and revoke.
+- **`GET /api/v1/api-keys`** and **`DELETE /api/v1/api-keys/{prefix}`** — list and revoke.
 
-- **`workflow.api_keys.{generate, list, delete}`** Lua stdlib helpers
-  wrapping the above endpoints. Example:
+- **`workflow.api_keys.{generate, list, delete}`** Lua stdlib helpers wrapping the above endpoints.
+  Example:
 
   ```lua
   local resp = workflow.api_keys.generate("cc_api_key", { idempotent = true })
@@ -561,107 +551,102 @@ already supported namespace on these endpoints; only the stdlib was missing.
 
 ### Store
 
-- New `WorkflowStore` trait methods: `api_keys_empty()` (used by the
-  bootstrap-window gate) and `get_api_key_by_label(label)` (used by the
-  idempotent-mode lookup). Implemented for both SQLite and Postgres.
+- New `WorkflowStore` trait methods: `api_keys_empty()` (used by the bootstrap-window gate) and
+  `get_api_key_by_label(label)` (used by the idempotent-mode lookup). Implemented for both SQLite
+  and Postgres.
 
-- `ApiKeyRecord` now derives `utoipa::ToSchema` so the OpenAPI spec
-  includes it.
+- `ApiKeyRecord` now derives `utoipa::ToSchema` so the OpenAPI spec includes it.
 
 ### Changed
 
-- **`assay-workflow` crate** bumped to `0.1.5` (from `0.1.4`). Additive
-  API changes; downstream consumers on `version = "0.1"` continue to work.
+- **`assay-workflow` crate** bumped to `0.1.5` (from `0.1.4`). Additive API changes; downstream
+  consumers on `version = "0.1"` continue to work.
 
 ## [0.11.6] - 2026-04-17
 
 ### Fixed
 
-- **Postgres schema migration crash on startup.** `PostgresStore::migrate()` split
-  the embedded `SCHEMA` string by `;` and executed each fragment as SQL. A semicolon
-  inside an SQL line comment (`-- Idempotent across startups; fresh installs pick
-  the column up from the…`) produced a phantom fragment starting with naked prose,
-  and Postgres rejected it with `syntax error at or near "fresh"` — which crashed
-  `assay serve` on every boot against a Postgres backend, regardless of whether the
-  target database was fresh or already populated. Affects v0.11.3 through v0.11.5.
+- **Postgres schema migration crash on startup.** `PostgresStore::migrate()` split the embedded
+  `SCHEMA` string by `;` and executed each fragment as SQL. A semicolon inside an SQL line comment
+  (`-- Idempotent across startups; fresh installs pick
+  the column up from the…`) produced a
+  phantom fragment starting with naked prose, and Postgres rejected it with
+  `syntax error at or near "fresh"` — which crashed `assay serve` on every boot against a Postgres
+  backend, regardless of whether the target database was fresh or already populated. Affects v0.11.3
+  through v0.11.5.
 
-  Fix: extract the split into a `sanitise_schema` helper that drops pure-comment
-  lines (leading whitespace then `--`) before splitting on `;`. Inline `--`-after-code
-  and string-literal contents are left untouched, so the filter is conservative enough
-  to stay correct as the SCHEMA grows more prose.
+  Fix: extract the split into a `sanitise_schema` helper that drops pure-comment lines (leading
+  whitespace then `--`) before splitting on `;`. Inline `--`-after-code and string-literal contents
+  are left untouched, so the filter is conservative enough to stay correct as the SCHEMA grows more
+  prose.
 
 ### Changed
 
-- **`assay-workflow` crate** bumped to `0.1.4` (from `0.1.3`). No public API
-  changes. Downstream consumers on `version = "0.1"` continue to work.
+- **`assay-workflow` crate** bumped to `0.1.4` (from `0.1.3`). No public API changes. Downstream
+  consumers on `version = "0.1"` continue to work.
 
 ### Tests
 
-- Added five pure-Rust unit tests for `sanitise_schema` under `src/store/postgres.rs`
-  that run on all platforms — no Docker required. Includes a regression test
-  (`sanitise_schema_real_constant_produces_only_ddl`) that asserts the live `SCHEMA`
-  constant never produces a statement whose first token isn't a recognised SQL
-  keyword. This would have caught the v0.11.3 bug at CI time; the existing
-  integration tests under `tests/postgres_store.rs` skip when Docker is unavailable
-  (macOS default), which is why this class of bug slipped through.
+- Added five pure-Rust unit tests for `sanitise_schema` under `src/store/postgres.rs` that run on
+  all platforms — no Docker required. Includes a regression test
+  (`sanitise_schema_real_constant_produces_only_ddl`) that asserts the live `SCHEMA` constant never
+  produces a statement whose first token isn't a recognised SQL keyword. This would have caught the
+  v0.11.3 bug at CI time; the existing integration tests under `tests/postgres_store.rs` skip when
+  Docker is unavailable (macOS default), which is why this class of bug slipped through.
 
 ## [0.11.5] - 2026-04-17
 
 ### Changed
 
-- **`assay-workflow` crate version** bumped to `0.1.3` (from `0.1.2`) — carries the
-  v0.11.4 `AuthMode` refactor from enum to struct. Per assay's pre-1.0 policy of
-  patch-bumps-by-default, both crates stay in their current minor tracks until there's
-  a deliberate decision to signal API instability to downstream consumers.
+- **`assay-workflow` crate version** bumped to `0.1.3` (from `0.1.2`) — carries the v0.11.4
+  `AuthMode` refactor from enum to struct. Per assay's pre-1.0 policy of patch-bumps-by-default,
+  both crates stay in their current minor tracks until there's a deliberate decision to signal API
+  instability to downstream consumers.
 
 ### Fixed
 
-- **crates.io publish.** v0.11.4 shipped the binary (GHCR, npm, Linux/macOS artefacts,
-  GitHub release) but its crates.io publish failed because `assay-workflow` was still
-  pinned to `0.1.2` — the same version already published for v0.11.3. v0.11.5 is a
-  re-release of v0.11.4's code with both crates' versions bumped so the publish
-  actually lands on crates.io.
+- **crates.io publish.** v0.11.4 shipped the binary (GHCR, npm, Linux/macOS artefacts, GitHub
+  release) but its crates.io publish failed because `assay-workflow` was still pinned to `0.1.2` —
+  the same version already published for v0.11.3. v0.11.5 is a re-release of v0.11.4's code with
+  both crates' versions bumped so the publish actually lands on crates.io.
 
 ### Docs
 
-- `AGENTS.md` "Release docs checklist" gains an explicit note about `crates/*/Cargo.toml`
-  and the independent-versioning policy for sub-crates — the gap that caused the v0.11.4
-  crates.io failure.
+- `AGENTS.md` "Release docs checklist" gains an explicit note about `crates/*/Cargo.toml` and the
+  independent-versioning policy for sub-crates — the gap that caused the v0.11.4 crates.io failure.
 
 ## [0.11.4] - 2026-04-17
 
 ### Added
 
-- **Combined JWT + API-key authentication for `assay serve`.** `--auth-issuer` and
-  `--auth-api-key` can now be set on the same invocation. When both are enabled, the
-  auth middleware dispatches on token shape:
+- **Combined JWT + API-key authentication for `assay serve`.** `--auth-issuer` and `--auth-api-key`
+  can now be set on the same invocation. When both are enabled, the auth middleware dispatches on
+  token shape:
 
-  - Bearer tokens that parse as a JWS header are validated against the OIDC issuer's
-    JWKS.
-  - Bearer tokens that are not JWT-shaped are hashed and looked up in the API-key
-    store.
+  - Bearer tokens that parse as a JWS header are validated against the OIDC issuer's JWKS.
+  - Bearer tokens that are not JWT-shaped are hashed and looked up in the API-key store.
 
-  A semantically-invalid JWT (expired, wrong issuer / audience, forged signature) is
-  rejected on the JWT path and is **not** retried as an API key — a token that looks
-  like a JWT is treated as a JWT. This lets a single server accept short-lived OIDC
-  user tokens from a browser session and long-lived machine API keys from a CI job
-  without the caller picking a mode up front.
+  A semantically-invalid JWT (expired, wrong issuer / audience, forged signature) is rejected on the
+  JWT path and is **not** retried as an API key — a token that looks like a JWT is treated as a JWT.
+  This lets a single server accept short-lived OIDC user tokens from a browser session and
+  long-lived machine API keys from a CI job without the caller picking a mode up front.
 
 ### Changed
 
-- **`AuthMode` is now a struct** (`api_key: bool`, `jwt: Option<JwtConfig>`) instead of
-  an enum with three variants. Library constructors are unchanged in shape —
-  `AuthMode::no_auth()`, `AuthMode::api_key()`, `AuthMode::jwt(issuer, audience)` — and
-  a new `AuthMode::combined(issuer, audience)` enables both paths. `AuthMode::is_enabled()`
-  replaces `!matches!(.., NoAuth)` call sites.
+- **`AuthMode` is now a struct** (`api_key: bool`, `jwt: Option<JwtConfig>`) instead of an enum with
+  three variants. Library constructors are unchanged in shape — `AuthMode::no_auth()`,
+  `AuthMode::api_key()`, `AuthMode::jwt(issuer, audience)` — and a new
+  `AuthMode::combined(issuer, audience)` enables both paths. `AuthMode::is_enabled()` replaces
+  `!matches!(.., NoAuth)` call sites.
 
   Breaking for downstream Rust consumers that matched on `AuthMode::NoAuth | ApiKey |
-  Jwt { .. }`. The `assay` binary and REST / dashboard users are unaffected.
+  Jwt { .. }`.
+  The `assay` binary and REST / dashboard users are unaffected.
 
 ### Docs
 
-- `docs/modules/workflow.md` auth table adds the combined-mode row and documents the
-  token-shape dispatch rule.
+- `docs/modules/workflow.md` auth table adds the combined-mode row and documents the token-shape
+  dispatch rule.
 
 ## [0.11.3] - 2026-04-16
 
