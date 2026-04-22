@@ -10,8 +10,8 @@ If something here isn't clear, open an issue.
 
 - `assay serve` is gone. Run `assay-engine serve --config <path.toml>` instead.
 - SurrealDB backend removed. PG18 + SQLite only.
-- Library imports changed: `WorkflowStore` is in `assay-domain` now, not `assay-workflow`. `Engine<S>`
-  dropped its generic.
+- Library imports changed: `WorkflowStore` is in `assay-domain` now, not `assay-workflow`.
+  `Engine<S>` dropped its generic.
 - `assay-lua` (the runtime binary) no longer embeds workflow. It's a pure Lua runtime + HTTP client
   that talks to a deployed `assay-engine`.
 - Dashboard is served by `assay-engine` only, not by `assay-lua`.
@@ -91,6 +91,22 @@ let ctx = WorkflowCtx::start(Arc::new(store));
 
 **Features are additive:** `backend-postgres` and `backend-sqlite` can both be compiled in the same
 binary. Runtime selection happens via `EngineConfig.backend`. No mutual exclusion.
+
+**`subscribe_runnable` / `subscribe_tasks` are now `async`:**
+
+```rust
+// Old (0.1.x) — returned a lazy stream; LISTEN was issued on first poll.
+// Callers could race the subscription against the first pg_notify.
+let mut stream = store.subscribe_runnable("main");
+
+// New (0.2.0) — awaits LISTEN registration before handing back the stream.
+// By the time `.await` resolves, the subscription is active on the server.
+let mut stream = store.subscribe_runnable("main").await;
+```
+
+The old shape dropped notifications when a caller `pg_notify`'d between construction and first poll.
+The new shape makes this impossible. `PostgresStore::from_pool(pool)` is also new — use it when the
+engine owns the pool and hands a clone to the workflow module.
 
 ## Scenario 4 — you're writing Lua scripts against the engine HTTP API
 

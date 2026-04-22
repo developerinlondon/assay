@@ -20,7 +20,7 @@ Six crates go out together:
 | ----------------- | ------- | --------------------- |
 | `assay-lua`       | 0.13.0  | Bumped (runtime only) |
 | `assay-workflow`  | 0.2.0   | Bumped (breaking)     |
-| `assay-domain`      | 0.1.0   | New                   |
+| `assay-domain`    | 0.1.0   | New                   |
 | `assay-auth`      | 0.1.0   | New (scaffold)        |
 | `assay-dashboard` | 0.1.0   | New                   |
 | `assay-engine`    | 0.1.0   | New                   |
@@ -73,6 +73,13 @@ revised). Call sites go from `Engine::<PostgresStore>::new(store)` to
 `WorkflowCtx::start(Arc::new(store))`. Features are now additive, not mutually exclusive:
 `backend-postgres` and `backend-sqlite` can both compile into the same binary and the engine picks
 one at startup.
+
+The `WorkflowStore::subscribe_runnable` / `subscribe_tasks` methods are now `async` and return the
+stream only after the underlying `LISTEN` has been registered on the server. The old shape returned
+a lazy `async_stream` that issued `LISTEN` on first poll, which let a caller drop notifications by
+calling `pg_notify` between constructing the stream and polling it. `PostgresStore::from_pool(pool)`
+is a new constructor for when the engine owns the pool and hands a clone to the workflow module,
+matching the plan-12 "shared pool" story.
 
 The engine in 0.13.0 runs with `AuthMode::no_auth()` — there is no JWT or API-key gate on the
 workflow API in this release. Do not expose a 0.13.0 engine on the public internet without a network
