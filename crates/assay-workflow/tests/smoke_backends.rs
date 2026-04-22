@@ -1257,9 +1257,13 @@ use futures_util::StreamExt;
 // Serial — push tests spin up testcontainers; running them concurrent
 // with other container-using tests sporadically conflicts on the
 // docker daemon's port allocation / container startup path.
+// PG-only: SQLite returns stream::empty() by design (no cross-process
+// notification primitive). macOS CI has no Docker for the testcontainer, so
+// gate the whole fn — `target_os != "linux"` would leave rstest with zero
+// cases and fail to compile.
+#[cfg(all(feature = "backend-postgres", target_os = "linux"))]
 #[rstest]
-#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
-
+#[case::pg(Backend::Postgres)]
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
 async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
@@ -1298,9 +1302,10 @@ async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
     assert_eq!(got, wf_id, "push stream should yield the workflow id");
 }
 
+// PG-only (same reason as push_runnable_fires_on_dispatchable above).
+#[cfg(all(feature = "backend-postgres", target_os = "linux"))]
 #[rstest]
-#[cfg_attr(all(feature = "backend-postgres", target_os = "linux"), case::pg(Backend::Postgres))]
-
+#[case::pg(Backend::Postgres)]
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
 async fn push_tasks_fires_on_activity_insert(#[case] backend: Backend) {

@@ -36,7 +36,8 @@ local function substitute(content, placeholder, replacement)
 end
 
 local function count_builtins()
-  local src = fs.read("src/lua/builtins/mod.rs")
+  -- Path changed in v0.13.0 when the root binary moved to crates/assay/.
+  local src = fs.read("crates/assay/src/lua/builtins/mod.rs")
   local internal = { register_all=1, register_shell=1, register_process=1, register_disk=1, register_os=1 }
   local count = 0
   for line in src:gmatch("[^\n]+") do
