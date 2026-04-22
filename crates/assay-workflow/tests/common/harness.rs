@@ -5,6 +5,14 @@
 //! `WorkflowStore` calls through explicit `match` arms, so test bodies remain
 //! backend-agnostic without requiring `dyn Trait`.
 
+// Some harness methods are only exercised by a subset of the tests
+// (e.g. PG-only tests gated off on macOS). Silence dead_code rather
+// than litter the file with per-method allows.
+#![allow(dead_code)]
+// Harness variant sizes differ substantially (PG testcontainer vs
+// SQLite tempdir). Boxing wouldn't help the test ergonomics.
+#![allow(clippy::large_enum_variant)]
+
 use assay_domain::types::*;
 use assay_domain::{ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats};
 use assay_workflow::WorkflowStore;
