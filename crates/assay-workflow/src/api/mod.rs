@@ -1,7 +1,6 @@
 pub mod activities;
 pub mod api_keys;
 pub mod auth;
-pub mod dashboard;
 pub mod events;
 pub mod namespaces;
 pub mod openapi;
@@ -9,7 +8,6 @@ pub mod public;
 pub mod queues;
 pub mod schedules;
 pub mod tasks;
-pub mod whitelabel;
 pub mod workers;
 pub mod workflow_tasks;
 pub mod workflows;
@@ -21,22 +19,9 @@ use axum::Router;
 use tokio::sync::broadcast;
 use tracing::info;
 
-use crate::api::auth::AuthMode;
-use crate::engine::Engine;
+use crate::auth_mode::AuthMode;
+use crate::ctx::{BroadcastEvent, EngineEvent, WorkflowCtx};
 use crate::store::WorkflowStore;
-
-/// Shared state for all API handlers.
-pub struct AppState<S: WorkflowStore> {
-    pub engine: Arc<Engine<S>>,
-    pub event_tx: broadcast::Sender<events::BroadcastEvent>,
-    pub auth_mode: AuthMode,
-    /// Version of the containing binary (e.g. the `assay-lua` CLI) — set
-    /// by embedders so `/api/v1/version` reflects the user-facing
-    /// binary, not this internal engine-crate version. Defaults to the
-    /// `assay-workflow` crate version, which is what the dashboard
-    /// falls back to when an embedder doesn't override.
-    pub binary_version: Option<&'static str>,
-}
 
 /// Build the full API router.
 ///
@@ -48,53 +33,52 @@ pub struct AppState<S: WorkflowStore> {
 ///      Kubernetes probes, load balancers, and third-party monitors can
 ///      reach them without a bearer token.
 ///   3. **Dashboard + OpenAPI** — HTML/JSON at the root. Always public.
-pub fn router<S: WorkflowStore + 'static>(state: Arc<AppState<S>>) -> Router {
+pub fn router<S: WorkflowStore>(state: Arc<WorkflowCtx<S>>) -> Router {
     let needs_auth = state.auth_mode.is_enabled();
 
     let authed_api = Router::new()
-        .nest("/api/v1", api_v1_router())
-        .nest("/api/v1", events::router());
+        .nest("/api/v1", api_v1_router::<S>())
+        .nest("/api/v1", events::router::<S>());
 
     let authed_api = if needs_auth {
         authed_api.layer(middleware::from_fn_with_state(
             Arc::clone(&state),
-            auth::auth_middleware,
+            auth::auth_middleware::<S>,
         ))
     } else {
         authed_api
     };
 
     // Public /api/v1/* routes — outside the auth layer by construction.
-    let public_api = Router::new().nest("/api/v1", public::router());
+    let public_api = Router::new().nest("/api/v1", public::router::<S>());
 
     let app = authed_api
         .merge(public_api)
-        .merge(dashboard::router())
-        .merge(openapi::router());
+        .merge(openapi::router::<S>());
 
     app.with_state(state)
 }
 
-fn api_v1_router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+fn api_v1_router<S: WorkflowStore>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
-        .merge(workflows::router())
-        .merge(activities::router())
-        .merge(workflow_tasks::router())
-        .merge(tasks::router())
-        .merge(schedules::router())
-        .merge(workers::router())
-        .merge(namespaces::router())
-        .merge(queues::router())
-        .merge(api_keys::router())
+        .merge(workflows::router::<S>())
+        .merge(activities::router::<S>())
+        .merge(workflow_tasks::router::<S>())
+        .merge(tasks::router::<S>())
+        .merge(schedules::router::<S>())
+        .merge(workers::router::<S>())
+        .merge(namespaces::router::<S>())
+        .merge(queues::router::<S>())
+        .merge(api_keys::router::<S>())
 }
 
 /// Start the HTTP server on the given port.
-pub async fn serve<S: WorkflowStore + 'static>(
-    engine: Engine<S>,
+pub async fn serve(
+    store: impl WorkflowStore + 'static,
     port: u16,
     auth_mode: AuthMode,
 ) -> anyhow::Result<()> {
-    serve_with_version(engine, port, auth_mode, None).await
+    serve_with_version(store, port, auth_mode, None).await
 }
 
 /// Like `serve`, but lets the embedder (e.g. the `assay` binary) pass
@@ -102,8 +86,8 @@ pub async fn serve<S: WorkflowStore + 'static>(
 /// actually running instead of the internal `assay-workflow` crate
 /// version. Without this, the dashboard would show a misleading
 /// "engine crate" version to operators.
-pub async fn serve_with_version<S: WorkflowStore + 'static>(
-    engine: Engine<S>,
+pub async fn serve_with_version(
+    store: impl WorkflowStore + 'static,
     port: u16,
     auth_mode: AuthMode,
     binary_version: Option<&'static str>,
@@ -112,16 +96,24 @@ pub async fn serve_with_version<S: WorkflowStore + 'static>(
     // engine pushes EngineEvents into the bridge below; the bridge
     // converts each one to a BroadcastEvent and forwards to every
     // connected dashboard.
-    let (event_tx, _) = broadcast::channel::<events::BroadcastEvent>(1024);
-    let (engine_tx, mut engine_rx) =
-        broadcast::channel::<crate::engine::EngineEvent>(1024);
-    let engine = engine.with_event_broadcaster(engine_tx);
+    let (sse_tx, _) = broadcast::channel::<BroadcastEvent>(1024);
+    let (engine_tx, mut engine_rx) = broadcast::channel::<EngineEvent>(1024);
+
+    let store = Arc::new(store);
+    let mut ctx = WorkflowCtx::start(store)
+        .with_event_broadcaster(engine_tx)
+        .with_auth_mode(auth_mode.clone())
+        .with_sse_tx(sse_tx.clone());
+
+    if let Some(v) = binary_version {
+        ctx = ctx.with_binary_version(v);
+    }
 
     {
-        let event_tx = event_tx.clone();
+        let sse_tx = sse_tx.clone();
         tokio::spawn(async move {
             while let Ok(evt) = engine_rx.recv().await {
-                let _ = event_tx.send(events::BroadcastEvent {
+                let _ = sse_tx.send(BroadcastEvent {
                     event_type: evt.event_type,
                     workflow_id: evt.workflow_id,
                     payload: Some(serde_json::json!({
@@ -133,13 +125,7 @@ pub async fn serve_with_version<S: WorkflowStore + 'static>(
     }
 
     let mode_desc = auth_mode.describe();
-
-    let state = Arc::new(AppState {
-        engine: Arc::new(engine),
-        event_tx,
-        auth_mode,
-        binary_version,
-    });
+    let state = Arc::new(ctx);
 
     let app = router(state);
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;

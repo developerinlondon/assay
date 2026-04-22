@@ -142,15 +142,45 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
 
--- Future additive migrations go below this line. Postgres supports
--- `ADD COLUMN IF NOT EXISTS` natively, so the pattern is simply:
---
---   ALTER TABLE workflows ADD COLUMN IF NOT EXISTS some_new_field TEXT;
---
--- Idempotent across startups; fresh installs pick the column up from the
--- CREATE TABLE above so the ADD is a no-op. Currently no pending
--- migrations — baseline schema in CREATE TABLE statements above is the
--- source of truth through v0.11.3.
+"#;
+
+/// Trigger DDL for LISTEN/NOTIFY push streams (Task 3.17).
+///
+/// Executed as raw SQL (not through `sanitise_schema`) because the PL/pgSQL
+/// function bodies use `$$` dollar-quoting which contains semicolons that would
+/// be incorrectly split by `sanitise_schema`'s naive `;` splitter.
+///
+/// Idempotent: `CREATE OR REPLACE FUNCTION` and `DROP TRIGGER IF EXISTS` /
+/// `CREATE TRIGGER` are safe to run on every startup.
+const TRIGGER_DDL: &str = r#"
+CREATE OR REPLACE FUNCTION assay_notify_runnable() RETURNS trigger AS $$
+BEGIN
+  IF NEW.needs_dispatch = TRUE
+     AND NEW.status IN ('PENDING', 'RUNNING')
+     AND NEW.dispatch_claimed_by IS NULL
+  THEN
+    PERFORM pg_notify('assay_runnable_' || NEW.namespace, NEW.id);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS workflow_runnable_notify ON workflows;
+CREATE TRIGGER workflow_runnable_notify
+  AFTER INSERT OR UPDATE OF status, needs_dispatch, dispatch_claimed_by ON workflows
+  FOR EACH ROW EXECUTE FUNCTION assay_notify_runnable();
+
+CREATE OR REPLACE FUNCTION assay_notify_task() RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_notify('assay_task_' || NEW.task_queue, NEW.id::text);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS workflow_task_notify ON workflow_activities;
+CREATE TRIGGER workflow_task_notify
+  AFTER INSERT ON workflow_activities
+  FOR EACH ROW EXECUTE FUNCTION assay_notify_task();
 "#;
 
 /// Split a Postgres DDL script into individual statements ready for `sqlx::query`.
@@ -185,15 +215,28 @@ pub struct PostgresStore {
 impl PostgresStore {
     pub async fn new(url: &str) -> Result<Self> {
         let pool = PgPool::connect(url).await?;
+        Self::from_pool(pool).await
+    }
+
+    /// Build a store from an existing pool. Runs migrations on the target
+    /// database. Useful when the engine owns the pool (shared with other
+    /// modules) and hands a clone to the workflow module, or for tests that
+    /// point many stores at different databases in the same Postgres server.
+    pub async fn from_pool(pool: PgPool) -> Result<Self> {
         let store = Self { pool };
         store.migrate().await?;
         Ok(store)
     }
 
     async fn migrate(&self) -> Result<()> {
+        // Apply the base schema (tables + indexes) statement-by-statement.
         for statement in sanitise_schema(SCHEMA) {
             sqlx::query(&statement).execute(&self.pool).await?;
         }
+        // Apply LISTEN/NOTIFY trigger DDL as a single raw execution.
+        // Can't use sanitise_schema here because PL/pgSQL $$ bodies contain
+        // semicolons that would be incorrectly split.
+        sqlx::raw_sql(TRIGGER_DDL).execute(&self.pool).await?;
         Ok(())
     }
 
@@ -674,15 +717,33 @@ impl WorkflowStore for PostgresStore {
     // ── Timers ──────────────────────────────────────────────
 
     async fn create_timer(&self, timer: &WorkflowTimer) -> Result<i64> {
-        let row: (i64,) = sqlx::query_as(
-            "INSERT INTO workflow_timers (workflow_id, seq, fire_at, fired) VALUES ($1, $2, $3, FALSE) RETURNING id",
+        // Idempotent: ON CONFLICT (workflow_id, seq) DO NOTHING.
+        // If a row already exists, RETURNING produces no rows — fall back to SELECT.
+        let inserted: Option<(i64,)> = sqlx::query_as(
+            "INSERT INTO workflow_timers (workflow_id, seq, fire_at, fired)
+             VALUES ($1, $2, $3, FALSE)
+             ON CONFLICT (workflow_id, seq) DO NOTHING
+             RETURNING id",
         )
         .bind(&timer.workflow_id)
         .bind(timer.seq)
         .bind(timer.fire_at)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some((id,)) = inserted {
+            return Ok(id);
+        }
+
+        // Row already existed — return its id.
+        let (id,): (i64,) = sqlx::query_as(
+            "SELECT id FROM workflow_timers WHERE workflow_id = $1 AND seq = $2",
+        )
+        .bind(&timer.workflow_id)
+        .bind(timer.seq)
         .fetch_one(&self.pool)
         .await?;
-        Ok(row.0)
+        Ok(id)
     }
 
     async fn cancel_pending_activities(&self, workflow_id: &str) -> Result<u64> {
@@ -1241,6 +1302,92 @@ impl WorkflowStore for PostgresStore {
                 .fetch_one(&self.pool)
                 .await?;
         Ok(row.0)
+    }
+
+    fn subscribe_runnable<'a>(
+        &'a self,
+        namespace: &'a str,
+    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
+           + Send
+           + 'a {
+        use futures_util::StreamExt;
+        let pool = self.pool.clone();
+        let ns = namespace.to_string();
+        async move {
+            let channel = format!("assay_runnable_{ns}");
+            let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!(?e, "subscribe_runnable: pg listener connect failed");
+                    return futures_util::stream::empty().boxed();
+                }
+            };
+            if let Err(e) = listener.listen(&channel).await {
+                tracing::error!(?e, %channel, "subscribe_runnable: LISTEN failed");
+                return futures_util::stream::empty().boxed();
+            }
+            // LISTEN is now registered. From here any `pg_notify` on this
+            // channel reaches us — hand the caller a stream that just reads.
+            async_stream::stream! {
+                loop {
+                    match listener.recv().await {
+                        Ok(n) => yield n.payload().to_string(),
+                        Err(e) => {
+                            tracing::warn!(?e, "subscribe_runnable: recv error, reconnecting");
+                            // PgListener handles reconnection internally; a
+                            // recv error means the connection was dropped.
+                            // End the stream so the scheduler falls back to
+                            // its timer-heap wake-up.
+                            break;
+                        }
+                    }
+                }
+            }
+            .boxed()
+        }
+    }
+
+    fn subscribe_tasks<'a>(
+        &'a self,
+        queue_names: &'a [&'a str],
+    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
+           + Send
+           + 'a {
+        use futures_util::StreamExt;
+        let pool = self.pool.clone();
+        let channels: Vec<String> = queue_names
+            .iter()
+            .map(|q| format!("assay_task_{q}"))
+            .collect();
+        async move {
+            if channels.is_empty() {
+                return futures_util::stream::empty().boxed();
+            }
+            let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!(?e, "subscribe_tasks: pg listener connect failed");
+                    return futures_util::stream::empty().boxed();
+                }
+            };
+            let channel_refs: Vec<&str> = channels.iter().map(|s| s.as_str()).collect();
+            if let Err(e) = listener.listen_all(channel_refs).await {
+                tracing::error!(?e, "subscribe_tasks: LISTEN failed");
+                return futures_util::stream::empty().boxed();
+            }
+            async_stream::stream! {
+                loop {
+                    match listener.recv().await {
+                        Ok(n) => yield n.payload().to_string(),
+                        Err(e) => {
+                            tracing::warn!(?e, "subscribe_tasks: recv error");
+                            break;
+                        }
+                    }
+                }
+            }
+            .boxed()
+        }
     }
 }
 

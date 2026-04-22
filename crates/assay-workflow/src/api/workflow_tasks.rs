@@ -26,10 +26,10 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::api::workflows::AppError;
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/workflow-tasks/poll", post(poll_workflow_task))
         .route("/workflow-tasks/{id}/commands", post(submit_commands))
@@ -52,11 +52,10 @@ pub struct PollWorkflowTaskRequest {
     ),
 )]
 pub async fn poll_workflow_task<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<PollWorkflowTaskRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     match state
-        .engine
         .claim_workflow_task(&req.queue, &req.worker_id)
         .await?
     {
@@ -96,12 +95,11 @@ pub struct SubmitCommandsRequest {
     responses((status = 200, description = "Commands processed; lease released")),
 )]
 pub async fn submit_commands<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(workflow_id): Path<String>,
     Json(req): Json<SubmitCommandsRequest>,
 ) -> Result<axum::http::StatusCode, AppError> {
     state
-        .engine
         .submit_workflow_commands(&workflow_id, &req.worker_id, &req.commands)
         .await?;
     Ok(axum::http::StatusCode::OK)

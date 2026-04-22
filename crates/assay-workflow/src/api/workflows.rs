@@ -6,11 +6,11 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 use crate::types::WorkflowStatus;
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/workflows", post(start_workflow).get(list_workflows))
         .route("/workflows/{id}", get(describe_workflow))
@@ -64,14 +64,13 @@ pub struct WorkflowResponse {
     ),
 )]
 pub async fn start_workflow<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<StartWorkflowRequest>,
 ) -> Result<(axum::http::StatusCode, Json<WorkflowResponse>), AppError> {
     let input = req.input.map(|v| v.to_string());
     let namespace = req.namespace.as_deref().unwrap_or("main");
     let search_attributes = req.search_attributes.map(|v| v.to_string());
     let wf = state
-        .engine
         .start_workflow(
             namespace,
             &req.workflow_type,
@@ -131,7 +130,7 @@ fn default_limit() -> i64 {
     ),
 )]
 pub async fn list_workflows<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
     let status = q
@@ -140,7 +139,6 @@ pub async fn list_workflows<S: WorkflowStore>(
         .and_then(|s| s.parse::<WorkflowStatus>().ok());
 
     let workflows = state
-        .engine
         .list_workflows(
             &q.namespace,
             status,
@@ -169,11 +167,10 @@ pub async fn list_workflows<S: WorkflowStore>(
     ),
 )]
 pub async fn describe_workflow<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let wf = state
-        .engine
         .get_workflow(&id)
         .await?
         .ok_or(AppError::NotFound(format!("workflow {id}")))?;
@@ -190,10 +187,10 @@ pub async fn describe_workflow<S: WorkflowStore>(
     ),
 )]
 pub async fn get_events<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let events = state.engine.get_events(&id).await?;
+    let events = state.get_events(&id).await?;
     let json: Vec<serde_json::Value> = events
         .into_iter()
         .map(|e| serde_json::to_value(e).unwrap_or_default())
@@ -218,13 +215,12 @@ pub struct SignalBody {
     ),
 )]
 pub async fn send_signal<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path((id, name)): Path<(String, String)>,
     Json(body): Json<Option<SignalBody>>,
 ) -> Result<axum::http::StatusCode, AppError> {
     let payload = body.and_then(|b| b.payload).map(|v| v.to_string());
     state
-        .engine
         .send_signal(&id, &name, payload.as_deref())
         .await?;
     Ok(axum::http::StatusCode::OK)
@@ -249,14 +245,14 @@ pub struct CancelBody {
     ),
 )]
 pub async fn cancel_workflow<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
     body: Option<Json<CancelBody>>,
 ) -> Result<axum::http::StatusCode, AppError> {
     // Accept either no body (back-compat with callers that just POST
     // /cancel) or a body with optional reason.
     let reason = body.and_then(|Json(b)| b.reason);
-    let cancelled = state.engine.cancel_workflow(&id, reason.as_deref()).await?;
+    let cancelled = state.cancel_workflow(&id, reason.as_deref()).await?;
     if cancelled {
         Ok(axum::http::StatusCode::OK)
     } else {
@@ -281,13 +277,12 @@ pub struct TerminateBody {
     ),
 )]
 pub async fn terminate_workflow<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
     Json(body): Json<Option<TerminateBody>>,
 ) -> Result<axum::http::StatusCode, AppError> {
     let reason = body.and_then(|b| b.reason);
     let terminated = state
-        .engine
         .terminate_workflow(&id, reason.as_deref())
         .await?;
     if terminated {
@@ -308,10 +303,10 @@ pub async fn terminate_workflow<S: WorkflowStore>(
     ),
 )]
 pub async fn list_children<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let children = state.engine.list_child_workflows(&id).await?;
+    let children = state.list_child_workflows(&id).await?;
     let json: Vec<serde_json::Value> = children
         .into_iter()
         .map(|w| serde_json::to_value(w).unwrap_or_default())
@@ -340,7 +335,7 @@ pub struct ContinueAsNewBody {
     ),
 )]
 pub async fn continue_as_new<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
     Json(body): Json<ContinueAsNewBody>,
 ) -> Result<(axum::http::StatusCode, Json<WorkflowResponse>), AppError> {
@@ -350,7 +345,6 @@ pub async fn continue_as_new<S: WorkflowStore>(
         .as_deref()
         .filter(|s| !s.trim().is_empty());
     let wf = state
-        .engine
         .continue_as_new(&id, input.as_deref(), new_id)
         .await?;
 
@@ -383,11 +377,10 @@ pub async fn continue_as_new<S: WorkflowStore>(
     ),
 )]
 pub async fn get_workflow_state<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let snapshot = state
-        .engine
         .get_latest_snapshot(&id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("state for workflow {id}")))?;
@@ -419,11 +412,10 @@ pub async fn get_workflow_state<S: WorkflowStore>(
     ),
 )]
 pub async fn get_workflow_state_by_name<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path((id, name)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let snapshot = state
-        .engine
         .get_latest_snapshot(&id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("state for workflow {id}")))?;

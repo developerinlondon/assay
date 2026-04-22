@@ -1,14 +1,17 @@
 [package]
 name = "assay-workflow"
-version = "0.1.8"
+version = "0.2.0"
 categories = ["asynchronous", "database"]
 edition = "2024"
 keywords = ["workflow", "durable-execution", "orchestration", "task-queue"]
 license = "Apache-2.0"
 repository = "https://github.com/developerinlondon/assay"
-description = "Durable workflow engine with REST+SSE API, PostgreSQL/SQLite backends. Embeddable library or standalone server."
+description = "Durable workflow engine with REST+SSE API on PostgreSQL 18 and SQLite backends. Embeddable library or standalone server (via assay-engine)."
 
 [dependencies]
+# Shared types + traits
+assay-domain = { path = "../assay-domain", version = "0.1" }
+
 # Async runtime
 tokio = { version = "1", features = ["rt", "time", "macros"] }
 
@@ -46,12 +49,25 @@ anyhow = "1"
 # Logging
 tracing = "0.1"
 
+# Push-subscription stream types (Stream trait + empty-stream constructor)
+futures-core = "0.3"
+futures-util = "0.3"
+
+# Async generator streams (used by push-stream impls)
+async-stream = "0.3"
+
 [features]
-default = []
+default = ["backend-postgres", "backend-sqlite"]
 # Enable the S3 archival background task for completed workflows.
 # Adds the AWS SDK dependency (~5MB of binary size); leave off when
 # archival isn't needed.
 s3-archival = ["dep:aws-config", "dep:aws-sdk-s3"]
+
+# Backend features. Postgres + SQLite are unconditionally compiled for now
+# (the source hasn't been feature-gated off sqlx yet — tracked in plan 12a).
+# Both are additive; runtime backend selection happens via EngineConfig.backend.
+backend-postgres = []
+backend-sqlite = []
 
 [dependencies.aws-config]
 version = "1.8"
@@ -66,6 +82,8 @@ features = ["behavior-version-latest"]
 [dev-dependencies]
 reqwest = { version = "0.13", features = ["json"], default-features = false }
 rsa = "0.9"
+rstest = "0.26"
+serial_test = "3"
 tempfile = "3.27.0"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }

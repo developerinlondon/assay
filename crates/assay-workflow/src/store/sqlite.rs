@@ -349,7 +349,8 @@ impl WorkflowStore for SqliteStore {
     }
 
     async fn delete_namespace(&self, name: &str) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM namespaces WHERE name = ?")
+        // Mirror PG: 'main' is always available, can't be deleted.
+        let res = sqlx::query("DELETE FROM namespaces WHERE name = ? AND name != 'main'")
             .bind(name)
             .execute(&self.pool)
             .await?;
@@ -805,15 +806,31 @@ impl WorkflowStore for SqliteStore {
     // ── Timers ──────────────────────────────────────────────
 
     async fn create_timer(&self, timer: &WorkflowTimer) -> Result<i64> {
+        // Idempotent: INSERT OR IGNORE on UNIQUE (workflow_id, seq).
+        // If the row already existed, last_insert_rowid() is 0 — fall back to SELECT.
         let res = sqlx::query(
-            "INSERT INTO workflow_timers (workflow_id, seq, fire_at, fired) VALUES (?, ?, ?, 0)",
+            "INSERT OR IGNORE INTO workflow_timers (workflow_id, seq, fire_at, fired) VALUES (?, ?, ?, 0)",
         )
         .bind(&timer.workflow_id)
         .bind(timer.seq)
         .bind(timer.fire_at)
         .execute(&self.pool)
         .await?;
-        Ok(res.last_insert_rowid())
+
+        let id = res.last_insert_rowid();
+        if id != 0 {
+            return Ok(id);
+        }
+
+        // Row already existed — return its id.
+        let (existing_id,): (i64,) = sqlx::query_as(
+            "SELECT id FROM workflow_timers WHERE workflow_id = ? AND seq = ?",
+        )
+        .bind(&timer.workflow_id)
+        .bind(timer.seq)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(existing_id)
     }
 
     async fn cancel_pending_activities(&self, workflow_id: &str) -> Result<u64> {
@@ -1391,6 +1408,32 @@ impl WorkflowStore for SqliteStore {
         // Also refresh the engine lock heartbeat on each scheduler tick.
         self.refresh_engine_lock().await.ok();
         Ok(true)
+    }
+
+    /// SQLite has no cross-process notification primitive. Single-process
+    /// deployments wanting push wake-ups should compose an in-memory
+    /// channel at the call site. The trait contract guarantees the
+    /// scheduler still wakes on its heap regardless. The future is trivial
+    /// (no setup to do) but keeps the trait shape consistent with PG so
+    /// callers can `.await` uniformly.
+    fn subscribe_runnable<'a>(
+        &'a self,
+        _namespace: &'a str,
+    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
+           + Send
+           + 'a {
+        use futures_util::StreamExt;
+        async move { futures_util::stream::empty().boxed() }
+    }
+
+    fn subscribe_tasks<'a>(
+        &'a self,
+        _queue_names: &'a [&'a str],
+    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
+           + Send
+           + 'a {
+        use futures_util::StreamExt;
+        async move { futures_util::stream::empty().boxed() }
     }
 }
 

@@ -8,21 +8,15 @@
 //! Each test starts a real engine (in-memory SQLite), exercises the REST
 //! surface, and asserts on persistent state — never on logs or stdout.
 
-use assay_workflow::{Engine, SqliteStore};
+use assay_workflow::{SqliteStore, WorkflowCtx};
 use std::sync::Arc;
-use tokio::sync::broadcast;
 
 async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
-    let engine = Engine::start(store);
-
-    let (event_tx, _) = broadcast::channel(64);
-    let state = Arc::new(assay_workflow::api::AppState {
-        engine: Arc::new(engine),
-        event_tx,
-        auth_mode: assay_workflow::api::auth::AuthMode::no_auth(),
-        binary_version: None,
-    });
+    let state = Arc::new(
+        WorkflowCtx::start(Arc::new(store))
+            .with_auth_mode(assay_workflow::api::auth::AuthMode::no_auth()),
+    );
 
     let app = assay_workflow::api::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

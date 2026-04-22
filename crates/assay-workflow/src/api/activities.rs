@@ -1,9 +1,4 @@
 //! Activity scheduling and lookup endpoints.
-//!
-//! These endpoints are the public face of `Engine::schedule_activity` and
-//! `Engine::get_activity` — workflows (running on a worker) call POST to
-//! schedule the next activity, and the worker polls GET while waiting for
-//! the result. Idempotency on `(workflow_id, seq)` makes it safe to retry.
 
 use std::sync::Arc;
 
@@ -14,11 +9,11 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::api::workflows::AppError;
-use crate::api::AppState;
+use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 use crate::types::{ScheduleActivityOpts, WorkflowActivity};
 
-pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<AppState<S>>> {
+pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/workflows/{id}/activities", post(schedule_activity))
         .route("/activities/{id}", get(get_activity))
@@ -58,7 +53,7 @@ pub struct ScheduleActivityRequest {
     ),
 )]
 pub async fn schedule_activity<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(workflow_id): Path<String>,
     Json(req): Json<ScheduleActivityRequest>,
 ) -> Result<(axum::http::StatusCode, Json<WorkflowActivity>), AppError> {
@@ -71,7 +66,6 @@ pub async fn schedule_activity<S: WorkflowStore>(
         heartbeat_timeout_secs: req.heartbeat_timeout_secs,
     };
     let act = state
-        .engine
         .schedule_activity(
             &workflow_id,
             req.seq,
@@ -94,10 +88,10 @@ pub async fn schedule_activity<S: WorkflowStore>(
     ),
 )]
 pub async fn get_activity<S: WorkflowStore>(
-    State(state): State<Arc<AppState<S>>>,
+    State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<i64>,
 ) -> Result<Json<WorkflowActivity>, AppError> {
-    match state.engine.get_activity(id).await? {
+    match state.get_activity(id).await? {
         Some(a) => Ok(Json(a)),
         None => Err(AppError::NotFound(format!("activity {id} not found"))),
     }
