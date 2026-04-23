@@ -1,27 +1,207 @@
 name: Release
 
+# Version-driven release pipeline. Trigger: any push to main (including the
+# merge commit of a feature PR). The `detect` job compares each workspace
+# crate's Cargo.toml version against crates.io; downstream jobs only run for
+# crates that bumped. Idempotent on re-run: if a version is already
+# published, its job is a no-op.
+#
+# Tagging policy (plan 12 rev 3): product crates get git tags on every
+# publish — `assay-lua-v<ver>` and `assay-engine-v<ver>`. Library crates
+# (assay-domain, assay-workflow, assay-dashboard, assay-auth) publish to
+# crates.io but don't get git tags in coordinated releases — their versions
+# are traceable through the product tag's tree and the crates.io index.
+#
+# `workflow_dispatch` is kept for retries and for the human-triggered first
+# smoke test. Intentionally no `tags: [v*]` trigger — tags are output here,
+# not input.
+
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
-  packages: write
+  contents: write # tags + GitHub releases
+  packages: write # ghcr.io Docker images + npm publish to GitHub Packages
+
+# Releases must not race: serialise by this workflow name, don't cancel an
+# in-flight run (half-published crates.io state is annoying to recover from).
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  # Build both release binaries (assay runtime + assay-engine) for each target.
-  # The matrix includes a `binary` entry per target, producing two uploaded
-  # artifacts per target that the GitHub-release job stitches together.
-  build-binaries:
+  # ─────────────────────────────────────────────────────────────────────
+  # 1. Figure out what, if anything, needs releasing.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      # Per-crate: `bumped` is "true" when the local manifest version is
+      # ahead of crates.io; `version` is always the local manifest version
+      # (downstream jobs use it for tag/release names regardless of whether
+      # we're publishing this run).
+      assay_domain_bumped: ${{ steps.assay-domain.outputs.bumped }}
+      assay_workflow_bumped: ${{ steps.assay-workflow.outputs.bumped }}
+      assay_dashboard_bumped: ${{ steps.assay-dashboard.outputs.bumped }}
+      assay_auth_bumped: ${{ steps.assay-auth.outputs.bumped }}
+      assay_engine_bumped: ${{ steps.assay-engine.outputs.bumped }}
+      assay_lua_bumped: ${{ steps.assay-lua.outputs.bumped }}
+      assay_engine_version: ${{ steps.assay-engine.outputs.version }}
+      assay_lua_version: ${{ steps.assay-lua.outputs.version }}
+      extension_bumped: ${{ steps.extension.outputs.bumped }}
+      extension_version: ${{ steps.extension.outputs.version }}
+      any_product_bumped: ${{ steps.any.outputs.any }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # needed for `git show HEAD~1:...` diffing below
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - id: assay-domain
+        run: .github/release/check-bumped.sh assay-domain
+
+      - id: assay-workflow
+        run: .github/release/check-bumped.sh assay-workflow
+
+      - id: assay-dashboard
+        run: .github/release/check-bumped.sh assay-dashboard
+
+      - id: assay-auth
+        run: .github/release/check-bumped.sh assay-auth
+
+      - id: assay-engine
+        run: .github/release/check-bumped.sh assay-engine
+
+      - id: assay-lua
+        run: .github/release/check-bumped.sh assay-lua
+
+      # openclaw-extension follows its own version track (package.json),
+      # and GitHub Packages doesn't expose a public HEAD we can cheaply
+      # probe without auth. Keep it simple: diff the current version
+      # against the previous commit's version — if the push changed it,
+      # publish. `npm publish` is itself idempotent on exact version
+      # matches (returns 409), so mistaken re-runs are safe.
+      - id: extension
+        run: |
+          set -euo pipefail
+          current=$(jq -r .version openclaw-extension/package.json)
+          previous=$(git show HEAD~1:openclaw-extension/package.json 2>/dev/null \
+            | jq -r .version 2>/dev/null || echo "")
+          if [ "$current" != "$previous" ] && [ -n "$current" ]; then
+            echo "openclaw-extension@$current: changed from '$previous' — will publish"
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "openclaw-extension@$current: unchanged since HEAD~1 — no-op"
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$current" >> "$GITHUB_OUTPUT"
+
+      # Used by the binary-build job — only worth running if some product
+      # is actually shipping.
+      - id: any
+        run: |
+          any=false
+          for b in \
+            "${{ steps.assay-engine.outputs.bumped }}" \
+            "${{ steps.assay-lua.outputs.bumped }}"; do
+            if [ "$b" = "true" ]; then any=true; fi
+          done
+          echo "any=$any" >> "$GITHUB_OUTPUT"
+
+  # ─────────────────────────────────────────────────────────────────────
+  # 2. Library crates: publish only, no tags, no GH releases. Strict
+  #    dependency order to respect crates.io's post-publish propagation
+  #    delay (the helper sleeps 30s after each publish).
+  libraries:
+    needs: detect
+    if: >
+      needs.detect.outputs.assay_domain_bumped    == 'true' ||
+      needs.detect.outputs.assay_workflow_bumped  == 'true' ||
+      needs.detect.outputs.assay_dashboard_bumped == 'true' ||
+      needs.detect.outputs.assay_auth_bumped      == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Inline the helper so editing release.yml is one file, not two —
+      # the detection path is already factored out, this is just the
+      # publish side which is a thin wrapper over `cargo publish`.
+      - name: Publish helper
+        run: |
+          cat > /tmp/publish-crate.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          crate="$1"
+          version=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r --arg c "$crate" '.packages[] | select(.name==$c) | .version')
+          status=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -A 'assay-release-ci (https://github.com/developerinlondon/assay)' \
+            "https://crates.io/api/v1/crates/$crate/$version")
+          if [ "$status" = "200" ]; then
+            echo "$crate@$version — already on crates.io, skipping"
+          else
+            cargo publish --allow-dirty -p "$crate"
+            echo "$crate@$version — published, waiting 30s for index propagation"
+            sleep 30
+          fi
+          EOF
+          chmod +x /tmp/publish-crate.sh
+
+      # Order: assay-domain first (no assay-* deps), then the three crates
+      # that depend on it.
+      - name: Publish assay-domain
+        if: needs.detect.outputs.assay_domain_bumped == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: /tmp/publish-crate.sh assay-domain
+
+      - name: Publish assay-workflow
+        if: needs.detect.outputs.assay_workflow_bumped == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: /tmp/publish-crate.sh assay-workflow
+
+      - name: Publish assay-dashboard
+        if: needs.detect.outputs.assay_dashboard_bumped == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: /tmp/publish-crate.sh assay-dashboard
+
+      - name: Publish assay-auth
+        if: needs.detect.outputs.assay_auth_bumped == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: /tmp/publish-crate.sh assay-auth
+
+  # ─────────────────────────────────────────────────────────────────────
+  # 3. Build product binaries for both targets. Shared between the two
+  #    product release jobs so we don't pay the cross-compile cost twice.
+  binaries:
+    needs: [detect, libraries]
+    # `libraries` uses `if:` to skip when nothing bumped, which in GH
+    # Actions makes it "skipped" not "success" — downstream `needs` would
+    # normally refuse to run. Use `always()` + explicit status check to
+    # proceed as long as libraries didn't outright *fail*.
+    if: |
+      always() &&
+      needs.detect.outputs.any_product_bumped == 'true' &&
+      (needs.libraries.result == 'success' || needs.libraries.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
+            suffix: linux-x86_64
             deps: sudo apt-get update && sudo apt-get install -y musl-tools
           - os: macos-14
             target: aarch64-apple-darwin
+            suffix: darwin-aarch64
             deps: ""
     runs-on: ${{ matrix.os }}
     steps:
@@ -39,40 +219,66 @@ jobs:
         if: matrix.deps != ''
         run: ${{ matrix.deps }}
 
-      - name: Build assay runtime (assay-lua crate, `assay` binary)
+      - name: Build assay runtime
+        if: needs.detect.outputs.assay_lua_bumped == 'true'
         run: cargo build --release --target ${{ matrix.target }} -p assay-lua --bin assay
 
-      - name: Build assay-engine (assay-engine crate, `assay-engine` binary)
+      - name: Build assay-engine
+        if: needs.detect.outputs.assay_engine_bumped == 'true'
         run: cargo build --release --target ${{ matrix.target }} -p assay-engine --bin assay-engine
 
-      - name: Rename binaries
+      - name: Package artifacts
         run: |
-          # Target-suffixed artifact names so both matrix runs upload
-          # without colliding.
-          case "${{ matrix.target }}" in
-            x86_64-unknown-linux-musl) suffix=linux-x86_64 ;;
-            aarch64-apple-darwin)      suffix=darwin-aarch64 ;;
-            *) echo "unknown target"; exit 1 ;;
-          esac
-          cp target/${{ matrix.target }}/release/assay        assay-${suffix}
-          cp target/${{ matrix.target }}/release/assay-engine assay-engine-${suffix}
-          ls -la assay-* assay-engine-* 2>/dev/null
+          set -euo pipefail
+          mkdir -p dist
+          if [ -f "target/${{ matrix.target }}/release/assay" ]; then
+            cp target/${{ matrix.target }}/release/assay dist/assay-${{ matrix.suffix }}
+          fi
+          if [ -f "target/${{ matrix.target }}/release/assay-engine" ]; then
+            cp target/${{ matrix.target }}/release/assay-engine dist/assay-engine-${{ matrix.suffix }}
+          fi
+          ls -la dist/
 
       - uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.target }}
-          path: |
-            assay-linux-x86_64
-            assay-darwin-aarch64
-            assay-engine-linux-x86_64
-            assay-engine-darwin-aarch64
+          path: dist/*
           if-no-files-found: ignore
 
-  release:
-    needs: build-binaries
+  # ─────────────────────────────────────────────────────────────────────
+  # 4. Product release: assay-engine. Publish the crate, push the
+  #    `assay-engine-v<ver>` tag, create a GH release with the engine
+  #    binaries + checksums + CHANGELOG section, and push the Docker
+  #    image. Runs only if assay-engine bumped.
+  release-assay-engine:
+    needs: [detect, libraries, binaries]
+    if: |
+      always() &&
+      needs.detect.outputs.assay_engine_bumped == 'true' &&
+      (needs.libraries.result == 'success' || needs.libraries.result == 'skipped') &&
+      needs.binaries.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish assay-engine to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -A 'assay-release-ci' \
+            "https://crates.io/api/v1/crates/assay-engine/${{ needs.detect.outputs.assay_engine_version }}")
+          if [ "$status" = "200" ]; then
+            echo "already published — skipping"
+          else
+            cargo publish --allow-dirty -p assay-engine
+          fi
 
       - uses: actions/download-artifact@v4
         with:
@@ -84,102 +290,61 @@ jobs:
         run: |
           set -euo pipefail
           cd artifacts
-          chmod +x assay-linux-x86_64 assay-darwin-aarch64 assay-engine-linux-x86_64 assay-engine-darwin-aarch64 2>/dev/null || true
-          sha256sum assay-* assay-engine-* > ../checksums-sha256.txt
+          chmod +x assay-engine-* 2>/dev/null || true
+          sha256sum assay-engine-* > ../engine-checksums.txt
           cd ..
-          ls -la artifacts/ checksums-sha256.txt
+          cat engine-checksums.txt
 
-      - name: Create GitHub Release
+      - name: Tag assay-engine-v${{ needs.detect.outputs.assay_engine_version }}
+        env:
+          VERSION: ${{ needs.detect.outputs.assay_engine_version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "assay-engine-v${VERSION}" >/dev/null 2>&1; then
+            echo "tag assay-engine-v${VERSION} already exists — skipping"
+          else
+            git tag -a "assay-engine-v${VERSION}" -m "assay-engine ${VERSION}"
+            git push origin "assay-engine-v${VERSION}"
+          fi
+
+      - name: Extract CHANGELOG section
+        env:
+          ENGINE_VER: ${{ needs.detect.outputs.assay_engine_version }}
+          LUA_VER: ${{ needs.detect.outputs.assay_lua_version }}
+        run: |
+          set -euo pipefail
+          # Product releases share one CHANGELOG keyed on the assay-lua /
+          # coordinated release version (e.g. 0.13.0 covers everything
+          # shipped that day). Prefer the engine's own version section if
+          # one exists; otherwise fall back to the lua section for
+          # coordinated releases.
+          if .github/release/extract-changelog.sh "$ENGINE_VER" > notes.md 2>/dev/null; then
+            echo "notes from CHANGELOG section $ENGINE_VER"
+          elif .github/release/extract-changelog.sh "$LUA_VER" > notes.md 2>/dev/null; then
+            echo "notes from CHANGELOG section $LUA_VER (coordinated release)"
+          else
+            echo "Release assay-engine ${ENGINE_VER}." > notes.md
+          fi
+
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.detect.outputs.assay_engine_version }}
         run: |
-          gh release create ${{ github.ref_name }} \
-            artifacts/assay-linux-x86_64 \
-            artifacts/assay-darwin-aarch64 \
-            artifacts/assay-engine-linux-x86_64 \
-            artifacts/assay-engine-darwin-aarch64 \
-            checksums-sha256.txt \
-            --generate-notes
-
-  # Publish all six workspace crates to crates.io in dependency order.
-  # Each step skips if that crate's version is already on the index so the
-  # workflow is idempotent across mixed-bump releases (e.g. v0.13.1 that
-  # only patches assay-lua leaves the other five crates alone).
-  crates-io:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      # Install the helper script inline — one jq'd lookup of a crate's
-      # manifest version + a HEAD against crates.io, then publish if new.
-      - name: Setup publish helper
-        run: |
-          cat > /tmp/publish-crate.sh <<'EOF'
-          #!/usr/bin/env bash
-          # usage: publish-crate.sh <crate-name>
-          # skips if <crate>@<manifest-version> is already indexed on crates.io.
           set -euo pipefail
-          crate="$1"
-          version=$(cargo metadata --format-version 1 --no-deps \
-            | jq -r --arg c "$crate" '.packages[] | select(.name==$c) | .version')
-          if [ -z "$version" ]; then
-            echo "error: crate '$crate' not found in workspace" >&2
-            exit 1
+          if gh release view "assay-engine-v${VERSION}" >/dev/null 2>&1; then
+            echo "release assay-engine-v${VERSION} already exists — skipping"
+            exit 0
           fi
-          echo "=> $crate@$version"
-          status=$(curl -sS -o /dev/null -w '%{http_code}' \
-            -A 'assay-release-ci (https://github.com/developerinlondon/assay)' \
-            "https://crates.io/api/v1/crates/$crate/$version")
-          if [ "$status" = "200" ]; then
-            echo "   already on crates.io — skipping"
-          else
-            cargo publish --allow-dirty -p "$crate"
-            echo "   published; waiting 30s for index propagation"
-            sleep 30
-          fi
-          EOF
-          chmod +x /tmp/publish-crate.sh
-
-      # Dependency order: assay-domain (no assay-* deps) first, then crates that
-      # depend only on assay-domain (workflow, dashboard, auth), then assay-engine
-      # which composes them, then assay-lua (standalone — pure runtime, no
-      # workspace-crate deps since v0.13.0 rev 2).
-      - name: Publish assay-domain
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: /tmp/publish-crate.sh assay-domain
-
-      - name: Publish assay-workflow
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: /tmp/publish-crate.sh assay-workflow
-
-      - name: Publish assay-dashboard
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: /tmp/publish-crate.sh assay-dashboard
-
-      - name: Publish assay-auth
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: /tmp/publish-crate.sh assay-auth
-
-      - name: Publish assay-engine
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: /tmp/publish-crate.sh assay-engine
-
-      - name: Publish assay-lua
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: /tmp/publish-crate.sh assay-lua
-
-  docker:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+          cd artifacts
+          gh release create "assay-engine-v${VERSION}" \
+            --title "assay-engine ${VERSION}" \
+            --notes-file "../notes.md" \
+            assay-engine-linux-x86_64 \
+            assay-engine-darwin-aarch64 \
+            ../engine-checksums.txt
 
       - uses: docker/login-action@v3
         with:
@@ -189,12 +354,126 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
+          context: .
+          file: Dockerfile.assay-engine
           push: true
           tags: |
-            ghcr.io/developerinlondon/assay:${{ github.ref_name }}
+            ghcr.io/developerinlondon/assay-engine:${{ needs.detect.outputs.assay_engine_version }}
+            ghcr.io/developerinlondon/assay-engine:latest
+
+  # ─────────────────────────────────────────────────────────────────────
+  # 5. Product release: assay-lua. Same shape as assay-engine — separate
+  #    job so the two can run in parallel after libraries+binaries finish.
+  release-assay-lua:
+    needs: [detect, libraries, binaries]
+    if: |
+      always() &&
+      needs.detect.outputs.assay_lua_bumped == 'true' &&
+      (needs.libraries.result == 'success' || needs.libraries.result == 'skipped') &&
+      needs.binaries.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish assay-lua to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -A 'assay-release-ci' \
+            "https://crates.io/api/v1/crates/assay-lua/${{ needs.detect.outputs.assay_lua_version }}")
+          if [ "$status" = "200" ]; then
+            echo "already published — skipping"
+          else
+            cargo publish --allow-dirty -p assay-lua
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+          cd artifacts
+          chmod +x assay-linux-x86_64 assay-darwin-aarch64 2>/dev/null || true
+          sha256sum assay-linux-x86_64 assay-darwin-aarch64 > ../lua-checksums.txt
+          cd ..
+          cat lua-checksums.txt
+
+      - name: Tag assay-lua-v${{ needs.detect.outputs.assay_lua_version }}
+        env:
+          VERSION: ${{ needs.detect.outputs.assay_lua_version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "assay-lua-v${VERSION}" >/dev/null 2>&1; then
+            echo "tag assay-lua-v${VERSION} already exists — skipping"
+          else
+            git tag -a "assay-lua-v${VERSION}" -m "assay-lua ${VERSION}"
+            git push origin "assay-lua-v${VERSION}"
+          fi
+
+      - name: Extract CHANGELOG section
+        env:
+          VERSION: ${{ needs.detect.outputs.assay_lua_version }}
+        run: |
+          set -euo pipefail
+          if .github/release/extract-changelog.sh "$VERSION" > notes.md 2>/dev/null; then
+            echo "notes from CHANGELOG section $VERSION"
+          else
+            echo "Release assay-lua ${VERSION}." > notes.md
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.detect.outputs.assay_lua_version }}
+        run: |
+          set -euo pipefail
+          if gh release view "assay-lua-v${VERSION}" >/dev/null 2>&1; then
+            echo "release assay-lua-v${VERSION} already exists — skipping"
+            exit 0
+          fi
+          cd artifacts
+          gh release create "assay-lua-v${VERSION}" \
+            --title "assay-lua ${VERSION}" \
+            --notes-file "../notes.md" \
+            assay-linux-x86_64 \
+            assay-darwin-aarch64 \
+            ../lua-checksums.txt
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/developerinlondon/assay:${{ needs.detect.outputs.assay_lua_version }}
             ghcr.io/developerinlondon/assay:latest
 
-  npm:
+  # ─────────────────────────────────────────────────────────────────────
+  # 6. openclaw-extension npm publish. Independent track — only fires
+  #    when openclaw-extension/package.json version changed. Can run in
+  #    parallel with everything else.
+  publish-extension:
+    needs: detect
+    if: needs.detect.outputs.extension_bumped == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -207,11 +486,7 @@ jobs:
           node-version: "22"
           registry-url: "https://npm.pkg.github.com"
 
-      - name: Sync version from git tag
-        working-directory: openclaw-extension
-        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
-
-      - name: Publish to GitHub Packages
+      - name: Publish openclaw-extension to GitHub Packages
         working-directory: openclaw-extension
         run: npm publish --access public
         env:
