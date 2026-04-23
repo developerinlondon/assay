@@ -1,13 +1,17 @@
-# Builder
+# Builder — runtime binary (`assay`) for the pure Lua runtime crate.
+#
+# Post-0.13.0 the root-level `src/` and `stdlib/` moved under
+# `crates/assay/`, so `COPY crates/ crates/` alone covers every source
+# file the build needs. Building just the one package + bin keeps this
+# image focused and avoids compiling assay-engine (which has its own
+# Dockerfile) into the assay runtime image.
 FROM rust:1.92-slim AS builder
 RUN apt-get update && apt-get install -y musl-tools cmake make g++ protobuf-compiler && rm -rf /var/lib/apt/lists/*
 RUN rustup target add x86_64-unknown-linux-musl
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
-COPY src/ src/
-COPY stdlib/ stdlib/
 COPY crates/ crates/
-RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN cargo build --release --target x86_64-unknown-linux-musl -p assay-lua --bin assay
 
 # Runtime — FROM scratch so the published image is the assay binary
 # plus a CA bundle, nothing else (~10 MB instead of ~25 MB with
