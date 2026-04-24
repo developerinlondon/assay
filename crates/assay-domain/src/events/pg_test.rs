@@ -227,6 +227,54 @@ async fn prune_removes_older_than_cutoff() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn listener_still_works_across_bus_drop() {
+    // Lightweight smoke test that two PgEngineEventBus instances
+    // constructed against the same pool each get a working LISTEN
+    // bridge (exercised by publish + subscribe after one is dropped).
+    // Full server-side backend-termination would require
+    // pg_terminate_backend on the listener's PID which is flaky in CI.
+    //
+    // TCP keepalive on PgConnectOptions isn't exposed in sqlx 0.8, so
+    // we rely on OS-default keepalives + sqlx auto-reconnect. This
+    // test just documents that dropping a bus doesn't poison future
+    // listener setups on the same pool.
+    let Some(url) = test_db_url() else {
+        eprintln!("skipped: TEST_DATABASE_URL not set");
+        return;
+    };
+    let ns = unique_ns("reconnect");
+    let pool = prepare_pool().await;
+    {
+        let bus1 = PgEngineEventBus::new(pool.clone(), &url).await.unwrap();
+        drop(bus1);
+    }
+    let bus2 = PgEngineEventBus::new(pool.clone(), &url).await.unwrap();
+    let mut rx = bus2.subscribe(&ns);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    bus2.publish_committed(NewEvent {
+        namespace: &ns,
+        subsystem: Subsystem::Workflow,
+        kind: "z",
+        payload: serde_json::json!({}),
+    })
+    .await
+    .unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        assert!(!remaining.is_zero(), "reconnect smoke: event not received");
+        let ev = tokio::time::timeout(remaining, rx.recv())
+            .await
+            .expect("recv timed out")
+            .unwrap();
+        if ev.namespace == ns {
+            assert_eq!(ev.kind, "z");
+            break;
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
 async fn cursor_before_oldest_returns_gone() {
     let Some(url) = test_db_url() else {
