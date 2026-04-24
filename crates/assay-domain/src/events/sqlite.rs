@@ -1,5 +1,3 @@
-#![cfg(feature = "backend-sqlite")]
-
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -70,12 +68,11 @@ impl EngineEventBus for SqliteEngineEventBus {
         filter: &EventFilter,
         limit: u32,
     ) -> std::result::Result<Vec<Event>, CursorGoneError> {
-        if let Some(a) = after {
-            if let Ok(Some(oldest)) = self.oldest_id_inner(namespace).await {
-                if a < oldest - 1 {
-                    return Err(CursorGoneError { after: a, oldest });
-                }
-            }
+        if let Some(a) = after
+            && let Ok(Some(oldest)) = self.oldest_id_inner(namespace).await
+            && a < oldest - 1
+        {
+            return Err(CursorGoneError { after: a, oldest });
         }
         let rows: Vec<(i64, f64, String, String, String, String)> = sqlx::query_as(
             "SELECT id, ts, namespace, subsystem, kind, payload

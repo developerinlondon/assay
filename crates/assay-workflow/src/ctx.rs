@@ -113,10 +113,10 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
     /// triggered it (atomicity for the state change is the DB tx's job;
     /// this is a notification fired *after* the row write).
     pub(crate) async fn emit(&self, namespace: &str, ev: WorkflowBusEvent) {
-        if let Some(bus) = &self.bus {
-            if let Err(e) = bus.publish(namespace, ev).await {
-                tracing::warn!(?e, "engine event emit failed");
-            }
+        if let Some(bus) = &self.bus
+            && let Err(e) = bus.publish(namespace, ev).await
+        {
+            tracing::warn!(?e, "engine event emit failed");
         }
     }
 
@@ -129,17 +129,17 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         workflow_id: &str,
     ) -> anyhow::Result<()> {
         self.store.mark_workflow_dispatchable(workflow_id).await?;
-        if self.bus.is_some() {
-            if let Some(wf) = self.store.get_workflow(workflow_id).await? {
-                self.emit(
-                    &wf.namespace,
-                    WorkflowBusEvent::WorkflowNeedsDispatch {
-                        workflow_id: workflow_id.to_string(),
-                        task_queue: wf.task_queue,
-                    },
-                )
-                .await;
-            }
+        if self.bus.is_some()
+            && let Some(wf) = self.store.get_workflow(workflow_id).await?
+        {
+            self.emit(
+                &wf.namespace,
+                WorkflowBusEvent::WorkflowNeedsDispatch {
+                    workflow_id: workflow_id.to_string(),
+                    task_queue: wf.task_queue,
+                },
+            )
+            .await;
         }
         Ok(())
     }

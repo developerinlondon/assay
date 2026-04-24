@@ -1,5 +1,3 @@
-#![cfg(feature = "backend-postgres")]
-
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -206,12 +204,11 @@ impl EngineEventBus for PgEngineEventBus {
         filter: &EventFilter,
         limit: u32,
     ) -> std::result::Result<Vec<Event>, CursorGoneError> {
-        if let Some(a) = after {
-            if let Ok(Some(oldest)) = self.oldest_id_inner(namespace).await {
-                if a < oldest - 1 {
-                    return Err(CursorGoneError { after: a, oldest });
-                }
-            }
+        if let Some(a) = after
+            && let Ok(Some(oldest)) = self.oldest_id_inner(namespace).await
+            && a < oldest - 1
+        {
+            return Err(CursorGoneError { after: a, oldest });
         }
         let rows: Vec<PgEventRow> = sqlx::query_as(
             "SELECT id, ts, namespace, subsystem, kind, payload

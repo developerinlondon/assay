@@ -26,6 +26,12 @@ impl Subsystem {
         }
     }
 
+    // Clippy flags this as "confusable with std::str::FromStr"; we
+    // deliberately diverge — this is infallible (unknown strings map
+    // to `System` for forward-compat) while `FromStr::from_str` returns
+    // Result. The method name is the one the call sites use, so keep
+    // it and silence the lint.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Subsystem {
         match s {
             "workflow" => Subsystem::Workflow,
@@ -75,10 +81,10 @@ impl EventFilter {
         if !self.kinds.is_empty() && !self.kinds.iter().any(|k| k == &e.kind) {
             return false;
         }
-        if let Some(ref wf_id) = self.workflow_id {
-            if e.payload.get("workflow_id").and_then(|v| v.as_str()) != Some(wf_id) {
-                return false;
-            }
+        if let Some(ref wf_id) = self.workflow_id
+            && e.payload.get("workflow_id").and_then(|v| v.as_str()) != Some(wf_id)
+        {
+            return false;
         }
         true
     }

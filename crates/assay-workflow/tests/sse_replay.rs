@@ -87,12 +87,12 @@ async fn read_sse_ids(
                     let frame = buf[..sep].to_string();
                     buf = buf[sep + 2..].to_string();
                     for line in frame.lines() {
-                        if let Some(v) = line.strip_prefix("id: ") {
-                            if let Ok(id) = v.trim().parse::<i64>() {
-                                ids.push(id);
-                                if ids.len() >= max {
-                                    break;
-                                }
+                        if let Some(v) = line.strip_prefix("id: ")
+                            && let Ok(id) = v.trim().parse::<i64>()
+                        {
+                            ids.push(id);
+                            if ids.len() >= max {
+                                break;
                             }
                         }
                     }
