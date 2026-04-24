@@ -18,6 +18,14 @@ pub struct EngineConfig {
     pub dashboard: DashboardConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
+    /// TTL in seconds for the engine_events outbox. Rows older than this
+    /// are pruned hourly by the cleanup loop. Default 3 days.
+    #[serde(default = "default_engine_events_ttl_secs")]
+    pub engine_events_ttl_secs: u64,
+}
+
+fn default_engine_events_ttl_secs() -> u64 {
+    3 * 86_400
 }
 
 #[derive(Clone, Debug, Deserialize)]

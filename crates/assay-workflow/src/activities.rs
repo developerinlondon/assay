@@ -3,6 +3,7 @@
 use anyhow::Result;
 
 use crate::ctx::{timestamp_now, WorkflowCtx};
+use crate::events::WorkflowBusEvent;
 use crate::store::WorkflowStore;
 use crate::types::*;
 
@@ -87,6 +88,27 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             })
             .await?;
 
+        // Emit an ActivityInserted event carrying the activity row id,
+        // workflow id, queue, and name — task workers subscribe and
+        // dispatch matching activities (replacing the old PG trigger
+        // that did `pg_notify('assay_task_<queue>', NEW.id)`).
+        let ns = self
+            .store
+            .get_workflow(workflow_id)
+            .await?
+            .map(|w| w.namespace)
+            .unwrap_or_else(|| "main".to_string());
+        self.emit(
+            &ns,
+            WorkflowBusEvent::ActivityInserted {
+                activity_id: id,
+                workflow_id: workflow_id.to_string(),
+                task_queue: task_queue.to_string(),
+                name: name.to_string(),
+            },
+        )
+        .await;
+
         // Transition workflow from PENDING to RUNNING on first scheduled activity
         if let Some(wf) = self.store.get_workflow(workflow_id).await?
             && wf.status == "PENDING"
@@ -159,7 +181,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             .await?;
         // Phase 9: the workflow has a new event the handler needs to see —
         // wake the workflow task back up.
-        self.store.mark_workflow_dispatchable(&workflow_id).await?;
+        self.mark_and_emit_needs_dispatch(&workflow_id).await?;
         Ok(())
     }
 
@@ -216,7 +238,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             })
             .await?;
         // Wake the workflow task — handler needs to see the failure.
-        self.store.mark_workflow_dispatchable(&workflow_id).await?;
+        self.mark_and_emit_needs_dispatch(&workflow_id).await?;
         Ok(())
     }
 

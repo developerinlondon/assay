@@ -151,6 +151,17 @@ CREATE TABLE IF NOT EXISTS engine_lock (
     started_at      REAL NOT NULL,
     last_heartbeat  REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS engine_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts              REAL NOT NULL DEFAULT (CAST(strftime('%s','now') AS REAL)),
+    namespace       TEXT NOT NULL,
+    subsystem       TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    payload         TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_engine_events_ns_id ON engine_events(namespace, id);
+CREATE INDEX IF NOT EXISTS idx_engine_events_ts_prune ON engine_events(ts);
 "#;
 
 /// Stale lock timeout — if the lock holder hasn't heartbeated in this
@@ -167,6 +178,13 @@ pub struct SqliteStore {
 impl SqliteStore {
     pub async fn new(url: &str) -> Result<Self> {
         let pool = SqlitePool::connect(url).await?;
+        Self::from_pool(pool).await
+    }
+
+    /// Construct from an externally-managed pool. Use this when the engine
+    /// shares the pool with the engine-events bus so both touch the same
+    /// in-memory instance (:memory: SQLite is per-connection).
+    pub async fn from_pool(pool: SqlitePool) -> Result<Self> {
         let instance_id = format!("assay-{:016x}", {
             use std::collections::hash_map::DefaultHasher;
             use std::hash::{Hash, Hasher};
@@ -178,6 +196,12 @@ impl SqliteStore {
         let store = Self { pool, instance_id };
         store.migrate().await?;
         Ok(store)
+    }
+
+    /// Expose the underlying pool (used by the engine to build an
+    /// `SqliteEngineEventBus` that shares the same connection).
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 
     /// Acquire the single-instance engine lock.
@@ -1410,31 +1434,6 @@ impl WorkflowStore for SqliteStore {
         Ok(true)
     }
 
-    /// SQLite has no cross-process notification primitive. Single-process
-    /// deployments wanting push wake-ups should compose an in-memory
-    /// channel at the call site. The trait contract guarantees the
-    /// scheduler still wakes on its heap regardless. The future is trivial
-    /// (no setup to do) but keeps the trait shape consistent with PG so
-    /// callers can `.await` uniformly.
-    fn subscribe_runnable<'a>(
-        &'a self,
-        _namespace: &'a str,
-    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
-           + Send
-           + 'a {
-        use futures_util::StreamExt;
-        async move { futures_util::stream::empty().boxed() }
-    }
-
-    fn subscribe_tasks<'a>(
-        &'a self,
-        _queue_names: &'a [&'a str],
-    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
-           + Send
-           + 'a {
-        use futures_util::StreamExt;
-        async move { futures_util::stream::empty().boxed() }
-    }
 }
 
 fn timestamp_now() -> f64 {

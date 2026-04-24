@@ -93,7 +93,7 @@ async fn archive_batch<S: WorkflowStore>(
     client: &aws_sdk_s3::Client,
     cfg: &ArchivalConfig,
 ) -> Result<()> {
-    let now = crate::timestamp_now();
+    let now = crate::ctx::timestamp_now();
     let cutoff = now - cfg.retention_secs;
 
     let candidates = store
@@ -153,7 +153,7 @@ async fn archive_one<S: WorkflowStore>(
 
     let uri = format!("s3://{}/{}", cfg.bucket, key);
     store
-        .mark_archived_and_purge(&wf.id, &uri, crate::timestamp_now())
+        .mark_archived_and_purge(&wf.id, &uri, crate::ctx::timestamp_now())
         .await?;
     Ok(uri)
 }
