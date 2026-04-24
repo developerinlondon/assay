@@ -5,6 +5,7 @@ pub mod auth_mode;
 pub mod children;
 pub mod ctx;
 pub mod dispatch_recovery;
+pub mod events;
 pub mod health;
 pub mod lifecycle;
 pub mod namespaces;
