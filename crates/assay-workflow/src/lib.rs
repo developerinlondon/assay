@@ -6,6 +6,7 @@ pub mod children;
 pub mod ctx;
 pub mod dispatch_recovery;
 pub mod events;
+pub mod events_cleanup;
 pub mod health;
 pub mod lifecycle;
 pub mod namespaces;

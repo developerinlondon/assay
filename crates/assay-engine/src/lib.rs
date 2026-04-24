@@ -66,7 +66,17 @@ async fn run_with_store<S: WorkflowStore + 'static>(
     store: S,
     bus: Arc<dyn EngineEventBus>,
 ) -> anyhow::Result<()> {
-    let workflow_ctx = server::build_workflow_ctx_with_bus(store, bus);
+    let workflow_ctx = server::build_workflow_ctx_with_bus(store, Arc::clone(&bus));
+
+    // Hourly sweep of the engine_events outbox. Detached — the handle
+    // lives for the process lifetime; there's nothing to await for
+    // clean shutdown (prune is idempotent so a missed tick is fine).
+    tokio::spawn(assay_workflow::events_cleanup::run_events_cleanup(
+        Arc::clone(&bus),
+        std::time::Duration::from_secs(3600),
+        cfg.engine_events_ttl_secs,
+    ));
+
     let whitelabel = Arc::new(WhitelabelConfig::from_env());
     let asset_version = env!("CARGO_PKG_VERSION").to_string();
     let dashboard_ctx = Arc::new(DashboardCtx::new(whitelabel, asset_version));
