@@ -22,7 +22,8 @@ pub mod workers;
 // paths continue to resolve.
 pub use assay_domain::types;
 
-pub use ctx::{EngineEvent, WorkflowCtx};
+pub use ctx::WorkflowCtx;
+pub use events::{WorkflowBusEvent, WorkflowEventBus};
 pub use store::postgres::PostgresStore;
 pub use store::sqlite::SqliteStore;
 pub use store::WorkflowStore;

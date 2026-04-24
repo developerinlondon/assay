@@ -2,7 +2,7 @@
 //!
 //! Every state-mutating method in `assay-workflow` that previously
 //! called `ctx.broadcast(...)` or relied on a PG trigger for
-//! `pg_notify` now emits a `WorkflowEvent` via `WorkflowEventBus`.
+//! `pg_notify` now emits a `WorkflowBusEvent` via `WorkflowEventBus`.
 
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ use assay_domain::events::{
 /// dump whole rows.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum WorkflowEvent {
+pub enum WorkflowBusEvent {
     WorkflowCreated {
         workflow_id: String,
         workflow_type: String,
@@ -76,24 +76,24 @@ pub enum WorkflowEvent {
     },
 }
 
-impl WorkflowEvent {
+impl WorkflowBusEvent {
     /// The kind string written to `engine_events.kind`. Matches the
     /// serde `rename_all = "snake_case"` tag for each variant.
     pub fn kind(&self) -> &'static str {
         match self {
-            WorkflowEvent::WorkflowCreated { .. } => "workflow_created",
-            WorkflowEvent::WorkflowStatusChanged { .. } => "workflow_status_changed",
-            WorkflowEvent::WorkflowNeedsDispatch { .. } => "workflow_needs_dispatch",
-            WorkflowEvent::WorkflowStarted { .. } => "workflow_started",
-            WorkflowEvent::WorkflowRunning { .. } => "workflow_running",
-            WorkflowEvent::WorkflowCompleted { .. } => "workflow_completed",
-            WorkflowEvent::WorkflowFailed { .. } => "workflow_failed",
-            WorkflowEvent::WorkflowCancelled { .. } => "workflow_cancelled",
-            WorkflowEvent::WorkflowTerminated { .. } => "workflow_terminated",
-            WorkflowEvent::ActivityInserted { .. } => "activity_inserted",
-            WorkflowEvent::ActivityStatusChanged { .. } => "activity_status_changed",
-            WorkflowEvent::SignalReceived { .. } => "signal_received",
-            WorkflowEvent::TimerFired { .. } => "timer_fired",
+            WorkflowBusEvent::WorkflowCreated { .. } => "workflow_created",
+            WorkflowBusEvent::WorkflowStatusChanged { .. } => "workflow_status_changed",
+            WorkflowBusEvent::WorkflowNeedsDispatch { .. } => "workflow_needs_dispatch",
+            WorkflowBusEvent::WorkflowStarted { .. } => "workflow_started",
+            WorkflowBusEvent::WorkflowRunning { .. } => "workflow_running",
+            WorkflowBusEvent::WorkflowCompleted { .. } => "workflow_completed",
+            WorkflowBusEvent::WorkflowFailed { .. } => "workflow_failed",
+            WorkflowBusEvent::WorkflowCancelled { .. } => "workflow_cancelled",
+            WorkflowBusEvent::WorkflowTerminated { .. } => "workflow_terminated",
+            WorkflowBusEvent::ActivityInserted { .. } => "activity_inserted",
+            WorkflowBusEvent::ActivityStatusChanged { .. } => "activity_status_changed",
+            WorkflowBusEvent::SignalReceived { .. } => "signal_received",
+            WorkflowBusEvent::TimerFired { .. } => "timer_fired",
         }
     }
 
@@ -101,7 +101,7 @@ impl WorkflowEvent {
     /// Strips the `kind` serde tag from the payload since the kind
     /// lives in its own column.
     pub fn payload(&self) -> serde_json::Value {
-        let v = serde_json::to_value(self).expect("WorkflowEvent serialisable");
+        let v = serde_json::to_value(self).expect("WorkflowBusEvent serialisable");
         match v {
             serde_json::Value::Object(mut m) => {
                 m.remove("kind");
@@ -127,7 +127,7 @@ impl WorkflowEventBus {
 
     /// Publish a typed workflow event. `namespace` is the owning
     /// workflow's namespace.
-    pub async fn publish(&self, namespace: &str, ev: WorkflowEvent) -> Result<i64> {
+    pub async fn publish(&self, namespace: &str, ev: WorkflowBusEvent) -> Result<i64> {
         let kind = ev.kind();
         let payload = ev.payload();
         self.inner
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn kind_tag_stripped_from_payload() {
-        let e = WorkflowEvent::WorkflowCreated {
+        let e = WorkflowBusEvent::WorkflowCreated {
             workflow_id: "wf-1".into(),
             workflow_type: "greet".into(),
             task_queue: "main".into(),
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn activity_inserted_payload() {
-        let e = WorkflowEvent::ActivityInserted {
+        let e = WorkflowBusEvent::ActivityInserted {
             activity_id: 42,
             workflow_id: "wf-1".into(),
             task_queue: "main".into(),

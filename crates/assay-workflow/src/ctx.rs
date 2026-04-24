@@ -5,29 +5,11 @@ use tracing::info;
 
 use crate::auth_mode::AuthMode;
 use crate::dispatch_recovery;
+use crate::events::{WorkflowBusEvent, WorkflowEventBus};
 use crate::health;
 use crate::scheduler;
 use crate::store::WorkflowStore;
 use crate::timers;
-
-/// Event the engine broadcasts when a workflow transitions through
-/// its lifecycle states. Subscribed to by the SSE stream (`/api/v1/
-/// events/stream`) so the dashboard can refresh live instead of
-/// requiring the operator to F5 after every action.
-#[derive(Clone, Debug)]
-pub struct EngineEvent {
-    pub event_type: String,
-    pub workflow_id: String,
-    pub namespace: String,
-}
-
-/// SSE-level broadcast event forwarded to connected dashboard browsers.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct BroadcastEvent {
-    pub event_type: String,
-    pub workflow_id: String,
-    pub payload: Option<String>,
-}
 
 /// Holds the background-task JoinHandles. When the last Arc<BackgroundTasks>
 /// is dropped the tasks are abandoned (tokio will cancel them on shutdown).
@@ -49,11 +31,11 @@ pub struct BackgroundTasks {
 /// generic parameter is retained here to avoid boxing every async call.
 pub struct WorkflowCtx<S: WorkflowStore> {
     pub(crate) store: Arc<S>,
-    /// Engine-level event sender — lifecycle methods push here;
-    /// the serve layer bridges to `sse_tx`.
-    pub(crate) event_tx: Option<tokio::sync::broadcast::Sender<EngineEvent>>,
-    /// SSE broadcast sender — the SSE handler subscribes here.
-    pub sse_tx: Option<tokio::sync::broadcast::Sender<BroadcastEvent>>,
+    /// Engine-wide CDC outbox. When wired, state-mutating methods
+    /// publish typed `WorkflowBusEvent` variants via `emit(...)`.
+    /// `None` for tests / embedders without a dashboard — emit becomes
+    /// a no-op.
+    pub(crate) bus: Option<WorkflowEventBus>,
     pub(crate) _bg: Arc<BackgroundTasks>,
     pub auth_mode: AuthMode,
     /// Version of the containing binary (e.g. the `assay-lua` CLI) — set
@@ -73,16 +55,14 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         ));
 
         #[cfg(feature = "s3-archival")]
-        let _archival = crate::archival::ArchivalConfig::from_env().map(|cfg| {
-            tokio::spawn(crate::archival::run_archival(Arc::clone(&store), cfg))
-        });
+        let _archival = crate::archival::ArchivalConfig::from_env()
+            .map(|cfg| tokio::spawn(crate::archival::run_archival(Arc::clone(&store), cfg)));
 
         info!("Workflow engine started");
 
         Self {
             store,
-            event_tx: None,
-            sse_tx: None,
+            bus: None,
             _bg: Arc::new(BackgroundTasks {
                 _scheduler,
                 _timer_poller,
@@ -96,28 +76,12 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         }
     }
 
-    /// Attach an event broadcaster. The API layer sets this up so the
-    /// SSE stream (`/events/stream`) sees state transitions as they
-    /// happen — powers the dashboard's live list refresh, no F5 loop.
-    /// Returns the context by value so callers can chain:
-    ///
-    /// ```ignore
-    /// let ctx = WorkflowCtx::start(store).with_event_broadcaster(tx);
-    /// ```
-    pub fn with_event_broadcaster(
-        mut self,
-        tx: tokio::sync::broadcast::Sender<EngineEvent>,
-    ) -> Self {
-        self.event_tx = Some(tx);
-        self
-    }
-
-    /// Attach the SSE broadcast sender so the event stream handler can subscribe.
-    pub fn with_sse_tx(
-        mut self,
-        tx: tokio::sync::broadcast::Sender<BroadcastEvent>,
-    ) -> Self {
-        self.sse_tx = Some(tx);
+    /// Attach the engine-wide event bus. The API layer sets this up so
+    /// the SSE stream (`/events/stream`) and the dispatch-wakeup loop
+    /// see state transitions as they happen. Returns the context by
+    /// value so callers can chain.
+    pub fn with_event_bus(mut self, bus: WorkflowEventBus) -> Self {
+        self.bus = Some(bus);
         self
     }
 
@@ -138,18 +102,46 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         &self.store
     }
 
-    /// Broadcast a state-transition event. No-op when no broadcaster
-    /// is wired up (tests, embedders without an SSE surface). Errors
-    /// from a channel with zero subscribers are silently dropped —
-    /// that's the normal state between connections, not a failure.
-    pub(crate) fn broadcast(&self, event_type: &str, workflow_id: &str, namespace: &str) {
-        if let Some(tx) = &self.event_tx {
-            let _ = tx.send(EngineEvent {
-                event_type: event_type.to_string(),
-                workflow_id: workflow_id.to_string(),
-                namespace: namespace.to_string(),
-            });
+    /// Access the event bus (for SSE + scheduler wake-up).
+    pub fn bus(&self) -> Option<&WorkflowEventBus> {
+        self.bus.as_ref()
+    }
+
+    /// Emit a typed workflow event. No-op when no bus is wired (tests,
+    /// embedders without a dashboard). Errors are logged, not returned —
+    /// an emission failure must not fail the state-mutating method that
+    /// triggered it (atomicity for the state change is the DB tx's job;
+    /// this is a notification fired *after* the row write).
+    pub(crate) async fn emit(&self, namespace: &str, ev: WorkflowBusEvent) {
+        if let Some(bus) = &self.bus {
+            if let Err(e) = bus.publish(namespace, ev).await {
+                tracing::warn!(?e, "engine event emit failed");
+            }
         }
+    }
+
+    /// Mark a workflow dispatchable AND emit a `WorkflowNeedsDispatch`
+    /// on the bus so the dispatch-wakeup loop (phase 6) wakes workers
+    /// on this node / across the cluster. The extra SELECT is skipped
+    /// when no bus is wired.
+    pub(crate) async fn mark_and_emit_needs_dispatch(
+        &self,
+        workflow_id: &str,
+    ) -> anyhow::Result<()> {
+        self.store.mark_workflow_dispatchable(workflow_id).await?;
+        if self.bus.is_some() {
+            if let Some(wf) = self.store.get_workflow(workflow_id).await? {
+                self.emit(
+                    &wf.namespace,
+                    WorkflowBusEvent::WorkflowNeedsDispatch {
+                        workflow_id: workflow_id.to_string(),
+                        task_queue: wf.task_queue,
+                    },
+                )
+                .await;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -160,7 +152,6 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
 pub(crate) fn strip_continued_suffix(id: &str) -> &str {
     if let Some(idx) = id.rfind("-continued-") {
         let (head, tail) = id.split_at(idx);
-        // Only strip when the tail after "-continued-" is all digits.
         let rest = &tail["-continued-".len()..];
         if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
             return head;
@@ -192,8 +183,6 @@ pub(crate) fn inject_engine_version(caller_attrs: Option<&str>) -> Option<String
     let mut obj: serde_json::Map<String, serde_json::Value> = match caller_attrs {
         Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
             Ok(serde_json::Value::Object(m)) => m,
-            // Non-object JSON (or unparsable) — preserve as-is without
-            // stamping; we can't safely merge a key into a non-object.
             Ok(other) => return Some(other.to_string()),
             Err(_) => return Some(raw.to_string()),
         },
@@ -227,7 +216,8 @@ mod engine_version_stamp_tests {
 
     #[test]
     fn caller_supplied_version_wins_on_conflict() {
-        let out = inject_engine_version(Some(r#"{"assay_engine_version":"0.0.1-test"}"#)).unwrap();
+        let out =
+            inject_engine_version(Some(r#"{"assay_engine_version":"0.0.1-test"}"#)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["assay_engine_version"], "0.0.1-test");
     }

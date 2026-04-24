@@ -178,6 +178,13 @@ pub struct SqliteStore {
 impl SqliteStore {
     pub async fn new(url: &str) -> Result<Self> {
         let pool = SqlitePool::connect(url).await?;
+        Self::from_pool(pool).await
+    }
+
+    /// Construct from an externally-managed pool. Use this when the engine
+    /// shares the pool with the engine-events bus so both touch the same
+    /// in-memory instance (:memory: SQLite is per-connection).
+    pub async fn from_pool(pool: SqlitePool) -> Result<Self> {
         let instance_id = format!("assay-{:016x}", {
             use std::collections::hash_map::DefaultHasher;
             use std::hash::{Hash, Hasher};
@@ -189,6 +196,12 @@ impl SqliteStore {
         let store = Self { pool, instance_id };
         store.migrate().await?;
         Ok(store)
+    }
+
+    /// Expose the underlying pool (used by the engine to build an
+    /// `SqliteEngineEventBus` that shares the same connection).
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 
     /// Acquire the single-instance engine lock.

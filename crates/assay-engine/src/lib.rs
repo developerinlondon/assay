@@ -11,6 +11,7 @@
 use std::sync::Arc;
 
 use assay_dashboard::{DashboardCtx, WhitelabelConfig};
+use assay_domain::events::EngineEventBus;
 use assay_workflow::{PostgresStore, SqliteStore, WorkflowStore};
 
 pub mod config;
@@ -34,7 +35,12 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
             let store = PostgresStore::new(&url)
                 .await
                 .map_err(|e| anyhow::anyhow!("connect postgres: {e}"))?;
-            run_with_store(cfg, store).await
+            let bus: Arc<dyn EngineEventBus> = Arc::new(
+                assay_domain::events::PgEngineEventBus::new(store.pool().clone(), &url)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("engine-events bus (pg): {e}"))?,
+            );
+            run_with_store(cfg, store, bus).await
         }
         BackendConfig::Sqlite { path } => {
             let url = if path == ":memory:" {
@@ -45,7 +51,12 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
             let store = SqliteStore::new(&url)
                 .await
                 .map_err(|e| anyhow::anyhow!("connect sqlite: {e}"))?;
-            run_with_store(cfg, store).await
+            let bus: Arc<dyn EngineEventBus> = Arc::new(
+                assay_domain::events::SqliteEngineEventBus::new(store.pool().clone())
+                    .await
+                    .map_err(|e| anyhow::anyhow!("engine-events bus (sqlite): {e}"))?,
+            );
+            run_with_store(cfg, store, bus).await
         }
     }
 }
@@ -53,8 +64,9 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
 async fn run_with_store<S: WorkflowStore + 'static>(
     cfg: EngineConfig,
     store: S,
+    bus: Arc<dyn EngineEventBus>,
 ) -> anyhow::Result<()> {
-    let workflow_ctx = server::build_workflow_ctx(store);
+    let workflow_ctx = server::build_workflow_ctx_with_bus(store, bus);
     let whitelabel = Arc::new(WhitelabelConfig::from_env());
     let asset_version = env!("CARGO_PKG_VERSION").to_string();
     let dashboard_ctx = Arc::new(DashboardCtx::new(whitelabel, asset_version));

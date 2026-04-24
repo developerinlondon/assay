@@ -239,6 +239,12 @@ impl PostgresStore {
         Ok(store)
     }
 
+    /// Expose the underlying pool (used by the engine to build a
+    /// `PgEngineEventBus` that shares the same connection pool).
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+
     async fn migrate(&self) -> Result<()> {
         // Apply the base schema (tables + indexes) statement-by-statement.
         for statement in sanitise_schema(SCHEMA) {
