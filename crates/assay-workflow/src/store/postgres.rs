@@ -142,6 +142,17 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
 
+CREATE TABLE IF NOT EXISTS engine_events (
+    id              BIGSERIAL PRIMARY KEY,
+    ts              DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
+    namespace       TEXT NOT NULL,
+    subsystem       TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    payload         JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_engine_events_ns_id ON engine_events(namespace, id);
+CREATE INDEX IF NOT EXISTS idx_engine_events_ts_prune ON engine_events(ts);
+
 "#;
 
 /// Trigger DDL for LISTEN/NOTIFY push streams (Task 3.17).
