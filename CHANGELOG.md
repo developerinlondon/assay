@@ -2,6 +2,74 @@
 
 All notable changes to Assay are documented here.
 
+## [0.13.1] - 2026-04-24
+
+Engine-events outbox. The PL/pgSQL LISTEN/NOTIFY triggers and the lossy in-memory SSE broadcast are
+replaced by a Rust-managed CDC outbox (`engine_events`) that delivers durable realtime events to
+dashboards and cross-node subscribers. All state-mutating workflow methods now emit typed
+`WorkflowBusEvent` variants via the new `EngineEventBus` trait, which has PG + SQLite
+implementations. Dashboards reconnecting after a laptop sleep replay up to 3 days of missed events
+from a `Last-Event-ID` cursor; pre-retention gaps return HTTP 410 so the client can snapshot and
+resync.
+
+Active-development release — consumers roll with each bump, no dedicated migration guide.
+
+Per-crate bumps:
+
+| Crate            | Version | Notes                                                     |
+| ---------------- | ------- | --------------------------------------------------------- |
+| `assay`          | 0.13.1  | Dep bump (`assay-workflow 0.2.1`)                         |
+| `assay-engine`   | 0.1.1   | Wires PG/SQLite bus + cleanup loop into `run_with_store`  |
+| `assay-workflow` | 0.2.1   | Typed `WorkflowBusEvent` emits; SSE rewrite; no triggers  |
+| `assay-domain`   | 0.1.1   | `EngineEventBus` trait + PG/SQLite impls + `events` table |
+
+`assay-auth`, `assay-dashboard`, `assay-lua` unchanged.
+
+### Added
+
+- `assay_domain::events::EngineEventBus` trait + `PgEngineEventBus` + `SqliteEngineEventBus`
+  implementations.
+- `engine_events` table (PG + SQLite) as the durable event outbox.
+- `WorkflowEventBus` + `WorkflowBusEvent` enum in `assay-workflow`.
+- `EngineConfig.engine_events_ttl_secs` (default `259200` = 3 days) and an hourly cleanup task that
+  prunes `engine_events` older than the configured TTL.
+- SSE `/api/v1/events/stream` now supports `Last-Event-ID` replay, HTTP 410 Gone on pre-retention
+  cursors, and `?ns=&subsystem=&workflow_id=&kind=` server-side filters.
+
+### Changed
+
+- SSE payload shape is now `{id, ts, namespace, subsystem, kind, payload}`.
+- Scheduler wake-up is cross-node capable without per-subscription PgListener connections — one
+  `assay_engine_events_<ns>` channel per namespace replaces the old per-workflow/per-queue channels.
+- `dispatch_recovery` cadence bumped from 1s to 10min. Durable outbox + cursor replay is the
+  correctness path; this loop is now a pure crash-safety net.
+- `assay-workflow::api::serve_with_bus` is the preferred engine entry point; `serve` /
+  `serve_with_version` still exist for bus-less embedders (tests, the `assay-lua` runtime harness).
+
+### Removed
+
+- PL/pgSQL triggers `assay_notify_runnable`, `assay_notify_task`. The migrate path drops them if
+  they survive from a v0.13.0 database.
+- `assay_runnable_<ns>` / `assay_task_<queue>` NOTIFY channels (replaced by one
+  `assay_engine_events_<ns>` channel per namespace).
+- `WorkflowStore::subscribe_runnable` and `subscribe_tasks` trait methods — consumers subscribe to
+  the `EngineEventBus` instead.
+- In-memory `sse_tx` / `engine_tx` broadcast channels + `EngineEvent` / `BroadcastEvent` types on
+  `WorkflowCtx`.
+- `crates/assay-workflow/tests/subscribe_trait_bounds.rs` + the two `push_*_fires_on_*` tests in
+  `smoke_backends.rs` — they exercised the removed surface.
+
+### Fixed
+
+- Dashboard SSE clients no longer lose events when the laptop sleeps longer than the broadcast
+  buffer; cursor-based replay refills the gap up to the retention window.
+
+### Known gaps
+
+- `PgConnectOptions` in sqlx 0.8 doesn't expose TCP keepalive knobs, so the listener uses OS-default
+  keepalives (Linux: ~2h idle). sqlx auto-reconnect + cursor replay cover silently-dead TCP once the
+  next `recv()` errors. A future sqlx bump will let us tune this directly.
+
 ## [0.13.0] - 2026-04-22
 
 The monolithic `assay` binary is decomposed into six crates. `assay-lua` becomes a pure Lua runtime
