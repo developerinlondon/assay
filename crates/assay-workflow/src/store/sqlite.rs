@@ -151,6 +151,17 @@ CREATE TABLE IF NOT EXISTS engine_lock (
     started_at      REAL NOT NULL,
     last_heartbeat  REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS engine_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts              REAL NOT NULL DEFAULT (CAST(strftime('%s','now') AS REAL)),
+    namespace       TEXT NOT NULL,
+    subsystem       TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    payload         TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_engine_events_ns_id ON engine_events(namespace, id);
+CREATE INDEX IF NOT EXISTS idx_engine_events_ts_prune ON engine_events(ts);
 "#;
 
 /// Stale lock timeout — if the lock holder hasn't heartbeated in this
