@@ -3,6 +3,7 @@
 use anyhow::Result;
 
 use crate::ctx::{timestamp_now, WorkflowCtx};
+use crate::events::WorkflowBusEvent;
 use crate::store::WorkflowStore;
 use crate::types::*;
 
@@ -48,19 +49,26 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             .await?;
 
         // Phase 9: a workflow waiting on this signal needs to be re-dispatched
-        // so the worker can replay and notice the signal in history.
-        self.store.mark_workflow_dispatchable(workflow_id).await?;
+        // so the worker can replay and notice the signal in history. The
+        // helper also emits WorkflowNeedsDispatch on the engine event bus.
+        self.mark_and_emit_needs_dispatch(workflow_id).await?;
 
-        // Broadcast so the dashboard can refresh the run's row (signal
-        // count bump, log-tail tick, etc.) without waiting for the
-        // next list poll.
+        // Emit so the dashboard can refresh the run's row (signal
+        // count bump, log-tail tick, etc.).
         let ns = self
             .store
             .get_workflow(workflow_id)
             .await?
             .map(|w| w.namespace)
             .unwrap_or_default();
-        self.broadcast("signal_received", workflow_id, &ns);
+        self.emit(
+            &ns,
+            WorkflowBusEvent::SignalReceived {
+                workflow_id: workflow_id.to_string(),
+                signal_name: name.to_string(),
+            },
+        )
+        .await;
 
         Ok(())
     }

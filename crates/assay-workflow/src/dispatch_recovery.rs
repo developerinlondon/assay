@@ -26,9 +26,11 @@ use crate::store::WorkflowStore;
 /// waiting 30s for crash-recovery).
 pub const WORKFLOW_TASK_HEARTBEAT_TIMEOUT_SECS: f64 = 30.0;
 
-/// How often the recovery poller runs. Should be << the timeout so a
-/// single missed cycle doesn't double the recovery time.
-const POLL_SECS: u64 = 1;
+/// How often the recovery poller runs. Stale-lease recovery is a
+/// crash-safety net, not a correctness path — the durable engine-events
+/// outbox (v0.13.1) is the fast wake-up. 10 minutes keeps the dead
+/// lease window manageable without bombarding the DB with lease scans.
+const POLL_SECS: u64 = 600;
 
 fn timeout_secs() -> f64 {
     std::env::var("ASSAY_WF_DISPATCH_TIMEOUT_SECS")

@@ -1,0 +1,178 @@
+//! Integration tests for the engine-events SSE endpoint.
+//!
+//! Spins up a minimal axum server with the `/events/stream` route backed
+//! by an in-memory SQLite bus. Publishes events directly into the bus
+//! and asserts what the HTTP client sees (replay via `Last-Event-ID`,
+//! HTTP 410 on pre-retention cursors).
+
+#![cfg(feature = "backend-sqlite")]
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use assay_domain::events::{
+    EngineEventBus, NewEvent, SqliteEngineEventBus, Subsystem,
+};
+use assay_workflow::WorkflowCtx;
+use assay_workflow::events::WorkflowEventBus;
+use axum::Router;
+use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+
+/// Wire a SqliteStore + SqliteEngineEventBus on the same in-memory pool,
+/// stand up an axum server with just the events router, and return the
+/// base URL + bus so the test can push events directly.
+async fn spawn_sse_server() -> (String, Arc<dyn EngineEventBus>) {
+    let opts = SqliteConnectOptions::new()
+        .filename(":memory:")
+        .create_if_missing(true);
+    let pool: SqlitePool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await
+        .unwrap();
+
+    // Build the engine_events table + the rest of the schema the
+    // SqliteStore migrates in. SqliteStore::from_pool does both.
+    let store = Arc::new(
+        assay_workflow::SqliteStore::from_pool(pool.clone())
+            .await
+            .unwrap(),
+    );
+    let bus: Arc<dyn EngineEventBus> =
+        Arc::new(SqliteEngineEventBus::new(pool.clone()).await.unwrap());
+
+    let wf_bus = WorkflowEventBus::new(Arc::clone(&bus));
+    let ctx = WorkflowCtx::start(store).with_event_bus(wf_bus);
+    let state = Arc::new(ctx);
+
+    let app: Router = assay_workflow::api::events::router()
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    (format!("http://{addr}"), bus)
+}
+
+async fn read_sse_ids(
+    url: &str,
+    last_event_id: Option<i64>,
+    max: usize,
+    timeout: Duration,
+) -> Vec<i64> {
+    let client = reqwest::Client::new();
+    let mut req = client.get(format!("{url}/events/stream"));
+    if let Some(id) = last_event_id {
+        req = req.header("Last-Event-ID", id.to_string());
+    }
+    let resp = req.send().await.unwrap();
+    assert_eq!(resp.status(), 200, "SSE replay expected 200");
+    use futures_util::StreamExt;
+    let mut stream = Box::pin(resp.bytes_stream());
+    let mut buf = String::new();
+    let mut ids = Vec::new();
+    let deadline = tokio::time::Instant::now() + timeout;
+    while ids.len() < max {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match tokio::time::timeout(remaining, stream.next()).await {
+            Ok(Some(Ok(chunk))) => {
+                buf.push_str(&String::from_utf8_lossy(&chunk));
+                while let Some(sep) = buf.find("\n\n") {
+                    let frame = buf[..sep].to_string();
+                    buf = buf[sep + 2..].to_string();
+                    for line in frame.lines() {
+                        if let Some(v) = line.strip_prefix("id: ")
+                            && let Ok(id) = v.trim().parse::<i64>()
+                        {
+                            ids.push(id);
+                            if ids.len() >= max {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            _ => break,
+        }
+    }
+    ids
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sse_replay_from_last_event_id() {
+    let (url, bus) = spawn_sse_server().await;
+
+    let id1 = bus
+        .publish_committed(NewEvent {
+            namespace: "main",
+            subsystem: Subsystem::Workflow,
+            kind: "workflow_created",
+            payload: serde_json::json!({"workflow_id": "wf-1"}),
+        })
+        .await
+        .unwrap();
+    let _id2 = bus
+        .publish_committed(NewEvent {
+            namespace: "main",
+            subsystem: Subsystem::Workflow,
+            kind: "workflow_started",
+            payload: serde_json::json!({"workflow_id": "wf-1"}),
+        })
+        .await
+        .unwrap();
+    let _id3 = bus
+        .publish_committed(NewEvent {
+            namespace: "main",
+            subsystem: Subsystem::Workflow,
+            kind: "workflow_completed",
+            payload: serde_json::json !({"workflow_id": "wf-1"}),
+        })
+        .await
+        .unwrap();
+
+    // Reconnect with cursor = id1 — expect id2, id3 from the replay.
+    let ids = read_sse_ids(&url, Some(id1), 2, Duration::from_secs(3)).await;
+    assert_eq!(ids.len(), 2, "expected 2 replay frames, got {ids:?}");
+    assert!(ids.iter().all(|&i| i > id1), "all ids must be > cursor: {ids:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sse_returns_410_when_cursor_before_retention() {
+    let (url, bus) = spawn_sse_server().await;
+
+    bus.publish_committed(NewEvent {
+        namespace: "main",
+        subsystem: Subsystem::Workflow,
+        kind: "x",
+        payload: serde_json::json!({}),
+    })
+    .await
+    .unwrap();
+    bus.prune(f64::MAX).await.unwrap();
+
+    // Re-seed so oldest_id > 0.
+    let new_id = bus
+        .publish_committed(NewEvent {
+            namespace: "main",
+            subsystem: Subsystem::Workflow,
+            kind: "y",
+            payload: serde_json::json!({}),
+        })
+        .await
+        .unwrap();
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{url}/events/stream"))
+        .header("Last-Event-ID", (new_id - 100).to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 410);
+}

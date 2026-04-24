@@ -6,6 +6,7 @@ use std::str::FromStr;
 use anyhow::Result;
 
 use crate::ctx::{inject_engine_version, timestamp_now, WorkflowCtx};
+use crate::events::WorkflowBusEvent;
 use crate::store::WorkflowStore;
 use crate::types::*;
 
@@ -66,11 +67,20 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             .await?;
 
         // Phase 9: a freshly-started workflow has new events (WorkflowStarted)
-        // that need a worker to replay against — make it dispatchable.
-        self.store.mark_workflow_dispatchable(workflow_id).await?;
+        // that need a worker to replay against — make it dispatchable and
+        // emit WorkflowNeedsDispatch for the dispatch-wakeup loop.
+        self.mark_and_emit_needs_dispatch(workflow_id).await?;
 
-        // Notify SSE subscribers so the dashboard row appears live.
-        self.broadcast("workflow_started", workflow_id, namespace);
+        // Notify SSE subscribers via the engine event bus. An emit
+        // failure is a notification-layer issue only; the row write
+        // above is already committed.
+        self.emit(
+            namespace,
+            WorkflowBusEvent::WorkflowStarted {
+                workflow_id: workflow_id.to_string(),
+            },
+        )
+        .await;
 
         Ok(wf)
     }
@@ -155,7 +165,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                     })
                     .await?;
 
-                self.store.mark_workflow_dispatchable(id).await?;
+                self.mark_and_emit_needs_dispatch(id).await?;
 
                 // Propagate cancellation to all child workflows. Children
                 // inherit the reason so the audit trail explains the
@@ -201,7 +211,13 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
 
                 // Live-refresh the dashboard — no more F5 after
                 // Terminate.
-                self.broadcast("workflow_terminated", id, &wf.namespace);
+                self.emit(
+                    &wf.namespace,
+                    WorkflowBusEvent::WorkflowTerminated {
+                        workflow_id: id.to_string(),
+                    },
+                )
+                .await;
 
                 Ok(true)
             }
@@ -239,7 +255,13 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             .await?
             .map(|w| w.namespace)
             .unwrap_or_default();
-        self.broadcast("workflow_cancelled", workflow_id, &ns);
+        self.emit(
+            &ns,
+            WorkflowBusEvent::WorkflowCancelled {
+                workflow_id: workflow_id.to_string(),
+            },
+        )
+        .await;
         Ok(())
     }
 
@@ -277,7 +299,13 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             .await?
             .map(|w| w.namespace)
             .unwrap_or_default();
-        self.broadcast("workflow_completed", workflow_id, &ns);
+        self.emit(
+            &ns,
+            WorkflowBusEvent::WorkflowCompleted {
+                workflow_id: workflow_id.to_string(),
+            },
+        )
+        .await;
         Ok(())
     }
 
@@ -313,7 +341,13 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             .await?
             .map(|w| w.namespace)
             .unwrap_or_default();
-        self.broadcast("workflow_failed", workflow_id, &ns);
+        self.emit(
+            &ns,
+            WorkflowBusEvent::WorkflowFailed {
+                workflow_id: workflow_id.to_string(),
+            },
+        )
+        .await;
         Ok(())
     }
 
@@ -343,7 +377,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                 timestamp: timestamp_now(),
             })
             .await?;
-        self.store.mark_workflow_dispatchable(&parent_id).await?;
+        self.mark_and_emit_needs_dispatch(&parent_id).await?;
         Ok(())
     }
 }

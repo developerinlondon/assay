@@ -3,6 +3,7 @@
 use anyhow::Result;
 
 use crate::ctx::{timestamp_now, WorkflowCtx};
+use crate::events::WorkflowBusEvent;
 use crate::store::WorkflowStore;
 use crate::types::*;
 
@@ -34,8 +35,14 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             // Live-update the dashboard so the row flips PENDING →
             // RUNNING without requiring F5. Expected lifecycle for
             // durable workflows is to start PENDING and advance once
-            // a worker claims, so this broadcast completes the loop.
-            self.broadcast("workflow_running", &wf.id, &wf.namespace);
+            // a worker claims, so this emit completes the loop.
+            self.emit(
+                &wf.namespace,
+                WorkflowBusEvent::WorkflowRunning {
+                    workflow_id: wf.id.clone(),
+                },
+            )
+            .await;
         }
         let history = self.store.list_events(&wf.id).await?;
         Ok(Some((wf, history)))
@@ -167,8 +174,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                         )
                         .await?;
                         // Make the child immediately dispatchable so a worker
-                        // picks it up.
-                        self.store.mark_workflow_dispatchable(child_id).await?;
+                        // picks it up; emit WorkflowNeedsDispatch via the bus.
+                        self.mark_and_emit_needs_dispatch(child_id).await?;
                     }
                 }
                 "RecordSideEffect" => {
@@ -198,7 +205,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                     // Side effects don't trigger anything external — the
                     // workflow needs to immediately continue so it picks
                     // up the cached value on next replay.
-                    self.store.mark_workflow_dispatchable(workflow_id).await?;
+                    self.mark_and_emit_needs_dispatch(workflow_id).await?;
                 }
                 "ScheduleTimer" => {
                     let seq = cmd.get("seq").and_then(|v| v.as_i64()).unwrap_or(0) as i32;

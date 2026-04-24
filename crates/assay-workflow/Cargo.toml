@@ -1,6 +1,6 @@
 [package]
 name = "assay-workflow"
-version = "0.2.0"
+version = "0.2.1"
 categories = ["asynchronous", "database"]
 edition = "2024"
 keywords = ["workflow", "durable-execution", "orchestration", "task-queue"]
@@ -66,8 +66,10 @@ s3-archival = ["dep:aws-config", "dep:aws-sdk-s3"]
 # Backend features. Postgres + SQLite are unconditionally compiled for now
 # (the source hasn't been feature-gated off sqlx yet — tracked in plan 12a).
 # Both are additive; runtime backend selection happens via EngineConfig.backend.
-backend-postgres = []
-backend-sqlite = []
+# The feature flags also gate the matching backend impls in `assay-domain`,
+# so enabling `backend-postgres` here pulls in `PgEngineEventBus`.
+backend-postgres = ["assay-domain/backend-postgres"]
+backend-sqlite = ["assay-domain/backend-sqlite"]
 
 [dependencies.aws-config]
 version = "1.8"
@@ -80,7 +82,7 @@ optional = true
 features = ["behavior-version-latest"]
 
 [dev-dependencies]
-reqwest = { version = "0.13", features = ["json"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "stream"], default-features = false }
 rsa = "0.9"
 rstest = "0.26"
 serial_test = "3"

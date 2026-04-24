@@ -9,6 +9,8 @@ use axum::Router;
 use std::sync::Arc;
 use tracing::info;
 
+use assay_domain::events::EngineEventBus;
+use assay_workflow::events::WorkflowEventBus;
 use assay_workflow::{WorkflowCtx, WorkflowStore};
 
 use crate::state::EngineState;
@@ -47,5 +49,18 @@ pub fn build_workflow_ctx<S: WorkflowStore + 'static>(store: S) -> Arc<WorkflowC
     let ctx = WorkflowCtx::start(Arc::new(store))
         .with_auth_mode(assay_workflow::auth_mode::AuthMode::no_auth())
         .with_binary_version(env!("CARGO_PKG_VERSION"));
+    Arc::new(ctx)
+}
+
+/// Start a `WorkflowCtx` with the engine-events bus wired in so SSE +
+/// dispatch-wakeup can consume from it.
+pub fn build_workflow_ctx_with_bus<S: WorkflowStore + 'static>(
+    store: S,
+    bus: Arc<dyn EngineEventBus>,
+) -> Arc<WorkflowCtx<S>> {
+    let ctx = WorkflowCtx::start(Arc::new(store))
+        .with_auth_mode(assay_workflow::auth_mode::AuthMode::no_auth())
+        .with_binary_version(env!("CARGO_PKG_VERSION"))
+        .with_event_bus(WorkflowEventBus::new(bus));
     Arc::new(ctx)
 }

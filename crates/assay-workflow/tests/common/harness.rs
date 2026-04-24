@@ -388,50 +388,6 @@ impl Harness {
         dispatch!(self, s => s.try_acquire_scheduler_lock().await)
     }
 
-    // ── Push streams ──────────────────────────────────────────────────────────
-
-    /// Awaits subscription setup, then returns a pinned, type-erased stream
-    /// that emits workflow ids as they become dispatchable. Lifetime tied to
-    /// the harness borrow. The `.await` is the contract that the underlying
-    /// `LISTEN` (or equivalent) is active before the caller proceeds.
-    pub async fn subscribe_runnable<'a>(
-        &'a self,
-        namespace: &'a str,
-    ) -> std::pin::Pin<Box<dyn futures_core::Stream<Item = String> + Send + 'a>> {
-        match self {
-            #[cfg(feature = "backend-postgres")]
-            Self::Postgres { store, .. } => {
-                use assay_workflow::WorkflowStore;
-                store.subscribe_runnable(namespace).await
-            }
-            #[cfg(feature = "backend-sqlite")]
-            Self::Sqlite { store, .. } => {
-                use assay_workflow::WorkflowStore;
-                store.subscribe_runnable(namespace).await
-            }
-        }
-    }
-
-    /// Awaits subscription setup, then returns a pinned, type-erased stream
-    /// that emits activity ids as new tasks arrive on any of the listed
-    /// queues.
-    pub async fn subscribe_tasks<'a>(
-        &'a self,
-        queue_names: &'a [&'a str],
-    ) -> std::pin::Pin<Box<dyn futures_core::Stream<Item = String> + Send + 'a>> {
-        match self {
-            #[cfg(feature = "backend-postgres")]
-            Self::Postgres { store, .. } => {
-                use assay_workflow::WorkflowStore;
-                store.subscribe_tasks(queue_names).await
-            }
-            #[cfg(feature = "backend-sqlite")]
-            Self::Sqlite { store, .. } => {
-                use assay_workflow::WorkflowStore;
-                store.subscribe_tasks(queue_names).await
-            }
-        }
-    }
 }
 
 // ── Backend selector ──────────────────────────────────────────────────────────

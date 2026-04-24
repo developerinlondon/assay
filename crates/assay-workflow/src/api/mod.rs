@@ -14,13 +14,14 @@ pub mod workflows;
 
 use std::sync::Arc;
 
-use axum::middleware;
+use assay_domain::events::EngineEventBus;
 use axum::Router;
-use tokio::sync::broadcast;
+use axum::middleware;
 use tracing::info;
 
 use crate::auth_mode::AuthMode;
-use crate::ctx::{BroadcastEvent, EngineEvent, WorkflowCtx};
+use crate::ctx::WorkflowCtx;
+use crate::events::WorkflowEventBus;
 use crate::store::WorkflowStore;
 
 /// Build the full API router.
@@ -52,9 +53,7 @@ pub fn router<S: WorkflowStore>(state: Arc<WorkflowCtx<S>>) -> Router {
     // Public /api/v1/* routes — outside the auth layer by construction.
     let public_api = Router::new().nest("/api/v1", public::router::<S>());
 
-    let app = authed_api
-        .merge(public_api)
-        .merge(openapi::router::<S>());
+    let app = authed_api.merge(public_api).merge(openapi::router::<S>());
 
     app.with_state(state)
 }
@@ -73,55 +72,58 @@ fn api_v1_router<S: WorkflowStore>() -> Router<Arc<WorkflowCtx<S>>> {
 }
 
 /// Start the HTTP server on the given port.
+///
+/// Legacy entry point without event-bus wiring. Kept so existing embedders
+/// (e.g. tests / the `assay-lua` runtime harness) keep compiling; the engine
+/// binary goes through `serve_with_bus` so dashboard SSE + dispatch-wakeup
+/// loop have a live bus.
 pub async fn serve(
     store: impl WorkflowStore + 'static,
     port: u16,
     auth_mode: AuthMode,
 ) -> anyhow::Result<()> {
-    serve_with_version(store, port, auth_mode, None).await
+    serve_inner(store, port, auth_mode, None, None).await
 }
 
-/// Like `serve`, but lets the embedder (e.g. the `assay` binary) pass
-/// its own semver so `/api/v1/version` reflects the binary users are
-/// actually running instead of the internal `assay-workflow` crate
-/// version. Without this, the dashboard would show a misleading
-/// "engine crate" version to operators.
+/// Like `serve`, but lets the embedder pass its own semver so
+/// `/api/v1/version` reflects the binary users are actually running.
 pub async fn serve_with_version(
     store: impl WorkflowStore + 'static,
     port: u16,
     auth_mode: AuthMode,
     binary_version: Option<&'static str>,
 ) -> anyhow::Result<()> {
-    // The SSE channel that dashboard browsers subscribe to. The
-    // engine pushes EngineEvents into the bridge below; the bridge
-    // converts each one to a BroadcastEvent and forwards to every
-    // connected dashboard.
-    let (sse_tx, _) = broadcast::channel::<BroadcastEvent>(1024);
-    let (engine_tx, mut engine_rx) = broadcast::channel::<EngineEvent>(1024);
+    serve_inner(store, port, auth_mode, binary_version, None).await
+}
 
+/// Preferred entry point for the `assay-engine` binary. Wires the
+/// engine-wide `EngineEventBus` into the workflow context so emits
+/// from state-mutating methods reach the SSE stream + dispatch-wakeup
+/// loop.
+pub async fn serve_with_bus(
+    store: impl WorkflowStore + 'static,
+    bus: Arc<dyn EngineEventBus>,
+    port: u16,
+    auth_mode: AuthMode,
+    binary_version: Option<&'static str>,
+) -> anyhow::Result<()> {
+    serve_inner(store, port, auth_mode, binary_version, Some(bus)).await
+}
+
+async fn serve_inner(
+    store: impl WorkflowStore + 'static,
+    port: u16,
+    auth_mode: AuthMode,
+    binary_version: Option<&'static str>,
+    bus: Option<Arc<dyn EngineEventBus>>,
+) -> anyhow::Result<()> {
     let store = Arc::new(store);
-    let mut ctx = WorkflowCtx::start(store)
-        .with_event_broadcaster(engine_tx)
-        .with_auth_mode(auth_mode.clone())
-        .with_sse_tx(sse_tx.clone());
-
+    let mut ctx = WorkflowCtx::start(store).with_auth_mode(auth_mode.clone());
     if let Some(v) = binary_version {
         ctx = ctx.with_binary_version(v);
     }
-
-    {
-        let sse_tx = sse_tx.clone();
-        tokio::spawn(async move {
-            while let Ok(evt) = engine_rx.recv().await {
-                let _ = sse_tx.send(BroadcastEvent {
-                    event_type: evt.event_type,
-                    workflow_id: evt.workflow_id,
-                    payload: Some(serde_json::json!({
-                        "namespace": evt.namespace,
-                    }).to_string()),
-                });
-            }
-        });
+    if let Some(b) = bus {
+        ctx = ctx.with_event_bus(WorkflowEventBus::new(b));
     }
 
     let mode_desc = auth_mode.describe();
