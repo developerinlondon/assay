@@ -1252,75 +1252,11 @@ async fn leader_election(#[case] backend: Backend) {
 // increase it — flaky push tests hide real bugs. Instead investigate the
 // timing between subscription setup and the triggering insert.
 
-// Only the two PG-only push-stream tests below use this; on macOS those
-// tests are cfg-gated out, which would make this import unused.
-#[cfg(all(feature = "backend-postgres", target_os = "linux"))]
-use futures_util::StreamExt;
-
-// Serial — push tests spin up testcontainers; running them concurrent
-// with other container-using tests sporadically conflicts on the
-// docker daemon's port allocation / container startup path.
-// PG-only: SQLite returns stream::empty() by design (no cross-process
-// notification primitive). macOS CI has no Docker for the testcontainer, so
-// gate the whole fn — `target_os != "linux"` would leave rstest with zero
-// cases and fail to compile.
-#[cfg(all(feature = "backend-postgres", target_os = "linux"))]
-#[rstest]
-#[case::pg(Backend::Postgres)]
-#[tokio::test(flavor = "multi_thread")]
-#[serial_test::serial]
-async fn push_runnable_fires_on_dispatchable(#[case] backend: Backend) {
-    let h = backend.setup().await.expect("setup");
-    // `subscribe_runnable` awaits `LISTEN` registration internally — by the
-    // time it returns the stream, the server is forwarding notifications
-    // on our channel. No race window between setup and the trigger.
-    let mut stream = h.subscribe_runnable("main").await;
-
-    let wf_id = uid("wf-push-r");
-    let wf = make_workflow(&wf_id, "main", "push-q");
-    h.create_workflow(&wf).await.unwrap();
-    h.mark_workflow_dispatchable(&wf_id).await.unwrap();
-
-    let got = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        stream.next(),
-    )
-    .await
-    .expect("timed out waiting for push notification")
-    .expect("stream ended before yielding");
-
-    assert_eq!(got, wf_id, "push stream should yield the workflow id");
-}
-
-// PG-only (same reason as push_runnable_fires_on_dispatchable above).
-#[cfg(all(feature = "backend-postgres", target_os = "linux"))]
-#[rstest]
-#[case::pg(Backend::Postgres)]
-#[tokio::test(flavor = "multi_thread")]
-#[serial_test::serial]
-async fn push_tasks_fires_on_activity_insert(#[case] backend: Backend) {
-    let h = backend.setup().await.expect("setup");
-    let queue = "push-act-q";
-    let queues = [queue];
-    // See `push_runnable_fires_on_dispatchable` for why the `.await` matters.
-    let mut stream = h.subscribe_tasks(&queues).await;
-
-    let wf_id = uid("wf-push-t");
-    h.create_workflow(&make_workflow(&wf_id, "main", queue)).await.unwrap();
-
-    // Create a PENDING activity — the trigger fires on INSERT.
-    let act = make_activity(&wf_id, 1, queue);
-    let act_id = h.create_activity(&act).await.unwrap();
-
-    let got = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        stream.next(),
-    )
-    .await
-    .expect("timed out waiting for push notification")
-    .expect("stream ended before yielding");
-
-    // The emitted payload is the activity's numeric id as a string.
-    let got_id: i64 = got.parse().expect("payload should be a numeric activity id");
-    assert_eq!(got_id, act_id, "push stream should yield the activity id");
-}
+// Push-stream tests (push_runnable_fires_on_dispatchable +
+// push_tasks_fires_on_activity_insert) have been removed in v0.13.1.
+// The PL/pgSQL triggers + WorkflowStore::subscribe_runnable/_tasks they
+// exercised are gone; the engine-events outbox
+// (`assay_domain::events::{PgEngineEventBus, SqliteEngineEventBus}`)
+// replaces them. Equivalent coverage lives in that crate's pg_test +
+// sqlite_test suites (append_then_read_round_trip, subscribe_receives_*,
+// etc.).

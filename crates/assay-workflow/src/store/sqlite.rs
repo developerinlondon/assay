@@ -1434,31 +1434,6 @@ impl WorkflowStore for SqliteStore {
         Ok(true)
     }
 
-    /// SQLite has no cross-process notification primitive. Single-process
-    /// deployments wanting push wake-ups should compose an in-memory
-    /// channel at the call site. The trait contract guarantees the
-    /// scheduler still wakes on its heap regardless. The future is trivial
-    /// (no setup to do) but keeps the trait shape consistent with PG so
-    /// callers can `.await` uniformly.
-    fn subscribe_runnable<'a>(
-        &'a self,
-        _namespace: &'a str,
-    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
-           + Send
-           + 'a {
-        use futures_util::StreamExt;
-        async move { futures_util::stream::empty().boxed() }
-    }
-
-    fn subscribe_tasks<'a>(
-        &'a self,
-        _queue_names: &'a [&'a str],
-    ) -> impl std::future::Future<Output = futures_util::stream::BoxStream<'a, String>>
-           + Send
-           + 'a {
-        use futures_util::StreamExt;
-        async move { futures_util::stream::empty().boxed() }
-    }
 }
 
 fn timestamp_now() -> f64 {
