@@ -250,12 +250,12 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
 
     // Footer version-line: vanilla dashboards keep the current
     // "Assay Workflow Engine vX.Y.Z" wording. Whitelabel deployments
-    // get a "Powered by Assay vX.Y.Z" line — short, not redundant with
-    // a subtitle that may already say "Workflow Engine", still links
-    // to assay.rs for discovery. The version span is populated by the
-    // existing dashboard JS in both variants.
+    // get a "Powered by Assay Engine vX.Y.Z" line — distinguishes the
+    // engine binary (the daemon) from the `assay` Lua runtime binary,
+    // still links to assay.rs for discovery. The version span is
+    // populated by the existing dashboard JS in both variants.
     let engine_footer = if wl.is_customised() {
-        r#"Powered by <a class="assay-attribution" href="https://assay.rs" target="_blank" rel="noopener noreferrer">Assay</a> <span id="status-version">—</span>"#.to_string()
+        r#"Powered by <a class="assay-attribution" href="https://assay.rs" target="_blank" rel="noopener noreferrer">Assay Engine</a> <span id="status-version">—</span>"#.to_string()
     } else {
         r#"Assay Workflow Engine <span id="status-version">—</span>"#.to_string()
     };
@@ -402,7 +402,7 @@ v=__ASSETV__
         cfg.mark = "A".into();
         let out = render_index(TEMPLATE, "v", &cfg);
         assert!(out.contains("Powered by"));
-        assert!(out.contains(r#">Assay</a>"#), "short 'Assay' attribution text");
+        assert!(out.contains(r#">Assay Engine</a>"#), "short 'Assay Engine' attribution text — distinguishes the engine binary from the assay Lua runtime");
         assert!(!out.contains("Workflow Engine</a>"), "should not say 'Assay Workflow Engine' in link");
         assert!(out.contains(r#"href="https://assay.rs""#));
         assert!(out.contains(r#"target="_blank""#));
