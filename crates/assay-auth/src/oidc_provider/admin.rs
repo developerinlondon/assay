@@ -8,12 +8,11 @@
 //! Surface:
 //!
 //! - `GET    /admin/oidc/clients`
-//! - `POST   /admin/oidc/clients`            → returns the plaintext
-//!                                              `client_secret` ONCE.
+//! - `POST   /admin/oidc/clients` — returns the plaintext `client_secret` ONCE.
 //! - `GET    /admin/oidc/clients/{id}`
 //! - `PUT    /admin/oidc/clients/{id}`
 //! - `DELETE /admin/oidc/clients/{id}`
-//! - `POST   /admin/oidc/clients/{id}/rotate-secret` → new secret ONCE.
+//! - `POST   /admin/oidc/clients/{id}/rotate-secret` — new secret ONCE.
 //!
 //! - `GET    /admin/oidc/upstream`
 //! - `POST   /admin/oidc/upstream`            → upsert by slug.
@@ -37,14 +36,16 @@ use crate::state::AdminApiKeys;
 use super::types::{OidcClient, TokenAuthMethod, UpstreamProvider};
 
 /// Validate the presented bearer token against the admin keys list.
-/// Returns `Ok(())` on hit, `Err(response)` ready to return on miss.
-pub(crate) fn require_admin(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<(), Response> {
+/// Returns `Ok(())` on hit, `Err(boxed response)` ready to return on
+/// miss. Box keeps the success-path Result small (`Response` is
+/// ~272 bytes); callers unbox with `*r` before returning.
+pub(crate) fn require_admin(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<(), Box<Response>> {
     if !keys.enabled() {
-        return Err((
+        return Err(Box::new((
             StatusCode::UNAUTHORIZED,
             Json(json!({"error": "admin disabled — no admin_api_keys configured"})),
         )
-            .into_response());
+            .into_response()));
     }
     let presented = headers
         .get(header::AUTHORIZATION)
@@ -53,11 +54,11 @@ pub(crate) fn require_admin(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<
         .map(str::trim)
         .unwrap_or("");
     if !keys.check(presented) {
-        return Err((
+        return Err(Box::new((
             StatusCode::UNAUTHORIZED,
             Json(json!({"error": "invalid admin token"})),
         )
-            .into_response());
+            .into_response()));
     }
     Ok(())
 }
@@ -123,7 +124,7 @@ pub async fn create_client(
     Json(body): Json<CreateClientBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -203,7 +204,7 @@ pub async fn list_clients(
     headers: HeaderMap,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -222,7 +223,7 @@ pub async fn get_client(
     Path(id): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -264,7 +265,7 @@ pub async fn update_client(
     Json(body): Json<UpdateClientBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -318,7 +319,7 @@ pub async fn delete_client(
     Path(id): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -350,7 +351,7 @@ pub async fn rotate_client_secret(
     Path(id): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -407,7 +408,7 @@ pub async fn upsert_upstream(
     Json(body): Json<UpstreamBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -434,7 +435,7 @@ pub async fn list_upstream(
     headers: HeaderMap,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -453,7 +454,7 @@ pub async fn get_upstream(
     Path(slug): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -477,7 +478,7 @@ pub async fn delete_upstream(
     Path(slug): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
@@ -542,7 +543,7 @@ mod tests {
     use super::*;
 
     fn keys_with(values: &[&str]) -> AdminApiKeys {
-        AdminApiKeys::from_iter(values.iter().copied())
+        AdminApiKeys::from_keys(values.iter().copied())
     }
 
     #[test]

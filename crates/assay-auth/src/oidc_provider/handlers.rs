@@ -20,7 +20,7 @@ use axum::Form;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Json, Redirect, Response};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 
 use crate::ctx::AuthCtx;
@@ -312,7 +312,7 @@ pub async fn token_post(
     headers: HeaderMap,
     Form(req): Form<TokenRequest>,
 ) -> Response {
-    let provider = match ctx.oidc_provider.as_ref() {
+    let _provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
         None => return server_misconfigured("oidc_provider is not enabled"),
     };
@@ -491,15 +491,14 @@ async fn grant_authorization_code(
             Some("code does not belong to this client".into()),
         );
     }
-    if let Some(redirect) = &req.redirect_uri {
-        if redirect != &consumed.redirect_uri {
+    if let Some(redirect) = &req.redirect_uri
+        && redirect != &consumed.redirect_uri {
             return token_err(
                 StatusCode::BAD_REQUEST,
                 errors::INVALID_GRANT,
                 Some("redirect_uri mismatch".into()),
             );
         }
-    }
     // PKCE verify (S256 only — challenge_method always normalised).
     if !consumed.code_challenge.is_empty() {
         let verifier = req.code_verifier.as_deref().unwrap_or("");
@@ -811,8 +810,8 @@ pub async fn introspect_post(
     // Not a JWT — try as an opaque refresh_token.
     if let Some(provider) = ctx.oidc_provider.as_ref() {
         let hash = tok::hash_refresh_token(&body.token);
-        if let Ok(Some(row)) = provider.refresh.get(&hash).await {
-            if !row.revoked && row.expires_at > now_secs() {
+        if let Ok(Some(row)) = provider.refresh.get(&hash).await
+            && !row.revoked && row.expires_at > now_secs() {
                 let resp = IntrospectResponse {
                     active: true,
                     client_id: Some(row.client_id.clone()),
@@ -826,7 +825,6 @@ pub async fn introspect_post(
                 };
                 return (StatusCode::OK, Json(resp)).into_response();
             }
-        }
     }
 
     (StatusCode::OK, Json(IntrospectResponse::inactive())).into_response()
@@ -1038,11 +1036,10 @@ pub(crate) fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     let raw = headers.get(header::COOKIE)?.to_str().ok()?;
     for kv in raw.split(';') {
         let kv = kv.trim();
-        if let Some((k, v)) = kv.split_once('=') {
-            if k == name {
+        if let Some((k, v)) = kv.split_once('=')
+            && k == name {
                 return Some(v.to_string());
             }
-        }
     }
     None
 }

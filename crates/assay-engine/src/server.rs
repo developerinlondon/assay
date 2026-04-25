@@ -24,7 +24,7 @@ use crate::state::EngineState;
 /// ready for `axum::serve`. When the `auth` feature is on AND the
 /// engine boot constructed an `AuthCtx`, the auth router (mounted at
 /// `/auth`) joins the composition.
-pub fn build_app<S: WorkflowStore + 'static>(state: EngineState<S>) -> Router {
+pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> Router {
     let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow));
     let dashboard_router =
         assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
@@ -91,6 +91,13 @@ pub fn build_app<S: WorkflowStore + 'static>(state: EngineState<S>) -> Router {
     // pluck what they need.
     #[cfg(feature = "auth")]
     if state.auth.is_some() {
+        // Use EngineState<S> as the auth router's parent state. It impls
+        // both `FromRef<EngineState<S>> for AuthCtx` and
+        // `FromRef<EngineState<S>> for AdminApiKeys` (see state.rs), so
+        // the admin handlers and the user-facing handlers share the same
+        // state seam. EngineState<S>: Clone is satisfied because both
+        // PostgresStore and SqliteStore derive Clone (their pools are
+        // already Arc'd internally).
         let auth_router =
             assay_auth::router::<EngineState<S>>().with_state(state.clone());
         app = app.nest("/auth", auth_router);
@@ -105,7 +112,7 @@ pub fn build_app<S: WorkflowStore + 'static>(state: EngineState<S>) -> Router {
 }
 
 /// Bind a TCP listener on `bind_addr` and serve the composed app.
-pub async fn serve<S: WorkflowStore + 'static>(
+pub async fn serve<S: WorkflowStore + Clone + 'static>(
     bind_addr: &str,
     state: EngineState<S>,
 ) -> anyhow::Result<()> {

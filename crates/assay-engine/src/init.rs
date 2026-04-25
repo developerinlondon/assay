@@ -76,6 +76,9 @@ pub fn builtin_modules() -> Vec<BuiltinModule> {
 /// `engine.instances` rows whose `last_heartbeat` is older than
 /// [`INSTANCE_STALE_SECS`].
 const INSTANCE_HEARTBEAT_SECS: u64 = 15;
+// Used by the PG cleanup task that prunes dead `engine.instances` rows.
+// SQLite path is single-instance and never accumulates stale rows.
+#[cfg(feature = "backend-postgres")]
 const INSTANCE_STALE_SECS: f64 = 60.0;
 
 /// Result of the engine boot sequence — the parts each backend wired up.
@@ -549,13 +552,15 @@ fn spawn_sqlite_instance_lifecycle(pool: sqlx::SqlitePool, id: uuid::Uuid) {
     });
 }
 
-#[cfg(test)]
+// Gate the test module on the features its tests need so feature combos
+// without auth or sqlite don't trigger an unused-import warning on
+// `use super::*;`.
+#[cfg(all(test, feature = "backend-sqlite", feature = "auth"))]
 mod tests {
     use super::*;
 
     /// Default boot keeps auth disabled — ensures existing v0.1.2
     /// deployments don't get unexpected auth migrations on upgrade.
-    #[cfg(all(feature = "backend-sqlite", feature = "auth"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn sqlite_boot_default_does_not_run_auth_migration() {
         let boot = sqlite_boot(":memory:", &[]).await.expect("boot");
@@ -581,7 +586,6 @@ mod tests {
     /// `auto_enable_modules = ["auth"]` flips the seed row to TRUE on
     /// first boot AND triggers the auth schema migration. Recorded under
     /// `module = 'auth'` in `engine.migrations`.
-    #[cfg(all(feature = "backend-sqlite", feature = "auth"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn sqlite_boot_auto_enable_runs_auth_migration() {
         let boot = sqlite_boot(":memory:", &["auth".to_string()])

@@ -96,13 +96,16 @@ where
 /// Bearer-token check shared by every admin handler. Identical to
 /// [`crate::oidc_provider::admin::require_admin`] — duplicated locally
 /// so this module doesn't reach into another module's `pub(crate)`.
-fn require_admin(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<(), Response> {
+// `Response` is ~272 bytes; box it so the success path keeps the
+// `Result<(), _>` small (every admin handler calls this on the hot
+// path). Callers unbox with `*r` before returning.
+fn require_admin(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<(), Box<Response>> {
     if !keys.enabled() {
-        return Err((
+        return Err(Box::new((
             StatusCode::UNAUTHORIZED,
             Json(json!({"error": "admin disabled — no admin_api_keys configured"})),
         )
-            .into_response());
+            .into_response()));
     }
     let presented = headers
         .get(header::AUTHORIZATION)
@@ -111,11 +114,11 @@ fn require_admin(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<(), Respons
         .map(str::trim)
         .unwrap_or("");
     if !keys.check(presented) {
-        return Err((
+        return Err(Box::new((
             StatusCode::UNAUTHORIZED,
             Json(json!({"error": "invalid admin token"})),
         )
-            .into_response());
+            .into_response()));
     }
     Ok(())
 }
@@ -149,7 +152,7 @@ async fn list_users(
     Query(q): Query<ListUsersQuery>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
     let offset = q.offset.unwrap_or(0).max(0);
@@ -193,7 +196,7 @@ async fn create_user_handler(
     Json(body): Json<CreateUserBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let id = format!(
         "usr_{}",
@@ -259,7 +262,7 @@ async fn get_user_detail(
     Path(id): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let user = match ctx.users.get_user_by_id(&id).await {
         Ok(Some(u)) => u,
@@ -319,7 +322,7 @@ async fn update_user_handler(
     Json(body): Json<UpdateUserBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let mut user = match ctx.users.get_user_by_id(&id).await {
         Ok(Some(u)) => u,
@@ -351,7 +354,7 @@ async fn delete_user_handler(
     Path(id): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     match ctx.users.delete_user(&id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
@@ -380,7 +383,7 @@ async fn password_reset_handler(
     Json(body): Json<PasswordResetBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     if ctx.users.get_user_by_id(&id).await.unwrap_or(None).is_none() {
         return (
@@ -437,7 +440,7 @@ async fn list_sessions(
     Query(q): Query<ListSessionsQuery>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
     let offset = q.offset.unwrap_or(0).max(0);
@@ -469,7 +472,7 @@ async fn revoke_session(
     Path(id): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     match ctx.sessions.delete(&id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
@@ -494,7 +497,7 @@ async fn revoke_sessions_for_user(
     Path(user_id): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     match ctx.sessions.delete_for_user(&user_id).await {
         Ok(n) => (StatusCode::OK, Json(RevokeAllResponse { revoked: n })).into_response(),
@@ -518,7 +521,7 @@ async fn biscuit_info(
     headers: HeaderMap,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let kid = ctx.biscuit.active_kid();
     let public_pem = match ctx.biscuit.public_pem() {
@@ -534,7 +537,7 @@ async fn jwks_proxy(
     headers: HeaderMap,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     // The OIDC provider's JWKS endpoint already enumerates the active
     // signing key — reuse its shape so admin tooling sees the same
@@ -567,7 +570,7 @@ async fn zanzibar_list_namespaces(
     headers: HeaderMap,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
     {
@@ -593,7 +596,7 @@ async fn zanzibar_get_namespace(
     Path(name): Path<String>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
     {
@@ -635,7 +638,7 @@ async fn zanzibar_write_tuple(
     Json(body): Json<TupleBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
     {
@@ -662,7 +665,7 @@ async fn zanzibar_delete_tuple(
     Json(body): Json<TupleBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
     {
@@ -711,7 +714,7 @@ async fn zanzibar_check_handler(
     Json(body): Json<CheckBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
     {
@@ -774,7 +777,7 @@ async fn zanzibar_expand_handler(
     Json(body): Json<ExpandBody>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
     {
@@ -839,7 +842,7 @@ async fn audit_list(
     Query(q): Query<ListAuditQuery>,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &keys) {
-        return r;
+        return *r;
     }
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
     let offset = q.offset.unwrap_or(0).max(0);
@@ -918,7 +921,7 @@ mod tests {
     fn require_admin_accepts_known_bearer() {
         let mut headers = HeaderMap::new();
         headers.insert(header::AUTHORIZATION, "Bearer adm".parse().unwrap());
-        let keys = AdminApiKeys::from_iter(["adm"]);
+        let keys = AdminApiKeys::from_keys(["adm"]);
         assert!(require_admin(&headers, &keys).is_ok());
     }
 }

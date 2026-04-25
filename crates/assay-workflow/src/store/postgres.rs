@@ -307,6 +307,12 @@ fn sanitise_schema(schema: &str) -> Vec<String> {
         .collect()
 }
 
+/// `Clone` is derived because the underlying `PgPool` is itself `Clone`
+/// (it's `Arc<PoolInner>` internally) — cloning the store hands back a
+/// new wrapper around the same connection pool. Required so engine
+/// composition (`EngineState<S>`) can derive `Clone` and pass through
+/// axum `with_state`.
+#[derive(Clone)]
 pub struct PostgresStore {
     pool: PgPool,
 }

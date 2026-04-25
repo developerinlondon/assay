@@ -183,6 +183,13 @@ const LOCK_STALE_SECS: f64 = 60.0;
 /// How often to refresh the lock heartbeat.
 const LOCK_HEARTBEAT_SECS: u64 = 15;
 
+/// `Clone` is derived because the underlying `SqlitePool` is itself
+/// `Clone` (it's `Arc<PoolInner>` internally) — cloning the store hands
+/// back a new wrapper around the same connection pool. The
+/// `instance_id` is per-store identity (heartbeat row tag), shared
+/// across clones so all clones look like the same instance to
+/// `engine.lock`.
+#[derive(Clone)]
 pub struct SqliteStore {
     pool: SqlitePool,
     instance_id: String,

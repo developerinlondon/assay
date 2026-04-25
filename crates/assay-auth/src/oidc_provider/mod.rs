@@ -18,16 +18,16 @@
 //! - [`handlers`] — phase 8 — concrete axum handlers consuming AuthCtx.
 //! - [`admin`] — phase 8 — admin HTTP API (clients/upstream CRUD).
 //!
-//! The crate-level [`OidcProviderConfig`] composes the subsystem stores
-//! + issuer URL + JWT signing config so the AuthCtx carries one
-//! cohesive value.
+//! The crate-level [`OidcProviderConfig`] composes the subsystem stores +
+//! issuer URL + JWT signing config so the AuthCtx carries one cohesive
+//! value.
 
 use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::{FromRef, State};
 use axum::response::{Html, IntoResponse};
-use axum::routing::{delete, get, post};
+use axum::routing::{get, post};
 use url::Url;
 
 use crate::ctx::AuthCtx;
@@ -101,6 +101,14 @@ impl OidcProviderConfig {
     /// Build a provider config carrying the given stores. The default
     /// JWKS source is `Memory(vec![])` — engine boot replaces it with
     /// a backend-specific pool.
+    ///
+    /// Long argument list is the cost of being explicit about which
+    /// store backs each persistence concern (clients, upstream IdPs,
+    /// auth codes, refresh tokens, sessions, consents, upstream-flow
+    /// state). A builder/struct refactor was considered but rejected
+    /// for now — the engine binary is the only caller and a one-shot
+    /// `OidcProviderConfig::new(...)` reads cleanly there.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         issuer: impl Into<String>,
         public_url: Url,

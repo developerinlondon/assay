@@ -114,14 +114,18 @@ impl PgEngineSchema {
     /// Read the boot manifest. Returns every module row regardless of
     /// `enabled` — callers (engine boot) typically filter to enabled.
     pub async fn list_modules(&self) -> Result<Vec<ModuleRecord>> {
-        let rows: Vec<(
+        // Tuple shape of one `engine.modules` row as fetched from PG.
+        // Aliased so the query annotation stays readable; sqlx requires
+        // the explicit shape for `query_as` row decoding.
+        type PgModuleRow = (
             String,
             bool,
             Option<f64>,
             Option<String>,
             Option<String>,
             serde_json::Value,
-        )> = sqlx::query_as(
+        );
+        let rows: Vec<PgModuleRow> = sqlx::query_as(
             "SELECT name, enabled, enabled_at, enabled_by, version, config
              FROM engine.modules ORDER BY name",
         )

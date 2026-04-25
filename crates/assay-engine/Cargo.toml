@@ -27,7 +27,33 @@ default = [
   "server",
 ]
 
-auth = ["dep:assay-auth", "assay-dashboard/auth"]
+auth = [
+  "dep:assay-auth",
+  "assay-dashboard/auth",
+  # Pass-through sub-features. assay-auth's `auth` meta pulls these in
+  # on its own crate, but the engine's source uses `#[cfg(feature =
+  # "auth-X")]` to gate the wire-up code, so engine has to re-declare
+  # them locally to make those gates evaluate true.
+  "auth-jwt",
+  "auth-session",
+  "auth-password",
+  "auth-passkey",
+  "auth-oidc",
+  "auth-oidc-provider",
+  "auth-zanzibar",
+]
+
+# Pass-through declarations so engine's `cfg` matches assay-auth's. Each
+# is opt-in independently if a downstream consumer wants a slim engine
+# with only one auth flavour.
+auth-jwt = ["dep:assay-auth", "assay-auth?/auth-jwt"]
+auth-session = ["dep:assay-auth", "assay-auth?/auth-session"]
+auth-password = ["dep:assay-auth", "assay-auth?/auth-password"]
+auth-passkey = ["dep:assay-auth", "assay-auth?/auth-passkey"]
+auth-oidc = ["dep:assay-auth", "assay-auth?/auth-oidc"]
+auth-oidc-provider = ["dep:assay-auth", "assay-auth?/auth-oidc-provider"]
+auth-zanzibar = ["dep:assay-auth", "assay-auth?/auth-zanzibar"]
+
 server = ["dep:clap"]
 
 backend-postgres = ["assay-workflow/backend-postgres", "assay-auth?/backend-postgres"]

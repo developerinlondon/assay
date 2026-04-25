@@ -185,17 +185,14 @@ impl Tuple {
 /// `Consistency::Minimum` only (the other modes pass through to the
 /// same code path) — full snapshot enforcement lands in phase 9.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum Consistency {
+    #[default]
     Minimum,
     AtLeastAsFresh(String),
     Exact(String),
 }
 
-impl Default for Consistency {
-    fn default() -> Self {
-        Consistency::Minimum
-    }
-}
 
 /// Result of a `check` call. `Allowed` carries the (best-effort) tuple
 /// path that resolved the permission so callers can show "why?" in a

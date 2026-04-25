@@ -342,7 +342,7 @@ type AuthCtxOpt = Option<()>;
 #[cfg(feature = "auth")]
 type AuthCtxOpt = Option<assay_auth::AuthCtx>;
 
-async fn run_with_store<S: WorkflowStore + 'static>(
+async fn run_with_store<S: WorkflowStore + Clone + 'static>(
     cfg: EngineConfig,
     store: S,
     bus: Arc<dyn EngineEventBus>,

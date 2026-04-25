@@ -24,7 +24,10 @@ impl AdminApiKeys {
     }
 
     /// Build from a static slice — tests + simple programmatic setups.
-    pub fn from_iter<I, S>(iter: I) -> Self
+    /// Named `from_keys` (not `from_iter`) to avoid clashing with the
+    /// `std::iter::FromIterator::from_iter` trait method's call site
+    /// (which would silently shadow this inherent method).
+    pub fn from_keys<I, S>(iter: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
@@ -98,7 +101,7 @@ mod tests {
 
     #[test]
     fn admin_keys_constant_time_check() {
-        let keys = AdminApiKeys::from_iter(["abc", "xyz"]);
+        let keys = AdminApiKeys::from_keys(["abc", "xyz"]);
         assert!(keys.check("abc"));
         assert!(keys.check("xyz"));
         assert!(!keys.check("abd"));
@@ -115,7 +118,7 @@ mod tests {
 
     #[test]
     fn admin_keys_enabled_when_populated() {
-        let keys = AdminApiKeys::from_iter(["k"]);
+        let keys = AdminApiKeys::from_keys(["k"]);
         assert!(keys.enabled());
     }
 }

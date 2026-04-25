@@ -143,6 +143,10 @@ pub fn build_refresh_row(
 /// We emit per-scope optional claims:
 /// - `email` scope → `email` + `email_verified`
 /// - `profile` scope → `name`
+// All these fields appear directly as JWT claims, so a struct wrapper
+// would just shuffle the same bytes around. Reads cleanly at the call
+// sites in token.rs's grant handlers.
+#[allow(clippy::too_many_arguments)]
 pub fn build_id_token_claims(
     issuer: &str,
     user_id: &str,
@@ -166,17 +170,15 @@ pub fn build_id_token_claims(
     if let Some(n) = nonce {
         claims["nonce"] = serde_json::Value::String(n.to_string());
     }
-    if scopes.iter().any(|s| s == "email") {
-        if let Some(e) = email {
+    if scopes.iter().any(|s| s == "email")
+        && let Some(e) = email {
             claims["email"] = serde_json::Value::String(e.to_string());
             claims["email_verified"] = serde_json::Value::Bool(email_verified);
         }
-    }
-    if scopes.iter().any(|s| s == "profile") {
-        if let Some(n) = name {
+    if scopes.iter().any(|s| s == "profile")
+        && let Some(n) = name {
             claims["name"] = serde_json::Value::String(n.to_string());
         }
-    }
     claims
 }
 

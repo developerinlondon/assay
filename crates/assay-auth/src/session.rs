@@ -502,11 +502,10 @@ fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     let raw = headers.get(header::COOKIE)?.to_str().ok()?;
     for kv in raw.split(';') {
         let kv = kv.trim();
-        if let Some((k, v)) = kv.split_once('=') {
-            if k == name {
+        if let Some((k, v)) = kv.split_once('=')
+            && k == name {
                 return Some(v.to_string());
             }
-        }
     }
     None
 }

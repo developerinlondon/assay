@@ -143,7 +143,10 @@ impl SqliteEngineSchema {
              FROM {} ORDER BY name",
             self.q("modules")
         );
-        let rows: Vec<(String, i64, Option<f64>, Option<String>, Option<String>, String)> =
+        // Tuple shape of one `engine.modules` row as fetched from SQLite
+        // (booleans stored as INTEGER, JSONB-equivalent as TEXT).
+        type SqliteModuleRow = (String, i64, Option<f64>, Option<String>, Option<String>, String);
+        let rows: Vec<SqliteModuleRow> =
             sqlx::query_as(&sql)
                 .fetch_all(&self.pool)
                 .await
