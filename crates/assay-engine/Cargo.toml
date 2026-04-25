@@ -45,7 +45,7 @@ auth-oidc = ["assay-auth/auth-oidc"]
 auth-oidc-provider = ["assay-auth/auth-oidc-provider"]
 auth-zanzibar = ["assay-auth/auth-zanzibar"]
 
-server = ["dep:clap", "dep:reqwest"]
+server = ["dep:clap"]
 
 backend-postgres = ["assay-workflow/backend-postgres", "assay-auth/backend-postgres"]
 backend-sqlite = ["assay-workflow/backend-sqlite", "assay-auth/backend-sqlite"]
@@ -58,10 +58,6 @@ assay-workflow = { path = "../assay-workflow", version = "0.3" }
 
 axum = "0.8"
 clap = { version = "4", features = ["derive", "env"], optional = true }
-# Optional reqwest — only pulled in when the binary is built (the seed
-# subcommand drives the running engine via HTTP). Library consumers
-# shouldn't pay for a TLS stack they don't use.
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"], optional = true }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 
