@@ -66,6 +66,14 @@ bind_addr = "127.0.0.1:%d"
 type = "sqlite"
 path = "%s"
 
+# Plan-15 slice 3 (v0.14.0): the engine refuses to start when there are
+# no operator users AND no admin api keys. The dashboard e2e never
+# bootstraps an admin user, so seed a break-glass key here. The key is
+# only consumed by the engine's own gate — the dashboard suite doesn't
+# call admin routes, so the value is arbitrary.
+[auth]
+admin_api_keys = ["dev-admin-key-change-me"]
+
 [logging]
 level = "info"
 format = "pretty"

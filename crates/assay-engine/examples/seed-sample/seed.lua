@@ -171,11 +171,10 @@ else
 
   e.auth.oidc_upstream:upsert({
     slug = "example",
-    name = "Example IdP",
+    display_name = "Example IdP",
     issuer = "https://accounts.example.com",
     client_id = "demo-upstream-client",
     client_secret = "replace-me",
-    scopes = { "openid", "email", "profile" },
   })
   row("oidc_upstream", "example", "upserted")
 
