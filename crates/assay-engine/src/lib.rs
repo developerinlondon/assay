@@ -1,14 +1,41 @@
-//! Assay engine — workflow + dashboard + auth as a crate or standalone
-//! binary.
+//! `assay-engine` — one static binary that replaces a Temporal +
+//! Kratos + Hydra + Keto stack.
 //!
-//! Phase 3 composed `assay-workflow` and `assay-dashboard` behind one
-//! HTTP port. Phase 8 wires `assay-auth` (`AuthCtx`, OIDC provider
-//! routes, admin endpoints) under the same composition pattern — gated
-//! by the `auth` Cargo feature so a no-auth build still compiles
-//! identically.
+//! `v0.2.0` is the umbrella release that turns the engine into a full
+//! IdP + workflow runtime: the previously-empty [`auth`] feature now
+//! pulls [`assay_auth`] in, mounting OIDC client + provider, passkey,
+//! Argon2 password, JWT + JWKS rotation, biscuit capability tokens,
+//! Zanzibar ReBAC, session + admin endpoints under `/auth`. The
+//! dashboard panes that consume those routes (Users, Sessions, OIDC
+//! clients, Upstream providers, Zanzibar, JWKS, Biscuit, Audit) light up
+//! when the auth module is enabled in `engine.modules`.
 //!
-//! See plan 12 § Architecture principle 1 for the composition model and
-//! § Architecture principle 8 for the runtime/engine split.
+//! Composition is via [`axum::extract::FromRef`] over [`EngineState<S>`]
+//! — workflow / auth / dashboard each contribute their own `Ctx` and
+//! the parent state derives every sub-state extractor automatically. A
+//! no-auth build (`--no-default-features --features
+//! "backend-postgres,backend-sqlite"`) compiles identically to the
+//! pre-v0.2.0 engine; an auth build composes the auth ctx if and only if
+//! `engine.modules` shows `auth` enabled at boot.
+//!
+//! ## Module enablement model
+//!
+//! Three layers compose:
+//!
+//! 1. **Compile features (Cargo)** — decide whether the module's code
+//!    is *linked* into the binary. `assay-engine`'s default compiles
+//!    workflow + dashboard; opt into `auth` for the IdP.
+//! 2. **`engine.modules` row (DB)** — decides whether the module is
+//!    *active* at runtime. `name`, `enabled`, `version`, `config`. The
+//!    boot path runs the module's migrations + mounts its routes + lets
+//!    the dashboard render its panes only when `enabled = TRUE`.
+//! 3. **`engine.toml` config** — decides how the active module is
+//!    *configured* (issuer URL, session TTL, OIDC provider toggle,
+//!    admin api-keys, …).
+//!
+//! See plan 12 § Architecture principle 1 (composition) and § principle
+//! 8 (runtime/engine split). Migration notes for v0.1.x → v0.2.0 live
+//! in `docs/migration-to-0.2.0.md`.
 
 use std::sync::Arc;
 

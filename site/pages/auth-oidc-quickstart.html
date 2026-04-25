@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — OIDC provider quick-start</title>
+  <meta name="description" content="Plug Immich, Grafana, Nextcloud, ArgoCD, etc. into assay-engine's built-in OIDC provider — Hydra-equivalent in one binary.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-modules">
+  __HEADER__
+
+  <main>
+    <p><a href="auth-overview.html">&larr; Auth &amp; IdP overview</a></p>
+    <h1>OIDC provider quick-start</h1>
+    <p style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+      <code>assay-engine v0.2.0</code> is a conformant OpenID Connect provider — drop-in Ory Hydra
+      replacement. Authorization-code + PKCE, refresh tokens, RFC 7009 revoke, RFC 7662
+      introspect, JWKS rotation, back-channel logout. Register a client and your existing
+      OIDC-aware app (Immich, Grafana, ArgoCD, Nextcloud, Outline, Kanboard, …) talks to assay
+      instead of Hydra/Keycloak/Auth0.
+    </p>
+
+    <h2>1. Boot the engine with auth on</h2>
+    <pre><code># engine.toml
+auto_enable_modules = ["auth"]
+
+[server]
+bind_addr = "0.0.0.0:3000"
+public_url = "https://auth.example.com"   # MUST be the public HTTPS URL
+
+[backend]
+type = "postgres"
+url = "postgres://postgres:postgres@localhost/assay"
+
+[auth]
+issuer = "https://auth.example.com/auth"
+admin_api_keys = ["sk_admin_replace_me"]
+
+[auth.oidc_provider]
+enabled = true</code></pre>
+
+    <pre><code>assay-engine serve --config engine.toml</code></pre>
+
+    <p>Verify the discovery doc is live:</p>
+    <pre><code>curl https://auth.example.com/.well-known/openid-configuration | jq .
+# {
+#   "issuer": "https://auth.example.com/auth",
+#   "authorization_endpoint": "https://auth.example.com/auth/authorize",
+#   "token_endpoint": "https://auth.example.com/auth/token",
+#   "userinfo_endpoint": "https://auth.example.com/auth/userinfo",
+#   "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+#   "response_types_supported": ["code"],
+#   "grant_types_supported": ["authorization_code", "refresh_token"],
+#   "code_challenge_methods_supported": ["S256"],
+#   ...
+# }</code></pre>
+
+    <h2>2. Register an OIDC client</h2>
+
+    <p>Three ways to do this — pick whichever fits your workflow:</p>
+
+    <h3>via the dashboard</h3>
+    <p>Open <code>https://auth.example.com/auth/console</code>, log in as admin, navigate to
+      <strong>OIDC clients</strong>, click <strong>New client</strong>. The dashboard shows the
+      generated <code>client_secret</code> exactly once — copy it before closing.</p>
+
+    <h3>via the admin HTTP API</h3>
+    <pre><code>curl -X POST https://auth.example.com/auth/admin/auth/oidc-clients \
+  -H "Authorization: Bearer sk_admin_replace_me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Immich",
+    "redirect_uris": ["https://photos.example.com/auth/login"],
+    "default_scopes": ["openid", "email", "profile"],
+    "token_endpoint_auth_method": "client_secret_basic",
+    "pkce_required": true
+  }'
+# { "client_id": "...", "client_secret": "shown ONCE — store now", "name": "Immich", ... }</code></pre>
+
+    <h3>via the assay.auth Lua wrapper</h3>
+    <pre><code>local auth = require("assay.auth")
+local c = auth.client({
+  engine_url = "https://auth.example.com",
+  api_key    = env.get("ASSAY_ADMIN_KEY"),
+})
+local result = c.oidc_clients:create({
+  name = "Immich",
+  redirect_uris = { "https://photos.example.com/auth/login" },
+  default_scopes = { "openid", "email", "profile" },
+})
+print(result.client_id, result.client_secret)   -- secret returned ONCE</code></pre>
+
+    <h2>3. Configure the consumer (Immich example)</h2>
+    <pre><code># Immich .env or k8s ConfigMap
+OAUTH_AUTO_REGISTER=true
+OAUTH_AUTO_LAUNCH=true
+OAUTH_BUTTON_TEXT="Sign in with Acme"
+OAUTH_ISSUER_URL=https://auth.example.com/auth
+OAUTH_CLIENT_ID=&lt;the client_id from step 2&gt;
+OAUTH_CLIENT_SECRET=&lt;the client_secret from step 2&gt;
+OAUTH_SCOPE="openid email profile"</code></pre>
+
+    <p>Restart Immich. The login screen now shows "Sign in with Acme"; clicking it round-trips
+      through assay-engine's <code>/auth/authorize</code>, your password (or passkey) login, the
+      consent screen, and back to Immich's callback with a freshly minted id_token signed by the
+      JWKS at <code>/.well-known/jwks.json</code>.</p>
+
+    <h2>4. Operating concerns</h2>
+    <ul>
+      <li><strong>JWKS rotation.</strong> The provider rotates signing keys on a schedule (see
+        <code>auth.jwks_keys</code>). Old kids stay published until pruned, so existing tokens
+        verify until expiry. Trigger a manual rotation from the dashboard's <strong>JWKS</strong>
+        pane or via the admin HTTP API.</li>
+      <li><strong>Back-channel logout.</strong> Set <code>backchannel_logout_uri</code> on the
+        client and assay will POST a Logout Token there when the user logs out of any session
+        sharing the same SID.</li>
+      <li><strong>Token revocation.</strong> RFC 7009 — <code>POST /auth/oauth2/revoke</code>
+        with a refresh or access token. The token is marked <code>revoked = TRUE</code> in
+        <code>auth.oidc_refresh_tokens</code>.</li>
+      <li><strong>Token introspection.</strong> RFC 7662 — <code>POST /auth/oauth2/introspect</code>
+        for resource servers that need to validate tokens server-side.</li>
+      <li><strong>PKCE-required by default.</strong> All new clients enforce PKCE
+        (<code>S256</code>). Set <code>pkce_required = false</code> on creation if you absolutely
+        must support a legacy non-PKCE consumer.</li>
+    </ul>
+
+    <h2>5. Federated SSO (assay as RP)</h2>
+    <p>Want assay-engine to <em>also</em> let users sign in with Google/Apple/GitHub? Register an
+      <strong>upstream provider</strong> from the dashboard's <strong>Upstream providers</strong>
+      pane, or via API:</p>
+
+    <pre><code>curl -X POST https://auth.example.com/auth/admin/auth/upstream \
+  -H "Authorization: Bearer sk_admin_replace_me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "google",
+    "display_name": "Google",
+    "issuer": "https://accounts.google.com",
+    "client_id": "123-...apps.googleusercontent.com",
+    "client_secret": "GOCSPX-...",
+    "enabled": true
+  }'</code></pre>
+
+    <p>Now the login screen offers a "Sign in with Google" button alongside password + passkey.
+      assay-engine handles the federation handshake, links the upstream <code>(provider, sub)</code>
+      tuple to a local <code>auth.users</code> row, and continues the local session as if the
+      user had logged in directly.</p>
+
+    <p>See <a href="compare-vs-ory.html">Compare vs Ory</a> for how this all stacks up vs Hydra.</p>
+
+  </main>
+
+  __FOOTER__
+</body>
+</html>

@@ -1,6 +1,7 @@
 # Assay
 
-Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 51 modules.
+**One static binary that replaces Temporal + Kratos + Hydra + Keto.** Plus a full Lua 5.5 runtime
+with 51 modules for Kubernetes, monitoring, secrets, and AI agents.
 
 [![CI](https://github.com/developerinlondon/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/developerinlondon/assay/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/assay-lua.svg)](https://crates.io/crates/assay-lua)
@@ -8,52 +9,153 @@ Replaces your entire infrastructure scripting toolchain. One 9 MB binary, 51 mod
 
 ## What is Assay?
 
-A single ~11 MB static binary that replaces 50-250 MB Python/Node/kubectl containers in Kubernetes.
-Full-featured Lua 5.5 runtime with HTTP client/server, database, WebSocket, JWT, templates, and 35
-embedded stdlib modules for Kubernetes, monitoring, security, and AI agent integrations. Includes a
-built-in durable workflow engine (`assay serve`) with REST+SSE API, dashboard, and OpenAPI spec.
+Two binaries, one project. ~9-11 MB static each, `FROM scratch`-shippable, PG18 + SQLite first-
+class.
+
+- **`assay`** — Lua 5.5 runtime with 51 stdlib modules (Kubernetes, Prometheus, Vault, GitHub,
+  Gmail, OpenClaw, …). Drop-in replacement for 50-250 MB Python/Node/kubectl scripting containers.
+- **`assay-engine`** — durable **workflow engine** (Temporal-replacement: deterministic-replay
+  activities, signals, timers, child workflows, schedules, search attributes) **+ full IdP**
+  (Kratos + Hydra + Keto replacement: OIDC client + provider, passkey, JWT/JWKS rotation, biscuit
+  capability tokens, Argon2 password, Zanzibar ReBAC, session management, admin HTTP API, dashboard
+  panes for everything).
 
 ```bash
+# Lua runtime
 assay script.lua     # Run Lua with all builtins
 assay checks.yaml    # Structured checks with retry/backoff/JSON output
-assay serve          # Start the workflow engine (dashboard at /workflow/)
 assay exec -e 'log.info("hello")'   # Inline evaluation
 assay context "grafana"              # LLM-ready module docs
 assay modules                        # List all 51 modules
+
+# Workflow + auth + dashboard server (one process)
+assay-engine serve --config engine.toml
+#   workflow API  → /api/v1/workflows + dashboard at /workflow/
+#   auth/IdP API  → /auth/* (OIDC discovery at /.well-known/openid-configuration)
+#   admin SPA     → /auth/console
 ```
 
 Scripts that call `http.serve()` become web services. Scripts that call `http.get()` and exit are
-jobs. Same binary, same builtins.
+jobs. The runtime talks to a deployed `assay-engine` over HTTP via the `assay.workflow` and
+`assay.auth` stdlib modules — same binary, same builtins.
+
+## Replaces what?
+
+| Component                     | Replaces                  | Notes                                                  |
+| ----------------------------- | ------------------------- | ------------------------------------------------------ |
+| `assay-engine` workflow       | **Temporal**              | Same `define`/`execute_activity`/`wait_for_signal` API |
+| `assay-engine` auth (session) | **Ory Kratos** (sessions) | Cookie + CSRF + Argon2id                               |
+| `assay-engine` auth (passkey) | **Ory Kratos** (WebAuthn) | `webauthn-rs`-backed register + auth ceremonies        |
+| `assay-engine` auth (OIDC OP) | **Ory Hydra**             | RFC 7009 revoke, RFC 7662 introspect, JWKS rotation    |
+| `assay-engine` auth Zanzibar  | **Ory Keto / SpiceDB**    | Recursive-CTE walk on PG18 + SQLite                    |
+| `assay-engine` auth biscuit   | (Ory has nothing)         | Datalog-attenuable capability tokens — built-in        |
+| `assay-engine` dashboard      | Ory Console + Temporal UI | Single SPA, auth panes appear when auth is on          |
+| `assay` runtime               | Python / Node + kubectl   | 11 MB, 5 ms cold start, 51 stdlib modules              |
+
+## Two binaries, two use cases
+
+| Use case                     | Binary         | Install                                       |
+| ---------------------------- | -------------- | --------------------------------------------- |
+| Scripting / automation       | `assay`        | `cargo install assay-lua` or download release |
+| Workflow + auth + IdP server | `assay-engine` | `cargo install assay-engine` or Docker        |
+
+`assay` runs Lua scripts with the full 51-module stdlib; for workflows/auth it talks to a deployed
+`assay-engine` over HTTP. `assay-engine` is a standalone HTTP server with workflow + auth +
+dashboard, pluggable across PG18 (default) and SQLite — both backends compiled in, runtime-selected
+via config.
+
+See [docs/migration-to-0.2.0.md](./docs/migration-to-0.2.0.md) for the upgrade path from v0.1.x.
 
 ## Why Assay?
 
-| Runtime         | Compressed |   On-disk | vs Assay | Cold Start | K8s-native |
-| --------------- | ---------: | --------: | :------: | ---------: | :--------: |
-| **Assay**       |   **9 MB** | **15 MB** |  **1x**  |   **5 ms** |  **Yes**   |
-| Python alpine   |      17 MB |     50 MB |    2x    |     300 ms |     No     |
-| bitnami/kubectl |      35 MB |     90 MB |    4x    |     200 ms |  Partial   |
-| Node.js alpine  |      57 MB |    180 MB |    6x    |     500 ms |     No     |
-| Deno            |      75 MB |    200 MB |    8x    |      50 ms |     No     |
-| Bun             |     115 MB |    250 MB |   13x    |      30 ms |     No     |
-| postman/newman  |     128 MB |    350 MB |   14x    |     800 ms |     No     |
+| Runtime          | Compressed |   On-disk | vs Assay | Cold Start | K8s-native |
+| ---------------- | ---------: | --------: | :------: | ---------: | :--------: |
+| **assay**        |  **11 MB** | **15 MB** |  **1x**  |   **5 ms** |  **Yes**   |
+| **assay-engine** |   **9 MB** | **12 MB** |  **1x**  |   **8 ms** |  **Yes**   |
+| Python alpine    |      17 MB |     50 MB |    2x    |     300 ms |     No     |
+| bitnami/kubectl  |      35 MB |     90 MB |    4x    |     200 ms |  Partial   |
+| Node.js alpine   |      57 MB |    180 MB |    6x    |     500 ms |     No     |
+| Deno             |      75 MB |    200 MB |    8x    |      50 ms |     No     |
+| Bun              |     115 MB |    250 MB |   13x    |      30 ms |     No     |
+| postman/newman   |     128 MB |    350 MB |   14x    |     800 ms |     No     |
+
+For comparison, the stack `assay-engine` replaces — Temporal server + UI + Kratos + Hydra + Keto +
+their Postgres deps — typically lands at **800 MB-1.5 GB compressed** across 5+ containers.
 
 ## Installation
 
 ```bash
-# Pre-built binary (Linux x86_64 static)
+# Pre-built binaries (Linux x86_64 static, both binaries)
 curl -L -o assay https://github.com/developerinlondon/assay/releases/latest/download/assay-linux-x86_64
-chmod +x assay && sudo mv assay /usr/local/bin/
+curl -L -o assay-engine https://github.com/developerinlondon/assay/releases/latest/download/assay-engine-linux-x86_64
+chmod +x assay assay-engine && sudo mv assay assay-engine /usr/local/bin/
 
 # macOS (Apple Silicon)
 curl -L -o assay https://github.com/developerinlondon/assay/releases/latest/download/assay-darwin-aarch64
-chmod +x assay && sudo mv assay /usr/local/bin/
+curl -L -o assay-engine https://github.com/developerinlondon/assay/releases/latest/download/assay-engine-darwin-aarch64
+chmod +x assay assay-engine && sudo mv assay assay-engine /usr/local/bin/
 
 # Docker
-docker pull ghcr.io/developerinlondon/assay:latest
+docker pull ghcr.io/developerinlondon/assay:latest         # runtime
+docker pull ghcr.io/developerinlondon/assay-engine:latest  # engine
 
 # Cargo
-cargo install assay-lua
+cargo install assay-lua      # the `assay` runtime binary
+cargo install assay-engine   # the workflow + auth server
 ```
+
+## Auth + IdP quick-start
+
+Once `assay-engine` is running with the auth module enabled, every IdP capability is reachable over
+HTTP and from Lua via the `assay.auth` stdlib module:
+
+```bash
+# engine.toml — minimum viable v0.2.0 with auth on
+cat > engine.toml <<'TOML'
+auto_enable_modules = ["auth"]
+
+[server]
+bind_addr = "0.0.0.0:3000"
+public_url = "https://auth.example.com"
+
+[backend]
+type = "postgres"
+url = "postgres://postgres:postgres@localhost/assay"
+
+[auth]
+issuer = "https://auth.example.com/auth"
+admin_api_keys = ["sk_admin_replace_me"]
+TOML
+
+assay-engine serve --config engine.toml
+#   /auth/console                          → admin SPA
+#   /.well-known/openid-configuration      → OIDC discovery (Hydra-equivalent)
+#   /auth/login, /auth/passkey/*           → user-facing auth flows
+#   /auth/admin/auth/*                     → admin HTTP API (api-key gated)
+```
+
+```lua
+-- Use the assay-auth stdlib module from the assay (Lua) runtime
+local auth = require("assay.auth")
+local c = auth.client({ engine_url = "http://localhost:3000" })
+
+local sess = c:login("alice@example.com", "hunter2")
+local me   = c:whoami()
+local ok   = c.zanzibar:check("doc", "doc-42", "read", "user", me.id)
+
+-- Federated SSO (e.g. Google)
+local redirect = c.oidc:start("google")        -- returns redirect URL
+-- ...user round-trips through Google...
+local sess2    = c.oidc:complete("google", code, state)
+
+-- Issue a Datalog-attenuable biscuit capability token
+local pem = c.biscuit:public_pem()             -- cache the engine's root pubkey
+```
+
+Hook `assay-engine` up to any OIDC consumer (Immich, Grafana, ArgoCD, Nextcloud, …) by registering a
+client via `c.oidc_clients:create({...})` or the dashboard's OIDC Clients pane. The engine ships RFC
+7009 token revocation, RFC 7662 introspection, JWKS rotation, back-channel logout, and PKCE-enforced
+authorization-code flow out of the box — full Hydra parity in one process.
 
 ## Builtins API Reference
 
@@ -356,11 +458,20 @@ and one-shot shell scripts.
 ## Development
 
 ```bash
-cargo build --release     # Release build (~9 MB)
-cargo clippy -- -D warnings
-cargo test
-dprint fmt                # Format (Rust, Markdown, YAML, JSON, TOML)
+cargo build --release -p assay-lua      # Lua runtime binary (~11 MB)
+cargo build --release -p assay-engine \
+    --features backend-postgres,backend-sqlite,auth   # Workflow + auth server (~9 MB)
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+dprint fmt                              # Format (Rust, Markdown, YAML, JSON, TOML)
 ```
+
+The workspace splits across six crates: `assay-domain` (shared types + traits), `assay-workflow`
+(Temporal-replacement engine), `assay-auth` (Ory-replacement IdP), `assay-dashboard` (the SPA),
+`assay-engine` (composer + binary), and `assay-lua` / `assay` (the Lua runtime). Both
+`backend-
+postgres` and `backend-sqlite` features are additive — both compile in by default and the
+active backend is picked at runtime via `engine.toml`.
 
 ## License
 
