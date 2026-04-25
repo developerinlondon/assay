@@ -8,7 +8,7 @@
 use anyhow::{Context, Result};
 use sqlx::PgPool;
 
-use super::ModuleRecord;
+use super::{AuditRecord, InstanceRecord, ModuleRecord};
 
 /// Bootstrap + read interface for the engine-core PG schema.
 pub struct PgEngineSchema {
@@ -20,20 +20,48 @@ impl PgEngineSchema {
         Self { pool }
     }
 
-    /// Create the `engine` schema and engine-core tables. Idempotent.
+    /// Create the `engine` schema and engine-core tables. Idempotent
+    /// AND race-safe across concurrent callers (test parallelism +
+    /// multi-instance production boot both rely on this).
+    ///
+    /// PG's `CREATE SCHEMA IF NOT EXISTS` is **not** race-free against
+    /// `pg_namespace`: two callers can both pass the existence check
+    /// then both INSERT, and one loses with
+    /// `duplicate key value violates unique constraint
+    /// "pg_namespace_nspname_index"`. Same applies to concurrent
+    /// `CREATE TABLE IF NOT EXISTS` against `pg_class`.
+    ///
+    /// The fix is to serialise concurrent migrate() calls via a
+    /// transaction-scoped advisory lock. The lock is held only for the
+    /// duration of the migration transaction; subsequent boots that
+    /// find the schema already present pay one fast SELECT for the
+    /// lock then a no-op pass through every `IF NOT EXISTS`.
     pub async fn migrate(&self) -> Result<()> {
+        // Stable lock id — hash of "assay-engine-schema-migration"
+        // truncated to i64. Different from any other advisory lock id
+        // the engine uses (workflow uses 1; this is namespaced).
+        const ENGINE_MIGRATION_LOCK: i64 = 0x6173_7361_795f_656e; // "assay_en"
+
+        let mut tx = self.pool.begin().await.context("begin migrate tx")?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(ENGINE_MIGRATION_LOCK)
+            .execute(&mut *tx)
+            .await
+            .context("acquire engine migration advisory lock")?;
+
         // Engine schema lives unconditionally — it's the home for the
         // module manifest, audit log, instance registry, and migration
         // tracker. Other module schemas (workflow, auth, …) are created
         // by their own bootstrap when enabled.
         sqlx::query("CREATE SCHEMA IF NOT EXISTS engine")
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .context("create engine schema")?;
 
-        // Bootstrap the migrations table first so future schema changes
-        // can record themselves. PRIMARY KEY (module, version) lets each
-        // module advance independently.
+        // All DDL runs against the same transaction that holds the
+        // advisory lock above — that's what makes the migration
+        // race-safe. CREATE TABLE IF NOT EXISTS otherwise has the
+        // same pg_class race as CREATE SCHEMA does on pg_namespace.
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS engine.migrations (
                 module       TEXT NOT NULL,
@@ -42,13 +70,10 @@ impl PgEngineSchema {
                 PRIMARY KEY (module, version)
             )",
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .context("create engine.migrations")?;
 
-        // Module manifest. `config` is a JSONB blob the module owns —
-        // engine just stores it. `enabled_by` is informational
-        // (operator id / audit subject) and may be NULL.
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS engine.modules (
                 name         TEXT PRIMARY KEY,
@@ -59,13 +84,10 @@ impl PgEngineSchema {
                 config       JSONB NOT NULL DEFAULT '{}'::jsonb
             )",
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .context("create engine.modules")?;
 
-        // Engine-level operations log. Append-only by convention; no
-        // delete API. PG18's native uuidv7() gives us temporally
-        // sortable ids without an extra index.
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS engine.audit (
                 id           UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -75,19 +97,14 @@ impl PgEngineSchema {
                 details      JSONB NOT NULL DEFAULT '{}'::jsonb
             )",
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .context("create engine.audit")?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_engine_audit_ts ON engine.audit(ts)")
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .context("create idx_engine_audit_ts")?;
 
-        // Live engine processes. Visibility-only in v0.1.2 — coordination
-        // (leader election, task claiming) keeps using
-        // pg_try_advisory_lock + FOR UPDATE SKIP LOCKED. A stale row
-        // here doesn't break the engine; the dashboard "instances" view
-        // (v0.14.0) will display these.
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS engine.instances (
                 id              UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -97,17 +114,20 @@ impl PgEngineSchema {
                 version         TEXT
             )",
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .context("create engine.instances")?;
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_engine_instances_heartbeat \
              ON engine.instances(last_heartbeat)",
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .context("create idx_engine_instances_heartbeat")?;
 
+        // Commit releases the advisory lock + makes all the DDL
+        // visible atomically.
+        tx.commit().await.context("commit migrate tx")?;
         Ok(())
     }
 
@@ -232,6 +252,155 @@ impl PgEngineSchema {
             .context("deregister engine.instances row")?;
         Ok(())
     }
+
+    /// List engine.audit rows newest-first with the configured page
+    /// window. Optional filters narrow by exact actor / action / time
+    /// bounds. Returned `details` is the parsed JSONB blob.
+    pub async fn list_audit(
+        &self,
+        limit: i64,
+        offset: i64,
+        actor: Option<&str>,
+        action: Option<&str>,
+        since: Option<f64>,
+        until: Option<f64>,
+    ) -> Result<(Vec<AuditRecord>, i64)> {
+        // Build a single dynamic WHERE clause shared by SELECT + COUNT so
+        // the page + total stay consistent. Bound positions ($1..) are
+        // assigned in the order arguments are pushed.
+        let mut clauses: Vec<String> = Vec::new();
+        let mut binds: Vec<DynBind> = Vec::new();
+        if let Some(a) = actor {
+            clauses.push(format!("actor = ${}", binds.len() + 1));
+            binds.push(DynBind::Text(a.to_string()));
+        }
+        if let Some(a) = action {
+            clauses.push(format!("action = ${}", binds.len() + 1));
+            binds.push(DynBind::Text(a.to_string()));
+        }
+        if let Some(t) = since {
+            clauses.push(format!("ts >= ${}", binds.len() + 1));
+            binds.push(DynBind::Float(t));
+        }
+        if let Some(t) = until {
+            clauses.push(format!("ts <= ${}", binds.len() + 1));
+            binds.push(DynBind::Float(t));
+        }
+        let where_sql = if clauses.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", clauses.join(" AND "))
+        };
+
+        let select_sql = format!(
+            "SELECT id, ts, actor, action, details
+             FROM engine.audit
+             {where_sql}
+             ORDER BY ts DESC, id DESC
+             LIMIT ${} OFFSET ${}",
+            binds.len() + 1,
+            binds.len() + 2,
+        );
+        type AuditPgRow = (uuid::Uuid, f64, Option<String>, String, serde_json::Value);
+        let mut q = sqlx::query_as::<_, AuditPgRow>(&select_sql);
+        for b in &binds {
+            q = match b {
+                DynBind::Text(s) => q.bind(s),
+                DynBind::Float(f) => q.bind(*f),
+            };
+        }
+        let rows: Vec<AuditPgRow> = q
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .context("list engine.audit page")?;
+
+        let count_sql = format!("SELECT COUNT(*) FROM engine.audit {where_sql}");
+        let mut cq = sqlx::query_as::<_, (i64,)>(&count_sql);
+        for b in &binds {
+            cq = match b {
+                DynBind::Text(s) => cq.bind(s),
+                DynBind::Float(f) => cq.bind(*f),
+            };
+        }
+        let total: (i64,) = cq
+            .fetch_one(&self.pool)
+            .await
+            .context("count engine.audit page")?;
+
+        let items = rows
+            .into_iter()
+            .map(|(id, ts, actor, action, details)| AuditRecord {
+                id: id.to_string(),
+                ts,
+                actor,
+                action,
+                details,
+            })
+            .collect();
+        Ok((items, total.0))
+    }
+
+    /// List currently-registered engine instances ordered by most-recent
+    /// heartbeat first. Stale rows (over INSTANCE_STALE_SECS without a
+    /// heartbeat) are pruned by the boot loop's cleanup task; this read
+    /// returns whatever's currently present.
+    pub async fn list_instances(&self) -> Result<Vec<InstanceRecord>> {
+        type InstancePgRow = (uuid::Uuid, f64, f64, Vec<String>, Option<String>);
+        let rows: Vec<InstancePgRow> = sqlx::query_as(
+            "SELECT id, started_at, last_heartbeat, namespaces, version
+             FROM engine.instances
+             ORDER BY last_heartbeat DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("list engine.instances")?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, started_at, last_heartbeat, namespaces, version)| InstanceRecord {
+                id: id.to_string(),
+                started_at,
+                last_heartbeat,
+                namespaces,
+                version,
+            })
+            .collect())
+    }
+
+    /// Toggle a module row's `enabled` flag. Records the actor in
+    /// `enabled_by` so the audit log can correlate operator actions
+    /// without an extra column. Returns `Ok(false)` when the module
+    /// doesn't exist (caller surfaces 404), `Ok(true)` on a flip.
+    pub async fn set_module_enabled(
+        &self,
+        name: &str,
+        enabled: bool,
+        actor: Option<&str>,
+    ) -> Result<bool> {
+        let res = sqlx::query(
+            "UPDATE engine.modules
+             SET enabled = $1,
+                 enabled_at = EXTRACT(EPOCH FROM NOW()),
+                 enabled_by = COALESCE($2, enabled_by)
+             WHERE name = $3",
+        )
+        .bind(enabled)
+        .bind(actor)
+        .bind(name)
+        .execute(&self.pool)
+        .await
+        .context("set engine.modules.enabled")?;
+        Ok(res.rows_affected() > 0)
+    }
+}
+
+/// Dynamic-bind helper for [`PgEngineSchema::list_audit`]. The
+/// filter set is small and stable; an enum keeps the bind ordering
+/// trivial without pulling in a query builder.
+enum DynBind {
+    Text(String),
+    Float(f64),
 }
 
 #[cfg(test)]

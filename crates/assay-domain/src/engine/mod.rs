@@ -38,3 +38,27 @@ pub struct ModuleRecord {
     pub version: Option<String>,
     pub config: serde_json::Value,
 }
+
+/// A row from the `engine.audit` table — append-only operations log.
+/// Surfaced through the engine dashboard's audit pane and the
+/// `/api/v1/engine/audit` admin endpoint.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuditRecord {
+    pub id: String,
+    pub ts: f64,
+    pub actor: Option<String>,
+    pub action: String,
+    pub details: serde_json::Value,
+}
+
+/// A row from the `engine.instances` table — live engine processes
+/// registered at boot. Multi-node visibility for the dashboard's
+/// instances pane.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InstanceRecord {
+    pub id: String,
+    pub started_at: f64,
+    pub last_heartbeat: f64,
+    pub namespaces: Vec<String>,
+    pub version: Option<String>,
+}
