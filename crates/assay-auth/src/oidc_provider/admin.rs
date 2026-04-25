@@ -25,7 +25,7 @@
 //! `AdminAuth { keys, session }`).
 
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -35,32 +35,17 @@ use crate::state::AdminApiKeys;
 
 use super::types::{OidcClient, TokenAuthMethod, UpstreamProvider};
 
-/// Validate the presented bearer token against the admin keys list.
-/// Returns `Ok(())` on hit, `Err(boxed response)` ready to return on
-/// miss. Box keeps the success-path Result small (`Response` is
-/// ~272 bytes); callers unbox with `*r` before returning.
-pub(crate) fn require_admin(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<(), Box<Response>> {
-    if !keys.enabled() {
-        return Err(Box::new((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "admin disabled — no admin_api_keys configured"})),
-        )
-            .into_response()));
-    }
-    let presented = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer ")))
-        .map(str::trim)
-        .unwrap_or("");
-    if !keys.check(presented) {
-        return Err(Box::new((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "invalid admin token"})),
-        )
-            .into_response()));
-    }
-    Ok(())
+/// Auth + Zanzibar gate shared by every OIDC admin handler. Resolves a
+/// [`crate::gate::Caller`] from the request, then enforces the
+/// `auth#system#admin` role (same role as the cross-cutting admin
+/// router — OIDC client/upstream CRUD is operator-level concern, not
+/// per-tenant). Admin api-key callers bypass as break-glass.
+pub(crate) async fn require_admin(
+    headers: &HeaderMap,
+    ctx: &AuthCtx,
+    keys: &AdminApiKeys,
+) -> Result<crate::gate::Caller, Box<Response>> {
+    crate::gate::require_role_for(headers, ctx, keys, "auth", "system", "admin").await
 }
 
 // =====================================================================
@@ -123,7 +108,7 @@ pub async fn create_client(
     headers: HeaderMap,
     Json(body): Json<CreateClientBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -203,7 +188,7 @@ pub async fn list_clients(
     State(keys): State<AdminApiKeys>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -222,7 +207,7 @@ pub async fn get_client(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -264,7 +249,7 @@ pub async fn update_client(
     Path(id): Path<String>,
     Json(body): Json<UpdateClientBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -318,7 +303,7 @@ pub async fn delete_client(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -350,7 +335,7 @@ pub async fn rotate_client_secret(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -407,7 +392,7 @@ pub async fn upsert_upstream(
     headers: HeaderMap,
     Json(body): Json<UpstreamBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -434,7 +419,7 @@ pub async fn list_upstream(
     State(keys): State<AdminApiKeys>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -453,7 +438,7 @@ pub async fn get_upstream(
     headers: HeaderMap,
     Path(slug): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -477,7 +462,7 @@ pub async fn delete_upstream(
     headers: HeaderMap,
     Path(slug): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let provider = match ctx.oidc_provider.as_ref() {
@@ -538,42 +523,7 @@ fn random_bytes<const N: usize>() -> [u8; N] {
     buf
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn keys_with(values: &[&str]) -> AdminApiKeys {
-        AdminApiKeys::from_keys(values.iter().copied())
-    }
-
-    #[test]
-    fn require_admin_rejects_when_disabled() {
-        let headers = HeaderMap::new();
-        let keys = AdminApiKeys::empty();
-        assert!(require_admin(&headers, &keys).is_err());
-    }
-
-    #[test]
-    fn require_admin_accepts_known_bearer() {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::AUTHORIZATION, "Bearer top-secret".parse().unwrap());
-        let keys = keys_with(&["top-secret"]);
-        assert!(require_admin(&headers, &keys).is_ok());
-    }
-
-    #[test]
-    fn require_admin_rejects_wrong_bearer() {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::AUTHORIZATION, "Bearer wrong".parse().unwrap());
-        let keys = keys_with(&["top-secret"]);
-        assert!(require_admin(&headers, &keys).is_err());
-    }
-
-    #[test]
-    fn require_admin_accepts_lowercase_bearer() {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::AUTHORIZATION, "bearer top-secret".parse().unwrap());
-        let keys = keys_with(&["top-secret"]);
-        assert!(require_admin(&headers, &keys).is_ok());
-    }
-}
+// Admin-gate behaviour is covered in `crate::gate::tests` and the
+// integration-test suite — `require_admin` here is a one-line wrapper
+// over `gate::require_role_for`, so a per-handler test would just
+// duplicate gate.rs's coverage.

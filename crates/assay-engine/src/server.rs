@@ -16,9 +16,9 @@
 //! and mounted at distinct paths; the workflow API now nests under
 //! `/api/v1/engine/workflow/`.
 
+use axum::Router;
 use axum::response::Redirect;
 use axum::routing::get;
-use axum::Router;
 use std::sync::Arc;
 use tracing::info;
 
@@ -27,6 +27,16 @@ use assay_workflow::events::WorkflowEventBus;
 use assay_workflow::{WorkflowCtx, WorkflowStore};
 
 use crate::state::EngineState;
+
+/// Always-public paths under `/api/v1/engine/workflow/*` that bypass
+/// the engine's auth gate (k8s probes, version banners, OpenAPI docs).
+#[cfg(feature = "auth")]
+const WORKFLOW_PUBLIC_PATHS: &[&str] = &[
+    "/api/v1/engine/workflow/health",
+    "/api/v1/engine/workflow/version",
+    "/api/v1/engine/workflow/openapi.json",
+    "/api/v1/engine/workflow/docs",
+];
 
 /// Compose the full `axum::Router` for the engine.
 ///
@@ -38,7 +48,21 @@ use crate::state::EngineState;
 /// at `/auth/`) and the engine-internal auth router (mounted under
 /// `/api/v1/engine/auth/`) join the composition.
 pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> Router {
+    // Workflow router carries no auth of its own — slice 2 lifted that
+    // to the engine layer. When `auth` is on AND an `AuthCtx` is
+    // composed, wrap the workflow router with the gate middleware that
+    // enforces `workflow:<namespace>#access` via `assay_auth::gate`.
     let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow));
+    #[cfg(feature = "auth")]
+    let workflow_router = if state.auth.is_some() {
+        workflow_router.layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            workflow_gate_middleware::<S>,
+        ))
+    } else {
+        workflow_router
+    };
+
     let dashboard_router =
         assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
 
@@ -112,6 +136,83 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     app
 }
 
+/// Engine-side gate middleware for the workflow API.
+///
+/// Per plan-15 slice 2 the engine is the auth boundary for every
+/// module — the workflow no longer carries its own auth middleware.
+/// This wrapper:
+///
+/// 1. Lets the always-public paths through unconditionally
+///    ([`WORKFLOW_PUBLIC_PATHS`] — health, version, openapi, docs).
+/// 2. Reads `?namespace=<X>` from the query string (defaults to
+///    `main` to match the workflow store's default namespace).
+/// 3. Calls [`assay_auth::gate::require_role_for`] for
+///    `workflow:<namespace>#access`. Admin api-key callers bypass as
+///    break-glass; session/JWT callers go through Zanzibar.
+///
+/// On gate failure the request short-circuits with the gate's response
+/// (401 Unauthorized or 403 Forbidden); on success the request flows
+/// to the workflow handler with the caller already authorised.
+#[cfg(feature = "auth")]
+async fn workflow_gate_middleware<S: WorkflowStore + Clone + 'static>(
+    axum::extract::State(state): axum::extract::State<EngineState<S>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = request.uri().path();
+    if WORKFLOW_PUBLIC_PATHS
+        .iter()
+        .any(|p| path == *p || path.starts_with(&format!("{p}/")))
+    {
+        return next.run(request).await;
+    }
+
+    // Auth is on but no `AuthCtx` was composed at boot — this can
+    // happen for tests that build a no-auth engine. Fail closed; the
+    // engine binary's boot path always composes an AuthCtx when the
+    // auth module is enabled.
+    let Some(auth) = state.auth.as_ref() else {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "error": "service_unavailable",
+                "error_description": "auth not configured on this engine instance",
+            })),
+        )
+            .into_response();
+    };
+
+    let namespace = request
+        .uri()
+        .query()
+        .and_then(|q| {
+            url::form_urlencoded::parse(q.as_bytes())
+                .find(|(k, _)| k == "namespace")
+                .map(|(_, v)| v.into_owned())
+        })
+        .unwrap_or_else(|| "main".to_string());
+
+    let keys = crate::state::AdminApiKeys(Arc::clone(&state.admin_api_keys));
+    let headers = request.headers().clone();
+    if let Err(r) = assay_auth::gate::require_role_for(
+        &headers,
+        auth,
+        &keys,
+        "workflow",
+        &namespace,
+        "access",
+    )
+    .await
+    {
+        return *r;
+    }
+
+    next.run(request).await
+}
+
+#[cfg(feature = "auth")]
+use axum::response::IntoResponse;
+
 /// Bind a TCP listener on `bind_addr` and serve the composed app.
 pub async fn serve<S: WorkflowStore + Clone + 'static>(
     bind_addr: &str,
@@ -127,23 +228,23 @@ pub async fn serve<S: WorkflowStore + Clone + 'static>(
     Ok(())
 }
 
-/// Start a `WorkflowCtx` around the given store with Phase 3 defaults
-/// (no auth, binary version stamp).
+/// Start a `WorkflowCtx` around the given store. Authentication +
+/// authorization are no longer the workflow's concern — the engine
+/// wraps the workflow router with a gate middleware ([`build_app`])
+/// that handles all of that.
 pub fn build_workflow_ctx<S: WorkflowStore + 'static>(store: S) -> Arc<WorkflowCtx<S>> {
-    let ctx = WorkflowCtx::start(Arc::new(store))
-        .with_auth_mode(assay_workflow::auth_mode::AuthMode::no_auth())
-        .with_binary_version(env!("CARGO_PKG_VERSION"));
+    let ctx = WorkflowCtx::start(Arc::new(store)).with_binary_version(env!("CARGO_PKG_VERSION"));
     Arc::new(ctx)
 }
 
-/// Start a `WorkflowCtx` with the engine-events bus wired in so SSE +
-/// dispatch-wakeup can consume from it.
+/// Like [`build_workflow_ctx`] but also wires the engine-wide event
+/// bus into the workflow context so SSE + the dispatch-wakeup loop see
+/// state transitions.
 pub fn build_workflow_ctx_with_bus<S: WorkflowStore + 'static>(
     store: S,
     bus: Arc<dyn EngineEventBus>,
 ) -> Arc<WorkflowCtx<S>> {
     let ctx = WorkflowCtx::start(Arc::new(store))
-        .with_auth_mode(assay_workflow::auth_mode::AuthMode::no_auth())
         .with_binary_version(env!("CARGO_PKG_VERSION"))
         .with_event_bus(WorkflowEventBus::new(bus));
     Arc::new(ctx)

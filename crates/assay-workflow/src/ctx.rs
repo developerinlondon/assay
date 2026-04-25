@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::info;
 
-use crate::auth_mode::AuthMode;
 use crate::dispatch_recovery;
 use crate::events::{WorkflowBusEvent, WorkflowEventBus};
 use crate::health;
@@ -37,7 +36,6 @@ pub struct WorkflowCtx<S: WorkflowStore> {
     /// a no-op.
     pub(crate) bus: Option<WorkflowEventBus>,
     pub(crate) _bg: Arc<BackgroundTasks>,
-    pub auth_mode: AuthMode,
     /// Version of the containing binary (e.g. the `assay-lua` CLI) — set
     /// by embedders so `/api/v1/engine/workflow/version` reflects the user-facing
     /// binary, not this internal engine-crate version.
@@ -71,7 +69,6 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                 #[cfg(feature = "s3-archival")]
                 _archival,
             }),
-            auth_mode: AuthMode::default(),
             binary_version: None,
         }
     }
@@ -82,12 +79,6 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
     /// value so callers can chain.
     pub fn with_event_bus(mut self, bus: WorkflowEventBus) -> Self {
         self.bus = Some(bus);
-        self
-    }
-
-    /// Set the auth mode.
-    pub fn with_auth_mode(mut self, auth_mode: AuthMode) -> Self {
-        self.auth_mode = auth_mode;
         self
     }
 

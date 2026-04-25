@@ -34,7 +34,7 @@
 
 use axum::Router;
 use axum::extract::{FromRef, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
@@ -93,34 +93,22 @@ where
         .route("/admin/audit", get(audit_list))
 }
 
-/// Bearer-token check shared by every admin handler. Identical to
-/// [`crate::oidc_provider::admin::require_admin`] — duplicated locally
-/// so this module doesn't reach into another module's `pub(crate)`.
-// `Response` is ~272 bytes; box it so the success path keeps the
-// `Result<(), _>` small (every admin handler calls this on the hot
-// path). Callers unbox with `*r` before returning.
-fn require_admin(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<(), Box<Response>> {
-    if !keys.enabled() {
-        return Err(Box::new((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "admin disabled — no admin_api_keys configured"})),
-        )
-            .into_response()));
-    }
-    let presented = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer ")))
-        .map(str::trim)
-        .unwrap_or("");
-    if !keys.check(presented) {
-        return Err(Box::new((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "invalid admin token"})),
-        )
-            .into_response()));
-    }
-    Ok(())
+/// Auth + Zanzibar gate shared by every admin handler. Resolves a
+/// [`crate::gate::Caller`] from the request, then enforces the
+/// `auth#system#admin` role. Admin api-key callers are accepted as
+/// break-glass and bypass the Zanzibar lookup.
+///
+/// Returns the resolved caller on success — currently unused by these
+/// handlers but kept so future audit-log integration can reach for it.
+/// `Response` is ~272 bytes; the boxed error keeps the success path
+/// small (every admin handler calls this on the hot path). Callers
+/// unbox with `*r` before returning.
+async fn require_admin(
+    headers: &HeaderMap,
+    ctx: &AuthCtx,
+    keys: &AdminApiKeys,
+) -> Result<crate::gate::Caller, Box<Response>> {
+    crate::gate::require_role_for(headers, ctx, keys, "auth", "system", "admin").await
 }
 
 // =====================================================================
@@ -151,7 +139,7 @@ async fn list_users(
     headers: HeaderMap,
     Query(q): Query<ListUsersQuery>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
@@ -195,7 +183,7 @@ async fn create_user_handler(
     headers: HeaderMap,
     Json(body): Json<CreateUserBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let id = format!(
@@ -261,7 +249,7 @@ async fn get_user_detail(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let user = match ctx.users.get_user_by_id(&id).await {
@@ -321,7 +309,7 @@ async fn update_user_handler(
     Path(id): Path<String>,
     Json(body): Json<UpdateUserBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let mut user = match ctx.users.get_user_by_id(&id).await {
@@ -353,7 +341,7 @@ async fn delete_user_handler(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     match ctx.users.delete_user(&id).await {
@@ -382,7 +370,7 @@ async fn password_reset_handler(
     Path(id): Path<String>,
     Json(body): Json<PasswordResetBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     if ctx.users.get_user_by_id(&id).await.unwrap_or(None).is_none() {
@@ -439,7 +427,7 @@ async fn list_sessions(
     headers: HeaderMap,
     Query(q): Query<ListSessionsQuery>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
@@ -471,7 +459,7 @@ async fn revoke_session(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     match ctx.sessions.delete(&id).await {
@@ -496,7 +484,7 @@ async fn revoke_sessions_for_user(
     headers: HeaderMap,
     Path(user_id): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     match ctx.sessions.delete_for_user(&user_id).await {
@@ -520,7 +508,7 @@ async fn biscuit_info(
     State(keys): State<AdminApiKeys>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let kid = ctx.biscuit.active_kid();
@@ -536,7 +524,7 @@ async fn jwks_proxy(
     State(keys): State<AdminApiKeys>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     // The OIDC provider's JWKS endpoint already enumerates the active
@@ -569,7 +557,7 @@ async fn zanzibar_list_namespaces(
     State(keys): State<AdminApiKeys>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
@@ -595,7 +583,7 @@ async fn zanzibar_get_namespace(
     headers: HeaderMap,
     Path(name): Path<String>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
@@ -637,7 +625,7 @@ async fn zanzibar_write_tuple(
     headers: HeaderMap,
     Json(body): Json<TupleBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
@@ -664,7 +652,7 @@ async fn zanzibar_delete_tuple(
     headers: HeaderMap,
     Json(body): Json<TupleBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
@@ -713,7 +701,7 @@ async fn zanzibar_check_handler(
     headers: HeaderMap,
     Json(body): Json<CheckBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
@@ -776,7 +764,7 @@ async fn zanzibar_expand_handler(
     headers: HeaderMap,
     Json(body): Json<ExpandBody>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     #[cfg(feature = "auth-zanzibar")]
@@ -836,12 +824,12 @@ pub struct AuditResponse {
 }
 
 async fn audit_list(
-    State(_ctx): State<AuthCtx>,
+    State(ctx): State<AuthCtx>,
     State(keys): State<AdminApiKeys>,
     headers: HeaderMap,
     Query(q): Query<ListAuditQuery>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &keys) {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
@@ -906,22 +894,7 @@ fn random_bytes<const N: usize>() -> [u8; N] {
     buf
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn require_admin_rejects_when_disabled() {
-        let headers = HeaderMap::new();
-        let keys = AdminApiKeys::empty();
-        assert!(require_admin(&headers, &keys).is_err());
-    }
-
-    #[test]
-    fn require_admin_accepts_known_bearer() {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::AUTHORIZATION, "Bearer adm".parse().unwrap());
-        let keys = AdminApiKeys::from_keys(["adm"]);
-        assert!(require_admin(&headers, &keys).is_ok());
-    }
-}
+// Admin-gate behaviour is covered in `crate::gate::tests` and the
+// integration-test suite — the local `require_admin` is now a
+// one-line wrapper, so a per-handler test would duplicate gate.rs's
+// coverage without exercising new code paths.

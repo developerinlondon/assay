@@ -169,7 +169,7 @@ async fn list_modules<S: WorkflowStore + Clone + 'static>(
     State(s): State<EngineState<S>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &s.admin_api_keys) {
+    if let Err(r) = require_admin(&headers, &s).await {
         return *r;
     }
     let items = match list_module_records(&s.engine_config).await {
@@ -210,7 +210,7 @@ async fn toggle_module<S: WorkflowStore + Clone + 'static>(
     Path(name): Path<String>,
     body: Option<Json<ToggleBody>>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &s.admin_api_keys) {
+    if let Err(r) = require_admin(&headers, &s).await {
         return *r;
     }
     // Look up the current module row so we know what to flip to.
@@ -286,7 +286,7 @@ async fn list_instances<S: WorkflowStore + Clone + 'static>(
     headers: HeaderMap,
     Query(_q): Query<PageQuery>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &s.admin_api_keys) {
+    if let Err(r) = require_admin(&headers, &s).await {
         return *r;
     }
     let items = match list_instance_records(&s.engine_config).await {
@@ -352,7 +352,7 @@ async fn list_audit<S: WorkflowStore + Clone + 'static>(
     headers: HeaderMap,
     Query(q): Query<AuditQuery>,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &s.admin_api_keys) {
+    if let Err(r) = require_admin(&headers, &s).await {
         return *r;
     }
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
@@ -401,7 +401,7 @@ async fn get_config<S: WorkflowStore + Clone + 'static>(
     State(s): State<EngineState<S>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(r) = require_admin(&headers, &s.admin_api_keys) {
+    if let Err(r) = require_admin(&headers, &s).await {
         return *r;
     }
     let mut value = match serde_json::to_value(&*s.engine_config) {
@@ -479,7 +479,39 @@ fn redact_secrets(v: &mut Value) {
 //   helpers — admin auth
 // =====================================================================
 
-fn require_admin(headers: &HeaderMap, keys: &[String]) -> Result<(), Box<Response>> {
+/// Engine-core admin gate.
+///
+/// When the `auth` feature is on AND an [`AuthCtx`] is composed into
+/// the running state, dispatch to [`assay_auth::gate::require_role_for`]
+/// for `engine#core#admin`. Admin api-key callers bypass as
+/// break-glass; session/JWT callers go through Zanzibar.
+///
+/// Otherwise (no-auth builds or auth-feature-on-but-not-configured),
+/// fall back to the legacy admin api-key check so single-binary
+/// deployments without auth still work for ops scripts.
+async fn require_admin<S: WorkflowStore + Clone + 'static>(
+    headers: &HeaderMap,
+    state: &EngineState<S>,
+) -> Result<(), Box<Response>> {
+    #[cfg(feature = "auth")]
+    if let Some(auth) = state.auth.as_ref() {
+        let keys = crate::state::AdminApiKeys(std::sync::Arc::clone(&state.admin_api_keys));
+        return assay_auth::gate::require_role_for(
+            headers, auth, &keys, "engine", "core", "admin",
+        )
+        .await
+        .map(|_| ());
+    }
+    require_admin_api_key_only(headers, &state.admin_api_keys)
+}
+
+/// Legacy admin api-key check, preserved as the auth-disabled fallback
+/// for [`require_admin`]. Constant-time comparison against every
+/// configured key.
+fn require_admin_api_key_only(
+    headers: &HeaderMap,
+    keys: &[String],
+) -> Result<(), Box<Response>> {
     if keys.is_empty() {
         return Err(Box::new(
             (
@@ -783,26 +815,26 @@ mod tests {
     }
 
     #[test]
-    fn require_admin_locks_when_keys_empty() {
+    fn require_admin_api_key_only_locks_when_keys_empty() {
         let h = HeaderMap::new();
         let keys: Vec<String> = vec![];
-        assert!(require_admin(&h, &keys).is_err());
+        assert!(require_admin_api_key_only(&h, &keys).is_err());
     }
 
     #[test]
-    fn require_admin_accepts_known_bearer() {
+    fn require_admin_api_key_only_accepts_known_bearer() {
         let mut h = HeaderMap::new();
         h.insert(header::AUTHORIZATION, "Bearer abcd".parse().unwrap());
         let keys: Vec<String> = vec!["abcd".to_string()];
-        assert!(require_admin(&h, &keys).is_ok());
+        assert!(require_admin_api_key_only(&h, &keys).is_ok());
     }
 
     #[test]
-    fn require_admin_rejects_wrong_bearer() {
+    fn require_admin_api_key_only_rejects_wrong_bearer() {
         let mut h = HeaderMap::new();
         h.insert(header::AUTHORIZATION, "Bearer wrong".parse().unwrap());
         let keys: Vec<String> = vec!["abcd".to_string()];
-        assert!(require_admin(&h, &keys).is_err());
+        assert!(require_admin_api_key_only(&h, &keys).is_err());
     }
 
     #[test]

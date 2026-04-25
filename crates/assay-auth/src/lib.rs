@@ -95,6 +95,7 @@ pub mod error;
 pub mod admin;
 pub mod biscuit;
 pub mod ctx;
+pub mod gate;
 pub mod router;
 pub mod schema;
 pub mod state;
@@ -123,6 +124,7 @@ pub mod zanzibar;
 
 pub use ctx::AuthCtx;
 pub use error::{Error, Result};
+pub use gate::{Caller, CallerSource};
 pub use router::{engine_auth_router, oidc_spec_router, router};
 pub use schema::{MIGRATION_VERSION, MODULE_NAME};
 
