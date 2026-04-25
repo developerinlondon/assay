@@ -22,6 +22,14 @@ pub struct EngineConfig {
     /// are pruned hourly by the cleanup loop. Default 3 days.
     #[serde(default = "default_engine_events_ttl_secs")]
     pub engine_events_ttl_secs: u64,
+    /// Modules to flip from `enabled = FALSE` to `enabled = TRUE` on
+    /// first boot when they're compiled in. Empty by default — operators
+    /// of existing v0.1.2 deployments shouldn't get unexpected auth
+    /// migrations on upgrade. Local-dev convenience: set to
+    /// `["auth"]` in `engine.local.toml` to flip auth on without an
+    /// extra step.
+    #[serde(default)]
+    pub auto_enable_modules: Vec<String>,
 }
 
 fn default_engine_events_ttl_secs() -> u64 {

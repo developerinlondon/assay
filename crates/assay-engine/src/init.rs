@@ -33,14 +33,43 @@ use tracing::info;
 
 use crate::config::{BackendConfig, EngineConfig};
 
+/// One row to seed into `engine.modules` on first boot.
+/// `default_enabled = false` means operators must flip it to TRUE
+/// before its migrations run — used for opt-in modules like auth so
+/// existing v0.1.2 deployments don't get unexpected schema changes.
+#[derive(Debug, Clone)]
+pub struct BuiltinModule {
+    pub name: &'static str,
+    pub version: &'static str,
+    pub default_enabled: bool,
+}
+
 /// Built-in modules implied by the running build's compile-time features.
-/// Each tuple is `(name, version)`; on first boot these are upserted into
-/// `engine.modules` with `enabled = TRUE`.
-pub fn builtin_modules() -> Vec<(&'static str, &'static str)> {
-    // Workflow is always present today. Auth lands in v0.14.0 — when the
-    // `auth` Cargo feature is added here, gate it behind cfg!(feature =
-    // "auth") so a no-auth build doesn't seed an unused module row.
-    vec![("workflow", env!("CARGO_PKG_VERSION"))]
+///
+/// Workflow is always-on (the engine is currently the workflow runtime).
+/// Auth — when compiled in via the `auth` Cargo feature — seeds disabled
+/// so operators of existing v0.1.2 deployments don't get unexpected
+/// auth migrations on upgrade. Local dev flips this via
+/// `EngineConfig.auto_enable_modules = ["auth"]`.
+pub fn builtin_modules() -> Vec<BuiltinModule> {
+    // `mut` is only needed when auth (or any future opt-in module) is
+    // compiled in; cfg-attr the binding so a no-auth build doesn't trip
+    // the unused-mut lint.
+    #[cfg_attr(not(feature = "auth"), allow(unused_mut))]
+    let mut modules = vec![BuiltinModule {
+        name: "workflow",
+        version: env!("CARGO_PKG_VERSION"),
+        default_enabled: true,
+    }];
+    #[cfg(feature = "auth")]
+    {
+        modules.push(BuiltinModule {
+            name: "auth",
+            version: env!("CARGO_PKG_VERSION"),
+            default_enabled: false,
+        });
+    }
+    modules
 }
 
 /// Sweep interval for the stale-instance cleanup task. Removes
@@ -81,7 +110,7 @@ impl EngineBoot {
         match cfg.backend.clone() {
             #[cfg(feature = "backend-postgres")]
             BackendConfig::Postgres { url } => {
-                let boot = pg_boot(&url).await?;
+                let boot = pg_boot(&url, &cfg.auto_enable_modules).await?;
                 Ok(EngineBoot::Postgres(boot))
             }
             #[cfg(feature = "backend-sqlite")]
@@ -90,7 +119,7 @@ impl EngineBoot {
                     .backend
                     .sqlite_data_dir()
                     .expect("sqlite backend yields data_dir");
-                let boot = sqlite_boot(&data_dir).await?;
+                let boot = sqlite_boot(&data_dir, &cfg.auto_enable_modules).await?;
                 Ok(EngineBoot::Sqlite(boot))
             }
             #[allow(unreachable_patterns)]
@@ -118,7 +147,7 @@ impl EngineBoot {
 }
 
 #[cfg(feature = "backend-postgres")]
-async fn pg_boot(url: &str) -> anyhow::Result<PgBoot> {
+async fn pg_boot(url: &str, auto_enable: &[String]) -> anyhow::Result<PgBoot> {
     use assay_domain::engine::PgEngineSchema;
     use assay_domain::events::PgEngineEventBus;
     use sqlx::PgPool;
@@ -135,7 +164,7 @@ async fn pg_boot(url: &str) -> anyhow::Result<PgBoot> {
         .map_err(|e| anyhow::anyhow!("engine schema migrate (pg): {e}"))?;
     record_engine_migration_pg(&pool, "engine", 1).await?;
 
-    let modules = read_or_seed_modules_pg(&schema).await?;
+    let modules = read_or_seed_modules_pg(&schema, auto_enable).await?;
 
     // Per-module schema setup. The workflow module's actual DDL still
     // runs inside `PostgresStore::migrate` when the engine binary builds
@@ -149,6 +178,20 @@ async fn pg_boot(url: &str) -> anyhow::Result<PgBoot> {
             .await
             .map_err(|e| anyhow::anyhow!("create schema {name}: {e}"))?;
         record_engine_migration_pg(&pool, name, 1).await?;
+    }
+
+    // Auth module schema migration. Compile-time `auth` feature controls
+    // whether the code is *linked*; runtime `engine.modules` row controls
+    // whether it's *active*. The schema migration only runs when both
+    // hold — so a no-auth build never touches `auth.*` and an auth build
+    // with `engine.modules.auth.enabled = FALSE` doesn't either.
+    #[cfg(feature = "auth")]
+    {
+        if modules.iter().any(|m| m == "auth") {
+            assay_auth::schema::migrate_postgres(&pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("auth schema migrate (pg): {e}"))?;
+        }
     }
 
     let bus: Arc<dyn EngineEventBus> = Arc::new(
@@ -175,24 +218,37 @@ async fn pg_boot(url: &str) -> anyhow::Result<PgBoot> {
 #[cfg(feature = "backend-postgres")]
 async fn read_or_seed_modules_pg(
     schema: &assay_domain::engine::PgEngineSchema,
+    auto_enable: &[String],
 ) -> anyhow::Result<Vec<String>> {
-    let mut existing = schema
+    let existing = schema
         .list_modules()
         .await
         .map_err(|e| anyhow::anyhow!("list engine.modules (pg): {e}"))?;
-    if existing.is_empty() {
-        for (name, version) in builtin_modules() {
-            schema
-                .upsert_module(name, Some(version), true)
-                .await
-                .map_err(|e| anyhow::anyhow!("seed engine.modules row {name}: {e}"))?;
+    let known: std::collections::HashSet<String> =
+        existing.iter().map(|m| m.name.clone()).collect();
+
+    // Seed any compile-time module that isn't already in engine.modules.
+    // Each module's `default_enabled` is honoured unless the operator
+    // explicitly listed it in `auto_enable_modules` — that override
+    // exists so local-dev configs can flip auth on without an extra
+    // setup step.
+    for module in builtin_modules() {
+        if known.contains(module.name) {
+            continue;
         }
-        existing = schema
-            .list_modules()
+        let enabled = module.default_enabled
+            || auto_enable.iter().any(|n| n == module.name);
+        schema
+            .upsert_module(module.name, Some(module.version), enabled)
             .await
-            .map_err(|e| anyhow::anyhow!("re-list engine.modules (pg): {e}"))?;
+            .map_err(|e| anyhow::anyhow!("seed engine.modules row {}: {e}", module.name))?;
     }
-    Ok(existing
+
+    let final_list = schema
+        .list_modules()
+        .await
+        .map_err(|e| anyhow::anyhow!("re-list engine.modules (pg): {e}"))?;
+    Ok(final_list
         .into_iter()
         .filter(|m| m.enabled)
         .map(|m| m.name)
@@ -242,7 +298,7 @@ fn spawn_pg_instance_lifecycle(pool: sqlx::PgPool, id: uuid::Uuid) {
 }
 
 #[cfg(feature = "backend-sqlite")]
-async fn sqlite_boot(data_dir: &str) -> anyhow::Result<SqliteBoot> {
+async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<SqliteBoot> {
     use assay_domain::engine::SqliteEngineSchema;
     use assay_domain::events::SqliteEngineEventBus;
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -262,6 +318,11 @@ async fn sqlite_boot(data_dir: &str) -> anyhow::Result<SqliteBoot> {
 
     let engine_attach = sqlite_attach_uri(data_dir, "engine", in_memory);
     let workflow_attach = sqlite_attach_uri(data_dir, "workflow", in_memory);
+    // Compile-time-gated. Only built (and only ATTACHed) when the auth
+    // feature is on. Runtime `engine.modules` enablement is checked
+    // *after* the pool opens — see the auth migrate block below.
+    #[cfg(feature = "auth")]
+    let auth_attach = sqlite_attach_uri(data_dir, "auth", in_memory);
 
     info!(
         target: "assay-engine",
@@ -276,6 +337,8 @@ async fn sqlite_boot(data_dir: &str) -> anyhow::Result<SqliteBoot> {
         .after_connect(move |conn, _meta| {
             let engine_attach = engine_attach.clone();
             let workflow_attach = workflow_attach.clone();
+            #[cfg(feature = "auth")]
+            let auth_attach = auth_attach.clone();
             Box::pin(async move {
                 use sqlx::Executor;
                 conn.execute(
@@ -284,6 +347,15 @@ async fn sqlite_boot(data_dir: &str) -> anyhow::Result<SqliteBoot> {
                 .await?;
                 conn.execute(
                     format!("ATTACH DATABASE '{workflow_attach}' AS workflow").as_str(),
+                )
+                .await?;
+                // Always-attach auth.db (when auth feature is compiled).
+                // The schema migration only runs when the runtime
+                // `engine.modules.auth.enabled` is TRUE; an unused
+                // attached database is a cheap idle file.
+                #[cfg(feature = "auth")]
+                conn.execute(
+                    format!("ATTACH DATABASE '{auth_attach}' AS auth").as_str(),
                 )
                 .await?;
                 Ok(())
@@ -300,9 +372,21 @@ async fn sqlite_boot(data_dir: &str) -> anyhow::Result<SqliteBoot> {
         .map_err(|e| anyhow::anyhow!("engine schema migrate (sqlite): {e}"))?;
     record_engine_migration_sqlite(&pool, "engine", 1).await?;
 
-    let modules = read_or_seed_modules_sqlite(&schema).await?;
+    let modules = read_or_seed_modules_sqlite(&schema, auto_enable).await?;
     for name in &modules {
         record_engine_migration_sqlite(&pool, name, 1).await?;
+    }
+
+    // Auth module migration. Mirrors the PG path: only runs when the
+    // `auth` feature is compiled in AND `engine.modules.auth.enabled`
+    // is TRUE. The ATTACH already happened on connect.
+    #[cfg(feature = "auth")]
+    {
+        if modules.iter().any(|m| m == "auth") {
+            assay_auth::schema::migrate_sqlite(&pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("auth schema migrate (sqlite): {e}"))?;
+        }
     }
 
     let bus: Arc<dyn EngineEventBus> = Arc::new(
@@ -349,24 +433,35 @@ fn sqlite_attach_uri(data_dir: &str, module: &str, in_memory: bool) -> String {
 #[cfg(feature = "backend-sqlite")]
 async fn read_or_seed_modules_sqlite(
     schema: &assay_domain::engine::SqliteEngineSchema,
+    auto_enable: &[String],
 ) -> anyhow::Result<Vec<String>> {
-    let mut existing = schema
+    let existing = schema
         .list_modules()
         .await
         .map_err(|e| anyhow::anyhow!("list engine.modules (sqlite): {e}"))?;
-    if existing.is_empty() {
-        for (name, version) in builtin_modules() {
-            schema
-                .upsert_module(name, Some(version), true)
-                .await
-                .map_err(|e| anyhow::anyhow!("seed engine.modules row {name}: {e}"))?;
+    let known: std::collections::HashSet<String> =
+        existing.iter().map(|m| m.name.clone()).collect();
+
+    // Same per-module insert pattern as the PG path: skip rows that
+    // already exist, honour `default_enabled` unless the operator
+    // explicitly auto-enabled the module.
+    for module in builtin_modules() {
+        if known.contains(module.name) {
+            continue;
         }
-        existing = schema
-            .list_modules()
+        let enabled = module.default_enabled
+            || auto_enable.iter().any(|n| n == module.name);
+        schema
+            .upsert_module(module.name, Some(module.version), enabled)
             .await
-            .map_err(|e| anyhow::anyhow!("re-list engine.modules (sqlite): {e}"))?;
+            .map_err(|e| anyhow::anyhow!("seed engine.modules row {}: {e}", module.name))?;
     }
-    Ok(existing
+
+    let final_list = schema
+        .list_modules()
+        .await
+        .map_err(|e| anyhow::anyhow!("re-list engine.modules (sqlite): {e}"))?;
+    Ok(final_list
         .into_iter()
         .filter(|m| m.enabled)
         .map(|m| m.name)
@@ -404,4 +499,69 @@ fn spawn_sqlite_instance_lifecycle(pool: sqlx::SqlitePool, id: uuid::Uuid) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Default boot keeps auth disabled — ensures existing v0.1.2
+    /// deployments don't get unexpected auth migrations on upgrade.
+    #[cfg(all(feature = "backend-sqlite", feature = "auth"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn sqlite_boot_default_does_not_run_auth_migration() {
+        let boot = sqlite_boot(":memory:", &[]).await.expect("boot");
+        // Auth row exists but disabled — so it's not in the active modules list.
+        assert!(
+            !boot.modules.iter().any(|m| m == "auth"),
+            "auth must NOT be in active modules by default; got {:?}",
+            boot.modules
+        );
+        // engine.migrations should NOT carry an auth row yet.
+        let auth_row: Option<(String,)> = sqlx::query_as(
+            "SELECT module FROM engine.migrations WHERE module = 'auth'",
+        )
+        .fetch_optional(&boot.pool)
+        .await
+        .expect("query engine.migrations");
+        assert!(
+            auth_row.is_none(),
+            "engine.migrations should not have an auth row when auth is disabled"
+        );
+    }
+
+    /// `auto_enable_modules = ["auth"]` flips the seed row to TRUE on
+    /// first boot AND triggers the auth schema migration. Recorded under
+    /// `module = 'auth'` in `engine.migrations`.
+    #[cfg(all(feature = "backend-sqlite", feature = "auth"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn sqlite_boot_auto_enable_runs_auth_migration() {
+        let boot = sqlite_boot(":memory:", &["auth".to_string()])
+            .await
+            .expect("boot");
+        assert!(
+            boot.modules.iter().any(|m| m == "auth"),
+            "auth must be in active modules when auto-enabled; got {:?}",
+            boot.modules
+        );
+        // Auth migration recorded.
+        let auth_row: Option<(String,)> = sqlx::query_as(
+            "SELECT module FROM engine.migrations WHERE module = 'auth'",
+        )
+        .fetch_optional(&boot.pool)
+        .await
+        .expect("query engine.migrations");
+        assert!(
+            auth_row.is_some(),
+            "engine.migrations should have an auth row after auto-enabled boot"
+        );
+        // auth.users table should exist (proves migrate_sqlite ran against
+        // the ATTACHed auth db).
+        let user_count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM auth.users")
+                .fetch_one(&boot.pool)
+                .await
+                .expect("count auth.users");
+        assert_eq!(user_count.0, 0);
+    }
 }
