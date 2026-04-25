@@ -212,6 +212,16 @@ async fn pg_boot(url: &str, auto_enable: &[String]) -> anyhow::Result<PgBoot> {
             let _ = assay_auth::biscuit::load_or_init_postgres(&pool)
                 .await
                 .map_err(|e| anyhow::anyhow!("biscuit root key bootstrap (pg): {e}"))?;
+            // Phase 7: smoke-touch the OIDC provider tables (V4) so a
+            // missing migration / permissions issue surfaces at boot
+            // rather than first request. Construction of the actual
+            // `OidcProviderConfig` (and `AuthCtx::with_oidc_provider`)
+            // lands in phase 8 alongside the HTTP handler wiring; this
+            // probe just confirms the V4 tables exist + are readable.
+            sqlx::query("SELECT COUNT(*) FROM auth.oidc_clients")
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("oidc provider tables (pg): {e}"))?;
         }
     }
 
@@ -417,6 +427,13 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
             let _ = assay_auth::biscuit::load_or_init_sqlite(&pool)
                 .await
                 .map_err(|e| anyhow::anyhow!("biscuit root key bootstrap (sqlite): {e}"))?;
+            // Phase 7: smoke-touch the OIDC provider tables (V4) — same
+            // rationale as the PG path. Construction of the actual
+            // `OidcProviderConfig` happens in phase 8.
+            sqlx::query("SELECT COUNT(*) FROM auth.oidc_clients")
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("oidc provider tables (sqlite): {e}"))?;
         }
     }
 

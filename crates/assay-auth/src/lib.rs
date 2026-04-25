@@ -32,6 +32,9 @@ pub mod jwt;
 #[cfg(feature = "auth-oidc")]
 pub mod oidc;
 
+#[cfg(feature = "auth-oidc-provider")]
+pub mod oidc_provider;
+
 #[cfg(feature = "auth-passkey")]
 pub mod passkey;
 

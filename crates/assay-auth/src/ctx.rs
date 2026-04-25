@@ -15,6 +15,8 @@ use crate::store::{SessionStore, UserStore};
 use crate::jwt::JwtConfig;
 #[cfg(feature = "auth-oidc")]
 use crate::oidc::OidcRegistry;
+#[cfg(feature = "auth-oidc-provider")]
+use crate::oidc_provider::OidcProviderConfig;
 #[cfg(feature = "auth-passkey")]
 use crate::passkey::PasskeyManager;
 #[cfg(feature = "auth-zanzibar")]
@@ -56,6 +58,13 @@ pub struct AuthCtx {
     /// CTE walk, expand, lookup_*) lives behind it.
     #[cfg(feature = "auth-zanzibar")]
     pub zanzibar: Option<Arc<dyn ZanzibarStore>>,
+    /// Full OIDC provider — discovery, JWKS, /authorize, /token,
+    /// /userinfo, /revoke, /introspect, federation. Optional because a
+    /// deployment may use assay-engine purely as an OIDC client; engine
+    /// boot constructs the config once the V4 migration has run and
+    /// the upstream provider rows are loaded into the registry.
+    #[cfg(feature = "auth-oidc-provider")]
+    pub oidc_provider: Option<OidcProviderConfig>,
 }
 
 impl AuthCtx {
@@ -79,6 +88,8 @@ impl AuthCtx {
             passkeys: None,
             #[cfg(feature = "auth-zanzibar")]
             zanzibar: None,
+            #[cfg(feature = "auth-oidc-provider")]
+            oidc_provider: None,
         }
     }
 
@@ -124,6 +135,18 @@ impl AuthCtx {
     #[cfg(feature = "auth-zanzibar")]
     pub fn with_zanzibar(mut self, zanzibar: Arc<dyn ZanzibarStore>) -> Self {
         self.zanzibar = Some(zanzibar);
+        self
+    }
+
+    /// Replace the OIDC provider configuration. Engine boot constructs
+    /// the appropriate stores (PG / SQLite) after the V4 auth schema
+    /// migration runs; see `crates/assay-engine/src/init.rs`. Phase 7
+    /// only wires the builder + the migrations + the placeholder
+    /// router; phase 8 weaves the resolved AuthCtx into the actual
+    /// `/authorize` and `/token` HTTP handlers.
+    #[cfg(feature = "auth-oidc-provider")]
+    pub fn with_oidc_provider(mut self, oidc_provider: OidcProviderConfig) -> Self {
+        self.oidc_provider = Some(oidc_provider);
         self
     }
 }

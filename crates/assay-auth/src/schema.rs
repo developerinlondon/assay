@@ -48,7 +48,13 @@ pub const MODULE_NAME: &str = "auth";
 /// V3 (phase 6): adds `auth.zanzibar_namespaces` + `auth.zanzibar_tuples`
 ///               for ReBAC. Recursive-CTE walk + reverse index for
 ///               Keto/SpiceDB-equivalent permission checks.
-pub const MIGRATION_VERSION: i32 = 3;
+/// V4 (phase 7): adds the OIDC provider tables — `auth.oidc_clients`,
+///               `auth.upstream_providers`, `auth.oidc_authorization_codes`,
+///               `auth.oidc_refresh_tokens`, `auth.oidc_sessions`,
+///               `auth.oidc_consents`, and `auth.oidc_upstream_states`.
+///               Together they make `assay-engine` a conformant OIDC
+///               provider (Hydra equivalent).
+pub const MIGRATION_VERSION: i32 = 4;
 
 /// Postgres DDL for the auth schema, version 1.
 ///
@@ -181,6 +187,116 @@ CREATE INDEX IF NOT EXISTS idx_auth_zanzibar_tuples_rev
 CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_zanzibar_tuples_direct
     ON auth.zanzibar_tuples (object_type, object_id, relation, subject_type, subject_id)
     WHERE subject_rel IS NULL;
+"#;
+
+/// Postgres DDL for the auth schema, version 4 — full OIDC provider.
+///
+/// Seven tables together implement a conformant Authorization-Code +
+/// PKCE OIDC provider with refresh tokens, RP-initiated logout via SSO
+/// session registry, per-(user, client) consent records, and upstream
+/// federation state for the assay-as-RP path:
+///
+/// - `auth.oidc_clients` — registered consumer apps (client_id +
+///   secret hash + redirect URIs + auth method + default scopes +
+///   consent toggle).
+/// - `auth.upstream_providers` — federated identity providers
+///   (Google / Apple / GitHub / any OIDC IdP); used by the
+///   `auth.oidc.OidcRegistry` to seed itself on boot.
+/// - `auth.oidc_authorization_codes` — single-use codes issued at the
+///   end of `/authorize`; consumed at `/token` exchange.
+/// - `auth.oidc_refresh_tokens` — long-lived bearer tokens stored as
+///   SHA-256 hashes (the bearer never round-trips the DB in plaintext).
+/// - `auth.oidc_sessions` — SSO session registry; one row per issued
+///   id_token. Carries the `sid` claim so `/logout` can fan out
+///   back-channel logout to every consumer.
+/// - `auth.oidc_consents` — per-(user, client) consent grants so the
+///   consent screen only shows on first authorize for a given pair.
+/// - `auth.oidc_upstream_states` — short-lived per-login rows for the
+///   federation flow (state + nonce + pkce_verifier + return_to).
+pub const PG_DDL_V4: &str = r#"
+CREATE TABLE IF NOT EXISTS auth.oidc_clients (
+    client_id                       TEXT PRIMARY KEY,
+    client_secret_hash              TEXT,
+    redirect_uris                   TEXT NOT NULL,
+    name                            TEXT NOT NULL,
+    logo_url                        TEXT,
+    token_endpoint_auth_method      TEXT NOT NULL,
+    default_scopes                  TEXT NOT NULL,
+    require_consent                 BOOLEAN NOT NULL DEFAULT TRUE,
+    grant_types                     TEXT NOT NULL DEFAULT '["authorization_code","refresh_token"]',
+    response_types                  TEXT NOT NULL DEFAULT '["code"]',
+    pkce_required                   BOOLEAN NOT NULL DEFAULT TRUE,
+    backchannel_logout_uri          TEXT,
+    created_at                      DOUBLE PRECISION NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth.upstream_providers (
+    slug            TEXT PRIMARY KEY,
+    issuer          TEXT NOT NULL,
+    client_id       TEXT NOT NULL,
+    client_secret   TEXT NOT NULL,
+    display_name    TEXT NOT NULL,
+    icon_url        TEXT,
+    enabled         BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS auth.oidc_authorization_codes (
+    code                    TEXT PRIMARY KEY,
+    client_id               TEXT NOT NULL,
+    user_id                 TEXT NOT NULL,
+    redirect_uri            TEXT NOT NULL,
+    scopes                  TEXT NOT NULL,
+    code_challenge          TEXT NOT NULL,
+    code_challenge_method   TEXT NOT NULL,
+    nonce                   TEXT,
+    state                   TEXT,
+    issued_at               DOUBLE PRECISION NOT NULL,
+    expires_at              DOUBLE PRECISION NOT NULL,
+    consumed                BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS auth.oidc_refresh_tokens (
+    token_hash      TEXT PRIMARY KEY,
+    client_id       TEXT NOT NULL,
+    user_id         TEXT NOT NULL,
+    scopes          TEXT NOT NULL,
+    issued_at       DOUBLE PRECISION NOT NULL,
+    expires_at      DOUBLE PRECISION NOT NULL,
+    revoked         BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_auth_oidc_refresh_user
+    ON auth.oidc_refresh_tokens (user_id);
+
+CREATE TABLE IF NOT EXISTS auth.oidc_sessions (
+    sid                     TEXT PRIMARY KEY,
+    user_id                 TEXT NOT NULL,
+    client_id               TEXT NOT NULL,
+    assay_session_id        TEXT,
+    issued_at               DOUBLE PRECISION NOT NULL,
+    backchannel_logout_uri  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_auth_oidc_sessions_user
+    ON auth.oidc_sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_oidc_sessions_assay
+    ON auth.oidc_sessions (assay_session_id);
+
+CREATE TABLE IF NOT EXISTS auth.oidc_consents (
+    user_id     TEXT NOT NULL,
+    client_id   TEXT NOT NULL,
+    scopes      TEXT NOT NULL,
+    granted_at  DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (user_id, client_id)
+);
+
+CREATE TABLE IF NOT EXISTS auth.oidc_upstream_states (
+    state           TEXT PRIMARY KEY,
+    provider_slug   TEXT NOT NULL,
+    nonce           TEXT NOT NULL,
+    pkce_verifier   TEXT NOT NULL,
+    return_to       TEXT,
+    created_at      DOUBLE PRECISION NOT NULL,
+    expires_at      DOUBLE PRECISION NOT NULL
+);
 "#;
 
 /// SQLite DDL for the auth schema, version 1.
@@ -343,6 +459,122 @@ pub const SQLITE_DDL_V3: &[(&str, &str)] = &[
     ),
 ];
 
+/// SQLite DDL for the auth schema, version 4 — full OIDC provider.
+///
+/// Mirrors [`PG_DDL_V4`] with `BOOLEAN` → `INTEGER` and `DOUBLE PRECISION`
+/// → `REAL`. JSON arrays (redirect_uris, default_scopes, scopes, …) ride
+/// in `TEXT` columns and round-trip via `serde_json` in the store layer
+/// — same convention `auth.zanzibar_namespaces` uses for `schema_json`.
+pub const SQLITE_DDL_V4: &[(&str, &str)] = &[
+    (
+        "oidc_clients",
+        "CREATE TABLE IF NOT EXISTS auth.oidc_clients (
+            client_id                       TEXT PRIMARY KEY,
+            client_secret_hash              TEXT,
+            redirect_uris                   TEXT NOT NULL,
+            name                            TEXT NOT NULL,
+            logo_url                        TEXT,
+            token_endpoint_auth_method      TEXT NOT NULL,
+            default_scopes                  TEXT NOT NULL,
+            require_consent                 INTEGER NOT NULL DEFAULT 1,
+            grant_types                     TEXT NOT NULL DEFAULT '[\"authorization_code\",\"refresh_token\"]',
+            response_types                  TEXT NOT NULL DEFAULT '[\"code\"]',
+            pkce_required                   INTEGER NOT NULL DEFAULT 1,
+            backchannel_logout_uri          TEXT,
+            created_at                      REAL NOT NULL
+        )",
+    ),
+    (
+        "upstream_providers",
+        "CREATE TABLE IF NOT EXISTS auth.upstream_providers (
+            slug            TEXT PRIMARY KEY,
+            issuer          TEXT NOT NULL,
+            client_id       TEXT NOT NULL,
+            client_secret   TEXT NOT NULL,
+            display_name    TEXT NOT NULL,
+            icon_url        TEXT,
+            enabled         INTEGER NOT NULL DEFAULT 1
+        )",
+    ),
+    (
+        "oidc_authorization_codes",
+        "CREATE TABLE IF NOT EXISTS auth.oidc_authorization_codes (
+            code                    TEXT PRIMARY KEY,
+            client_id               TEXT NOT NULL,
+            user_id                 TEXT NOT NULL,
+            redirect_uri            TEXT NOT NULL,
+            scopes                  TEXT NOT NULL,
+            code_challenge          TEXT NOT NULL,
+            code_challenge_method   TEXT NOT NULL,
+            nonce                   TEXT,
+            state                   TEXT,
+            issued_at               REAL NOT NULL,
+            expires_at              REAL NOT NULL,
+            consumed                INTEGER NOT NULL DEFAULT 0
+        )",
+    ),
+    (
+        "oidc_refresh_tokens",
+        "CREATE TABLE IF NOT EXISTS auth.oidc_refresh_tokens (
+            token_hash      TEXT PRIMARY KEY,
+            client_id       TEXT NOT NULL,
+            user_id         TEXT NOT NULL,
+            scopes          TEXT NOT NULL,
+            issued_at       REAL NOT NULL,
+            expires_at      REAL NOT NULL,
+            revoked         INTEGER NOT NULL DEFAULT 0
+        )",
+    ),
+    (
+        "idx_oidc_refresh_user",
+        "CREATE INDEX IF NOT EXISTS auth.idx_auth_oidc_refresh_user \
+         ON oidc_refresh_tokens (user_id)",
+    ),
+    (
+        "oidc_sessions",
+        "CREATE TABLE IF NOT EXISTS auth.oidc_sessions (
+            sid                     TEXT PRIMARY KEY,
+            user_id                 TEXT NOT NULL,
+            client_id               TEXT NOT NULL,
+            assay_session_id        TEXT,
+            issued_at               REAL NOT NULL,
+            backchannel_logout_uri  TEXT
+        )",
+    ),
+    (
+        "idx_oidc_sessions_user",
+        "CREATE INDEX IF NOT EXISTS auth.idx_auth_oidc_sessions_user \
+         ON oidc_sessions (user_id)",
+    ),
+    (
+        "idx_oidc_sessions_assay",
+        "CREATE INDEX IF NOT EXISTS auth.idx_auth_oidc_sessions_assay \
+         ON oidc_sessions (assay_session_id)",
+    ),
+    (
+        "oidc_consents",
+        "CREATE TABLE IF NOT EXISTS auth.oidc_consents (
+            user_id     TEXT NOT NULL,
+            client_id   TEXT NOT NULL,
+            scopes      TEXT NOT NULL,
+            granted_at  REAL NOT NULL,
+            PRIMARY KEY (user_id, client_id)
+        )",
+    ),
+    (
+        "oidc_upstream_states",
+        "CREATE TABLE IF NOT EXISTS auth.oidc_upstream_states (
+            state           TEXT PRIMARY KEY,
+            provider_slug   TEXT NOT NULL,
+            nonce           TEXT NOT NULL,
+            pkce_verifier   TEXT NOT NULL,
+            return_to       TEXT,
+            created_at      REAL NOT NULL,
+            expires_at      REAL NOT NULL
+        )",
+    ),
+];
+
 /// Postgres migration runner.
 ///
 /// Applies every DDL pack up to and including the current
@@ -353,7 +585,7 @@ pub const SQLITE_DDL_V3: &[(&str, &str)] = &[
 #[cfg(feature = "backend-postgres")]
 pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     use anyhow::Context;
-    for ddl in [PG_DDL_V1, PG_DDL_V2, PG_DDL_V3] {
+    for ddl in [PG_DDL_V1, PG_DDL_V2, PG_DDL_V3, PG_DDL_V4] {
         for stmt in split_pg_statements(ddl) {
             sqlx::query(&stmt)
                 .execute(pool)
@@ -383,7 +615,7 @@ pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
 #[cfg(feature = "backend-sqlite")]
 pub async fn migrate_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     use anyhow::Context;
-    for pack in [SQLITE_DDL_V1, SQLITE_DDL_V2, SQLITE_DDL_V3] {
+    for pack in [SQLITE_DDL_V1, SQLITE_DDL_V2, SQLITE_DDL_V3, SQLITE_DDL_V4] {
         for (label, stmt) in pack {
             sqlx::query(stmt)
                 .execute(pool)
