@@ -191,6 +191,13 @@ async fn pg_boot(url: &str, auto_enable: &[String]) -> anyhow::Result<PgBoot> {
     // the AuthCtx the binary builds carries a stable root key.
     // [`assay_auth::biscuit::load_or_init_postgres`] is idempotent —
     // restart with an existing row reuses it, fresh DB generates one.
+    //
+    // Phase 6: `migrate_postgres` now also creates `auth.zanzibar_*`
+    // (V3) — the recursive-CTE walk's tuple table + namespace cache.
+    // Full AuthCtx wiring (constructing the `PostgresZanzibarStore`
+    // and stashing it via `AuthCtx::with_zanzibar`) is deferred to
+    // phase 8 alongside HTTP route mounting; the migration here is
+    // what unblocks that composition.
     #[cfg(feature = "auth")]
     {
         if modules.iter().any(|m| m == "auth") {
@@ -397,6 +404,10 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
     //
     // Phase 5: same as PG — load-or-init the biscuit root key right
     // after migrations.
+    //
+    // Phase 6: `migrate_sqlite` also creates the V3 zanzibar tables
+    // (`auth.zanzibar_namespaces`, `auth.zanzibar_tuples`) so the
+    // SQLite ZanzibarStore is ready to construct in phase 8.
     #[cfg(feature = "auth")]
     {
         if modules.iter().any(|m| m == "auth") {

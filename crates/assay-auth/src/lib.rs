@@ -35,6 +35,9 @@ pub mod oidc;
 #[cfg(feature = "auth-passkey")]
 pub mod passkey;
 
+#[cfg(feature = "auth-zanzibar")]
+pub mod zanzibar;
+
 pub use ctx::AuthCtx;
 pub use error::{Error, Result};
 pub use router::router;

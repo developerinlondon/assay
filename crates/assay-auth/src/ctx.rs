@@ -17,6 +17,8 @@ use crate::jwt::JwtConfig;
 use crate::oidc::OidcRegistry;
 #[cfg(feature = "auth-passkey")]
 use crate::passkey::PasskeyManager;
+#[cfg(feature = "auth-zanzibar")]
+use crate::zanzibar::ZanzibarStore;
 
 #[derive(Clone)]
 pub struct AuthCtx {
@@ -47,7 +49,13 @@ pub struct AuthCtx {
     /// See [`crate::passkey::PasskeyManager`].
     #[cfg(feature = "auth-passkey")]
     pub passkeys: Option<PasskeyManager>,
-    // Phase 6 will add `zanzibar` store here.
+    /// Zanzibar / ReBAC permission store. Optional — engine boot wires
+    /// the appropriate backend (Postgres / SQLite) once the auth schema
+    /// migration has run. See [`crate::zanzibar::ZanzibarStore`] for
+    /// the trait surface; full Keto/SpiceDB feature parity (recursive
+    /// CTE walk, expand, lookup_*) lives behind it.
+    #[cfg(feature = "auth-zanzibar")]
+    pub zanzibar: Option<Arc<dyn ZanzibarStore>>,
 }
 
 impl AuthCtx {
@@ -69,6 +77,8 @@ impl AuthCtx {
             oidc: None,
             #[cfg(feature = "auth-passkey")]
             passkeys: None,
+            #[cfg(feature = "auth-zanzibar")]
+            zanzibar: None,
         }
     }
 
@@ -103,6 +113,17 @@ impl AuthCtx {
     /// first boot) and feeds the result here.
     pub fn with_biscuit(mut self, biscuit: BiscuitConfig) -> Self {
         self.biscuit = biscuit;
+        self
+    }
+
+    /// Replace the Zanzibar store. Engine boot constructs the
+    /// appropriate backend impl after the auth schema migration runs;
+    /// see `crates/assay-engine/src/init.rs`. Phase 6 only wires the
+    /// builder + the migration; full AuthCtx composition happens in
+    /// phase 8 alongside HTTP route mounting.
+    #[cfg(feature = "auth-zanzibar")]
+    pub fn with_zanzibar(mut self, zanzibar: Arc<dyn ZanzibarStore>) -> Self {
+        self.zanzibar = Some(zanzibar);
         self
     }
 }

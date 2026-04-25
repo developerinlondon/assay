@@ -45,7 +45,10 @@ pub const MODULE_NAME: &str = "auth";
 /// V1 (phase 4): users / sessions / passkeys / user_upstream / jwks_keys.
 /// V2 (phase 5): adds `auth.biscuit_root_keys` for the always-on
 ///               biscuit capability-token root key bootstrap.
-pub const MIGRATION_VERSION: i32 = 2;
+/// V3 (phase 6): adds `auth.zanzibar_namespaces` + `auth.zanzibar_tuples`
+///               for ReBAC. Recursive-CTE walk + reverse index for
+///               Keto/SpiceDB-equivalent permission checks.
+pub const MIGRATION_VERSION: i32 = 3;
 
 /// Postgres DDL for the auth schema, version 1.
 ///
@@ -133,6 +136,51 @@ CREATE TABLE IF NOT EXISTS auth.biscuit_root_keys (
 );
 CREATE INDEX IF NOT EXISTS idx_auth_biscuit_root_keys_active
     ON auth.biscuit_root_keys (rotated_at) WHERE rotated_at IS NULL;
+"#;
+
+/// Postgres DDL for the auth schema, version 3 — Zanzibar / ReBAC.
+///
+/// Two tables:
+///
+/// - `auth.zanzibar_namespaces` — JSON-serialised
+///   [`crate::zanzibar::NamespaceSchema`], one row per namespace
+///   (`document`, `group`, `user`, …). The schema parser writes here on
+///   `define_namespace`.
+/// - `auth.zanzibar_tuples` — the relation-tuple table, the canonical
+///   Zanzibar/Keto data model. Composite PK supports the forward
+///   `(object, relation, *)` index for `check`; the auxiliary
+///   `idx_auth_zanzibar_tuples_rev` covers
+///   `(subject_type, subject_id, relation)` for reverse lookups
+///   (`lookup_resources`, expand-from-subject paths).
+///
+/// `subject_rel` is `TEXT NULL` because direct subjects (e.g. a user)
+/// have no relation, while userset subjects (e.g. `family:foo#member`)
+/// carry one. PG treats NULL as distinct in PK comparisons, so the PK
+/// alone is *not* a uniqueness guarantee for direct tuples — paired
+/// with a partial unique index on the NULL case to get the same
+/// dedup behaviour the SpiceDB schema mandates.
+pub const PG_DDL_V3: &str = r#"
+CREATE TABLE IF NOT EXISTS auth.zanzibar_namespaces (
+    name        TEXT PRIMARY KEY,
+    schema_json JSONB NOT NULL,
+    updated_at  DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())
+);
+
+CREATE TABLE IF NOT EXISTS auth.zanzibar_tuples (
+    object_type  TEXT NOT NULL,
+    object_id    TEXT NOT NULL,
+    relation     TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    subject_id   TEXT NOT NULL,
+    subject_rel  TEXT,
+    created_at   DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
+    PRIMARY KEY (object_type, object_id, relation, subject_type, subject_id, subject_rel)
+);
+CREATE INDEX IF NOT EXISTS idx_auth_zanzibar_tuples_rev
+    ON auth.zanzibar_tuples (subject_type, subject_id, relation);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_zanzibar_tuples_direct
+    ON auth.zanzibar_tuples (object_type, object_id, relation, subject_type, subject_id)
+    WHERE subject_rel IS NULL;
 "#;
 
 /// SQLite DDL for the auth schema, version 1.
@@ -248,6 +296,53 @@ pub const SQLITE_DDL_V2: &[(&str, &str)] = &[
     ),
 ];
 
+/// SQLite DDL for the auth schema, version 3 — Zanzibar / ReBAC.
+///
+/// Mirrors [`PG_DDL_V3`] with `JSONB` → `TEXT` (caller round-trips
+/// via `serde_json`), `DOUBLE PRECISION` → `REAL`. SQLite's
+/// `default CURRENT_TIMESTAMP` returns a string, not a unix epoch
+/// double, so the SQLite store binds the timestamp explicitly on
+/// every insert (matches the rest of the auth schema's discipline).
+///
+/// Treats `subject_rel` exactly as PG does: NULL for direct subjects,
+/// some relation name for usersets. SQLite considers two NULL values
+/// distinct in `PRIMARY KEY` comparisons just like PG, so the partial
+/// unique index reproduces the same dedup semantics.
+pub const SQLITE_DDL_V3: &[(&str, &str)] = &[
+    (
+        "zanzibar_namespaces",
+        "CREATE TABLE IF NOT EXISTS auth.zanzibar_namespaces (
+            name        TEXT PRIMARY KEY,
+            schema_json TEXT NOT NULL,
+            updated_at  REAL NOT NULL
+        )",
+    ),
+    (
+        "zanzibar_tuples",
+        "CREATE TABLE IF NOT EXISTS auth.zanzibar_tuples (
+            object_type  TEXT NOT NULL,
+            object_id    TEXT NOT NULL,
+            relation     TEXT NOT NULL,
+            subject_type TEXT NOT NULL,
+            subject_id   TEXT NOT NULL,
+            subject_rel  TEXT,
+            created_at   REAL NOT NULL,
+            PRIMARY KEY (object_type, object_id, relation, subject_type, subject_id, subject_rel)
+        )",
+    ),
+    (
+        "idx_zanzibar_tuples_rev",
+        "CREATE INDEX IF NOT EXISTS auth.idx_auth_zanzibar_tuples_rev \
+         ON zanzibar_tuples (subject_type, subject_id, relation)",
+    ),
+    (
+        "uq_zanzibar_tuples_direct",
+        "CREATE UNIQUE INDEX IF NOT EXISTS auth.uq_auth_zanzibar_tuples_direct \
+         ON zanzibar_tuples (object_type, object_id, relation, subject_type, subject_id) \
+         WHERE subject_rel IS NULL",
+    ),
+];
+
 /// Postgres migration runner.
 ///
 /// Applies every DDL pack up to and including the current
@@ -258,7 +353,7 @@ pub const SQLITE_DDL_V2: &[(&str, &str)] = &[
 #[cfg(feature = "backend-postgres")]
 pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     use anyhow::Context;
-    for ddl in [PG_DDL_V1, PG_DDL_V2] {
+    for ddl in [PG_DDL_V1, PG_DDL_V2, PG_DDL_V3] {
         for stmt in split_pg_statements(ddl) {
             sqlx::query(&stmt)
                 .execute(pool)
@@ -288,7 +383,7 @@ pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
 #[cfg(feature = "backend-sqlite")]
 pub async fn migrate_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     use anyhow::Context;
-    for pack in [SQLITE_DDL_V1, SQLITE_DDL_V2] {
+    for pack in [SQLITE_DDL_V1, SQLITE_DDL_V2, SQLITE_DDL_V3] {
         for (label, stmt) in pack {
             sqlx::query(stmt)
                 .execute(pool)
