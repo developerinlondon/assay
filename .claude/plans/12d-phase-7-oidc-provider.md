@@ -7,14 +7,16 @@
 > **Source of truth for module rationale:** [11-engine-auth-modules.md](./11-engine-auth-modules.md)
 > § "Own IdP with upstream federation" (lines 90–129) and § "Scope — V1" (lines 22–49).
 
-## v0.1.2 alignment
+## v0.2.0 alignment
 
-All OIDC provider tables live in the `auth` schema (PG) / attached `auth` database (SQLite). The DDL
-in this plan is schema-qualified: `auth.oidc_clients`, `auth.upstream_providers`,
-`auth.oidc_authorization_codes`, `auth.oidc_refresh_tokens`, `auth.oidc_sessions`. Migrations are
+This plan is part of the umbrella **`assay-engine v0.2.0`** release. Product positioning: **full Ory
+replacement + IdP** — the OIDC provider here is the Hydra equivalent; build it to enterprise-grade
+conformance. All OIDC provider tables live in the `auth` schema (PG) / attached `auth` database
+(SQLite). The DDL in this plan is schema-qualified: `auth.oidc_clients`, `auth.upstream_providers`,
+`auth.oidc_authorization_codes`, `auth.oidc_refresh_tokens`, `auth.oidc_sessions`. Migrations
 tracked under `module = 'auth'` in the shared `engine.migrations` table. See
-[12c §"v0.1.2 alignment"](./12c-phase-4-6-auth-identity-zanzibar.md) for the full convention list
-and [14-v0.13.2-engine-schemas.md](./14-v0.13.2-engine-schemas.md) for the storage model rationale.
+[12c §"v0.2.0 alignment"](./12c-phase-4-6-auth-identity-zanzibar.md) for the full convention list
+(positioning + naming + biscuit-built-in + storage model + version table).
 
 **Phase 7 goal:** `assay-engine` is a conformant OIDC provider. Consumer applications authenticate
 against _this_ IdP using the OpenID Connect Core 1.0 authorization code flow with PKCE. Local users

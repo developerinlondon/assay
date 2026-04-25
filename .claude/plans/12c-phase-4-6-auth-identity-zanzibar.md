@@ -9,19 +9,36 @@
 > 11 explains _why_ each choice (Biscuit vs Macaroons, `openidconnect` vs hand-rolled, Zanzibar
 > backend selection, etc.).
 
-## v0.1.2 alignment (read first)
+## v0.2.0 alignment (read first)
 
-Plan 12 was drafted before assay-engine v0.1.2 introduced the schema/attach storage model
-([14-v0.13.2-engine-schemas.md](./14-v0.13.2-engine-schemas.md)). The DDL below is now
-schema-qualified — all auth tables live in the `auth` schema (PG) / attached `auth` database
-(SQLite, file `data/auth.db` by default). Carry these conventions through every task in this plan:
+**Product positioning (locked):** assay is a **full Temporal replacement for workflows + full Ory
+replacement for auth + IdP**. Every scope decision goes through that lens — not "what jeebon needs
+at family scale." Build features that a serious self-hosted Ory/Temporal alternative would ship out
+of the box.
+
+**Release naming (locked):** the umbrella release is `assay-engine v0.2.0`. Per-crate bumps:
+
+| Crate             | Current → Target                                |
+| ----------------- | ----------------------------------------------- |
+| `assay-engine`    | 0.1.1 → **0.2.0** ← headline release name       |
+| `assay-workflow`  | 0.2.1 → **0.3.0** (tracks `assay-domain` 0.2)   |
+| `assay-domain`    | 0.1.1 → **0.2.0** (engine module + new types)   |
+| `assay-auth`      | 0.1.0 → **0.2.0** (first real content release)  |
+| `assay-dashboard` | 0.1.0 → **0.2.0** (auth panes added)            |
+| `assay` (Lua)     | 0.13.1 → **0.14.0** (Lua wrappers for new auth) |
+
+Assay-engine v0.1.2 (the schema/attach refactor — first 5 commits of this branch) is rolled into the
+v0.2.0 release; no separate 0.1.2 tag.
+
+**Schema/attach storage model** (carries forward from v0.1.2 — see
+[14-v0.13.2-engine-schemas.md](./14-v0.13.2-engine-schemas.md)). All auth tables live in the `auth`
+schema (PG) / attached `auth` database (SQLite, file `data/auth.db` by default).
 
 - **Schema-qualified naming**: `auth.users`, `auth.sessions`, `auth.zanzibar_tuples` (plural),
   `auth.zanzibar_namespaces` (plural), `auth.passkeys`, `auth.user_upstream`, `auth.audit`,
-  `auth.jwks_keys`. No `_assay_` prefix.
+  `auth.jwks_keys`, `auth.biscuit_root_keys`. No `_assay_` prefix.
 - **Migration tracker**: one shared `engine.migrations` table
-  (`module TEXT, version INTEGER,
-  applied_at TIMESTAMPTZ`). Auth records its migrations under
+  (`module TEXT, version INTEGER, applied_at TIMESTAMPTZ`). Auth records its migrations under
   `module = 'auth'`. Replaces the per-module `_assay_auth_migrations` references in earlier drafts.
 - **Boot lifecycle**: schema/file is created at boot when `engine.modules` shows auth enabled
   (`SELECT enabled FROM engine.modules WHERE name = 'auth'`). Compile-time features still control
@@ -32,18 +49,22 @@ schema-qualified — all auth tables live in the `auth` schema (PG) / attached `
 - **Auth does NOT write to `engine.events`.** Auth is independent at the event level. If real-time
   dashboard visibility into auth activity is wanted, auth uses its own NOTIFY channel on
   `auth.audit` (or a small `auth.outbox` table introduced if needed).
-- **Biscuit (task 4.5) becomes opt-in**, not in the default `auth` meta-feature. Cargo flag
-  `auth-biscuit` exists but isn't pulled in by default. Saves ~2h in phase 4. Re-enable later if a
-  use case actually needs offline verification or attenuation. (jeebon's planned use cases — share
-  links, delegated upload, worker caps, cross-app delegation — are equivalently served by a
-  `share_links` table + scoped JWTs from `auth.jwt` + OAuth scopes from the OIDC provider in phase
-  7.)
+- **Biscuit is built-in, not optional.** Capability tokens with Datalog attenuation are a
+  fundamental foundation of assay's auth solution and a real differentiator vs Ory (Ory has nothing
+  equivalent). `biscuit-auth` is a non-optional dep; there is no `auth-biscuit` Cargo feature gate;
+  `crates/assay-auth/src/biscuit.rs` always compiles; `AuthCtx::biscuit:
+  BiscuitConfig` is a
+  required field; engine boot always loads or generates the root key from `auth.biscuit_root_keys`.
+  Same posture as session/JWT — fundamental, always-on.
 - **Atomic transactions across schemas/attached DBs are preserved** by the v0.1.2 model. Signup
   atomically inserts `auth.users` + `auth.passkeys` + initial `auth.zanzibar_tuples` in one
   transaction. Cross-module FKs (`workflow.workflows.created_by` REFERENCES `auth.users(id)`) work
   since both schemas live in one DB.
 - **Default SQLite path**: `./data/auth.db`. Configurable via `[backend].data_dir` in engine.toml.
-- **Prerequisite**: assay-engine v0.1.2 must ship before phase 4 starts.
+- **Prerequisite**: assay-engine v0.1.2 schema refactor (already committed as the first 5 commits on
+  `feature/v0.14.0-auth`).
+- **Task 5.3 — Lua wrappers** stays in scope and lands in phase 8 (or 8a), since it consumes the
+  HTTP endpoints phase 8 mounts. This is what justifies the `assay` (Lua) → 0.14.0 bump.
 
 **Phase 4 goal:** Auth foundations built — session cookie jar + CSRF, Argon2 password hashing, JWT
 issue/verify with JWKS rotation, Biscuit capability tokens. Each is a small, focused module in
