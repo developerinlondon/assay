@@ -15,6 +15,17 @@
 --- @quickref c.zanzibar:check(resource_type, resource_id, perm, subject_type, subject_id) -> bool | Permission check
 --- @quickref c.zanzibar:expand(resource_type, resource_id, relation) -> tree | Userset expand
 --- @quickref c.zanzibar:write(tuple) -> ok | Admin write a relation tuple
+--- @quickref c.zanzibar:delete(tuple) -> nil | Admin remove a relation tuple
+--- @quickref c.jwks:get() -> {keys} | Admin JWKS proxy
+--- @quickref c.oidc_provider:discovery() -> table | Public OIDC discovery
+--- @quickref c.oidc_provider:jwks() -> {keys} | Public JWKS
+--- @quickref c.oidc_provider:authorize_url(params) -> URL string | Build /auth/authorize URL
+--- @quickref c.oidc_provider:token(body) -> {access_token, ...} | RFC 6749 token exchange
+--- @quickref c.oidc_provider:userinfo({access_token}) -> claims | OIDC userinfo
+--- @quickref c.oidc_provider:revoke(body) -> ok | RFC 7009 revoke
+--- @quickref c.oidc_provider:introspect(token) -> {active, ...} | RFC 7662 introspect
+--- @quickref c.oidc_provider:consent(body) -> ok | Record consent + resume authorize
+--- @quickref c.oidc_provider:logout() -> {redirect_url} | RP-initiated logout
 --- @quickref c.users:list({limit, offset, search}) -> {items, total, ...} | Admin list users
 --- @quickref c.users:create({email, display_name, password, email_verified}) -> User | Admin create
 --- @quickref c.users:get(id) -> {user, passkeys, sessions, upstream} | Admin get user detail
@@ -84,8 +95,15 @@ function M.client(opts)
     return decode(http.put(engine_url .. path, body or {}, { headers = build_headers(admin) }), true)
   end
 
-  local function del(path, admin)
-    return decode(http.delete(engine_url .. path, { headers = build_headers(admin) }), true)
+  local function del(path, admin, body)
+    -- DELETE with a body is required by `/admin/auth/zanzibar/tuples`
+    -- (the row to remove is identified by JSON, not a path param). The
+    -- assay http binding accepts `opts.body` (string OR table) and
+    -- auto-sets Content-Type when a table is passed; we route table
+    -- bodies through that path so the wire shape matches POST.
+    local opts = { headers = build_headers(admin) }
+    if body ~= nil then opts.body = body end
+    return decode(http.delete(engine_url .. path, opts), true)
   end
 
   local c = {}
@@ -243,6 +261,13 @@ function M.client(opts)
     return post("/auth/admin/auth/zanzibar/tuples", tuple, true)
   end
 
+  --- Remove a relation tuple. The body shape matches `:write` — same
+  --- {object_type, object_id, relation, subject_type, subject_id,
+  --- subject_rel?} record. Returns nil on 204; raises on 404 / 5xx.
+  function c.zanzibar:delete(tuple)
+    return del("/auth/admin/auth/zanzibar/tuples", true, tuple)
+  end
+
   function c.zanzibar:list_namespaces()
     return get("/auth/admin/auth/zanzibar/namespaces", true)
   end
@@ -356,6 +381,114 @@ function M.client(opts)
 
   function c.oidc_upstream:delete(slug)
     return del("/auth/admin/oidc/upstream/" .. slug, true)
+  end
+
+  -- ===== Admin: JWKS =====
+
+  c.jwks = {}
+
+  --- GET /auth/admin/auth/jwks — admin-gated JWKS proxy. The same key
+  --- material is also available unauthenticated via the OIDC discovery
+  --- endpoint (`c.oidc_provider:jwks()`); the admin path is provided
+  --- so dashboards can fetch keys behind the admin auth boundary.
+  function c.jwks:get()
+    return get("/auth/admin/auth/jwks", true)
+  end
+
+  -- ===== OIDC provider (public spec endpoints) =====
+  --
+  -- These are the OIDC-spec endpoints the engine implements as a
+  -- *provider* (RFC 6749 / OIDC Core 1.0). They're typically called
+  -- by external clients out-of-band, but exposing them in Lua lets
+  -- assay scripts probe a deployment for spec conformance and drive
+  -- end-to-end OIDC flows from a test harness.
+
+  c.oidc_provider = {}
+
+  --- GET /auth/.well-known/openid-configuration — discovery document
+  --- (issuer, endpoint URLs, supported scopes/algos/etc).
+  function c.oidc_provider:discovery()
+    return get("/auth/.well-known/openid-configuration", false)
+  end
+
+  --- GET /auth/.well-known/jwks.json — public JWKS (no auth).
+  function c.oidc_provider:jwks()
+    return get("/auth/.well-known/jwks.json", false)
+  end
+
+  --- Build the `/auth/authorize` URL for a redirect-based flow. Returns
+  --- the URL string — callers send the user-agent there. We don't
+  --- follow the redirect here because authorize lands in HTML/consent
+  --- UIs that aren't useful from a script context.
+  --- @param params table {client_id, redirect_uri, response_type?, scope?, state?, code_challenge?, code_challenge_method?, nonce?, prompt?}
+  function c.oidc_provider:authorize_url(params)
+    params = params or {}
+    local parts = {}
+    -- url_encode is local — encode each value to dodge `&`/`=`/spaces.
+    local function enc(s)
+      return (tostring(s):gsub("([^A-Za-z0-9%-_.~])", function(ch)
+        return string.format("%%%02X", string.byte(ch))
+      end))
+    end
+    for k, v in pairs(params) do
+      if v ~= nil and v ~= "" then
+        parts[#parts + 1] = enc(k) .. "=" .. enc(v)
+      end
+    end
+    local q = (#parts > 0) and ("?" .. table.concat(parts, "&")) or ""
+    return engine_url .. "/auth/authorize" .. q
+  end
+
+  --- POST /auth/token — token exchange (authorization_code, refresh_token,
+  --- client_credentials). Body is a table of form params; we send it as
+  --- JSON. Most IdPs accept either application/json or
+  --- application/x-www-form-urlencoded — assay's provider accepts both.
+  function c.oidc_provider:token(body)
+    return post("/auth/token", body, false)
+  end
+
+  --- GET /auth/userinfo — userinfo endpoint. Pass the access_token via
+  --- `opts.access_token`; the wrapper threads it through the
+  --- `Authorization: Bearer` header.
+  function c.oidc_provider:userinfo(opts)
+    opts = opts or {}
+    local headers = build_headers(false)
+    if opts.access_token and opts.access_token ~= "" then
+      headers["Authorization"] = "Bearer " .. opts.access_token
+    end
+    return decode(http.get(engine_url .. "/auth/userinfo", { headers = headers }))
+  end
+
+  --- POST /auth/revoke — RFC 7009 token revocation. Body is
+  --- `{token, token_type_hint?}`.
+  function c.oidc_provider:revoke(body)
+    return post("/auth/revoke", body, false)
+  end
+
+  --- POST /auth/introspect — RFC 7662 token introspection.
+  --- Returns `{active = bool, ...}`.
+  function c.oidc_provider:introspect(token)
+    return post("/auth/introspect", { token = token }, false)
+  end
+
+  --- POST /auth/authorize/consent — record the user's consent decision
+  --- and resume the authorize flow. Body shape is provider-specific
+  --- (typically `{state, decision = "allow"|"deny"}`).
+  function c.oidc_provider:consent(body)
+    return post("/auth/authorize/consent", body, false)
+  end
+
+  --- GET /auth/logout — RP-initiated logout endpoint.
+  function c.oidc_provider:logout()
+    -- Mirrors the upstream-OIDC pattern: surface the redirect URL so
+    -- the caller can follow it out-of-band.
+    local resp = http.get(engine_url .. "/auth/logout", {
+      headers = build_headers(false),
+    })
+    if resp.status == 302 or resp.status == 301 then
+      return { redirect_url = resp.headers and resp.headers.location, status = resp.status }
+    end
+    return { status = resp.status, body = resp.body, headers = resp.headers }
   end
 
   -- ===== Admin: audit =====
