@@ -2,6 +2,83 @@
 
 All notable changes to Assay are documented here.
 
+## [assay-engine 0.1.2] - 2026-04-25
+
+Engine schema refactor — storage now isolates each module behind its own PostgreSQL schema or SQLite
+attached database, addressed by identical schema-qualified queries (`engine.events`,
+`workflow.workflows`, future `auth.users`). The v0.13.1 atomic publish-on-commit guarantee carries
+forward — cross-schema PG transactions and cross-attached-DB SQLite transactions both stay atomic
+under the default journal mode. Boot is now driven by a new `engine.modules` table that records
+which modules are enabled; the engine reads it on startup and only attaches/creates the schemas for
+active modules.
+
+This is an `assay-engine`-only release. The user-facing `assay` Lua binary (currently 0.13.1) is
+unchanged because it speaks HTTP to a deployed engine and never sees schema-qualified table names.
+
+Active-development release — consumers roll with each bump, no dedicated migration guide. SQLite
+deployments need to delete `./data/` (or whatever `[backend].data_dir` points at) and let the new
+per-module-file layout populate from scratch.
+
+Per-crate bumps:
+
+| Crate            | Version | Notes                                                              |
+| ---------------- | ------- | ------------------------------------------------------------------ |
+| `assay`          | 0.13.1  | Unchanged                                                          |
+| `assay-engine`   | 0.1.2   | New `EngineBoot` + `engine.modules`-driven attach/create + healthz |
+| `assay-workflow` | 0.2.2   | All store queries schema-qualified (`workflow.workflows`, etc.)    |
+| `assay-domain`   | 0.1.2   | New `engine` module hosts engine-core schema; events table moved   |
+
+`assay-auth`, `assay-dashboard`, `assay-lua` unchanged.
+
+### Added
+
+- `assay_domain::engine::{PgEngineSchema, SqliteEngineSchema}` — engine-core schema bootstrap.
+- `engine.modules` table: persistent module enablement state (boot manifest).
+- `engine.audit` table: append-only engine-level operations log.
+- `engine.instances` table: live engine processes (PG-only meaningful — multi-node visibility);
+  every engine inserts on boot, refreshes `last_heartbeat` every 5s, DELETEs on graceful shutdown,
+  and prunes stale rows >60s without heartbeat.
+- `engine.migrations` table: per-module schema-version tracker.
+- `assay_engine::init::EngineBoot` — implements the 8-step boot sequence (open storage, migrate
+  engine schema, read enabled modules, create/attach module schemas, run module migrations, acquire
+  leader, register instance, wire routes).
+- `[backend].data_dir` config field (default `./data/`); engine creates the dir on boot if missing.
+- `from_pool` / `from_attached_pool` factory methods on `PostgresStore` / `SqliteStore` so
+  `EngineBoot` can hand prepared pools to stores without re-opening connections.
+
+### Changed
+
+- All v0.13.1 tables relocated into per-module schemas with the redundant prefix dropped:
+  - `engine_events` → `engine.events`
+  - `engine_lock` → `engine.lock` (SQLite path; PG path uses `pg_advisory_lock` instead)
+  - `namespaces` → `workflow.namespaces`
+  - `api_keys` → `workflow.api_keys` (workflow REST API auth, not engine admin)
+  - `workflows` → `workflow.workflows`
+  - `workflow_events` → `workflow.events`
+  - `workflow_activities` → `workflow.activities`
+  - `workflow_timers` → `workflow.timers`
+  - `workflow_signals` → `workflow.signals`
+  - `workflow_snapshots` → `workflow.snapshots`
+  - `workflow_schedules` → `workflow.schedules`
+  - `workflow_workers` → `workflow.workers`
+- PG: idempotent migration block in `assay-workflow` runs
+  `ALTER TABLE … SET SCHEMA … ; RENAME
+  TO …` for any v0.13.1 tables found in `public`; safe on
+  fresh installs and on already-migrated databases.
+- SQLite: opens `./data/engine.db`, attaches `./data/<module>.db` per enabled module so query syntax
+  matches PG. Old single-file SQLite databases are NOT migrated — delete and start fresh.
+- `GET /healthz` now returns the engine version, leader status, and the list of attached modules.
+
+### Preserved (carried forward from v0.13.1)
+
+- Atomic publish-on-commit — `INSERT INTO engine.events ... RETURNING id; pg_notify(channel, id);`
+  in one transaction. Works on PG cross-schema and SQLite cross-attached-DB.
+- Multi-node PG coordination via `pg_try_advisory_lock(1)` (leader election) +
+  `FOR UPDATE SKIP LOCKED` (distributed task dequeue) + `LISTEN`/`NOTIFY` (cross-instance event
+  propagation).
+- LISTEN channel naming (`assay_engine_events_<ns>` per namespace) is configured in code, not
+  derived from the table name — no rename needed despite `engine_events` → `engine.events`.
+
 ## [0.13.1] - 2026-04-24
 
 Engine-events outbox. The PL/pgSQL LISTEN/NOTIFY triggers and the lossy in-memory SSE broadcast are

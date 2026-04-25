@@ -5,7 +5,7 @@
 # the workflow-engine domain model (types + the WorkflowStore trait)
 # shared across assay-workflow, assay-auth, assay-engine, assay-dashboard.
 name = "assay-domain"
-version = "0.1.1"
+version = "0.1.2"
 categories = ["asynchronous", "database"]
 edition = "2024"
 keywords = ["workflow", "assay", "domain"]

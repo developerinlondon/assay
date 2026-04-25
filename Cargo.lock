@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "assay-domain"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "assay-engine"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "assay-auth",
@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "assay-workflow"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "assay-domain",
