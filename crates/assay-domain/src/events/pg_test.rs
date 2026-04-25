@@ -28,7 +28,7 @@ fn unique_ns(prefix: &str) -> String {
     format!("{prefix}_{pid}_{n}")
 }
 
-/// Prepare the `engine_events` table once per process. Concurrent
+/// Prepare the `engine.events` table once per process. Concurrent
 /// `CREATE TABLE IF NOT EXISTS` races the PG catalog (it inserts into
 /// pg_class/pg_type before checking), so wrap the DDL in a `OnceCell`.
 async fn prepare_pool() -> PgPool {
@@ -36,8 +36,12 @@ async fn prepare_pool() -> PgPool {
     let pool = PgPool::connect(&url).await.unwrap();
     SCHEMA_READY
         .get_or_init(|| async {
+            sqlx::query("CREATE SCHEMA IF NOT EXISTS engine")
+                .execute(&pool)
+                .await
+                .unwrap();
             sqlx::query(
-                "CREATE TABLE IF NOT EXISTS engine_events (
+                "CREATE TABLE IF NOT EXISTS engine.events (
                     id BIGSERIAL PRIMARY KEY,
                     ts DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
                     namespace TEXT NOT NULL,
@@ -49,7 +53,7 @@ async fn prepare_pool() -> PgPool {
             .await
             .unwrap();
             sqlx::query(
-                "CREATE INDEX IF NOT EXISTS idx_engine_events_ns_id ON engine_events(namespace, id)",
+                "CREATE INDEX IF NOT EXISTS idx_engine_events_ns_id ON engine.events(namespace, id)",
             )
             .execute(&pool)
             .await
@@ -296,7 +300,7 @@ async fn cursor_before_oldest_returns_gone() {
     .unwrap();
     // Prune via namespace-scoped ts cutoff — global prune would fight
     // parallel tests.
-    sqlx::query("DELETE FROM engine_events WHERE namespace = $1")
+    sqlx::query("DELETE FROM engine.events WHERE namespace = $1")
         .bind(&ns)
         .execute(&pool)
         .await
