@@ -1,11 +1,18 @@
 # assay-engine SQLite example config (Phase 3 — workflow + dashboard, no auth)
+#
+# v0.1.2 changes the SQLite layout from a single file to one file per
+# module attached on startup. `data_dir` holds `engine.db`,
+# `workflow.db`, and (in v0.14.0) `auth.db`. The directory is created on
+# boot if missing.
 
 [server]
 bind_addr = "127.0.0.1:3000"
 
 [backend]
 type = "sqlite"
-path = "/tmp/assay-engine-dev.db"
+# Production deployments override to e.g. /var/lib/assay or a mounted
+# volume. The leading dot relativises against the working directory.
+data_dir = "./data"
 
 [workflow]
 enabled = true

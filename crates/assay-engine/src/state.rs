@@ -13,4 +13,15 @@ use assay_workflow::{WorkflowCtx, WorkflowStore};
 pub struct EngineState<S: WorkflowStore> {
     pub workflow: Arc<WorkflowCtx<S>>,
     pub dashboard: Arc<DashboardCtx>,
+    /// Names of modules attached/loaded during boot — surfaced through
+    /// `/healthz` for ops visibility (which functional modules this
+    /// engine instance has wired up).
+    pub modules: Arc<Vec<String>>,
+    /// This instance's row in `engine.instances`. Lets `/healthz` and
+    /// future visibility endpoints identify which engine process is
+    /// answering.
+    pub instance_id: uuid::Uuid,
+    /// `assay-engine` crate version. Returned in `/healthz` so external
+    /// monitors can correlate health checks with deployments.
+    pub engine_version: &'static str,
 }

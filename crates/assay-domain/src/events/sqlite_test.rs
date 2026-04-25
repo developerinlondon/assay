@@ -19,8 +19,21 @@ async fn fresh_pool() -> SqlitePool {
         .connect_with(opts)
         .await
         .unwrap();
+    // v0.1.2: engine.events lives in an attached `engine` database.
+    // Per-test isolation: ATTACH a fresh in-memory file via shared cache.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let alias = format!(
+        "engine_test_{}_{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    let attach_sql = format!(
+        "ATTACH DATABASE 'file:{alias}?mode=memory&cache=shared' AS engine"
+    );
+    sqlx::query(&attach_sql).execute(&pool).await.unwrap();
     sqlx::query(
-        "CREATE TABLE IF NOT EXISTS engine_events (
+        "CREATE TABLE IF NOT EXISTS engine.events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts REAL NOT NULL DEFAULT (CAST(strftime('%s','now') AS REAL)),
             namespace TEXT NOT NULL,

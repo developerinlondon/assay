@@ -47,10 +47,47 @@ pub enum BackendConfig {
         url: String,
     },
     Sqlite {
-        /// Filesystem path to the SQLite database. Created on startup if
-        /// missing. Use `:memory:` for a test-only ephemeral database.
-        path: String,
+        /// Directory holding the per-module SQLite files
+        /// (`<data_dir>/engine.db`, `<data_dir>/workflow.db`, …). Created
+        /// on startup if missing. Defaults to `./data`. Use `:memory:`
+        /// in `path` (legacy) or set `data_dir = ":memory:"` to keep the
+        /// engine purely in-memory for tests.
+        #[serde(default = "default_data_dir")]
+        data_dir: String,
+        /// Legacy single-file SQLite path. Deprecated in v0.1.2 — when
+        /// set, the engine logs a deprecation notice and treats it as
+        /// `data_dir = parent(path)` so existing configs keep working
+        /// during the transition.
+        #[serde(default)]
+        path: Option<String>,
     },
+}
+
+fn default_data_dir() -> String {
+    "./data".to_string()
+}
+
+impl BackendConfig {
+    /// Resolve the effective data directory for SQLite. PG returns `None`.
+    pub fn sqlite_data_dir(&self) -> Option<String> {
+        match self {
+            Self::Sqlite { data_dir, path } => {
+                // Legacy `path` wins for backwards compat — treat the
+                // parent dir as the new data_dir so existing v0.1.1
+                // configs migrate without surprise.
+                if let Some(p) = path {
+                    let parent = std::path::Path::new(p)
+                        .parent()
+                        .map(|p| p.display().to_string())
+                        .filter(|s| !s.is_empty());
+                    Some(parent.unwrap_or_else(|| data_dir.clone()))
+                } else {
+                    Some(data_dir.clone())
+                }
+            }
+            Self::Postgres { .. } => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

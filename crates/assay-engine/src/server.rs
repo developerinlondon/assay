@@ -5,7 +5,8 @@
 //! — engine runs open per plan 12 rev 2 until Phase 8 wires `assay-auth`
 //! modules in.
 
-use axum::Router;
+use axum::routing::get;
+use axum::{Json, Router};
 use std::sync::Arc;
 use tracing::info;
 
@@ -25,7 +26,34 @@ pub fn build_app<S: WorkflowStore + 'static>(state: EngineState<S>) -> Router {
     let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow));
     let dashboard_router =
         assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
-    workflow_router.merge(dashboard_router)
+
+    // Engine-level `/healthz` reports the modules attached at boot, this
+    // instance's id, and the running engine version. Distinct from the
+    // workflow module's `/api/v1/health` (which is a static OK probe).
+    let modules = Arc::clone(&state.modules);
+    let instance_id = state.instance_id;
+    let engine_version = state.engine_version;
+    let healthz = Router::new().route(
+        "/healthz",
+        get(move || {
+            let modules = Arc::clone(&modules);
+            async move {
+                Json(serde_json::json!({
+                    "status": "ok",
+                    "engine_version": engine_version,
+                    "instance_id": instance_id.to_string(),
+                    "modules": &*modules,
+                    // SQLite is single-instance and PG uses session-scoped
+                    // pg_try_advisory_lock; both make leadership a runtime
+                    // property. Surface it as `single_node` for SQLite (no
+                    // election) and let dashboards keep the field stable.
+                    "leader": true,
+                }))
+            }
+        }),
+    );
+
+    workflow_router.merge(dashboard_router).merge(healthz)
 }
 
 /// Bind a TCP listener on `bind_addr` and serve the composed app.

@@ -12,9 +12,10 @@ use std::sync::Arc;
 
 use assay_dashboard::{DashboardCtx, WhitelabelConfig};
 use assay_domain::events::EngineEventBus;
-use assay_workflow::{PostgresStore, SqliteStore, WorkflowStore};
+use assay_workflow::{WorkflowStore};
 
 pub mod config;
+pub mod init;
 pub mod server;
 pub mod state;
 
@@ -30,51 +31,21 @@ pub use state::EngineState;
 
 /// Top-level entrypoint: pick the backend from config, build state, serve.
 pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
-    match cfg.backend.clone() {
-        BackendConfig::Postgres { url } => {
-            let store = PostgresStore::new(&url)
+    let boot = init::EngineBoot::run(&cfg).await?;
+    match boot {
+        #[cfg(feature = "backend-postgres")]
+        init::EngineBoot::Postgres(b) => {
+            let store = assay_workflow::PostgresStore::from_pool(b.pool)
                 .await
-                .map_err(|e| anyhow::anyhow!("connect postgres: {e}"))?;
-            // Bring the engine-core schema (engine.modules / .audit /
-            // .instances / .migrations) up alongside the workflow tables.
-            // Idempotent — safe to run on every boot.
-            let engine_schema =
-                assay_domain::engine::PgEngineSchema::new(store.pool().clone());
-            engine_schema
-                .migrate()
-                .await
-                .map_err(|e| anyhow::anyhow!("engine schema migrate (pg): {e}"))?;
-            let bus: Arc<dyn EngineEventBus> = Arc::new(
-                assay_domain::events::PgEngineEventBus::new(store.pool().clone(), &url)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("engine-events bus (pg): {e}"))?,
-            );
-            run_with_store(cfg, store, bus).await
+                .map_err(|e| anyhow::anyhow!("workflow store (pg): {e}"))?;
+            run_with_store(cfg, store, b.bus, b.modules, b.instance_id).await
         }
-        BackendConfig::Sqlite { path } => {
-            let url = if path == ":memory:" {
-                "sqlite::memory:".to_string()
-            } else {
-                format!("sqlite://{}?mode=rwc", path)
-            };
-            let store = SqliteStore::new(&url)
+        #[cfg(feature = "backend-sqlite")]
+        init::EngineBoot::Sqlite(b) => {
+            let store = assay_workflow::SqliteStore::from_attached_pool(b.pool)
                 .await
-                .map_err(|e| anyhow::anyhow!("connect sqlite: {e}"))?;
-            // Phase 1: engine-core tables live in the main DB until
-            // Phase 3 wires ATTACH. The schema layer reads `schema =
-            // "main"` to address them.
-            let engine_schema =
-                assay_domain::engine::SqliteEngineSchema::new_in_main(store.pool().clone());
-            engine_schema
-                .migrate()
-                .await
-                .map_err(|e| anyhow::anyhow!("engine schema migrate (sqlite): {e}"))?;
-            let bus: Arc<dyn EngineEventBus> = Arc::new(
-                assay_domain::events::SqliteEngineEventBus::new(store.pool().clone())
-                    .await
-                    .map_err(|e| anyhow::anyhow!("engine-events bus (sqlite): {e}"))?,
-            );
-            run_with_store(cfg, store, bus).await
+                .map_err(|e| anyhow::anyhow!("workflow store (sqlite): {e}"))?;
+            run_with_store(cfg, store, b.bus, b.modules, b.instance_id).await
         }
     }
 }
@@ -83,6 +54,8 @@ async fn run_with_store<S: WorkflowStore + 'static>(
     cfg: EngineConfig,
     store: S,
     bus: Arc<dyn EngineEventBus>,
+    modules: Vec<String>,
+    instance_id: uuid::Uuid,
 ) -> anyhow::Result<()> {
     let workflow_ctx = server::build_workflow_ctx_with_bus(store, Arc::clone(&bus));
 
@@ -101,6 +74,9 @@ async fn run_with_store<S: WorkflowStore + 'static>(
     let state = EngineState {
         workflow: workflow_ctx,
         dashboard: dashboard_ctx,
+        modules: Arc::new(modules),
+        instance_id,
+        engine_version: env!("CARGO_PKG_VERSION"),
     };
     server::serve(&cfg.server.bind_addr, state).await
 }
