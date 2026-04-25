@@ -14,6 +14,7 @@
 
 pub mod error;
 
+pub mod biscuit;
 pub mod ctx;
 pub mod router;
 pub mod schema;
@@ -28,8 +29,11 @@ pub mod password;
 #[cfg(feature = "auth-jwt")]
 pub mod jwt;
 
-#[cfg(feature = "auth-biscuit")]
-pub mod biscuit;
+#[cfg(feature = "auth-oidc")]
+pub mod oidc;
+
+#[cfg(feature = "auth-passkey")]
+pub mod passkey;
 
 pub use ctx::AuthCtx;
 pub use error::{Error, Result};

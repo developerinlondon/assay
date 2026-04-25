@@ -185,12 +185,26 @@ async fn pg_boot(url: &str, auto_enable: &[String]) -> anyhow::Result<PgBoot> {
     // whether it's *active*. The schema migration only runs when both
     // hold — so a no-auth build never touches `auth.*` and an auth build
     // with `engine.modules.auth.enabled = FALSE` doesn't either.
+    //
+    // Phase 5: when auth is active, biscuit's `auth.biscuit_root_keys`
+    // row is loaded-or-initialised right after the migrations land so
+    // the AuthCtx the binary builds carries a stable root key.
+    // [`assay_auth::biscuit::load_or_init_postgres`] is idempotent —
+    // restart with an existing row reuses it, fresh DB generates one.
     #[cfg(feature = "auth")]
     {
         if modules.iter().any(|m| m == "auth") {
             assay_auth::schema::migrate_postgres(&pool)
                 .await
                 .map_err(|e| anyhow::anyhow!("auth schema migrate (pg): {e}"))?;
+            // Bootstrap the biscuit root key — fire-and-discard the
+            // returned config; the engine binary will call
+            // `load_or_init_postgres` again when it builds the AuthCtx
+            // (cheap: SELECT-only on the second call). Doing it here
+            // catches DDL/permission errors at boot.
+            let _ = assay_auth::biscuit::load_or_init_postgres(&pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("biscuit root key bootstrap (pg): {e}"))?;
         }
     }
 
@@ -380,12 +394,18 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
     // Auth module migration. Mirrors the PG path: only runs when the
     // `auth` feature is compiled in AND `engine.modules.auth.enabled`
     // is TRUE. The ATTACH already happened on connect.
+    //
+    // Phase 5: same as PG — load-or-init the biscuit root key right
+    // after migrations.
     #[cfg(feature = "auth")]
     {
         if modules.iter().any(|m| m == "auth") {
             assay_auth::schema::migrate_sqlite(&pool)
                 .await
                 .map_err(|e| anyhow::anyhow!("auth schema migrate (sqlite): {e}"))?;
+            let _ = assay_auth::biscuit::load_or_init_sqlite(&pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("biscuit root key bootstrap (sqlite): {e}"))?;
         }
     }
 

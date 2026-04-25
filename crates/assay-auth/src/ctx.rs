@@ -8,37 +8,67 @@
 
 use std::sync::Arc;
 
+use crate::biscuit::BiscuitConfig;
 use crate::store::{SessionStore, UserStore};
 
 #[cfg(feature = "auth-jwt")]
 use crate::jwt::JwtConfig;
+#[cfg(feature = "auth-oidc")]
+use crate::oidc::OidcRegistry;
+#[cfg(feature = "auth-passkey")]
+use crate::passkey::PasskeyManager;
 
 #[derive(Clone)]
 pub struct AuthCtx {
     /// Authoritative user record store. Carries password hashes,
-    /// upstream-provider links, and (when phase 5 lands) passkeys.
+    /// upstream-provider links, and passkeys.
     pub users: Arc<dyn UserStore>,
     /// Session record store — opaque session id + CSRF token + expiry.
     pub sessions: Arc<dyn SessionStore>,
+    /// Biscuit capability-token issuer + verifier. Foundational
+    /// (always present): wraps the active root keypair loaded from
+    /// `auth.biscuit_root_keys` (or generated on first boot). Used for
+    /// share links, delegated upload caps, worker capability tokens,
+    /// edge auth, and any flow that wants offline-verifiable bearer
+    /// tokens. See [`crate::biscuit::BiscuitConfig`].
+    pub biscuit: BiscuitConfig,
     /// JWT issuance/verification configuration. Active key + history;
     /// see [`crate::jwt::JwtConfig`]. Present only when the
     /// `auth-jwt` feature is enabled.
     #[cfg(feature = "auth-jwt")]
     pub jwt: Option<JwtConfig>,
-    // Phase 5 will add `oidc` provider registry here.
+    /// Slug-keyed registry of discovered upstream OIDC providers.
+    /// Engine boot constructs an empty registry; admin CRUD (or seed
+    /// config) populates it. See [`crate::oidc::OidcRegistry`].
+    #[cfg(feature = "auth-oidc")]
+    pub oidc: Option<OidcRegistry>,
+    /// WebAuthn / passkey manager. Wraps a single
+    /// [`webauthn_rs::Webauthn`] built from the operator's RP config.
+    /// See [`crate::passkey::PasskeyManager`].
+    #[cfg(feature = "auth-passkey")]
+    pub passkeys: Option<PasskeyManager>,
     // Phase 6 will add `zanzibar` store here.
 }
 
 impl AuthCtx {
     /// Construct a context from the bare minimum required by phase 4 —
-    /// user and session stores. JWT and other modules are wired
-    /// separately by callers when they're ready.
+    /// user and session stores. Biscuit is initialised with an
+    /// ephemeral keypair (no DB row) so unit tests + downstream callers
+    /// that don't run engine boot can still construct an [`AuthCtx`].
+    /// Engine boot replaces the biscuit field via
+    /// [`AuthCtx::with_biscuit`] once the persistent root key has been
+    /// loaded from `auth.biscuit_root_keys`.
     pub fn new(users: Arc<dyn UserStore>, sessions: Arc<dyn SessionStore>) -> Self {
         Self {
             users,
             sessions,
+            biscuit: BiscuitConfig::generate_ephemeral(),
             #[cfg(feature = "auth-jwt")]
             jwt: None,
+            #[cfg(feature = "auth-oidc")]
+            oidc: None,
+            #[cfg(feature = "auth-passkey")]
+            passkeys: None,
         }
     }
 
@@ -47,6 +77,32 @@ impl AuthCtx {
     #[cfg(feature = "auth-jwt")]
     pub fn with_jwt(mut self, jwt: JwtConfig) -> Self {
         self.jwt = Some(jwt);
+        self
+    }
+
+    /// Replace the OIDC registry. Engine boot creates an empty registry
+    /// for unconfigured deployments; once admin CRUD lands, the same
+    /// builder runs after the seed providers are loaded.
+    #[cfg(feature = "auth-oidc")]
+    pub fn with_oidc(mut self, oidc: OidcRegistry) -> Self {
+        self.oidc = Some(oidc);
+        self
+    }
+
+    /// Replace the passkey manager. Optional — the manager owns a live
+    /// [`webauthn_rs::Webauthn`] built from the engine's RP config and
+    /// is only constructible when that config is present.
+    #[cfg(feature = "auth-passkey")]
+    pub fn with_passkeys(mut self, passkeys: PasskeyManager) -> Self {
+        self.passkeys = Some(passkeys);
+        self
+    }
+
+    /// Replace the biscuit configuration. Engine boot loads the active
+    /// root key from `auth.biscuit_root_keys` (or generates one on
+    /// first boot) and feeds the result here.
+    pub fn with_biscuit(mut self, biscuit: BiscuitConfig) -> Self {
+        self.biscuit = biscuit;
         self
     }
 }

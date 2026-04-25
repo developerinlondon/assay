@@ -41,7 +41,11 @@ pub const MODULE_NAME: &str = "auth";
 /// Highest migration version this build knows about. Bumped each time
 /// a new DDL pack is appended below. The runner records every version
 /// up to and including this one into `engine.migrations`.
-pub const MIGRATION_VERSION: i32 = 1;
+///
+/// V1 (phase 4): users / sessions / passkeys / user_upstream / jwks_keys.
+/// V2 (phase 5): adds `auth.biscuit_root_keys` for the always-on
+///               biscuit capability-token root key bootstrap.
+pub const MIGRATION_VERSION: i32 = 2;
 
 /// Postgres DDL for the auth schema, version 1.
 ///
@@ -112,6 +116,23 @@ CREATE TABLE IF NOT EXISTS auth.jwks_keys (
 );
 CREATE INDEX IF NOT EXISTS idx_auth_jwks_keys_active
     ON auth.jwks_keys (rotated_at) WHERE rotated_at IS NULL;
+"#;
+
+/// Postgres DDL for the auth schema, version 2 — adds
+/// `auth.biscuit_root_keys` for the always-on biscuit root key
+/// bootstrap. The `private_pem` column is plaintext today; secret-at-rest
+/// envelope is a later phase (matches the `auth.jwks_keys.private_pem_encrypted`
+/// shape — same TODO surface).
+pub const PG_DDL_V2: &str = r#"
+CREATE TABLE IF NOT EXISTS auth.biscuit_root_keys (
+    kid             TEXT PRIMARY KEY,
+    private_pem     BYTEA NOT NULL,
+    public_pem      TEXT NOT NULL,
+    created_at      DOUBLE PRECISION NOT NULL,
+    rotated_at      DOUBLE PRECISION
+);
+CREATE INDEX IF NOT EXISTS idx_auth_biscuit_root_keys_active
+    ON auth.biscuit_root_keys (rotated_at) WHERE rotated_at IS NULL;
 "#;
 
 /// SQLite DDL for the auth schema, version 1.
@@ -206,19 +227,44 @@ pub const SQLITE_DDL_V1: &[(&str, &str)] = &[
     ),
 ];
 
+/// SQLite DDL for the auth schema, version 2 — biscuit root keys.
+/// Mirrors [`PG_DDL_V2`] with `BYTEA` → `BLOB` and `DOUBLE PRECISION` →
+/// `REAL`.
+pub const SQLITE_DDL_V2: &[(&str, &str)] = &[
+    (
+        "biscuit_root_keys",
+        "CREATE TABLE IF NOT EXISTS auth.biscuit_root_keys (
+            kid             TEXT PRIMARY KEY,
+            private_pem     BLOB NOT NULL,
+            public_pem      TEXT NOT NULL,
+            created_at      REAL NOT NULL,
+            rotated_at      REAL
+        )",
+    ),
+    (
+        "idx_biscuit_root_keys_active",
+        "CREATE INDEX IF NOT EXISTS auth.idx_auth_biscuit_root_keys_active \
+         ON biscuit_root_keys (rotated_at) WHERE rotated_at IS NULL",
+    ),
+];
+
 /// Postgres migration runner.
 ///
-/// Splits [`PG_DDL_V1`] into individual statements (sqlx requires one
-/// statement per `query`), executes each, then records
-/// `(MODULE_NAME, MIGRATION_VERSION)` into `engine.migrations`.
+/// Applies every DDL pack up to and including the current
+/// [`MIGRATION_VERSION`] (V1 then V2 today). Splits each pack into
+/// individual statements (sqlx requires one statement per `query`),
+/// executes each, then records `(MODULE_NAME, MIGRATION_VERSION)` into
+/// `engine.migrations`. Idempotent — every CREATE uses `IF NOT EXISTS`.
 #[cfg(feature = "backend-postgres")]
 pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     use anyhow::Context;
-    for stmt in split_pg_statements(PG_DDL_V1) {
-        sqlx::query(&stmt)
-            .execute(pool)
-            .await
-            .with_context(|| format!("auth pg migrate: {}", first_line(&stmt)))?;
+    for ddl in [PG_DDL_V1, PG_DDL_V2] {
+        for stmt in split_pg_statements(ddl) {
+            sqlx::query(&stmt)
+                .execute(pool)
+                .await
+                .with_context(|| format!("auth pg migrate: {}", first_line(&stmt)))?;
+        }
     }
     sqlx::query(
         "INSERT INTO engine.migrations (module, version) VALUES ($1, $2) \
@@ -235,17 +281,20 @@ pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
 /// SQLite migration runner.
 ///
 /// Caller must have ATTACHed the auth database as `auth` before
-/// calling. Each DDL chunk is executed as its own statement; the
-/// per-table failure context names the table that broke so engine
-/// boot logs are actionable.
+/// calling. Applies every DDL pack up to and including
+/// [`MIGRATION_VERSION`] (V1 then V2 today). Each DDL chunk is
+/// executed as its own statement; the per-table failure context names
+/// the table that broke so engine boot logs are actionable.
 #[cfg(feature = "backend-sqlite")]
 pub async fn migrate_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     use anyhow::Context;
-    for (label, stmt) in SQLITE_DDL_V1 {
-        sqlx::query(stmt)
-            .execute(pool)
-            .await
-            .with_context(|| format!("auth sqlite migrate: {label}"))?;
+    for pack in [SQLITE_DDL_V1, SQLITE_DDL_V2] {
+        for (label, stmt) in pack {
+            sqlx::query(stmt)
+                .execute(pool)
+                .await
+                .with_context(|| format!("auth sqlite migrate: {label}"))?;
+        }
     }
     sqlx::query(
         "INSERT OR IGNORE INTO engine.migrations (module, version) VALUES (?, ?)",
