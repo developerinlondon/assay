@@ -4,10 +4,7 @@ use std::sync::Arc;
 /// Helper: start engine + API on a random port, return the base URL.
 async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
-    let state = Arc::new(
-        WorkflowCtx::start(Arc::new(store))
-            .with_auth_mode(assay_workflow::api::auth::AuthMode::no_auth()),
-    );
+    let state = Arc::new(WorkflowCtx::start(Arc::new(store)));
 
     let app = assay_workflow::api::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

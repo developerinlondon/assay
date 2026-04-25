@@ -501,41 +501,16 @@ fn spawn_sqlite_instance_lifecycle(pool: sqlx::SqlitePool, id: uuid::Uuid) {
 mod tests {
     use super::*;
 
-    /// Default boot keeps auth disabled — ensures existing v0.1.2
-    /// deployments don't get unexpected auth migrations on upgrade.
+    /// Plan-15 slice 3: auth is default-enabled. The `auto_enable_modules`
+    /// argument is a no-op for auth (kept as a setting for forward-compat
+    /// with future opt-in modules) — auth always runs its migration on
+    /// first boot now.
     #[tokio::test(flavor = "multi_thread")]
-    async fn sqlite_boot_default_does_not_run_auth_migration() {
+    async fn sqlite_boot_default_runs_auth_migration() {
         let boot = sqlite_boot(":memory:", &[]).await.expect("boot");
-        // Auth row exists but disabled — so it's not in the active modules list.
-        assert!(
-            !boot.modules.iter().any(|m| m == "auth"),
-            "auth must NOT be in active modules by default; got {:?}",
-            boot.modules
-        );
-        // engine.migrations should NOT carry an auth row yet.
-        let auth_row: Option<(String,)> = sqlx::query_as(
-            "SELECT module FROM engine.migrations WHERE module = 'auth'",
-        )
-        .fetch_optional(&boot.pool)
-        .await
-        .expect("query engine.migrations");
-        assert!(
-            auth_row.is_none(),
-            "engine.migrations should not have an auth row when auth is disabled"
-        );
-    }
-
-    /// `auto_enable_modules = ["auth"]` flips the seed row to TRUE on
-    /// first boot AND triggers the auth schema migration. Recorded under
-    /// `module = 'auth'` in `engine.migrations`.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn sqlite_boot_auto_enable_runs_auth_migration() {
-        let boot = sqlite_boot(":memory:", &["auth".to_string()])
-            .await
-            .expect("boot");
         assert!(
             boot.modules.iter().any(|m| m == "auth"),
-            "auth must be in active modules when auto-enabled; got {:?}",
+            "auth must be in active modules by default; got {:?}",
             boot.modules
         );
         // Auth migration recorded.

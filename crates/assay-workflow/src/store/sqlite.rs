@@ -150,9 +150,8 @@ CREATE TABLE IF NOT EXISTS workflow.snapshots (
     PRIMARY KEY (workflow_id, event_seq)
 );
 
--- Plan-15 slice 3: workflow.api_keys retired in favour of the auth
--- module (sessions / JWT / Zanzibar tuples). Table is dropped on
--- migration; nothing here re-creates it.
+-- workflow.api_keys retired in plan-15 slice 3 (auth tokens come from
+-- the auth module).
 DROP TABLE IF EXISTS workflow.api_keys;
 
 CREATE TABLE IF NOT EXISTS engine.lock (

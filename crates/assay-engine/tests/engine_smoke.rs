@@ -50,6 +50,9 @@ bind_addr = "127.0.0.1:{port}"
 type = "sqlite"
 path = "{db}"
 
+[auth]
+admin_api_keys = ["engine-smoke-test-key"]
+
 [logging]
 level = "error"
 format = "pretty"
@@ -132,8 +135,11 @@ async fn engine_smoke_sqlite() {
     );
 
     // ── /api/v1/engine/workflow/namespaces ────────────────────────────────────────────
+    // Gated by the engine's auth layer (slice 2) — admin api-key
+    // break-glass authenticates the request.
     let r = client
         .get(engine.url("/api/v1/engine/workflow/namespaces"))
+        .header("Authorization", "Bearer engine-smoke-test-key")
         .send()
         .await
         .unwrap();
