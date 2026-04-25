@@ -1,6 +1,6 @@
 [package]
 name = "assay-workflow"
-version = "0.2.2"
+version = "0.3.0"
 categories = ["asynchronous", "database"]
 edition = "2024"
 keywords = ["workflow", "durable-execution", "orchestration", "task-queue"]
@@ -10,7 +10,7 @@ description = "Durable workflow engine with REST+SSE API on PostgreSQL 18 and SQ
 
 [dependencies]
 # Shared types + traits
-assay-domain = { path = "../assay-domain", version = "0.1" }
+assay-domain = { path = "../assay-domain", version = "0.2" }
 
 # Async runtime
 tokio = { version = "1", features = ["rt", "time", "macros"] }

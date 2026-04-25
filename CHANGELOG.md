@@ -2,72 +2,153 @@
 
 All notable changes to Assay are documented here.
 
-## [assay-engine 0.1.2] - 2026-04-25
+## [assay-engine 0.2.0] - 2026-04-25
 
-Engine schema refactor — storage now isolates each module behind its own PostgreSQL schema or SQLite
-attached database, addressed by identical schema-qualified queries (`engine.events`,
-`workflow.workflows`, future `auth.users`). The v0.13.1 atomic publish-on-commit guarantee carries
-forward — cross-schema PG transactions and cross-attached-DB SQLite transactions both stay atomic
-under the default journal mode. Boot is now driven by a new `engine.modules` table that records
-which modules are enabled; the engine reads it on startup and only attaches/creates the schemas for
-active modules.
+**Headline:** assay-engine becomes a full Ory replacement + IdP, on top of the Temporal-replacement
+workflow engine that already shipped in v0.13.x. One static binary now covers Kratos (identity),
+Hydra (OIDC provider), Keto (Zanzibar/ReBAC) and Temporal (workflows) — plus capability tokens
+(biscuit) which Ory has nothing equivalent for. PostgreSQL 18 + SQLite, both first-class.
 
-This is an `assay-engine`-only release. The user-facing `assay` Lua binary (currently 0.13.1) is
-unchanged because it speaks HTTP to a deployed engine and never sees schema-qualified table names.
+The umbrella v0.2.0 release rolls together the v0.1.2 engine-schemas refactor with the entire auth
+stack (plan 12 phases 4-8) and the docs/site refresh. It supersedes the v0.1.2 work that was
+in-flight on `feature/engine-0.1.2-schemas` — that PR was closed; this is the consolidated drop.
 
 Active-development release — consumers roll with each bump, no dedicated migration guide. SQLite
-deployments need to delete `./data/` (or whatever `[backend].data_dir` points at) and let the new
-per-module-file layout populate from scratch.
+deployments delete `./data/` and let the new per-module-file layout populate from scratch. PG
+deployments get idempotent `ALTER TABLE … SET SCHEMA …` migrations applied automatically on boot.
 
 Per-crate bumps:
 
-| Crate            | Version | Notes                                                              |
-| ---------------- | ------- | ------------------------------------------------------------------ |
-| `assay`          | 0.13.1  | Unchanged                                                          |
-| `assay-engine`   | 0.1.2   | New `EngineBoot` + `engine.modules`-driven attach/create + healthz |
-| `assay-workflow` | 0.2.2   | All store queries schema-qualified (`workflow.workflows`, etc.)    |
-| `assay-domain`   | 0.1.2   | New `engine` module hosts engine-core schema; events table moved   |
+| Crate             | Version           | Notes                                                                                                                           |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `assay`           | 0.13.1 → 0.14.0   | New Lua stdlib `assay.auth.*` wrappers (login/passkey/oidc/biscuit/zanzibar/users/sessions/oidc_clients)                        |
+| `assay-engine`    | 0.1.1 → **0.2.0** | Headline release. AuthCtx composition, `engine.modules`-driven boot, dashboard auth panes mounted, full `/auth/*` HTTP surface. |
+| `assay-workflow`  | 0.2.1 → 0.3.0     | All store queries schema-qualified (`workflow.*`); tracks `assay-domain` 0.2                                                    |
+| `assay-domain`    | 0.1.1 → 0.2.0     | New `engine` module hosts engine-core schema (events/lock/namespaces/modules/audit/instances/migrations)                        |
+| `assay-auth`      | 0.1.0 → 0.2.0     | First real content release — full module set                                                                                    |
+| `assay-dashboard` | 0.1.0 → 0.2.0     | Auth admin SPA (Users / Sessions / OIDC clients / Upstream / Zanzibar / Keys / Audit)                                           |
 
-`assay-auth`, `assay-dashboard`, `assay-lua` unchanged.
+### Schema/attach storage model
 
-### Added
+- **PG**: one database, three schemas (`engine`, `workflow`, `auth`) per active module
+- **SQLite**: one file per module (`./data/engine.db`, `./data/workflow.db`, `./data/auth.db`),
+  attached to one connection on startup so query syntax matches PG (`auth.users`, etc.)
+- Cross-schema (PG) and cross-attached-DB (SQLite) transactions stay atomic under the default
+  journal mode, preserving the v0.13.1 atomic publish-on-commit guarantee
+- Module enablement driven by `engine.modules` row at runtime; compile features control linking
 
-- `assay_domain::engine::{PgEngineSchema, SqliteEngineSchema}` — engine-core schema bootstrap.
-- `engine.modules` table: persistent module enablement state (boot manifest).
-- `engine.audit` table: append-only engine-level operations log.
-- `engine.instances` table: live engine processes (PG-only meaningful — multi-node visibility);
-  every engine inserts on boot, refreshes `last_heartbeat` every 5s, DELETEs on graceful shutdown,
-  and prunes stale rows >60s without heartbeat.
-- `engine.migrations` table: per-module schema-version tracker.
-- `assay_engine::init::EngineBoot` — implements the 8-step boot sequence (open storage, migrate
-  engine schema, read enabled modules, create/attach module schemas, run module migrations, acquire
-  leader, register instance, wire routes).
-- `[backend].data_dir` config field (default `./data/`); engine creates the dir on boot if missing.
-- `from_pool` / `from_attached_pool` factory methods on `PostgresStore` / `SqliteStore` so
-  `EngineBoot` can hand prepared pools to stores without re-opening connections.
+### Added — engine core (was the v0.1.2 scope)
 
-### Changed
+- `engine.modules` (boot manifest), `engine.audit` (ops log), `engine.instances` (multi-node
+  visibility — 5 s heartbeat, 60 s stale TTL, graceful shutdown DELETE), `engine.migrations`
+  (per-module schema-version tracker)
+- `assay_engine::init::EngineBoot` — 8-step boot: open storage → migrate engine schema → read
+  enabled modules → create/attach per-module → run module migrations → acquire leader → register
+  instance → wire routes
+- `[backend].data_dir` config field (default `./data/`); engine creates the dir on boot if missing
+- `from_pool` / `from_attached_pool` factory methods on `PostgresStore` / `SqliteStore`
+- `GET /healthz` returns engine version + leader status + attached modules
+- `GET /api/v1/modules` for dashboard module-pane gating
 
-- All v0.13.1 tables relocated into per-module schemas with the redundant prefix dropped:
-  - `engine_events` → `engine.events`
-  - `engine_lock` → `engine.lock` (SQLite path; PG path uses `pg_advisory_lock` instead)
-  - `namespaces` → `workflow.namespaces`
-  - `api_keys` → `workflow.api_keys` (workflow REST API auth, not engine admin)
-  - `workflows` → `workflow.workflows`
-  - `workflow_events` → `workflow.events`
-  - `workflow_activities` → `workflow.activities`
-  - `workflow_timers` → `workflow.timers`
-  - `workflow_signals` → `workflow.signals`
-  - `workflow_snapshots` → `workflow.snapshots`
-  - `workflow_schedules` → `workflow.schedules`
-  - `workflow_workers` → `workflow.workers`
-- PG: idempotent migration block in `assay-workflow` runs
-  `ALTER TABLE … SET SCHEMA … ; RENAME
-  TO …` for any v0.13.1 tables found in `public`; safe on
-  fresh installs and on already-migrated databases.
-- SQLite: opens `./data/engine.db`, attaches `./data/<module>.db` per enabled module so query syntax
-  matches PG. Old single-file SQLite databases are NOT migrated — delete and start fresh.
-- `GET /healthz` now returns the engine version, leader status, and the list of attached modules.
+### Added — auth primitives (Kratos-equivalent identity)
+
+- **Sessions**: `auth.sessions`, opaque `sess_…` cookie, CSRF token, rotation on privilege change,
+  HttpOnly + SameSite=Lax + Secure cookies, programmatic `assay_session` + JS-readable `assay_csrf`
+- **Passwords**: Argon2id (m=64 MiB, t=3, p=4) with `hash`/`verify`/`needs_rehash`
+- **JWT**: Ed25519 issue + verify with kid-based active+history lookup, JWKS rotation,
+  `auth.jwks_keys` table
+- **Passkey** (WebAuthn): registration + authentication via `webauthn-rs`, state round-trip via
+  session payload
+- **Stores**: PG + SQLite User/Session stores; `auth.users`, `auth.user_upstream`, `auth.passkeys`,
+  `auth.audit`
+
+### Added — biscuit (capability tokens — assay differentiator vs Ory)
+
+- Ed25519 root keypair, persisted in `auth.biscuit_root_keys` with rotation support
+- `BiscuitConfig::issue` / `verify` / `attenuate` (the last two work offline — no auth-server
+  round-trip per check)
+- Datalog policy expressions for time-bound TTLs and scope assertions
+- AuthCtx carries `BiscuitConfig` as a non-optional field — same posture as session/JWT
+
+### Added — Zanzibar (Keto-equivalent ReBAC)
+
+- `ZanzibarStore` async trait + PG + SQLite recursive-CTE backends
+- SpiceDB-compatible schema parser (definitions, relations, permission expressions with
+  `+`/`&`/`-`/`->` arrows + wildcards)
+- Operations: `define_namespace`, `write_tuple`, `write_tuples`, `check`, `expand`,
+  `lookup_resources`, `lookup_subjects`
+- Depth bound 50 + cycle guard via path array
+- `auth.zanzibar_namespaces`, `auth.zanzibar_tuples` (with reverse index for lookup)
+- `Consistency` enum: `Minimum` / `Exact(zookie)` / `AtLeastAsFresh(zookie)`
+
+### Added — OIDC (client + provider; Hydra-equivalent IdP)
+
+- **OIDC client** (federated SSO): `OidcRegistry` + `OidcClient` per upstream provider; PKCE +
+  nonce; userinfo fetch with graceful endpoint degradation
+- **OIDC provider** (third-party apps authenticate against assay-engine):
+  - Discovery doc at `/.well-known/openid-configuration`
+  - JWKS at `/.well-known/jwks.json`
+  - `/authorize` (code flow + PKCE), `/token` (auth-code + refresh grants), `/userinfo`, `/revoke`
+    (RFC 7009), `/introspect` (RFC 7662)
+  - Federation routes (`/oidc/upstream/{slug}/start`, `/callback`)
+  - Consent screen (askama-rendered HTML)
+  - Admin CRUD over `auth.oidc_clients` + `auth.upstream_providers`
+  - Tables: `auth.oidc_clients`, `auth.upstream_providers`, `auth.oidc_authorization_codes`,
+    `auth.oidc_refresh_tokens`, `auth.oidc_sessions`
+
+### Added — Dashboard auth admin SPA
+
+Mounted at `/auth/console` when auth module is enabled, served from `assay-dashboard` static assets:
+
+- **Users** — list, search, view (with linked passkeys + sessions + upstream links), enable/disable,
+  delete, password reset
+- **Sessions** — global + per-user, single + bulk revoke
+- **OIDC clients** — CRUD + rotate-secret (display once)
+- **OIDC upstream providers** — CRUD
+- **Zanzibar** — namespace browser, tuple inspector, check evaluator, expand viewer
+- **JWKS / Biscuit keys** — list active + history, rotation trigger
+- **Audit log** — paginated `auth.audit` viewer with filters
+
+Conditional render: SPA reads `/api/v1/modules` and renders auth panes only when auth is enabled.
+
+### Added — Lua stdlib `assay.auth.*` (justifies `assay` 0.14.0 bump)
+
+`crates/assay/stdlib/auth.lua` exposes the new auth surface to Lua scripts:
+
+```lua
+assay.auth.login(email, password) / logout() / whoami()
+assay.auth.passkey.{start_register, finish_register, start_auth, finish_auth}
+assay.auth.oidc.{start, complete}
+assay.auth.biscuit.{issue, verify, attenuate}     -- verify + attenuate are local
+assay.auth.zanzibar.{check, expand, write}
+assay.auth.users.{list, get, create, update, delete}
+assay.auth.sessions.{list_for_user, revoke, revoke_all_for_user}
+assay.auth.oidc_clients.{list, create, rotate_secret}
+```
+
+### Schema rename (v0.13.1 → v0.2.0)
+
+All v0.13.1 tables relocated into per-module schemas with the redundant prefix dropped:
+
+| v0.13.1 (`public.*`)  | v0.2.0 (schema-qualified)                               |
+| --------------------- | ------------------------------------------------------- |
+| `engine_events`       | `engine.events`                                         |
+| `engine_lock`         | `engine.lock` (SQLite path; PG uses `pg_advisory_lock`) |
+| `namespaces`          | `workflow.namespaces`                                   |
+| `api_keys`            | `workflow.api_keys`                                     |
+| `workflows`           | `workflow.workflows`                                    |
+| `workflow_events`     | `workflow.events`                                       |
+| `workflow_activities` | `workflow.activities`                                   |
+| `workflow_timers`     | `workflow.timers`                                       |
+| `workflow_signals`    | `workflow.signals`                                      |
+| `workflow_snapshots`  | `workflow.snapshots`                                    |
+| `workflow_schedules`  | `workflow.schedules`                                    |
+| `workflow_workers`    | `workflow.workers`                                      |
+
+PG: idempotent migration block in `assay-workflow` runs `ALTER TABLE … SET SCHEMA …; RENAME TO …`
+for any v0.13.1 tables found in `public`; safe on fresh installs and already-migrated databases.
+
+SQLite: rebuild from scratch (per active-dev convention).
 
 ### Preserved (carried forward from v0.13.1)
 
@@ -78,6 +159,23 @@ Per-crate bumps:
   propagation).
 - LISTEN channel naming (`assay_engine_events_<ns>` per namespace) is configured in code, not
   derived from the table name — no rename needed despite `engine_events` → `engine.events`.
+
+### Docs + website
+
+- New `docs/migration-to-0.2.0.md` upgrade guide
+- Repositioned `README.md` ("One static binary that replaces Temporal + Kratos + Hydra + Keto") +
+  comparison table + auth quick-start
+- 5 new `site/pages/auth-*.html` pages (overview / passkey / OIDC quickstart / Zanzibar / biscuit)
+  - `compare-vs-ory.html`
+- Site nav adds "Auth & IdP"; homepage banner highlights v0.2.0
+- Crate-level rustdoc for `assay-auth` with the Ory-replacement narrative + getting-started doctest
+
+### Binary sizes (measured)
+
+- `assay` (Lua runtime + workflow + dashboard): 11 MB
+- `assay-engine` (workflow + auth + IdP + dashboard): 8.9 MB
+
+vs Ory: kratos + hydra + keto = ~30-45 MB combined, plus a separate dashboard you build yourself.
 
 ## [0.13.1] - 2026-04-24
 

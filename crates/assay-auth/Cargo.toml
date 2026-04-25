@@ -1,6 +1,6 @@
 [package]
 name = "assay-auth"
-version = "0.1.0"
+version = "0.2.0"
 categories = ["authentication", "cryptography", "asynchronous"]
 edition = "2024"
 keywords = ["oidc", "zanzibar", "passkey", "biscuit", "auth"]
@@ -51,7 +51,7 @@ backend-postgres = ["dep:sqlx", "sqlx/postgres"]
 backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 
 [dependencies]
-assay-domain = { path = "../assay-domain", version = "0.1" }
+assay-domain = { path = "../assay-domain", version = "0.2" }
 
 # Shared primitives — small, used unconditionally
 anyhow = "1"

@@ -1,6 +1,6 @@
 [package]
 name = "assay-engine"
-version = "0.1.2"
+version = "0.2.0"
 categories = ["asynchronous", "database", "web-programming::http-server"]
 edition = "2024"
 keywords = ["workflow", "auth", "oidc", "zanzibar", "postgres"]
@@ -34,10 +34,10 @@ backend-postgres = ["assay-workflow/backend-postgres", "assay-auth?/backend-post
 backend-sqlite = ["assay-workflow/backend-sqlite", "assay-auth?/backend-sqlite"]
 
 [dependencies]
-assay-auth = { path = "../assay-auth", version = "0.1", optional = true }
-assay-dashboard = { path = "../assay-dashboard", version = "0.1" }
-assay-domain = { path = "../assay-domain", version = "0.1" }
-assay-workflow = { path = "../assay-workflow", version = "0.2" }
+assay-auth = { path = "../assay-auth", version = "0.2", optional = true }
+assay-dashboard = { path = "../assay-dashboard", version = "0.2" }
+assay-domain = { path = "../assay-domain", version = "0.2" }
+assay-workflow = { path = "../assay-workflow", version = "0.3" }
 
 axum = "0.8"
 clap = { version = "4", features = ["derive", "env"], optional = true }
@@ -49,6 +49,10 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 # `CREATE SCHEMA` on PG, then hands the pool to per-module stores.
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite"] }
 uuid = { version = "1.18", features = ["v7", "serde"] }
+
+# Direct dep so rustdoc can resolve `url::Url` references in lib.rs
+# auth-composition helpers (transitive through assay-auth otherwise).
+url = "2"
 
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
