@@ -10,31 +10,21 @@
 
 use std::sync::Arc;
 
+use assay_auth::AuthCtx;
 use assay_dashboard::DashboardCtx;
 use assay_workflow::{WorkflowCtx, WorkflowStore};
 
-#[cfg(feature = "auth")]
-use assay_auth::AuthCtx;
-
-#[cfg(feature = "auth")]
 pub use assay_auth::state::AdminApiKeys;
 
 use crate::config::EngineConfig;
-
-/// Stand-in `AdminApiKeys` for no-auth builds — same name + same
-/// `FromRef`-shape so `EngineState` stays cfg-clean.
-#[cfg(not(feature = "auth"))]
-#[derive(Clone, Default)]
-pub struct AdminApiKeys(pub Arc<Vec<String>>);
 
 #[derive(Clone)]
 pub struct EngineState<S: WorkflowStore> {
     pub workflow: Arc<WorkflowCtx<S>>,
     pub dashboard: Arc<DashboardCtx>,
-    /// Composed auth context — present iff the `auth` Cargo feature is
-    /// on AND the runtime `engine.modules.auth.enabled` row is TRUE.
-    /// `axum::FromRef` extracts it for the auth router's handlers.
-    #[cfg(feature = "auth")]
+    /// Composed auth context — present iff the runtime
+    /// `engine.modules.auth.enabled` row is TRUE. `axum::FromRef`
+    /// extracts it for the auth router's handlers.
     pub auth: Option<AuthCtx>,
     /// Admin API keys for the `/admin/*` HTTP surface — checked by
     /// auth handlers via `axum::extract::FromRef<EngineState<S>>` so
@@ -67,7 +57,6 @@ pub struct EngineState<S: WorkflowStore> {
     pub engine_config: Arc<EngineConfig>,
 }
 
-#[cfg(feature = "auth")]
 impl<S: WorkflowStore> axum::extract::FromRef<EngineState<S>> for AuthCtx {
     /// FromRef impl so auth handlers can extract the resolved AuthCtx
     /// via `State<AuthCtx>`. Panics when the engine binary mounted the

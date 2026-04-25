@@ -30,7 +30,6 @@ use crate::state::EngineState;
 
 /// Always-public paths under `/api/v1/engine/workflow/*` that bypass
 /// the engine's auth gate (k8s probes, version banners, OpenAPI docs).
-#[cfg(feature = "auth")]
 const WORKFLOW_PUBLIC_PATHS: &[&str] = &[
     "/api/v1/engine/workflow/health",
     "/api/v1/engine/workflow/version",
@@ -53,8 +52,7 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // composed, wrap the workflow router with the gate middleware that
     // enforces `workflow:<namespace>#access` via `assay_auth::gate`.
     let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow));
-    #[cfg(feature = "auth")]
-    let workflow_router = if state.auth.is_some() {
+        let workflow_router = if state.auth.is_some() {
         workflow_router.layer(axum::middleware::from_fn_with_state(
             state.clone(),
             workflow_gate_middleware::<S>,
@@ -88,7 +86,6 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     let engine_api_router = crate::engine_api::router::<S>().with_state(state.clone());
     let engine_console_router = assay_dashboard::engine_router();
 
-    #[cfg_attr(not(feature = "auth"), allow(unused_mut))]
     let mut app = workflow_router
         .merge(dashboard_router)
         .merge(healthz)
@@ -106,8 +103,7 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // `EngineState<S>` implements both impls (see `state.rs`), so the
     // engine threads its full state in once and the auth handlers
     // pluck what they need.
-    #[cfg(feature = "auth")]
-    if state.auth.is_some() {
+        if state.auth.is_some() {
         // OIDC spec endpoints — mounted at `/auth/...`. Discovery doc,
         // JWKS, authorize/token/userinfo/revoke/introspect/logout,
         // federation upstream callbacks. Stable surface that downstream
@@ -153,7 +149,6 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
 /// On gate failure the request short-circuits with the gate's response
 /// (401 Unauthorized or 403 Forbidden); on success the request flows
 /// to the workflow handler with the caller already authorised.
-#[cfg(feature = "auth")]
 async fn workflow_gate_middleware<S: WorkflowStore + Clone + 'static>(
     axum::extract::State(state): axum::extract::State<EngineState<S>>,
     request: axum::extract::Request,
@@ -210,7 +205,6 @@ async fn workflow_gate_middleware<S: WorkflowStore + Clone + 'static>(
     next.run(request).await
 }
 
-#[cfg(feature = "auth")]
 use axum::response::IntoResponse;
 
 /// Bind a TCP listener on `bind_addr` and serve the composed app.

@@ -1,6 +1,4 @@
 pub mod activities;
-pub mod api_keys;
-pub mod auth;
 pub mod events;
 pub mod namespaces;
 pub mod openapi;
@@ -24,10 +22,11 @@ use crate::store::WorkflowStore;
 /// Three tiers, all under `/api/v1/engine/workflow/*`:
 ///
 /// 1. **Authenticated** — workflows, schedules, namespaces, activities,
-///    tasks, workers, queues, api-keys, events. Authentication +
-///    authorization happens at the engine layer (via
-///    [`assay_auth::gate`] in `assay_engine::server`); the workflow
-///    router itself carries no gate.
+///    tasks, workers, queues, events. Authentication + authorization
+///    happens at the engine layer (via [`assay_auth::gate`] in
+///    `assay_engine::server`); the workflow router itself carries no
+///    gate. (The `workflow.api_keys` surface was retired in plan-15
+///    slice 3 — auth tokens come from the auth module now.)
 /// 2. **Public** — health, version. Always unauthenticated so
 ///    Kubernetes probes, load balancers, and third-party monitors can
 ///    reach them without a bearer token.
@@ -58,5 +57,4 @@ fn api_v1_router<S: WorkflowStore>() -> Router<Arc<WorkflowCtx<S>>> {
         .merge(workers::router::<S>())
         .merge(namespaces::router::<S>())
         .merge(queues::router::<S>())
-        .merge(api_keys::router::<S>())
 }

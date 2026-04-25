@@ -51,12 +51,10 @@ pub mod server;
 pub mod seed;
 pub mod state;
 
+pub use assay_auth as auth;
 pub use assay_domain as core;
 pub use assay_dashboard as dashboard;
 pub use assay_workflow as workflow;
-
-#[cfg(feature = "auth")]
-pub use assay_auth as auth;
 
 pub use config::{
     AuthConfig, AuthOidcProviderConfig, AuthPasskeyConfig, AuthSessionConfig, BackendConfig,
@@ -73,35 +71,23 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
             let store = assay_workflow::PostgresStore::from_pool(b.pool.clone())
                 .await
                 .map_err(|e| anyhow::anyhow!("workflow store (pg): {e}"))?;
-            #[cfg(feature = "auth")]
-            let auth_ctx = if b.modules.iter().any(|m| m == "auth") {
-                Some(build_auth_ctx_pg(&cfg, &b.pool).await?)
-            } else {
-                None
-            };
-            #[cfg(not(feature = "auth"))]
-            let auth_ctx: Option<()> = None;
-            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, auth_ctx).await
+            let auth_ctx = build_auth_ctx_pg(&cfg, &b.pool).await?;
+            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, Some(auth_ctx))
+                .await
         }
         #[cfg(feature = "backend-sqlite")]
         init::EngineBoot::Sqlite(b) => {
             let store = assay_workflow::SqliteStore::from_attached_pool(b.pool.clone())
                 .await
                 .map_err(|e| anyhow::anyhow!("workflow store (sqlite): {e}"))?;
-            #[cfg(feature = "auth")]
-            let auth_ctx = if b.modules.iter().any(|m| m == "auth") {
-                Some(build_auth_ctx_sqlite(&cfg, &b.pool).await?)
-            } else {
-                None
-            };
-            #[cfg(not(feature = "auth"))]
-            let auth_ctx: Option<()> = None;
-            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, auth_ctx).await
+            let auth_ctx = build_auth_ctx_sqlite(&cfg, &b.pool).await?;
+            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, Some(auth_ctx))
+                .await
         }
     }
 }
 
-#[cfg(all(feature = "auth", feature = "backend-postgres"))]
+#[cfg(feature = "backend-postgres")]
 async fn build_auth_ctx_pg(
     cfg: &EngineConfig,
     pool: &sqlx::PgPool,
@@ -179,7 +165,7 @@ async fn build_auth_ctx_pg(
     Ok(ctx)
 }
 
-#[cfg(all(feature = "auth", feature = "backend-sqlite"))]
+#[cfg(feature = "backend-sqlite")]
 async fn build_auth_ctx_sqlite(
     cfg: &EngineConfig,
     pool: &sqlx::SqlitePool,
@@ -260,7 +246,6 @@ async fn build_auth_ctx_sqlite(
 /// Issuer for JWTs minted via the `auth-jwt` module. Defaults to
 /// `<server.public_url>/auth` when unset, matching where the auth
 /// router is mounted.
-#[cfg(feature = "auth")]
 fn effective_issuer(cfg: &EngineConfig) -> String {
     if let Some(issuer) = &cfg.auth.issuer {
         return issuer.clone();
@@ -272,13 +257,6 @@ fn effective_issuer(cfg: &EngineConfig) -> String {
 /// Issuer the OIDC provider advertises in its discovery doc + the `iss`
 /// claim of every issued id_token. Defaults to the parent
 /// [`effective_issuer`] when no override is set.
-///
-/// Gated only on `feature = "auth"` (not `auth-oidc-provider`) because
-/// `assay-engine` does not re-export `assay-auth`'s sub-feature flags —
-/// the `auth` meta-feature in `assay-auth` always pulls in
-/// `auth-oidc-provider` (and friends), so for engine builds these
-/// helpers are always reachable when `auth` is on.
-#[cfg(feature = "auth")]
 fn oidc_issuer(cfg: &EngineConfig) -> String {
     cfg.auth
         .oidc_provider
@@ -289,7 +267,6 @@ fn oidc_issuer(cfg: &EngineConfig) -> String {
 
 /// Parse `server.public_url` as a `url::Url`. Used by the OIDC provider
 /// to derive default redirect targets and by passkey RP setup.
-#[cfg(feature = "auth")]
 fn parse_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
     url::Url::parse(&cfg.server.public_url)
         .map_err(|e| anyhow::anyhow!("server.public_url {:?}: {e}", cfg.server.public_url))
@@ -298,11 +275,6 @@ fn parse_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
 /// Build a passkey manager from `auth.passkey` config. Returns `None`
 /// when the public_url isn't parseable as a URL with a host (passkeys
 /// require an origin) — we log + skip rather than fail boot.
-///
-/// Gated only on `feature = "auth"` (see [`oidc_issuer`] for the same
-/// rationale): `assay-auth`'s `auth` meta-feature pulls `auth-passkey`
-/// in, so engine builds with `auth` always have this helper available.
-#[cfg(feature = "auth")]
 fn build_passkey_manager(
     cfg: &EngineConfig,
     users: Arc<dyn assay_auth::store::UserStore>,
@@ -340,19 +312,37 @@ fn build_passkey_manager(
     }
 }
 
-#[cfg(not(feature = "auth"))]
-type AuthCtxOpt = Option<()>;
-#[cfg(feature = "auth")]
-type AuthCtxOpt = Option<assay_auth::AuthCtx>;
-
 async fn run_with_store<S: WorkflowStore + Clone + 'static>(
     cfg: EngineConfig,
     store: S,
     bus: Arc<dyn EngineEventBus>,
     modules: Vec<String>,
     instance_id: uuid::Uuid,
-    auth_ctx: AuthCtxOpt,
+    auth_ctx: Option<assay_auth::AuthCtx>,
 ) -> anyhow::Result<()> {
+    // Plan-15 slice 3: refuse to start if there's no admin path. Engine
+    // requires either at least one operator user (created via
+    // `bootstrap-admin`) OR at least one `admin_api_keys` entry as a
+    // break-glass. Without either, every admin request would 401 and
+    // the operator would be locked out — fail fast with a helpful
+    // message instead.
+    if let Some(auth) = auth_ctx.as_ref() {
+        let user_count = auth
+            .users
+            .count_users(None)
+            .await
+            .map_err(|e| anyhow::anyhow!("count auth.users: {e}"))?;
+        if user_count == 0 && cfg.auth.admin_api_keys.is_empty() {
+            anyhow::bail!(
+                "engine refuses to start: no operator users exist and \
+                 `auth.admin_api_keys` is empty. Either run \
+                 `assay-engine bootstrap-admin --email <e> --password <p>` \
+                 to seed the first user, or add at least one entry to \
+                 `auth.admin_api_keys` in engine.toml as a break-glass."
+            );
+        }
+    }
+
     let workflow_ctx = server::build_workflow_ctx_with_bus(store, Arc::clone(&bus));
 
     // Hourly sweep of the engine_events outbox. Detached — the handle
@@ -368,8 +358,6 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
     let asset_version = env!("CARGO_PKG_VERSION").to_string();
     let dashboard_ctx = Arc::new(DashboardCtx::new(whitelabel, asset_version));
     let admin_api_keys = Arc::new(cfg.auth.admin_api_keys.clone());
-    #[cfg(not(feature = "auth"))]
-    let _ = auth_ctx;
     // Wall-clock seconds since epoch — uptime baseline for the
     // /api/v1/engine/core/info response. Captured here (just before serve)
     // so the value reflects the moment HTTP becomes ready, not the
@@ -383,7 +371,6 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
     let state = EngineState {
         workflow: workflow_ctx,
         dashboard: dashboard_ctx,
-        #[cfg(feature = "auth")]
         auth: auth_ctx,
         admin_api_keys,
         modules: Arc::new(modules),

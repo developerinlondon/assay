@@ -9,13 +9,11 @@ repository = "https://github.com/developerinlondon/assay"
 description = "Dashboard (HTML + JS + CSS) for assay-workflow and assay-engine. Feature-gated per view set."
 
 [features]
-default = ["workflow"]
-workflow = []
-# Auth console — adds the `/auth/console` SPA + asset routes that
-# consume the engine's `/auth/admin/*` endpoints. Conditional on the
-# engine binary's `auth` Cargo feature being on; the dashboard crate
-# itself never links to `assay-auth` (assets are baked-in HTML/JS).
-auth = []
+# Plan-15 slice 3: workflow + auth are mandatory. The engine ships
+# both consoles and gates them at runtime via `engine.modules`, not
+# at compile time. The features here are kept empty for now in case
+# a slim downstream dashboard build wants to opt out one console.
+default = []
 
 [dependencies]
 assay-domain = { path = "../assay-domain", version = "0.2" }

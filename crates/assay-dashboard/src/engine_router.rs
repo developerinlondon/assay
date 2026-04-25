@@ -72,11 +72,8 @@ fn asset(content_type: &'static str, body: &'static str) -> impl IntoResponse {
 
 async fn index() -> impl IntoResponse {
     // Substitute the same template tokens the workflow router fills
-    // (whitelabel-aware); fall back to a vanilla render when the
-    // workflow feature is off so the shell still loads in an auth-only
-    // build. Title is overridden to "Assay Engine — Engine" so the
-    // browser tab tells operators which console they're on.
-    #[cfg(feature = "workflow")]
+    // (whitelabel-aware). Title overridden to "Assay Engine — Engine"
+    // so the browser tab tells operators which console they're on.
     let body = {
         let asset_version = env!("CARGO_PKG_VERSION");
         crate::whitelabel::render_index(
@@ -86,23 +83,6 @@ async fn index() -> impl IntoResponse {
         )
         .replace("Assay Engine — Workflow", "Assay Engine — Engine")
     };
-    #[cfg(not(feature = "workflow"))]
-    let body = ENGINE_INDEX_HTML
-        .replace("__ASSETV__", env!("CARGO_PKG_VERSION"))
-        .replace("__PAGE_TITLE__", "Assay Engine — Engine")
-        .replace("__BRAND_NAME__", "Assay")
-        .replace("__BRAND_MARK__", "A")
-        .replace("__BRAND_LOGO_IMG__", "")
-        .replace(
-            "__FAVICON_LINK__",
-            r#"<link rel="icon" type="image/svg+xml" href="/engine/favicon.svg">"#,
-        )
-        .replace("__EXTRA_CSS_LINK__", "")
-        .replace("__DEFAULT_NAMESPACE_ATTR__", "")
-        .replace(
-            "__ENGINE_FOOTER__",
-            r#"Powered by Assay Engine <span id="status-version">—</span>"#,
-        );
     (
         StatusCode::OK,
         [

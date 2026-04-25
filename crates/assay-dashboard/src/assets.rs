@@ -3,15 +3,12 @@
 //! Every asset is baked into the binary at compile time via `include_str!`.
 //! Served by the router in `crate::router`.
 
-#[cfg(feature = "workflow")]
 pub const INDEX_HTML: &str = include_str!("../assets/workflow/index.html");
-#[cfg(feature = "workflow")]
 pub const THEME_CSS: &str = include_str!("../assets/workflow/theme.css");
 
 // style.css is split across numbered section files for maintainability.
 // Concat order is cascade order — filenames are numbered to make that obvious.
 // Served as a single /workflow/style.css so the browser does one HTTP fetch.
-#[cfg(feature = "workflow")]
 pub const STYLE_CSS: &str = concat!(
     include_str!("../assets/workflow/styles/00-base.css"),
     include_str!("../assets/workflow/styles/10-sidebar.css"),
@@ -34,25 +31,15 @@ pub const STYLE_CSS: &str = concat!(
     include_str!("../assets/workflow/styles/80-mobile.css"),
 );
 
-#[cfg(feature = "workflow")]
 pub const APP_JS: &str = include_str!("../assets/workflow/app.js");
-#[cfg(feature = "workflow")]
 pub const WORKFLOWS_JS: &str = include_str!("../assets/workflow/components/workflows.js");
-#[cfg(feature = "workflow")]
 pub const DETAIL_JS: &str = include_str!("../assets/workflow/components/detail.js");
-#[cfg(feature = "workflow")]
 pub const SCHEDULES_JS: &str = include_str!("../assets/workflow/components/schedules.js");
-#[cfg(feature = "workflow")]
 pub const WORKERS_JS: &str = include_str!("../assets/workflow/components/workers.js");
-#[cfg(feature = "workflow")]
 pub const QUEUES_JS: &str = include_str!("../assets/workflow/components/queues.js");
-#[cfg(feature = "workflow")]
 pub const SETTINGS_JS: &str = include_str!("../assets/workflow/components/settings.js");
-#[cfg(feature = "workflow")]
 pub const MODAL_JS: &str = include_str!("../assets/workflow/components/modal.js");
-#[cfg(feature = "workflow")]
 pub const ACTIONS_JS: &str = include_str!("../assets/workflow/components/actions.js");
-#[cfg(feature = "workflow")]
 pub const SELECT_JS: &str = include_str!("../assets/workflow/components/select.js");
 
 /// Inline SVG favicon — single accent-coloured "A" mark on a dark surface.
@@ -62,29 +49,18 @@ pub const FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBo
 //   Auth console assets (feature = "auth")
 // =====================================================================
 
-#[cfg(feature = "auth")]
 pub const AUTH_INDEX_HTML: &str = include_str!("../assets/auth/index.html");
-#[cfg(feature = "auth")]
 pub const AUTH_STYLE_CSS: &str = include_str!("../assets/auth/style.css");
-#[cfg(feature = "auth")]
 pub const AUTH_APP_JS: &str = include_str!("../assets/auth/app.js");
-#[cfg(feature = "auth")]
 pub const AUTH_API_JS: &str = include_str!("../assets/auth/components/api.js");
-#[cfg(feature = "auth")]
 pub const AUTH_USERS_JS: &str = include_str!("../assets/auth/components/users.js");
-#[cfg(feature = "auth")]
 pub const AUTH_SESSIONS_JS: &str = include_str!("../assets/auth/components/sessions.js");
-#[cfg(feature = "auth")]
 pub const AUTH_OIDC_CLIENTS_JS: &str =
     include_str!("../assets/auth/components/oidc_clients.js");
-#[cfg(feature = "auth")]
 pub const AUTH_OIDC_UPSTREAM_JS: &str =
     include_str!("../assets/auth/components/oidc_upstream.js");
-#[cfg(feature = "auth")]
 pub const AUTH_ZANZIBAR_JS: &str = include_str!("../assets/auth/components/zanzibar.js");
-#[cfg(feature = "auth")]
 pub const AUTH_KEYS_JS: &str = include_str!("../assets/auth/components/keys.js");
-#[cfg(feature = "auth")]
 pub const AUTH_AUDIT_JS: &str = include_str!("../assets/auth/components/audit.js");
 
 // =====================================================================

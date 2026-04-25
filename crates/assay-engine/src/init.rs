@@ -52,24 +52,21 @@ pub struct BuiltinModule {
 /// auth migrations on upgrade. Local dev flips this via
 /// `EngineConfig.auto_enable_modules = ["auth"]`.
 pub fn builtin_modules() -> Vec<BuiltinModule> {
-    // `mut` is only needed when auth (or any future opt-in module) is
-    // compiled in; cfg-attr the binding so a no-auth build doesn't trip
-    // the unused-mut lint.
-    #[cfg_attr(not(feature = "auth"), allow(unused_mut))]
-    let mut modules = vec![BuiltinModule {
-        name: "workflow",
-        version: env!("CARGO_PKG_VERSION"),
-        default_enabled: true,
-    }];
-    #[cfg(feature = "auth")]
-    {
-        modules.push(BuiltinModule {
+    vec![
+        BuiltinModule {
+            name: "workflow",
+            version: env!("CARGO_PKG_VERSION"),
+            default_enabled: true,
+        },
+        // Plan-15 slice 3: auth is mandatory and default-enabled. The
+        // engine itself authenticates every admin + workflow request via
+        // the auth module; running with auth disabled isn't supported.
+        BuiltinModule {
             name: "auth",
             version: env!("CARGO_PKG_VERSION"),
-            default_enabled: false,
-        });
-    }
-    modules
+            default_enabled: true,
+        },
+    ]
 }
 
 /// Sweep interval for the stale-instance cleanup task. Removes
@@ -183,49 +180,21 @@ async fn pg_boot(url: &str, auto_enable: &[String]) -> anyhow::Result<PgBoot> {
         record_engine_migration_pg(&pool, name, 1).await?;
     }
 
-    // Auth module schema migration. Compile-time `auth` feature controls
-    // whether the code is *linked*; runtime `engine.modules` row controls
-    // whether it's *active*. The schema migration only runs when both
-    // hold — so a no-auth build never touches `auth.*` and an auth build
-    // with `engine.modules.auth.enabled = FALSE` doesn't either.
-    //
-    // Phase 5: when auth is active, biscuit's `auth.biscuit_root_keys`
-    // row is loaded-or-initialised right after the migrations land so
-    // the AuthCtx the binary builds carries a stable root key.
-    // [`assay_auth::biscuit::load_or_init_postgres`] is idempotent —
-    // restart with an existing row reuses it, fresh DB generates one.
-    //
-    // Phase 6: `migrate_postgres` now also creates `auth.zanzibar_*`
-    // (V3) — the recursive-CTE walk's tuple table + namespace cache.
-    // Full AuthCtx wiring (constructing the `PostgresZanzibarStore`
-    // and stashing it via `AuthCtx::with_zanzibar`) is deferred to
-    // phase 8 alongside HTTP route mounting; the migration here is
-    // what unblocks that composition.
-    #[cfg(feature = "auth")]
-    {
-        if modules.iter().any(|m| m == "auth") {
-            assay_auth::schema::migrate_postgres(&pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("auth schema migrate (pg): {e}"))?;
-            // Bootstrap the biscuit root key — fire-and-discard the
-            // returned config; the engine binary will call
-            // `load_or_init_postgres` again when it builds the AuthCtx
-            // (cheap: SELECT-only on the second call). Doing it here
-            // catches DDL/permission errors at boot.
-            let _ = assay_auth::biscuit::load_or_init_postgres(&pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("biscuit root key bootstrap (pg): {e}"))?;
-            // Phase 7: smoke-touch the OIDC provider tables (V4) so a
-            // missing migration / permissions issue surfaces at boot
-            // rather than first request. Construction of the actual
-            // `OidcProviderConfig` (and `AuthCtx::with_oidc_provider`)
-            // lands in phase 8 alongside the HTTP handler wiring; this
-            // probe just confirms the V4 tables exist + are readable.
-            sqlx::query("SELECT COUNT(*) FROM auth.oidc_clients")
-                .fetch_one(&pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("oidc provider tables (pg): {e}"))?;
-        }
+    // Auth schema migration — always runs (auth is mandatory per plan-15
+    // slice 3). Loads the biscuit root key (or initialises one on first
+    // boot) and smoke-touches the OIDC provider tables so missing DDL or
+    // permission issues surface here rather than at first request.
+    if modules.iter().any(|m| m == "auth") {
+        assay_auth::schema::migrate_postgres(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("auth schema migrate (pg): {e}"))?;
+        let _ = assay_auth::biscuit::load_or_init_postgres(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("biscuit root key bootstrap (pg): {e}"))?;
+        sqlx::query("SELECT COUNT(*) FROM auth.oidc_clients")
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("oidc provider tables (pg): {e}"))?;
     }
 
     let bus: Arc<dyn EngineEventBus> = Arc::new(
@@ -352,10 +321,6 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
 
     let engine_attach = sqlite_attach_uri(data_dir, "engine", in_memory);
     let workflow_attach = sqlite_attach_uri(data_dir, "workflow", in_memory);
-    // Compile-time-gated. Only built (and only ATTACHed) when the auth
-    // feature is on. Runtime `engine.modules` enablement is checked
-    // *after* the pool opens — see the auth migrate block below.
-    #[cfg(feature = "auth")]
     let auth_attach = sqlite_attach_uri(data_dir, "auth", in_memory);
 
     info!(
@@ -371,7 +336,6 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
         .after_connect(move |conn, _meta| {
             let engine_attach = engine_attach.clone();
             let workflow_attach = workflow_attach.clone();
-            #[cfg(feature = "auth")]
             let auth_attach = auth_attach.clone();
             Box::pin(async move {
                 use sqlx::Executor;
@@ -383,11 +347,6 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
                     format!("ATTACH DATABASE '{workflow_attach}' AS workflow").as_str(),
                 )
                 .await?;
-                // Always-attach auth.db (when auth feature is compiled).
-                // The schema migration only runs when the runtime
-                // `engine.modules.auth.enabled` is TRUE; an unused
-                // attached database is a cheap idle file.
-                #[cfg(feature = "auth")]
                 conn.execute(
                     format!("ATTACH DATABASE '{auth_attach}' AS auth").as_str(),
                 )
@@ -411,33 +370,19 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
         record_engine_migration_sqlite(&pool, name, 1).await?;
     }
 
-    // Auth module migration. Mirrors the PG path: only runs when the
-    // `auth` feature is compiled in AND `engine.modules.auth.enabled`
-    // is TRUE. The ATTACH already happened on connect.
-    //
-    // Phase 5: same as PG — load-or-init the biscuit root key right
-    // after migrations.
-    //
-    // Phase 6: `migrate_sqlite` also creates the V3 zanzibar tables
-    // (`auth.zanzibar_namespaces`, `auth.zanzibar_tuples`) so the
-    // SQLite ZanzibarStore is ready to construct in phase 8.
-    #[cfg(feature = "auth")]
-    {
-        if modules.iter().any(|m| m == "auth") {
-            assay_auth::schema::migrate_sqlite(&pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("auth schema migrate (sqlite): {e}"))?;
-            let _ = assay_auth::biscuit::load_or_init_sqlite(&pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("biscuit root key bootstrap (sqlite): {e}"))?;
-            // Phase 7: smoke-touch the OIDC provider tables (V4) — same
-            // rationale as the PG path. Construction of the actual
-            // `OidcProviderConfig` happens in phase 8.
-            sqlx::query("SELECT COUNT(*) FROM auth.oidc_clients")
-                .fetch_one(&pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("oidc provider tables (sqlite): {e}"))?;
-        }
+    // Auth schema migration — always runs (auth is mandatory per plan-15
+    // slice 3). The ATTACH already happened on connect.
+    if modules.iter().any(|m| m == "auth") {
+        assay_auth::schema::migrate_sqlite(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("auth schema migrate (sqlite): {e}"))?;
+        let _ = assay_auth::biscuit::load_or_init_sqlite(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("biscuit root key bootstrap (sqlite): {e}"))?;
+        sqlx::query("SELECT COUNT(*) FROM auth.oidc_clients")
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("oidc provider tables (sqlite): {e}"))?;
     }
 
     let bus: Arc<dyn EngineEventBus> = Arc::new(
@@ -552,10 +497,7 @@ fn spawn_sqlite_instance_lifecycle(pool: sqlx::SqlitePool, id: uuid::Uuid) {
     });
 }
 
-// Gate the test module on the features its tests need so feature combos
-// without auth or sqlite don't trigger an unused-import warning on
-// `use super::*;`.
-#[cfg(all(test, feature = "backend-sqlite", feature = "auth"))]
+#[cfg(all(test, feature = "backend-sqlite"))]
 mod tests {
     use super::*;
 

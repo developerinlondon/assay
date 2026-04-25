@@ -2,7 +2,7 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
-use crate::store::{ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats, WorkflowStore};
+use crate::store::{NamespaceRecord, NamespaceStats, QueueStats, WorkflowStore};
 use crate::types::*;
 
 /// Workflow-module DDL. v0.1.2 schema-qualifies every table to the
@@ -150,13 +150,10 @@ CREATE TABLE IF NOT EXISTS workflow.snapshots (
     PRIMARY KEY (workflow_id, event_seq)
 );
 
-CREATE TABLE IF NOT EXISTS workflow.api_keys (
-    key_hash        TEXT PRIMARY KEY,
-    prefix          TEXT NOT NULL,
-    label           TEXT,
-    created_at      REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS workflow.idx_api_keys_prefix ON api_keys(prefix);
+-- Plan-15 slice 3: workflow.api_keys retired in favour of the auth
+-- module (sessions / JWT / Zanzibar tuples). Table is dropped on
+-- migration; nothing here re-creates it.
+DROP TABLE IF EXISTS workflow.api_keys;
 
 CREATE TABLE IF NOT EXISTS engine.lock (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
@@ -1331,81 +1328,6 @@ impl WorkflowStore for SqliteStore {
                 .await?;
         }
         Ok(ids)
-    }
-
-    // ── API Keys ────────────────────────────────────────────
-
-    async fn create_api_key(
-        &self,
-        key_hash: &str,
-        prefix: &str,
-        label: Option<&str>,
-        created_at: f64,
-    ) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO workflow.api_keys (key_hash, prefix, label, created_at) VALUES (?, ?, ?, ?)",
-        )
-        .bind(key_hash)
-        .bind(prefix)
-        .bind(label)
-        .bind(created_at)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn validate_api_key(&self, key_hash: &str) -> Result<bool> {
-        let row: Option<(i64,)> =
-            sqlx::query_as("SELECT 1 FROM workflow.api_keys WHERE key_hash = ?")
-                .bind(key_hash)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.is_some())
-    }
-
-    async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>> {
-        let rows = sqlx::query_as::<_, (String, Option<String>, f64)>(
-            "SELECT prefix, label, created_at FROM workflow.api_keys ORDER BY created_at DESC",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows
-            .into_iter()
-            .map(|(prefix, label, created_at)| ApiKeyRecord {
-                prefix,
-                label,
-                created_at,
-            })
-            .collect())
-    }
-
-    async fn revoke_api_key(&self, prefix: &str) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM workflow.api_keys WHERE prefix = ?")
-            .bind(prefix)
-            .execute(&self.pool)
-            .await?;
-        Ok(res.rows_affected() > 0)
-    }
-
-    async fn api_keys_empty(&self) -> Result<bool> {
-        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM workflow.api_keys")
-            .fetch_one(&self.pool)
-            .await?;
-        Ok(row.0 == 0)
-    }
-
-    async fn get_api_key_by_label(&self, label: &str) -> Result<Option<ApiKeyRecord>> {
-        let row: Option<(String, Option<String>, f64)> = sqlx::query_as(
-            "SELECT prefix, label, created_at FROM workflow.api_keys WHERE label = ? LIMIT 1",
-        )
-        .bind(label)
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(row.map(|(prefix, label, created_at)| ApiKeyRecord {
-            prefix,
-            label,
-            created_at,
-        }))
     }
 
     // ── Child Workflows ─────────────────────────────────────

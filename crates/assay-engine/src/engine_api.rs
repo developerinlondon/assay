@@ -481,57 +481,32 @@ fn redact_secrets(v: &mut Value) {
 
 /// Engine-core admin gate.
 ///
-/// When the `auth` feature is on AND an [`AuthCtx`] is composed into
-/// the running state, dispatch to [`assay_auth::gate::require_role_for`]
+/// Auth is mandatory (plan-15 slice 3) so the engine always has an
+/// [`AuthCtx`]. Dispatch to [`assay_auth::gate::require_role_for`]
 /// for `engine#core#admin`. Admin api-key callers bypass as
 /// break-glass; session/JWT callers go through Zanzibar.
-///
-/// Otherwise (no-auth builds or auth-feature-on-but-not-configured),
-/// fall back to the legacy admin api-key check so single-binary
-/// deployments without auth still work for ops scripts.
 async fn require_admin<S: WorkflowStore + Clone + 'static>(
     headers: &HeaderMap,
     state: &EngineState<S>,
 ) -> Result<(), Box<Response>> {
-    #[cfg(feature = "auth")]
-    if let Some(auth) = state.auth.as_ref() {
-        let keys = crate::state::AdminApiKeys(std::sync::Arc::clone(&state.admin_api_keys));
-        return assay_auth::gate::require_role_for(
-            headers, auth, &keys, "engine", "core", "admin",
-        )
+    let auth = state
+        .auth
+        .as_ref()
+        .ok_or_else(|| svc_unavailable_box("auth not configured on this engine instance"))?;
+    let keys = crate::state::AdminApiKeys(std::sync::Arc::clone(&state.admin_api_keys));
+    assay_auth::gate::require_role_for(headers, auth, &keys, "engine", "core", "admin")
         .await
-        .map(|_| ());
-    }
-    require_admin_api_key_only(headers, &state.admin_api_keys)
+        .map(|_| ())
 }
 
-/// Legacy admin api-key check, preserved as the auth-disabled fallback
-/// for [`require_admin`]. Constant-time comparison against every
-/// configured key.
-fn require_admin_api_key_only(
-    headers: &HeaderMap,
-    keys: &[String],
-) -> Result<(), Box<Response>> {
-    if keys.is_empty() {
-        return Err(Box::new(
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "admin disabled — no admin_api_keys configured"})),
-            )
-                .into_response(),
-        ));
-    }
-    let presented = bearer_token(headers).unwrap_or_default();
-    if !keys.iter().any(|k| constant_eq(k.as_bytes(), presented.as_bytes())) {
-        return Err(Box::new(
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "invalid admin token"})),
-            )
-                .into_response(),
-        ));
-    }
-    Ok(())
+fn svc_unavailable_box(msg: &str) -> Box<Response> {
+    Box::new(
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "service_unavailable", "error_description": msg})),
+        )
+            .into_response(),
+    )
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<String> {
@@ -541,21 +516,6 @@ fn bearer_token(headers: &HeaderMap) -> Option<String> {
     raw.strip_prefix("Bearer ")
         .or_else(|| raw.strip_prefix("bearer "))
         .map(|s| s.trim().to_string())
-}
-
-/// Constant-time-ish equality on equal-length byte slices. Prevents the
-/// trivial timing leak from comparing raw `&[u8] == &[u8]`. The length
-/// short-circuit is unavoidable with variable-length tokens but is
-/// considered acceptable for admin api-keys (operator-controlled).
-fn constant_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff: u8 = 0;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
 }
 
 /// Reduce an admin token to a short, non-reversible identifier so the
@@ -814,28 +774,9 @@ mod tests {
         assert!(red.contains("/assay"));
     }
 
-    #[test]
-    fn require_admin_api_key_only_locks_when_keys_empty() {
-        let h = HeaderMap::new();
-        let keys: Vec<String> = vec![];
-        assert!(require_admin_api_key_only(&h, &keys).is_err());
-    }
-
-    #[test]
-    fn require_admin_api_key_only_accepts_known_bearer() {
-        let mut h = HeaderMap::new();
-        h.insert(header::AUTHORIZATION, "Bearer abcd".parse().unwrap());
-        let keys: Vec<String> = vec!["abcd".to_string()];
-        assert!(require_admin_api_key_only(&h, &keys).is_ok());
-    }
-
-    #[test]
-    fn require_admin_api_key_only_rejects_wrong_bearer() {
-        let mut h = HeaderMap::new();
-        h.insert(header::AUTHORIZATION, "Bearer wrong".parse().unwrap());
-        let keys: Vec<String> = vec!["abcd".to_string()];
-        assert!(require_admin_api_key_only(&h, &keys).is_err());
-    }
+    // Admin-gate behaviour now lives in `assay_auth::gate` —
+    // engine_api's `require_admin` is a one-line wrapper. Tests for
+    // the gate live in that crate's gate.rs.
 
     #[test]
     fn short_actor_safely_truncates() {
