@@ -1,0 +1,29 @@
+# E2E fixture config for the engine + auth consoles. Used by
+# tests-e2e/run.sh to boot the engine; never read in production. Keep
+# bind_addr / public_url in lock-step with playwright.config.ts'
+# baseURL.
+
+auto_enable_modules = ["auth"]
+
+[server]
+bind_addr = "127.0.0.1:8420"
+public_url = "http://localhost:8420"
+
+[backend]
+type = "sqlite"
+data_dir = "/tmp/assay-engine-e2e-data"
+
+[auth]
+audience = ["http://localhost:8420"]
+admin_api_keys = ["dev-admin-key-change-me"]
+
+[auth.passkey]
+rp_id = "localhost"
+rp_name = "Assay E2E"
+
+[auth.oidc_provider]
+enabled = true
+
+[logging]
+level = "info"
+format = "pretty"

@@ -1,0 +1,53 @@
+# Headless browser tests for the engine + auth consoles + cross-nav
+# strip. Boots assay-engine with auth + admin api-keys configured,
+# runs the seed-sample subcommand to populate fixture rows, then
+# drives the consoles with Playwright. Lifecycle script is `run.sh`
+# in this dir — keeps the runner POSIX-portable so CI doesn't depend
+# on the assay Lua runtime being built before the e2e step.
+
+language: "typescript"
+layer: "automation"
+stack: "frontend"
+
+tasks:
+  install:
+    command: "npm install --no-audit --no-fund"
+    inputs:
+      - "package.json"
+      - "package-lock.json"
+    outputs:
+      - "node_modules"
+    options:
+      cache: true
+      runInCI: true
+
+  install-browsers:
+    command: "npx playwright install --with-deps chromium"
+    deps:
+      - "install"
+    options:
+      cache: false
+      runInCI: true
+
+  test:
+    # Build the engine binary first, then hand over to run.sh which
+    # boots it, seeds fixtures, runs Playwright, and tears down. The
+    # `assay-lua:build` task already does `cargo build --release` for
+    # both `assay` and `assay-engine` (see crates/assay/moon.yml) so
+    # we reuse it here rather than declaring a separate engine-only
+    # build task that would shadow the workspace cache.
+    command: "bash run.sh"
+    deps:
+      - "assay-lua:build"
+      - "install-browsers"
+    inputs:
+      - "**/*.{ts,sh,toml,json}"
+      - "fixtures/**/*"
+      - "/crates/assay-dashboard/src/**/*"
+      - "/crates/assay-dashboard/assets/**/*"
+      - "/crates/assay-engine/src/**/*"
+      - "/crates/assay-auth/src/**/*"
+    options:
+      cache: true
+      runInCI: true
+      retryCount: 1
