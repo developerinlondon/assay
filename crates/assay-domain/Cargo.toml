@@ -33,10 +33,14 @@ tracing = "0.1"
 async-stream = { version = "0.3", optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls"], optional = true }
 
+# UUIDv7 for engine-core tables (engine.audit, engine.instances). PG18
+# has native uuidv7(); SQLite generates the value in Rust before insert.
+uuid = { version = "1.18", features = ["v7", "serde"], optional = true }
+
 [features]
 default = []
-backend-postgres = ["dep:sqlx", "sqlx/postgres", "dep:async-stream"]
-backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
+backend-postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/uuid", "dep:async-stream", "dep:uuid"]
+backend-sqlite = ["dep:sqlx", "sqlx/sqlite", "dep:uuid"]
 
 [dev-dependencies]
 serial_test = "3"
