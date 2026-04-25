@@ -69,16 +69,20 @@ async fn index() -> impl IntoResponse {
     // Substitute the same template tokens the workflow router fills
     // when the workflow feature is on. With `auth` enabled but
     // `workflow` off (theoretical edge case), fall back to plain
-    // template-token replacement here so the shell still loads.
+    // template-token replacement here so the shell still loads. Page
+    // title / footer use the unified "Assay Engine — Auth" wording so
+    // operators reading the tab title can tell the three consoles
+    // apart at a glance.
     #[cfg(feature = "workflow")]
     let body = {
         let asset_version = env!("CARGO_PKG_VERSION");
         crate::whitelabel::render_index(AUTH_INDEX_HTML, asset_version, &crate::whitelabel::WHITELABEL)
+            .replace("Assay Workflow Dashboard", "Assay Engine — Auth")
     };
     #[cfg(not(feature = "workflow"))]
     let body = AUTH_INDEX_HTML
         .replace("__ASSETV__", env!("CARGO_PKG_VERSION"))
-        .replace("__PAGE_TITLE__", "Assay Auth Console")
+        .replace("__PAGE_TITLE__", "Assay Engine — Auth")
         .replace("__BRAND_NAME__", "Assay")
         .replace("__BRAND_MARK__", "A")
         .replace("__BRAND_LOGO_IMG__", "")
@@ -88,7 +92,10 @@ async fn index() -> impl IntoResponse {
         )
         .replace("__EXTRA_CSS_LINK__", "")
         .replace("__DEFAULT_NAMESPACE_ATTR__", "")
-        .replace("__ENGINE_FOOTER__", "Assay Auth Console");
+        .replace(
+            "__ENGINE_FOOTER__",
+            r#"Powered by Assay Engine <span id="status-version">—</span>"#,
+        );
     (
         StatusCode::OK,
         [

@@ -11,7 +11,7 @@
 //! | ------------------------------- | ---------------------------------------------------- | ---------------------------- |
 //! | `ASSAY_WHITELABEL_NAME`         | Text in the sidebar header + footer                  | `Assay`                      |
 //! | `ASSAY_WHITELABEL_LOGO_URL`     | Image URL rendered before the brand text             | — (no image)                 |
-//! | `ASSAY_WHITELABEL_PAGE_TITLE`   | Browser tab title                                    | `Assay Workflow Dashboard`   |
+//! | `ASSAY_WHITELABEL_PAGE_TITLE`   | Browser tab title                                    | `Assay Engine — Workflow`    |
 //! | `ASSAY_WHITELABEL_PARENT_URL`   | When set, adds a back-link in the sidebar footer     | — (hidden)                   |
 //! | `ASSAY_WHITELABEL_PARENT_NAME`  | Label for the back-link                              | `Back`                       |
 //! | `ASSAY_WHITELABEL_API_DOCS_URL` | Override (or hide) the API Docs sidebar link         | `/api/v1/docs`               |
@@ -149,7 +149,7 @@ impl WhitelabelConfig {
             .ok()
             .filter(|s| !s.is_empty());
         let page_title = std::env::var("ASSAY_WHITELABEL_PAGE_TITLE")
-            .unwrap_or_else(|_| "Assay Workflow Dashboard".to_string());
+            .unwrap_or_else(|_| "Assay Engine — Workflow".to_string());
         let parent_url = std::env::var("ASSAY_WHITELABEL_PARENT_URL")
             .ok()
             .filter(|s| !s.is_empty());
@@ -248,16 +248,16 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         )
     };
 
-    // Footer version-line: vanilla dashboards keep the current
-    // "Assay Workflow Engine vX.Y.Z" wording. Whitelabel deployments
-    // get a "Powered by Assay Engine vX.Y.Z" line — distinguishes the
-    // engine binary (the daemon) from the `assay` Lua runtime binary,
-    // still links to assay.rs for discovery. The version span is
-    // populated by the existing dashboard JS in both variants.
+    // Footer version-line: every dashboard now says "Powered by Assay
+    // Engine vX.Y.Z" — distinguishes the engine binary (the daemon)
+    // from the `assay` Lua runtime binary, links to assay.rs for
+    // discovery in whitelabel mode. The version span is populated by
+    // the existing dashboard JS in both variants — handler code lives
+    // in `app.js#loadVersion`.
     let engine_footer = if wl.is_customised() {
         r#"Powered by <a class="assay-attribution" href="https://assay.rs" target="_blank" rel="noopener noreferrer">Assay Engine</a> <span id="status-version">—</span>"#.to_string()
     } else {
-        r#"Assay Workflow Engine <span id="status-version">—</span>"#.to_string()
+        r#"Powered by Assay Engine <span id="status-version">—</span>"#.to_string()
     };
 
     // Favicon — operator-supplied URL when set, otherwise assay's own
@@ -335,7 +335,7 @@ v=__ASSETV__
             mark: "A".into(),
             subtitle: String::new(),
             logo_url: None,
-            page_title: "Assay Workflow Dashboard".into(),
+            page_title: "Assay Engine — Workflow".into(),
             parent_url: None,
             parent_name: "Back".into(),
             api_docs_url: Some("/api/v1/docs".into()),
@@ -348,16 +348,21 @@ v=__ASSETV__
     #[test]
     fn default_render_matches_standalone_identity() {
         let out = render_index(TEMPLATE, "42", &default_cfg());
-        assert!(out.contains("<title>Assay Workflow Dashboard</title>"));
+        assert!(out.contains("<title>Assay Engine — Workflow</title>"));
         assert!(out.contains("<span>Assay</span><span>A</span>"));
         // Optional bits are absent/empty by default.
         assert!(!out.contains("nav-link-back"));
         assert!(!out.contains("logo-img"));
         assert!(!out.contains("logo-subtitle"));
-        // Vanilla footer — no "Powered by" prefix, no attribution link.
-        assert!(out.contains("Assay Workflow Engine"));
-        assert!(!out.contains("Powered by"));
+        // Vanilla footer now uses the unified "Powered by Assay Engine
+        // vX.Y.Z" wording (no attribution link in non-whitelabel mode —
+        // that's a whitelabel-only `<a class="assay-attribution">`).
+        assert!(out.contains("Powered by Assay Engine"));
         assert!(!out.contains("assay-attribution"));
+        // Old wording is gone — the engine is no longer described as the
+        // "Workflow Engine" in the footer; the binary is just "Assay
+        // Engine" so the dashboard label matches.
+        assert!(!out.contains("Assay Workflow Engine"));
         // Default API Docs link present and pointing at the engine path.
         assert!(out.contains("href=\"/api/v1/docs\""));
         // Default favicon points at the built-in SVG.
