@@ -185,6 +185,93 @@ impl UserStore for PostgresUserStore {
         .context("auth.user_upstream lookup")?;
         Ok(row.map(map_user_row_pg))
     }
+
+    async fn list_users(
+        &self,
+        limit: i64,
+        offset: i64,
+        search: Option<&str>,
+    ) -> Result<Vec<User>> {
+        // Cap limit at 500 — the admin dashboard pages 50 at a time so
+        // anything bigger is either a misconfigured client or a probe.
+        let lim = limit.clamp(1, 500);
+        let off = offset.max(0);
+        let rows = if let Some(needle) = search {
+            let pat = format!("%{}%", needle.to_lowercase());
+            sqlx::query(
+                "SELECT id, email, email_verified, display_name, created_at
+                 FROM auth.users
+                 WHERE LOWER(COALESCE(email, '')) LIKE $1
+                    OR LOWER(COALESCE(display_name, '')) LIKE $1
+                 ORDER BY created_at DESC
+                 LIMIT $2 OFFSET $3",
+            )
+            .bind(pat)
+            .bind(lim)
+            .bind(off)
+            .fetch_all(&self.pool)
+            .await
+            .context("auth.users list (search)")?
+        } else {
+            sqlx::query(
+                "SELECT id, email, email_verified, display_name, created_at
+                 FROM auth.users
+                 ORDER BY created_at DESC
+                 LIMIT $1 OFFSET $2",
+            )
+            .bind(lim)
+            .bind(off)
+            .fetch_all(&self.pool)
+            .await
+            .context("auth.users list")?
+        };
+        Ok(rows.into_iter().map(map_user_row_pg).collect())
+    }
+
+    async fn count_users(&self, search: Option<&str>) -> Result<i64> {
+        let row: (i64,) = if let Some(needle) = search {
+            let pat = format!("%{}%", needle.to_lowercase());
+            sqlx::query_as(
+                "SELECT COUNT(*) FROM auth.users
+                 WHERE LOWER(COALESCE(email, '')) LIKE $1
+                    OR LOWER(COALESCE(display_name, '')) LIKE $1",
+            )
+            .bind(pat)
+            .fetch_one(&self.pool)
+            .await
+            .context("auth.users count (search)")?
+        } else {
+            sqlx::query_as("SELECT COUNT(*) FROM auth.users")
+                .fetch_one(&self.pool)
+                .await
+                .context("auth.users count")?
+        };
+        Ok(row.0)
+    }
+
+    async fn delete_user(&self, id: &str) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM auth.users WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .context("auth.users delete")?;
+        Ok(res.rows_affected() > 0)
+    }
+
+    async fn list_upstream_for_user(&self, user_id: &str) -> Result<Vec<(String, String)>> {
+        let rows = sqlx::query(
+            "SELECT provider, subject FROM auth.user_upstream
+             WHERE user_id = $1 ORDER BY provider, subject",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("auth.user_upstream list")?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.get::<String, _>("provider"), r.get::<String, _>("subject")))
+            .collect())
+    }
 }
 
 /// Session store backed by `auth.sessions`. Independent struct from
@@ -275,6 +362,59 @@ impl SessionStore for PostgresSessionStore {
             .await
             .context("auth.sessions purge_expired")?;
         Ok(res.rows_affected())
+    }
+
+    async fn list_all(
+        &self,
+        limit: i64,
+        offset: i64,
+        user_filter: Option<&str>,
+    ) -> Result<Vec<Session>> {
+        let lim = limit.clamp(1, 500);
+        let off = offset.max(0);
+        let rows = if let Some(uid) = user_filter {
+            sqlx::query(
+                "SELECT id, user_id, csrf_token, created_at, expires_at, ip_hash, user_agent_hash
+                 FROM auth.sessions WHERE user_id = $1
+                 ORDER BY created_at DESC
+                 LIMIT $2 OFFSET $3",
+            )
+            .bind(uid)
+            .bind(lim)
+            .bind(off)
+            .fetch_all(&self.pool)
+            .await
+            .context("auth.sessions list_all (user filter)")?
+        } else {
+            sqlx::query(
+                "SELECT id, user_id, csrf_token, created_at, expires_at, ip_hash, user_agent_hash
+                 FROM auth.sessions
+                 ORDER BY created_at DESC
+                 LIMIT $1 OFFSET $2",
+            )
+            .bind(lim)
+            .bind(off)
+            .fetch_all(&self.pool)
+            .await
+            .context("auth.sessions list_all")?
+        };
+        Ok(rows.into_iter().map(map_session_row_pg).collect())
+    }
+
+    async fn count_all(&self, user_filter: Option<&str>) -> Result<i64> {
+        let row: (i64,) = if let Some(uid) = user_filter {
+            sqlx::query_as("SELECT COUNT(*) FROM auth.sessions WHERE user_id = $1")
+                .bind(uid)
+                .fetch_one(&self.pool)
+                .await
+                .context("auth.sessions count_all (user filter)")?
+        } else {
+            sqlx::query_as("SELECT COUNT(*) FROM auth.sessions")
+                .fetch_one(&self.pool)
+                .await
+                .context("auth.sessions count_all")?
+        };
+        Ok(row.0)
     }
 }
 

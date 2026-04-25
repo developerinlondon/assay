@@ -55,18 +55,50 @@ pub fn build_app<S: WorkflowStore + 'static>(state: EngineState<S>) -> Router {
         }),
     );
 
+    // `/api/v1/modules` reports the active modules list — read by the
+    // dashboard JS so auth panes surface only when the auth module is
+    // actually enabled (matches the `engine.modules` row + `engine.toml`
+    // `auto_enable_modules` knob).
+    let modules_for_api = Arc::clone(&state.modules);
+    let modules_api = Router::new().route(
+        "/api/v1/modules",
+        get(move || {
+            let modules = Arc::clone(&modules_for_api);
+            async move {
+                Json(serde_json::json!({
+                    "modules": &*modules,
+                }))
+            }
+        }),
+    );
+
     #[cfg_attr(not(feature = "auth"), allow(unused_mut))]
-    let mut app = workflow_router.merge(dashboard_router).merge(healthz);
+    let mut app = workflow_router
+        .merge(dashboard_router)
+        .merge(healthz)
+        .merge(modules_api);
 
     // Mount the auth router under `/auth` when AuthCtx is present. We
     // bind state to the auth router *before* nesting so the merged tree
     // remains `Router<()>` (every other sub-router has its state baked in
     // similarly). This avoids the axum requirement that all merged
     // routers share a common state parameter.
+    //
+    // The router is generic over a parent state from which both
+    // `AuthCtx` and `AdminApiKeys` are extractable via `FromRef`;
+    // `EngineState<S>` implements both impls (see `state.rs`), so the
+    // engine threads its full state in once and the auth handlers
+    // pluck what they need.
     #[cfg(feature = "auth")]
-    if let Some(auth_ctx) = state.auth.clone() {
-        let auth_router = assay_auth::router::<assay_auth::AuthCtx>().with_state(auth_ctx);
+    if state.auth.is_some() {
+        let auth_router =
+            assay_auth::router::<EngineState<S>>().with_state(state.clone());
         app = app.nest("/auth", auth_router);
+        // Mount the auth-console SPA assets at root (so the same /auth/...
+        // path namespace serves both the API and the asset bundle —
+        // /auth/console for the SPA, /auth/admin/* for the JSON API).
+        let asset_router = assay_dashboard::auth_router();
+        app = app.merge(asset_router);
     }
 
     app

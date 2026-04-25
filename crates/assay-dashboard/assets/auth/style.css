@@ -1,0 +1,135 @@
+/* Assay Auth Console — phase 8b
+ *
+ * Minimal additions on top of /workflow/style.css. Reuses every layout
+ * + token (sidebar, table, badges) so the auth panes feel native to
+ * operators already familiar with the workflow dashboard.
+ */
+
+.auth-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.auth-toolbar .auth-search {
+  flex: 1;
+  max-width: 320px;
+}
+
+.auth-pane-section {
+  margin-top: 24px;
+}
+
+.auth-pane-section h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #6e7781);
+  margin-bottom: 8px;
+}
+
+.auth-token-banner {
+  background: color-mix(in srgb, var(--accent, #e6662a) 12%, transparent);
+  border: 1px solid var(--accent, #e6662a);
+  color: var(--text);
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.auth-token-banner code {
+  background: var(--surface, #fff);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.auth-mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.auth-secret-once {
+  background: var(--surface, #fff);
+  border: 2px dashed var(--accent, #e6662a);
+  padding: 12px;
+  border-radius: 6px;
+  margin: 12px 0;
+}
+
+.auth-secret-once .auth-mono {
+  display: block;
+  margin: 8px 0;
+  user-select: all;
+}
+
+.auth-status-allowed {
+  color: hsl(140 60% 40%);
+  font-weight: 600;
+}
+.auth-status-denied {
+  color: hsl(0 60% 50%);
+  font-weight: 600;
+}
+.auth-status-other {
+  color: hsl(40 80% 45%);
+  font-weight: 600;
+}
+
+.auth-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted, #6e7781);
+  font-size: 14px;
+}
+
+.auth-form {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  align-items: center;
+  max-width: 720px;
+}
+
+.auth-form label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.auth-form input,
+.auth-form textarea,
+.auth-form select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border, hsl(214 32% 91%));
+  background: var(--surface, #fff);
+  color: var(--text);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.auth-form textarea {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  min-height: 80px;
+}
+
+.auth-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.auth-tree {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  white-space: pre;
+  background: var(--surface, #fff);
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border, hsl(214 32% 91%));
+  overflow-x: auto;
+}

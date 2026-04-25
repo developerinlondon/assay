@@ -27,7 +27,7 @@ default = [
   "server",
 ]
 
-auth = ["dep:assay-auth"]
+auth = ["dep:assay-auth", "assay-dashboard/auth"]
 server = ["dep:clap"]
 
 backend-postgres = ["assay-workflow/backend-postgres", "assay-auth?/backend-postgres"]

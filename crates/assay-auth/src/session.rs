@@ -591,6 +591,36 @@ mod tests {
             guard.retain(|_, s| s.expires_at > now);
             Ok((before - guard.len()) as u64)
         }
+
+        async fn list_all(
+            &self,
+            limit: i64,
+            offset: i64,
+            user_filter: Option<&str>,
+        ) -> anyhow::Result<Vec<Session>> {
+            let guard = self.0.lock().unwrap();
+            let mut all: Vec<Session> = guard
+                .values()
+                .filter(|s| user_filter.is_none_or(|u| s.user_id == u))
+                .cloned()
+                .collect();
+            all.sort_by(|a, b| {
+                b.created_at
+                    .partial_cmp(&a.created_at)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let off = offset.max(0) as usize;
+            let lim = limit.clamp(1, 500) as usize;
+            Ok(all.into_iter().skip(off).take(lim).collect())
+        }
+
+        async fn count_all(&self, user_filter: Option<&str>) -> anyhow::Result<i64> {
+            let guard = self.0.lock().unwrap();
+            Ok(guard
+                .values()
+                .filter(|s| user_filter.is_none_or(|u| s.user_id == u))
+                .count() as i64)
+        }
     }
 
     fn manager() -> SessionManager {

@@ -37,6 +37,27 @@ pub trait UserStore: Send + Sync + 'static {
     async fn get_user_by_email(&self, email: &str) -> anyhow::Result<Option<User>>;
     async fn update_user(&self, user: &User) -> anyhow::Result<()>;
 
+    /// Admin: paginated user list. `limit` is clamped by the impl;
+    /// `offset` may be 0. `search` is an optional case-insensitive
+    /// substring match on `email` (or `display_name` when email is
+    /// NULL). Returns rows sorted by `created_at DESC`.
+    async fn list_users(
+        &self,
+        limit: i64,
+        offset: i64,
+        search: Option<&str>,
+    ) -> anyhow::Result<Vec<User>>;
+
+    /// Admin: total user count (after applying `search` if provided).
+    /// Used by the dashboard's pagination + the Lua wrapper.
+    async fn count_users(&self, search: Option<&str>) -> anyhow::Result<i64>;
+
+    /// Admin: hard-delete a user row + cascade dependents. Returns
+    /// `Ok(true)` iff a row was removed. The schema's
+    /// `ON DELETE CASCADE` foreign keys handle the dependents
+    /// (`auth.passkeys`, `auth.sessions`, `auth.user_upstream`).
+    async fn delete_user(&self, id: &str) -> anyhow::Result<bool>;
+
     // Password credentials — stored as Argon2id PHC strings on `auth.users`.
     async fn set_password_hash(&self, user_id: &str, hash: &str) -> anyhow::Result<()>;
     async fn get_password_hash(&self, user_id: &str) -> anyhow::Result<Option<String>>;
@@ -58,6 +79,13 @@ pub trait UserStore: Send + Sync + 'static {
         provider: &str,
         subject: &str,
     ) -> anyhow::Result<Option<User>>;
+
+    /// Admin: list every (provider, subject) link for a user. Used by
+    /// the dashboard's user-detail pane to show federated identities.
+    async fn list_upstream_for_user(
+        &self,
+        user_id: &str,
+    ) -> anyhow::Result<Vec<(String, String)>>;
 }
 
 /// CRUD over `auth.sessions`. The session manager
@@ -72,4 +100,18 @@ pub trait SessionStore: Send + Sync + 'static {
     /// Drop every session whose `expires_at <= now`. Returns the row
     /// count for visibility (logging / metrics).
     async fn purge_expired(&self, now: f64) -> anyhow::Result<u64>;
+
+    /// Admin: paginated global session list. `user_filter` narrows to
+    /// a single user when provided. Returns rows sorted by
+    /// `created_at DESC`. Used by the dashboard's Sessions pane and
+    /// the Lua wrapper.
+    async fn list_all(
+        &self,
+        limit: i64,
+        offset: i64,
+        user_filter: Option<&str>,
+    ) -> anyhow::Result<Vec<Session>>;
+
+    /// Admin: total session count (optionally filtered by user).
+    async fn count_all(&self, user_filter: Option<&str>) -> anyhow::Result<i64>;
 }

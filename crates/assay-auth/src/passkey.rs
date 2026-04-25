@@ -336,6 +336,26 @@ mod tests {
         ) -> anyhow::Result<Option<User>> {
             Ok(None)
         }
+        async fn list_users(
+            &self,
+            _limit: i64,
+            _offset: i64,
+            _search: Option<&str>,
+        ) -> anyhow::Result<Vec<User>> {
+            Ok(vec![])
+        }
+        async fn count_users(&self, _search: Option<&str>) -> anyhow::Result<i64> {
+            Ok(0)
+        }
+        async fn delete_user(&self, _id: &str) -> anyhow::Result<bool> {
+            Ok(false)
+        }
+        async fn list_upstream_for_user(
+            &self,
+            _user_id: &str,
+        ) -> anyhow::Result<Vec<(String, String)>> {
+            Ok(vec![])
+        }
     }
 
     #[allow(dead_code)]
@@ -359,6 +379,17 @@ mod tests {
             Ok(0)
         }
         async fn purge_expired(&self, _n: f64) -> anyhow::Result<u64> {
+            Ok(0)
+        }
+        async fn list_all(
+            &self,
+            _limit: i64,
+            _offset: i64,
+            _user_filter: Option<&str>,
+        ) -> anyhow::Result<Vec<Session>> {
+            Ok(vec![])
+        }
+        async fn count_all(&self, _user_filter: Option<&str>) -> anyhow::Result<i64> {
             Ok(0)
         }
     }

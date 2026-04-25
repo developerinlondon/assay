@@ -11,6 +11,10 @@ description = "Dashboard (HTML + JS + CSS) for assay-workflow and assay-engine. 
 [features]
 default = ["workflow"]
 workflow = []
+# Auth console — adds the `/auth/console` SPA + asset routes that
+# consume the engine's `/auth/admin/*` endpoints. Conditional on the
+# engine binary's `auth` Cargo feature being on; the dashboard crate
+# itself never links to `assay-auth` (assets are baked-in HTML/JS).
 auth = []
 
 [dependencies]

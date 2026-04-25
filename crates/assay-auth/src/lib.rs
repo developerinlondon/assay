@@ -14,6 +14,7 @@
 
 pub mod error;
 
+pub mod admin;
 pub mod biscuit;
 pub mod ctx;
 pub mod router;

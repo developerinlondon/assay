@@ -35,5 +35,10 @@ where
     let r = r.merge(crate::oidc_provider::router::<S>());
     #[cfg(feature = "auth-session")]
     let r = r.merge(crate::session::router::<S>());
+    // Cross-cutting admin endpoints (users / sessions / zanzibar /
+    // biscuit / jwks / audit). Always merged when the auth router is
+    // built — the handlers themselves degrade gracefully (503) when
+    // their underlying module isn't compiled in or wired up.
+    let r = r.merge(crate::admin::router::<S>());
     r
 }
