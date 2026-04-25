@@ -30,6 +30,12 @@ local DB = env.get("ASSAY_E2E_DB") or "/tmp/assay-e2e.sqlite"
 local ENGINE_CONFIG = env.get("ASSAY_E2E_ENGINE_CONFIG") or "/tmp/assay-e2e-engine.toml"
 local ENGINE_LOG = env.get("ASSAY_E2E_ENGINE_LOG") or "/tmp/assay-e2e-engine.log"
 local WORKER_LOG = env.get("ASSAY_E2E_WORKER_LOG") or "/tmp/assay-e2e-worker.log"
+-- Plan-15 slice 2 lifted the workflow-API auth gate to the engine layer:
+-- when state.auth is Some (now always), every /api/v1/engine/workflow/*
+-- call except /health|/version|/openapi.json|/docs requires a Bearer
+-- admin key. Match the break-glass key seeded in write_engine_config().
+local ADMIN_KEY = env.get("ASSAY_E2E_ADMIN_KEY") or "dev-admin-key-change-me"
+local ADMIN_HEADERS = { ["Authorization"] = "Bearer " .. ADMIN_KEY }
 
 -- ── Helpers ─────────────────────────────────────────────────────────
 local function log(msg)
@@ -123,7 +129,7 @@ local ok, err = pcall(function()
   log("engine ready (pid " .. engine_pid .. ")")
 
   log("creating namespace 'demo'")
-  local r = http.post(BASE .. "/api/v1/engine/workflow/namespaces", { name = "demo" })
+  local r = http.post(BASE .. "/api/v1/engine/workflow/namespaces", { name = "demo" }, { headers = ADMIN_HEADERS })
   if r.status >= 400 and r.status ~= 409 then
     fail("namespace create failed: " .. r.status .. " " .. (r.body or ""))
   end
@@ -134,6 +140,15 @@ local ok, err = pcall(function()
     args = { "run", WORKER },
     stdout = WORKER_LOG,
     stderr = WORKER_LOG,
+    -- Worker pulls tasks from the gated /api/v1/engine/workflow/tasks/*
+    -- routes; the assay.engine.workflow Lua client reads ASSAY_ADMIN_KEY
+    -- when present and forwards it as a Bearer header on every request.
+    -- ASSAY_ENGINE_URL lets demo-worker.lua honour the dynamic e2e port
+    -- instead of the legacy hard-coded :8080.
+    env = {
+      ASSAY_ENGINE_URL = BASE,
+      ASSAY_ADMIN_KEY = ADMIN_KEY,
+    },
   })
   worker_pid = hw.pid
   sleep(1.5) -- let the worker register before we POST the workflow
@@ -145,7 +160,7 @@ local ok, err = pcall(function()
     namespace = "demo",
     task_queue = "demo-q",
     input = {},
-  })
+  }, { headers = ADMIN_HEADERS })
   if rs.status >= 400 then
     fail("workflow seed failed: " .. rs.status .. " " .. (rs.body or ""))
   end
@@ -153,7 +168,11 @@ local ok, err = pcall(function()
   log("running playwright")
   local res = shell.exec("npx playwright test", {
     cwd = HERE,
-    env = { ASSAY_E2E_BASE = BASE, CI = env.get("CI") or "" },
+    env = {
+      ASSAY_E2E_BASE = BASE,
+      ASSAY_E2E_ADMIN_KEY = ADMIN_KEY,
+      CI = env.get("CI") or "",
+    },
   })
   io.write(res.stdout)
   io.stderr:write(res.stderr)
