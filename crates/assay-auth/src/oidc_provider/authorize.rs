@@ -17,7 +17,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::RngCore;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::types::AuthorizationCode;
 use super::OidcProviderConfig;
@@ -32,7 +32,7 @@ pub const CODE_LIFETIME_SECS: f64 = 60.0;
 /// `redirect_uri` is required (we don't fall back to a registered
 /// default — OIDC Core §3.1.2.1 mandates explicit). `code_challenge` is
 /// required when the client's `pkce_required` flag is true.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct AuthorizeRequest {
     pub response_type: String,
     pub client_id: String,

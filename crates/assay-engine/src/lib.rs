@@ -1,9 +1,11 @@
-//! Assay engine — workflow + dashboard as a crate or standalone binary.
+//! Assay engine — workflow + dashboard + auth as a crate or standalone
+//! binary.
 //!
-//! Phase 3 composes `assay-workflow` and `assay-dashboard` behind one HTTP
-//! port. Auth (`assay-auth`) is reserved for Phase 8 — feature-gated
-//! behind `auth` so the crate compiles identically with or without it
-//! until the auth modules land.
+//! Phase 3 composed `assay-workflow` and `assay-dashboard` behind one
+//! HTTP port. Phase 8 wires `assay-auth` (`AuthCtx`, OIDC provider
+//! routes, admin endpoints) under the same composition pattern — gated
+//! by the `auth` Cargo feature so a no-auth build still compiles
+//! identically.
 //!
 //! See plan 12 § Architecture principle 1 for the composition model and
 //! § Architecture principle 8 for the runtime/engine split.
@@ -12,7 +14,7 @@ use std::sync::Arc;
 
 use assay_dashboard::{DashboardCtx, WhitelabelConfig};
 use assay_domain::events::EngineEventBus;
-use assay_workflow::{WorkflowStore};
+use assay_workflow::WorkflowStore;
 
 pub mod config;
 pub mod init;
@@ -26,8 +28,11 @@ pub use assay_workflow as workflow;
 #[cfg(feature = "auth")]
 pub use assay_auth as auth;
 
-pub use config::{BackendConfig, DashboardConfig, EngineConfig, ServerConfig};
-pub use state::EngineState;
+pub use config::{
+    AuthConfig, AuthOidcProviderConfig, AuthPasskeyConfig, AuthSessionConfig, BackendConfig,
+    DashboardConfig, EngineConfig, ServerConfig,
+};
+pub use state::{AdminApiKeys, EngineState};
 
 /// Top-level entrypoint: pick the backend from config, build state, serve.
 pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
@@ -35,20 +40,280 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
     match boot {
         #[cfg(feature = "backend-postgres")]
         init::EngineBoot::Postgres(b) => {
-            let store = assay_workflow::PostgresStore::from_pool(b.pool)
+            let store = assay_workflow::PostgresStore::from_pool(b.pool.clone())
                 .await
                 .map_err(|e| anyhow::anyhow!("workflow store (pg): {e}"))?;
-            run_with_store(cfg, store, b.bus, b.modules, b.instance_id).await
+            #[cfg(feature = "auth")]
+            let auth_ctx = if b.modules.iter().any(|m| m == "auth") {
+                Some(build_auth_ctx_pg(&cfg, &b.pool).await?)
+            } else {
+                None
+            };
+            #[cfg(not(feature = "auth"))]
+            let auth_ctx: Option<()> = None;
+            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, auth_ctx).await
         }
         #[cfg(feature = "backend-sqlite")]
         init::EngineBoot::Sqlite(b) => {
-            let store = assay_workflow::SqliteStore::from_attached_pool(b.pool)
+            let store = assay_workflow::SqliteStore::from_attached_pool(b.pool.clone())
                 .await
                 .map_err(|e| anyhow::anyhow!("workflow store (sqlite): {e}"))?;
-            run_with_store(cfg, store, b.bus, b.modules, b.instance_id).await
+            #[cfg(feature = "auth")]
+            let auth_ctx = if b.modules.iter().any(|m| m == "auth") {
+                Some(build_auth_ctx_sqlite(&cfg, &b.pool).await?)
+            } else {
+                None
+            };
+            #[cfg(not(feature = "auth"))]
+            let auth_ctx: Option<()> = None;
+            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, auth_ctx).await
         }
     }
 }
+
+#[cfg(all(feature = "auth", feature = "backend-postgres"))]
+async fn build_auth_ctx_pg(
+    cfg: &EngineConfig,
+    pool: &sqlx::PgPool,
+) -> anyhow::Result<assay_auth::AuthCtx> {
+    use assay_auth::store::{PostgresSessionStore, PostgresUserStore};
+    let users = PostgresUserStore::new(pool.clone()).into_dyn();
+    let sessions = PostgresSessionStore::new(pool.clone()).into_dyn();
+    let mut ctx = assay_auth::AuthCtx::new(users.clone(), sessions);
+
+    let biscuit = assay_auth::biscuit::load_or_init_postgres(pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("biscuit root key (pg): {e}"))?;
+    ctx = ctx.with_biscuit(biscuit);
+
+    #[cfg(feature = "auth-jwt")]
+    {
+        let issuer = effective_issuer(cfg);
+        let audience = if cfg.auth.audience.is_empty() {
+            vec![issuer.clone()]
+        } else {
+            cfg.auth.audience.clone()
+        };
+        let jwt = assay_auth::jwt::JwtConfig::new(issuer.clone(), audience);
+        if let Err(e) = jwt.load_from_postgres(pool).await {
+            tracing::warn!(?e, "no JWKS rows yet; rotating to seed first key");
+            jwt.rotate_postgres(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("seed JWKS (pg): {e}"))?;
+        }
+        if jwt.active_kid().is_none() {
+            jwt.rotate_postgres(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("seed JWKS (pg): {e}"))?;
+        }
+        ctx = ctx.with_jwt(jwt);
+    }
+
+    #[cfg(feature = "auth-oidc")]
+    {
+        ctx = ctx.with_oidc(assay_auth::oidc::OidcRegistry::new());
+    }
+
+    #[cfg(feature = "auth-passkey")]
+    if let Some(passkey_mgr) = build_passkey_manager(cfg, users.clone()) {
+        ctx = ctx.with_passkeys(passkey_mgr);
+    }
+
+    #[cfg(feature = "auth-zanzibar")]
+    {
+        let zanzibar: Arc<dyn assay_auth::zanzibar::ZanzibarStore> =
+            Arc::new(assay_auth::zanzibar::PostgresZanzibarStore::new(pool.clone()));
+        ctx = ctx.with_zanzibar(zanzibar);
+    }
+
+    #[cfg(feature = "auth-oidc-provider")]
+    if cfg.auth.oidc_provider.enabled {
+        let issuer = oidc_issuer(cfg);
+        let public_url = parse_public_url(cfg)?;
+        let provider = assay_auth::oidc_provider::OidcProviderConfig::new(
+            issuer,
+            public_url,
+            assay_auth::oidc_provider::PostgresOidcClientStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::PostgresOidcUpstreamStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::PostgresOidcCodeStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::PostgresOidcRefreshStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::PostgresOidcSessionStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::PostgresOidcConsentStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::PostgresOidcUpstreamStateStore::new(pool.clone())
+                .into_dyn(),
+        )
+        .with_jwks_source(assay_auth::oidc_provider::JwksSource::Postgres(pool.clone()));
+        ctx = ctx.with_oidc_provider(provider);
+    }
+
+    Ok(ctx)
+}
+
+#[cfg(all(feature = "auth", feature = "backend-sqlite"))]
+async fn build_auth_ctx_sqlite(
+    cfg: &EngineConfig,
+    pool: &sqlx::SqlitePool,
+) -> anyhow::Result<assay_auth::AuthCtx> {
+    use assay_auth::store::{SqliteSessionStore, SqliteUserStore};
+    let users = SqliteUserStore::new(pool.clone()).into_dyn();
+    let sessions = SqliteSessionStore::new(pool.clone()).into_dyn();
+    let mut ctx = assay_auth::AuthCtx::new(users.clone(), sessions);
+
+    let biscuit = assay_auth::biscuit::load_or_init_sqlite(pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("biscuit root key (sqlite): {e}"))?;
+    ctx = ctx.with_biscuit(biscuit);
+
+    #[cfg(feature = "auth-jwt")]
+    {
+        let issuer = effective_issuer(cfg);
+        let audience = if cfg.auth.audience.is_empty() {
+            vec![issuer.clone()]
+        } else {
+            cfg.auth.audience.clone()
+        };
+        let jwt = assay_auth::jwt::JwtConfig::new(issuer.clone(), audience);
+        if let Err(e) = jwt.load_from_sqlite(pool).await {
+            tracing::warn!(?e, "no JWKS rows yet; rotating to seed first key");
+            jwt.rotate_sqlite(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("seed JWKS (sqlite): {e}"))?;
+        }
+        if jwt.active_kid().is_none() {
+            jwt.rotate_sqlite(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("seed JWKS (sqlite): {e}"))?;
+        }
+        ctx = ctx.with_jwt(jwt);
+    }
+
+    #[cfg(feature = "auth-oidc")]
+    {
+        ctx = ctx.with_oidc(assay_auth::oidc::OidcRegistry::new());
+    }
+
+    #[cfg(feature = "auth-passkey")]
+    if let Some(passkey_mgr) = build_passkey_manager(cfg, users.clone()) {
+        ctx = ctx.with_passkeys(passkey_mgr);
+    }
+
+    #[cfg(feature = "auth-zanzibar")]
+    {
+        let zanzibar: Arc<dyn assay_auth::zanzibar::ZanzibarStore> =
+            Arc::new(assay_auth::zanzibar::SqliteZanzibarStore::new(pool.clone()));
+        ctx = ctx.with_zanzibar(zanzibar);
+    }
+
+    #[cfg(feature = "auth-oidc-provider")]
+    if cfg.auth.oidc_provider.enabled {
+        let issuer = oidc_issuer(cfg);
+        let public_url = parse_public_url(cfg)?;
+        let provider = assay_auth::oidc_provider::OidcProviderConfig::new(
+            issuer,
+            public_url,
+            assay_auth::oidc_provider::SqliteOidcClientStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::SqliteOidcUpstreamStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::SqliteOidcCodeStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::SqliteOidcRefreshStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::SqliteOidcSessionStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::SqliteOidcConsentStore::new(pool.clone()).into_dyn(),
+            assay_auth::oidc_provider::SqliteOidcUpstreamStateStore::new(pool.clone())
+                .into_dyn(),
+        )
+        .with_jwks_source(assay_auth::oidc_provider::JwksSource::Sqlite(pool.clone()));
+        ctx = ctx.with_oidc_provider(provider);
+    }
+
+    Ok(ctx)
+}
+
+/// Issuer for JWTs minted via the `auth-jwt` module. Defaults to
+/// `<server.public_url>/auth` when unset, matching where the auth
+/// router is mounted.
+#[cfg(feature = "auth")]
+fn effective_issuer(cfg: &EngineConfig) -> String {
+    if let Some(issuer) = &cfg.auth.issuer {
+        return issuer.clone();
+    }
+    let base = cfg.server.public_url.trim_end_matches('/');
+    format!("{base}/auth")
+}
+
+/// Issuer the OIDC provider advertises in its discovery doc + the `iss`
+/// claim of every issued id_token. Defaults to the parent
+/// [`effective_issuer`] when no override is set.
+///
+/// Gated only on `feature = "auth"` (not `auth-oidc-provider`) because
+/// `assay-engine` does not re-export `assay-auth`'s sub-feature flags —
+/// the `auth` meta-feature in `assay-auth` always pulls in
+/// `auth-oidc-provider` (and friends), so for engine builds these
+/// helpers are always reachable when `auth` is on.
+#[cfg(feature = "auth")]
+fn oidc_issuer(cfg: &EngineConfig) -> String {
+    cfg.auth
+        .oidc_provider
+        .issuer_override
+        .clone()
+        .unwrap_or_else(|| effective_issuer(cfg))
+}
+
+/// Parse `server.public_url` as a `url::Url`. Used by the OIDC provider
+/// to derive default redirect targets and by passkey RP setup.
+#[cfg(feature = "auth")]
+fn parse_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
+    url::Url::parse(&cfg.server.public_url)
+        .map_err(|e| anyhow::anyhow!("server.public_url {:?}: {e}", cfg.server.public_url))
+}
+
+/// Build a passkey manager from `auth.passkey` config. Returns `None`
+/// when the public_url isn't parseable as a URL with a host (passkeys
+/// require an origin) — we log + skip rather than fail boot.
+///
+/// Gated only on `feature = "auth"` (see [`oidc_issuer`] for the same
+/// rationale): `assay-auth`'s `auth` meta-feature pulls `auth-passkey`
+/// in, so engine builds with `auth` always have this helper available.
+#[cfg(feature = "auth")]
+fn build_passkey_manager(
+    cfg: &EngineConfig,
+    users: Arc<dyn assay_auth::store::UserStore>,
+) -> Option<assay_auth::passkey::PasskeyManager> {
+    let url = match parse_public_url(cfg) {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::warn!(?e, "passkeys disabled — bad public_url");
+            return None;
+        }
+    };
+    let host = match url.host_str() {
+        Some(h) => h.to_string(),
+        None => {
+            tracing::warn!("passkeys disabled — public_url has no host");
+            return None;
+        }
+    };
+    let pk_cfg = assay_auth::passkey::PasskeyConfig {
+        rp_id: cfg.auth.passkey.rp_id.clone().unwrap_or(host),
+        rp_name: cfg
+            .auth
+            .passkey
+            .rp_name
+            .clone()
+            .unwrap_or_else(|| "Assay".to_string()),
+        origin: url,
+    };
+    match assay_auth::passkey::PasskeyManager::new(pk_cfg, users) {
+        Ok(m) => Some(m),
+        Err(e) => {
+            tracing::warn!(?e, "passkeys disabled — manager construction failed");
+            None
+        }
+    }
+}
+
+#[cfg(not(feature = "auth"))]
+type AuthCtxOpt = Option<()>;
+#[cfg(feature = "auth")]
+type AuthCtxOpt = Option<assay_auth::AuthCtx>;
 
 async fn run_with_store<S: WorkflowStore + 'static>(
     cfg: EngineConfig,
@@ -56,6 +321,7 @@ async fn run_with_store<S: WorkflowStore + 'static>(
     bus: Arc<dyn EngineEventBus>,
     modules: Vec<String>,
     instance_id: uuid::Uuid,
+    auth_ctx: AuthCtxOpt,
 ) -> anyhow::Result<()> {
     let workflow_ctx = server::build_workflow_ctx_with_bus(store, Arc::clone(&bus));
 
@@ -71,9 +337,15 @@ async fn run_with_store<S: WorkflowStore + 'static>(
     let whitelabel = Arc::new(WhitelabelConfig::from_env());
     let asset_version = env!("CARGO_PKG_VERSION").to_string();
     let dashboard_ctx = Arc::new(DashboardCtx::new(whitelabel, asset_version));
+    let admin_api_keys = Arc::new(cfg.auth.admin_api_keys.clone());
+    #[cfg(not(feature = "auth"))]
+    let _ = auth_ctx;
     let state = EngineState {
         workflow: workflow_ctx,
         dashboard: dashboard_ctx,
+        #[cfg(feature = "auth")]
+        auth: auth_ctx,
+        admin_api_keys,
         modules: Arc::new(modules),
         instance_id,
         engine_version: env!("CARGO_PKG_VERSION"),

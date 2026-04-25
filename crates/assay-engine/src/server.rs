@@ -1,9 +1,9 @@
 //! HTTP server wiring.
 //!
 //! Builds an axum `Router` that composes the workflow API + dashboard
-//! under one port. Auth middleware is intentionally omitted at Phase 3
-//! — engine runs open per plan 12 rev 2 until Phase 8 wires `assay-auth`
-//! modules in.
+//! under one port. Phase 8 adds the optional auth router (mounted at
+//! `/auth`) when an `AuthCtx` is present in `EngineState` — gated by
+//! the `auth` Cargo feature so a no-auth build compiles unchanged.
 
 use axum::routing::get;
 use axum::{Json, Router};
@@ -21,7 +21,9 @@ use crate::state::EngineState;
 /// The workflow crate returns a `Router` that already embeds its state,
 /// and the dashboard crate returns a `Router<Arc<DashboardCtx>>` that we
 /// `.with_state()` here. Both are merged into a single stateless `Router`
-/// ready for `axum::serve`.
+/// ready for `axum::serve`. When the `auth` feature is on AND the
+/// engine boot constructed an `AuthCtx`, the auth router (mounted at
+/// `/auth`) joins the composition.
 pub fn build_app<S: WorkflowStore + 'static>(state: EngineState<S>) -> Router {
     let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow));
     let dashboard_router =
@@ -53,7 +55,21 @@ pub fn build_app<S: WorkflowStore + 'static>(state: EngineState<S>) -> Router {
         }),
     );
 
-    workflow_router.merge(dashboard_router).merge(healthz)
+    #[cfg_attr(not(feature = "auth"), allow(unused_mut))]
+    let mut app = workflow_router.merge(dashboard_router).merge(healthz);
+
+    // Mount the auth router under `/auth` when AuthCtx is present. We
+    // bind state to the auth router *before* nesting so the merged tree
+    // remains `Router<()>` (every other sub-router has its state baked in
+    // similarly). This avoids the axum requirement that all merged
+    // routers share a common state parameter.
+    #[cfg(feature = "auth")]
+    if let Some(auth_ctx) = state.auth.clone() {
+        let auth_router = assay_auth::router::<assay_auth::AuthCtx>().with_state(auth_ctx);
+        app = app.nest("/auth", auth_router);
+    }
+
+    app
 }
 
 /// Bind a TCP listener on `bind_addr` and serve the composed app.

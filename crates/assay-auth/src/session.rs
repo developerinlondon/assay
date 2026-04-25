@@ -11,6 +11,10 @@
 //! [`csrf_cookie_for`]) build the standard cookie pair (HttpOnly +
 //! Secure session cookie, JS-readable CSRF cookie) used by the
 //! double-submit pattern.
+//!
+//! Phase 8 adds a HTTP router under [`router`] that mounts the
+//! session-facing endpoints (`/login`, `/logout`, `/whoami`, passkey
+//! ceremony). The auth top-level router merges this in.
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -207,6 +211,325 @@ fn random_token() -> String {
     let mut buf = [0u8; 32];
     rand::rng().fill_bytes(&mut buf);
     data_encoding::BASE64URL_NOPAD.encode(&buf)
+}
+
+// =====================================================================
+//   HTTP router — phase 8
+// =====================================================================
+//
+// Endpoints:
+// - POST  /login        password login: email + password → session cookie
+// - DELETE /session     logout: revoke current session, clear cookie
+// - GET   /whoami       current user's id + email
+// - POST  /passkey/register/start   passkey ceremony — returns challenge
+// - POST  /passkey/register/finish  finish — persists the cred via UserStore
+// - POST  /passkey/auth/start
+// - POST  /passkey/auth/finish
+
+use axum::extract::{FromRef, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Json, Response};
+use axum::routing::{delete, get, post};
+use axum::Router;
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::ctx::AuthCtx;
+
+/// Build the session router. Generic over a parent state `S` from
+/// which `AuthCtx` is extractable via `axum::extract::FromRef`.
+pub fn router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    AuthCtx: FromRef<S>,
+{
+    Router::new()
+        .route("/login", post(login_post))
+        .route("/session", delete(logout_delete))
+        .route("/whoami", get(whoami_get))
+        .route("/passkey/register/start", post(passkey_register_start))
+        .route("/passkey/register/finish", post(passkey_register_finish))
+        .route("/passkey/auth/start", post(passkey_auth_start))
+        .route("/passkey/auth/finish", post(passkey_auth_finish))
+}
+
+#[derive(Deserialize)]
+struct LoginBody {
+    email: String,
+    password: String,
+}
+
+async fn login_post(State(ctx): State<AuthCtx>, Json(body): Json<LoginBody>) -> Response {
+    let user = match ctx.users.get_user_by_email(&body.email).await {
+        Ok(Some(u)) => u,
+        _ => return unauthorized("invalid credentials"),
+    };
+    let stored = match ctx.users.get_password_hash(&user.id).await {
+        Ok(Some(h)) => h,
+        _ => return unauthorized("invalid credentials"),
+    };
+    let hasher = crate::password::PasswordHasher::default();
+    let ok = match hasher.verify(&body.password, &stored) {
+        Ok(b) => b,
+        Err(_) => return unauthorized("invalid credentials"),
+    };
+    if !ok {
+        return unauthorized("invalid credentials");
+    }
+    let mgr = SessionManager::with_default_duration(ctx.sessions.clone());
+    let session = match mgr.create(&user.id).await {
+        Ok(s) => s,
+        Err(e) => return server_error(&format!("create session: {e}")),
+    };
+    let public_url = ctx
+        .oidc_provider
+        .as_ref()
+        .map(|p| p.public_url.clone())
+        .unwrap_or_else(|| url::Url::parse("http://localhost").unwrap());
+    let cookie = cookie_for(&session, &public_url);
+    let csrf = csrf_cookie_for(&session);
+    let mut response = (
+        StatusCode::OK,
+        Json(json!({
+            "user_id": user.id,
+            "email": user.email,
+            "csrf_token": session.csrf_token,
+        })),
+    )
+        .into_response();
+    if let Ok(value) = cookie.to_string().parse() {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    if let Ok(value) = csrf.to_string().parse() {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
+}
+
+async fn logout_delete(State(ctx): State<AuthCtx>, headers: HeaderMap) -> Response {
+    if let Some(sid) = parse_cookie(&headers, SESSION_COOKIE) {
+        let _ = ctx.sessions.delete(&sid).await;
+    }
+    let mut response = (StatusCode::NO_CONTENT, "").into_response();
+    let clear = format!(
+        "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+        SESSION_COOKIE
+    );
+    if let Ok(v) = clear.parse() {
+        response.headers_mut().append(header::SET_COOKIE, v);
+    }
+    response
+}
+
+async fn whoami_get(State(ctx): State<AuthCtx>, headers: HeaderMap) -> Response {
+    let sid = match parse_cookie(&headers, SESSION_COOKIE) {
+        Some(s) => s,
+        None => return unauthorized("no session"),
+    };
+    let mgr = SessionManager::with_default_duration(ctx.sessions.clone());
+    let session = match mgr.resolve(&sid).await {
+        Ok(Some(s)) => s,
+        _ => return unauthorized("session unknown"),
+    };
+    let user = match ctx.users.get_user_by_id(&session.user_id).await {
+        Ok(Some(u)) => u,
+        _ => return unauthorized("user unknown"),
+    };
+    (
+        StatusCode::OK,
+        Json(json!({
+            "user_id": user.id,
+            "email": user.email,
+            "email_verified": user.email_verified,
+            "display_name": user.display_name,
+        })),
+    )
+        .into_response()
+}
+
+#[derive(Deserialize)]
+struct PasskeyRegisterStartBody {
+    user_id: String,
+    user_name: String,
+    display_name: String,
+}
+
+async fn passkey_register_start(
+    State(ctx): State<AuthCtx>,
+    Json(body): Json<PasskeyRegisterStartBody>,
+) -> Response {
+    let Some(mgr) = ctx.passkeys.as_ref() else {
+        return svc_unavailable("passkey manager not configured");
+    };
+    let uuid = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, body.user_id.as_bytes());
+    match mgr
+        .start_registration(uuid, &body.user_name, &body.display_name, Some(&body.user_id))
+        .await
+    {
+        Ok((challenge, state)) => {
+            let state_blob = serde_json::to_string(&state).unwrap_or_default();
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "challenge": challenge,
+                    "state": state_blob,
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => bad_request(&format!("start_registration: {e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct PasskeyRegisterFinishBody {
+    user_id: String,
+    state: String,
+    response: serde_json::Value,
+}
+
+async fn passkey_register_finish(
+    State(ctx): State<AuthCtx>,
+    Json(body): Json<PasskeyRegisterFinishBody>,
+) -> Response {
+    let Some(mgr) = ctx.passkeys.as_ref() else {
+        return svc_unavailable("passkey manager not configured");
+    };
+    let state: webauthn_rs::prelude::PasskeyRegistration =
+        match serde_json::from_str(&body.state) {
+            Ok(s) => s,
+            Err(e) => return bad_request(&format!("decode state: {e}")),
+        };
+    let response: webauthn_rs::prelude::RegisterPublicKeyCredential =
+        match serde_json::from_value(body.response) {
+            Ok(r) => r,
+            Err(e) => return bad_request(&format!("decode response: {e}")),
+        };
+    let passkey = match mgr.finish_registration(&state, &response) {
+        Ok(p) => p,
+        Err(e) => return bad_request(&format!("finish_registration: {e}")),
+    };
+    let cred = crate::passkey::passkey_to_cred(&passkey, now_secs());
+    if let Err(e) = ctx.users.add_passkey(&body.user_id, &cred).await {
+        return server_error(&format!("persist passkey: {e}"));
+    }
+    (
+        StatusCode::OK,
+        Json(json!({"credential_id": data_encoding::BASE64URL_NOPAD.encode(&cred.credential_id)})),
+    )
+        .into_response()
+}
+
+#[derive(Deserialize)]
+struct PasskeyAuthStartBody {
+    user_id: String,
+    /// Optional pre-decoded passkeys (for tests + advanced clients).
+    /// In production we'd load these out of `auth.passkeys`; phase 8
+    /// has no `passkey_json` column so we accept them as a body field.
+    #[serde(default)]
+    passkeys: Vec<serde_json::Value>,
+}
+
+async fn passkey_auth_start(
+    State(ctx): State<AuthCtx>,
+    Json(body): Json<PasskeyAuthStartBody>,
+) -> Response {
+    let Some(mgr) = ctx.passkeys.as_ref() else {
+        return svc_unavailable("passkey manager not configured");
+    };
+    let _ = body.user_id;
+    let mut creds: Vec<webauthn_rs::prelude::Passkey> = Vec::with_capacity(body.passkeys.len());
+    for v in body.passkeys {
+        match serde_json::from_value(v) {
+            Ok(p) => creds.push(p),
+            Err(e) => return bad_request(&format!("decode passkey: {e}")),
+        }
+    }
+    if creds.is_empty() {
+        return bad_request("passkeys list is empty");
+    }
+    match mgr.start_authentication_with(&creds) {
+        Ok((challenge, state)) => (
+            StatusCode::OK,
+            Json(json!({
+                "challenge": challenge,
+                "state": serde_json::to_string(&state).unwrap_or_default(),
+            })),
+        )
+            .into_response(),
+        Err(e) => bad_request(&format!("start_authentication: {e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct PasskeyAuthFinishBody {
+    state: String,
+    response: serde_json::Value,
+}
+
+async fn passkey_auth_finish(
+    State(ctx): State<AuthCtx>,
+    Json(body): Json<PasskeyAuthFinishBody>,
+) -> Response {
+    let Some(mgr) = ctx.passkeys.as_ref() else {
+        return svc_unavailable("passkey manager not configured");
+    };
+    let state: webauthn_rs::prelude::PasskeyAuthentication =
+        match serde_json::from_str(&body.state) {
+            Ok(s) => s,
+            Err(e) => return bad_request(&format!("decode state: {e}")),
+        };
+    let response: webauthn_rs::prelude::PublicKeyCredential =
+        match serde_json::from_value(body.response) {
+            Ok(r) => r,
+            Err(e) => return bad_request(&format!("decode response: {e}")),
+        };
+    match mgr.finish_authentication(&state, &response) {
+        Ok(result) => (
+            StatusCode::OK,
+            Json(json!({
+                "credential_id": data_encoding::BASE64URL_NOPAD.encode(&result.credential_id),
+                "sign_count": result.sign_count,
+                "user_verified": result.user_verified,
+            })),
+        )
+            .into_response(),
+        Err(e) => unauthorized(&format!("finish_authentication: {e}")),
+    }
+}
+
+fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    let raw = headers.get(header::COOKIE)?.to_str().ok()?;
+    for kv in raw.split(';') {
+        let kv = kv.trim();
+        if let Some((k, v)) = kv.split_once('=') {
+            if k == name {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn unauthorized(msg: &str) -> Response {
+    (StatusCode::UNAUTHORIZED, Json(json!({"error": msg}))).into_response()
+}
+fn bad_request(msg: &str) -> Response {
+    (StatusCode::BAD_REQUEST, Json(json!({"error": msg}))).into_response()
+}
+fn server_error(msg: &str) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({"error": msg})),
+    )
+        .into_response()
+}
+fn svc_unavailable(msg: &str) -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({"error": msg})),
+    )
+        .into_response()
 }
 
 #[cfg(test)]

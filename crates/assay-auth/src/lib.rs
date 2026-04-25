@@ -18,6 +18,7 @@ pub mod biscuit;
 pub mod ctx;
 pub mod router;
 pub mod schema;
+pub mod state;
 pub mod store;
 
 #[cfg(feature = "auth-session")]

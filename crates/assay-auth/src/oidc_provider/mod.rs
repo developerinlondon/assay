@@ -15,6 +15,8 @@
 //! - [`revoke`] — RFC 7009 token revocation.
 //! - [`introspect`] — RFC 7662 token introspection.
 //! - [`federation`] — upstream login start/complete (Google/Apple/etc).
+//! - [`handlers`] — phase 8 — concrete axum handlers consuming AuthCtx.
+//! - [`admin`] — phase 8 — admin HTTP API (clients/upstream CRUD).
 //!
 //! The crate-level [`OidcProviderConfig`] composes the subsystem stores
 //! + issuer URL + JWT signing config so the AuthCtx carries one
@@ -23,19 +25,19 @@
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse, Json};
-use axum::routing::{get, post};
-use serde_json::json;
+use axum::extract::{FromRef, State};
+use axum::response::{Html, IntoResponse};
+use axum::routing::{delete, get, post};
 use url::Url;
 
 use crate::ctx::AuthCtx;
 
+pub mod admin;
 pub mod authorize;
 pub mod consent;
 pub mod discovery;
 pub mod federation;
+pub mod handlers;
 pub mod introspect;
 pub mod jwks;
 pub mod revoke;
@@ -132,59 +134,84 @@ impl OidcProviderConfig {
     }
 }
 
-/// Mount the OIDC provider routes. Returns a [`Router`] over [`AuthCtx`]
-/// that the top-level [`crate::router::router`] merges in when the
-/// `auth-oidc-provider` feature is on.
+/// Mount the OIDC provider routes. Returns a [`Router`] generic over
+/// any state `S` from which `AuthCtx` can be extracted via
+/// `axum::extract::FromRef`. The top-level [`crate::router::router`]
+/// merges this in when the `auth-oidc-provider` feature is on.
 ///
 /// Routes:
 ///
 /// - `GET /.well-known/openid-configuration`
 /// - `GET /.well-known/jwks.json`
-/// - `GET /authorize` — (placeholder body) returns 501; full handler is
-///   wired in phase 8 alongside the login UI.
-/// - `POST /token` — (placeholder)
-/// - `GET /userinfo` — (placeholder)
-/// - `POST /revoke` — (placeholder)
-/// - `POST /introspect` — (placeholder)
-/// - `GET /logout` — (placeholder)
-///
-/// The placeholders carry the full helper logic (validation, claim
-/// build) under the hood; the HTTP wiring just lacks the handler glue
-/// that materialises the resolved AuthCtx (session resolution, JWT
-/// signing) — phase 8 supplies it. Until then, hitting them returns
-/// `501 Not Implemented` so an OIDC client probing the discovery doc
-/// fails fast rather than hanging.
-pub fn router() -> Router<AuthCtx> {
+/// - `GET /authorize` — full handler (login redirect / consent / code mint).
+/// - `POST /token` — full handler (auth code + refresh grant dispatch).
+/// - `GET /userinfo` — bearer parse + JWT verify + scope-filtered claims.
+/// - `POST /revoke` — RFC 7009 (refresh token marked revoked).
+/// - `POST /introspect` — RFC 7662 (active/inactive response).
+/// - `GET /logout` — session revoke + post_logout_redirect.
+/// - `GET /authorize/consent` — render consent preview page.
+/// - `POST /authorize/consent` — record consent + resume the flow.
+/// - `GET /oidc/upstream/{slug}/start` — federation start.
+/// - `GET /oidc/upstream/{slug}/callback` — federation completion.
+/// - `POST /admin/oidc/clients[/{id}]` & friends — client + upstream
+///   CRUD (admin-key gated).
+pub fn router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    AuthCtx: FromRef<S>,
+    crate::state::AdminApiKeys: FromRef<S>,
+{
     Router::new()
         .route(
             "/.well-known/openid-configuration",
             get(discovery::discovery_handler),
         )
         .route("/.well-known/jwks.json", get(jwks::jwks_handler))
-        .route("/authorize", get(not_yet_implemented))
-        .route("/token", post(not_yet_implemented))
-        .route("/userinfo", get(not_yet_implemented))
-        .route("/revoke", post(not_yet_implemented))
-        .route("/introspect", post(not_yet_implemented))
-        .route("/logout", get(not_yet_implemented))
-        .route("/authorize/consent", get(consent_preview))
-}
-
-/// Sentinel handler — 501 with a JSON-shaped error body. Used for
-/// every route whose final HTTP wiring lands in phase 8 (it needs the
-/// engine-side login UI + AuthCtx resolution helpers that don't live
-/// in `assay-auth` yet).
-async fn not_yet_implemented() -> impl IntoResponse {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({"error": "not_implemented", "error_description": "OIDC provider HTTP handlers wired in phase 8"})),
-    )
+        .route("/authorize", get(handlers::authorize_get))
+        .route("/authorize/consent", get(consent_preview).post(handlers::consent_post))
+        .route("/token", post(handlers::token_post))
+        .route("/userinfo", get(handlers::userinfo_get).post(handlers::userinfo_get))
+        .route("/revoke", post(handlers::revoke_post))
+        .route("/introspect", post(handlers::introspect_post))
+        .route("/logout", get(handlers::logout_get))
+        .route(
+            "/oidc/upstream/{slug}/start",
+            get(handlers::upstream_start),
+        )
+        .route(
+            "/oidc/upstream/{slug}/callback",
+            get(handlers::upstream_callback),
+        )
+        // Admin routes — gated by api-key middleware in the handler.
+        .route(
+            "/admin/oidc/clients",
+            get(admin::list_clients).post(admin::create_client),
+        )
+        .route(
+            "/admin/oidc/clients/{id}",
+            get(admin::get_client)
+                .put(admin::update_client)
+                .delete(admin::delete_client),
+        )
+        .route(
+            "/admin/oidc/clients/{id}/rotate-secret",
+            post(admin::rotate_client_secret),
+        )
+        .route(
+            "/admin/oidc/upstream",
+            get(admin::list_upstream).post(admin::upsert_upstream),
+        )
+        .route(
+            "/admin/oidc/upstream/{slug}",
+            get(admin::get_upstream).delete(admin::delete_upstream),
+        )
 }
 
 /// Lightweight preview handler for the consent screen so the askama
-/// template compiles + the route is reachable from a browser. Phase 8
-/// replaces this with the real flow that resolves the in-progress
-/// authorize request.
+/// template compiles + the route is reachable from a browser. Phase 8's
+/// real consent flow is in [`handlers::consent_get`] — this stays as
+/// the GET fallback that just renders a sample page (no real flow
+/// state).
 async fn consent_preview(State(ctx): State<AuthCtx>) -> impl IntoResponse {
     let issuer = ctx
         .oidc_provider
@@ -214,6 +241,7 @@ mod tests {
     /// — handler functions compile + bind to AuthCtx.
     #[test]
     fn router_constructs() {
-        let _ = router();
+        // Identity FromRef: AuthCtx is its own parent state.
+        let _: Router<crate::state::AuthCtxWithAdmin> = router();
     }
 }
