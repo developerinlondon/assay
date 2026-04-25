@@ -539,6 +539,12 @@
     // build they're talking to. Fire-and-forget: if /version doesn't
     // exist (older engine), the placeholder stays.
     loadVersion();
+    // Cross-console nav strip — pills + header bar (version, leader,
+    // instance). Mounted globally; engine console renders the same.
+    if (window.AssayCrossNav) {
+      window.AssayCrossNav.render({ active: 'workflow' });
+    }
+    loadHeaderIdentity();
   }
 
   async function loadVersion() {
@@ -554,6 +560,30 @@
     } catch (_) {
       // Leave the placeholder — not worth surfacing as an error.
     }
+  }
+
+  // Populate the cross-nav header bar (version + leader + instance) from
+  // the public /api/v1/engine/info endpoint. Same loader the engine
+  // console runs — duplicated here so the workflow shell doesn't depend
+  // on the engine SPA's app.js.
+  async function loadHeaderIdentity() {
+    try {
+      const r = await fetch('/api/v1/engine/info', { headers: { 'accept': 'application/json' } });
+      if (!r.ok) return;
+      const info = await r.json();
+      const v = document.getElementById('cross-nav-version');
+      if (v && info.version) v.textContent = 'v' + info.version;
+      const dot = document.getElementById('cross-nav-leader-dot');
+      const txt = document.getElementById('cross-nav-leader-text');
+      if (dot) dot.classList.toggle('leader', !!info.leader);
+      if (txt) txt.textContent = info.leader ? 'leader' : 'follower';
+      const inst = document.getElementById('cross-nav-instance');
+      if (inst && info.instance_id) {
+        const id = info.instance_id;
+        inst.textContent = 'instance:' + id.slice(0, 6) + '…' + id.slice(-4);
+        inst.title = 'instance ' + id;
+      }
+    } catch (_) { /* leave placeholders */ }
   }
 
   // Expose globals for components

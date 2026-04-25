@@ -8,9 +8,22 @@
   <link rel="stylesheet" href="/workflow/theme.css?v=__ASSETV__">
   <link rel="stylesheet" href="/workflow/style.css?v=__ASSETV__">
   <link rel="stylesheet" href="/auth/style.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/shared/cross-nav.css?v=__ASSETV__">
   __EXTRA_CSS_LINK__
 </head>
 <body__DEFAULT_NAMESPACE_ATTR__>
+  <header class="cross-nav">
+    <div class="cross-nav-brand">
+      <span class="cross-nav-mark" aria-hidden="true">__BRAND_MARK__</span>
+      <span class="cross-nav-title">ASSAY ENGINE <span class="cross-nav-version" id="cross-nav-version">v—</span></span>
+      <span class="cross-nav-leader" id="cross-nav-leader" title="Leader / instance status">
+        <span class="cross-nav-dot" id="cross-nav-leader-dot"></span><span id="cross-nav-leader-text">leader</span>
+      </span>
+      <span class="cross-nav-instance" id="cross-nav-instance" title="Instance ID">instance:—</span>
+    </div>
+    <nav class="cross-nav-pills" id="cross-nav-pills" aria-label="Console switcher"></nav>
+  </header>
+
   <div class="layout">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
@@ -55,9 +68,8 @@
         </a>
       </nav>
       <div class="sidebar-footer">
-        <a href="/workflow/" class="nav-link nav-link-grow" title="Back to workflow dashboard">
-          <span class="nav-icon">&larr;</span> <span class="nav-label">Workflow</span>
-        </a>
+        <!-- Cross-console links live in the top cross-nav strip; the
+             sidebar footer is kept lean (theme toggle only). -->
         <button type="button" class="nav-link nav-link-button nav-link-icon" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
           <span class="nav-icon icon-sun">&#9788;</span>
           <span class="nav-icon icon-moon">&#9790;</span>
@@ -81,6 +93,7 @@
   <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">&#9776;</button>
 
   <script src="/workflow/components/modal.js?v=__ASSETV__"></script>
+  <script src="/shared/cross-nav.js?v=__ASSETV__"></script>
   <script src="/auth/components/api.js?v=__ASSETV__"></script>
   <script src="/auth/components/users.js?v=__ASSETV__"></script>
   <script src="/auth/components/sessions.js?v=__ASSETV__"></script>
