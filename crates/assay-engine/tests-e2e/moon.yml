@@ -1,9 +1,9 @@
 # Headless browser tests for the engine + auth consoles + cross-nav
 # strip. Boots assay-engine with auth + admin api-keys configured,
-# runs the seed-sample subcommand to populate fixture rows, then
-# drives the consoles with Playwright. Lifecycle script is `run.sh`
-# in this dir — keeps the runner POSIX-portable so CI doesn't depend
-# on the assay Lua runtime being built before the e2e step.
+# runs examples/seed-sample/seed.lua via the assay binary to populate
+# fixture rows (replaces the v0.13.x Rust seed-sample subcommand,
+# retired in plan-15 slice 5), then drives the consoles with
+# Playwright. Lifecycle script is `run.sh` in this dir.
 
 language: "typescript"
 layer: "automation"

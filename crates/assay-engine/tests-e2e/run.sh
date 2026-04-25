@@ -4,7 +4,8 @@
 # 1. Wipe and recreate the SQLite data dir
 # 2. Boot `assay-engine serve` with fixtures/engine.toml
 # 3. Wait for /api/v1/engine/core/info to answer
-# 4. Run the seed-sample subcommand (idempotent fixtures)
+# 4. Run examples/seed-sample/seed.lua (idempotent fixtures, via the
+#    assay binary using the admin api-key break-glass)
 # 5. Run Playwright against http://localhost:8420
 # 6. Tear down the engine + tail logs on failure
 #
@@ -59,10 +60,10 @@ if ! curl -fs -m 1 "$BASE/api/v1/engine/core/info" >/dev/null 2>&1; then
 fi
 
 # Idempotent fixture seed. The engine console specs assume a small
-# set of users + OIDC clients + audit rows — seed-sample provides
-# exactly that.
-say "running seed-sample"
-ASSAY_ENGINE_BIN="$ENGINE_BIN" "$HERE/fixtures/seed.sh" "$BASE" "$ADMIN_KEY"
+# set of users + OIDC clients + audit rows — seed.lua provides
+# exactly that, via the new assay-lua client.
+say "running seed.lua"
+ASSAY_BIN="$REPO_ROOT/target/release/assay" "$HERE/fixtures/seed.sh" "$BASE" "$ADMIN_KEY"
 
 # Hand over to Playwright. Single worker — see playwright.config.ts.
 say "running playwright"
