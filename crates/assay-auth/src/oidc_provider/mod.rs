@@ -142,10 +142,9 @@ impl OidcProviderConfig {
     }
 }
 
-/// Mount the OIDC provider routes. Returns a [`Router`] generic over
-/// any state `S` from which `AuthCtx` can be extracted via
-/// `axum::extract::FromRef`. The top-level [`crate::router::router`]
-/// merges this in when the `auth-oidc-provider` feature is on.
+/// OIDC spec router — only the OAuth2/OIDC well-known surface that
+/// the wider ecosystem expects under stable paths. Mounted at `/auth`
+/// by the engine binary.
 ///
 /// Routes:
 ///
@@ -161,13 +160,10 @@ impl OidcProviderConfig {
 /// - `POST /authorize/consent` — record consent + resume the flow.
 /// - `GET /oidc/upstream/{slug}/start` — federation start.
 /// - `GET /oidc/upstream/{slug}/callback` — federation completion.
-/// - `POST /admin/oidc/clients[/{id}]` & friends — client + upstream
-///   CRUD (admin-key gated).
-pub fn router<S>() -> Router<S>
+pub fn spec_router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     AuthCtx: FromRef<S>,
-    crate::state::AdminApiKeys: FromRef<S>,
 {
     Router::new()
         .route(
@@ -190,7 +186,32 @@ where
             "/oidc/upstream/{slug}/callback",
             get(handlers::upstream_callback),
         )
-        // Admin routes — gated by api-key middleware in the handler.
+}
+
+/// OIDC admin router — operator-only CRUD for OIDC clients and
+/// upstream federation providers. Mounted under
+/// `/api/v1/engine/auth/` by the engine binary so the merged paths
+/// land at `/api/v1/engine/auth/admin/oidc/...`.
+///
+/// Routes (admin-key gated by handlers):
+///
+/// - `GET    /admin/oidc/clients`
+/// - `POST   /admin/oidc/clients`
+/// - `GET    /admin/oidc/clients/{id}`
+/// - `PUT    /admin/oidc/clients/{id}`
+/// - `DELETE /admin/oidc/clients/{id}`
+/// - `POST   /admin/oidc/clients/{id}/rotate-secret`
+/// - `GET    /admin/oidc/upstream`
+/// - `POST   /admin/oidc/upstream`
+/// - `GET    /admin/oidc/upstream/{slug}`
+/// - `DELETE /admin/oidc/upstream/{slug}`
+pub fn admin_router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    AuthCtx: FromRef<S>,
+    crate::state::AdminApiKeys: FromRef<S>,
+{
+    Router::new()
         .route(
             "/admin/oidc/clients",
             get(admin::list_clients).post(admin::create_client),
@@ -213,6 +234,19 @@ where
             "/admin/oidc/upstream/{slug}",
             get(admin::get_upstream).delete(admin::delete_upstream),
         )
+}
+
+/// Backward-compat alias that returns the merged spec + admin
+/// surface. Internal callers should pick the more specific router
+/// ([`spec_router`] or [`admin_router`]); the engine binary uses both
+/// directly.
+pub fn router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    AuthCtx: FromRef<S>,
+    crate::state::AdminApiKeys: FromRef<S>,
+{
+    spec_router::<S>().merge(admin_router::<S>())
 }
 
 /// Lightweight preview handler for the consent screen so the askama

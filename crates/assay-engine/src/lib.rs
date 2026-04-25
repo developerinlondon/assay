@@ -371,7 +371,7 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
     #[cfg(not(feature = "auth"))]
     let _ = auth_ctx;
     // Wall-clock seconds since epoch — uptime baseline for the
-    // /api/v1/engine/info response. Captured here (just before serve)
+    // /api/v1/engine/core/info response. Captured here (just before serve)
     // so the value reflects the moment HTTP becomes ready, not the
     // earlier boot-sequence start.
     let started_at = std::time::SystemTime::now()

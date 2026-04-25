@@ -46,13 +46,13 @@
   }
 
   window.AssayEngineApi = {
-    info: function () { return call('GET', '/api/v1/engine/info'); },
-    listModules: function () { return call('GET', '/api/v1/engine/modules'); },
+    info: function () { return call('GET', '/api/v1/engine/core/info'); },
+    listModules: function () { return call('GET', '/api/v1/engine/core/modules'); },
     toggleModule: function (name, enabled) {
-      return call('POST', '/api/v1/engine/modules/' + encodeURIComponent(name) + '/toggle',
+      return call('POST', '/api/v1/engine/core/modules/' + encodeURIComponent(name) + '/toggle',
         { enabled: enabled });
     },
-    listInstances: function () { return call('GET', '/api/v1/engine/instances'); },
+    listInstances: function () { return call('GET', '/api/v1/engine/core/instances'); },
     listAudit: function (q) {
       const p = new URLSearchParams();
       if (q && q.limit !== undefined) p.set('limit', String(q.limit));
@@ -62,8 +62,8 @@
       if (q && q.since !== undefined) p.set('since', String(q.since));
       if (q && q.until !== undefined) p.set('until', String(q.until));
       const qs = p.toString();
-      return call('GET', '/api/v1/engine/audit' + (qs ? ('?' + qs) : ''));
+      return call('GET', '/api/v1/engine/core/audit' + (qs ? ('?' + qs) : ''));
     },
-    getConfig: function () { return call('GET', '/api/v1/engine/config'); },
+    getConfig: function () { return call('GET', '/api/v1/engine/core/config'); },
   };
 })();

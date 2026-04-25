@@ -39,7 +39,7 @@ pub struct WorkflowCtx<S: WorkflowStore> {
     pub(crate) _bg: Arc<BackgroundTasks>,
     pub auth_mode: AuthMode,
     /// Version of the containing binary (e.g. the `assay-lua` CLI) — set
-    /// by embedders so `/api/v1/version` reflects the user-facing
+    /// by embedders so `/api/v1/engine/workflow/version` reflects the user-facing
     /// binary, not this internal engine-crate version.
     pub binary_version: Option<&'static str>,
 }
@@ -91,7 +91,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         self
     }
 
-    /// Set the binary version string surfaced by `/api/v1/version`.
+    /// Set the binary version string surfaced by `/api/v1/engine/workflow/version`.
     pub fn with_binary_version(mut self, version: &'static str) -> Self {
         self.binary_version = Some(version);
         self

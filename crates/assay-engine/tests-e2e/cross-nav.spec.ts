@@ -49,7 +49,7 @@ test.describe('Cross-console nav strip', () => {
 
   test('header bar identity strip populates with version + leader', async ({ page }) => {
     await withAdminToken(page, '/engine/console');
-    // The version span gets filled from /api/v1/engine/info — wait
+    // The version span gets filled from /api/v1/engine/core/info — wait
     // until the placeholder ("v—") flips to a real semver string.
     await expect(page.locator('#cross-nav-version')).toHaveText(/v\d+\.\d+\.\d+/, { timeout: 10_000 });
     // Leader dot toggles `.leader` when info.leader=true.

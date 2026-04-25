@@ -127,7 +127,7 @@
     el.innerHTML =
       '<div class="auth-token-banner">' +
         '<strong>Admin token required.</strong> ' +
-        'These panes hit <code>/api/v1/engine/*</code> endpoints gated by ' +
+        'These panes hit <code>/api/v1/engine/core/*</code> endpoints gated by ' +
         '<code>auth.admin_api_keys</code>. Paste a configured token to continue. ' +
         'The token lives in your browser localStorage; clear it on a shared machine.' +
       '</div>' +
@@ -165,11 +165,11 @@
     }
   }
 
-  // Populate the status-version footer span by hitting /api/v1/version
+  // Populate the status-version footer span by hitting /api/v1/engine/workflow/version
   // (public). Same JS contract as the workflow + auth consoles.
   async function loadVersion() {
     try {
-      const r = await fetch('/api/v1/version', { headers: { 'accept': 'application/json' } });
+      const r = await fetch('/api/v1/engine/workflow/version', { headers: { 'accept': 'application/json' } });
       if (!r.ok) return;
       const v = await r.json();
       const el = document.getElementById('status-version');
@@ -181,12 +181,12 @@
   }
 
   // Header-bar identity strip — version, leader dot, instance id.
-  // Hits /api/v1/engine/info (public, no auth), then mirrors the values
+  // Hits /api/v1/engine/core/info (public, no auth), then mirrors the values
   // into the cross-nav header so operators see them on every console
   // load even before they paste an admin token.
   async function loadHeaderIdentity() {
     try {
-      const r = await fetch('/api/v1/engine/info', { headers: { 'accept': 'application/json' } });
+      const r = await fetch('/api/v1/engine/core/info', { headers: { 'accept': 'application/json' } });
       if (!r.ok) return;
       const info = await r.json();
       const v = document.getElementById('cross-nav-version');

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { withAdminToken, waitForCrossNav } from './_setup';
 
 test.describe('Engine console', () => {
-  test('Info pane populates from /api/v1/engine/info', async ({ page }) => {
+  test('Info pane populates from /api/v1/engine/core/info', async ({ page }) => {
     await withAdminToken(page, '/engine/console');
 
     // Section title sanity.

@@ -14,7 +14,7 @@
 //! | `ASSAY_WHITELABEL_PAGE_TITLE`   | Browser tab title                                    | `Assay Engine — Workflow`    |
 //! | `ASSAY_WHITELABEL_PARENT_URL`   | When set, adds a back-link in the sidebar footer     | — (hidden)                   |
 //! | `ASSAY_WHITELABEL_PARENT_NAME`  | Label for the back-link                              | `Back`                       |
-//! | `ASSAY_WHITELABEL_API_DOCS_URL` | Override (or hide) the API Docs sidebar link         | `/api/v1/docs`               |
+//! | `ASSAY_WHITELABEL_API_DOCS_URL` | Override (or hide) the API Docs sidebar link         | `/api/v1/engine/workflow/docs`               |
 //! | `ASSAY_WHITELABEL_CSS_URL`      | Extra stylesheet loaded after assay's own CSS        | — (none)                     |
 //! | `ASSAY_WHITELABEL_SUBTITLE`     | Small muted line shown under the brand name          | `Workflow Engine` (empty hides) |
 //! | `ASSAY_WHITELABEL_MARK`         | Single glyph for the always-visible badge square     | First char of NAME (upper)   |
@@ -158,7 +158,7 @@ impl WhitelabelConfig {
         let api_docs_url = match std::env::var("ASSAY_WHITELABEL_API_DOCS_URL") {
             Ok(s) if s.is_empty() => None,
             Ok(s) => Some(s),
-            Err(_) => Some("/api/v1/docs".to_string()),
+            Err(_) => Some("/api/v1/engine/workflow/docs".to_string()),
         };
         let css_url = std::env::var("ASSAY_WHITELABEL_CSS_URL")
             .ok()
@@ -338,7 +338,7 @@ v=__ASSETV__
             page_title: "Assay Engine — Workflow".into(),
             parent_url: None,
             parent_name: "Back".into(),
-            api_docs_url: Some("/api/v1/docs".into()),
+            api_docs_url: Some("/api/v1/engine/workflow/docs".into()),
             css_url: None,
             favicon_url: None,
             default_namespace: "main".into(),
@@ -364,7 +364,7 @@ v=__ASSETV__
         // Engine" so the dashboard label matches.
         assert!(!out.contains("Assay Workflow Engine"));
         // Default API Docs link present and pointing at the engine path.
-        assert!(out.contains("href=\"/api/v1/docs\""));
+        assert!(out.contains("href=\"/api/v1/engine/workflow/docs\""));
         // Default favicon points at the built-in SVG.
         assert!(out.contains(r#"href="/workflow/favicon.svg""#));
         // Default namespace attr exposes "main" for the dashboard JS.
@@ -501,7 +501,7 @@ v=__ASSETV__
         cfg.api_docs_url = None;
         let out = render_index(TEMPLATE, "v", &cfg);
         assert!(!out.contains("API Docs"));
-        assert!(!out.contains("/api/v1/docs"));
+        assert!(!out.contains("/api/v1/engine/workflow/docs"));
     }
 
     #[test]

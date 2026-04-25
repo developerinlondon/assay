@@ -30,11 +30,11 @@ pub use crate::auth_mode::{AuthMode, JwksCache, JwtConfig};
 /// audience) is rejected and is *not* retried as an API key — a token that looks
 /// like a JWT is treated as a JWT.
 ///
-/// **Bootstrap window:** `POST /api/v1/api-keys` is accepted without a Bearer
-/// token iff the `api_keys` table is empty. This is the only way a freshly
-/// deployed server running in API-key or combined mode can receive its first
-/// credential without operator shell access. The window closes the moment any
-/// key exists.
+/// **Bootstrap window:** `POST /api/v1/engine/workflow/api-keys` is accepted
+/// without a Bearer token iff the `api_keys` table is empty. This is the
+/// only way a freshly deployed server running in API-key or combined mode
+/// can receive its first credential without operator shell access. The
+/// window closes the moment any key exists.
 pub async fn auth_middleware<S: WorkflowStore>(
     State(state): State<Arc<WorkflowCtx<S>>>,
     request: Request,
@@ -50,7 +50,7 @@ pub async fn auth_middleware<S: WorkflowStore>(
         match state.store().api_keys_empty().await {
             Ok(true) => {
                 info!(
-                    "Allowing unauthenticated POST /api/v1/api-keys — api_keys table is empty (bootstrap window)"
+                    "Allowing unauthenticated POST /api/v1/engine/workflow/api-keys — api_keys table is empty (bootstrap window)"
                 );
                 return next.run(request).await;
             }
@@ -194,11 +194,12 @@ fn extract_bearer(request: &Request) -> Option<&str> {
 }
 
 /// True iff the request is the bootstrap-window endpoint
-/// (`POST /api/v1/api-keys`). The caller is still responsible for checking
-/// that the `api_keys` table is empty before actually allowing unauth access.
+/// (`POST /api/v1/engine/workflow/api-keys`). The caller is still
+/// responsible for checking that the `api_keys` table is empty before
+/// actually allowing unauth access.
 fn is_bootstrap_request(request: &Request) -> bool {
     request.method() == axum::http::Method::POST
-        && request.uri().path() == "/api/v1/api-keys"
+        && request.uri().path() == "/api/v1/engine/workflow/api-keys"
 }
 
 fn auth_error(msg: &str) -> Response {

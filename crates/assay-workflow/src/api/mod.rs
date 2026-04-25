@@ -26,20 +26,20 @@ use crate::store::WorkflowStore;
 
 /// Build the full API router.
 ///
-/// Three tiers:
-///   1. **Authenticated `/api/v1/*`** — workflows, schedules, namespaces,
-///      activities, tasks, workers, queues, api-keys, events, meta/version.
+/// Three tiers (all under `/api/v1/engine/workflow/*` per plan 15):
+///   1. **Authenticated** — workflows, schedules, namespaces,
+///      activities, tasks, workers, queues, api-keys, events.
 ///      Gated by `auth::auth_middleware` when an auth mode is enabled.
-///   2. **Public `/api/v1/*`** — health, version. Always unauthenticated so
+///   2. **Public** — health, version. Always unauthenticated so
 ///      Kubernetes probes, load balancers, and third-party monitors can
 ///      reach them without a bearer token.
-///   3. **Dashboard + OpenAPI** — HTML/JSON at the root. Always public.
+///   3. **OpenAPI** — `openapi.json` + `docs` HTML. Always public.
 pub fn router<S: WorkflowStore>(state: Arc<WorkflowCtx<S>>) -> Router {
     let needs_auth = state.auth_mode.is_enabled();
 
     let authed_api = Router::new()
-        .nest("/api/v1", api_v1_router::<S>())
-        .nest("/api/v1", events::router::<S>());
+        .nest("/api/v1/engine/workflow", api_v1_router::<S>())
+        .nest("/api/v1/engine/workflow", events::router::<S>());
 
     let authed_api = if needs_auth {
         authed_api.layer(middleware::from_fn_with_state(
@@ -50,8 +50,8 @@ pub fn router<S: WorkflowStore>(state: Arc<WorkflowCtx<S>>) -> Router {
         authed_api
     };
 
-    // Public /api/v1/* routes — outside the auth layer by construction.
-    let public_api = Router::new().nest("/api/v1", public::router::<S>());
+    // Public workflow routes — outside the auth layer by construction.
+    let public_api = Router::new().nest("/api/v1/engine/workflow", public::router::<S>());
 
     let app = authed_api.merge(public_api).merge(openapi::router::<S>());
 
@@ -86,7 +86,7 @@ pub async fn serve(
 }
 
 /// Like `serve`, but lets the embedder pass its own semver so
-/// `/api/v1/version` reflects the binary users are actually running.
+/// `/api/v1/engine/workflow/version` reflects the binary users are actually running.
 pub async fn serve_with_version(
     store: impl WorkflowStore + 'static,
     port: u16,

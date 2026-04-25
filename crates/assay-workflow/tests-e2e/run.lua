@@ -73,10 +73,10 @@ format = "pretty"
   fs.write(ENGINE_CONFIG, toml)
 end
 
--- Poll /api/v1/version until the engine answers (or give up after 15s).
+-- Poll /api/v1/engine/workflow/version until the engine answers (or give up after 15s).
 local function wait_for_engine()
   for _ = 1, 30 do
-    local ok, resp = pcall(http.get, BASE .. "/api/v1/version", { timeout = 1 })
+    local ok, resp = pcall(http.get, BASE .. "/api/v1/engine/workflow/version", { timeout = 1 })
     if ok and resp and resp.status == 200 then return true end
     sleep(0.5)
   end
@@ -115,7 +115,7 @@ local ok, err = pcall(function()
   log("engine ready (pid " .. engine_pid .. ")")
 
   log("creating namespace 'demo'")
-  local r = http.post(BASE .. "/api/v1/namespaces", { name = "demo" })
+  local r = http.post(BASE .. "/api/v1/engine/workflow/namespaces", { name = "demo" })
   if r.status >= 400 and r.status ~= 409 then
     fail("namespace create failed: " .. r.status .. " " .. (r.body or ""))
   end
@@ -131,7 +131,7 @@ local ok, err = pcall(function()
   sleep(1.5) -- let the worker register before we POST the workflow
 
   log("seeding DemoPipeline (id=demo-2)")
-  local rs = http.post(BASE .. "/api/v1/workflows", {
+  local rs = http.post(BASE .. "/api/v1/engine/workflow/workflows", {
     workflow_type = "DemoPipeline",
     workflow_id = "demo-2",
     namespace = "demo",

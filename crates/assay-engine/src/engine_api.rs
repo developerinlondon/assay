@@ -1,23 +1,26 @@
 //! Engine-core HTTP admin API.
 //!
-//! Mounted at `/api/v1/engine/*` by the engine binary so the engine
+//! Mounted at `/api/v1/engine/core/*` by the engine binary so the engine
 //! console (`/engine/console`) has structured JSON to render.
 //!
 //! Endpoints (all return JSON):
 //!
-//! - `GET    /api/v1/engine/info`              public, no auth
-//! - `GET    /api/v1/engine/modules`           admin
-//! - `POST   /api/v1/engine/modules/{name}/toggle`  admin
-//! - `GET    /api/v1/engine/instances`         admin
-//! - `GET    /api/v1/engine/audit`             admin
-//! - `GET    /api/v1/engine/config`            admin (secrets redacted)
+//! - `GET    /api/v1/engine/core/info`              public, no auth
+//! - `GET    /api/v1/engine/core/health`            public, no auth
+//! - `GET    /api/v1/engine/core/active-modules`    public, no auth
+//! - `GET    /api/v1/engine/core/modules`           admin
+//! - `POST   /api/v1/engine/core/modules/{name}/toggle`  admin
+//! - `GET    /api/v1/engine/core/instances`         admin
+//! - `GET    /api/v1/engine/core/audit`             admin
+//! - `GET    /api/v1/engine/core/config`            admin (secrets redacted)
 //!
 //! Admin-gated endpoints reuse the same `Authorization: Bearer ...`
 //! check the auth admin router uses (compared in constant-ish time
 //! against `EngineState.admin_api_keys`). When `admin_api_keys` is
 //! empty every admin endpoint returns 401 — locking the surface
-//! entirely. `info` is always public so dashboards can render the
-//! header bar before an operator has supplied credentials.
+//! entirely. `info`, `health`, and `active-modules` are always public
+//! so dashboards can render the header bar + cross-nav before an
+//! operator has supplied credentials.
 //!
 //! Backend-agnostic: handlers branch on the `BackendConfig` variant
 //! to call into either `PgEngineSchema` or `SqliteEngineSchema`. SQLite
@@ -45,19 +48,63 @@ where
     S: WorkflowStore + Clone + 'static,
 {
     Router::new()
-        .route("/api/v1/engine/info", get(engine_info::<S>))
-        .route("/api/v1/engine/modules", get(list_modules::<S>))
+        .route("/api/v1/engine/core/info", get(engine_info::<S>))
+        .route("/api/v1/engine/core/health", get(engine_health::<S>))
         .route(
-            "/api/v1/engine/modules/{name}/toggle",
+            "/api/v1/engine/core/active-modules",
+            get(active_modules::<S>),
+        )
+        .route("/api/v1/engine/core/modules", get(list_modules::<S>))
+        .route(
+            "/api/v1/engine/core/modules/{name}/toggle",
             post(toggle_module::<S>),
         )
-        .route("/api/v1/engine/instances", get(list_instances::<S>))
-        .route("/api/v1/engine/audit", get(list_audit::<S>))
-        .route("/api/v1/engine/config", get(get_config::<S>))
+        .route("/api/v1/engine/core/instances", get(list_instances::<S>))
+        .route("/api/v1/engine/core/audit", get(list_audit::<S>))
+        .route("/api/v1/engine/core/config", get(get_config::<S>))
 }
 
 // =====================================================================
-//   /api/v1/engine/info
+//   /api/v1/engine/core/health
+// =====================================================================
+
+/// Engine-core health probe. Returns the same envelope previously
+/// served by the legacy `/healthz` endpoint (status + version +
+/// instance_id + active modules + leader flag) so existing operator
+/// scripts that scrape the JSON keep working after the URL move.
+async fn engine_health<S: WorkflowStore + Clone + 'static>(
+    State(s): State<EngineState<S>>,
+) -> Json<Value> {
+    Json(json!({
+        "status": "ok",
+        "engine_version": s.engine_version,
+        "instance_id": s.instance_id.to_string(),
+        "modules": &*s.modules,
+        // SQLite is single-instance and PG uses session-scoped
+        // pg_try_advisory_lock; both make leadership a runtime
+        // property. Surface it as `leader = true` for SQLite (no
+        // election) so dashboards keep the field stable.
+        "leader": true,
+    }))
+}
+
+// =====================================================================
+//   /api/v1/engine/core/active-modules
+// =====================================================================
+
+/// Active-modules listing — public, no auth. Read by the cross-console
+/// nav strip JS so disabled modules' pills don't render. Replaces the
+/// legacy top-level `/api/v1/modules` endpoint.
+async fn active_modules<S: WorkflowStore + Clone + 'static>(
+    State(s): State<EngineState<S>>,
+) -> Json<Value> {
+    Json(json!({
+        "modules": &*s.modules,
+    }))
+}
+
+// =====================================================================
+//   /api/v1/engine/core/info
 // =====================================================================
 
 #[derive(Debug, Clone, Serialize)]
@@ -100,7 +147,7 @@ async fn engine_info<S: WorkflowStore + Clone + 'static>(
 }
 
 // =====================================================================
-//   /api/v1/engine/modules
+//   /api/v1/engine/core/modules
 // =====================================================================
 
 #[derive(Debug, Clone, Serialize)]
@@ -209,7 +256,7 @@ async fn toggle_module<S: WorkflowStore + Clone + 'static>(
 }
 
 // =====================================================================
-//   /api/v1/engine/instances
+//   /api/v1/engine/core/instances
 // =====================================================================
 
 #[derive(Debug, Clone, Serialize)]
@@ -264,7 +311,7 @@ async fn list_instances<S: WorkflowStore + Clone + 'static>(
 }
 
 // =====================================================================
-//   /api/v1/engine/audit
+//   /api/v1/engine/core/audit
 // =====================================================================
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -347,7 +394,7 @@ async fn list_audit<S: WorkflowStore + Clone + 'static>(
 }
 
 // =====================================================================
-//   /api/v1/engine/config
+//   /api/v1/engine/core/config
 // =====================================================================
 
 async fn get_config<S: WorkflowStore + Clone + 'static>(

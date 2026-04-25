@@ -1,6 +1,6 @@
 /* Engine console — Info pane.
  *
- * Public read of /api/v1/engine/info. Renders six identity cards
+ * Public read of /api/v1/engine/core/info. Renders six identity cards
  * (version, instance, started, uptime, backend, modules) so an
  * operator can confirm which engine they're talking to without
  * an admin token.
@@ -20,7 +20,7 @@ var AssayEngineInfo = (function () {
     try {
       // info is public — fetch directly so an unauthenticated operator
       // still sees the header bar populated.
-      const r = await fetch('/api/v1/engine/info', { headers: { 'accept': 'application/json' } });
+      const r = await fetch('/api/v1/engine/core/info', { headers: { 'accept': 'application/json' } });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const info = await r.json();
       paint(wrap, info, ctx);
@@ -51,7 +51,7 @@ var AssayEngineInfo = (function () {
         card('Public URL', ctx.escapeHtml(info.public_url || '-'), true) +
       '</div>' +
       '<p class="auth-empty">' +
-        'The Info pane reads from <code>/api/v1/engine/info</code> (public, no auth). ' +
+        'The Info pane reads from <code>/api/v1/engine/core/info</code> (public, no auth). ' +
         'Other panes require an admin token configured via <code>auth.admin_api_keys</code>.' +
       '</p>';
   }

@@ -1,7 +1,7 @@
 /* Engine console — Config pane.
  *
  * Read-only viewer over the running `engine.toml`. The endpoint
- * (`/api/v1/engine/config`) returns the parsed config with
+ * (`/api/v1/engine/core/config`) returns the parsed config with
  * `admin_api_keys` redacted to literal "[REDACTED]" so screenshots
  * don't leak credentials.
  */

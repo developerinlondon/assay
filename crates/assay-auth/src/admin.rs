@@ -5,31 +5,31 @@
 //! constant time against [`crate::state::AdminApiKeys`]) — same auth
 //! pattern as [`crate::oidc_provider::admin`].
 //!
-//! Surface (mounted at `/auth` by the engine, so the actual paths are
-//! `/auth/admin/auth/...`):
+//! Surface (mounted under `/api/v1/engine/auth/` by the engine, so the
+//! actual paths are `/api/v1/engine/auth/admin/...`):
 //!
-//! - `GET    /admin/auth/users?limit=&offset=&search=`
-//! - `POST   /admin/auth/users`            → mint user
-//! - `GET    /admin/auth/users/{id}`       → user + linked passkeys + sessions + upstream
-//! - `PUT    /admin/auth/users/{id}`       → update email / display_name / verified
-//! - `DELETE /admin/auth/users/{id}`       → cascade delete via FKs
-//! - `POST   /admin/auth/users/{id}/password-reset` → set new password (admin override)
+//! - `GET    /admin/users?limit=&offset=&search=`
+//! - `POST   /admin/users`            → mint user
+//! - `GET    /admin/users/{id}`       → user + linked passkeys + sessions + upstream
+//! - `PUT    /admin/users/{id}`       → update email / display_name / verified
+//! - `DELETE /admin/users/{id}`       → cascade delete via FKs
+//! - `POST   /admin/users/{id}/password-reset` → set new password (admin override)
 //!
-//! - `GET    /admin/auth/sessions?limit=&offset=&user_id=`
-//! - `DELETE /admin/auth/sessions/{id}`
-//! - `DELETE /admin/auth/sessions/by-user/{user_id}` → revoke all
+//! - `GET    /admin/sessions?limit=&offset=&user_id=`
+//! - `DELETE /admin/sessions/{id}`
+//! - `DELETE /admin/sessions/by-user/{user_id}` → revoke all
 //!
-//! - `GET    /admin/auth/biscuit`          → active root key info (kid + public PEM)
-//! - `GET    /admin/auth/jwks`             → JWKS public document (proxy /well-known)
+//! - `GET    /admin/biscuit`          → active root key info (kid + public PEM)
+//! - `GET    /admin/jwks`             → JWKS public document (proxy /well-known)
 //!
-//! - `GET    /admin/auth/zanzibar/namespaces`
-//! - `GET    /admin/auth/zanzibar/namespaces/{name}`
-//! - `POST   /admin/auth/zanzibar/tuples`              → write
-//! - `DELETE /admin/auth/zanzibar/tuples`              → delete
-//! - `POST   /admin/auth/zanzibar/check`               → permission check
-//! - `POST   /admin/auth/zanzibar/expand`              → userset tree
+//! - `GET    /admin/zanzibar/namespaces`
+//! - `GET    /admin/zanzibar/namespaces/{name}`
+//! - `POST   /admin/zanzibar/tuples`              → write
+//! - `DELETE /admin/zanzibar/tuples`              → delete
+//! - `POST   /admin/zanzibar/check`               → permission check
+//! - `POST   /admin/zanzibar/expand`              → userset tree
 //!
-//! - `GET    /admin/auth/audit?limit=&offset=&actor=&action=`
+//! - `GET    /admin/audit?limit=&offset=&actor=&action=`
 //!   → empty response today (audit table is deferred per V1 schema notes)
 
 use axum::Router;
@@ -55,42 +55,42 @@ where
 {
     Router::new()
         .route(
-            "/admin/auth/users",
+            "/admin/users",
             get(list_users).post(create_user_handler),
         )
         .route(
-            "/admin/auth/users/{id}",
+            "/admin/users/{id}",
             get(get_user_detail)
                 .put(update_user_handler)
                 .delete(delete_user_handler),
         )
         .route(
-            "/admin/auth/users/{id}/password-reset",
+            "/admin/users/{id}/password-reset",
             post(password_reset_handler),
         )
-        .route("/admin/auth/sessions", get(list_sessions))
-        .route("/admin/auth/sessions/{id}", delete(revoke_session))
+        .route("/admin/sessions", get(list_sessions))
+        .route("/admin/sessions/{id}", delete(revoke_session))
         .route(
-            "/admin/auth/sessions/by-user/{user_id}",
+            "/admin/sessions/by-user/{user_id}",
             delete(revoke_sessions_for_user),
         )
-        .route("/admin/auth/biscuit", get(biscuit_info))
-        .route("/admin/auth/jwks", get(jwks_proxy))
+        .route("/admin/biscuit", get(biscuit_info))
+        .route("/admin/jwks", get(jwks_proxy))
         .route(
-            "/admin/auth/zanzibar/namespaces",
+            "/admin/zanzibar/namespaces",
             get(zanzibar_list_namespaces),
         )
         .route(
-            "/admin/auth/zanzibar/namespaces/{name}",
+            "/admin/zanzibar/namespaces/{name}",
             get(zanzibar_get_namespace),
         )
         .route(
-            "/admin/auth/zanzibar/tuples",
+            "/admin/zanzibar/tuples",
             post(zanzibar_write_tuple).delete(zanzibar_delete_tuple),
         )
-        .route("/admin/auth/zanzibar/check", post(zanzibar_check_handler))
-        .route("/admin/auth/zanzibar/expand", post(zanzibar_expand_handler))
-        .route("/admin/auth/audit", get(audit_list))
+        .route("/admin/zanzibar/check", post(zanzibar_check_handler))
+        .route("/admin/zanzibar/expand", post(zanzibar_expand_handler))
+        .route("/admin/audit", get(audit_list))
 }
 
 /// Bearer-token check shared by every admin handler. Identical to
@@ -124,7 +124,7 @@ fn require_admin(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<(), Box<Res
 }
 
 // =====================================================================
-//   /admin/auth/users
+//   /admin/users
 // =====================================================================
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -412,7 +412,7 @@ async fn password_reset_handler(
 }
 
 // =====================================================================
-//   /admin/auth/sessions
+//   /admin/sessions
 // =====================================================================
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -506,7 +506,7 @@ async fn revoke_sessions_for_user(
 }
 
 // =====================================================================
-//   /admin/auth/biscuit + /admin/auth/jwks
+//   /admin/biscuit + /admin/jwks
 // =====================================================================
 
 #[derive(Clone, Debug, Serialize)]
@@ -561,7 +561,7 @@ async fn jwks_proxy(
 }
 
 // =====================================================================
-//   /admin/auth/zanzibar
+//   /admin/zanzibar
 // =====================================================================
 
 async fn zanzibar_list_namespaces(
@@ -803,7 +803,7 @@ async fn zanzibar_expand_handler(
 }
 
 // =====================================================================
-//   /admin/auth/audit
+//   /admin/audit
 // =====================================================================
 
 #[derive(Clone, Debug, Default, Deserialize)]

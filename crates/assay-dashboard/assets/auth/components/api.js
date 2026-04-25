@@ -23,7 +23,7 @@
     if (body !== undefined && body !== null && method !== 'GET' && method !== 'DELETE') {
       opts.body = JSON.stringify(body);
     }
-    const url = '/auth' + path;
+    const url = '/api/v1/engine/auth' + path;
     const res = await fetch(url, opts);
     if (res.status === 204) return null;
     const text = await res.text();
@@ -59,20 +59,20 @@
     del: function (path, body) { return call('DELETE', path, body); },
 
     // Users
-    listUsers: function (params) { return call('GET', '/admin/auth/users' + qs(params)); },
-    createUser: function (body) { return call('POST', '/admin/auth/users', body); },
-    getUser: function (id) { return call('GET', '/admin/auth/users/' + encodeURIComponent(id)); },
-    updateUser: function (id, body) { return call('PUT', '/admin/auth/users/' + encodeURIComponent(id), body); },
-    deleteUser: function (id) { return call('DELETE', '/admin/auth/users/' + encodeURIComponent(id)); },
+    listUsers: function (params) { return call('GET', '/admin/users' + qs(params)); },
+    createUser: function (body) { return call('POST', '/admin/users', body); },
+    getUser: function (id) { return call('GET', '/admin/users/' + encodeURIComponent(id)); },
+    updateUser: function (id, body) { return call('PUT', '/admin/users/' + encodeURIComponent(id), body); },
+    deleteUser: function (id) { return call('DELETE', '/admin/users/' + encodeURIComponent(id)); },
     resetPassword: function (id, password) {
-      return call('POST', '/admin/auth/users/' + encodeURIComponent(id) + '/password-reset', { password: password });
+      return call('POST', '/admin/users/' + encodeURIComponent(id) + '/password-reset', { password: password });
     },
 
     // Sessions
-    listSessions: function (params) { return call('GET', '/admin/auth/sessions' + qs(params)); },
-    revokeSession: function (id) { return call('DELETE', '/admin/auth/sessions/' + encodeURIComponent(id)); },
+    listSessions: function (params) { return call('GET', '/admin/sessions' + qs(params)); },
+    revokeSession: function (id) { return call('DELETE', '/admin/sessions/' + encodeURIComponent(id)); },
     revokeAllSessions: function (uid) {
-      return call('DELETE', '/admin/auth/sessions/by-user/' + encodeURIComponent(uid));
+      return call('DELETE', '/admin/sessions/by-user/' + encodeURIComponent(uid));
     },
 
     // OIDC clients
@@ -94,14 +94,14 @@
     },
 
     // Zanzibar
-    listZanzibarNamespaces: function () { return call('GET', '/admin/auth/zanzibar/namespaces'); },
+    listZanzibarNamespaces: function () { return call('GET', '/admin/zanzibar/namespaces'); },
     getZanzibarNamespace: function (name) {
-      return call('GET', '/admin/auth/zanzibar/namespaces/' + encodeURIComponent(name));
+      return call('GET', '/admin/zanzibar/namespaces/' + encodeURIComponent(name));
     },
-    writeZanzibarTuple: function (body) { return call('POST', '/admin/auth/zanzibar/tuples', body); },
+    writeZanzibarTuple: function (body) { return call('POST', '/admin/zanzibar/tuples', body); },
     deleteZanzibarTuple: function (body) {
       // DELETE with body is non-standard but supported here for tuple deletion
-      const url = '/auth/admin/auth/zanzibar/tuples';
+      const url = '/api/v1/engine/auth/admin/zanzibar/tuples';
       return fetch(url, {
         method: 'DELETE',
         headers: authHeaders(),
@@ -117,14 +117,14 @@
         return p;
       });
     },
-    checkZanzibar: function (body) { return call('POST', '/admin/auth/zanzibar/check', body); },
-    expandZanzibar: function (body) { return call('POST', '/admin/auth/zanzibar/expand', body); },
+    checkZanzibar: function (body) { return call('POST', '/admin/zanzibar/check', body); },
+    expandZanzibar: function (body) { return call('POST', '/admin/zanzibar/expand', body); },
 
     // Keys
-    biscuit: function () { return call('GET', '/admin/auth/biscuit'); },
-    jwks: function () { return call('GET', '/admin/auth/jwks'); },
+    biscuit: function () { return call('GET', '/admin/biscuit'); },
+    jwks: function () { return call('GET', '/admin/jwks'); },
 
     // Audit
-    audit: function (params) { return call('GET', '/admin/auth/audit' + qs(params)); },
+    audit: function (params) { return call('GET', '/admin/audit' + qs(params)); },
   };
 })();

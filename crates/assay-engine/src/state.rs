@@ -50,11 +50,12 @@ pub struct EngineState<S: WorkflowStore> {
     /// future visibility endpoints identify which engine process is
     /// answering.
     pub instance_id: uuid::Uuid,
-    /// `assay-engine` crate version. Returned in `/healthz` so external
-    /// monitors can correlate health checks with deployments.
+    /// `assay-engine` crate version. Returned in
+    /// `/api/v1/engine/core/health` so external monitors can correlate
+    /// health checks with deployments.
     pub engine_version: &'static str,
     /// Wall-clock seconds since the UNIX epoch when this engine process
-    /// finished booting. Surfaced through `/api/v1/engine/info` so the
+    /// finished booting. Surfaced through `/api/v1/engine/core/info` so the
     /// engine console can display "uptime" without an extra DB lookup
     /// per request — matches the value the engine wrote to its
     /// `engine.instances` row at boot.

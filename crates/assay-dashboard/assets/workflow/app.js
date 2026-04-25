@@ -148,7 +148,7 @@
 
   async function apiFetch(path, opts) {
     const sep = path.includes('?') ? '&' : '?';
-    const url = '/api/v1' + path + sep + 'namespace=' + encodeURIComponent(currentNamespace);
+    const url = '/api/v1/engine/workflow' + path + sep + 'namespace=' + encodeURIComponent(currentNamespace);
     const res = await fetch(url, opts);
     if (!res.ok) {
       const body = await res.text();
@@ -161,7 +161,7 @@
   /// Fetch without auto-injecting the namespace query param — used for
   /// endpoints that don't take one (e.g. /version, /namespaces).
   async function apiFetchRaw(path, opts) {
-    const res = await fetch('/api/v1' + path, opts);
+    const res = await fetch('/api/v1/engine/workflow' + path, opts);
     if (!res.ok) {
       const body = await res.text();
       throw new Error(body || res.statusText);
@@ -200,7 +200,7 @@
     const select = document.getElementById('namespace-select');
     const statusSelect = document.getElementById('status-namespace-select');
     try {
-      const namespaces = await fetch('/api/v1/namespaces').then((r) => r.json());
+      const namespaces = await fetch('/api/v1/engine/workflow/namespaces').then((r) => r.json());
       const options = namespaces
         .map((ns) => {
           const name = ns.name || ns;
@@ -229,7 +229,7 @@
       eventSource.close();
     }
 
-    const url = '/api/v1/events/stream?namespace=' + encodeURIComponent(currentNamespace);
+    const url = '/api/v1/engine/workflow/events/stream?namespace=' + encodeURIComponent(currentNamespace);
     eventSource = new EventSource(url);
 
     const dot = document.getElementById('connection-dot');
@@ -563,12 +563,12 @@
   }
 
   // Populate the cross-nav header bar (version + leader + instance) from
-  // the public /api/v1/engine/info endpoint. Same loader the engine
+  // the public /api/v1/engine/core/info endpoint. Same loader the engine
   // console runs — duplicated here so the workflow shell doesn't depend
   // on the engine SPA's app.js.
   async function loadHeaderIdentity() {
     try {
-      const r = await fetch('/api/v1/engine/info', { headers: { 'accept': 'application/json' } });
+      const r = await fetch('/api/v1/engine/core/info', { headers: { 'accept': 'application/json' } });
       if (!r.ok) return;
       const info = await r.json();
       const v = document.getElementById('cross-nav-version');

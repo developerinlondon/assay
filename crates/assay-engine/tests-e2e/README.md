@@ -27,17 +27,17 @@ npx playwright show-report
 
 `run.sh` is what CI uses too — it wipes `/tmp/assay-engine-e2e-data`, boots `assay-engine serve`
 against `fixtures/engine.toml` (SQLite + auth + admin api-key `dev-admin-key-change-me`), waits for
-`/api/v1/engine/info` to answer, runs `assay-engine seed-sample` to populate fixtures, then drives
+`/api/v1/engine/core/info` to answer, runs `assay-engine seed-sample` to populate fixtures, then drives
 Playwright. Engine log lands at `/tmp/assay-engine-e2e.log` for post-mortem.
 
 ## What's covered
 
 - `engine-console.spec.ts`
-  - `/engine/console` shell loads + paints the Info pane from `/api/v1/engine/info` (version,
+  - `/engine/console` shell loads + paints the Info pane from `/api/v1/engine/core/info` (version,
     instance, started, uptime, modules).
-  - Modules table loads from `/api/v1/engine/modules` (admin token persisted via localStorage in
+  - Modules table loads from `/api/v1/engine/core/modules` (admin token persisted via localStorage in
     beforeEach).
-  - Instances table loads from `/api/v1/engine/instances`.
+  - Instances table loads from `/api/v1/engine/core/instances`.
   - Audit log paginates (Prev/Next disabled at boundaries).
   - Config view shows the redacted `[REDACTED]` placeholder for `admin_api_keys` (no plaintext
     leakage).

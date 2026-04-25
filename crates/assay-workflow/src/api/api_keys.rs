@@ -3,7 +3,7 @@
 //! Provides REST creation/listing/deletion of engine API keys as an
 //! alternative to the `assay serve --generate-api-key` CLI subcommand.
 //!
-//! `POST /api/v1/api-keys` supports a client-supplied `label` and an
+//! `POST /api/v1/engine/workflow/api-keys` supports a client-supplied `label` and an
 //! `idempotent` flag. When `idempotent = true` and a key with that label
 //! already exists, the handler returns the existing record's metadata
 //! *without* a plaintext — the plaintext was handed out at generation
@@ -62,7 +62,7 @@ pub struct CreateApiKeyResponse {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/api-keys",
+    post, path = "/api/v1/engine/workflow/api-keys",
     tag = "api-keys",
     request_body = CreateApiKeyRequest,
     responses(
@@ -115,7 +115,7 @@ pub async fn create_api_key<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/api-keys",
+    get, path = "/api/v1/engine/workflow/api-keys",
     tag = "api-keys",
     responses(
         (status = 200, description = "List of API key metadata (hashes never exposed)", body = Vec<ApiKeyRecord>),
@@ -129,7 +129,7 @@ pub async fn list_api_keys<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    delete, path = "/api/v1/api-keys/{prefix}",
+    delete, path = "/api/v1/engine/workflow/api-keys/{prefix}",
     tag = "api-keys",
     params(("prefix" = String, Path, description = "Key prefix (e.g. assay_abcd1234...)")),
     responses(

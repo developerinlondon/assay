@@ -123,7 +123,7 @@ pub mod zanzibar;
 
 pub use ctx::AuthCtx;
 pub use error::{Error, Result};
-pub use router::router;
+pub use router::{engine_auth_router, oidc_spec_router, router};
 pub use schema::{MIGRATION_VERSION, MODULE_NAME};
 
 /// Stable module name registered in `engine.modules` and used as the

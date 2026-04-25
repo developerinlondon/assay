@@ -3,7 +3,7 @@
 #
 # 1. Wipe and recreate the SQLite data dir
 # 2. Boot `assay-engine serve` with fixtures/engine.toml
-# 3. Wait for /api/v1/engine/info to answer
+# 3. Wait for /api/v1/engine/core/info to answer
 # 4. Run the seed-sample subcommand (idempotent fixtures)
 # 5. Run Playwright against http://localhost:8420
 # 6. Tear down the engine + tail logs on failure
@@ -43,16 +43,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Wait for /api/v1/engine/info to respond — public, no auth.
+# Wait for /api/v1/engine/core/info to respond — public, no auth.
 say "waiting for engine to come up"
 for _ in $(seq 1 30); do
-  if curl -fs -m 1 "$BASE/api/v1/engine/info" >/dev/null 2>&1; then
+  if curl -fs -m 1 "$BASE/api/v1/engine/core/info" >/dev/null 2>&1; then
     say "engine ready"
     break
   fi
   sleep 0.5
 done
-if ! curl -fs -m 1 "$BASE/api/v1/engine/info" >/dev/null 2>&1; then
+if ! curl -fs -m 1 "$BASE/api/v1/engine/core/info" >/dev/null 2>&1; then
   echo "[e2e] FATAL: engine never came up — tail of $LOG_FILE:" >&2
   tail -n 80 "$LOG_FILE" >&2
   exit 1

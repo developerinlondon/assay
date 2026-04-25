@@ -47,7 +47,7 @@ async fn schedule_activity_creates_pending_row_and_event() {
 
     // 1. Start workflow
     let resp = c
-        .post(format!("{url}/api/v1/workflows"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "TestWorkflow",
             "workflow_id": "wf-1",
@@ -61,7 +61,7 @@ async fn schedule_activity_creates_pending_row_and_event() {
 
     // 2. Schedule activity at seq=1
     let resp = c
-        .post(format!("{url}/api/v1/workflows/wf-1/activities"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-1/activities"))
         .json(&serde_json::json!({
             "name": "fetch",
             "input": {"url": "https://example.com"},
@@ -78,7 +78,7 @@ async fn schedule_activity_creates_pending_row_and_event() {
 
     // 3. GET activity returns it with status PENDING
     let resp = c
-        .get(format!("{url}/api/v1/activities/{activity_id}"))
+        .get(format!("{url}/api/v1/engine/workflow/activities/{activity_id}"))
         .send()
         .await
         .unwrap();
@@ -92,7 +92,7 @@ async fn schedule_activity_creates_pending_row_and_event() {
 
     // 4. Workflow event log has WorkflowStarted + ActivityScheduled
     let resp = c
-        .get(format!("{url}/api/v1/workflows/wf-1/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-1/events"))
         .send()
         .await
         .unwrap();
@@ -110,7 +110,7 @@ async fn schedule_activity_creates_pending_row_and_event() {
 
     // 5. Workflow status is now RUNNING (was PENDING)
     let resp = c
-        .get(format!("{url}/api/v1/workflows/wf-1"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-1"))
         .send()
         .await
         .unwrap();
@@ -125,7 +125,7 @@ async fn schedule_activity_is_idempotent_on_seq() {
     let (url, _h) = start_test_server().await;
     let c = client();
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "TestWorkflow",
             "workflow_id": "wf-idem",
@@ -143,7 +143,7 @@ async fn schedule_activity_is_idempotent_on_seq() {
     });
 
     let r1: serde_json::Value = c
-        .post(format!("{url}/api/v1/workflows/wf-idem/activities"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-idem/activities"))
         .json(&body)
         .send()
         .await
@@ -153,7 +153,7 @@ async fn schedule_activity_is_idempotent_on_seq() {
         .unwrap();
 
     let r2: serde_json::Value = c
-        .post(format!("{url}/api/v1/workflows/wf-idem/activities"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-idem/activities"))
         .json(&body)
         .send()
         .await
@@ -166,7 +166,7 @@ async fn schedule_activity_is_idempotent_on_seq() {
 
     // Only one ActivityScheduled event should have been appended
     let events: Vec<serde_json::Value> = c
-        .get(format!("{url}/api/v1/workflows/wf-idem/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-idem/events"))
         .send()
         .await
         .unwrap()
@@ -183,7 +183,7 @@ async fn schedule_activity_is_idempotent_on_seq() {
 /// Helper used by 9.2 tests: schedule a workflow + activity, claim it as a
 /// fake worker, and return the activity id ready to be completed/failed.
 async fn schedule_and_claim(c: &reqwest::Client, url: &str, workflow_id: &str) -> i64 {
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "TestWorkflow",
             "workflow_id": workflow_id,
@@ -193,7 +193,7 @@ async fn schedule_and_claim(c: &reqwest::Client, url: &str, workflow_id: &str) -
         .await
         .unwrap();
 
-    c.post(format!("{url}/api/v1/workers/register"))
+    c.post(format!("{url}/api/v1/engine/workflow/workers/register"))
         .json(&serde_json::json!({
             "identity": "test-worker",
             "queue": "default",
@@ -204,7 +204,7 @@ async fn schedule_and_claim(c: &reqwest::Client, url: &str, workflow_id: &str) -
         .unwrap();
 
     let scheduled: serde_json::Value = c
-        .post(format!("{url}/api/v1/workflows/{workflow_id}/activities"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/{workflow_id}/activities"))
         .json(&serde_json::json!({
             "name": "fetch",
             "input": {"x": 1},
@@ -223,7 +223,7 @@ async fn schedule_and_claim(c: &reqwest::Client, url: &str, workflow_id: &str) -
 
     // Claim via /tasks/poll so worker has the activity in RUNNING state
     let poll_resp: serde_json::Value = c
-        .post(format!("{url}/api/v1/tasks/poll"))
+        .post(format!("{url}/api/v1/engine/workflow/tasks/poll"))
         .json(&serde_json::json!({
             "queue": "default",
             "worker_id": "test-worker",
@@ -254,7 +254,7 @@ async fn complete_activity_appends_event() {
     let activity_id = schedule_and_claim(&c, &url, "wf-complete").await;
 
     let resp = c
-        .post(format!("{url}/api/v1/tasks/{activity_id}/complete"))
+        .post(format!("{url}/api/v1/engine/workflow/tasks/{activity_id}/complete"))
         .json(&serde_json::json!({"result": {"bytes": 42}}))
         .send()
         .await
@@ -262,7 +262,7 @@ async fn complete_activity_appends_event() {
     assert_eq!(resp.status(), 200);
 
     let events: Vec<serde_json::Value> = c
-        .get(format!("{url}/api/v1/workflows/wf-complete/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-complete/events"))
         .send()
         .await
         .unwrap()
@@ -291,7 +291,7 @@ async fn fail_activity_retries_until_max_attempts() {
 
     // First failure → should re-queue (attempts left)
     let resp = c
-        .post(format!("{url}/api/v1/tasks/{activity_id}/fail"))
+        .post(format!("{url}/api/v1/engine/workflow/tasks/{activity_id}/fail"))
         .json(&serde_json::json!({"error": "transient: ConnectionReset"}))
         .send()
         .await
@@ -300,7 +300,7 @@ async fn fail_activity_retries_until_max_attempts() {
 
     // Activity should be PENDING again with attempt = 2
     let act: serde_json::Value = c
-        .get(format!("{url}/api/v1/activities/{activity_id}"))
+        .get(format!("{url}/api/v1/engine/workflow/activities/{activity_id}"))
         .send()
         .await
         .unwrap()
@@ -315,7 +315,7 @@ async fn fail_activity_retries_until_max_attempts() {
 
     // No ActivityFailed event yet
     let events: Vec<serde_json::Value> = c
-        .get(format!("{url}/api/v1/workflows/wf-retry/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-retry/events"))
         .send()
         .await
         .unwrap()
@@ -332,7 +332,7 @@ async fn fail_activity_retries_until_max_attempts() {
     tokio::time::sleep(std::time::Duration::from_millis(120)).await;
     for expected_attempt in 2..=3 {
         let claimed: serde_json::Value = c
-            .post(format!("{url}/api/v1/tasks/poll"))
+            .post(format!("{url}/api/v1/engine/workflow/tasks/poll"))
             .json(&serde_json::json!({
                 "queue": "default",
                 "worker_id": "test-worker",
@@ -346,7 +346,7 @@ async fn fail_activity_retries_until_max_attempts() {
         assert_eq!(claimed["id"].as_i64(), Some(activity_id), "should re-claim same activity");
         assert_eq!(claimed["attempt"], expected_attempt);
 
-        c.post(format!("{url}/api/v1/tasks/{activity_id}/fail"))
+        c.post(format!("{url}/api/v1/engine/workflow/tasks/{activity_id}/fail"))
             .json(&serde_json::json!({"error": "still failing"}))
             .send()
             .await
@@ -359,7 +359,7 @@ async fn fail_activity_retries_until_max_attempts() {
 
     // Now the activity should be permanently FAILED with one ActivityFailed event
     let act: serde_json::Value = c
-        .get(format!("{url}/api/v1/activities/{activity_id}"))
+        .get(format!("{url}/api/v1/engine/workflow/activities/{activity_id}"))
         .send()
         .await
         .unwrap()
@@ -370,7 +370,7 @@ async fn fail_activity_retries_until_max_attempts() {
     assert_eq!(act["attempt"], 3);
 
     let events: Vec<serde_json::Value> = c
-        .get(format!("{url}/api/v1/workflows/wf-retry/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-retry/events"))
         .send()
         .await
         .unwrap()
@@ -401,7 +401,7 @@ async fn poll_workflow_task(
     queue: &str,
     worker_id: &str,
 ) -> serde_json::Value {
-    c.post(format!("{url}/api/v1/workflow-tasks/poll"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflow-tasks/poll"))
         .json(&serde_json::json!({"queue": queue, "worker_id": worker_id}))
         .send()
         .await
@@ -419,7 +419,7 @@ async fn start_workflow_makes_it_dispatchable() {
     let (url, _h) = start_test_server().await;
     let c = client();
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "TestWorkflow",
             "workflow_id": "wf-disp-1",
@@ -449,7 +449,7 @@ async fn workflow_task_claim_is_exclusive() {
     let (url, _h) = start_test_server().await;
     let c = client();
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "TestWorkflow",
             "workflow_id": "wf-disp-2",
@@ -475,7 +475,7 @@ async fn submit_commands_schedules_activities_and_releases_claim() {
     let (url, _h) = start_test_server().await;
     let c = client();
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "TestWorkflow",
             "workflow_id": "wf-disp-3",
@@ -489,7 +489,7 @@ async fn submit_commands_schedules_activities_and_releases_claim() {
 
     // Worker submits a ScheduleActivity command at seq 1
     let resp = c
-        .post(format!("{url}/api/v1/workflow-tasks/wf-disp-3/commands"))
+        .post(format!("{url}/api/v1/engine/workflow/workflow-tasks/wf-disp-3/commands"))
         .json(&serde_json::json!({
             "worker_id": "worker-A",
             "commands": [
@@ -504,7 +504,7 @@ async fn submit_commands_schedules_activities_and_releases_claim() {
 
     // Activity should now exist with seq 1
     let events: Vec<serde_json::Value> = c
-        .get(format!("{url}/api/v1/workflows/wf-disp-3/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-disp-3/events"))
         .send()
         .await
         .unwrap()
@@ -531,7 +531,7 @@ async fn activity_completion_redispatches_workflow() {
     let (url, _h) = start_test_server().await;
     let c = client();
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "TestWorkflow",
             "workflow_id": "wf-disp-4",
@@ -544,7 +544,7 @@ async fn activity_completion_redispatches_workflow() {
 
     // Schedule + claim + complete an activity (mirrors a real worker loop)
     let scheduled: serde_json::Value = c
-        .post(format!("{url}/api/v1/workflows/wf-disp-4/activities"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-disp-4/activities"))
         .json(&serde_json::json!({
             "name": "fetch", "seq": 1, "task_queue": "default", "input": {}
         }))
@@ -555,19 +555,19 @@ async fn activity_completion_redispatches_workflow() {
         .await
         .unwrap();
     let activity_id = scheduled["id"].as_i64().unwrap();
-    c.post(format!("{url}/api/v1/workers/register"))
+    c.post(format!("{url}/api/v1/engine/workflow/workers/register"))
         .json(&serde_json::json!({
             "identity": "act-worker", "queue": "default", "activities": ["fetch"],
         }))
         .send()
         .await
         .unwrap();
-    c.post(format!("{url}/api/v1/tasks/poll"))
+    c.post(format!("{url}/api/v1/engine/workflow/tasks/poll"))
         .json(&serde_json::json!({"queue": "default", "worker_id": "act-worker"}))
         .send()
         .await
         .unwrap();
-    c.post(format!("{url}/api/v1/tasks/{activity_id}/complete"))
+    c.post(format!("{url}/api/v1/engine/workflow/tasks/{activity_id}/complete"))
         .json(&serde_json::json!({"result": {"ok": true}}))
         .send()
         .await
@@ -576,7 +576,7 @@ async fn activity_completion_redispatches_workflow() {
     // The workflow should now be claimable again — the worker (which had
     // submitted commands and released its claim) needs to replay.
     // First release worker-A's claim by submitting an empty commands batch:
-    c.post(format!("{url}/api/v1/workflow-tasks/wf-disp-4/commands"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflow-tasks/wf-disp-4/commands"))
         .json(&serde_json::json!({"worker_id": "worker-A", "commands": []}))
         .send()
         .await
@@ -596,7 +596,7 @@ async fn complete_workflow_command_marks_terminal() {
     let (url, _h) = start_test_server().await;
     let c = client();
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "TestWorkflow",
             "workflow_id": "wf-disp-5",
@@ -608,7 +608,7 @@ async fn complete_workflow_command_marks_terminal() {
     poll_workflow_task(&c, &url, "default", "worker-A").await;
 
     let resp = c
-        .post(format!("{url}/api/v1/workflow-tasks/wf-disp-5/commands"))
+        .post(format!("{url}/api/v1/engine/workflow/workflow-tasks/wf-disp-5/commands"))
         .json(&serde_json::json!({
             "worker_id": "worker-A",
             "commands": [
@@ -621,7 +621,7 @@ async fn complete_workflow_command_marks_terminal() {
     assert_eq!(resp.status(), 200);
 
     let wf: serde_json::Value = c
-        .get(format!("{url}/api/v1/workflows/wf-disp-5"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-disp-5"))
         .send()
         .await
         .unwrap()
@@ -689,7 +689,7 @@ async fn wait_for_workflow_status(
     let mut last: serde_json::Value = serde_json::Value::Null;
     while std::time::Instant::now() < deadline {
         let resp = c
-            .get(format!("{base_url}/api/v1/workflows/{workflow_id}"))
+            .get(format!("{base_url}/api/v1/engine/workflow/workflows/{workflow_id}"))
             .send()
             .await
             .expect("describe workflow");
@@ -702,7 +702,7 @@ async fn wait_for_workflow_status(
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     let events: serde_json::Value = c
-        .get(format!("{base_url}/api/v1/workflows/{workflow_id}/events"))
+        .get(format!("{base_url}/api/v1/engine/workflow/workflows/{workflow_id}/events"))
         .send()
         .await
         .unwrap()
@@ -776,7 +776,7 @@ workflow.listen({ queue = "default" })
 
     // Start the workflow
     let resp = c
-        .post(format!("{url}/api/v1/workflows"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "TwoStep",
             "workflow_id": "wf-lua-1",
@@ -851,7 +851,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "WaitForApproval",
             "workflow_id": "wf-sig-1",
@@ -866,7 +866,7 @@ workflow.listen({ queue = "default" })
 
     // Workflow should be sitting in RUNNING with WorkflowAwaitingSignal in events
     let wf: serde_json::Value = c
-        .get(format!("{url}/api/v1/workflows/wf-sig-1"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-sig-1"))
         .send()
         .await
         .unwrap()
@@ -877,7 +877,7 @@ workflow.listen({ queue = "default" })
 
     // Send the signal with a payload
     let resp = c
-        .post(format!("{url}/api/v1/workflows/wf-sig-1/signal/approve"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-sig-1/signal/approve"))
         .json(&serde_json::json!({"payload": {"by": "alice"}}))
         .send()
         .await
@@ -947,7 +947,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "SelfCancel",
             "workflow_id": "wf-self-cancel",
@@ -991,7 +991,7 @@ async fn lua_workflow_namespace_scoping_end_to_end() {
 
     // Create the non-default namespace the worker + workflow will use.
     let resp = c
-        .post(format!("{url}/api/v1/namespaces"))
+        .post(format!("{url}/api/v1/engine/workflow/namespaces"))
         .json(&serde_json::json!({ "name": "deployments" }))
         .send()
         .await
@@ -1027,7 +1027,7 @@ workflow.listen({ queue = "scoped-q", namespace = "deployments" })
 
     // Start the workflow in the same namespace via the stdlib shape
     // (POST /workflows with `namespace` in the body).
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "ScopedPing",
             "workflow_id": "wf-ns-scoped",
@@ -1104,7 +1104,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "WaitWithTimeout",
             "workflow_id": "wf-timed-sig-win",
@@ -1119,7 +1119,7 @@ workflow.listen({ queue = "default" })
 
     // Signal well before the 30s timer would fire.
     let resp = c
-        .post(format!("{url}/api/v1/workflows/wf-timed-sig-win/signal/decide"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-timed-sig-win/signal/decide"))
         .json(&serde_json::json!({"payload": {"choice": "approve"}}))
         .send()
         .await
@@ -1186,7 +1186,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "WaitWithShortTimeout",
             "workflow_id": "wf-timed-sig-timeout",
@@ -1261,7 +1261,7 @@ workflow.listen({ queue = "default" })
     // Create a schedule. next_run_at is None → scheduler treats as
     // never-run-before → fires on next 15s tick.
     let resp = c
-        .post(format!("{url}/api/v1/schedules"))
+        .post(format!("{url}/api/v1/engine/workflow/schedules"))
         .json(&serde_json::json!({
             "namespace": "main",
             "name": "test-cron-1",
@@ -1283,7 +1283,7 @@ workflow.listen({ queue = "default" })
     let mut found_workflow_id: Option<String> = None;
     while started_at.elapsed() < std::time::Duration::from_secs(25) {
         let resp = c
-            .get(format!("{url}/api/v1/workflows?namespace=main"))
+            .get(format!("{url}/api/v1/engine/workflow/workflows?namespace=main"))
             .send()
             .await
             .unwrap();
@@ -1390,7 +1390,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker A");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "CrashSafeWorkflow",
             "workflow_id": "wf-crash-1",
@@ -1468,7 +1468,7 @@ async fn wait_for_event(
     let deadline = std::time::Instant::now() + timeout;
     while std::time::Instant::now() < deadline {
         let events: Vec<serde_json::Value> = c
-            .get(format!("{base_url}/api/v1/workflows/{workflow_id}/events"))
+            .get(format!("{base_url}/api/v1/engine/workflow/workflows/{workflow_id}/events"))
             .send()
             .await
             .unwrap()
@@ -1544,7 +1544,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "WithSideEffect",
             "workflow_id": "wf-se-1",
@@ -1634,7 +1634,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "Parent",
             "workflow_id": "wf-parent-1",
@@ -1661,7 +1661,7 @@ workflow.listen({ queue = "default" })
 
     // The child workflow should also be COMPLETED with its parent_id set
     let child: serde_json::Value = c
-        .get(format!("{url}/api/v1/workflows/child-of-alpha"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/child-of-alpha"))
         .send()
         .await
         .unwrap()
@@ -1722,7 +1722,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "LongSleepThenWork",
             "workflow_id": "wf-cancel-1",
@@ -1737,7 +1737,7 @@ workflow.listen({ queue = "default" })
 
     // Cancel the workflow
     let resp = c
-        .post(format!("{url}/api/v1/workflows/wf-cancel-1/cancel"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-cancel-1/cancel"))
         .send()
         .await
         .unwrap();
@@ -1756,7 +1756,7 @@ workflow.listen({ queue = "default" })
 
     // Verify NO activity was ever scheduled — the workflow died at sleep
     let events: Vec<serde_json::Value> = c
-        .get(format!("{url}/api/v1/workflows/wf-cancel-1/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-cancel-1/events"))
         .send()
         .await
         .unwrap()
@@ -1835,7 +1835,7 @@ workflow.listen({ queue = "default" })
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
     let started_at = std::time::Instant::now();
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "SleepThenStep",
             "workflow_id": "wf-timer-1",
@@ -1874,7 +1874,7 @@ workflow.listen({ queue = "default" })
 
     // History should record TimerScheduled and TimerFired
     let events: Vec<serde_json::Value> = c
-        .get(format!("{url}/api/v1/workflows/wf-timer-1/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-timer-1/events"))
         .send()
         .await
         .unwrap()
@@ -1948,7 +1948,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "Staged",
             "workflow_id": "wf-rq-1",
@@ -1970,7 +1970,7 @@ workflow.listen({ queue = "default" })
 
     // Full state
     let resp = c
-        .get(format!("{url}/api/v1/workflows/wf-rq-1/state"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-rq-1/state"))
         .send()
         .await
         .unwrap();
@@ -1981,7 +1981,7 @@ workflow.listen({ queue = "default" })
 
     // Per-query
     let resp = c
-        .get(format!("{url}/api/v1/workflows/wf-rq-1/state/stage"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-rq-1/state/stage"))
         .send()
         .await
         .unwrap();
@@ -1991,14 +1991,14 @@ workflow.listen({ queue = "default" })
 
     // Unknown query name → 404
     let resp = c
-        .get(format!("{url}/api/v1/workflows/wf-rq-1/state/nonexistent"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-rq-1/state/nonexistent"))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 404);
 
     // Workflow without queries → 404 on the state endpoint
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "Staged",
             "workflow_id": "wf-rq-none",
@@ -2064,7 +2064,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "Counter",
             "workflow_id": "wf-can-1",
@@ -2089,7 +2089,7 @@ workflow.listen({ queue = "default" })
     // `{original_id}-continued-{timestamp}`. Find it by listing workflows
     // of this type and picking the one that isn't the original.
     let resp = c
-        .get(format!("{url}/api/v1/workflows?type=Counter&limit=10"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows?type=Counter&limit=10"))
         .send()
         .await
         .unwrap();
@@ -2164,7 +2164,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "FanOut",
             "workflow_id": "wf-par-1",
@@ -2192,7 +2192,7 @@ workflow.listen({ queue = "default" })
     // verify by counting ActivityScheduled events before the first
     // ActivityCompleted.
     let events: Vec<serde_json::Value> = c
-        .get(format!("{url}/api/v1/workflows/wf-par-1/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-par-1/events"))
         .send()
         .await
         .unwrap()
@@ -2261,7 +2261,7 @@ workflow.listen({ queue = "default" })
         .expect("spawn worker");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "FanOutWithFailure",
             "workflow_id": "wf-par-fail",
@@ -2297,7 +2297,7 @@ async fn search_attributes_filter_list() {
 
     // Create three workflows with distinct search attributes
     for (id, env) in [("wf-sa-1", "prod"), ("wf-sa-2", "prod"), ("wf-sa-3", "staging")] {
-        c.post(format!("{url}/api/v1/workflows"))
+        c.post(format!("{url}/api/v1/engine/workflow/workflows"))
             .json(&serde_json::json!({
                 "workflow_type": "Tagged",
                 "workflow_id": id,
@@ -2311,7 +2311,7 @@ async fn search_attributes_filter_list() {
 
     // No filter: all 3
     let all: Vec<serde_json::Value> = c
-        .get(format!("{url}/api/v1/workflows?type=Tagged"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows?type=Tagged"))
         .send()
         .await
         .unwrap()
@@ -2323,7 +2323,7 @@ async fn search_attributes_filter_list() {
     // Filter env=prod: 2 (URL-encoded {"env":"prod"})
     let prod: Vec<serde_json::Value> = c
         .get(format!(
-            "{url}/api/v1/workflows?type=Tagged&search_attrs=%7B%22env%22%3A%22prod%22%7D"
+            "{url}/api/v1/engine/workflow/workflows?type=Tagged&search_attrs=%7B%22env%22%3A%22prod%22%7D"
         ))
         .send()
         .await
@@ -2336,7 +2336,7 @@ async fn search_attributes_filter_list() {
     // Filter env=staging: 1
     let staging: Vec<serde_json::Value> = c
         .get(format!(
-            "{url}/api/v1/workflows?type=Tagged&search_attrs=%7B%22env%22%3A%22staging%22%7D"
+            "{url}/api/v1/engine/workflow/workflows?type=Tagged&search_attrs=%7B%22env%22%3A%22staging%22%7D"
         ))
         .send()
         .await

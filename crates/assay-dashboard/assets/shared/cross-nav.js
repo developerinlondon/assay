@@ -1,6 +1,6 @@
 /* Cross-console navigation strip controller.
  *
- * Reads `/api/v1/modules` (no auth) so disabled modules' pills don't
+ * Reads `/api/v1/engine/core/active-modules` (no auth) so disabled modules' pills don't
  * render. The Engine pill always shows because engine-core is always
  * running. Active console is set by the host (`AssayCrossNav.render({
  * active: 'workflow' | 'auth' | 'engine' })`).
@@ -27,12 +27,12 @@
 
   async function loadModules() {
     try {
-      const r = await fetch('/api/v1/modules', { headers: { 'accept': 'application/json' } });
+      const r = await fetch('/api/v1/engine/core/active-modules', { headers: { 'accept': 'application/json' } });
       if (!r.ok) return [];
       const j = await r.json();
       return Array.isArray(j.modules) ? j.modules : [];
     } catch (_) {
-      // Without /modules data we still want the engine pill — fall
+      // Without /active-modules data we still want the engine pill — fall
       // through with an empty list and let `requires === null` show it.
       return [];
     }

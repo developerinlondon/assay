@@ -25,7 +25,7 @@ pub struct CreateNamespaceRequest {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/namespaces",
+    post, path = "/api/v1/engine/workflow/namespaces",
     tag = "namespaces",
     request_body = CreateNamespaceRequest,
     responses(
@@ -42,7 +42,7 @@ pub async fn create_namespace<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/namespaces",
+    get, path = "/api/v1/engine/workflow/namespaces",
     tag = "namespaces",
     responses(
         (status = 200, description = "List of namespaces", body = Vec<NamespaceRecord>),
@@ -60,7 +60,7 @@ pub async fn list_namespaces<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/namespaces/{name}",
+    get, path = "/api/v1/engine/workflow/namespaces/{name}",
     tag = "namespaces",
     params(("name" = String, Path, description = "Namespace name")),
     responses(
@@ -76,7 +76,7 @@ pub async fn get_namespace_stats<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    delete, path = "/api/v1/namespaces/{name}",
+    delete, path = "/api/v1/engine/workflow/namespaces/{name}",
     tag = "namespaces",
     params(("name" = String, Path, description = "Namespace name")),
     responses(

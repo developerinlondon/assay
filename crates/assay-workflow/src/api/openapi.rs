@@ -84,8 +84,8 @@ pub struct ApiDoc;
 
 pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
-        .route("/api/v1/openapi.json", get(openapi_json))
-        .route("/api/v1/docs", get(docs_page))
+        .route("/api/v1/engine/workflow/openapi.json", get(openapi_json))
+        .route("/api/v1/engine/workflow/docs", get(docs_page))
 }
 
 async fn openapi_json() -> impl IntoResponse {
@@ -107,7 +107,7 @@ async fn docs_page() -> Html<String> {
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
-    <script id="api-reference" data-url="/api/v1/openapi.json"></script>
+    <script id="api-reference" data-url="/api/v1/engine/workflow/openapi.json"></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>"#;

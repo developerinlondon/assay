@@ -130,14 +130,14 @@ async fn no_auth_allows_all_requests() {
     let (url, _h) = start_server(AuthMode::no_auth()).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/health"))
+        .get(format!("{url}/api/v1/engine/workflow/health"))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .send()
         .await
         .unwrap();
@@ -151,7 +151,7 @@ async fn api_key_rejects_no_token() {
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .send()
         .await
         .unwrap();
@@ -163,7 +163,7 @@ async fn api_key_rejects_invalid_key() {
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", "Bearer assay_invalid_key_12345678")
         .send()
         .await
@@ -189,7 +189,7 @@ async fn api_key_accepts_valid_key() {
     let (url, _h) = start_server_with_store(store, AuthMode::api_key()).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {key}"))
         .send()
         .await
@@ -205,7 +205,7 @@ async fn jwt_rejects_no_token() {
     let (url, _h) = start_server(jwt_auth_mode(&keys)).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .send()
         .await
         .unwrap();
@@ -227,7 +227,7 @@ async fn jwt_accepts_valid_rsa_token() {
     );
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
@@ -249,7 +249,7 @@ async fn jwt_rejects_wrong_issuer() {
     );
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
@@ -271,7 +271,7 @@ async fn jwt_rejects_expired_token() {
     );
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
@@ -294,7 +294,7 @@ async fn jwt_rejects_wrong_audience() {
     );
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
@@ -325,7 +325,7 @@ async fn jwt_rejects_tampered_signature() {
     let tampered = String::from_utf8_lossy(&tampered).to_string();
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {tampered}"))
         .send()
         .await
@@ -351,7 +351,7 @@ async fn jwt_rejects_different_rsa_key() {
     );
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
@@ -376,7 +376,7 @@ async fn combined_accepts_valid_jwt() {
     );
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
@@ -403,7 +403,7 @@ async fn combined_accepts_valid_api_key() {
     let (url, _h) = start_server_with_store(store, combined_auth_mode(&keys)).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {api_key}"))
         .send()
         .await
@@ -417,7 +417,7 @@ async fn combined_rejects_missing_token() {
     let (url, _h) = start_server(combined_auth_mode(&keys)).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .send()
         .await
         .unwrap();
@@ -431,7 +431,7 @@ async fn combined_rejects_garbage_token() {
 
     // Not JWT-shaped, not a stored API key — should fail the API-key lookup.
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", "Bearer assay_not_a_real_key_abcd")
         .send()
         .await
@@ -455,7 +455,7 @@ async fn combined_rejects_expired_jwt_without_api_key_fallback() {
     );
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
@@ -498,16 +498,16 @@ fn is_enabled_reflects_state() {
     assert!(AuthMode::combined("https://auth.example.com".to_string(), None).is_enabled());
 }
 
-// ── POST /api/v1/api-keys — bootstrap window + idempotent mode ────
+// ── POST /api/v1/engine/workflow/api-keys — bootstrap window + idempotent mode ────
 
 #[tokio::test]
 async fn bootstrap_post_api_keys_allowed_without_auth_when_empty() {
     // Fresh store, api_keys table is empty. In api-key auth mode, the only
-    // way to mint the first key is unauthenticated POST /api/v1/api-keys.
+    // way to mint the first key is unauthenticated POST /api/v1/engine/workflow/api-keys.
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let resp = client()
-        .post(format!("{url}/api/v1/api-keys"))
+        .post(format!("{url}/api/v1/engine/workflow/api-keys"))
         .json(&serde_json::json!({ "label": "first-ever", "idempotent": true }))
         .send()
         .await
@@ -529,7 +529,7 @@ async fn bootstrap_closes_after_first_key() {
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let first = client()
-        .post(format!("{url}/api/v1/api-keys"))
+        .post(format!("{url}/api/v1/engine/workflow/api-keys"))
         .json(&serde_json::json!({ "label": "k1" }))
         .send()
         .await
@@ -537,7 +537,7 @@ async fn bootstrap_closes_after_first_key() {
     assert_eq!(first.status(), 201);
 
     let second = client()
-        .post(format!("{url}/api/v1/api-keys"))
+        .post(format!("{url}/api/v1/engine/workflow/api-keys"))
         .json(&serde_json::json!({ "label": "k2" }))
         .send()
         .await
@@ -556,14 +556,14 @@ async fn bootstrap_only_on_post_api_keys_path() {
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .send()
         .await
         .unwrap();
     assert_eq!(
         resp.status(),
         401,
-        "bootstrap window only covers POST /api/v1/api-keys"
+        "bootstrap window only covers POST /api/v1/engine/workflow/api-keys"
     );
 }
 
@@ -575,7 +575,7 @@ async fn api_keys_idempotent_returns_existing_without_plaintext() {
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let first = client()
-        .post(format!("{url}/api/v1/api-keys"))
+        .post(format!("{url}/api/v1/engine/workflow/api-keys"))
         .json(&serde_json::json!({ "label": "cc_api_key", "idempotent": true }))
         .send()
         .await
@@ -586,7 +586,7 @@ async fn api_keys_idempotent_returns_existing_without_plaintext() {
 
     // Second call with idempotent=true — authenticated via the key we just received.
     let second = client()
-        .post(format!("{url}/api/v1/api-keys"))
+        .post(format!("{url}/api/v1/engine/workflow/api-keys"))
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({ "label": "cc_api_key", "idempotent": true }))
         .send()
@@ -611,7 +611,7 @@ async fn api_keys_non_idempotent_mints_another_with_same_label() {
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let first = client()
-        .post(format!("{url}/api/v1/api-keys"))
+        .post(format!("{url}/api/v1/engine/workflow/api-keys"))
         .json(&serde_json::json!({ "label": "shared-label" }))
         .send()
         .await
@@ -621,7 +621,7 @@ async fn api_keys_non_idempotent_mints_another_with_same_label() {
     let key = first_body["plaintext"].as_str().unwrap().to_string();
 
     let second = client()
-        .post(format!("{url}/api/v1/api-keys"))
+        .post(format!("{url}/api/v1/engine/workflow/api-keys"))
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({ "label": "shared-label" }))
         .send()
@@ -640,12 +640,12 @@ async fn api_keys_non_idempotent_mints_another_with_same_label() {
 
 #[tokio::test]
 async fn health_is_unauth_in_api_key_mode() {
-    // /api/v1/health must always be reachable without auth so k8s kubelet
+    // /api/v1/engine/workflow/health must always be reachable without auth so k8s kubelet
     // probes, load balancers, and third-party monitors don't need tokens.
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/health"))
+        .get(format!("{url}/api/v1/engine/workflow/health"))
         .send()
         .await
         .unwrap();
@@ -660,7 +660,7 @@ async fn health_is_unauth_in_jwt_mode() {
     let (url, _h) = start_server(jwt_auth_mode(&keys)).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/health"))
+        .get(format!("{url}/api/v1/engine/workflow/health"))
         .send()
         .await
         .unwrap();
@@ -673,7 +673,7 @@ async fn health_is_unauth_in_combined_mode() {
     let (url, _h) = start_server(combined_auth_mode(&keys)).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/health"))
+        .get(format!("{url}/api/v1/engine/workflow/health"))
         .send()
         .await
         .unwrap();
@@ -682,12 +682,12 @@ async fn health_is_unauth_in_combined_mode() {
 
 #[tokio::test]
 async fn version_is_unauth_in_api_key_mode() {
-    // /api/v1/version — used by the CLI and dashboard to identify the
+    // /api/v1/engine/workflow/version — used by the CLI and dashboard to identify the
     // running build. Always unauth for the same reasons as /health.
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/version"))
+        .get(format!("{url}/api/v1/engine/workflow/version"))
         .send()
         .await
         .unwrap();
@@ -700,11 +700,11 @@ async fn version_is_unauth_in_api_key_mode() {
 #[tokio::test]
 async fn other_api_v1_paths_still_require_auth_when_auth_enabled() {
     // Regression: carving out /health + /version must not accidentally
-    // open up the rest of /api/v1/*. /api/v1/workflows is auth-gated.
+    // open up the rest of /api/v1/engine/workflow/*. /api/v1/engine/workflow/workflows is auth-gated.
     let (url, _h) = start_server(AuthMode::api_key()).await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .send()
         .await
         .unwrap();
@@ -718,7 +718,7 @@ async fn bootstrap_window_closed_in_no_auth_mode_is_a_noop() {
     let (url, _h) = start_server(AuthMode::no_auth()).await;
 
     let resp = client()
-        .post(format!("{url}/api/v1/api-keys"))
+        .post(format!("{url}/api/v1/engine/workflow/api-keys"))
         .json(&serde_json::json!({ "label": "anything" }))
         .send()
         .await

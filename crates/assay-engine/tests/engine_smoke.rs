@@ -1,7 +1,7 @@
 //! Phase-3 integration test.
 //!
 //! Spawns the `assay-engine` binary against a temp SQLite DB on a random
-//! free port, polls `/api/v1/health` until ready, then exercises the key
+//! free port, polls `/api/v1/engine/workflow/health` until ready, then exercises the key
 //! endpoints: health, version, namespaces, dashboard index. Confirms
 //! shape of the responses.
 //!
@@ -82,7 +82,7 @@ format = "pretty"
     async fn wait_ready(&self, client: &reqwest::Client) {
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
-            if let Ok(r) = client.get(self.url("/api/v1/health")).send().await
+            if let Ok(r) = client.get(self.url("/api/v1/engine/workflow/health")).send().await
                 && r.status().is_success()
             {
                 return;
@@ -115,15 +115,15 @@ async fn engine_smoke_sqlite() {
 
     engine.wait_ready(&client).await;
 
-    // ── /api/v1/health ────────────────────────────────────────────────
-    let r = client.get(engine.url("/api/v1/health")).send().await.unwrap();
+    // ── /api/v1/engine/workflow/health ────────────────────────────────────────────────
+    let r = client.get(engine.url("/api/v1/engine/workflow/health")).send().await.unwrap();
     assert_eq!(r.status(), 200, "health should return 200");
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["service"], "assay-workflow");
     assert_eq!(body["status"], "ok");
 
-    // ── /api/v1/version ───────────────────────────────────────────────
-    let r = client.get(engine.url("/api/v1/version")).send().await.unwrap();
+    // ── /api/v1/engine/workflow/version ───────────────────────────────────────────────
+    let r = client.get(engine.url("/api/v1/engine/workflow/version")).send().await.unwrap();
     assert_eq!(r.status(), 200);
     let body: serde_json::Value = r.json().await.unwrap();
     assert!(
@@ -131,9 +131,9 @@ async fn engine_smoke_sqlite() {
         "version response should have `version` field"
     );
 
-    // ── /api/v1/namespaces ────────────────────────────────────────────
+    // ── /api/v1/engine/workflow/namespaces ────────────────────────────────────────────
     let r = client
-        .get(engine.url("/api/v1/namespaces"))
+        .get(engine.url("/api/v1/engine/workflow/namespaces"))
         .send()
         .await
         .unwrap();

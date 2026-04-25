@@ -1,6 +1,6 @@
 //! SSE endpoint for the engine-events outbox.
 //!
-//! Endpoint: `GET /api/v1/events/stream`
+//! Endpoint: `GET /api/v1/engine/workflow/events/stream`
 //!   Query params:
 //!     ?ns=<namespace>                       default "main"
 //!     ?subsystem=<workflow|auth|secrets|system>   repeatable

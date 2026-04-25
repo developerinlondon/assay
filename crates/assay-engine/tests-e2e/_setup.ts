@@ -24,7 +24,7 @@ export async function withAdminToken(page: Page, route: string): Promise<void> {
 
 /**
  * Wait for the cross-nav strip to be populated (it's filled in by an
- * async fetch of /api/v1/modules + /api/v1/engine/info).
+ * async fetch of /api/v1/engine/core/active-modules + /api/v1/engine/core/info).
  */
 export async function waitForCrossNav(page: Page): Promise<void> {
   await page.locator('.cross-nav-pill').first().waitFor({ state: 'visible' });
