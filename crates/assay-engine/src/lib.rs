@@ -47,6 +47,8 @@ pub mod config;
 pub mod engine_api;
 pub mod init;
 pub mod server;
+#[cfg(feature = "server")]
+pub mod seed;
 pub mod state;
 
 pub use assay_domain as core;
