@@ -44,6 +44,7 @@ use assay_domain::events::EngineEventBus;
 use assay_workflow::WorkflowStore;
 
 pub mod config;
+pub mod engine_api;
 pub mod init;
 pub mod server;
 pub mod state;
@@ -367,6 +368,16 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
     let admin_api_keys = Arc::new(cfg.auth.admin_api_keys.clone());
     #[cfg(not(feature = "auth"))]
     let _ = auth_ctx;
+    // Wall-clock seconds since epoch — uptime baseline for the
+    // /api/v1/engine/info response. Captured here (just before serve)
+    // so the value reflects the moment HTTP becomes ready, not the
+    // earlier boot-sequence start.
+    let started_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+    let bind_addr = cfg.server.bind_addr.clone();
+    let engine_config = Arc::new(cfg);
     let state = EngineState {
         workflow: workflow_ctx,
         dashboard: dashboard_ctx,
@@ -376,6 +387,8 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
         modules: Arc::new(modules),
         instance_id,
         engine_version: env!("CARGO_PKG_VERSION"),
+        started_at,
+        engine_config,
     };
-    server::serve(&cfg.server.bind_addr, state).await
+    server::serve(&bind_addr, state).await
 }

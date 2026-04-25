@@ -17,7 +17,7 @@
 use anyhow::{Context, Result};
 use sqlx::SqlitePool;
 
-use super::ModuleRecord;
+use super::{AuditRecord, InstanceRecord, ModuleRecord};
 
 pub struct SqliteEngineSchema {
     pool: SqlitePool,
@@ -257,6 +257,159 @@ impl SqliteEngineSchema {
             .context("deregister engine.instances row")?;
         Ok(())
     }
+
+    /// List engine.audit rows newest-first with the configured page
+    /// window. Mirrors the PG `list_audit` shape exactly so the engine
+    /// dashboard's audit pane uses one client. Returned `details` is the
+    /// parsed JSON blob (TEXT in SQLite, JSONB in PG).
+    pub async fn list_audit(
+        &self,
+        limit: i64,
+        offset: i64,
+        actor: Option<&str>,
+        action: Option<&str>,
+        since: Option<f64>,
+        until: Option<f64>,
+    ) -> Result<(Vec<AuditRecord>, i64)> {
+        // Build the same dynamic-WHERE both queries share. SQLite uses
+        // positional `?` binds; we just push values into a typed enum
+        // so the order matches the SQL.
+        let mut clauses: Vec<String> = Vec::new();
+        let mut binds: Vec<DynBind> = Vec::new();
+        if let Some(a) = actor {
+            clauses.push("actor = ?".to_string());
+            binds.push(DynBind::Text(a.to_string()));
+        }
+        if let Some(a) = action {
+            clauses.push("action = ?".to_string());
+            binds.push(DynBind::Text(a.to_string()));
+        }
+        if let Some(t) = since {
+            clauses.push("ts >= ?".to_string());
+            binds.push(DynBind::Float(t));
+        }
+        if let Some(t) = until {
+            clauses.push("ts <= ?".to_string());
+            binds.push(DynBind::Float(t));
+        }
+        let where_sql = if clauses.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", clauses.join(" AND "))
+        };
+
+        let select_sql = format!(
+            "SELECT id, ts, actor, action, details
+             FROM {}
+             {where_sql}
+             ORDER BY ts DESC, id DESC
+             LIMIT ? OFFSET ?",
+            self.q("audit")
+        );
+        type AuditSqliteRow = (String, f64, Option<String>, String, String);
+        let mut q = sqlx::query_as::<_, AuditSqliteRow>(&select_sql);
+        for b in &binds {
+            q = match b {
+                DynBind::Text(s) => q.bind(s),
+                DynBind::Float(f) => q.bind(*f),
+            };
+        }
+        let rows: Vec<AuditSqliteRow> = q
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .context("list engine.audit page")?;
+
+        let count_sql = format!("SELECT COUNT(*) FROM {} {where_sql}", self.q("audit"));
+        let mut cq = sqlx::query_as::<_, (i64,)>(&count_sql);
+        for b in &binds {
+            cq = match b {
+                DynBind::Text(s) => cq.bind(s),
+                DynBind::Float(f) => cq.bind(*f),
+            };
+        }
+        let total: (i64,) = cq
+            .fetch_one(&self.pool)
+            .await
+            .context("count engine.audit page")?;
+
+        let items = rows
+            .into_iter()
+            .map(|(id, ts, actor, action, details)| AuditRecord {
+                id,
+                ts,
+                actor,
+                action,
+                details: serde_json::from_str(&details).unwrap_or(serde_json::Value::Null),
+            })
+            .collect();
+        Ok((items, total.0))
+    }
+
+    /// List currently-registered engine instances ordered by most-recent
+    /// heartbeat first. SQLite is single-instance so this typically
+    /// returns one row, but the table exists for parity with PG (the
+    /// dashboard renders "1 instance" the same way it would render N).
+    pub async fn list_instances(&self) -> Result<Vec<InstanceRecord>> {
+        type InstanceSqliteRow = (String, f64, f64, String, Option<String>);
+        let sql = format!(
+            "SELECT id, started_at, last_heartbeat, namespaces, version
+             FROM {}
+             ORDER BY last_heartbeat DESC",
+            self.q("instances")
+        );
+        let rows: Vec<InstanceSqliteRow> = sqlx::query_as(&sql)
+            .fetch_all(&self.pool)
+            .await
+            .context("list engine.instances")?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, started_at, last_heartbeat, namespaces, version)| InstanceRecord {
+                id,
+                started_at,
+                last_heartbeat,
+                namespaces: serde_json::from_str(&namespaces).unwrap_or_default(),
+                version,
+            })
+            .collect())
+    }
+
+    /// Toggle a module row's `enabled` flag. Records the actor in
+    /// `enabled_by` so the audit log can correlate operator actions
+    /// without an extra column. Returns `Ok(false)` when the module
+    /// doesn't exist (caller surfaces 404), `Ok(true)` on a flip.
+    pub async fn set_module_enabled(
+        &self,
+        name: &str,
+        enabled: bool,
+        actor: Option<&str>,
+    ) -> Result<bool> {
+        let sql = format!(
+            "UPDATE {}
+             SET enabled = ?,
+                 enabled_at = CAST(strftime('%s','now') AS REAL),
+                 enabled_by = COALESCE(?, enabled_by)
+             WHERE name = ?",
+            self.q("modules")
+        );
+        let res = sqlx::query(&sql)
+            .bind(if enabled { 1i64 } else { 0i64 })
+            .bind(actor)
+            .bind(name)
+            .execute(&self.pool)
+            .await
+            .context("set engine.modules.enabled")?;
+        Ok(res.rows_affected() > 0)
+    }
+}
+
+/// Dynamic-bind helper for [`SqliteEngineSchema::list_audit`]. The
+/// filter set is small and stable; an enum keeps the bind ordering
+/// trivial without pulling in a query builder.
+enum DynBind {
+    Text(String),
+    Float(f64),
 }
 
 #[cfg(test)]

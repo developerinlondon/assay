@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>__PAGE_TITLE__</title>
+  __FAVICON_LINK__
+  <link rel="stylesheet" href="/workflow/theme.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/workflow/style.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/auth/style.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/shared/cross-nav.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/engine/style.css?v=__ASSETV__">
+  __EXTRA_CSS_LINK__
+</head>
+<body__DEFAULT_NAMESPACE_ATTR__>
+  <header class="cross-nav">
+    <div class="cross-nav-brand">
+      <span class="cross-nav-mark" aria-hidden="true">__BRAND_MARK__</span>
+      <span class="cross-nav-title">ASSAY ENGINE <span class="cross-nav-version" id="cross-nav-version">v—</span></span>
+      <span class="cross-nav-leader" id="cross-nav-leader" title="Leader / instance status">
+        <span class="cross-nav-dot" id="cross-nav-leader-dot"></span><span id="cross-nav-leader-text">leader</span>
+      </span>
+      <span class="cross-nav-instance" id="cross-nav-instance" title="Instance ID">instance:—</span>
+    </div>
+    <nav class="cross-nav-pills" id="cross-nav-pills" aria-label="Console switcher">
+      <!-- Pills are filled in by /shared/cross-nav.js after /api/v1/modules
+           tells us which consoles are active. -->
+    </nav>
+  </header>
+
+  <div class="layout layout-engine">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h1 class="logo">
+          __BRAND_LOGO_IMG__
+          <span class="logo-mark" aria-hidden="true">__BRAND_MARK__</span>
+          <span class="logo-text">
+            <span class="logo-full">__BRAND_NAME__</span>
+            <span class="logo-subtitle">Engine Console</span>
+          </span>
+        </h1>
+        <button type="button" class="header-icon-btn" id="sidebar-collapse" title="Collapse sidebar" aria-label="Toggle sidebar">
+          <svg class="icon-collapse" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+          <svg class="icon-expand" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
+        </button>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-link active" data-view="info">
+          <span class="nav-icon">&#9432;</span> <span class="nav-label">Info</span>
+        </a>
+        <a href="#" class="nav-link" data-view="modules">
+          <span class="nav-icon">&#128722;</span> <span class="nav-label">Modules</span>
+        </a>
+        <a href="#" class="nav-link" data-view="instances">
+          <span class="nav-icon">&#128187;</span> <span class="nav-label">Instances</span>
+        </a>
+        <a href="#" class="nav-link" data-view="audit">
+          <span class="nav-icon">&#128203;</span> <span class="nav-label">Audit</span>
+        </a>
+        <a href="#" class="nav-link" data-view="config">
+          <span class="nav-icon">&#9881;</span> <span class="nav-label">Config</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button type="button" class="nav-link nav-link-button nav-link-icon" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+          <span class="nav-icon icon-sun">&#9788;</span>
+          <span class="nav-icon icon-moon">&#9790;</span>
+        </button>
+      </div>
+    </aside>
+
+    <main id="content" class="main-content"></main>
+  </div>
+
+  <footer class="status-bar">
+    <span class="status-item" id="status-admin">
+      <span class="status-dot" id="admin-dot"></span>
+      <span id="admin-text">Admin token required</span>
+    </span>
+    <span class="status-item status-version">
+      __ENGINE_FOOTER__
+    </span>
+  </footer>
+
+  <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">&#9776;</button>
+
+  <script src="/workflow/components/modal.js?v=__ASSETV__"></script>
+  <script src="/shared/cross-nav.js?v=__ASSETV__"></script>
+  <script src="/engine/components/api.js?v=__ASSETV__"></script>
+  <script src="/engine/components/info.js?v=__ASSETV__"></script>
+  <script src="/engine/components/modules.js?v=__ASSETV__"></script>
+  <script src="/engine/components/instances.js?v=__ASSETV__"></script>
+  <script src="/engine/components/audit.js?v=__ASSETV__"></script>
+  <script src="/engine/components/config.js?v=__ASSETV__"></script>
+  <script src="/engine/app.js?v=__ASSETV__"></script>
+</body>
+</html>

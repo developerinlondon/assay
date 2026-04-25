@@ -6,10 +6,10 @@
 //! off) the auth section is parsed but never read — keeping the TOML
 //! shape stable across feature configurations.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EngineConfig {
     pub server: ServerConfig,
     pub backend: BackendConfig,
@@ -39,7 +39,7 @@ fn default_engine_events_ttl_secs() -> u64 {
     3 * 86_400
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ServerConfig {
     #[serde(default = "default_bind_addr")]
     pub bind_addr: String,
@@ -60,7 +60,7 @@ fn default_public_url() -> String {
     "http://localhost:3000".to_string()
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum BackendConfig {
     Postgres {
@@ -112,7 +112,7 @@ impl BackendConfig {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct WorkflowConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -121,7 +121,7 @@ pub struct WorkflowConfig {
 /// Auth-module deployment shape. Read by the engine binary when the
 /// `auth` Cargo feature is compiled in AND `engine.modules.auth.enabled`
 /// is TRUE; otherwise the defaults are harmless.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AuthConfig {
     /// JWT issuer + OIDC `iss` claim. Defaults to
     /// `<server.public_url>/auth` when unset, which matches the route
@@ -147,7 +147,7 @@ pub struct AuthConfig {
 }
 
 /// Session module knobs.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AuthSessionConfig {
     /// Default session lifetime in seconds. `None` ⇒ uses the
     /// `assay_auth::session::DEFAULT_SESSION_DURATION` (30 days).
@@ -155,7 +155,7 @@ pub struct AuthSessionConfig {
 }
 
 /// WebAuthn / passkey module knobs.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AuthPasskeyConfig {
     /// Relying-party id — the host (no scheme/port) the browser will
     /// scope passkeys to. Defaults to the host of `server.public_url`.
@@ -165,7 +165,7 @@ pub struct AuthPasskeyConfig {
 }
 
 /// OIDC provider knobs.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AuthOidcProviderConfig {
     /// Whether the OIDC provider routes (/authorize /token /userinfo …)
     /// are mounted. Defaults to `true` when the Cargo feature is on.
@@ -176,13 +176,13 @@ pub struct AuthOidcProviderConfig {
     pub issuer_override: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct DashboardConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,

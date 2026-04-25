@@ -86,3 +86,24 @@ pub const AUTH_ZANZIBAR_JS: &str = include_str!("../assets/auth/components/zanzi
 pub const AUTH_KEYS_JS: &str = include_str!("../assets/auth/components/keys.js");
 #[cfg(feature = "auth")]
 pub const AUTH_AUDIT_JS: &str = include_str!("../assets/auth/components/audit.js");
+
+// =====================================================================
+//   Engine console assets (always present — engine-core is always on)
+// =====================================================================
+
+pub const ENGINE_INDEX_HTML: &str = include_str!("../assets/engine/index.html");
+pub const ENGINE_STYLE_CSS: &str = include_str!("../assets/engine/style.css");
+pub const ENGINE_APP_JS: &str = include_str!("../assets/engine/app.js");
+pub const ENGINE_API_JS: &str = include_str!("../assets/engine/components/api.js");
+pub const ENGINE_INFO_JS: &str = include_str!("../assets/engine/components/info.js");
+pub const ENGINE_MODULES_JS: &str = include_str!("../assets/engine/components/modules.js");
+pub const ENGINE_INSTANCES_JS: &str = include_str!("../assets/engine/components/instances.js");
+pub const ENGINE_AUDIT_JS: &str = include_str!("../assets/engine/components/audit.js");
+pub const ENGINE_CONFIG_JS: &str = include_str!("../assets/engine/components/config.js");
+
+// =====================================================================
+//   Shared cross-console nav strip — included by every console shell
+// =====================================================================
+
+pub const CROSS_NAV_CSS: &str = include_str!("../assets/shared/cross-nav.css");
+pub const CROSS_NAV_JS: &str = include_str!("../assets/shared/cross-nav.js");

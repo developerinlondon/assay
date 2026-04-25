@@ -72,11 +72,21 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         }),
     );
 
+    // Engine-core admin API + console SPA. Always present (engine-core
+    // is always running, regardless of which functional modules are
+    // enabled). The admin handlers require a configured api-key —
+    // when `admin_api_keys` is empty every admin route returns 401, so
+    // mounting unconditionally is safe for no-auth builds.
+    let engine_api_router = crate::engine_api::router::<S>().with_state(state.clone());
+    let engine_console_router = assay_dashboard::engine_router();
+
     #[cfg_attr(not(feature = "auth"), allow(unused_mut))]
     let mut app = workflow_router
         .merge(dashboard_router)
         .merge(healthz)
-        .merge(modules_api);
+        .merge(modules_api)
+        .merge(engine_api_router)
+        .merge(engine_console_router);
 
     // Mount the auth router under `/auth` when AuthCtx is present. We
     // bind state to the auth router *before* nesting so the merged tree
