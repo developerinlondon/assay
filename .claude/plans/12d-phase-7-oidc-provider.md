@@ -7,6 +7,15 @@
 > **Source of truth for module rationale:** [11-engine-auth-modules.md](./11-engine-auth-modules.md)
 > § "Own IdP with upstream federation" (lines 90–129) and § "Scope — V1" (lines 22–49).
 
+## v0.1.2 alignment
+
+All OIDC provider tables live in the `auth` schema (PG) / attached `auth` database (SQLite). The DDL
+in this plan is schema-qualified: `auth.oidc_clients`, `auth.upstream_providers`,
+`auth.oidc_authorization_codes`, `auth.oidc_refresh_tokens`, `auth.oidc_sessions`. Migrations are
+tracked under `module = 'auth'` in the shared `engine.migrations` table. See
+[12c §"v0.1.2 alignment"](./12c-phase-4-6-auth-identity-zanzibar.md) for the full convention list
+and [14-v0.13.2-engine-schemas.md](./14-v0.13.2-engine-schemas.md) for the storage model rationale.
+
 **Phase 7 goal:** `assay-engine` is a conformant OIDC provider. Consumer applications authenticate
 against _this_ IdP using the OpenID Connect Core 1.0 authorization code flow with PKCE. Local users
 authenticate via password + passkey; federated users authenticate via upstream (Google, Apple,
@@ -200,7 +209,7 @@ pub trait FederationStore: Send + Sync + 'static {
 
 ```sql
 -- migrations/postgres/03_oidc_provider.sql
-CREATE TABLE oidc_clients (
+CREATE TABLE auth.oidc_clients (
     client_id TEXT PRIMARY KEY,
     client_secret_hash TEXT,
     redirect_uris TEXT NOT NULL,  -- JSON array
@@ -212,7 +221,7 @@ CREATE TABLE oidc_clients (
     created_at DOUBLE PRECISION NOT NULL
 );
 
-CREATE TABLE upstream_providers (
+CREATE TABLE auth.upstream_providers (
     slug TEXT PRIMARY KEY,
     issuer TEXT NOT NULL,
     client_id TEXT NOT NULL,
@@ -222,7 +231,7 @@ CREATE TABLE upstream_providers (
     enabled BOOLEAN NOT NULL DEFAULT TRUE
 );
 
-CREATE TABLE oidc_authorization_codes (
+CREATE TABLE auth.oidc_authorization_codes (
     code TEXT PRIMARY KEY,
     client_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
@@ -236,7 +245,7 @@ CREATE TABLE oidc_authorization_codes (
     consumed BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-CREATE TABLE oidc_refresh_tokens (
+CREATE TABLE auth.oidc_refresh_tokens (
     token_hash TEXT PRIMARY KEY,
     client_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
@@ -245,7 +254,7 @@ CREATE TABLE oidc_refresh_tokens (
     expires_at DOUBLE PRECISION NOT NULL,
     revoked BOOLEAN NOT NULL DEFAULT FALSE
 );
-CREATE INDEX oidc_refresh_user ON oidc_refresh_tokens (user_id);
+CREATE INDEX oidc_refresh_user ON auth.oidc_refresh_tokens (user_id);
 ```
 
 - [ ] **Step 4: PG + SQLite impls**
@@ -541,7 +550,7 @@ to all clients.
 When `/token` issues an id_token, record a row in `oidc_sessions`:
 
 ```sql
-CREATE TABLE oidc_sessions (
+CREATE TABLE auth.oidc_sessions (
     sid TEXT PRIMARY KEY,          -- matches id_token `sid` claim
     user_id TEXT NOT NULL,
     client_id TEXT NOT NULL,
@@ -549,8 +558,8 @@ CREATE TABLE oidc_sessions (
     issued_at DOUBLE PRECISION NOT NULL,
     backchannel_logout_uri TEXT
 );
-CREATE INDEX oidc_sessions_user ON oidc_sessions (user_id);
-CREATE INDEX oidc_sessions_assay ON oidc_sessions (assay_session_id);
+CREATE INDEX oidc_sessions_user ON auth.oidc_sessions (user_id);
+CREATE INDEX oidc_sessions_assay ON auth.oidc_sessions (assay_session_id);
 ```
 
 - [ ] **Step 2: `/logout` endpoint**

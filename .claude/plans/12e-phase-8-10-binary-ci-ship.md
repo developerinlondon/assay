@@ -3,6 +3,29 @@
 > Sub-plan of [12-v0.13.0-execution.md](./12-v0.13.0-execution.md). Prerequisites: Phases 3, 5, 6, 7
 > complete.
 
+## v0.1.2 alignment
+
+Module enablement is now driven by `engine.modules`, not just compile features or static config.
+Phase 8 boot sequence:
+
+1. Open engine storage; CREATE SCHEMA / open file for `engine`; run engine schema migrations.
+2. `SELECT name, version, config FROM engine.modules WHERE enabled = TRUE`.
+3. For each enabled module: PG `CREATE SCHEMA IF NOT EXISTS <m>` / SQLite
+   `ATTACH DATABASE
+   'data/<m>.db' AS <m>`; run pending migrations recorded in
+   `engine.migrations`.
+4. Wire trait routing per module; mount HTTP routes; start scheduler/workers.
+
+When auth is added to `engine.modules` (insert row with
+`name='auth', enabled=TRUE,
+version='0.1.0'`), the auth schema is created/attached on next boot.
+Dashboard panes (workflow, auth) render conditionally based on enabled modules read from
+`engine.modules` at startup. See [14-v0.13.2-engine-schemas.md](./14-v0.13.2-engine-schemas.md) for
+storage model details and [12c §"v0.1.2 alignment"](./12c-phase-4-6-auth-identity-zanzibar.md) for
+auth-specific deltas.
+
+---
+
 **Phase 8 goal:** `assay-engine` is a runnable binary that loads a config, connects to a backend,
 runs migrations, composes module routers via `FromRef`, and serves workflow + auth + dashboard on
 one port. Runtime binary's dashboard is restored (via engine's composition helper).
@@ -880,8 +903,8 @@ Key messages:
   (unchanged); internal module paths changed. Update `use assay_workflow::...` imports (previously
   `use assay::workflow::...`).
 - **`assay-workflow` 0.1 embedders:** the workflow store trait moved to `assay-domain`. Update
-  imports: `use assay_workflow::WorkflowStore` → `use assay_domain::WorkflowStore`. The `Engine` is no
-  longer generic — drop the type parameter.
+  imports: `use assay_workflow::WorkflowStore` → `use assay_domain::WorkflowStore`. The `Engine` is
+  no longer generic — drop the type parameter.
 - **New engine consumers:** follow `docs/engine-quickstart.md` (to be written).
 
 - [ ] **Step 1: Write migration doc with code snippets.**
