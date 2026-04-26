@@ -127,10 +127,14 @@ async fn build_vault_ctx_pg(
     // The `vault` umbrella feature on assay-vault implies vault-kv +
     // vault-transit, so the with_* methods are unconditionally
     // available here.
-    let ctx = assay_vault::VaultCtx::new()
+    let mut ctx = assay_vault::VaultCtx::new()
         .with_kek(kek)
         .with_kv(assay_vault::store::postgres::PgKvStore::new(pool.clone()))
         .with_transit(assay_vault::store::postgres::PgTransitStore::new(pool.clone()));
+    #[cfg(feature = "vault-sealing-shamir")]
+    {
+        ctx = ctx.with_seal_store(assay_vault::store::postgres::PgSealStore::new(pool.clone()));
+    }
     Ok(Some(ctx))
 }
 
@@ -146,10 +150,14 @@ async fn build_vault_ctx_sqlite(
     let kek = assay_vault::crypto::kek_store::load_or_init_sqlite(pool)
         .await
         .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (sqlite): {e}"))?;
-    let ctx = assay_vault::VaultCtx::new()
+    let mut ctx = assay_vault::VaultCtx::new()
         .with_kek(kek)
         .with_kv(assay_vault::store::sqlite::SqliteKvStore::new(pool.clone()))
         .with_transit(assay_vault::store::sqlite::SqliteTransitStore::new(pool.clone()));
+    #[cfg(feature = "vault-sealing-shamir")]
+    {
+        ctx = ctx.with_seal_store(assay_vault::store::sqlite::SqliteSealStore::new(pool.clone()));
+    }
     Ok(Some(ctx))
 }
 

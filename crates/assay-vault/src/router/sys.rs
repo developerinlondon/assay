@@ -28,6 +28,72 @@ where
         .route("/sys/seal-status", get(seal_status::<S>))
         .route("/sys/seal", post(seal_op::<S>))
         .route("/sys/unseal", post(unseal_op::<S>))
+        .route("/sys/init", post(init_op::<S>))
+}
+
+#[derive(Deserialize)]
+struct InitBody {
+    /// Number of shares operators receive.
+    shares_count: u8,
+    /// Threshold needed to unseal — must be ≥ 1 and ≤ shares_count.
+    threshold: u8,
+}
+
+#[derive(Serialize)]
+struct InitResponse {
+    kid: String,
+    /// One base64-encoded share per entry. Operators MUST store these
+    /// — the engine will not return them again.
+    shares_b64: Vec<String>,
+    threshold: u8,
+    shares_count: u8,
+}
+
+async fn init_op<S>(
+    State(vault): State<VaultCtx>,
+    State(keys): State<AdminApiKeys>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<InitBody>,
+) -> Response
+where
+    S: Clone + Send + Sync + 'static,
+    VaultCtx: FromRef<S>,
+    AdminApiKeys: FromRef<S>,
+{
+    if let Err(r) = check_admin(&headers, &keys) {
+        return r;
+    }
+    let store = match vault.seal_store.as_ref() {
+        Some(s) => s.clone(),
+        None => {
+            return vault_err_to_response(VaultError::Invalid(
+                "sealing backend not configured on this engine".into(),
+            ));
+        }
+    };
+    match store.init_shamir(body.threshold, body.shares_count).await {
+        Ok((kid, shares)) => {
+            // Re-prime the runtime SealState so subsequent /sys/unseal
+            // calls accumulate against the just-initialised KEK.
+            vault.seal_state.seal().ok();
+            // The engine continues to hold the prior KEK in memory
+            // until the first reboot — by design: callers are
+            // expected to seal explicitly after init when migrating
+            // from plaintext to shamir, and reboot when ready to
+            // require quorum unseal.
+            let resp = InitResponse {
+                kid,
+                shares_b64: shares
+                    .into_iter()
+                    .map(|s| data_encoding::BASE64.encode(&s))
+                    .collect(),
+                threshold: body.threshold,
+                shares_count: body.shares_count,
+            };
+            (StatusCode::CREATED, axum::Json(resp)).into_response()
+        }
+        Err(e) => vault_err_to_response(e),
+    }
 }
 
 #[derive(Serialize)]

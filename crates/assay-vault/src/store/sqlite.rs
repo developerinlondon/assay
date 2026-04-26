@@ -478,3 +478,50 @@ mod transit {
 
 #[cfg(feature = "vault-transit")]
 pub use transit::SqliteTransitStore;
+
+#[cfg(feature = "vault-sealing-shamir")]
+mod sealing {
+    use super::*;
+    use crate::crypto::sealing::SealStore;
+    use crate::error::{Result as VaultResult, VaultError};
+
+    /// SQLite-backed [`SealStore`] — delegates to the
+    /// [`crate::crypto::kek_store`] helpers.
+    #[derive(Clone)]
+    pub struct SqliteSealStore {
+        pool: SqlitePool,
+    }
+
+    impl SqliteSealStore {
+        pub fn new(pool: SqlitePool) -> Self {
+            Self { pool }
+        }
+    }
+
+    #[async_trait]
+    impl SealStore for SqliteSealStore {
+        async fn init_shamir(
+            &self,
+            threshold: u8,
+            shares_count: u8,
+        ) -> VaultResult<(String, Vec<Vec<u8>>)> {
+            let (kid, shares) = crate::crypto::kek_store::init_shamir_sqlite(
+                &self.pool,
+                threshold,
+                shares_count,
+            )
+            .await
+            .map_err(|e| VaultError::Backend(anyhow::anyhow!("seal init_shamir: {e}")))?;
+            Ok((kid, shares.into_iter().map(|s| s.0).collect()))
+        }
+
+        async fn set_sealed(&self, kid: &str, sealed: bool) -> VaultResult<()> {
+            crate::crypto::kek_store::set_sealed_flag_sqlite(&self.pool, kid, sealed)
+                .await
+                .map_err(|e| VaultError::Backend(anyhow::anyhow!("set_sealed: {e}")))
+        }
+    }
+}
+
+#[cfg(feature = "vault-sealing-shamir")]
+pub use sealing::SqliteSealStore;

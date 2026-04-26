@@ -39,6 +39,12 @@ pub struct VaultCtx {
     /// installations it starts sealed and an operator must call
     /// `/sys/unseal` to bring it up.
     pub seal_state: SealState,
+    /// Backend-pluggable [`crate::crypto::sealing::SealStore`] —
+    /// /sys/init delegates init_shamir + set_sealed through this. Same
+    /// dyn pattern as KV / transit; engine boot wires Pg or Sqlite at
+    /// startup. None when no sealing backend is wired (tests + slim
+    /// builds without sharks).
+    pub seal_store: Option<DynSealStore>,
     #[cfg(feature = "vault-kv")]
     pub kv: Option<KvService<DynKvStore>>,
     #[cfg(feature = "vault-transit")]
@@ -56,6 +62,7 @@ impl Default for VaultCtx {
         Self {
             kek,
             seal_state,
+            seal_store: None,
             #[cfg(feature = "vault-kv")]
             kv: None,
             #[cfg(feature = "vault-transit")]
@@ -116,7 +123,21 @@ impl VaultCtx {
         self.transit = Some(TransitService::new(store, self.seal_state.clone()));
         self
     }
+
+    /// Wire a backend-pluggable [`crate::crypto::sealing::SealStore`].
+    /// Engine boot calls this with PgSealStore / SqliteSealStore.
+    pub fn with_seal_store<S: crate::crypto::sealing::SealStore + 'static>(
+        mut self,
+        store: S,
+    ) -> Self {
+        self.seal_store = Some(Arc::new(store));
+        self
+    }
 }
+
+/// Trait-object alias for the seal store — same shape as DynKvStore /
+/// DynTransitStore.
+pub type DynSealStore = Arc<dyn crate::crypto::sealing::SealStore>;
 
 /// Type alias for the `KvService` carried in [`VaultCtx`]. The
 /// trait-object indirection lets the engine choose PG or SQLite at

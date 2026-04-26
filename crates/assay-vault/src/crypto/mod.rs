@@ -22,4 +22,4 @@ pub mod kek_store;
 pub use aead::{decrypt, encrypt, random_dek, random_nonce, NONCE_LEN};
 pub use kek::KekHandle;
 pub use seal_state::{SealState, SealStatus};
-pub use sealing::{KmsSeal, SealingMethod};
+pub use sealing::{KmsSeal, SealStore, SealingMethod};

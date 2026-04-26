@@ -218,3 +218,29 @@ pub trait KmsSeal: Send + Sync + 'static {
     /// Stable identifier for logs (e.g. "aws-kms:us-east-1:alias/vault").
     fn identifier(&self) -> String;
 }
+
+/// Backend-pluggable seal-state mutations.
+///
+/// Mirrors the [`crate::kv::KvStore`] / [`crate::transit::TransitStore`]
+/// trait pattern so seal operations route through the same backend
+/// abstraction. Engine boot wires `Arc<dyn SealStore>` into
+/// [`crate::ctx::VaultCtx`] and the `/sys/*` handlers call it; the
+/// handlers don't know whether they're talking to PG or SQLite.
+#[async_trait::async_trait]
+pub trait SealStore: Send + Sync + 'static {
+    /// Generate a fresh KEK + Shamir split + persist a new
+    /// `vault.kek_metadata` row. Returns the new kid plus the share
+    /// bytes (one `Vec<u8>` per share). The shares are returned ONCE —
+    /// the engine does not retain a copy. Operators MUST distribute
+    /// and store them securely.
+    async fn init_shamir(
+        &self,
+        threshold: u8,
+        shares_count: u8,
+    ) -> Result<(String, Vec<Vec<u8>>)>;
+
+    /// Update the at-rest sealed flag for a kid. The runtime
+    /// [`crate::crypto::seal_state::SealState`] is the source of truth
+    /// for in-memory state; this is the audit/reboot signal.
+    async fn set_sealed(&self, kid: &str, sealed: bool) -> Result<()>;
+}

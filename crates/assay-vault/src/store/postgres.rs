@@ -415,3 +415,50 @@ mod transit {
 
 #[cfg(feature = "vault-transit")]
 pub use transit::PgTransitStore;
+
+#[cfg(feature = "vault-sealing-shamir")]
+mod sealing {
+    use super::*;
+    use crate::crypto::sealing::SealStore;
+    use crate::error::{Result as VaultResult, VaultError};
+
+    /// Postgres-backed [`SealStore`] — delegates to the
+    /// [`crate::crypto::kek_store`] helpers.
+    #[derive(Clone)]
+    pub struct PgSealStore {
+        pool: PgPool,
+    }
+
+    impl PgSealStore {
+        pub fn new(pool: PgPool) -> Self {
+            Self { pool }
+        }
+    }
+
+    #[async_trait]
+    impl SealStore for PgSealStore {
+        async fn init_shamir(
+            &self,
+            threshold: u8,
+            shares_count: u8,
+        ) -> VaultResult<(String, Vec<Vec<u8>>)> {
+            let (kid, shares) = crate::crypto::kek_store::init_shamir_postgres(
+                &self.pool,
+                threshold,
+                shares_count,
+            )
+            .await
+            .map_err(|e| VaultError::Backend(anyhow::anyhow!("seal init_shamir: {e}")))?;
+            Ok((kid, shares.into_iter().map(|s| s.0).collect()))
+        }
+
+        async fn set_sealed(&self, kid: &str, sealed: bool) -> VaultResult<()> {
+            crate::crypto::kek_store::set_sealed_flag_postgres(&self.pool, kid, sealed)
+                .await
+                .map_err(|e| VaultError::Backend(anyhow::anyhow!("set_sealed: {e}")))
+        }
+    }
+}
+
+#[cfg(feature = "vault-sealing-shamir")]
+pub use sealing::PgSealStore;
