@@ -68,11 +68,21 @@ assay-domain = { path = "../assay-domain", version = "0.2" }
 anyhow = "1"
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+parking_lot = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
+
+# AEAD (AES-256-GCM-SIV) — RustCrypto. Misuse-resistant: the SIV mode
+# survives nonce reuse, which matters for transit's deterministic
+# per-version nonces. Used for the master KEK ↔ DEK envelope, KV
+# at-rest, transit, and (Phase 3) collection-side item encryption.
+aes-gcm-siv = "0.11"
+data-encoding = "2"
+rand = "0.9"
+sha2 = "0.10"
 
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "any"], optional = true }
 

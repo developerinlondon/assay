@@ -71,12 +71,17 @@ CREATE TABLE IF NOT EXISTS vault.kv_meta (
     updated_at     DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())
 );
 
+-- Per-record DEK envelope. `wrapped_dek` is the data-encryption key
+-- (32 random bytes) encrypted by the master KEK identified by `kek_kid`;
+-- `ciphertext` is the payload encrypted by that DEK with AES-256-GCM-SIV
+-- and `nonce`. The path-and-version pair binds the AEAD's AAD so a
+-- ciphertext relocated to a different row fails to authenticate.
 CREATE TABLE IF NOT EXISTS vault.kv (
     path        TEXT NOT NULL,
     version     BIGINT NOT NULL,
     ciphertext  BYTEA NOT NULL,
     nonce       BYTEA NOT NULL,
-    aad         BYTEA NOT NULL DEFAULT ''::bytea,
+    wrapped_dek BYTEA NOT NULL,
     kek_kid     TEXT NOT NULL,
     deleted_at  DOUBLE PRECISION,
     destroyed   BOOLEAN NOT NULL DEFAULT FALSE,
@@ -207,10 +212,20 @@ CREATE TABLE IF NOT EXISTS vault.share_revoked (
 -- rotation appends a new row; the previous KEK stays so existing
 -- wrapped DEKs remain decryptable until the operator-driven re-wrap
 -- finishes.
+-- `sealed_blob` holds the master KEK material at rest. The interpretation
+-- depends on `sealing_method`:
+--   plaintext       — Phase 1 placeholder; blob IS the raw 32-byte KEK.
+--                     Tracked in kek_metadata so Phase 2 can re-wrap.
+--   shamir          — blob is empty; the KEK is split into rows in
+--                     vault.unseal_shares and reconstituted on unseal.
+--   kms-aws / kms-gcp — blob is the cloud-KMS-encrypted KEK; auto-unseal
+--                     calls the cloud KMS Decrypt API on boot.
+--   hsm             — blob is the PKCS#11-wrapped KEK (opt-in feature).
 CREATE TABLE IF NOT EXISTS vault.kek_metadata (
     kid              TEXT PRIMARY KEY,
     sealing_method   TEXT NOT NULL,
     sealed           BOOLEAN NOT NULL DEFAULT TRUE,
+    sealed_blob      BYTEA NOT NULL DEFAULT ''::bytea,
     share_threshold  INTEGER,
     share_count      INTEGER,
     sealed_at        DOUBLE PRECISION,
@@ -281,7 +296,7 @@ pub const SQLITE_DDL_V1: &[(&str, &str)] = &[
             version     INTEGER NOT NULL,
             ciphertext  BLOB NOT NULL,
             nonce       BLOB NOT NULL,
-            aad         BLOB NOT NULL DEFAULT x'',
+            wrapped_dek BLOB NOT NULL,
             kek_kid     TEXT NOT NULL,
             deleted_at  REAL,
             destroyed   INTEGER NOT NULL DEFAULT 0,
@@ -428,6 +443,7 @@ pub const SQLITE_DDL_V1: &[(&str, &str)] = &[
             kid              TEXT PRIMARY KEY,
             sealing_method   TEXT NOT NULL,
             sealed           INTEGER NOT NULL DEFAULT 1,
+            sealed_blob      BLOB NOT NULL DEFAULT x'',
             share_threshold  INTEGER,
             share_count      INTEGER,
             sealed_at        REAL,

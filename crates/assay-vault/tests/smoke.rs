@@ -116,12 +116,13 @@ async fn round_trip_one_row_per_table() {
     .expect("insert kv_meta");
 
     sqlx::query(
-        "INSERT INTO vault.kv (path, version, ciphertext, nonce, kek_kid, created_at)
-         VALUES (?, 1, ?, ?, 'kek-1', ?)",
+        "INSERT INTO vault.kv (path, version, ciphertext, nonce, wrapped_dek, kek_kid, created_at)
+         VALUES (?, 1, ?, ?, ?, 'kek-1', ?)",
     )
     .bind("api/stripe")
     .bind(b"ciphertext".as_slice())
     .bind(b"012345678901".as_slice())
+    .bind(b"wrapped-dek-blob".as_slice())
     .bind(now)
     .execute(&pool)
     .await

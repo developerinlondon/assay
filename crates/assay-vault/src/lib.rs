@@ -40,6 +40,7 @@
 //! No HTTP handlers, no Lua stdlib, no implementation logic yet — those
 //! land in Phases 1-7.
 
+pub mod crypto;
 pub mod ctx;
 pub mod error;
 pub mod schema;
@@ -47,6 +48,7 @@ pub mod schema;
 #[cfg(any(feature = "backend-postgres", feature = "backend-sqlite"))]
 pub mod store;
 
+pub use crypto::KekHandle;
 pub use ctx::VaultCtx;
 pub use error::{Result, VaultError};
 pub use schema::{MIGRATION_VERSION, MODULE_NAME};
