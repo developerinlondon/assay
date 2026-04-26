@@ -32,5 +32,12 @@ assay-workflow.db-*
 /crates/assay-workflow/tests-e2e/playwright-report/
 /crates/assay-workflow/tests-e2e/.last-run.json
 
+# E2E SQLite scratch dirs created when local runs use a CWD-relative
+# data_dir. CI fixtures explicitly point at /tmp, but a developer
+# launching the engine binary directly from these directories will
+# land here (auth.db / engine.db / workflow.db).
+/crates/assay-engine/tests-e2e/data/
+/crates/assay-workflow/tests-e2e/data/
+
 # OMC session state in nested dirs
 **/.omc/

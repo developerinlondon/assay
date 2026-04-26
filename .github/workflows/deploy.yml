@@ -36,13 +36,25 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      # Pin rust to whatever .mise.toml says (single source of truth
+      # for the workspace toolchain) so the site build uses the same
+      # compiler the rest of CI does.
+      - id: rust
+        name: Read rust version from .mise.toml
+        run: |
+          set -euo pipefail
+          v=$(grep -oP '^rust\s*=\s*"\K[0-9]+\.[0-9]+(\.[0-9]+)?' .mise.toml)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust.outputs.version }}
 
       - name: Cache cargo build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
