@@ -76,6 +76,11 @@ tracing = "0.1"
 url = "2"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 
+# Runtime — `rt` for spawn_blocking (syslog sink), `sync` for the
+# parking_lot/RwLock-bridge primitives, `time` for sleeps in tests
+# already covered by the dev tokio feature.
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+
 # AEAD (AES-256-GCM-SIV) — RustCrypto. Misuse-resistant: the SIV mode
 # survives nonce reuse, which matters for transit's deterministic
 # per-version nonces. Used for the master KEK ↔ DEK envelope, KV
