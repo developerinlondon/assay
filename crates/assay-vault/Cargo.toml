@@ -1,0 +1,81 @@
+[package]
+name = "assay-vault"
+version = "0.1.0"
+categories = ["cryptography", "asynchronous", "database"]
+edition = "2024"
+keywords = ["vault", "secrets", "kv", "transit", "biscuit"]
+license = "Apache-2.0"
+repository = "https://github.com/developerinlondon/assay"
+description = "Vault module for assay-engine: KV v2, transit, dynamic credentials, Bitwarden-aligned vaults + collections + items + folders, biscuit-attenuated share links, sealing (Shamir / cloud KMS / HSM), audit forwarding, and a Bitwarden-protocol compat shim. PG18 + SQLite, both first-class."
+
+[features]
+# Default builds: full vault meta-feature plus both backends. The
+# fine-grained submodule flags exist so a slim downstream binary can
+# opt out of individual surfaces without touching the engine wiring.
+default = [
+  "vault",
+  "backend-postgres",
+  "backend-sqlite",
+]
+
+# Meta-feature pulling every default-on submodule. Mirrors the shape
+# of assay-auth's `auth` umbrella feature. PKCS#11-backed sealing
+# (`vault-sealing-hsm`) is intentionally NOT in the umbrella — most
+# operators don't have an HSM and the cryptoki dep is heavy.
+vault = [
+  "vault-kv",
+  "vault-transit",
+  "vault-collections",
+  "vault-share",
+  "vault-sealing-shamir",
+  "vault-sealing-kms",
+  "vault-audit-forwarding",
+  "vault-bitwarden-compat",
+  "vault-dynamic-postgres",
+  "vault-dynamic-aws",
+  "vault-dynamic-gcp",
+  "vault-dynamic-kubernetes",
+]
+
+vault-kv = []
+vault-transit = []
+vault-collections = []
+vault-share = []
+vault-sealing-shamir = []
+vault-sealing-kms = []
+# Opt-in: requires a PKCS#11 device and the `cryptoki` dep. Phase 2
+# wires the actual implementation; Phase 0 just reserves the flag.
+vault-sealing-hsm = []
+vault-audit-forwarding = []
+vault-bitwarden-compat = []
+vault-dynamic-postgres = []
+vault-dynamic-aws = []
+vault-dynamic-gcp = []
+vault-dynamic-kubernetes = []
+
+backend-postgres = ["dep:sqlx", "sqlx/postgres"]
+backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
+
+[dependencies]
+assay-auth = { path = "../assay-auth", version = "0.2" }
+assay-domain = { path = "../assay-domain", version = "0.2" }
+
+# Phase 0 holds the dep set deliberately small: just what the schema
+# bootstrap, ctx skeleton, and smoke test need. Subsequent phases
+# (1: KV+transit, 2: sealing+audit, 3: collections, 4: share, 5:
+# dynamic creds, 6: HA, 7: BW-compat) add their own crypto / HTTP
+# / sigv4 / kms primitives behind their own feature gates.
+anyhow = "1"
+async-trait = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "any"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
