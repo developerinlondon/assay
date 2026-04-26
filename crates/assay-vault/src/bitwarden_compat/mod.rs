@@ -48,6 +48,7 @@ use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::VaultCtx;
 
+mod accounts;
 mod ciphers;
 mod folders;
 mod identity;
@@ -66,6 +67,7 @@ where
 {
     Router::new()
         .merge(identity::router::<S>())
+        .merge(accounts::router::<S>())
         .merge(profile::router::<S>())
         .merge(sync::router::<S>())
         .merge(ciphers::router::<S>())

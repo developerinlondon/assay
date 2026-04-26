@@ -124,10 +124,14 @@ where
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
+    // iss + aud must match the JwtConfig's own values — verify path
+    // (assay-auth's JwtConfig::verify) reuses them as the validation
+    // set, so a token minted with mismatched values fails its own
+    // verifier.
     let claims = BwClaims {
         sub: &user.id,
-        iss: "assay-vault/bw-compat".into(),
-        aud: vec!["assay-vault".into()],
+        iss: jwt.issuer(),
+        aud: jwt.audience(),
         iat: now,
         exp: now + 3600,
         scope: body.scope.clone().unwrap_or_else(|| "api offline_access".into()),

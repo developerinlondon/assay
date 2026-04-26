@@ -127,6 +127,19 @@ impl JwtConfig {
         self.inner.read().active.as_ref().map(|k| k.kid.clone())
     }
 
+    /// Configured issuer string. Plan-locked: every JWT this config
+    /// signs must carry this `iss` claim. Useful for downstream callers
+    /// (e.g. the BW-compat shim in assay-vault) that mint their own
+    /// claim shapes but still need `verify` to accept the token.
+    pub fn issuer(&self) -> String {
+        self.inner.read().issuer.clone()
+    }
+
+    /// Configured audience list (cheap clone — typical size 1).
+    pub fn audience(&self) -> Vec<String> {
+        self.inner.read().audience.clone()
+    }
+
     /// Load every key from `auth.jwks_keys` into memory. The row with
     /// `rotated_at IS NULL` becomes active; the rest become history.
     /// `private_pem_encrypted` is treated as plaintext PEM for now —

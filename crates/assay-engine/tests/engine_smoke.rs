@@ -544,37 +544,150 @@ async fn engine_smoke_sqlite() {
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["server"]["name"], "assay-vault");
 
-    // ── BW token response ships Argon2id KDF default (plan §"Open
-    //    questions" #1) — verify the unauthenticated invalid-grant
-    //    path doesn't accidentally return a token, but more importantly
-    //    that when we *would* mint, the KDF is Argon2id. Smoke covers
-    //    the field-shape; a real password-grant test needs a seeded
-    //    user (which the engine smoke setup doesn't do). Hit
-    //    /identity/connect/token with an empty body to assert the
-    //    400/invalid_request shape so the route is reachable.
+    // ── BW prelogin → register → connect/token → sync round-trip ─────
+    // Plan §S6: stock BW client flow. Drives the same routes `bw
+    // login` would call.
+    let bw_email = "bw-smoke@example.com";
+    let bw_password = "0123456789abcdef0123456789abcdef"; // simulated KDF-derived hash
+
+    // 1. Prelogin returns Argon2id KDF posture for the email.
     let r = client2
-        .post(engine2.url("/identity/connect/token"))
-        .form(&[("grant_type", "password")])
+        .post(engine2.url("/api/accounts/prelogin"))
+        .json(&serde_json::json!({ "email": bw_email }))
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 400, "/identity/connect/token without creds → 400");
+    assert_eq!(r.status(), 200);
     let body: serde_json::Value = r.json().await.unwrap();
-    assert_eq!(body["error"], "invalid_request");
+    assert_eq!(body["Kdf"], 1);
+    assert_eq!(body["KdfIterations"], 3);
+    assert_eq!(body["KdfMemory"], 64);
 
-    // ── BW cipher round-trip with passkey-as-cipher data (Plan §S6) ──
-    // Stock BW clients post per-type fields; the server stores the
-    // structured JSON blob and replays it on /sync. Passkeys live
-    // in Login.Fido2Credentials; the server handles them as opaque
-    // pre-encrypted strings.
-    //
-    // We can't drive real /api/ciphers without a Bearer JWT (the BW
-    // shim's /api/* routes verify the token), and minting a JWT
-    // needs a seeded user. Skip the live PUT test here — the unit-
-    // level pack/unpack round-trip in the bitwarden_compat crate
-    // covers the wire format; the `bw` CLI integration test in CI
-    // covers the live flow.
-    let _ = "see vault BW unit tests + CI bw-cli job";
+    // 2. Register the user.
+    let r = client2
+        .post(engine2.url("/api/accounts/register"))
+        .json(&serde_json::json!({
+            "Email": bw_email,
+            "Name": "Smoke User",
+            "MasterPasswordHash": bw_password,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+
+    // 3. Re-register the same email → 400.
+    let r = client2
+        .post(engine2.url("/api/accounts/register"))
+        .json(&serde_json::json!({
+            "Email": bw_email,
+            "MasterPasswordHash": bw_password,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400, "duplicate register should 400");
+
+    // 4. /identity/connect/token — password grant returns a JWT.
+    let r = client2
+        .post(engine2.url("/identity/connect/token"))
+        .form(&[
+            ("grant_type", "password"),
+            ("username", bw_email),
+            ("password", bw_password),
+            ("scope", "api offline_access"),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "BW token grant should succeed for seeded user");
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["Kdf"], 1, "issued JWT response carries Argon2id KDF");
+    assert!(body["access_token"].as_str().unwrap_or("").len() > 20);
+    let bw_jwt = body["access_token"].as_str().unwrap().to_string();
+
+    // 5. Wrong password → 400 invalid_grant.
+    let r = client2
+        .post(engine2.url("/identity/connect/token"))
+        .form(&[
+            ("grant_type", "password"),
+            ("username", bw_email),
+            ("password", "definitely-wrong"),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["error"], "invalid_grant");
+
+    // 6. /api/sync with the JWT returns BW shape (auto-create vault row).
+    let r = client2
+        .get(engine2.url("/api/sync"))
+        .bearer_auth(&bw_jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["Object"], "sync");
+    assert_eq!(body["Profile"]["Email"], bw_email);
+
+    // 7. Create a passkey-bearing cipher (plan §S6 — passkey-as-cipher).
+    let cipher_body = serde_json::json!({
+        "Type": 1,
+        "Name": "github",
+        "Notes": "encrypted-notes-blob",
+        "Login": {
+            "Username": "alice@example.com",
+            "Password": "encrypted-password-blob",
+            "Uri": "https://github.com",
+            "Fido2Credentials": [
+                {
+                    "CredentialId": "encrypted-credential-id",
+                    "KeyType": "encrypted-key-type",
+                    "KeyAlgorithm": "encrypted-alg",
+                    "RpId": "encrypted-rpid",
+                    "UserName": "encrypted-user",
+                    "Counter": "encrypted-counter"
+                }
+            ]
+        }
+    });
+    let r = client2
+        .post(engine2.url("/api/ciphers"))
+        .bearer_auth(&bw_jwt)
+        .json(&cipher_body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let body: serde_json::Value = r.json().await.unwrap();
+    let cipher_id = body["Id"].as_str().unwrap().to_string();
+    assert_eq!(body["Type"], 1);
+    assert!(body["Login"]["Fido2Credentials"].is_array());
+
+    // 8. Sync now returns the cipher with passkey credentials intact.
+    let r = client2
+        .get(engine2.url("/api/sync"))
+        .bearer_auth(&bw_jwt)
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = r.json().await.unwrap();
+    let ciphers = body["Ciphers"].as_array().unwrap();
+    assert_eq!(ciphers.len(), 1);
+    assert_eq!(ciphers[0]["Login"]["Fido2Credentials"][0]["CredentialId"],
+               "encrypted-credential-id");
+
+    // 9. Delete the cipher.
+    let r = client2
+        .delete(engine2.url(&format!("/api/ciphers/{cipher_id}")))
+        .bearer_auth(&bw_jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204);
 
     // ── Zanzibar default namespaces seeded at boot (plan §S4) ────────
     // Reach into the engine's auth API to confirm the vault namespaces
