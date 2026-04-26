@@ -160,26 +160,16 @@ CREATE INDEX IF NOT EXISTS idx_engine_events_ts_prune ON engine.events(ts);
 
 "#;
 
-/// Idempotent v0.13.1 → v0.13.2 table-relocation migration.
+/// One-shot relocation: moves v0.13.1's prefixed `public.workflow_*`
+/// tables into the `workflow` schema. Idempotent — each step gates on
+/// `to_regclass(public.<old>) IS NOT NULL` so fresh installs and
+/// already-migrated DBs are no-ops.
 ///
-/// On a database upgraded from v0.13.1, the v0.13.1 tables still live
-/// in `public` under their prefixed names. This block moves each of them
-/// into the right schema and drops the now-redundant prefix in one go.
-/// Each step is gated on `to_regclass(public.<old>) IS NOT NULL` so the
-/// block is a no-op on fresh installs (where the new tables already
-/// exist via `SCHEMA` above) and on databases that have already been
-/// migrated.
-///
-/// The CREATE SCHEMA + the schema-qualified DDL in `SCHEMA` runs
-/// *before* this block, so when an old v0.13.1 install boots into
-/// v0.13.2 we end up with both `public.workflows` (the old one with
-/// data) and `workflow.workflows` (the new empty one). To preserve the
-/// data, we DROP the freshly-created empty schema-qualified tables
-/// before the move so ALTER TABLE … SET SCHEMA + RENAME has somewhere
-/// to land. The DROP uses CASCADE to take the indexes/constraints with
-/// it; ALTER TABLE will recreate them. RESTRICT would fail on the
-/// foreign-key references between workflow.events / .activities / .timers
-/// / .signals / .snapshots and workflow.workflows.
+/// SCHEMA above already created empty `workflow.*` tables; we DROP
+/// them with CASCADE here before ALTER TABLE … SET SCHEMA so the move
+/// has somewhere to land. RESTRICT would fail on the FKs between
+/// workflow.events / .activities / .timers / .signals / .snapshots
+/// and workflow.workflows.
 const V0_13_2_RELOCATION_SQL: &str = r#"
 DO $$
 DECLARE

@@ -21,20 +21,12 @@ use crate::assets::{
     AUTH_USERS_JS, AUTH_ZANZIBAR_JS, FAVICON_SVG,
 };
 
-/// Build the auth-console asset router. Stateless — returns
-/// `Router<()>` ready to merge into the engine's composed router.
+/// Build the auth-console asset router. Stateless `Router<()>` ready
+/// to merge into the engine's composed router.
 ///
-/// Routes:
-///
-/// - `GET /auth/console`              → SPA shell HTML
-/// - `GET /auth/console/`             → SPA shell HTML (with-trailing-slash variant)
-/// - `GET /auth/style.css`            → auth-only CSS overrides
-/// - `GET /auth/app.js`               → SPA controller
-/// - `GET /auth/components/*.js`      → per-pane modules
-///
-/// All assets are served with `Cache-Control: no-cache` so a redeploy
-/// invalidates client cache without manual cache-busting (matches the
-/// workflow dashboard's policy — see `router::NO_CACHE`).
+/// All assets serve with `Cache-Control: no-cache` so a redeploy
+/// invalidates client cache without manual busting (matches the
+/// workflow dashboard's `router::NO_CACHE`).
 pub fn router() -> Router<()> {
     Router::new()
         .route("/auth/console", get(index))

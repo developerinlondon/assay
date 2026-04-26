@@ -151,19 +151,10 @@ var AssayDetail = (function () {
       '</div>' +
       '<div class="detail-body">';
 
-    // Every identity/config field shown in the detail block is also
-    // surfaced on the row above (id, type, status, queue, created) or
-    // in the namespace selector. The only field the row can't carry is
-    // `completed_at` — workflow list rows show "Created X ago" but not
-    // a completion timestamp. Put that on a slim meta row above the
-    // tabs so terminal runs get their one missing piece; no meta row
-    // at all for in-flight runs (nothing new to say).
-    //
-    // The action buttons (Signal / Cancel / Terminate / Continue-as-
-    // new) used to live on a toolbar here too; v0.12.0 dropped them
-    // because they duplicate the row's Action column. The row now
-    // shows them as icons with tooltips, so the detail view stays
-    // identity-only and the tabs get all the vertical space.
+    // The list row already carries id/type/status/queue/created;
+    // `completed_at` is the only field it can't fit, so terminal runs
+    // get a slim meta row above the tabs. In-flight runs render no
+    // meta row (nothing new to say).
     if (wf.completed_at) {
       html += '<div class="detail-meta-line">' +
         '<span class="detail-meta-label">Completed</span> ' +

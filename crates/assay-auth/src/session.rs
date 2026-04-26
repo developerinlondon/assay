@@ -213,18 +213,7 @@ fn random_token() -> String {
     data_encoding::BASE64URL_NOPAD.encode(&buf)
 }
 
-// =====================================================================
-//   HTTP router —
-// =====================================================================
-//
-// Endpoints:
-// - POST  /login        password login: email + password → session cookie
-// - DELETE /session     logout: revoke current session, clear cookie
-// - GET   /whoami       current user's id + email
-// - POST  /passkey/register/start   passkey ceremony — returns challenge
-// - POST  /passkey/register/finish  finish — persists the cred via UserStore
-// - POST  /passkey/auth/start
-// - POST  /passkey/auth/finish
+// HTTP router — see `router()` below for the canonical route list.
 
 use axum::extract::{FromRef, State};
 use axum::http::{HeaderMap, StatusCode, header};

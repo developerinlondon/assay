@@ -142,24 +142,9 @@ impl OidcProviderConfig {
     }
 }
 
-/// OIDC spec router — only the OAuth2/OIDC well-known surface that
-/// the wider ecosystem expects under stable paths. Mounted at `/auth`
-/// by the engine binary.
-///
-/// Routes:
-///
-/// - `GET /.well-known/openid-configuration`
-/// - `GET /.well-known/jwks.json`
-/// - `GET /authorize` — full handler (login redirect / consent / code mint).
-/// - `POST /token` — full handler (auth code + refresh grant dispatch).
-/// - `GET /userinfo` — bearer parse + JWT verify + scope-filtered claims.
-/// - `POST /revoke` — RFC 7009 (refresh token marked revoked).
-/// - `POST /introspect` — RFC 7662 (active/inactive response).
-/// - `GET /logout` — session revoke + post_logout_redirect.
-/// - `GET /authorize/consent` — render consent preview page.
-/// - `POST /authorize/consent` — record consent + resume the flow.
-/// - `GET /oidc/upstream/{slug}/start` — federation start.
-/// - `GET /oidc/upstream/{slug}/callback` — federation completion.
+/// OIDC spec router — the OAuth2/OIDC well-known surface, mounted at
+/// `/auth` by the engine binary. See route declarations below for the
+/// authoritative path/handler list.
 pub fn spec_router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
