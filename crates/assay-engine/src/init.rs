@@ -79,14 +79,27 @@ pub fn builtin_modules() -> Vec<BuiltinModule> {
     mods
 }
 
-/// Sweep interval for the stale-instance cleanup task. Removes
-/// `engine.instances` rows whose `last_heartbeat` is older than
-/// [`INSTANCE_STALE_SECS`].
-const INSTANCE_HEARTBEAT_SECS: u64 = 15;
+/// Heartbeat interval for the engine.instances row. Tightened in
+/// v0.3.0 (plan 17 §S9) so secondary engine pods can detect a failed
+/// primary within [`INSTANCE_STALE_SECS`] of the actual failure.
+///
+/// 3-second heartbeat × 10-second stale-cutoff = primary loss is
+/// observed by every other instance within ~10s (worst case: a
+/// heartbeat just succeeded, then the primary dies; the row stays
+/// "fresh" for the remainder of the 10-second window).
+///
+/// HA tradeoffs:
+/// - Lower heartbeat → faster failover detection, more PG writes per
+///   second per pod (~1 row/s/pod is negligible at any realistic
+///   fleet size).
+/// - Higher stale cutoff → reduces false-positive failovers from
+///   transient network blips, but slows real-failure detection.
+/// 3s × 10s is plan §S9's locked target.
+const INSTANCE_HEARTBEAT_SECS: u64 = 3;
 // Used by the PG cleanup task that prunes dead `engine.instances` rows.
 // SQLite path is single-instance and never accumulates stale rows.
 #[cfg(feature = "backend-postgres")]
-const INSTANCE_STALE_SECS: f64 = 60.0;
+const INSTANCE_STALE_SECS: f64 = 10.0;
 
 /// Result of the engine boot sequence — the parts each backend wired up.
 /// The engine binary uses these to compose its `WorkflowStore` /
