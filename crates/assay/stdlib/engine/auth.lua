@@ -94,14 +94,14 @@ function M.client(opts)
 
   local function post(path, body, admin)
     return decode(
-      http.post(engine_url .. path, body or {}, { headers = build_headers(admin) }),
+      http.post(engine_url .. path, body, { headers = build_headers(admin) }),
       true
     )
   end
 
   local function put(path, body, admin)
     return decode(
-      http.put(engine_url .. path, body or {}, { headers = build_headers(admin) }),
+      http.put(engine_url .. path, body, { headers = build_headers(admin) }),
       true
     )
   end
