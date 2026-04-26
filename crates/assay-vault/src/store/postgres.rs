@@ -462,3 +462,105 @@ mod sealing {
 
 #[cfg(feature = "vault-sealing-shamir")]
 pub use sealing::PgSealStore;
+
+#[cfg(feature = "vault-collections")]
+mod personal_vault {
+    use super::*;
+    use crate::error::{Result as VaultResult, VaultError};
+    use crate::personal_vault::{PersonalVault, PersonalVaultStore};
+
+    #[derive(Clone)]
+    pub struct PgPersonalVaultStore {
+        pool: PgPool,
+    }
+
+    impl PgPersonalVaultStore {
+        pub fn new(pool: PgPool) -> Self {
+            Self { pool }
+        }
+    }
+
+    fn map_err(ctx: &'static str) -> impl FnOnce(sqlx::Error) -> VaultError {
+        move |e| VaultError::Backend(anyhow::anyhow!("{ctx}: {e}"))
+    }
+
+    #[async_trait]
+    impl PersonalVaultStore for PgPersonalVaultStore {
+        async fn ensure_vault(
+            &self,
+            id: &str,
+            owner_user: &str,
+            public_key: &[u8],
+        ) -> VaultResult<PersonalVault> {
+            // ON CONFLICT DO NOTHING; then SELECT — keeps the public_key
+            // stable across concurrent ensure_vault calls.
+            sqlx::query(
+                "INSERT INTO vault.vaults (id, owner_user, public_key, created_at)
+                 VALUES ($1, $2, $3, EXTRACT(EPOCH FROM NOW()))
+                 ON CONFLICT (owner_user) DO NOTHING",
+            )
+            .bind(id)
+            .bind(owner_user)
+            .bind(public_key)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("ensure_vault insert"))?;
+
+            self.get_by_owner(owner_user)
+                .await?
+                .ok_or_else(|| VaultError::Backend(anyhow::anyhow!("vault row missing post-insert")))
+        }
+
+        async fn get_by_owner(&self, owner_user: &str) -> VaultResult<Option<PersonalVault>> {
+            let row: Option<(String, Vec<u8>, f64)> = sqlx::query_as(
+                "SELECT id, public_key, created_at FROM vault.vaults WHERE owner_user = $1",
+            )
+            .bind(owner_user)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err("get_by_owner"))?;
+            Ok(row.map(|(id, pk, ca)| PersonalVault {
+                id,
+                owner_user: owner_user.to_string(),
+                public_key: pk,
+                created_at: ca,
+            }))
+        }
+
+        async fn get_by_id(&self, id: &str) -> VaultResult<Option<PersonalVault>> {
+            let row: Option<(String, Vec<u8>, f64)> = sqlx::query_as(
+                "SELECT owner_user, public_key, created_at FROM vault.vaults WHERE id = $1",
+            )
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err("get_by_id"))?;
+            Ok(row.map(|(o, pk, ca)| PersonalVault {
+                id: id.to_string(),
+                owner_user: o,
+                public_key: pk,
+                created_at: ca,
+            }))
+        }
+
+        async fn rotate_public_key(
+            &self,
+            owner_user: &str,
+            new_public_key: &[u8],
+        ) -> VaultResult<bool> {
+            let n = sqlx::query(
+                "UPDATE vault.vaults SET public_key = $2 WHERE owner_user = $1",
+            )
+            .bind(owner_user)
+            .bind(new_public_key)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("rotate_public_key"))?
+            .rows_affected();
+            Ok(n > 0)
+        }
+    }
+}
+
+#[cfg(feature = "vault-collections")]
+pub use personal_vault::PgPersonalVaultStore;
