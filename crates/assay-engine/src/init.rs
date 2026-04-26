@@ -52,7 +52,7 @@ pub struct BuiltinModule {
 /// auth migrations on upgrade. Local dev flips this via
 /// `EngineConfig.auto_enable_modules = ["auth"]`.
 pub fn builtin_modules() -> Vec<BuiltinModule> {
-    #[allow(unused_mut)]
+    #[cfg_attr(not(feature = "vault"), allow(unused_mut))]
     let mut mods = vec![
         BuiltinModule {
             name: "workflow",

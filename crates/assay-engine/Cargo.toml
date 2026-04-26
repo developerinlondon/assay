@@ -48,8 +48,24 @@ auth-zanzibar = ["assay-auth/auth-zanzibar"]
 # Vault module (plan 17 / v0.3.0). The umbrella `vault` flag pulls every
 # always-on submodule; PKCS#11-backed sealing is opt-in via
 # `vault-sealing-hsm` because most operators don't have an HSM.
-vault = ["dep:assay-vault", "assay-vault/vault"]
-vault-sealing-hsm = ["assay-vault/vault-sealing-hsm"]
+vault = [
+  "dep:assay-vault",
+  "assay-vault/vault",
+  "vault-kv",
+  "vault-transit",
+  "vault-collections",
+  "vault-share",
+  "vault-bitwarden-compat",
+]
+# Per-surface pass-throughs. Mirroring assay-vault's flags here lets
+# downstream binaries opt out of a single surface (e.g. drop the BW
+# compat shim) without touching every cfg gate in the engine.
+vault-kv = ["assay-vault?/vault-kv"]
+vault-transit = ["assay-vault?/vault-transit"]
+vault-collections = ["assay-vault?/vault-collections"]
+vault-share = ["assay-vault?/vault-share"]
+vault-bitwarden-compat = ["assay-vault?/vault-bitwarden-compat"]
+vault-sealing-hsm = ["assay-vault?/vault-sealing-hsm"]
 
 server = ["dep:clap"]
 

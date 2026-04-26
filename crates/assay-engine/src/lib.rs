@@ -71,7 +71,7 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("workflow store (pg): {e}"))?;
             let auth_ctx = build_auth_ctx_pg(&cfg, &b.pool).await?;
             #[cfg(feature = "vault")]
-            let vault_ctx = build_vault_ctx(&b.modules);
+            let vault_ctx = build_vault_ctx_pg(&b.modules, &b.pool).await?;
             #[cfg(not(feature = "vault"))]
             let vault_ctx: Option<()> = None;
             run_with_store(
@@ -92,7 +92,7 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("workflow store (sqlite): {e}"))?;
             let auth_ctx = build_auth_ctx_sqlite(&cfg, &b.pool).await?;
             #[cfg(feature = "vault")]
-            let vault_ctx = build_vault_ctx(&b.modules);
+            let vault_ctx = build_vault_ctx_sqlite(&b.modules, &b.pool).await?;
             #[cfg(not(feature = "vault"))]
             let vault_ctx: Option<()> = None;
             run_with_store(
@@ -110,15 +110,47 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
 }
 
 /// Build the vault context iff the runtime `engine.modules.vault.enabled`
-/// row is TRUE. Phase 0: empty ctx — Phase 1+ wire pool-backed stores
-/// here matching the AuthCtx pattern.
-#[cfg(feature = "vault")]
-fn build_vault_ctx(modules: &[String]) -> Option<assay_vault::VaultCtx> {
-    if modules.iter().any(|m| m == "vault") {
-        Some(assay_vault::VaultCtx::new())
-    } else {
-        None
+/// row is TRUE. Loads the master KEK from `vault.kek_metadata` (or seeds
+/// a fresh one on first boot) and composes the per-feature stores
+/// against the same pool the rest of the engine uses.
+#[cfg(all(feature = "vault", feature = "backend-postgres"))]
+async fn build_vault_ctx_pg(
+    modules: &[String],
+    pool: &sqlx::PgPool,
+) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
+    if !modules.iter().any(|m| m == "vault") {
+        return Ok(None);
     }
+    let kek = assay_vault::crypto::kek_store::load_or_init_postgres(pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (pg): {e}"))?;
+    // The `vault` umbrella feature on assay-vault implies vault-kv +
+    // vault-transit, so the with_* methods are unconditionally
+    // available here.
+    let ctx = assay_vault::VaultCtx::new()
+        .with_kek(kek)
+        .with_kv(assay_vault::store::postgres::PgKvStore::new(pool.clone()))
+        .with_transit(assay_vault::store::postgres::PgTransitStore::new(pool.clone()));
+    Ok(Some(ctx))
+}
+
+/// SQLite mirror of [`build_vault_ctx_pg`].
+#[cfg(all(feature = "vault", feature = "backend-sqlite"))]
+async fn build_vault_ctx_sqlite(
+    modules: &[String],
+    pool: &sqlx::SqlitePool,
+) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
+    if !modules.iter().any(|m| m == "vault") {
+        return Ok(None);
+    }
+    let kek = assay_vault::crypto::kek_store::load_or_init_sqlite(pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (sqlite): {e}"))?;
+    let ctx = assay_vault::VaultCtx::new()
+        .with_kek(kek)
+        .with_kv(assay_vault::store::sqlite::SqliteKvStore::new(pool.clone()))
+        .with_transit(assay_vault::store::sqlite::SqliteTransitStore::new(pool.clone()));
+    Ok(Some(ctx))
 }
 
 #[cfg(feature = "backend-postgres")]
