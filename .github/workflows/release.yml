@@ -324,10 +324,6 @@ jobs:
           sha256sum assay-engine-* > ../engine-checksums.txt
           cd ..
           cat engine-checksums.txt
-          # Co-locate the Dockerfile with the artifact so the docker
-          # build step's `context: artifacts` can find both. buildx
-          # resolves `file:` relative to the context directory.
-          cp Dockerfile.assay-engine artifacts/Dockerfile.assay-engine
 
       - name: Tag assay-engine-v${{ needs.detect.outputs.assay_engine_version }}
         env:
@@ -412,9 +408,11 @@ jobs:
           # COPYs the linux-musl binary that the `binaries` job uploaded.
           # Avoids re-running the cargo cross-compile inside Docker, which
           # used to take ~6 min and tripped the openssl-src-needs-perl
-          # failure on rust:slim images.
+          # failure on rust:slim images. The Dockerfile lives at the
+          # workspace root so the `file:` path is workspace-absolute —
+          # buildx accepts that explicitly even with a smaller `context:`.
           context: artifacts
-          file: Dockerfile.assay-engine
+          file: ${{ github.workspace }}/Dockerfile.assay-engine
           push: true
           build-args: |
             RUST_VERSION=${{ needs.detect.outputs.rust_version }}
@@ -473,9 +471,6 @@ jobs:
           sha256sum assay-linux-x86_64 assay-darwin-aarch64 > ../lua-checksums.txt
           cd ..
           cat lua-checksums.txt
-          # Co-locate the Dockerfile with the artifact so the docker
-          # build step's `context: artifacts` can find both.
-          cp Dockerfile artifacts/Dockerfile
 
       - name: Tag assay-lua-v${{ needs.detect.outputs.assay_lua_version }}
         env:
@@ -545,8 +540,10 @@ jobs:
         with:
           # `context: artifacts` so the artifact-mode Dockerfile COPYs
           # the linux-musl assay binary the `binaries` job uploaded.
+          # `file:` is workspace-absolute so buildx finds the Dockerfile
+          # outside the slimmer build context.
           context: artifacts
-          file: Dockerfile
+          file: ${{ github.workspace }}/Dockerfile
           push: true
           build-args: |
             RUST_VERSION=${{ needs.detect.outputs.rust_version }}
