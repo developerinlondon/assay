@@ -48,8 +48,8 @@ async fn kv_put_then_get_round_trip() {
 
     let script = format!(
         r#"
-        local vault = require("assay.vault")
-        local c = vault.client({{ engine_url = "{base}", admin_key = "{key}" }})
+        local vault = require("assay.engine.vault")
+        local c = vault.client({{ engine_url = "{base}", api_key = "{key}" }})
         local put = c.kv:put("api/stripe", "sk_live_xxx")
         assert.eq(put.version, 1)
         local got = c.kv:get("api/stripe")
@@ -80,8 +80,8 @@ async fn kv_get_specific_version_query() {
         .await;
     let script = format!(
         r#"
-        local vault = require("assay.vault")
-        local c = vault.client({{ engine_url = "{base}", admin_key = "{key}" }})
+        local vault = require("assay.engine.vault")
+        local c = vault.client({{ engine_url = "{base}", api_key = "{key}" }})
         local got = c.kv:get("k", 3)
         assert.eq(got.data, "v3")
         "#,
@@ -117,8 +117,8 @@ async fn kv_lifecycle_paths() {
         .await;
     let script = format!(
         r#"
-        local vault = require("assay.vault")
-        local c = vault.client({{ engine_url = "{base}", admin_key = "{key}" }})
+        local vault = require("assay.engine.vault")
+        local c = vault.client({{ engine_url = "{base}", api_key = "{key}" }})
         c.kv:delete("k", 2)
         c.kv:destroy("k", 2)
         c.kv:undelete("k", 2)
@@ -152,8 +152,8 @@ async fn kv_list_with_and_without_prefix() {
         .await;
     let script = format!(
         r#"
-        local vault = require("assay.vault")
-        local c = vault.client({{ engine_url = "{base}", admin_key = "{key}" }})
+        local vault = require("assay.engine.vault")
+        local c = vault.client({{ engine_url = "{base}", api_key = "{key}" }})
         local under_api = c.kv:list("api/")
         assert.eq(#under_api.entries, 1)
         local everything = c.kv:list()
@@ -203,8 +203,8 @@ async fn transit_create_encrypt_decrypt_rotate() {
 
     let script = format!(
         r#"
-        local vault = require("assay.vault")
-        local c = vault.client({{ engine_url = "{base}", admin_key = "{key}" }})
+        local vault = require("assay.engine.vault")
+        local c = vault.client({{ engine_url = "{base}", api_key = "{key}" }})
         c.transit:create("logs")
         local ct = c.transit:encrypt("logs", "anything")
         assert.eq(ct, "vault:v1:abcdef==")
@@ -222,7 +222,7 @@ async fn transit_create_encrypt_decrypt_rotate() {
 #[tokio::test]
 async fn missing_engine_url_errors() {
     let script = r#"
-        local vault = require("assay.vault")
+        local vault = require("assay.engine.vault")
         local ok, err = pcall(function() return vault.client({}) end)
         assert.eq(ok, false)
         assert.contains(tostring(err), "engine_url")
@@ -243,8 +243,8 @@ async fn unauth_response_surfaces_as_lua_error() {
         .await;
     let script = format!(
         r#"
-        local vault = require("assay.vault")
-        local c = vault.client({{ engine_url = "{base}", admin_key = "" }})
+        local vault = require("assay.engine.vault")
+        local c = vault.client({{ engine_url = "{base}", api_key = "" }})
         local ok, err = pcall(function() return c.kv:get("x") end)
         assert.eq(ok, false)
         assert.contains(tostring(err), "401")
