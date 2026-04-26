@@ -78,6 +78,12 @@ enum Commands {
         mode: Option<String>,
         #[arg(long, default_value = "20")]
         timeout: Option<u64>,
+        /// Positional arguments passed through to the Lua script as the
+        /// `arg` global (a 1-indexed array, mirroring `lua` and `luajit`).
+        /// Use `--` to separate them from `assay run`'s own flags:
+        /// `assay run script.lua -- --email a@b.c --password hunter2`.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        script_args: Vec<String>,
     },
     Resume {
         #[arg(long)]
@@ -446,7 +452,7 @@ async fn main() -> ExitCode {
             if let Some(code) = eval {
                 run_lua_inline(&code).await
             } else if let Some(path) = file {
-                run_lua_script(&path, RunOptions::default()).await
+                run_lua_script(&path, RunOptions::default(), Vec::new()).await
             } else {
                 eprintln!("error: exec requires either -e <code> or a file path");
                 ExitCode::from(1)
@@ -457,12 +463,13 @@ async fn main() -> ExitCode {
             file,
             mode,
             timeout,
+            script_args,
         }) => {
             let options = RunOptions {
                 mode: resolve_script_mode(mode.as_deref()),
                 timeout_secs: timeout.unwrap_or(DEFAULT_TOOL_TIMEOUT_SECS),
             };
-            dispatch_file(&file, options).await
+            dispatch_file(&file, options, script_args).await
         }
         Some(Commands::Resume {
             token,
@@ -634,7 +641,7 @@ async fn main() -> ExitCode {
         }
         None => {
             if let Some(ref file) = cli.file {
-                dispatch_file(file, RunOptions::default()).await
+                dispatch_file(file, RunOptions::default(), Vec::new()).await
             } else {
                 use clap::CommandFactory;
                 Cli::command().print_help().ok();
@@ -656,12 +663,16 @@ fn resolve_script_mode(cli_mode: Option<&str>) -> ScriptMode {
     }
 }
 
-async fn dispatch_file(file: &std::path::Path, options: RunOptions) -> ExitCode {
+async fn dispatch_file(
+    file: &std::path::Path,
+    options: RunOptions,
+    script_args: Vec<String>,
+) -> ExitCode {
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
         "yaml" | "yml" => run_yaml_checks(file).await,
-        "lua" => run_lua_script(file, options).await,
+        "lua" => run_lua_script(file, options, script_args).await,
         other => {
             eprintln!(
                 "error: unsupported file extension {other:?} (expected .yaml, .yml, or .lua)"
@@ -693,7 +704,11 @@ async fn run_yaml_checks(path: &std::path::Path) -> ExitCode {
     result.print()
 }
 
-async fn run_lua_script(path: &std::path::Path, options: RunOptions) -> ExitCode {
+async fn run_lua_script(
+    path: &std::path::Path,
+    options: RunOptions,
+    script_args: Vec<String>,
+) -> ExitCode {
     let script = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -705,12 +720,34 @@ async fn run_lua_script(path: &std::path::Path, options: RunOptions) -> ExitCode
     let script = lua::async_bridge::strip_shebang(&script);
 
     match options.mode {
-        ScriptMode::Script => run_lua_script_mode(path, script).await,
-        ScriptMode::Tool => run_lua_tool_mode(path, script, options.timeout_secs).await,
+        ScriptMode::Script => run_lua_script_mode(path, script, script_args).await,
+        ScriptMode::Tool => {
+            run_lua_tool_mode(path, script, options.timeout_secs, script_args).await
+        }
     }
 }
 
-async fn run_lua_script_mode(path: &std::path::Path, script: &str) -> ExitCode {
+/// Populate Lua's standard `arg` global from the trailing positional
+/// arguments we collected in `Commands::Run`. Mirrors stock `lua`:
+/// `arg[0]` is the script path, `arg[1..]` are the user-passed args.
+fn install_script_args(
+    vm: &mlua::Lua,
+    path: &std::path::Path,
+    script_args: &[String],
+) -> mlua::Result<()> {
+    let table = vm.create_table()?;
+    table.set(0, path.display().to_string())?;
+    for (i, a) in script_args.iter().enumerate() {
+        table.set(i as i64 + 1, a.as_str())?;
+    }
+    vm.globals().set("arg", table)
+}
+
+async fn run_lua_script_mode(
+    path: &std::path::Path,
+    script: &str,
+    script_args: Vec<String>,
+) -> ExitCode {
     info!(script = %path.display(), "starting assay (script mode)");
 
     let client = build_http_client();
@@ -722,6 +759,11 @@ async fn run_lua_script_mode(path: &std::path::Path, script: &str) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+
+    if let Err(e) = install_script_args(&vm, path, &script_args) {
+        eprintln!("error: installing arg global: {e}");
+        return ExitCode::from(1);
+    }
 
     let local = tokio::task::LocalSet::new();
     let result = local
@@ -742,7 +784,12 @@ async fn run_lua_script_mode(path: &std::path::Path, script: &str) -> ExitCode {
     }
 }
 
-async fn run_lua_tool_mode(path: &std::path::Path, script: &str, timeout_secs: u64) -> ExitCode {
+async fn run_lua_tool_mode(
+    path: &std::path::Path,
+    script: &str,
+    timeout_secs: u64,
+    script_args: Vec<String>,
+) -> ExitCode {
     info!(script = %path.display(), timeout_secs, "starting assay (tool mode)");
     let tool_script = format!("env.set(\"ASSAY_MODE\", \"tool\")\n{script}");
 
@@ -755,6 +802,11 @@ async fn run_lua_tool_mode(path: &std::path::Path, script: &str, timeout_secs: u
             return ExitCode::SUCCESS;
         }
     };
+
+    if let Err(e) = install_script_args(&vm, path, &script_args) {
+        emit_tool_error("error", format!("installing arg global: {e}"));
+        return ExitCode::SUCCESS;
+    }
 
     let local = tokio::task::LocalSet::new();
     let execution = local.run_until(async {

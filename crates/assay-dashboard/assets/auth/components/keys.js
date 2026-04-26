@@ -44,7 +44,7 @@ var AssayAuthKeys = (function () {
       } else {
         html += '<p class="auth-empty">' + ctx.escapeHtml((jwks && jwks.error) || 'unavailable') + '</p>';
       }
-      html += '<p class="auth-empty">Rotation is performed via the engine boot path or operator tooling — phase 8b surfaces the active material read-only.</p>';
+      html += '<p class="auth-empty">Rotation is currently controlled by the engine; this view is read-only.</p>';
       html += '</div>';
       wrap.innerHTML = html;
     } catch (err) {

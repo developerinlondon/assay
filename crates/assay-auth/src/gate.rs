@@ -161,7 +161,7 @@ pub async fn require_role(
         let subject = SubjectRef {
             subject_type: "user".to_string(),
             subject_id: caller.user_id.clone(),
-            subject_rel: None,
+            subject_rel: String::new(),
         };
         match store
             .check(&resource, permission, &subject, Consistency::Minimum)

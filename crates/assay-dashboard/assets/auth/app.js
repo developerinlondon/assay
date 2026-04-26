@@ -1,4 +1,4 @@
-/* Assay Auth Console — main controller (phase 8b)
+/* Assay Auth Console — main controller
  *
  * SPA shell that mirrors workflow's app.js shape: sidebar nav switches
  * the active view, each view module is a {render(el, ctx)} object that
