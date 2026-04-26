@@ -278,7 +278,7 @@ dependencies = [
 
 [[package]]
 name = "assay-dashboard"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "assay-domain",
  "axum",
@@ -308,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "assay-engine"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "assay-auth",
@@ -337,7 +337,7 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.14.2"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "axum",
