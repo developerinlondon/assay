@@ -10,7 +10,11 @@ static STDLIB_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/stdlib");
 /// Environment variable to override the global module search path.
 pub const MODULES_PATH_ENV: &str = "ASSAY_MODULES_PATH";
 
-const DANGEROUS_GLOBALS: &[&str] = &["load", "loadfile", "dofile"];
+/// Comma-separated list of additional globals to nil out at VM
+/// creation time (defense-in-depth knob for hardened deployments).
+/// Names support dotted paths into stdlib tables — e.g.
+/// `ASSAY_BLOCK_GLOBALS=dofile,os.execute,debug.getinfo`.
+pub const BLOCK_GLOBALS_ENV: &str = "ASSAY_BLOCK_GLOBALS";
 
 fn lua_err(e: mlua::Error) -> anyhow::Error {
     anyhow::anyhow!("{e}")
@@ -40,15 +44,48 @@ pub fn create_vm_with_paths(
 }
 
 fn sandbox(lua: &Lua) -> mlua::Result<()> {
+    // Block bytecode-level escape hatches only. Source-level loaders
+    // (`load` / `loadfile` / `dofile`) stay available — operator scripts
+    // are trusted to compose themselves out of multiple files (seed +
+    // init bootstraps, shared helpers, etc.). `string.dump` stays
+    // blocked because it produces native bytecode that defeats the
+    // memory/CPU caps the runtime relies on.
     let globals = lua.globals();
-    for name in DANGEROUS_GLOBALS {
-        globals.set(*name, mlua::Value::Nil)?;
-    }
-
     let string_lib: mlua::Table = globals.get("string")?;
     string_lib.set("dump", mlua::Value::Nil)?;
 
+    if let Ok(extra) = std::env::var(BLOCK_GLOBALS_ENV) {
+        for raw in extra.split(',') {
+            let name = raw.trim();
+            if name.is_empty() {
+                continue;
+            }
+            nil_dotted_path(lua, name)?;
+        }
+    }
+
     Ok(())
+}
+
+/// Resolve a dotted Lua path (e.g. `"os.execute"` or `"debug.getinfo"`)
+/// against globals and set the leaf to nil. A bare name (e.g.
+/// `"dofile"`) clears it from `_G`. Missing intermediate tables are
+/// silently skipped so a typo in `ASSAY_BLOCK_GLOBALS` doesn't fail
+/// VM creation.
+fn nil_dotted_path(lua: &Lua, path: &str) -> mlua::Result<()> {
+    let parts: Vec<&str> = path.split('.').filter(|s| !s.is_empty()).collect();
+    if parts.is_empty() {
+        return Ok(());
+    }
+    let mut current: mlua::Table = lua.globals();
+    for segment in &parts[..parts.len() - 1] {
+        let next: mlua::Value = current.get(*segment)?;
+        match next {
+            mlua::Value::Table(t) => current = t,
+            _ => return Ok(()),
+        }
+    }
+    current.set(parts[parts.len() - 1], mlua::Value::Nil)
 }
 
 fn register_stdlib_loader(lua: &Lua) -> mlua::Result<()> {

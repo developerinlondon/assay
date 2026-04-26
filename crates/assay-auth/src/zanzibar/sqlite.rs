@@ -157,14 +157,14 @@ impl ZanzibarStore for SqliteZanzibarStore {
     }
 
     async fn delete_tuple(&self, t: &Tuple) -> Result<bool> {
-        // SQLite's `IS` already treats NULL = NULL as true, so the
-        // delete uses `subject_rel IS ?` rather than the PG
-        // `IS NOT DISTINCT FROM`.
+        // subject_rel is NOT NULL ('' for direct), so plain equality
+        // works on both backends — no `IS` / `IS NOT DISTINCT FROM`
+        // dance needed.
         let res = sqlx::query(
             "DELETE FROM auth.zanzibar_tuples
              WHERE object_type = ? AND object_id = ? AND relation = ?
                AND subject_type = ? AND subject_id = ?
-               AND subject_rel IS ?",
+               AND subject_rel = ?",
         )
         .bind(&t.object_type)
         .bind(&t.object_id)
@@ -227,7 +227,7 @@ impl ZanzibarStore for SqliteZanzibarStore {
                 JOIN walk w
                   ON t.object_type = w.subject_type
                  AND t.object_id   = w.subject_id
-                 AND w.subject_rel IS NOT NULL
+                 AND w.subject_rel <> ''
                  AND t.relation = w.subject_rel
                 WHERE w.depth < ?4
                   AND instr(w.path, '|' || t.subject_type || ':' || t.subject_id || '|') = 0
@@ -235,7 +235,7 @@ impl ZanzibarStore for SqliteZanzibarStore {
             SELECT CASE
                 WHEN EXISTS (
                     SELECT 1 FROM walk
-                    WHERE subject_type = ?5 AND subject_id = ?6 AND subject_rel IS NULL
+                    WHERE subject_type = ?5 AND subject_id = ?6 AND subject_rel = ''
                 ) THEN 1
                 WHEN EXISTS (SELECT 1 FROM walk WHERE depth >= ?4) THEN 2
                 ELSE 0
@@ -356,14 +356,14 @@ impl ZanzibarStore for SqliteZanzibarStore {
                 JOIN walk w
                   ON t.object_type = w.subject_type
                  AND t.object_id   = w.subject_id
-                 AND w.subject_rel IS NOT NULL
+                 AND w.subject_rel <> ''
                  AND t.relation = w.subject_rel
                 WHERE w.depth < ?4
                   AND instr(w.path, '|' || t.subject_type || ':' || t.subject_id || '|') = 0
             )
             SELECT DISTINCT subject_type, subject_id
             FROM walk
-            WHERE subject_type = ?5 AND subject_rel IS NULL
+            WHERE subject_type = ?5 AND subject_rel = ''
             "#,
         )
         .bind(&resource.object_type)
@@ -421,28 +421,26 @@ fn expand_sqlite<'a>(
         for row in rows {
             let st: String = row.get("subject_type");
             let sid: String = row.get("subject_id");
-            let sr: Option<String> = row.get("subject_rel");
-            match sr {
-                None => children.push(UsersetTree::Leaf {
+            let sr: String = row.get("subject_rel");
+            if sr.is_empty() {
+                children.push(UsersetTree::Leaf {
                     subject: SubjectRef::direct(st, sid),
-                }),
-                Some(r) => {
-                    let inner_resource = ObjectRef::new(st.clone(), sid.clone());
-                    let sub =
-                        expand_sqlite(store, &inner_resource, &r, depth - 1, seen).await?;
-                    children.push(UsersetTree::Node {
-                        op: TreeOp::TuplesetArrow,
-                        children: vec![
-                            UsersetTree::Leaf {
-                                subject: SubjectRef::userset(st, sid, r),
-                            },
-                            UsersetTree::Node {
-                                op: TreeOp::Direct,
-                                children: sub,
-                            },
-                        ],
-                    });
-                }
+                });
+            } else {
+                let inner_resource = ObjectRef::new(st.clone(), sid.clone());
+                let sub = expand_sqlite(store, &inner_resource, &sr, depth - 1, seen).await?;
+                children.push(UsersetTree::Node {
+                    op: TreeOp::TuplesetArrow,
+                    children: vec![
+                        UsersetTree::Leaf {
+                            subject: SubjectRef::userset(st, sid, sr.clone()),
+                        },
+                        UsersetTree::Node {
+                            op: TreeOp::Direct,
+                            children: sub,
+                        },
+                    ],
+                });
             }
         }
         Ok(children)

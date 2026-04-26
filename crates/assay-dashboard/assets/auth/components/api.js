@@ -1,4 +1,4 @@
-/* Assay Auth Console — shared API client (phase 8b)
+/* Assay Auth Console — shared API client
  *
  * Wraps fetch() with the admin Bearer token and JSON helpers. Every
  * call returns a Promise that resolves to the parsed JSON body or

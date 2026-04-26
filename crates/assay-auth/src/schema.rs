@@ -159,12 +159,15 @@ CREATE INDEX IF NOT EXISTS idx_auth_biscuit_root_keys_active
 ///   `(subject_type, subject_id, relation)` for reverse lookups
 ///   (`lookup_resources`, expand-from-subject paths).
 ///
-/// `subject_rel` is `TEXT NULL` because direct subjects (e.g. a user)
-/// have no relation, while userset subjects (e.g. `family:foo#member`)
-/// carry one. PG treats NULL as distinct in PK comparisons, so the PK
-/// alone is *not* a uniqueness guarantee for direct tuples — paired
-/// with a partial unique index on the NULL case to get the same
-/// dedup behaviour the SpiceDB schema mandates.
+/// `subject_rel` is `TEXT NOT NULL DEFAULT ''`. Direct subjects
+/// (e.g. `user:alice`) store an empty string; userset subjects
+/// (e.g. `family:foo#member`) store the relation name. The empty-
+/// string sentinel lets the column stay in the primary key without
+/// the NULL-distinctness pitfall that bit the original schema (PG
+/// implicitly NOT-NULLs all PK columns, so any insert with NULL
+/// hard-failed even though the surrounding code paths treated NULL
+/// as the encoding for "direct subject"). The PK alone now enforces
+/// uniqueness for both arms.
 pub const PG_DDL_V3: &str = r#"
 CREATE TABLE IF NOT EXISTS auth.zanzibar_namespaces (
     name        TEXT PRIMARY KEY,
@@ -178,15 +181,12 @@ CREATE TABLE IF NOT EXISTS auth.zanzibar_tuples (
     relation     TEXT NOT NULL,
     subject_type TEXT NOT NULL,
     subject_id   TEXT NOT NULL,
-    subject_rel  TEXT,
+    subject_rel  TEXT NOT NULL DEFAULT '',
     created_at   DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
     PRIMARY KEY (object_type, object_id, relation, subject_type, subject_id, subject_rel)
 );
 CREATE INDEX IF NOT EXISTS idx_auth_zanzibar_tuples_rev
     ON auth.zanzibar_tuples (subject_type, subject_id, relation);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_zanzibar_tuples_direct
-    ON auth.zanzibar_tuples (object_type, object_id, relation, subject_type, subject_id)
-    WHERE subject_rel IS NULL;
 "#;
 
 /// Postgres DDL for the auth schema, version 4 — full OIDC provider.
@@ -420,10 +420,10 @@ pub const SQLITE_DDL_V2: &[(&str, &str)] = &[
 /// double, so the SQLite store binds the timestamp explicitly on
 /// every insert (matches the rest of the auth schema's discipline).
 ///
-/// Treats `subject_rel` exactly as PG does: NULL for direct subjects,
-/// some relation name for usersets. SQLite considers two NULL values
-/// distinct in `PRIMARY KEY` comparisons just like PG, so the partial
-/// unique index reproduces the same dedup semantics.
+/// Treats `subject_rel` exactly as PG does: empty string for direct
+/// subjects, relation name for usersets. The empty-string sentinel
+/// avoids the NULL-vs-PK-NOT-NULL conflict the original schema had
+/// (see PG DDL note above).
 pub const SQLITE_DDL_V3: &[(&str, &str)] = &[
     (
         "zanzibar_namespaces",
@@ -441,7 +441,7 @@ pub const SQLITE_DDL_V3: &[(&str, &str)] = &[
             relation     TEXT NOT NULL,
             subject_type TEXT NOT NULL,
             subject_id   TEXT NOT NULL,
-            subject_rel  TEXT,
+            subject_rel  TEXT NOT NULL DEFAULT '',
             created_at   REAL NOT NULL,
             PRIMARY KEY (object_type, object_id, relation, subject_type, subject_id, subject_rel)
         )",
@@ -450,12 +450,6 @@ pub const SQLITE_DDL_V3: &[(&str, &str)] = &[
         "idx_zanzibar_tuples_rev",
         "CREATE INDEX IF NOT EXISTS auth.idx_auth_zanzibar_tuples_rev \
          ON zanzibar_tuples (subject_type, subject_id, relation)",
-    ),
-    (
-        "uq_zanzibar_tuples_direct",
-        "CREATE UNIQUE INDEX IF NOT EXISTS auth.uq_auth_zanzibar_tuples_direct \
-         ON zanzibar_tuples (object_type, object_id, relation, subject_type, subject_id) \
-         WHERE subject_rel IS NULL",
     ),
 ];
 
