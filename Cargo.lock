@@ -391,6 +391,7 @@ dependencies = [
  "assay-domain",
  "async-trait",
  "axum",
+ "biscuit-auth",
  "chrono",
  "data-encoding",
  "parking_lot",

@@ -40,7 +40,7 @@ vault = [
 vault-kv = []
 vault-transit = []
 vault-collections = []
-vault-share = []
+vault-share = ["dep:biscuit-auth"]
 vault-sealing-shamir = ["dep:sharks"]
 vault-sealing-kms = []
 # Opt-in: requires a PKCS#11 device and the `cryptoki` dep. Phase 2
@@ -87,6 +87,11 @@ sha2 = "0.10"
 # Shamir Secret Sharing for the init-unseal flow (plan 17 §S7).
 # Galois-field-256 SSS, pure Rust, audited. ~50 KB on disk.
 sharks = { version = "0.5", optional = true }
+
+# Biscuit capability tokens for share-link semantics (plan 17 §S5).
+# Already in the workspace via assay-auth; gated here on `vault-share`
+# so a slim build without share links doesn't link biscuit twice.
+biscuit-auth = { version = "6", optional = true }
 
 # HTTP layer — axum 0.8, the version every other engine module already
 # uses. assay-auth is in tree, so its types (AdminApiKeys) come from

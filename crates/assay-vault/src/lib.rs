@@ -63,6 +63,9 @@ pub mod collections;
 #[cfg(feature = "vault-collections")]
 pub mod items;
 
+#[cfg(feature = "vault-share")]
+pub mod share;
+
 pub mod router;
 
 #[cfg(any(feature = "backend-postgres", feature = "backend-sqlite"))]

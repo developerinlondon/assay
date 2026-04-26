@@ -201,11 +201,31 @@ CREATE TABLE IF NOT EXISTS vault.folders (
 );
 
 -- ── S5: biscuit share revocations ─────────────────────────────────
+-- Stores the biscuit revocation identifier (one per block, returned by
+-- `Biscuit::revocation_identifiers()`). Verifiers compare every block's
+-- ID against this table; any match → token rejected. Per plan
+-- §"Open questions", the vault uses its OWN biscuit root key (table
+-- below) so a compromise of the auth biscuit root doesn't grant share-
+-- token forging power.
 CREATE TABLE IF NOT EXISTS vault.share_revoked (
     key_id       TEXT PRIMARY KEY,
     revoked_at   DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
     reason       TEXT NOT NULL DEFAULT ''
 );
+
+-- ── S5: vault-side biscuit root keypair ──────────────────────────
+-- Active row has the most recent created_at AND rotated_at IS NULL.
+-- History rows kept so previously-issued tokens still verify until
+-- they expire or hit the revocation list.
+CREATE TABLE IF NOT EXISTS vault.biscuit_root_keys (
+    kid             TEXT PRIMARY KEY,
+    private_pem     BYTEA NOT NULL,
+    public_pem      TEXT NOT NULL,
+    created_at      DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
+    rotated_at      DOUBLE PRECISION
+);
+CREATE INDEX IF NOT EXISTS idx_vault_biscuit_root_active
+    ON vault.biscuit_root_keys (rotated_at) WHERE rotated_at IS NULL;
 
 -- ── S7: sealing — KEK metadata + Shamir SSS shares ───────────────
 -- The active KEK is the row with the most recent `created_at`. KEK
@@ -435,6 +455,21 @@ pub const SQLITE_DDL_V1: &[(&str, &str)] = &[
             revoked_at   REAL NOT NULL,
             reason       TEXT NOT NULL DEFAULT ''
         )",
+    ),
+    (
+        "biscuit_root_keys",
+        "CREATE TABLE IF NOT EXISTS vault.biscuit_root_keys (
+            kid             TEXT PRIMARY KEY,
+            private_pem     BLOB NOT NULL,
+            public_pem      TEXT NOT NULL,
+            created_at      REAL NOT NULL,
+            rotated_at      REAL
+        )",
+    ),
+    (
+        "idx_biscuit_root_active",
+        "CREATE INDEX IF NOT EXISTS vault.idx_vault_biscuit_root_active \
+         ON biscuit_root_keys (rotated_at) WHERE rotated_at IS NULL",
     ),
     // ── S7: sealing ──────────────────────────────────────────────
     (
