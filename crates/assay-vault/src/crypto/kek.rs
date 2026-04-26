@@ -130,7 +130,7 @@ impl KekHandle {
 /// short enough to grep for in logs. The hash uses a domain-separation
 /// label so pre-image attacks against unrelated SHA-256 outputs don't
 /// transfer.
-fn mint_kid(key: &[u8; KEY_LEN]) -> String {
+pub(crate) fn mint_kid(key: &[u8; KEY_LEN]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(b"assay-vault/kek-kid/v1");

@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::crypto::aead::{decrypt, encrypt, random_dek, random_nonce};
-use crate::crypto::kek::{KekHandle, WrappedDek};
+use crate::crypto::kek::WrappedDek;
 use crate::error::{Result, VaultError};
 
 /// One stored version of a KV path. Returned by store-layer reads.
@@ -111,17 +111,21 @@ pub struct KvRead {
     pub created_at: f64,
 }
 
-/// High-level KV API. Wraps a store + the active KEK handle. Cheap to
-/// clone — store impls are `Arc<dyn KvStore>` underneath.
+/// High-level KV API. Wraps a store + the live sealing state. Cheap to
+/// clone — store impls are `Arc<dyn KvStore>` underneath; `SealState`
+/// is itself an `Arc`-shared inner. Every crypto op fetches the active
+/// [`KekHandle`] via [`crate::crypto::seal_state::SealState::require_unsealed`],
+/// which fails closed with [`VaultError::Sealed`] when the vault is
+/// sealed.
 #[derive(Clone)]
 pub struct KvService<S: KvStore> {
     store: S,
-    kek: KekHandle,
+    seal_state: crate::crypto::seal_state::SealState,
 }
 
 impl<S: KvStore> KvService<S> {
-    pub fn new(store: S, kek: KekHandle) -> Self {
-        Self { store, kek }
+    pub fn new(store: S, seal_state: crate::crypto::seal_state::SealState) -> Self {
+        Self { store, seal_state }
     }
 
     /// Borrow the underlying store — useful for admin paths that need
@@ -130,9 +134,9 @@ impl<S: KvStore> KvService<S> {
         &self.store
     }
 
-    /// Active KEK kid — recorded in every row this service writes.
-    pub fn kek_kid(&self) -> &str {
-        self.kek.kid()
+    /// Active KEK kid (when unsealed). Returns `None` while sealed.
+    pub fn kek_kid(&self) -> Option<String> {
+        self.seal_state.require_unsealed().ok().map(|h| h.kid().to_string())
     }
 
     /// Encrypt and store a new version of `path`. Returns the allocated
@@ -145,11 +149,12 @@ impl<S: KvStore> KvService<S> {
         custom_md: Value,
     ) -> Result<i64> {
         validate_path(path)?;
+        let kek = self.seal_state.require_unsealed()?;
         let dek = random_dek();
         let nonce = random_nonce();
         let aad = path_aad(path);
         let ciphertext = encrypt(&dek, &nonce, &aad, plaintext)?;
-        let wrapped = self.kek.wrap_dek(&dek)?;
+        let wrapped = kek.wrap_dek(&dek)?;
         let version = self
             .store
             .put_row(
@@ -157,7 +162,7 @@ impl<S: KvStore> KvService<S> {
                 &ciphertext,
                 &nonce,
                 wrapped.as_bytes(),
-                self.kek.kid(),
+                kek.kid(),
                 &custom_md,
             )
             .await?;
@@ -170,6 +175,7 @@ impl<S: KvStore> KvService<S> {
     /// so the caller can choose to surface "this secret was deleted".
     pub async fn get(&self, path: &str, version: Option<i64>) -> Result<KvRead> {
         validate_path(path)?;
+        let kek = self.seal_state.require_unsealed()?;
         let row = match version {
             Some(v) => self.store.get_row(path, v).await?,
             None => self.store.get_latest_row(path).await?,
@@ -178,19 +184,18 @@ impl<S: KvStore> KvService<S> {
         if row.destroyed {
             return Err(VaultError::NotFound);
         }
-        if row.kek_kid != self.kek.kid() {
-            // Phase 1 hasn't shipped KEK rotation yet, so this branch
-            // is unreachable in normal operation. Phase 2 lands the
-            // re-wrap path; for now refuse rather than silently fail.
+        if row.kek_kid != kek.kid() {
+            // Row was wrapped under a different KEK kid than the
+            // currently-active one. KEK rotation (Phase 2 follow-up)
+            // re-wraps every DEK; until that ships, refuse rather than
+            // silently fail.
             return Err(VaultError::Crypto(format!(
                 "row encrypted with KEK {kid} but service active KEK is {active}",
                 kid = row.kek_kid,
-                active = self.kek.kid()
+                active = kek.kid()
             )));
         }
-        let dek = self
-            .kek
-            .unwrap_dek(&WrappedDek::from_bytes(row.wrapped_dek.clone()))?;
+        let dek = kek.unwrap_dek(&WrappedDek::from_bytes(row.wrapped_dek.clone()))?;
         let aad = path_aad(&row.path);
         let mut nonce = [0u8; 12];
         if row.nonce.len() != nonce.len() {

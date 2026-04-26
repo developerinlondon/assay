@@ -6,6 +6,8 @@
 
 #![cfg(all(feature = "backend-sqlite", feature = "vault-kv"))]
 
+use assay_vault::crypto::seal_state::SealState;
+use assay_vault::crypto::sealing::SealingMethod;
 use assay_vault::store::sqlite::SqliteKvStore;
 use assay_vault::{KekHandle, KvService};
 use serde_json::json;
@@ -59,7 +61,10 @@ async fn boot_pool() -> SqlitePool {
 }
 
 fn service(pool: SqlitePool) -> KvService<SqliteKvStore> {
-    KvService::new(SqliteKvStore::new(pool), KekHandle::generate_ephemeral())
+    let kek = KekHandle::generate_ephemeral();
+    let seal_state =
+        SealState::unsealed(SealingMethod::Plaintext, kek.kid().to_string(), kek);
+    KvService::new(SqliteKvStore::new(pool), seal_state)
 }
 
 #[tokio::test]

@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::aead::{decrypt, encrypt, random_dek, random_nonce, NONCE_LEN};
-use crate::crypto::kek::{KekHandle, WrappedDek};
+use crate::crypto::kek::WrappedDek;
 use crate::error::{Result, VaultError};
 
 /// Per-key metadata.
@@ -77,16 +77,19 @@ pub trait TransitStore: Send + Sync + 'static {
     async fn list_keys(&self) -> Result<Vec<TransitKey>>;
 }
 
-/// High-level transit API. Cheap to clone.
+/// High-level transit API. Cheap to clone. Defers to the live
+/// [`crate::crypto::seal_state::SealState`] for KEK access — every
+/// crypto op fails closed with [`VaultError::Sealed`] when the vault
+/// is sealed.
 #[derive(Clone)]
 pub struct TransitService<S: TransitStore> {
     store: S,
-    kek: KekHandle,
+    seal_state: crate::crypto::seal_state::SealState,
 }
 
 impl<S: TransitStore> TransitService<S> {
-    pub fn new(store: S, kek: KekHandle) -> Self {
-        Self { store, kek }
+    pub fn new(store: S, seal_state: crate::crypto::seal_state::SealState) -> Self {
+        Self { store, seal_state }
     }
 
     pub fn store(&self) -> &S {
@@ -98,11 +101,12 @@ impl<S: TransitStore> TransitService<S> {
     /// uses AES-256-GCM-SIV regardless of the value.
     pub async fn create_key(&self, name: &str, algo: Option<&str>) -> Result<()> {
         validate_name(name)?;
+        let kek = self.seal_state.require_unsealed()?;
         let dek = random_dek();
-        let wrapped = self.kek.wrap_dek(&dek)?;
+        let wrapped = kek.wrap_dek(&dek)?;
         let algo = algo.unwrap_or("aes256-gcm-siv");
         self.store
-            .create_key(name, algo, wrapped.as_bytes(), self.kek.kid())
+            .create_key(name, algo, wrapped.as_bytes(), kek.kid())
             .await?;
         Ok(())
     }
@@ -111,12 +115,13 @@ impl<S: TransitStore> TransitService<S> {
     /// Returns the wire-format ciphertext (`vault:vN:b64...`).
     pub async fn encrypt(&self, name: &str, plaintext: &[u8]) -> Result<String> {
         validate_name(name)?;
+        let kek = self.seal_state.require_unsealed()?;
         let v = self
             .store
             .get_latest_version(name)
             .await?
             .ok_or(VaultError::NotFound)?;
-        let dek = self.unwrap_version(&v)?;
+        let dek = unwrap_version(&kek, &v)?;
         let nonce = random_nonce();
         let aad = aad_for(name, v.version);
         let ct = encrypt(&dek, &nonce, &aad, plaintext)?;
@@ -128,13 +133,14 @@ impl<S: TransitStore> TransitService<S> {
     /// current latest), and runs AEAD-decrypt.
     pub async fn decrypt(&self, name: &str, envelope: &str) -> Result<Vec<u8>> {
         validate_name(name)?;
+        let kek = self.seal_state.require_unsealed()?;
         let parts = parse_envelope(envelope)?;
         let v = self
             .store
             .get_version(name, parts.version)
             .await?
             .ok_or(VaultError::NotFound)?;
-        let dek = self.unwrap_version(&v)?;
+        let dek = unwrap_version(&kek, &v)?;
         let aad = aad_for(name, parts.version);
         decrypt(&dek, &parts.nonce, &aad, &parts.ciphertext)
     }
@@ -142,30 +148,33 @@ impl<S: TransitStore> TransitService<S> {
     /// Append a new version to `name`. Returns the new version number.
     pub async fn rotate(&self, name: &str) -> Result<i64> {
         validate_name(name)?;
+        let kek = self.seal_state.require_unsealed()?;
         let dek = random_dek();
-        let wrapped = self.kek.wrap_dek(&dek)?;
+        let wrapped = kek.wrap_dek(&dek)?;
         self.store
-            .rotate(name, wrapped.as_bytes(), self.kek.kid())
+            .rotate(name, wrapped.as_bytes(), kek.kid())
             .await
     }
 
     pub async fn list_keys(&self) -> Result<Vec<TransitKey>> {
         self.store.list_keys().await
     }
+}
 
-    fn unwrap_version(&self, v: &TransitVersion) -> Result<[u8; 32]> {
-        if v.kek_kid != self.kek.kid() {
-            return Err(VaultError::Crypto(format!(
-                "transit version {name}/v{ver} encrypted with KEK {kid} but service active KEK is {active}",
-                name = v.name,
-                ver = v.version,
-                kid = v.kek_kid,
-                active = self.kek.kid()
-            )));
-        }
-        self.kek
-            .unwrap_dek(&WrappedDek::from_bytes(v.key_wrapped.clone()))
+fn unwrap_version(
+    kek: &crate::crypto::kek::KekHandle,
+    v: &TransitVersion,
+) -> Result<[u8; 32]> {
+    if v.kek_kid != kek.kid() {
+        return Err(VaultError::Crypto(format!(
+            "transit version {name}/v{ver} encrypted with KEK {kid} but service active KEK is {active}",
+            name = v.name,
+            ver = v.version,
+            kid = v.kek_kid,
+            active = kek.kid()
+        )));
     }
+    kek.unwrap_dek(&WrappedDek::from_bytes(v.key_wrapped.clone()))
 }
 
 /// Bind name + version into the AEAD AAD. A cipher decrypted under the

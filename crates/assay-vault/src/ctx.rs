@@ -13,6 +13,8 @@
 
 use std::sync::Arc;
 
+use crate::crypto::seal_state::SealState;
+use crate::crypto::sealing::SealingMethod;
 use crate::crypto::KekHandle;
 
 #[cfg(feature = "vault-kv")]
@@ -25,9 +27,18 @@ use crate::transit::{TransitService, TransitStore};
 /// `Arc`-shared underneath the type-erased trait object.
 #[derive(Clone)]
 pub struct VaultCtx {
-    /// Master KEK handle. Always present; engine boot loads it from
-    /// `vault.kek_metadata` (or seeds a fresh one on first boot).
+    /// Master KEK handle. Always present so KV / transit services can
+    /// hold a clone — but the live sealing state in `seal_state`
+    /// gates whether the handle is "trusted active" or stale (sealed).
+    /// Per-request handlers MUST consult `seal_state.require_unsealed()`
+    /// before touching key material.
     pub kek: KekHandle,
+    /// Runtime sealing state. Phase 2 introduces this; the engine boot
+    /// path wires it from `vault.kek_metadata`. For first-boot /
+    /// plaintext deployments it starts unsealed; for shamir-sealed
+    /// installations it starts sealed and an operator must call
+    /// `/sys/unseal` to bring it up.
+    pub seal_state: SealState,
     #[cfg(feature = "vault-kv")]
     pub kv: Option<KvService<DynKvStore>>,
     #[cfg(feature = "vault-transit")]
@@ -36,8 +47,15 @@ pub struct VaultCtx {
 
 impl Default for VaultCtx {
     fn default() -> Self {
+        let kek = KekHandle::generate_ephemeral();
+        let seal_state = SealState::unsealed(
+            SealingMethod::Plaintext,
+            kek.kid().to_string(),
+            kek.clone(),
+        );
         Self {
-            kek: KekHandle::generate_ephemeral(),
+            kek,
+            seal_state,
             #[cfg(feature = "vault-kv")]
             kv: None,
             #[cfg(feature = "vault-transit")]
@@ -55,23 +73,47 @@ impl VaultCtx {
     }
 
     /// Construct from an explicit KEK handle. Engine boot calls this
-    /// after `crypto::kek_store::load_or_init_*` returns.
+    /// after `crypto::kek_store::load_or_init_*` returns. Initialises
+    /// the seal state to `unsealed` with method = Plaintext (Phase-1
+    /// shape). For shamir installs use [`Self::with_sealed_shamir`].
     pub fn with_kek(mut self, kek: KekHandle) -> Self {
+        let seal_state = SealState::unsealed(
+            SealingMethod::Plaintext,
+            kek.kid().to_string(),
+            kek.clone(),
+        );
         self.kek = kek;
+        self.seal_state = seal_state;
+        self
+    }
+
+    /// Phase-2 builder: vault starts sealed; operator must submit
+    /// shares via `/sys/unseal` to bring it up. The KEK held on the
+    /// ctx is a placeholder until then — handlers must check
+    /// `seal_state.require_unsealed()` before using it.
+    pub fn with_sealed_shamir(mut self, kid: String, threshold: u8, shares_count: u8) -> Self {
+        self.seal_state = SealState::sealed_shamir(kid, threshold, shares_count);
+        self
+    }
+
+    /// Replace the seal state explicitly — engine boot uses this when
+    /// a unified loader builds the state from `vault.kek_metadata`.
+    pub fn with_seal_state(mut self, seal_state: SealState) -> Self {
+        self.seal_state = seal_state;
         self
     }
 
     #[cfg(feature = "vault-kv")]
     pub fn with_kv<S: KvStore + 'static>(mut self, store: S) -> Self {
         let store: DynKvStore = Arc::new(store);
-        self.kv = Some(KvService::new(store, self.kek.clone()));
+        self.kv = Some(KvService::new(store, self.seal_state.clone()));
         self
     }
 
     #[cfg(feature = "vault-transit")]
     pub fn with_transit<S: TransitStore + 'static>(mut self, store: S) -> Self {
         let store: DynTransitStore = Arc::new(store);
-        self.transit = Some(TransitService::new(store, self.kek.clone()));
+        self.transit = Some(TransitService::new(store, self.seal_state.clone()));
         self
     }
 }

@@ -17,6 +17,7 @@ use crate::ctx::VaultCtx;
 
 #[cfg(feature = "vault-kv")]
 mod kv;
+mod sys;
 #[cfg(feature = "vault-transit")]
 mod transit;
 
@@ -30,7 +31,7 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    let mut r = Router::new();
+    let mut r = Router::new().merge(sys::router::<S>());
     #[cfg(feature = "vault-kv")]
     {
         r = r.merge(kv::router::<S>());

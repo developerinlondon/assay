@@ -279,4 +279,69 @@ async fn engine_smoke_sqlite() {
         .decode(body["plaintext_b64"].as_str().unwrap().as_bytes())
         .unwrap();
     assert_eq!(decoded, plaintext);
+
+    // ── /api/v1/vault/sys/seal-status ─────────────────────────────────
+    // Phase 2 sealing: status reflects unsealed (plaintext-method,
+    // first-boot path), `sealed = false`.
+    let r = client
+        .get(engine.url("/api/v1/vault/sys/seal-status"))
+        .header("Authorization", admin_bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["sealed"], false);
+    assert_eq!(body["method"], "plaintext");
+
+    // ── /api/v1/vault/sys/seal — fail-closed semantics ────────────────
+    let r = client
+        .post(engine.url("/api/v1/vault/sys/seal"))
+        .header("Authorization", admin_bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204, "seal should return 204");
+
+    // After sealing, KV + transit ops must surface 503 / Sealed.
+    let r = client
+        .put(engine.url("/api/v1/vault/kv/api/post-seal"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({ "data": "should-be-rejected" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r.status(),
+        503,
+        "PUT after seal must fail-closed with 503; got {}",
+        r.status()
+    );
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["error"], "sealed");
+
+    let r = client
+        .post(engine.url("/api/v1/vault/transit/encrypt/logs"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({ "plaintext_b64": "Zm9v" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r.status(),
+        503,
+        "transit encrypt after seal must fail-closed; got {}",
+        r.status()
+    );
+
+    // Status should now report sealed = true.
+    let r = client
+        .get(engine.url("/api/v1/vault/sys/seal-status"))
+        .header("Authorization", admin_bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["sealed"], true);
 }

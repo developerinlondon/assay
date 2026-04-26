@@ -22,6 +22,24 @@ use crate::crypto::kek::KekHandle;
 
 /// Sealing method — the column value in `vault.kek_metadata`.
 pub const METHOD_PLAINTEXT: &str = "plaintext";
+pub const METHOD_SHAMIR: &str = "shamir";
+
+/// Outcome of [`load_active_*`] — fully describes the at-rest state so
+/// engine boot can construct the right [`crate::crypto::seal_state::SealState`].
+pub enum ActiveKek {
+    /// Plaintext sealing (Phase 1 placeholder). The KEK is in memory.
+    Plaintext { kid: String, handle: KekHandle },
+    /// Shamir-sealed. The engine cannot use the vault until the
+    /// operator submits `threshold` shares.
+    Shamir {
+        kid: String,
+        threshold: u8,
+        shares_count: u8,
+    },
+}
+
+#[cfg(feature = "vault-sealing-shamir")]
+use crate::crypto::sealing::shamir::{split_kek, Share};
 
 /// Load the active KEK or generate one on first boot.
 ///
@@ -113,8 +131,8 @@ pub async fn load_or_init_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<KekH
 fn parse_plaintext_blob(method: &str, blob: &[u8]) -> anyhow::Result<[u8; KEY_LEN]> {
     if method != METHOD_PLAINTEXT {
         anyhow::bail!(
-            "vault.kek_metadata.sealing_method = '{method}' is not supported in Phase 1; \
-             Phase 2 ships shamir / kms / hsm sealing"
+            "parse_plaintext_blob called for sealing_method = '{method}'; \
+             this is a code bug — non-plaintext methods take a different code path"
         );
     }
     if blob.len() != KEY_LEN {
@@ -126,6 +144,233 @@ fn parse_plaintext_blob(method: &str, blob: &[u8]) -> anyhow::Result<[u8; KEY_LE
     let mut key = [0u8; KEY_LEN];
     key.copy_from_slice(blob);
     Ok(key)
+}
+
+/// Read the active row from `vault.kek_metadata`, returning the parsed
+/// state. Phase-2 entrypoint that distinguishes plaintext from
+/// shamir-sealed installations. Caller hands the result to
+/// [`crate::crypto::seal_state::SealState`] to build the runtime state.
+#[cfg(feature = "backend-sqlite")]
+pub async fn load_active_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<Option<ActiveKek>> {
+    let row: Option<(String, String, Vec<u8>, Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT kid, sealing_method, sealed_blob, share_threshold, share_count
+           FROM vault.kek_metadata
+          ORDER BY created_at DESC
+          LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .context("read vault.kek_metadata")?;
+
+    let Some((kid, method, blob, threshold, shares_count)) = row else {
+        return Ok(None);
+    };
+    match method.as_str() {
+        METHOD_PLAINTEXT => {
+            let key = parse_plaintext_blob(&method, &blob)
+                .with_context(|| format!("unwrap plaintext KEK kid={kid}"))?;
+            warn_if_plaintext(&kid, &method);
+            Ok(Some(ActiveKek::Plaintext {
+                kid: kid.clone(),
+                handle: KekHandle::from_bytes(kid, key),
+            }))
+        }
+        METHOD_SHAMIR => {
+            let threshold = threshold.ok_or_else(|| {
+                anyhow::anyhow!("shamir-sealed kid={kid} missing share_threshold")
+            })? as u8;
+            let shares_count = shares_count.ok_or_else(|| {
+                anyhow::anyhow!("shamir-sealed kid={kid} missing share_count")
+            })? as u8;
+            Ok(Some(ActiveKek::Shamir {
+                kid,
+                threshold,
+                shares_count,
+            }))
+        }
+        other => anyhow::bail!(
+            "vault.kek_metadata.sealing_method = '{other}' is not yet supported; \
+             current build handles plaintext + shamir"
+        ),
+    }
+}
+
+#[cfg(feature = "backend-postgres")]
+pub async fn load_active_postgres(pool: &sqlx::PgPool) -> anyhow::Result<Option<ActiveKek>> {
+    let row: Option<(String, String, Vec<u8>, Option<i32>, Option<i32>)> = sqlx::query_as(
+        "SELECT kid, sealing_method, sealed_blob, share_threshold, share_count
+           FROM vault.kek_metadata
+          ORDER BY created_at DESC
+          LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .context("read vault.kek_metadata")?;
+
+    let Some((kid, method, blob, threshold, shares_count)) = row else {
+        return Ok(None);
+    };
+    match method.as_str() {
+        METHOD_PLAINTEXT => {
+            let key = parse_plaintext_blob(&method, &blob)
+                .with_context(|| format!("unwrap plaintext KEK kid={kid}"))?;
+            warn_if_plaintext(&kid, &method);
+            Ok(Some(ActiveKek::Plaintext {
+                kid: kid.clone(),
+                handle: KekHandle::from_bytes(kid, key),
+            }))
+        }
+        METHOD_SHAMIR => {
+            let threshold = threshold.ok_or_else(|| {
+                anyhow::anyhow!("shamir-sealed kid={kid} missing share_threshold")
+            })? as u8;
+            let shares_count = shares_count.ok_or_else(|| {
+                anyhow::anyhow!("shamir-sealed kid={kid} missing share_count")
+            })? as u8;
+            Ok(Some(ActiveKek::Shamir {
+                kid,
+                threshold,
+                shares_count,
+            }))
+        }
+        other => anyhow::bail!(
+            "vault.kek_metadata.sealing_method = '{other}' is not yet supported; \
+             current build handles plaintext + shamir"
+        ),
+    }
+}
+
+/// Init a fresh Shamir-sealed KEK. Generates 32 random bytes, splits
+/// them into `shares_count` Shamir shares (any `threshold` reconstruct),
+/// persists the metadata row with `sealed_blob = ''`, and returns the
+/// shares to the operator. The shares are returned ONCE — the engine
+/// does not retain a copy. Operators MUST distribute and store them
+/// securely (typically among trusted humans).
+///
+/// Returns the new kid + the raw share bytes. Each share is the binary
+/// `sharks::Share` representation; operators submit these verbatim to
+/// `/sys/unseal`.
+///
+/// The caller is responsible for clearing prior `kek_metadata` rows
+/// when rotating from plaintext sealing — Phase 2 ships init-from-empty
+/// and init-replacing-plaintext only; cross-method KEK rotation
+/// (re-wrapping every existing DEK to the new KEK) lands later.
+#[cfg(all(feature = "backend-sqlite", feature = "vault-sealing-shamir"))]
+pub async fn init_shamir_sqlite(
+    pool: &sqlx::SqlitePool,
+    threshold: u8,
+    shares_count: u8,
+) -> anyhow::Result<(String, Vec<Share>)> {
+    if threshold == 0 || shares_count == 0 || threshold > shares_count {
+        anyhow::bail!("invalid shamir params: threshold={threshold}, shares_count={shares_count}");
+    }
+    let key = random_dek();
+    let kid = content_addressed_kid(&key);
+    let shares = split_kek(&key, threshold, shares_count)
+        .map_err(|e| anyhow::anyhow!("split_kek: {e}"))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+    sqlx::query(
+        "INSERT INTO vault.kek_metadata
+            (kid, sealing_method, sealed, sealed_blob, share_threshold, share_count, sealed_at, unsealed_at, created_at)
+         VALUES (?, ?, 0, x'', ?, ?, NULL, ?, ?)",
+    )
+    .bind(&kid)
+    .bind(METHOD_SHAMIR)
+    .bind(threshold as i64)
+    .bind(shares_count as i64)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await
+    .context("insert shamir kek_metadata row")?;
+    tracing::info!(
+        target: "assay-vault",
+        kid = %kid, threshold, shares_count,
+        "vault sealed with shamir; operator must store the returned shares"
+    );
+    Ok((kid, shares))
+}
+
+#[cfg(all(feature = "backend-postgres", feature = "vault-sealing-shamir"))]
+pub async fn init_shamir_postgres(
+    pool: &sqlx::PgPool,
+    threshold: u8,
+    shares_count: u8,
+) -> anyhow::Result<(String, Vec<Share>)> {
+    if threshold == 0 || shares_count == 0 || threshold > shares_count {
+        anyhow::bail!("invalid shamir params: threshold={threshold}, shares_count={shares_count}");
+    }
+    let key = random_dek();
+    let kid = content_addressed_kid(&key);
+    let shares = split_kek(&key, threshold, shares_count)
+        .map_err(|e| anyhow::anyhow!("split_kek: {e}"))?;
+    sqlx::query(
+        "INSERT INTO vault.kek_metadata
+            (kid, sealing_method, sealed, sealed_blob, share_threshold, share_count, sealed_at, unsealed_at)
+         VALUES ($1, $2, FALSE, ''::bytea, $3, $4, NULL, EXTRACT(EPOCH FROM NOW()))",
+    )
+    .bind(&kid)
+    .bind(METHOD_SHAMIR)
+    .bind(threshold as i32)
+    .bind(shares_count as i32)
+    .execute(pool)
+    .await
+    .context("insert shamir kek_metadata row")?;
+    tracing::info!(
+        target: "assay-vault",
+        kid = %kid, threshold, shares_count,
+        "vault sealed with shamir; operator must store the returned shares"
+    );
+    Ok((kid, shares))
+}
+
+/// Mark a kek_metadata row as sealed/unsealed in the DB. The runtime
+/// [`crate::crypto::seal_state::SealState`] is the source of truth for
+/// in-memory state; this is the audit / reboot signal.
+#[cfg(feature = "backend-sqlite")]
+pub async fn set_sealed_flag_sqlite(
+    pool: &sqlx::SqlitePool,
+    kid: &str,
+    sealed: bool,
+) -> anyhow::Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+    let q = if sealed {
+        "UPDATE vault.kek_metadata SET sealed = 1, sealed_at = ? WHERE kid = ?"
+    } else {
+        "UPDATE vault.kek_metadata SET sealed = 0, unsealed_at = ? WHERE kid = ?"
+    };
+    sqlx::query(q)
+        .bind(now)
+        .bind(kid)
+        .execute(pool)
+        .await
+        .context("update sealed flag")?;
+    Ok(())
+}
+
+#[cfg(feature = "backend-postgres")]
+pub async fn set_sealed_flag_postgres(
+    pool: &sqlx::PgPool,
+    kid: &str,
+    sealed: bool,
+) -> anyhow::Result<()> {
+    let q = if sealed {
+        "UPDATE vault.kek_metadata SET sealed = TRUE, sealed_at = EXTRACT(EPOCH FROM NOW()) WHERE kid = $1"
+    } else {
+        "UPDATE vault.kek_metadata SET sealed = FALSE, unsealed_at = EXTRACT(EPOCH FROM NOW()) WHERE kid = $1"
+    };
+    sqlx::query(q)
+        .bind(kid)
+        .execute(pool)
+        .await
+        .context("update sealed flag")?;
+    Ok(())
 }
 
 fn content_addressed_kid(key: &[u8; KEY_LEN]) -> String {
