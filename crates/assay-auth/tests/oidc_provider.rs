@@ -1,4 +1,4 @@
-//! Integration tests for the OIDC provider (phase 7).
+//! Integration tests for the OIDC provider.
 //!
 //! Backend coverage mirrors the zanzibar test pattern:
 //!

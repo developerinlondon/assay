@@ -9,7 +9,6 @@ repository = "https://github.com/developerinlondon/assay"
 description = "Dashboard (HTML + JS + CSS) for assay-workflow and assay-engine. Feature-gated per view set."
 
 [features]
-# Plan-15 slice 3: workflow + auth are mandatory. The engine ships
 # both consoles and gates them at runtime via `engine.modules`, not
 # at compile time. The features here are kept empty for now in case
 # a slim downstream dashboard build wants to opt out one console.

@@ -1,20 +1,11 @@
-//! HTTP server wiring.
+//! HTTP server wiring — composes the workflow API + dashboard + auth
+//! routers into one axum `Router`. URL surface:
 //!
-//! Builds an axum `Router` that composes the workflow API + dashboard
-//! under one port. Plan-15 lays out the locked URL surface:
-//!
-//! - `/auth/*`                         → OIDC spec endpoints (well-known,
-//!   authorize, token, userinfo, revoke, introspect, logout, federation)
-//! - `/api/v1/engine/core/*`           → engine-core admin
-//! - `/api/v1/engine/workflow/*`       → workflow API
-//! - `/api/v1/engine/auth/*`           → engine-internal auth (login,
-//!   logout, whoami, passkey, admin)
-//! - `/healthz`                        → 1-line redirect to
-//!   `/api/v1/engine/core/health` for k8s probes
-//!
-//! The auth router is split into two routers (spec + engine-internal)
-//! and mounted at distinct paths; the workflow API now nests under
-//! `/api/v1/engine/workflow/`.
+//! - `/auth/*`                   OIDC spec (discovery, authorize, token, …)
+//! - `/api/v1/engine/core/*`     engine-core admin
+//! - `/api/v1/engine/workflow/*` workflow API (auth-gated below)
+//! - `/api/v1/engine/auth/*`     engine-internal auth + admin
+//! - `/healthz`                  redirect to `/api/v1/engine/core/health`
 
 use axum::Router;
 use axum::response::Redirect;
@@ -132,23 +123,11 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     app
 }
 
-/// Engine-side gate middleware for the workflow API.
-///
-/// Per plan-15 slice 2 the engine is the auth boundary for every
-/// module — the workflow no longer carries its own auth middleware.
-/// This wrapper:
-///
-/// 1. Lets the always-public paths through unconditionally
-///    ([`WORKFLOW_PUBLIC_PATHS`] — health, version, openapi, docs).
-/// 2. Reads `?namespace=<X>` from the query string (defaults to
-///    `main` to match the workflow store's default namespace).
-/// 3. Calls [`assay_auth::gate::require_role_for`] for
-///    `workflow:<namespace>#access`. Admin api-key callers bypass as
-///    break-glass; session/JWT callers go through Zanzibar.
-///
-/// On gate failure the request short-circuits with the gate's response
-/// (401 Unauthorized or 403 Forbidden); on success the request flows
-/// to the workflow handler with the caller already authorised.
+/// Workflow-API auth gate. The engine is the auth boundary for every
+/// module — the workflow router carries no gate of its own.
+/// [`WORKFLOW_PUBLIC_PATHS`] bypass; everything else goes through
+/// [`assay_auth::gate::require_role_for`] keyed on the
+/// `?namespace=<X>` query param (default `main`).
 async fn workflow_gate_middleware<S: WorkflowStore + Clone + 'static>(
     axum::extract::State(state): axum::extract::State<EngineState<S>>,
     request: axum::extract::Request,

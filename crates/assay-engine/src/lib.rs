@@ -318,12 +318,11 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
     instance_id: uuid::Uuid,
     auth_ctx: Option<assay_auth::AuthCtx>,
 ) -> anyhow::Result<()> {
-    // Plan-15 slice 3: refuse to start if there's no admin path. Engine
-    // requires either at least one operator user (created via
-    // `bootstrap-admin`) OR at least one `admin_api_keys` entry as a
-    // break-glass. Without either, every admin request would 401 and
-    // the operator would be locked out — fail fast with a helpful
-    // message instead.
+    // The engine refuses to start unless there's at least one operator
+    // user (created via `bootstrap-admin`) or at least one entry in
+    // `admin_api_keys` as a break-glass. Without either, every admin
+    // request would 401 and the operator would be locked out — fail
+    // fast with a helpful message instead.
     if let Some(auth) = auth_ctx.as_ref() {
         let user_count = auth
             .users

@@ -3,7 +3,6 @@
 -- shape so the dashboard can render circles + connectors + log tail and
 -- the suite can verify each state transition end-to-end.
 
--- Plan-15 slice 4 reorganized the Lua client into the
 -- assay.engine.{core,auth,workflow} trio; the old top-level
 -- assay.workflow module is gone. The worker reads the engine URL +
 -- admin Bearer key from env so the e2e harness (run.lua) can drive

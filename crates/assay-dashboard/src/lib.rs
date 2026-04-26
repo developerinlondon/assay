@@ -1,6 +1,6 @@
 //! Dashboard — typed asset bundle + axum router composition.
 //!
-//! Three consoles are always compiled in (plan-15 slice 3): workflow,
+//! Three consoles are always compiled in: workflow,
 //! auth, and engine-core. The engine binary mounts them all; runtime
 //! visibility per console is gated by `engine.modules` rows.
 

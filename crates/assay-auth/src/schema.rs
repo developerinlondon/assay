@@ -42,13 +42,13 @@ pub const MODULE_NAME: &str = "auth";
 /// a new DDL pack is appended below. The runner records every version
 /// up to and including this one into `engine.migrations`.
 ///
-/// V1 (phase 4): users / sessions / passkeys / user_upstream / jwks_keys.
-/// V2 (phase 5): adds `auth.biscuit_root_keys` for the always-on
+/// V1: users / sessions / passkeys / user_upstream / jwks_keys.
+/// V2: adds `auth.biscuit_root_keys` for the always-on
 ///               biscuit capability-token root key bootstrap.
-/// V3 (phase 6): adds `auth.zanzibar_namespaces` + `auth.zanzibar_tuples`
+/// V3: adds `auth.zanzibar_namespaces` + `auth.zanzibar_tuples`
 ///               for ReBAC. Recursive-CTE walk + reverse index for
 ///               Keto/SpiceDB-equivalent permission checks.
-/// V4 (phase 7): adds the OIDC provider tables — `auth.oidc_clients`,
+/// V4: adds the OIDC provider tables — `auth.oidc_clients`,
 ///               `auth.upstream_providers`, `auth.oidc_authorization_codes`,
 ///               `auth.oidc_refresh_tokens`, `auth.oidc_sessions`,
 ///               `auth.oidc_consents`, and `auth.oidc_upstream_states`.

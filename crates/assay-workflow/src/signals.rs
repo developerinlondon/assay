@@ -48,7 +48,6 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             })
             .await?;
 
-        // Phase 9: a workflow waiting on this signal needs to be re-dispatched
         // so the worker can replay and notice the signal in history. The
         // helper also emits WorkflowNeedsDispatch on the engine event bus.
         self.mark_and_emit_needs_dispatch(workflow_id).await?;

@@ -65,7 +65,7 @@ fn default_public_url() -> String {
 pub enum BackendConfig {
     Postgres {
         /// Postgres connection URL, e.g. `postgres://user:pass@host:5432/db`.
-        /// PostgreSQL 18 is the minimum supported version (see plan 12 Principle 7).
+        /// PostgreSQL 18 is the minimum supported version.
         url: String,
     },
     Sqlite {
