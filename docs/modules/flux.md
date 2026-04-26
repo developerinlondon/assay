@@ -1,3 +1,7 @@
+---
+category: Kubernetes & GitOps
+---
+
 ## assay.flux
 
 Flux CD GitOps toolkit. GitRepositories, Kustomizations, HelmReleases, notifications, image

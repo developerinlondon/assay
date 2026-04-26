@@ -1,3 +1,7 @@
+---
+category: Monitoring & Observability
+---
+
 ## assay.alertmanager
 
 Alertmanager alert and silence management. Query, create, and delete alerts and silences. Client:

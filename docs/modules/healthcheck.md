@@ -1,3 +1,7 @@
+---
+category: Feature Flags & Health
+---
+
 ## assay.healthcheck
 
 HTTP health checking utilities. Status codes, JSON path, body matching, latency, multi-check.

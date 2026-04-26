@@ -74,9 +74,9 @@ function M.client(opts)
     local url = engine_url .. BASE .. path
     local opts2 = { headers = build_headers() }
     if method == "GET" then return http.get(url, opts2)
-    elseif method == "POST" then return http.post(url, body or {}, opts2)
-    elseif method == "PATCH" then return http.patch(url, body or {}, opts2)
-    elseif method == "PUT" then return http.put(url, body or {}, opts2)
+    elseif method == "POST" then return http.post(url, body, opts2)
+    elseif method == "PATCH" then return http.patch(url, body, opts2)
+    elseif method == "PUT" then return http.put(url, body, opts2)
     elseif method == "DELETE" then return http.delete(url, opts2)
     else error("engine.workflow: unsupported method: " .. method)
     end

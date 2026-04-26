@@ -1,6 +1,6 @@
 --- @module assay.github
---- @description GitHub REST API client. PRs, issues, actions, repositories, GraphQL. No gh CLI dependency.
---- @keywords github, pr, pull-request, issue, actions, runs, graphql, repository, merge, review, comment
+--- @description GitHub REST API client. PRs, issues, actions, repositories, GraphQL, releases. No gh CLI dependency.
+--- @keywords github, pr, pull-request, issue, actions, runs, graphql, repository, merge, review, comment, release, asset, checksum
 --- @quickref c.pulls:get(repo, number) -> pr | Get pull request details
 --- @quickref c.pulls:list(repo, opts?) -> [pr] | List pull requests
 --- @quickref c.pulls:reviews(repo, number) -> [review] | List PR reviews
@@ -13,6 +13,11 @@
 --- @quickref c.runs:list(repo, opts?) -> {workflow_runs} | List workflow runs
 --- @quickref c.runs:get(repo, run_id) -> run | Get workflow run details
 --- @quickref c:graphql(query, variables?) -> data | Execute GraphQL query
+--- @quickref github.latest_release(owner, repo, opts?) -> release | Get latest release
+--- @quickref github.find_asset(release, name_pattern) -> asset | Match asset by Lua pattern
+--- @quickref github.fetch_asset_text(asset) -> string | Download asset body
+--- @quickref github.fetch_asset_bytes(asset) -> string | Download asset body (alias)
+--- @quickref github.release_checksum(release, opts) -> hex | Look up sibling .sha256 digest
 
 local M = {}
 
@@ -193,6 +198,124 @@ function M.client(opts)
   end
 
   return c
+end
+
+-- ===== Releases (module-level helpers) =====
+
+local function release_headers(token)
+  local h = {
+    ["Accept"] = "application/vnd.github+json",
+  }
+  if token then
+    h["Authorization"] = "Bearer " .. token
+  end
+  return h
+end
+
+local function release_token(opts)
+  return opts.token or env.get("GITHUB_TOKEN") or env.get("GH_TOKEN")
+end
+
+local function release_base_url(opts)
+  local base = opts.base_url or "https://api.github.com"
+  return (base:gsub("/+$", ""))
+end
+
+--- Get the latest release for a repository.
+--- @param owner string Repo owner
+--- @param repo string Repo name
+--- @param opts table? `{ token = "...", base_url = "..." }`
+--- @return table release JSON release with extra `version` field (tag_name with leading "v" stripped)
+function M.latest_release(owner, repo, opts)
+  opts = opts or {}
+  local base_url = release_base_url(opts)
+  local url = base_url .. "/repos/" .. owner .. "/" .. repo .. "/releases/latest"
+  local resp = http.get(url, { headers = release_headers(release_token(opts)) })
+  if resp.status ~= 200 then
+    error("github.latest_release: GET " .. url .. " HTTP " .. resp.status .. ": " .. resp.body)
+  end
+  local rel = json.parse(resp.body)
+  if rel.tag_name then
+    rel.version = (rel.tag_name:gsub("^v", ""))
+  end
+  return rel
+end
+
+--- Find the first asset whose name matches a Lua pattern.
+--- @param release table Release returned by `latest_release`.
+--- @param name_pattern string Lua pattern matched against `asset.name`.
+--- @return table|nil asset
+function M.find_asset(release, name_pattern)
+  if not release or not release.assets then return nil end
+  for _, asset in ipairs(release.assets) do
+    if asset.name and asset.name:match(name_pattern) then
+      return asset
+    end
+  end
+  return nil
+end
+
+--- Download an asset body as text. Lua strings are byte buffers, so this is
+--- safe for binary data too — `fetch_asset_bytes` is provided as an alias
+--- for clarity at the call site.
+--- @param asset table Asset table containing `browser_download_url`.
+--- @return string body
+function M.fetch_asset_text(asset)
+  if not asset or not asset.browser_download_url then
+    error("github.fetch_asset_text: asset missing browser_download_url")
+  end
+  local resp = http.get(asset.browser_download_url)
+  if resp.status ~= 200 then
+    error(
+      "github.fetch_asset_text: GET "
+        .. asset.browser_download_url
+        .. " HTTP "
+        .. resp.status
+    )
+  end
+  return resp.body
+end
+
+--- Alias of `fetch_asset_text`. Lua strings are bytes; both are equivalent.
+function M.fetch_asset_bytes(asset)
+  return M.fetch_asset_text(asset)
+end
+
+--- Look up a checksum recorded in a sibling `<asset>.<digest>` release file.
+--- Common GitHub-release convention: `tool.tar.gz` ships next to
+--- `tool.tar.gz.sha256`, where the latter holds `<hex>  tool.tar.gz`.
+--- @param release table Release table.
+--- @param opts table `{ asset_pattern = "...", digest = "sha256" }`.
+--- @return string hex Lowercase hex digest.
+function M.release_checksum(release, opts)
+  opts = opts or {}
+  local asset_pattern = opts.asset_pattern
+    or error("github.release_checksum: opts.asset_pattern required")
+  local digest = opts.digest or "sha256"
+
+  local primary = M.find_asset(release, asset_pattern)
+  if not primary then
+    error("github.release_checksum: no asset matching pattern: " .. asset_pattern)
+  end
+
+  local checksum_name = primary.name .. "." .. digest
+  local checksum_asset
+  for _, asset in ipairs(release.assets or {}) do
+    if asset.name == checksum_name then
+      checksum_asset = asset
+      break
+    end
+  end
+  if not checksum_asset then
+    error("github.release_checksum: no sibling asset named: " .. checksum_name)
+  end
+
+  local body = M.fetch_asset_text(checksum_asset)
+  local hex = body:match("^(%x+)")
+  if not hex then
+    error("github.release_checksum: could not extract hex digest from: " .. checksum_name)
+  end
+  return hex:lower()
 end
 
 return M

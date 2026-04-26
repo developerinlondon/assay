@@ -1,3 +1,7 @@
+---
+category: Kubernetes & GitOps
+---
+
 ## assay.traefik
 
 Traefik reverse proxy API. Routers, services, middlewares, entrypoints, TLS status. Client:

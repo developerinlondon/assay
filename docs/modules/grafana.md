@@ -1,3 +1,7 @@
+---
+category: Monitoring & Observability
+---
+
 ## assay.grafana
 
 Grafana monitoring and dashboards. Health, datasources, annotations, alerts, folders. Client:

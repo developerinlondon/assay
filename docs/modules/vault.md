@@ -1,3 +1,7 @@
+---
+category: Security & Identity
+---
+
 ## assay.vault
 
 HashiCorp Vault secrets management. KV v2, policies, auth methods, transit encryption, PKI

@@ -1,3 +1,7 @@
+---
+category: Kubernetes & GitOps
+---
+
 ## assay.k8s
 
 Kubernetes API client. 30+ resource types, CRDs, readiness checks, pod logs, rollouts. Module-level

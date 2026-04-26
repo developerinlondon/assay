@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## async
 
 Async task management. No `require()` needed.

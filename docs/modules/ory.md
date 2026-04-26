@@ -1,3 +1,7 @@
+---
+category: Security & Identity
+---
+
 ## assay.ory.kratos
 
 Ory Kratos identity management. Self-service login, registration, recovery and settings flows,

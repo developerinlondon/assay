@@ -1,3 +1,7 @@
+---
+category: Security & Identity
+---
+
 ## assay.openbao
 
 OpenBao secrets management (Vault API-compatible). Alias for `assay.vault`.

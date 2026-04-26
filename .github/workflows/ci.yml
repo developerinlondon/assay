@@ -101,6 +101,20 @@ jobs:
         env:
           MOON_LOG: "info"
 
+      # `assay site/build.lua` (the moon `site:build` task above)
+      # rewrites the stdlib table in README.md in place from
+      # docs/modules/*.md frontmatter. If that rewrite produced a diff,
+      # the committed README was out of sync — fail with a clear hint
+      # rather than letting drift slip through. Linux only: macOS would
+      # produce the same result, asserting twice is noise.
+      - name: Docs are in sync (README stdlib table)
+        if: runner.os == 'Linux'
+        run: |
+          if ! git diff --exit-code -- README.md; then
+            echo "::error title=README.md out of sync::Run 'assay site/build.lua' locally and commit the result. The stdlib table is generated from docs/modules/*.md frontmatter; edit those (or build.lua's category_order) — not README directly."
+            exit 1
+          fi
+
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v7

@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## db
 
 SQL database access. No `require()` needed. Supports Postgres, MySQL, SQLite via connection URL.

@@ -420,10 +420,14 @@ async fn execute_http_request(
         return Ok(Value::Table(result));
     }
 
-    // Standard response: buffer full body
-    let body = resp.text().await.map_err(|e| {
+    // Standard response: buffer full body. Use raw bytes (not .text()) so binary
+    // payloads — gzip/xz/zstd, images, tarballs — round-trip cleanly. Lua strings
+    // in mlua are byte buffers, so this remains compatible with existing
+    // text-decoding callers.
+    let body_bytes = resp.bytes().await.map_err(|e| {
         mlua::Error::runtime(format!("http.{method_name}: reading body failed: {e}"))
     })?;
+    let body = lua.create_string(&body_bytes)?;
 
     let result = lua.create_table()?;
     result.set("status", status)?;

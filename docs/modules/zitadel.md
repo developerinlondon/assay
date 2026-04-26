@@ -1,3 +1,7 @@
+---
+category: Security & Identity
+---
+
 ## assay.zitadel
 
 Zitadel OIDC identity management. Projects, OIDC apps, IdPs, users, login policies. Client:

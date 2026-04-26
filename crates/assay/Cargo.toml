@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.14.0"
+version = "0.14.1"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -91,10 +91,15 @@ futures-util = "0.3"
 tokio-tungstenite = { version = "0.28.0", features = ["connect", "rustls-tls-webpki-roots"] }
 
 # Template engine (Jinja2-compatible)
-minijinja = "2.15.1"
+minijinja = { version = "2.15.1", features = ["loader"] }
 
 # Markdown to HTML conversion
 pulldown-cmark = "0.13"
+
+# Decompression (gunzip/unxz/unzstd builtins)
+flate2 = "1"
+xz2 = "0.1"
+zstd = "0.13"
 
 # URL parsing/encoding (used by http server query string decoding)
 url = "2"

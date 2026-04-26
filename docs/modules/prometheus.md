@@ -1,3 +1,7 @@
+---
+category: Monitoring & Observability
+---
+
 ## assay.prometheus
 
 Prometheus monitoring queries. PromQL instant/range queries, alerts, targets, rules, series. Client:

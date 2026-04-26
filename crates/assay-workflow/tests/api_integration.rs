@@ -140,6 +140,53 @@ async fn signal_and_cancel_workflow() {
     assert_eq!(resp.status(), 404);
 }
 
+// Regression for issue #66: stdlib used to send `[]` (empty Lua table → JSON
+// array) for no-body POSTs, which the Option<Json<CancelBody>> extractor
+// rejected with 400. The handler now consumes raw bytes and tolerates any
+// of: missing body, "{}", "[]", '{"reason":"..."}'.
+#[tokio::test]
+async fn cancel_accepts_any_body_shape() {
+    let (url, _handle) = start_test_server().await;
+    let c = client();
+
+    for (i, body_kind) in ["none", "empty_object", "empty_array", "with_reason"]
+        .iter()
+        .enumerate()
+    {
+        let wf_id = format!("wf-cancel-{i}");
+        c.post(format!("{url}/api/v1/engine/workflow/workflows"))
+            .json(&serde_json::json!({
+                "workflow_type": "Approval",
+                "workflow_id": wf_id,
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let cancel_url = format!("{url}/api/v1/engine/workflow/workflows/{wf_id}/cancel");
+        let req = c.post(&cancel_url);
+        let req = match *body_kind {
+            "none" => req,
+            "empty_object" => req
+                .header("content-type", "application/json")
+                .body("{}"),
+            "empty_array" => req
+                .header("content-type", "application/json")
+                .body("[]"),
+            "with_reason" => req
+                .header("content-type", "application/json")
+                .body(r#"{"reason":"explicit"}"#),
+            _ => unreachable!(),
+        };
+        let resp = req.send().await.unwrap();
+        assert_eq!(
+            resp.status(),
+            200,
+            "cancel with body_kind={body_kind} should be 200"
+        );
+    }
+}
+
 #[tokio::test]
 async fn worker_register_and_poll() {
     let (url, _handle) = start_test_server().await;

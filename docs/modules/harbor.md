@@ -1,3 +1,7 @@
+---
+category: Infrastructure
+---
+
 ## assay.harbor
 
 Harbor container registry. Projects, repositories, artifacts, vulnerability scanning. Client:
