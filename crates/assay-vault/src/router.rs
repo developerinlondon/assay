@@ -78,8 +78,12 @@ where
 }
 
 /// Top-of-handler admin-key check. Constant-time bytewise compare via
-/// [`AdminApiKeys::check`]. Returns `Err(401)` if no `Bearer` token is
-/// present or the token doesn't match.
+/// [`AdminApiKeys::check`]. Returns `Err(Response)` (axum 401) if the
+/// token is absent or invalid; every handler propagates the response
+/// verbatim, so the size of the Err variant is intentional — boxing
+/// it would force every call site to dereference. Suppress the lint
+/// here at the API boundary.
+#[allow(clippy::result_large_err)]
 pub(crate) fn check_admin(
     headers: &HeaderMap,
     keys: &AdminApiKeys,
@@ -88,17 +92,17 @@ pub(crate) fn check_admin(
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "));
-    match token {
-        Some(t) if keys.check(t) => Ok(()),
-        _ => Err((
-            StatusCode::UNAUTHORIZED,
-            axum::Json(serde_json::json!({
-                "error": "unauthorized",
-                "error_description": "missing or invalid Bearer token",
-            })),
-        )
-            .into_response()),
+    if matches!(token, Some(t) if keys.check(t)) {
+        return Ok(());
     }
+    Err((
+        StatusCode::UNAUTHORIZED,
+        axum::Json(serde_json::json!({
+            "error": "unauthorized",
+            "error_description": "missing or invalid Bearer token",
+        })),
+    )
+        .into_response())
 }
 
 /// Map a [`crate::error::VaultError`] to an HTTP response. Centralised

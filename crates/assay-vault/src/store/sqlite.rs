@@ -1201,8 +1201,7 @@ mod share {
             // of `?` placeholders and bind one at a time. The list
             // length is at most "blocks per biscuit" (single digit in
             // practice), so the SQL stays short.
-            let placeholders = std::iter::repeat("?")
-                .take(key_ids.len())
+            let placeholders = std::iter::repeat_n("?", key_ids.len())
                 .collect::<Vec<_>>()
                 .join(",");
             let q = format!(

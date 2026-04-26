@@ -94,6 +94,7 @@ pub fn builtin_modules() -> Vec<BuiltinModule> {
 ///   fleet size).
 /// - Higher stale cutoff → reduces false-positive failovers from
 ///   transient network blips, but slows real-failure detection.
+///
 /// 3s × 10s is plan §S9's locked target.
 const INSTANCE_HEARTBEAT_SECS: u64 = 3;
 // Used by the PG cleanup task that prunes dead `engine.instances` rows.

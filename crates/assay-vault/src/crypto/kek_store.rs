@@ -146,13 +146,22 @@ fn parse_plaintext_blob(method: &str, blob: &[u8]) -> anyhow::Result<[u8; KEY_LE
     Ok(key)
 }
 
+/// One row from vault.kek_metadata as queried by the load_active_*
+/// helpers. Tuple alias keeps clippy::type-complexity happy without
+/// adding a real DTO.
+#[cfg(feature = "backend-sqlite")]
+type SqliteKekRow = (String, String, Vec<u8>, Option<i64>, Option<i64>);
+
+#[cfg(feature = "backend-postgres")]
+type PgKekRow = (String, String, Vec<u8>, Option<i32>, Option<i32>);
+
 /// Read the active row from `vault.kek_metadata`, returning the parsed
 /// state. Phase-2 entrypoint that distinguishes plaintext from
 /// shamir-sealed installations. Caller hands the result to
 /// [`crate::crypto::seal_state::SealState`] to build the runtime state.
 #[cfg(feature = "backend-sqlite")]
 pub async fn load_active_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<Option<ActiveKek>> {
-    let row: Option<(String, String, Vec<u8>, Option<i64>, Option<i64>)> = sqlx::query_as(
+    let row: Option<SqliteKekRow> = sqlx::query_as(
         "SELECT kid, sealing_method, sealed_blob, share_threshold, share_count
            FROM vault.kek_metadata
           ORDER BY created_at DESC
@@ -197,7 +206,7 @@ pub async fn load_active_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<Optio
 
 #[cfg(feature = "backend-postgres")]
 pub async fn load_active_postgres(pool: &sqlx::PgPool) -> anyhow::Result<Option<ActiveKek>> {
-    let row: Option<(String, String, Vec<u8>, Option<i32>, Option<i32>)> = sqlx::query_as(
+    let row: Option<PgKekRow> = sqlx::query_as(
         "SELECT kid, sealing_method, sealed_blob, share_threshold, share_count
            FROM vault.kek_metadata
           ORDER BY created_at DESC

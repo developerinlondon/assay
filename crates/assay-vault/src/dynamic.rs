@@ -408,7 +408,7 @@ pub mod aws_provider {
                 uuid::Uuid::new_v4().simple()
             );
             // STS minimum is 900s; clamp.
-            let duration = ttl_secs.max(900) as u64;
+            let duration = ttl_secs.max(900);
             let body = format!(
                 "Action=AssumeRole&Version=2011-06-15&RoleArn={}&RoleSessionName={}&DurationSeconds={}",
                 urlencode(&cfg.role_arn),

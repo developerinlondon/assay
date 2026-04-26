@@ -359,7 +359,7 @@ async fn engine_smoke_sqlite() {
 
     // Personal vault: ensure for user "alice" with a 32-byte X25519
     // pubkey (placeholder — real value comes from the auth crate).
-    let pubkey_b64 = B64.encode(&[7u8; 32]);
+    let pubkey_b64 = B64.encode([7u8; 32]);
     let r = client2
         .post(engine2.url("/api/v1/vault/me/alice"))
         .header("Authorization", admin_bearer)
@@ -392,7 +392,7 @@ async fn engine_smoke_sqlite() {
             "item_type": "login",
             "name": "github",
             "ciphertext_b64": B64.encode(b"encrypted-payload"),
-            "nonce_b64": B64.encode(&[1u8; 12]),
+            "nonce_b64": B64.encode([1u8; 12]),
         }))
         .send()
         .await
@@ -463,7 +463,7 @@ async fn engine_smoke_sqlite() {
             "item_type": "login",
             "name": "shared-aws-root",
             "ciphertext_b64": B64.encode(b"shared-encrypted"),
-            "nonce_b64": B64.encode(&[2u8; 12]),
+            "nonce_b64": B64.encode([2u8; 12]),
         }))
         .send()
         .await

@@ -70,6 +70,11 @@ pub trait ItemStore: Send + Sync + 'static {
     /// Create one item attached to either a vault or a collection.
     /// Caller picks the id (UUIDv7). Optional `folder_id` for visual
     /// organization. Returns Conflict on duplicate id.
+    ///
+    /// 8 args is intentional — the `Item` shape has that many fields
+    /// and bundling them into a struct just to satisfy clippy would
+    /// add ceremony without clarity.
+    #[allow(clippy::too_many_arguments)]
     async fn create_item(
         &self,
         id: &str,

@@ -192,9 +192,8 @@ pub mod shamir {
             // The combine may either reconstruct a wrong secret or fail
             // outright depending on where the corruption hits — either
             // way the result is NOT equal to the original.
-            match combine_shares(3, &shares[..3]) {
-                Ok(bad) => assert_ne!(bad, kek),
-                Err(_) => {}
+            if let Ok(bad) = combine_shares(3, &shares[..3]) {
+                assert_ne!(bad, kek);
             }
         }
     }

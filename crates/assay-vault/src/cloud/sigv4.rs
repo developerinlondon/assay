@@ -139,10 +139,7 @@ pub fn sign(input: SigV4Input<'_>) -> SignedRequest {
         input.access_key_id, credential_scope, signed_headers, signature
     );
 
-    let mut out_headers: Vec<(String, String)> = header_map
-        .into_iter()
-        .map(|(k, v)| (k, v))
-        .collect();
+    let mut out_headers: Vec<(String, String)> = header_map.into_iter().collect();
     out_headers.push(("authorization".into(), authorization));
 
     SignedRequest {
@@ -215,7 +212,7 @@ mod tests {
             body: b"",
             amz_date: "20150830T123600Z",
         };
-        let a = sign(inputs.clone());
+        let a = sign(inputs);
         let b = sign(inputs);
         let auth_a = a
             .headers
