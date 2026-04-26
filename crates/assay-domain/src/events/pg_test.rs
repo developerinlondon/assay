@@ -36,10 +36,29 @@ async fn prepare_pool() -> PgPool {
     let pool = PgPool::connect(&url).await.unwrap();
     SCHEMA_READY
         .get_or_init(|| async {
-            sqlx::query("CREATE SCHEMA IF NOT EXISTS engine")
+            // PG's `CREATE SCHEMA IF NOT EXISTS` is documented as
+            // idempotent but its implementation inserts into pg_namespace
+            // *then* checks for the conflict — so two backends running it
+            // at the same moment can both make it past the existence
+            // probe and one then trips the unique index on
+            // pg_namespace.nspname (SQLSTATE 23505). The OnceCell above
+            // serialises this within one test binary, but multiple
+            // crates' tests share the CI postgres container and race
+            // each other across processes. Tolerate the duplicate-key
+            // path: if the schema is already there, that's exactly the
+            // post-condition we wanted.
+            if let Err(e) = sqlx::query("CREATE SCHEMA IF NOT EXISTS engine")
                 .execute(&pool)
                 .await
-                .unwrap();
+            {
+                let is_dup = e
+                    .as_database_error()
+                    .map(|d| d.code().as_deref() == Some("23505"))
+                    .unwrap_or(false);
+                if !is_dup {
+                    panic!("create schema engine: {e}");
+                }
+            }
             sqlx::query(
                 "CREATE TABLE IF NOT EXISTS engine.events (
                     id BIGSERIAL PRIMARY KEY,
