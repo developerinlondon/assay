@@ -2,9 +2,15 @@ name: Release
 
 # Version-driven release pipeline. Trigger: any push to main (including the
 # merge commit of a feature PR). The `detect` job compares each workspace
-# crate's Cargo.toml version against crates.io; downstream jobs only run for
-# crates that bumped. Idempotent on re-run: if a version is already
-# published, its job is a no-op.
+# crate's Cargo.toml version against crates.io and exposes per-crate
+# `bumped` flags; the library-publish steps key off those flags. The
+# product (binaries + release-assay-engine + release-assay-lua) jobs
+# now always run after their predecessors succeed — every individual
+# step is independently idempotent (200-check on crates.io, `git
+# rev-parse` on tags, `gh release view` on GH releases, and
+# `docker buildx imagetools inspect` on ghcr images) so a re-run can
+# fill in a missed publish/push without bumping versions just to
+# clear an `if:` gate. Re-running on an already-shipped main is safe.
 #
 # Tagging policy (plan 12 rev 3): product crates get git tags on every
 # publish — `assay-lua-v<ver>` and `assay-engine-v<ver>`. Library crates
@@ -40,7 +46,9 @@ jobs:
       # Per-crate: `bumped` is "true" when the local manifest version is
       # ahead of crates.io; `version` is always the local manifest version
       # (downstream jobs use it for tag/release names regardless of whether
-      # we're publishing this run).
+      # we're publishing this run). The bumped flags drive *what* publish
+      # steps may push artifacts; downstream jobs themselves no longer
+      # gate on `bumped` so re-runs can fill in missed steps idempotently.
       assay_domain_bumped: ${{ steps.assay-domain.outputs.bumped }}
       assay_workflow_bumped: ${{ steps.assay-workflow.outputs.bumped }}
       assay_dashboard_bumped: ${{ steps.assay-dashboard.outputs.bumped }}
@@ -52,13 +60,32 @@ jobs:
       extension_bumped: ${{ steps.extension.outputs.bumped }}
       extension_version: ${{ steps.extension.outputs.version }}
       any_product_bumped: ${{ steps.any.outputs.any }}
+      # Workspace toolchain version — single source of truth lives in
+      # .mise.toml. Downstream jobs that need rust read this output
+      # instead of pinning their own version (or relying on @stable
+      # which silently rolls forward independently).
+      rust_version: ${{ steps.rust.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 2 # needed for `git show HEAD~1:...` diffing below
 
-      - uses: dtolnay/rust-toolchain@stable
+      - id: rust
+        name: Read rust version from .mise.toml
+        run: |
+          set -euo pipefail
+          v=$(grep -oP '^rust\s*=\s*"\K[0-9]+\.[0-9]+(\.[0-9]+)?' .mise.toml)
+          if [ -z "$v" ]; then
+            echo "could not extract rust version from .mise.toml" >&2
+            exit 1
+          fi
+          echo "rust pinned in .mise.toml: $v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust.outputs.version }}
 
       - id: assay-domain
         run: .github/release/check-bumped.sh assay-domain
@@ -124,9 +151,11 @@ jobs:
       needs.detect.outputs.assay_auth_bumped      == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ needs.detect.outputs.rust_version }}
 
       # Inline the helper so editing release.yml is one file, not two —
       # the detection path is already factored out, this is just the
@@ -183,13 +212,14 @@ jobs:
   #    product release jobs so we don't pay the cross-compile cost twice.
   binaries:
     needs: [detect, libraries]
-    # `libraries` uses `if:` to skip when nothing bumped, which in GH
-    # Actions makes it "skipped" not "success" — downstream `needs` would
-    # normally refuse to run. Use `always()` + explicit status check to
-    # proceed as long as libraries didn't outright *fail*.
+    # Always run after libraries finishes (success OR skipped). The
+    # downstream release jobs are independently idempotent — they can
+    # see what's already on crates.io / ghcr / GitHub releases and skip
+    # only the steps that have nothing left to do. Keeping `binaries`
+    # always-on means a release re-run can fix a missed publish/push
+    # without bumping versions just to clear the gate.
     if: |
       always() &&
-      needs.detect.outputs.any_product_bumped == 'true' &&
       (needs.libraries.result == 'success' || needs.libraries.result == 'skipped')
     strategy:
       fail-fast: false
@@ -205,10 +235,11 @@ jobs:
             deps: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ needs.detect.outputs.rust_version }}
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
@@ -220,51 +251,50 @@ jobs:
         run: ${{ matrix.deps }}
 
       - name: Build assay runtime
-        if: needs.detect.outputs.assay_lua_bumped == 'true'
         run: cargo build --release --target ${{ matrix.target }} -p assay-lua --bin assay
 
       - name: Build assay-engine
-        if: needs.detect.outputs.assay_engine_bumped == 'true'
         run: cargo build --release --target ${{ matrix.target }} -p assay-engine --bin assay-engine
 
       - name: Package artifacts
         run: |
           set -euo pipefail
           mkdir -p dist
-          if [ -f "target/${{ matrix.target }}/release/assay" ]; then
-            cp target/${{ matrix.target }}/release/assay dist/assay-${{ matrix.suffix }}
-          fi
-          if [ -f "target/${{ matrix.target }}/release/assay-engine" ]; then
-            cp target/${{ matrix.target }}/release/assay-engine dist/assay-engine-${{ matrix.suffix }}
-          fi
+          cp target/${{ matrix.target }}/release/assay         dist/assay-${{ matrix.suffix }}
+          cp target/${{ matrix.target }}/release/assay-engine  dist/assay-engine-${{ matrix.suffix }}
           ls -la dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.target }}
           path: dist/*
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   # ─────────────────────────────────────────────────────────────────────
   # 4. Product release: assay-engine. Publish the crate, push the
   #    `assay-engine-v<ver>` tag, create a GH release with the engine
   #    binaries + checksums + CHANGELOG section, and push the Docker
-  #    image. Runs only if assay-engine bumped.
+  #    image to ghcr.io. Always runs after `binaries` succeeds — every
+  #    step below is independently idempotent (crates.io 200-check, git
+  #    tag existence check, gh release existence check, ghcr image
+  #    existence check) so a re-run can fill in missed artifacts
+  #    without re-bumping the version.
   release-assay-engine:
     needs: [detect, libraries, binaries]
     if: |
       always() &&
-      needs.detect.outputs.assay_engine_bumped == 'true' &&
       (needs.libraries.result == 'success' || needs.libraries.result == 'skipped') &&
       needs.binaries.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ needs.detect.outputs.rust_version }}
 
       - name: Publish assay-engine to crates.io
         env:
@@ -280,7 +310,7 @@ jobs:
             cargo publish --allow-dirty -p assay-engine
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: binaries-*
           path: artifacts
@@ -346,17 +376,46 @@ jobs:
             assay-engine-darwin-aarch64 \
             ../engine-checksums.txt
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v6
+      # Idempotency check — `imagetools inspect` resolves the manifest
+      # via the registry API. Returns 0 when the tag exists, non-zero
+      # otherwise (404, network error, etc.). We treat any non-zero as
+      # "needs push" — false negatives just push redundantly, which is
+      # harmless when the destination tag is unchanged.
+      - name: Check if assay-engine docker image already exists
+        id: docker-check
+        env:
+          VERSION: ${{ needs.detect.outputs.assay_engine_version }}
+        run: |
+          set -uo pipefail
+          if docker buildx imagetools inspect "ghcr.io/developerinlondon/assay-engine:${VERSION}" >/dev/null 2>&1; then
+            echo "ghcr.io/developerinlondon/assay-engine:${VERSION} already published — skipping docker push"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ghcr.io/developerinlondon/assay-engine:${VERSION} not found — will push"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/build-push-action@v7
+        if: steps.docker-check.outputs.exists != 'true'
         with:
-          context: .
-          file: Dockerfile.assay-engine
+          # `context: artifacts` so the artifact-mode Dockerfile.assay-engine
+          # COPYs the linux-musl binary that the `binaries` job uploaded.
+          # Avoids re-running the cargo cross-compile inside Docker, which
+          # used to take ~6 min and tripped the openssl-src-needs-perl
+          # failure on rust:slim images. The Dockerfile lives at the
+          # workspace root so the `file:` path is workspace-absolute —
+          # buildx accepts that explicitly even with a smaller `context:`.
+          context: artifacts
+          file: ${{ github.workspace }}/Dockerfile.assay-engine
           push: true
+          build-args: |
+            RUST_VERSION=${{ needs.detect.outputs.rust_version }}
           tags: |
             ghcr.io/developerinlondon/assay-engine:${{ needs.detect.outputs.assay_engine_version }}
             ghcr.io/developerinlondon/assay-engine:latest
@@ -364,21 +423,25 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   # 5. Product release: assay-lua. Same shape as assay-engine — separate
   #    job so the two can run in parallel after libraries+binaries finish.
+  #    Always runs after `binaries` succeeds; per-step idempotency
+  #    handles re-runs without version bumps (see release-assay-engine
+  #    above for the same pattern).
   release-assay-lua:
     needs: [detect, libraries, binaries]
     if: |
       always() &&
-      needs.detect.outputs.assay_lua_bumped == 'true' &&
       (needs.libraries.result == 'success' || needs.libraries.result == 'skipped') &&
       needs.binaries.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ needs.detect.outputs.rust_version }}
 
       - name: Publish assay-lua to crates.io
         env:
@@ -394,7 +457,7 @@ jobs:
             cargo publish --allow-dirty -p assay-lua
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: binaries-*
           path: artifacts
@@ -452,17 +515,38 @@ jobs:
             assay-darwin-aarch64 \
             ../lua-checksums.txt
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v6
+      - name: Check if assay docker image already exists
+        id: docker-check
+        env:
+          VERSION: ${{ needs.detect.outputs.assay_lua_version }}
+        run: |
+          set -uo pipefail
+          if docker buildx imagetools inspect "ghcr.io/developerinlondon/assay:${VERSION}" >/dev/null 2>&1; then
+            echo "ghcr.io/developerinlondon/assay:${VERSION} already published — skipping docker push"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ghcr.io/developerinlondon/assay:${VERSION} not found — will push"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/build-push-action@v7
+        if: steps.docker-check.outputs.exists != 'true'
         with:
-          context: .
-          file: Dockerfile
+          # `context: artifacts` so the artifact-mode Dockerfile COPYs
+          # the linux-musl assay binary the `binaries` job uploaded.
+          # `file:` is workspace-absolute so buildx finds the Dockerfile
+          # outside the slimmer build context.
+          context: artifacts
+          file: ${{ github.workspace }}/Dockerfile
           push: true
+          build-args: |
+            RUST_VERSION=${{ needs.detect.outputs.rust_version }}
           tags: |
             ghcr.io/developerinlondon/assay:${{ needs.detect.outputs.assay_lua_version }}
             ghcr.io/developerinlondon/assay:latest
@@ -479,9 +563,9 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           registry-url: "https://npm.pkg.github.com"
