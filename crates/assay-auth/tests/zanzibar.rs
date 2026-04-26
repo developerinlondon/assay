@@ -1,4 +1,4 @@
-//! Integration tests for the Zanzibar layer (phase 6).
+//! Integration tests for the Zanzibar layer.
 //!
 //! Backend coverage:
 //!

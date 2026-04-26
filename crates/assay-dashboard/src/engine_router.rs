@@ -21,24 +21,11 @@ use crate::assets::{
     ENGINE_MODULES_JS, ENGINE_STYLE_CSS, FAVICON_SVG,
 };
 
-/// Build the engine-console asset router. Stateless — returns
-/// `Router<()>` ready to merge into the engine's composed router.
+/// Build the engine-console asset router. Stateless `Router<()>` ready
+/// to merge into the engine's composed router.
 ///
-/// Routes:
-///
-/// - `GET /engine/console`              → SPA shell HTML
-/// - `GET /engine/console/`             → SPA shell HTML (trailing-slash variant)
-/// - `GET /engine/console/{path}`       → SPA shell HTML (deep-link variant)
-/// - `GET /engine/style.css`            → engine-only CSS overrides
-/// - `GET /engine/app.js`               → SPA controller
-/// - `GET /engine/components/*.js`      → per-pane modules
-/// - `GET /engine/favicon.svg`          → favicon
-/// - `GET /shared/cross-nav.css`        → shared cross-console nav strip CSS
-/// - `GET /shared/cross-nav.js`         → shared cross-console nav strip controller
-///
-/// Cross-nav assets live at `/shared/*` and ship from the engine
-/// router (the workflow + auth shells just `<link>` them in). Mounting
-/// once here keeps the path canonical.
+/// `/shared/*` cross-nav assets ship from this router (the workflow +
+/// auth shells just `<link>` them in) so the path stays canonical.
 pub fn router() -> Router<()> {
     Router::new()
         .route("/engine/console", get(index))

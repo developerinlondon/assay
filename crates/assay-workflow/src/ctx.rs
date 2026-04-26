@@ -112,7 +112,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
     }
 
     /// Mark a workflow dispatchable AND emit a `WorkflowNeedsDispatch`
-    /// on the bus so the dispatch-wakeup loop (phase 6) wakes workers
+    /// on the bus so the dispatch-wakeup loop wakes workers
     /// on this node / across the cluster. The extra SELECT is skipped
     /// when no bus is wired.
     pub(crate) async fn mark_and_emit_needs_dispatch(

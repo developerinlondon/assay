@@ -135,7 +135,7 @@ async fn engine_smoke_sqlite() {
     );
 
     // ── /api/v1/engine/workflow/namespaces ────────────────────────────────────────────
-    // Gated by the engine's auth layer (slice 2) — admin api-key
+    // Gated by the engine's auth layer — admin api-key
     // break-glass authenticates the request.
     let r = client
         .get(engine.url("/api/v1/engine/workflow/namespaces"))

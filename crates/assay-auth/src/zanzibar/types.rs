@@ -181,9 +181,9 @@ impl Tuple {
 ///
 /// In v0.2.0 zookies are opaque transaction-id strings; the Postgres
 /// backend serialises `pg_current_wal_lsn()` and the SQLite backend
-/// uses a monotonic counter. The check implementation in phase 6 is
+/// uses a monotonic counter. The current check implementation is
 /// `Consistency::Minimum` only (the other modes pass through to the
-/// same code path) — full snapshot enforcement lands in phase 9.
+/// same code path); full snapshot enforcement is future work.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[derive(Default)]
 pub enum Consistency {

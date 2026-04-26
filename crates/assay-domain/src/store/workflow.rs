@@ -99,7 +99,7 @@ pub trait WorkflowStore: Send + Sync + 'static {
         worker_id: &str,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
-    // ── Workflow-task dispatch (Phase 9) ────────────────────
+    // ── Workflow-task dispatch ────────────────────
 
     /// Mark a workflow as having new events that need a worker to replay it.
     /// Idempotent — calling repeatedly is fine. Cleared by `claim_workflow_task`.

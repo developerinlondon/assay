@@ -3,7 +3,6 @@ import { test, expect, Page } from '@playwright/test';
 const DEMO_WF_ID = process.env.ASSAY_E2E_WF_ID || 'demo-2';
 const DEMO_NAMESPACE = process.env.ASSAY_E2E_NAMESPACE || 'demo';
 
-// Plan-15 slice 3 gates every /api/v1/engine/workflow/* admin route at
 // the engine layer. The SPA reads `assay-admin-token` from localStorage
 // and sends it as `Authorization: Bearer …` on every fetch; without it
 // the SPA shows a token prompt and the namespace selector never

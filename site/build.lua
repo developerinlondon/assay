@@ -50,7 +50,6 @@ local function count_builtins()
 end
 
 -- =====================================================================
--- Phase 0: Compute variables
 -- =====================================================================
 local module_count = count_builtins() + #fs.glob("stdlib/**/*.lua")
 
@@ -87,7 +86,6 @@ local function apply_placeholders(html)
 end
 
 -- =====================================================================
--- Phase 1: Copy static assets
 -- =====================================================================
 local statics = fs.glob("site/static/*")
 for _, f in ipairs(statics) do
@@ -96,7 +94,6 @@ end
 log.info("Copied " .. #statics .. " static assets")
 
 -- =====================================================================
--- Phase 2: Build page templates
 -- =====================================================================
 local pages = fs.glob("site/pages/*.html")
 for _, f in ipairs(pages) do
@@ -105,7 +102,6 @@ end
 log.info("Built " .. #pages .. " pages")
 
 -- =====================================================================
--- Phase 3: Generate per-module HTML pages
 -- =====================================================================
 local md_files = fs.glob("docs/modules/*.md")
 fs.write(modules_out .. "/.gitkeep", "")
@@ -159,7 +155,6 @@ end
 log.info("Generated " .. #modules .. " module pages")
 
 -- =====================================================================
--- Phase 4: Generate modules.html index
 -- =====================================================================
 local function modules_in_category(cat_pattern)
   local items = {}
@@ -214,7 +209,6 @@ __FOOTER__
 fs.write(out .. "/modules.html", apply_placeholders(index_html))
 
 -- =====================================================================
--- Phase 4b: Generate per-example HTML pages + examples.html index
 -- =====================================================================
 -- Each subdirectory of examples/workflows/ ships a README.md and one or
 -- more *.lua files. We render the README + a syntax-highlighted view of
@@ -338,7 +332,6 @@ __FOOTER__
 fs.write(out .. "/examples.html", apply_placeholders(examples_index_html))
 
 -- =====================================================================
--- Phase 5: Generate llms-full.txt
 -- =====================================================================
 local llms = { [[# Assay
 

@@ -1,32 +1,19 @@
 name: CI
 
+# pull_request validates the merge commit; branch protection blocks
+# direct pushes to main, so a push trigger would re-run on identical
+# code. Tag pushes (`v*`) are handled by release.yml.
 on:
-  # `pull_request` fires on open + every new commit (the
-  # `synchronize` event), and tests against the merge commit with
-  # the base branch. Because branch protection blocks direct pushes
-  # to `main`, the merge commit that pull_request validates IS the
-  # commit that lands on `main` after merge — so a push trigger on
-  # `main` would just re-run CI on identical code. Skip it; rely on
-  # pull_request alone. Tag pushes (`v*`) are handled by release.yml.
   pull_request:
 
 permissions:
   contents: read
 
-# Cancel superseded runs on the same branch — saves CI minutes when
-# pushing rapid-fire commits.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Rust workspace: clippy + tests + e2e via `moon ci`, on both
-  # release targets. Job name `check` + the two matrix entries
-  # produce the status contexts `check (ubuntu-latest,
-  # x86_64-unknown-linux-gnu)` and `check (macos-14,
-  # aarch64-apple-darwin)`, matching branch protection on `main`.
-  # Matrix coverage exists because assay ships binaries for both
-  # targets via release.yml — CI must validate each on every PR.
   check:
     strategy:
       fail-fast: false
@@ -37,79 +24,54 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
-    # Ubuntu runs the full matrix (PG + SQLite). Shared PG18 service below
-    # eliminates per-test container spin-up, so the workflow suite is
-    # seconds not minutes. macOS is SQLite-only (PG tests cfg-gated
-    # `target_os = "linux"`) plus rust compile. 25 min covers both with
-    # comfortable headroom — any longer was masking the per-test-container
-    # pathology, which is now gone.
     timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v6
         with:
-          # moon's affected detection compares against the base ref,
-          # which needs full history. Without this, every PR appears
-          # as a single-commit diff and the affected set is wrong.
+          # moon's affected detection compares against the base ref —
+          # needs full history.
           fetch-depth: 0
 
-      # Single source of truth for tool versions: .mise.toml at the
-      # repo root pins rust + node + moon. mise-action installs them
-      # and prepends them to PATH for every subsequent step.
+      # .mise.toml is the single source of truth for tool versions.
+      # Pinning mise itself avoids a flaky `latest` CDN failure
+      # ("zstd: unexpected end of file" / "tar: child returned status 1").
       - uses: jdx/mise-action@v2
         with:
-          # Pin mise itself rather than using `latest`. The download
-          # step for `latest` has been intermittently failing with
-          # "zstd: unexpected end of file" / "tar: child returned
-          # status 1" — a flaky CDN issue, not anything wrong with
-          # our config. A pinned version uses a stable artifact URL.
           version: 2026.4.17
           install: true
           cache: true
 
-      # mise's rust plugin defaults to the `minimal` profile which
-      # excludes clippy. CI runs `cargo clippy --workspace` so add
-      # the component explicitly. Cheap (~2s) and idempotent.
+      # mise's rust plugin defaults to the `minimal` profile (no clippy).
       - name: Install clippy component
         run: rustup component add clippy
 
-      # Cargo's incremental build cache (target/, ~/.cargo/registry).
-      # Independent of moon's task-output cache — they cover different
-      # layers (compile artifacts vs declared task results). Keyed on
-      # the matrix target so linux and macos have independent caches.
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "ci-${{ matrix.target }}-v3"
           cache-all-crates: "true"
           save-if: "true"
 
-      # Cache Playwright browser binaries (~150 MB). Playwright stores
-      # them under an OS-specific default path — list both so the
-      # cache action matches whichever the runner uses. Key includes
-      # the e2e project's package.json so a Playwright bump
-      # invalidates the cache and forces a fresh install.
+      # Playwright stores browsers under an OS-specific default path —
+      # list both so the cache action matches whichever the runner uses.
+      # Hash both e2e package.json files: a Playwright bump in either
+      # project invalidates the cache and forces a fresh install.
       - name: Cache Playwright browsers
         uses: actions/cache@v5
         with:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-          # Hash both e2e package.json files so a Playwright bump in
-          # either project invalidates the cache. The engine console e2e
-          # suite (tests-e2e/ on assay-engine) lives next to the
-          # workflow one and shares the same browser binaries.
           key: playwright-${{ runner.os }}-${{ hashFiles('crates/assay-workflow/tests-e2e/package.json', 'crates/assay-engine/tests-e2e/package.json') }}
           restore-keys: |
             playwright-${{ runner.os }}-
 
-      # Shared Postgres service for Ubuntu runs only. `services:` in a
-      # matrix job can't be conditional, and on macOS GH runners have no
-      # Docker — so we run the container explicitly here with `if:`.
-      # Starting PG once per job and creating a database per test (via
-      # the harness's `TEST_DATABASE_URL` path) eliminates the per-test
-      # testcontainer spin-up that previously churned the docker daemon
-      # into intermittent hangs. macOS keeps its SQLite-only code path
-      # (PG cases cfg-gated `target_os = "linux"`).
+      # Shared Postgres for Ubuntu only. `services:` can't be conditional
+      # in a matrix and macOS GH runners have no Docker. Starting PG once
+      # per job + creating a database per test (via TEST_DATABASE_URL)
+      # eliminates the per-test testcontainer churn that intermittently
+      # hung the docker daemon. macOS is SQLite-only (PG cases cfg-gated
+      # `target_os = "linux"`).
       - name: Start Postgres 18 (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -134,21 +96,11 @@ jobs:
         if: runner.os == 'Linux'
         run: echo "TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres" >> $GITHUB_ENV
 
-      # Run only the tasks affected by the diff. moon walks the
-      # project graph, identifies which projects' inputs changed, and
-      # runs their `runInCI: true` tasks (lint/build/test for rust,
-      # install/install-browsers/test for the e2e + extension
-      # projects, build for the site). Doc-only PRs skip everything
-      # except site:build if the docs they touch feed it.
       - name: moon ci
         run: moon ci --color
         env:
           MOON_LOG: "info"
 
-      # On failure, surface the Playwright HTML report + traces +
-      # screenshots so the PR author can debug without rerunning
-      # locally. Artifact name is per-OS so both matrix runs can
-      # upload without colliding.
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v7
@@ -165,12 +117,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # Dedicated openclaw-extension vitest gate. Ubuntu-only (pure node
-  # + vitest; no native deps). Kept as a distinct required check so a
-  # PR that only breaks the extension fails this job specifically,
-  # instead of hiding behind a generic "moon ci failed" in the matrix
-  # jobs. Moon's cache makes the task near-free when the extension
-  # isn't touched.
+  # Dedicated extension gate so an extension-only break fails this job
+  # specifically rather than hiding behind a generic "moon ci failed".
   extension-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10

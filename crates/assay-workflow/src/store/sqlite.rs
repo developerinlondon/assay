@@ -381,18 +381,11 @@ impl SqliteStore {
         });
     }
 
-    /// Apply the baseline schema.
-    ///
-    /// Fresh installs get the current `CREATE TABLE IF NOT EXISTS` statements
-    /// in one pass. The engine is pre-1.0 and no v0.11.x release has been
-    /// deployed against a real workload yet, so we don't carry
-    /// `ALTER TABLE ADD COLUMN` statements for historical columns — the
-    /// baseline is the source of truth.
-    ///
-    /// For **future** additive migrations (post-v0.11.3), call
-    /// `Self::add_column_if_missing(&self.pool, "<table>", "<column>",
-    /// "<type_def>").await?` here before returning. Kept around so adding a
-    /// column later is a one-liner.
+    /// Apply the baseline schema. SCHEMA's `CREATE TABLE IF NOT EXISTS`
+    /// statements are the source of truth — pre-1.0 we don't carry
+    /// `ALTER TABLE ADD COLUMN` history. For additive migrations later,
+    /// chain a `Self::add_column_if_missing(&self.pool, "<table>",
+    /// "<column>", "<type_def>")` call here before returning.
     async fn migrate(&self) -> Result<()> {
         for statement in SCHEMA.split(';') {
             let trimmed = statement.trim();

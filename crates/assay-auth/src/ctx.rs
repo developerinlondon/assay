@@ -140,7 +140,7 @@ impl AuthCtx {
 
     /// Replace the OIDC provider configuration. Engine boot constructs
     /// the appropriate stores (PG / SQLite) after the V4 auth schema
-    /// migration runs; see `crates/assay-engine/src/init.rs`. Phase 7
+    /// migration runs; see `crates/assay-engine/src/init.rs`.
     /// only wires the builder + the migrations + the placeholder
     /// router; phase 8 weaves the resolved AuthCtx into the actual
     /// `/authorize` and `/token` HTTP handlers.

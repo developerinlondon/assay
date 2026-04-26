@@ -15,7 +15,6 @@
   let currentView = 'workflows';
   let eventSource = null;
 
-  // Plan-15 slice 3 gates the workflow API on the engine layer; every
   // /api/v1/engine/workflow/* call now needs an admin Bearer token.
   // Re-use the same `assay-admin-token` localStorage key the auth +
   // engine consoles set so the operator only types it once across all

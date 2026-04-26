@@ -2,7 +2,7 @@
 //!
 //! Creates the `engine` schema and the four engine-scope tables on
 //! first boot, idempotently. PG18 is the minimum supported version
-//! (see plan 12 Principle 7); we lean on `uuidv7()` for primary keys
+//!; we lean on `uuidv7()` for primary keys
 //! that need temporal ordering.
 
 use anyhow::{Context, Result};

@@ -66,7 +66,6 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             })
             .await?;
 
-        // Phase 9: a freshly-started workflow has new events (WorkflowStarted)
         // that need a worker to replay against — make it dispatchable and
         // emit WorkflowNeedsDispatch for the dispatch-wakeup loop.
         self.mark_and_emit_needs_dispatch(workflow_id).await?;

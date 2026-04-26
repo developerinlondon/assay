@@ -1,4 +1,4 @@
-//! Workflow-task dispatch endpoints (Phase 9).
+//! Workflow-task dispatch endpoints.
 //!
 //! A "workflow task" represents "this workflow has new events that need a
 //! worker to run the workflow handler against." It's distinct from an
