@@ -112,7 +112,10 @@ async fn engine_smoke_sqlite() {
 
     let engine = EngineProcess::spawn();
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+        // 30s — generous: Argon2id (m=64 MiB, t=3, p=4) on a slow CI
+        // runner can take 2-3s per hash; the BW register/verify path
+        // does multiple. 5s is too tight on ubuntu-latest 4-vCPU.
+        .timeout(Duration::from_secs(30))
         .build()
         .unwrap();
 
@@ -352,7 +355,10 @@ async fn engine_smoke_sqlite() {
     drop(engine);
     let engine2 = EngineProcess::spawn();
     let client2 = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+        // 30s — generous: Argon2id (m=64 MiB, t=3, p=4) on a slow CI
+        // runner can take 2-3s per hash; the BW register/verify path
+        // does multiple. 5s is too tight on ubuntu-latest 4-vCPU.
+        .timeout(Duration::from_secs(30))
         .build()
         .unwrap();
     engine2.wait_ready(&client2).await;
