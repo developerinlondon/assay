@@ -212,6 +212,11 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
         "Unix timestamp in seconds",
         &["time", "timestamp", "unix", "epoch", "clock", "datetime"],
     ),
+    (
+        "compress",
+        "Decompression: gunzip, unxz, unzstd. Pure binary in/out.",
+        &["compress", "decompress", "gunzip", "gzip", "xz", "lzma", "zstd"],
+    ),
 ];
 
 /// Discover all modules: embedded stdlib + `./modules/` + `~/.assay/modules/` (or `$ASSAY_MODULES_PATH`).

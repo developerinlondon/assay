@@ -1,4 +1,5 @@
 mod assert;
+mod compress;
 mod core;
 mod crypto;
 #[cfg(feature = "db")]
@@ -39,5 +40,6 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     process::register_process(lua)?;
     disk::register_disk(lua)?;
     os_info::register_os(lua)?;
+    compress::register_compress(lua)?;
     Ok(())
 }
