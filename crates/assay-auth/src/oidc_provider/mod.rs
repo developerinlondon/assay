@@ -174,22 +174,10 @@ where
 }
 
 /// OIDC admin router — operator-only CRUD for OIDC clients and
-/// upstream federation providers. Mounted under
-/// `/api/v1/engine/auth/` by the engine binary so the merged paths
-/// land at `/api/v1/engine/auth/admin/oidc/...`.
-///
-/// Routes (admin-key gated by handlers):
-///
-/// - `GET    /admin/oidc/clients`
-/// - `POST   /admin/oidc/clients`
-/// - `GET    /admin/oidc/clients/{id}`
-/// - `PUT    /admin/oidc/clients/{id}`
-/// - `DELETE /admin/oidc/clients/{id}`
-/// - `POST   /admin/oidc/clients/{id}/rotate-secret`
-/// - `GET    /admin/oidc/upstream`
-/// - `POST   /admin/oidc/upstream`
-/// - `GET    /admin/oidc/upstream/{slug}`
-/// - `DELETE /admin/oidc/upstream/{slug}`
+/// upstream federation providers, mounted under `/api/v1/engine/auth/`
+/// (so paths land at `/api/v1/engine/auth/admin/oidc/...`). Each
+/// handler enforces admin-key auth itself; see route declarations
+/// below for the canonical surface.
 pub fn admin_router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,

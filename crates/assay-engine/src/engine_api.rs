@@ -412,17 +412,11 @@ async fn get_config<S: WorkflowStore + Clone + 'static>(
     (StatusCode::OK, Json(value)).into_response()
 }
 
-/// Walk the serialised config and replace any value whose key looks
-/// like a secret with the literal string `[REDACTED]`. Targets:
-///
-/// - `admin_api_keys`             (array of strings)
-/// - any field whose key contains `password`, `secret`, `token`, `key`
-///   (case-insensitive) other than the structural `kid` / `keys`
-///
-/// Defensive: the engine console renders this for operators, so an
-/// over-redaction (e.g. `rp_id` containing the substring "id" — no it
-/// doesn't, but the pattern is conservative) is preferable to leaking
-/// a credential into a screenshot.
+/// Replace secrets in the serialised config with `[REDACTED]`. Targets
+/// `admin_api_keys` and any key containing `password`, `secret`,
+/// `token`, or `key` (case-insensitive), excluding the structural
+/// `kid` / `keys`. Conservative on purpose — the engine console
+/// renders this for operators; over-redaction beats credential leaks.
 fn redact_secrets(v: &mut Value) {
     let placeholder = Value::String("[REDACTED]".to_string());
     match v {
