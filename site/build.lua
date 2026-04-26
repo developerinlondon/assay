@@ -128,14 +128,15 @@ __FOOTER__
 </html>]]
 
 local categories = {
-  { name = "Builtins (no require needed)", pattern = {"http", "serialization", "crypto", "regex", "db", "ws", "template", "async", "assert", "utilities", "fs", "markdown"} },
+  { name = "Builtins (no require needed)", pattern = {"http", "serialization", "crypto", "regex", "db", "ws", "template", "async", "assert", "utilities", "fs", "markdown", "compress"} },
   { name = "Monitoring &amp; Observability", pattern = {"prometheus", "alertmanager", "loki", "grafana"} },
   { name = "Kubernetes &amp; GitOps", pattern = {"k8s", "argocd", "kargo", "flux", "traefik"} },
   { name = "Security &amp; Identity", pattern = {"vault", "openbao", "certmanager", "eso", "dex", "zitadel", "ory"} },
-  { name = "Infrastructure", pattern = {"crossplane", "velero", "harbor"} },
+  { name = "Infrastructure", pattern = {"crossplane", "velero", "harbor", "tailscale", "apt"} },
   { name = "Data &amp; Storage", pattern = {"postgres", "s3"} },
   { name = "Feature Flags &amp; Utilities", pattern = {"unleash", "healthcheck"} },
-  { name = "AI Agent &amp; Workflow", pattern = {"ai-agents", "workflow"} },
+  { name = "Text, URLs &amp; Versions", pattern = {"ansi", "url", "version"} },
+  { name = "AI Agent &amp; Workflow", pattern = {"ai-agents", "workflow", "github"} },
 }
 
 local modules = {}

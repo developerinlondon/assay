@@ -1,7 +1,7 @@
 # Assay
 
 **One static binary that replaces Temporal + Kratos + Hydra + Keto.** Plus a full Lua 5.5 runtime
-with 51 modules for Kubernetes, monitoring, secrets, and AI agents.
+with 60 modules for Kubernetes, monitoring, secrets, and AI agents.
 
 [![CI](https://github.com/developerinlondon/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/developerinlondon/assay/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/assay-lua.svg)](https://crates.io/crates/assay-lua)
@@ -9,11 +9,12 @@ with 51 modules for Kubernetes, monitoring, secrets, and AI agents.
 
 ## What is Assay?
 
-Two binaries, one project. ~9-11 MB static each, `FROM scratch`-shippable, PG18 + SQLite first-
-class.
+Two binaries, one project. `FROM scratch`-shippable, PG18 + SQLite first-class. Sizes today: `assay`
+~12 MB, `assay-engine` ~19 MB (the engine grew with the auth + IdP work in v0.2.0).
 
-- **`assay`** — Lua 5.5 runtime with 51 stdlib modules (Kubernetes, Prometheus, Vault, GitHub,
-  Gmail, OpenClaw, …). Drop-in replacement for 50-250 MB Python/Node/kubectl scripting containers.
+- **`assay`** — Lua 5.5 runtime with 57 stdlib modules (Kubernetes, Prometheus, Vault, GitHub,
+  Gmail, OpenClaw, Tailscale, …). Drop-in replacement for 50-250 MB Python/Node/kubectl scripting
+  containers.
 - **`assay-engine`** — durable **workflow engine** (Temporal-replacement: deterministic-replay
   activities, signals, timers, child workflows, schedules, search attributes) **+ full IdP**
   (Kratos + Hydra + Keto replacement: OIDC client + provider, passkey, JWT/JWKS rotation, biscuit
@@ -26,7 +27,7 @@ assay script.lua     # Run Lua with all builtins
 assay checks.yaml    # Structured checks with retry/backoff/JSON output
 assay exec -e 'log.info("hello")'   # Inline evaluation
 assay context "grafana"              # LLM-ready module docs
-assay modules                        # List all 51 modules
+assay modules                        # List all 57 modules
 
 # Workflow + auth + dashboard server (one process)
 assay-engine serve --config engine.toml
@@ -50,7 +51,7 @@ jobs. The runtime talks to a deployed `assay-engine` over HTTP via the `assay.wo
 | `assay-engine` auth Zanzibar  | **Ory Keto / SpiceDB**    | Recursive-CTE walk on PG18 + SQLite                    |
 | `assay-engine` auth biscuit   | (Ory has nothing)         | Datalog-attenuable capability tokens — built-in        |
 | `assay-engine` dashboard      | Ory Console + Temporal UI | Single SPA, auth panes appear when auth is on          |
-| `assay` runtime               | Python / Node + kubectl   | 11 MB, 5 ms cold start, 51 stdlib modules              |
+| `assay` runtime               | Python / Node + kubectl   | 12 MB, 5 ms cold start, 57 stdlib modules              |
 
 ## Two binaries, two use cases
 
@@ -59,7 +60,7 @@ jobs. The runtime talks to a deployed `assay-engine` over HTTP via the `assay.wo
 | Scripting / automation       | `assay`        | `cargo install assay-lua` or download release |
 | Workflow + auth + IdP server | `assay-engine` | `cargo install assay-engine` or Docker        |
 
-`assay` runs Lua scripts with the full 51-module stdlib; for workflows/auth it talks to a deployed
+`assay` runs Lua scripts with the full 57-module stdlib; for workflows/auth it talks to a deployed
 `assay-engine` over HTTP. `assay-engine` is a standalone HTTP server with workflow + auth +
 dashboard, pluggable across PG18 (default) and SQLite — both backends compiled in, runtime-selected
 via config.
@@ -70,8 +71,8 @@ See [docs/migration-to-0.2.0.md](./docs/migration-to-0.2.0.md) for the upgrade p
 
 | Runtime          | Compressed |   On-disk | vs Assay | Cold Start | K8s-native |
 | ---------------- | ---------: | --------: | :------: | ---------: | :--------: |
-| **assay**        |  **11 MB** | **15 MB** |  **1x**  |   **5 ms** |  **Yes**   |
-| **assay-engine** |   **9 MB** | **12 MB** |  **1x**  |   **8 ms** |  **Yes**   |
+| **assay**        |  **~9 MB** | **12 MB** |  **1x**  |   **5 ms** |  **Yes**   |
+| **assay-engine** | **~14 MB** | **19 MB** |  **1x**  |   **8 ms** |  **Yes**   |
 | Python alpine    |      17 MB |     50 MB |    2x    |     300 ms |     No     |
 | bitnami/kubectl  |      35 MB |     90 MB |    4x    |     200 ms |  Partial   |
 | Node.js alpine   |      57 MB |    180 MB |    6x    |     500 ms |     No     |
@@ -221,8 +222,9 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 
 ## Stdlib Modules
 
-34 embedded Lua modules loaded via `require("assay.<name>")`. All follow the client pattern:
-`M.client(url, opts)` then `c:method()`.
+36 embedded Lua modules loaded via `require("assay.<name>")`. Most follow the client pattern:
+`M.client(url, opts)` then `c:method()`. A few utilities (`ansi`, `url`, `version`) are pure
+functions and can be called directly off the module table.
 
 | Module                          | Description                                                                                           |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -252,6 +254,8 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 | `assay.crossplane`              | Providers, XRDs, compositions                                                                         |
 | `assay.velero`                  | Backups, restores, schedules                                                                          |
 | `assay.harbor`                  | Projects, repos, vulnerability scanning                                                               |
+| `assay.tailscale`               | OAuth2 client_credentials, mint auth keys, list/find/get devices, set key expiry, tags, ACL preview   |
+| `assay.apt`                     | Read Debian `Packages.{gz,xz,zst,plain}` indexes, parse stanzas, sorted versions via `assay.version`  |
 | **Data & Storage**              |                                                                                                       |
 | `assay.postgres`                | User/database management, grants                                                                      |
 | `assay.s3`                      | S3-compatible storage with Sig V4 auth                                                                |
@@ -265,6 +269,11 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 | `assay.gcal`                    | Calendar events CRUD (OAuth2)                                                                         |
 | `assay.oauth2`                  | Google OAuth2 token management                                                                        |
 | `assay.email_triage`            | Email classification and triage                                                                       |
+| **Utilities & Text**            |                                                                                                       |
+| `assay.ansi`                    | ANSI SGR → HTML conversion + stripper for browser-facing log viewers                                  |
+| `assay.url`                     | RFC 3986 percent-encoding + form-body builder (`url.encode`, `url.encode_form`, `url.decode`)         |
+| `assay.version`                 | Compare versions across semver / debian / rpm / numeric schemes                                       |
+| `assay.compress` (builtin)      | gunzip / unxz / unzstd — bytes in, bytes out                                                          |
 
 ## Examples
 
@@ -458,9 +467,9 @@ and one-shot shell scripts.
 ## Development
 
 ```bash
-cargo build --release -p assay-lua      # Lua runtime binary (~11 MB)
+cargo build --release -p assay-lua      # Lua runtime binary (~12 MB)
 cargo build --release -p assay-engine \
-    --features backend-postgres,backend-sqlite,auth   # Workflow + auth server (~9 MB)
+    --features backend-postgres,backend-sqlite,auth   # Workflow + auth server (~19 MB)
 cargo clippy --workspace -- -D warnings
 cargo test --workspace
 dprint fmt                              # Format (Rust, Markdown, YAML, JSON, TOML)

@@ -1,6 +1,6 @@
 ---
 name: assay
-description: Infrastructure scripting runtime — 51 modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one 9 MB binary.
+description: Infrastructure scripting runtime — 60 modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one ~12 MB binary.
 metadata:
   author: developerinlondon
   version: "0.6.1"
@@ -8,7 +8,7 @@ metadata:
 
 # Assay Skill — LLM Agent Guide
 
-Assay is a single ~9 MB static binary that runs Lua scripts in Kubernetes. It replaces 50-250 MB
+Assay is a single ~12 MB static binary that runs Lua scripts in Kubernetes. It replaces 50-250 MB
 Python/Node/kubectl containers in K8s Jobs. One binary, two modes: run a `.lua` script directly, or
 run a `.yaml` check config with retry/backoff/structured output.
 
@@ -44,7 +44,7 @@ assay modules
 | `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 51 modules (34 stdlib + 17 builtins) |
+| `assay modules`             | List all 60 modules (36 stdlib + 24 builtins) |
 
 ## Discovering Modules
 
@@ -274,37 +274,37 @@ block polling) and **management** (inspect/mutate the engine from anywhere, REST
 CLI). Returns parsed JSON on success, nil on a 404 for describe/get_state, raises with HTTP status
 on other non-2xx.
 
-| Function                                                                                | Description                                          |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `workflow.connect(url, opts?)`                                                          | Verify reachability; opts = `{ token = "Bearer …" }` |
-| `workflow.define(name, function(ctx, input) … end)`                                     | Register a workflow handler (runs as a coroutine)    |
-| `workflow.activity(name, function(ctx, input) … end)`                                   | Register an activity implementation                  |
+| Function                                                                                            | Description                                                                                                    |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `workflow.connect(url, opts?)`                                                                      | Verify reachability; opts = `{ token = "Bearer …" }`                                                           |
+| `workflow.define(name, function(ctx, input) … end)`                                                 | Register a workflow handler (runs as a coroutine)                                                              |
+| `workflow.activity(name, function(ctx, input) … end)`                                               | Register an activity implementation                                                                            |
 | `workflow.listen({queue, namespace?, identity?})`                                                   | Block; poll workflow tasks AND activity tasks. **v0.11.10:** `namespace` scopes the worker (default `"main"`). |
 | `workflow.start({workflow_type, workflow_id, namespace?, input?, search_attributes?, task_queue?})` | Start a workflow. **v0.11.10:** `namespace` + `search_attributes` now flow through to the engine.              |
-| `workflow.list({namespace?, status?, type?, search_attrs?, limit?, offset?})`           | List + filter workflows                              |
-| `workflow.describe(id)` / `workflow.get_events(id)`                                     | Inspect                                              |
-| `workflow.get_state(id, name?)`                                                         | Read the latest register_query snapshot (nil on 404) |
-| `workflow.list_children(id)`                                                            | List a parent's child workflows                      |
-| `workflow.signal(id, name, payload?)`                                                   | Send a signal                                        |
-| `workflow.cancel(id)` / `workflow.terminate(id, reason?)`                               | Graceful / hard stop                                 |
-| `workflow.continue_as_new(id, input?)`                                                  | Client-side continue-as-new (distinct from `ctx:`)   |
-| `workflow.schedules.{create, list, describe, patch, pause, resume, delete}`             | Full schedule management                             |
-| `workflow.namespaces.{create, list, describe, stats, delete}`                           | Namespace management                                 |
-| `workflow.workers.list(opts?)` / `workflow.queues.stats(opts?)`                         | Engine-state inspection                              |
+| `workflow.list({namespace?, status?, type?, search_attrs?, limit?, offset?})`                       | List + filter workflows                                                                                        |
+| `workflow.describe(id)` / `workflow.get_events(id)`                                                 | Inspect                                                                                                        |
+| `workflow.get_state(id, name?)`                                                                     | Read the latest register_query snapshot (nil on 404)                                                           |
+| `workflow.list_children(id)`                                                                        | List a parent's child workflows                                                                                |
+| `workflow.signal(id, name, payload?)`                                                               | Send a signal                                                                                                  |
+| `workflow.cancel(id)` / `workflow.terminate(id, reason?)`                                           | Graceful / hard stop                                                                                           |
+| `workflow.continue_as_new(id, input?)`                                                              | Client-side continue-as-new (distinct from `ctx:`)                                                             |
+| `workflow.schedules.{create, list, describe, patch, pause, resume, delete}`                         | Full schedule management                                                                                       |
+| `workflow.namespaces.{create, list, describe, stats, delete}`                                       | Namespace management                                                                                           |
+| `workflow.workers.list(opts?)` / `workflow.queues.stats(opts?)`                                     | Engine-state inspection                                                                                        |
 
 Workflow handler `ctx`:
 
-| Method                                     | Returns         | Notes                                                                                                        |
-| ------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| `ctx:execute_activity(name, input, opts?)` | activity result | Sync; raises after retries exhausted                                                                         |
-| `ctx:execute_parallel(activities)`         | list of results | **v0.11.3**: fan out; handler resumes only when all terminal. Raises if any fail.                            |
-| `ctx:sleep(seconds)`                       | nil             | Durable timer; survives worker restart                                                                       |
-| `ctx:wait_for_signal(name, opts?)`         | signal payload  | Block until matching signal arrives. **v0.11.9**: `opts.timeout` bounds the wait; returns nil on timeout.    |
-| `ctx:start_child_workflow(type, opts)`     | child result    | `opts.workflow_id` required and deterministic                                                                |
-| `ctx:side_effect(name, fn)`                | value of fn()   | Run once, cache in event log; use for `crypto.uuid()`, `os.time()`, anything non-deterministic               |
-| `ctx:register_query(name, fn)`             | nil             | **v0.11.3**: expose live state via `GET /workflows/{id}/state`. Handler runs on every replay.                |
-| `ctx:upsert_search_attributes(patch)`      | nil             | **v0.11.3**: merge into the workflow's indexed metadata; callers filter with `workflow.list({search_attrs})` |
-| `ctx:continue_as_new(input)`               | nil (yields)    | **v0.11.3**: close this run, start a fresh one with empty history; same type/namespace/queue                 |
+| Method                                     | Returns         | Notes                                                                                                                                 |
+| ------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `ctx:execute_activity(name, input, opts?)` | activity result | Sync; raises after retries exhausted                                                                                                  |
+| `ctx:execute_parallel(activities)`         | list of results | **v0.11.3**: fan out; handler resumes only when all terminal. Raises if any fail.                                                     |
+| `ctx:sleep(seconds)`                       | nil             | Durable timer; survives worker restart                                                                                                |
+| `ctx:wait_for_signal(name, opts?)`         | signal payload  | Block until matching signal arrives. **v0.11.9**: `opts.timeout` bounds the wait; returns nil on timeout.                             |
+| `ctx:start_child_workflow(type, opts)`     | child result    | `opts.workflow_id` required and deterministic                                                                                         |
+| `ctx:side_effect(name, fn)`                | value of fn()   | Run once, cache in event log; use for `crypto.uuid()`, `os.time()`, anything non-deterministic                                        |
+| `ctx:register_query(name, fn)`             | nil             | **v0.11.3**: expose live state via `GET /workflows/{id}/state`. Handler runs on every replay.                                         |
+| `ctx:upsert_search_attributes(patch)`      | nil             | **v0.11.3**: merge into the workflow's indexed metadata; callers filter with `workflow.list({search_attrs})`                          |
+| `ctx:continue_as_new(input)`               | nil (yields)    | **v0.11.3**: close this run, start a fresh one with empty history; same type/namespace/queue                                          |
 | `ctx:cancel(reason?)`                      | never (raises)  | **v0.11.11**: terminate the workflow with engine status `CANCELLED`. Self-decided cancel; not the same as an external cancel request. |
 
 **Dashboard** at `/workflow/` — read-only views in v0.11.2; **v0.11.3** adds tier-1 operator
@@ -325,16 +325,16 @@ create/delete, engine version shown in the status bar.
 embedded `/workflow` dashboard per-deployment — brand name (`_NAME`), mark-badge glyph (`_MARK`;
 v0.11.11), subtitle (`_SUBTITLE`; v0.11.11), logo image (`_LOGO_URL`), browser title
 (`_PAGE_TITLE`), parent-app back-link (`_PARENT_URL` + `_PARENT_NAME`), API Docs link override /
-hide (`_API_DOCS_URL`; set to `""` to hide), and an extra stylesheet URL (`_CSS_URL`) loaded
-after assay's own CSS for re-skinning via CSS custom properties. Any customised identity flips
-the footer to `Powered by Assay Workflow Engine vX.Y.Z` with a link to https://assay.rs
-(v0.11.11). Every knob defaults to assay's identity; unset env keeps the standalone experience
-unchanged. Use when embedding assay inside another admin UI. Full table + theme tokens in
+hide (`_API_DOCS_URL`; set to `""` to hide), and an extra stylesheet URL (`_CSS_URL`) loaded after
+assay's own CSS for re-skinning via CSS custom properties. Any customised identity flips the footer
+to `Powered by Assay Workflow Engine vX.Y.Z` with a link to https://assay.rs (v0.11.11). Every knob
+defaults to assay's identity; unset env keeps the standalone experience unchanged. Use when
+embedding assay inside another admin UI. Full table + theme tokens in
 `docs/modules/workflow.md#dashboard-whitelabel`.
 
 ## Stdlib Modules Quick Reference
 
-All 35 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 36 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module               | Description                                                                                                                                                      |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -597,7 +597,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 34 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: All 36 stdlib modules are embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use
@@ -689,7 +689,7 @@ Today: use `assay context <query>` from terminal and paste output into agent con
 
 ## MCP-Serve Vision (v0.6.0)
 
-`assay mcp-serve` will expose all 51 modules (34 stdlib + 17 builtins) as MCP tools over stdio/SSE
+`assay mcp-serve` will expose all 60 modules (36 stdlib + 24 builtins) as MCP tools over stdio/SSE
 transport:
 
 - Each stdlib module becomes an MCP tool (e.g., `grafana_health`, `k8s_pods`)
