@@ -1150,3 +1150,144 @@ mod items {
 
 #[cfg(feature = "vault-collections")]
 pub use items::{SqliteFolderStore, SqliteItemStore};
+
+#[cfg(feature = "vault-share")]
+mod share {
+    use super::*;
+    use crate::error::{Result as VaultResult, VaultError};
+    use crate::share::{RevocationEntry, RevocationStore};
+
+    #[derive(Clone)]
+    pub struct SqliteRevocationStore {
+        pool: SqlitePool,
+    }
+    impl SqliteRevocationStore {
+        pub fn new(pool: SqlitePool) -> Self {
+            Self { pool }
+        }
+    }
+    fn map_err(ctx: &'static str) -> impl FnOnce(sqlx::Error) -> VaultError {
+        move |e| VaultError::Backend(anyhow::anyhow!("{ctx}: {e}"))
+    }
+    fn unix_now() -> f64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64()
+    }
+
+    #[async_trait]
+    impl RevocationStore for SqliteRevocationStore {
+        async fn add(&self, key_id: &str, reason: &str) -> VaultResult<()> {
+            sqlx::query(
+                "INSERT INTO vault.share_revoked (key_id, revoked_at, reason)
+                 VALUES (?, ?, ?)
+                 ON CONFLICT (key_id) DO NOTHING",
+            )
+            .bind(key_id)
+            .bind(unix_now())
+            .bind(reason)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("share_revoked add"))?;
+            Ok(())
+        }
+
+        async fn any_revoked(&self, key_ids: &[String]) -> VaultResult<bool> {
+            if key_ids.is_empty() {
+                return Ok(false);
+            }
+            // SQLite doesn't have ANY(array) like PG — build a series
+            // of `?` placeholders and bind one at a time. The list
+            // length is at most "blocks per biscuit" (single digit in
+            // practice), so the SQL stays short.
+            let placeholders = std::iter::repeat("?")
+                .take(key_ids.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let q = format!(
+                "SELECT 1 FROM vault.share_revoked WHERE key_id IN ({placeholders}) LIMIT 1"
+            );
+            let mut query = sqlx::query_as::<_, (i64,)>(&q);
+            for k in key_ids {
+                query = query.bind(k);
+            }
+            let row = query
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(map_err("share_revoked any_revoked"))?;
+            Ok(row.is_some())
+        }
+
+        async fn list(&self) -> VaultResult<Vec<RevocationEntry>> {
+            let rows: Vec<(String, f64, String)> = sqlx::query_as(
+                "SELECT key_id, revoked_at, reason FROM vault.share_revoked ORDER BY revoked_at DESC",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_err("share_revoked list"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(k, ra, r)| RevocationEntry {
+                    key_id: k,
+                    revoked_at: ra,
+                    reason: r,
+                })
+                .collect())
+        }
+    }
+
+    pub async fn load_or_init_biscuit_root_sqlite(
+        pool: &SqlitePool,
+    ) -> anyhow::Result<biscuit_auth::KeyPair> {
+        use anyhow::Context;
+        let row: Option<(String, Vec<u8>)> = sqlx::query_as(
+            "SELECT kid, private_pem FROM vault.biscuit_root_keys
+              WHERE rotated_at IS NULL
+              ORDER BY created_at DESC LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await
+        .context("read vault.biscuit_root_keys")?;
+        if let Some((_kid, pem_bytes)) = row {
+            let pem = String::from_utf8(pem_bytes)
+                .context("vault biscuit private_pem is not valid UTF-8")?;
+            return biscuit_auth::KeyPair::from_private_key_pem(&pem)
+                .map_err(|e| anyhow::anyhow!("biscuit KeyPair::from_pem: {e:?}"));
+        }
+        let kp = biscuit_auth::KeyPair::new();
+        let private_pem = kp
+            .to_private_key_pem()
+            .map_err(|e| anyhow::anyhow!("biscuit private_pem: {e:?}"))?;
+        let public_pem = kp
+            .public()
+            .to_pem()
+            .map_err(|e| anyhow::anyhow!("biscuit public_pem: {e:?}"))?;
+        let kid = mint_kid(&public_pem);
+        sqlx::query(
+            "INSERT INTO vault.biscuit_root_keys (kid, private_pem, public_pem, created_at)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(&kid)
+        .bind(private_pem.as_bytes())
+        .bind(&public_pem)
+        .bind(unix_now())
+        .execute(pool)
+        .await
+        .context("seed vault.biscuit_root_keys")?;
+        tracing::info!(target: "assay-vault", %kid, "vault biscuit root keypair seeded");
+        Ok(kp)
+    }
+
+    fn mint_kid(public_pem: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(b"assay-vault/biscuit-root/v1");
+        h.update(public_pem.as_bytes());
+        let d = h.finalize();
+        format!("vbr-{}", data_encoding::HEXLOWER.encode(&d[..8]))
+    }
+}
+
+#[cfg(feature = "vault-share")]
+pub use share::{load_or_init_biscuit_root_sqlite, SqliteRevocationStore};

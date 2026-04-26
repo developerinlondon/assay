@@ -19,6 +19,8 @@ use crate::ctx::VaultCtx;
 mod collections;
 #[cfg(feature = "vault-kv")]
 mod kv;
+#[cfg(feature = "vault-share")]
+mod share;
 mod sys;
 #[cfg(feature = "vault-transit")]
 mod transit;
@@ -45,6 +47,10 @@ where
     #[cfg(feature = "vault-collections")]
     {
         r = r.merge(collections::router::<S>());
+    }
+    #[cfg(feature = "vault-share")]
+    {
+        r = r.merge(share::router::<S>());
     }
     r
 }

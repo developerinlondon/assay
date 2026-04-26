@@ -63,6 +63,9 @@ pub struct VaultCtx {
     /// Folders for visual organization (Phase 3, Bitwarden-compat).
     #[cfg(feature = "vault-collections")]
     pub folders: Option<DynFolderStore>,
+    /// Biscuit-share service (Phase 4) — mint/verify/revoke share links.
+    #[cfg(feature = "vault-share")]
+    pub share: Option<crate::share::ShareService>,
 }
 
 impl Default for VaultCtx {
@@ -89,6 +92,8 @@ impl Default for VaultCtx {
             items: None,
             #[cfg(feature = "vault-collections")]
             folders: None,
+            #[cfg(feature = "vault-share")]
+            share: None,
         }
     }
 }
@@ -183,6 +188,12 @@ impl VaultCtx {
     #[cfg(feature = "vault-collections")]
     pub fn with_folders<S: crate::items::FolderStore + 'static>(mut self, store: S) -> Self {
         self.folders = Some(Arc::new(store));
+        self
+    }
+
+    #[cfg(feature = "vault-share")]
+    pub fn with_share(mut self, service: crate::share::ShareService) -> Self {
+        self.share = Some(service);
         self
     }
 }

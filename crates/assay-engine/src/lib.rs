@@ -147,6 +147,17 @@ async fn build_vault_ctx_pg(
             .with_items(assay_vault::store::postgres::PgItemStore::new(pool.clone()))
             .with_folders(assay_vault::store::postgres::PgFolderStore::new(pool.clone()));
     }
+    #[cfg(feature = "vault-share")]
+    {
+        let kp = assay_vault::store::postgres::load_or_init_biscuit_root_postgres(pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("vault biscuit root bootstrap (pg): {e}"))?;
+        let revs = std::sync::Arc::new(
+            assay_vault::store::postgres::PgRevocationStore::new(pool.clone()),
+        );
+        let svc = assay_vault::share::ShareService::new(kp, revs);
+        ctx = ctx.with_share(svc);
+    }
     Ok(Some(ctx))
 }
 
@@ -181,6 +192,17 @@ async fn build_vault_ctx_sqlite(
             ))
             .with_items(assay_vault::store::sqlite::SqliteItemStore::new(pool.clone()))
             .with_folders(assay_vault::store::sqlite::SqliteFolderStore::new(pool.clone()));
+    }
+    #[cfg(feature = "vault-share")]
+    {
+        let kp = assay_vault::store::sqlite::load_or_init_biscuit_root_sqlite(pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("vault biscuit root bootstrap (sqlite): {e}"))?;
+        let revs = std::sync::Arc::new(
+            assay_vault::store::sqlite::SqliteRevocationStore::new(pool.clone()),
+        );
+        let svc = assay_vault::share::ShareService::new(kp, revs);
+        ctx = ctx.with_share(svc);
     }
     Ok(Some(ctx))
 }

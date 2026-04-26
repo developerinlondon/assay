@@ -480,4 +480,52 @@ async fn engine_smoke_sqlite() {
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
     assert_eq!(body["items"][0]["name"], "shared-aws-root");
+
+    // ── /api/v1/vault/share — biscuit share links (Phase 4) ──────────
+    let r = client2
+        .post(engine2.url("/api/v1/vault/share"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({
+            "target_kind": "collection",
+            "target_id": col_id,
+            "ttl_secs": 60,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let mint: serde_json::Value = r.json().await.unwrap();
+    let token = mint["token"].as_str().unwrap().to_string();
+    let revocation_id = mint["revocation_ids"][0].as_str().unwrap().to_string();
+    assert!(!token.is_empty());
+
+    // Redeem — public surface, no admin gate.
+    let r = client2
+        .get(engine2.url(&format!("/api/v1/vault/share/{token}")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let grant: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(grant["target_kind"], "collection");
+    assert_eq!(grant["target_id"], col_id);
+
+    // Revoke and re-redeem — should now 403.
+    let r = client2
+        .post(engine2.url("/api/v1/vault/share/revoke"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({
+            "revocation_id": revocation_id,
+            "reason": "test-revoke",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204);
+    let r = client2
+        .get(engine2.url(&format!("/api/v1/vault/share/{token}")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403, "redeeming a revoked token must 403");
 }
