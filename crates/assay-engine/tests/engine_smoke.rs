@@ -528,4 +528,19 @@ async fn engine_smoke_sqlite() {
         .await
         .unwrap();
     assert_eq!(r.status(), 403, "redeeming a revoked token must 403");
+
+    // ── BW-compat shim (Phase 7) ─────────────────────────────────────
+    // Discovery endpoints are public + unauthenticated.
+    let r = client2.get(engine2.url("/api/alive")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["service"], "assay-vault");
+
+    let r = client2.get(engine2.url("/api/version")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+
+    let r = client2.get(engine2.url("/api/config")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["server"]["name"], "assay-vault");
 }

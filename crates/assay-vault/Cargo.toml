@@ -47,7 +47,10 @@ vault-sealing-kms = ["dep:reqwest", "dep:hmac", "dep:jsonwebtoken"]
 # wires the actual implementation; Phase 0 just reserves the flag.
 vault-sealing-hsm = []
 vault-audit-forwarding = ["dep:reqwest", "dep:syslog", "dep:hmac"]
-vault-bitwarden-compat = []
+# BW-compat shim requires assay-auth's password + JWT surfaces — the
+# `/identity/connect/token` route delegates to assay-auth's password
+# verifier and JWT issuer.
+vault-bitwarden-compat = ["assay-auth/auth-password", "assay-auth/auth-jwt"]
 vault-dynamic-postgres = []
 vault-dynamic-aws = ["dep:reqwest", "dep:hmac"]
 vault-dynamic-gcp = ["dep:reqwest", "dep:jsonwebtoken"]

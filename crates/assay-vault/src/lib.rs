@@ -56,6 +56,9 @@ pub mod cloud;
 #[cfg(feature = "vault-sealing-kms")]
 pub mod sealing;
 
+#[cfg(feature = "vault-bitwarden-compat")]
+pub mod bitwarden_compat;
+
 #[cfg(feature = "vault-audit-forwarding")]
 pub mod audit;
 

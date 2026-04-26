@@ -43,6 +43,12 @@ where
     AdminApiKeys: FromRef<S>,
 {
     let mut r = Router::new().merge(sys::router::<S>());
+    // BW-compat shim mounts at /identity/* + /api/* (unprefixed); the
+    // engine nests THIS router under /api/v1/vault/*. The BW-compat
+    // routes therefore appear under /api/v1/vault/identity/* and
+    // /api/v1/vault/api/*. The engine's lib.rs additionally mounts
+    // the compat router at the top level so stock BW clients (which
+    // hardcode /identity and /api) can talk directly.
     #[cfg(feature = "vault-kv")]
     {
         r = r.merge(kv::router::<S>());

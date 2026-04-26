@@ -132,6 +132,18 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         app = app.nest("/api/v1/vault", vault);
     }
 
+    // BW-compat shim (Phase 7). Stock BW mobile / browser / CLI
+    // clients hardcode /identity/* and /api/* — mount the compat
+    // router at root so those clients work without a reverse-proxy
+    // rewrite. Only reachable when both vault + bitwarden-compat
+    // features are on AND VaultCtx + AuthCtx are composed.
+    #[cfg(all(feature = "vault", feature = "vault-bitwarden-compat"))]
+    if state.vault.is_some() && state.auth.is_some() {
+        let bw = assay_vault::bitwarden_compat::router::<EngineState<S>>()
+            .with_state(state.clone());
+        app = app.merge(bw);
+    }
+
     app
 }
 
