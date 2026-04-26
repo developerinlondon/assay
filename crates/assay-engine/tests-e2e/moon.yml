@@ -25,6 +25,12 @@ tasks:
     command: "npx playwright install --with-deps chromium"
     deps:
       - "install"
+      # Serialize against dashboard-e2e:install-browsers — both run
+      # `playwright install --with-deps` which shells to `sudo apt-get`,
+      # and on Ubuntu CI runners the parallel apt-get processes race for
+      # /var/lib/apt/lists/lock and one fails. Ordering them here is
+      # cheaper than turning off concurrency for the whole job.
+      - "dashboard-e2e:install-browsers"
     options:
       cache: false
       runInCI: true

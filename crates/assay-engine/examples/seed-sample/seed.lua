@@ -178,6 +178,45 @@ else
   })
   row("oidc_upstream", "example", "upserted")
 
+  -- ── Zanzibar namespaces (family + circle demo) ───────────────────────
+  --
+  -- The auth-console Zanzibar pane lists registered namespace SCHEMAS
+  -- (auth.zanzibar_namespaces), separate from the (auth.zanzibar_tuples)
+  -- below. Without these `define_namespace` calls the pane is empty
+  -- even though tuples exist — the dashboard groups by schema, not by
+  -- the implicit set of object_types found in tuples.
+  --
+  -- Schema shape: NamespaceSchema { name, definitions: { <name> = RelationDef } }
+  -- RelationDef.kind is serde-tagged: { kind = "direct", value = [TypeRef] }
+  -- TypeRef = { object_type, relation = nil, wildcard = false } — for now
+  -- both demo namespaces accept direct `user` subjects only.
+  local function direct_user()
+    return {
+      kind = "direct",
+      value = { { object_type = "user", relation = json.null, wildcard = false } },
+    }
+  end
+
+  local zanzibar_namespaces = {
+    {
+      name = "family",
+      definitions = {
+        admin  = { name = "admin",  kind = direct_user() },
+        member = { name = "member", kind = direct_user() },
+      },
+    },
+    {
+      name = "circle",
+      definitions = {
+        member = { name = "member", kind = direct_user() },
+      },
+    },
+  }
+  for _, ns in ipairs(zanzibar_namespaces) do
+    e.auth.zanzibar:define_namespace(ns)
+    row("zanzibar_namespace", ns.name, "defined")
+  end
+
   -- ── Zanzibar tuples (family + circle demo) ───────────────────────────
 
   local alice_id, bob_id

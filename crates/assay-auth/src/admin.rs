@@ -23,6 +23,7 @@
 //! - `GET    /admin/jwks`             → JWKS public document (proxy /well-known)
 //!
 //! - `GET    /admin/zanzibar/namespaces`
+//! - `POST   /admin/zanzibar/namespaces`           → define / replace schema
 //! - `GET    /admin/zanzibar/namespaces/{name}`
 //! - `POST   /admin/zanzibar/tuples`              → write
 //! - `DELETE /admin/zanzibar/tuples`              → delete
@@ -78,7 +79,7 @@ where
         .route("/admin/jwks", get(jwks_proxy))
         .route(
             "/admin/zanzibar/namespaces",
-            get(zanzibar_list_namespaces),
+            get(zanzibar_list_namespaces).post(zanzibar_define_namespace),
         )
         .route(
             "/admin/zanzibar/namespaces/{name}",
@@ -604,6 +605,36 @@ async fn zanzibar_get_namespace(
     #[cfg(not(feature = "auth-zanzibar"))]
     {
         let _ = (ctx, name);
+        svc_unavailable("zanzibar not compiled in")
+    }
+}
+
+async fn zanzibar_define_namespace(
+    State(ctx): State<AuthCtx>,
+    State(keys): State<AdminApiKeys>,
+    headers: HeaderMap,
+    Json(schema): Json<crate::zanzibar::NamespaceSchema>,
+) -> Response {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
+        return *r;
+    }
+    #[cfg(feature = "auth-zanzibar")]
+    {
+        let Some(store) = ctx.zanzibar.as_ref() else {
+            return svc_unavailable("zanzibar not enabled");
+        };
+        return match store.define_namespace(&schema).await {
+            Ok(()) => (
+                StatusCode::CREATED,
+                Json(json!({"ok": true, "name": schema.name})),
+            )
+                .into_response(),
+            Err(e) => server_error(&format!("define namespace: {e}")),
+        };
+    }
+    #[cfg(not(feature = "auth-zanzibar"))]
+    {
+        let _ = (ctx, schema);
         svc_unavailable("zanzibar not compiled in")
     }
 }

@@ -3,7 +3,18 @@ import { test, expect, Page } from '@playwright/test';
 const DEMO_WF_ID = process.env.ASSAY_E2E_WF_ID || 'demo-2';
 const DEMO_NAMESPACE = process.env.ASSAY_E2E_NAMESPACE || 'demo';
 
+// Plan-15 slice 3 gates every /api/v1/engine/workflow/* admin route at
+// the engine layer. The SPA reads `assay-admin-token` from localStorage
+// and sends it as `Authorization: Bearer …` on every fetch; without it
+// the SPA shows a token prompt and the namespace selector never
+// renders. Seed the token via addInitScript so it's already in place
+// when the SPA boots — no flicker, no race.
+const ADMIN_TOKEN = process.env.ASSAY_E2E_ADMIN_KEY || 'dev-admin-key-change-me';
+
 async function openDashboard(page: Page) {
+  await page.addInitScript((token) => {
+    window.localStorage.setItem('assay-admin-token', token);
+  }, ADMIN_TOKEN);
   await page.goto('/workflow/');
   // Switch to the demo namespace where the fixture worker registered.
   const sel = page.locator('select').first();
