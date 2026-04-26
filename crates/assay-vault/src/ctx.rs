@@ -49,6 +49,20 @@ pub struct VaultCtx {
     pub kv: Option<KvService<DynKvStore>>,
     #[cfg(feature = "vault-transit")]
     pub transit: Option<TransitService<DynTransitStore>>,
+    /// Personal-vault store (Phase 3). Holds 1-per-user X25519 pubkey
+    /// rows; the assay-auth user-create hook calls ensure_vault.
+    #[cfg(feature = "vault-collections")]
+    pub personal_vaults: Option<DynPersonalVaultStore>,
+    /// Collection store (Phase 3) — shared E2E containers + member
+    /// envelope tracking.
+    #[cfg(feature = "vault-collections")]
+    pub collections: Option<DynCollectionStore>,
+    /// E2E-encrypted item store (Phase 3).
+    #[cfg(feature = "vault-collections")]
+    pub items: Option<DynItemStore>,
+    /// Folders for visual organization (Phase 3, Bitwarden-compat).
+    #[cfg(feature = "vault-collections")]
+    pub folders: Option<DynFolderStore>,
 }
 
 impl Default for VaultCtx {
@@ -67,6 +81,14 @@ impl Default for VaultCtx {
             kv: None,
             #[cfg(feature = "vault-transit")]
             transit: None,
+            #[cfg(feature = "vault-collections")]
+            personal_vaults: None,
+            #[cfg(feature = "vault-collections")]
+            collections: None,
+            #[cfg(feature = "vault-collections")]
+            items: None,
+            #[cfg(feature = "vault-collections")]
+            folders: None,
         }
     }
 }
@@ -133,11 +155,50 @@ impl VaultCtx {
         self.seal_store = Some(Arc::new(store));
         self
     }
+
+    #[cfg(feature = "vault-collections")]
+    pub fn with_personal_vaults<S: crate::personal_vault::PersonalVaultStore + 'static>(
+        mut self,
+        store: S,
+    ) -> Self {
+        self.personal_vaults = Some(Arc::new(store));
+        self
+    }
+
+    #[cfg(feature = "vault-collections")]
+    pub fn with_collections<S: crate::collections::CollectionStore + 'static>(
+        mut self,
+        store: S,
+    ) -> Self {
+        self.collections = Some(Arc::new(store));
+        self
+    }
+
+    #[cfg(feature = "vault-collections")]
+    pub fn with_items<S: crate::items::ItemStore + 'static>(mut self, store: S) -> Self {
+        self.items = Some(Arc::new(store));
+        self
+    }
+
+    #[cfg(feature = "vault-collections")]
+    pub fn with_folders<S: crate::items::FolderStore + 'static>(mut self, store: S) -> Self {
+        self.folders = Some(Arc::new(store));
+        self
+    }
 }
 
 /// Trait-object alias for the seal store — same shape as DynKvStore /
 /// DynTransitStore.
 pub type DynSealStore = Arc<dyn crate::crypto::sealing::SealStore>;
+
+#[cfg(feature = "vault-collections")]
+pub type DynPersonalVaultStore = Arc<dyn crate::personal_vault::PersonalVaultStore>;
+#[cfg(feature = "vault-collections")]
+pub type DynCollectionStore = Arc<dyn crate::collections::CollectionStore>;
+#[cfg(feature = "vault-collections")]
+pub type DynItemStore = Arc<dyn crate::items::ItemStore>;
+#[cfg(feature = "vault-collections")]
+pub type DynFolderStore = Arc<dyn crate::items::FolderStore>;
 
 /// Type alias for the `KvService` carried in [`VaultCtx`]. The
 /// trait-object indirection lets the engine choose PG or SQLite at

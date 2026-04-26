@@ -135,6 +135,18 @@ async fn build_vault_ctx_pg(
     {
         ctx = ctx.with_seal_store(assay_vault::store::postgres::PgSealStore::new(pool.clone()));
     }
+    #[cfg(feature = "vault-collections")]
+    {
+        ctx = ctx
+            .with_personal_vaults(assay_vault::store::postgres::PgPersonalVaultStore::new(
+                pool.clone(),
+            ))
+            .with_collections(assay_vault::store::postgres::PgCollectionStore::new(
+                pool.clone(),
+            ))
+            .with_items(assay_vault::store::postgres::PgItemStore::new(pool.clone()))
+            .with_folders(assay_vault::store::postgres::PgFolderStore::new(pool.clone()));
+    }
     Ok(Some(ctx))
 }
 
@@ -157,6 +169,18 @@ async fn build_vault_ctx_sqlite(
     #[cfg(feature = "vault-sealing-shamir")]
     {
         ctx = ctx.with_seal_store(assay_vault::store::sqlite::SqliteSealStore::new(pool.clone()));
+    }
+    #[cfg(feature = "vault-collections")]
+    {
+        ctx = ctx
+            .with_personal_vaults(assay_vault::store::sqlite::SqlitePersonalVaultStore::new(
+                pool.clone(),
+            ))
+            .with_collections(assay_vault::store::sqlite::SqliteCollectionStore::new(
+                pool.clone(),
+            ))
+            .with_items(assay_vault::store::sqlite::SqliteItemStore::new(pool.clone()))
+            .with_folders(assay_vault::store::sqlite::SqliteFolderStore::new(pool.clone()));
     }
     Ok(Some(ctx))
 }

@@ -15,6 +15,8 @@ use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::VaultCtx;
 
+#[cfg(feature = "vault-collections")]
+mod collections;
 #[cfg(feature = "vault-kv")]
 mod kv;
 mod sys;
@@ -39,6 +41,10 @@ where
     #[cfg(feature = "vault-transit")]
     {
         r = r.merge(transit::router::<S>());
+    }
+    #[cfg(feature = "vault-collections")]
+    {
+        r = r.merge(collections::router::<S>());
     }
     r
 }

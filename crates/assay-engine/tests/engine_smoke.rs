@@ -344,4 +344,140 @@ async fn engine_smoke_sqlite() {
     assert_eq!(r.status(), 200);
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["sealed"], true);
+
+    // ── Spawn a second engine for collection / personal vault flow ────
+    // (the prior instance is sealed for the rest of this test). The
+    // flow is admin-key gated; this proves the Phase-3 routes exist and
+    // round-trip through the full PG/SQLite path.
+    drop(engine);
+    let engine2 = EngineProcess::spawn();
+    let client2 = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+    engine2.wait_ready(&client2).await;
+
+    // Personal vault: ensure for user "alice" with a 32-byte X25519
+    // pubkey (placeholder — real value comes from the auth crate).
+    let pubkey_b64 = B64.encode(&[7u8; 32]);
+    let r = client2
+        .post(engine2.url("/api/v1/vault/me/alice"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({ "public_key_b64": pubkey_b64 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["owner_user"], "alice");
+
+    // Idempotent ensure — second call returns the same row.
+    let r = client2
+        .post(engine2.url("/api/v1/vault/me/alice"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({ "public_key_b64": pubkey_b64 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let again: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(again["id"], body["id"], "ensure_vault must be idempotent");
+
+    // Personal item — pre-encrypted bytes (the server is just a blob
+    // store at this layer).
+    let r = client2
+        .post(engine2.url("/api/v1/vault/me/alice/items"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({
+            "item_type": "login",
+            "name": "github",
+            "ciphertext_b64": B64.encode(b"encrypted-payload"),
+            "nonce_b64": B64.encode(&[1u8; 12]),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["item_type"], "login");
+    assert_eq!(body["name"], "github");
+
+    // List personal items — should include the one we just created.
+    let r = client2
+        .get(engine2.url("/api/v1/vault/me/alice/items"))
+        .header("Authorization", admin_bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+
+    // Collection — create + add member + add item + list.
+    let r = client2
+        .post(engine2.url("/api/v1/vault/collections"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({
+            "org_id": "org-acme",
+            "name": "Engineering",
+            "created_by": "alice",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let col: serde_json::Value = r.json().await.unwrap();
+    let col_id = col["id"].as_str().unwrap().to_string();
+
+    // Add member with wrapped collection key.
+    let r = client2
+        .post(engine2.url(&format!("/api/v1/vault/collections/{col_id}/members")))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({
+            "user_id": "alice",
+            "wrapped_key_b64": B64.encode(b"wrapped-collection-key-32-bytes-here"),
+            "role": "admin",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204);
+
+    // List members.
+    let r = client2
+        .get(engine2.url(&format!("/api/v1/vault/collections/{col_id}/members")))
+        .header("Authorization", admin_bearer)
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["members"].as_array().unwrap().len(), 1);
+    assert_eq!(body["members"][0]["user_id"], "alice");
+    assert_eq!(body["members"][0]["role"], "admin");
+
+    // Add item to the collection.
+    let r = client2
+        .post(engine2.url(&format!("/api/v1/vault/collections/{col_id}/items")))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({
+            "item_type": "login",
+            "name": "shared-aws-root",
+            "ciphertext_b64": B64.encode(b"shared-encrypted"),
+            "nonce_b64": B64.encode(&[2u8; 12]),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+
+    // List collection items.
+    let r = client2
+        .get(engine2.url(&format!("/api/v1/vault/collections/{col_id}/items")))
+        .header("Authorization", admin_bearer)
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["items"][0]["name"], "shared-aws-root");
 }
