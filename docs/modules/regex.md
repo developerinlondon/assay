@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## regex
 
 Regular expressions (Rust regex syntax). No `require()` needed.

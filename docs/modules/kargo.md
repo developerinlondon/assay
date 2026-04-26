@@ -1,3 +1,7 @@
+---
+category: Kubernetes & GitOps
+---
+
 ## assay.kargo
 
 Kargo continuous promotion. Stages, freight, promotions, warehouses, pipeline status. Client:

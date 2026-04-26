@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## json
 
 JSON serialization. No `require()` needed.

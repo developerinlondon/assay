@@ -1,3 +1,7 @@
+---
+category: Text, URLs & Versions
+---
+
 ## assay.ansi
 
 ANSI SGR → HTML conversion + stripper for log viewers. Pure Lua, no state, no dependencies — safe to

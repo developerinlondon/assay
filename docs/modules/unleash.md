@@ -1,3 +1,7 @@
+---
+category: Feature Flags & Health
+---
+
 ## assay.unleash
 
 Unleash feature flag management. Projects, features, environments, strategies, API tokens. Client:

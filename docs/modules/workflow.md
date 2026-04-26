@@ -1,3 +1,7 @@
+---
+category: AI Agents & Workflow
+---
+
 ## workflow
 
 Durable workflow engine + Lua client. The engine runs in `assay serve`; any assay Lua app becomes a

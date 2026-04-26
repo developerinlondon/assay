@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## assert
 
 Assertion utilities. No `require()` needed. All raise `error()` on failure.

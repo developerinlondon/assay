@@ -1,6 +1,6 @@
 ---
 name: assay
-description: Infrastructure scripting runtime — 60 modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one ~12 MB binary.
+description: Infrastructure scripting runtime — 65 modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one ~12 MB binary.
 metadata:
   author: developerinlondon
   version: "0.6.1"
@@ -44,7 +44,7 @@ assay modules
 | `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 60 modules (36 stdlib + 24 builtins) |
+| `assay modules`             | List all 65 modules (45 stdlib + 20 builtins) |
 
 ## Discovering Modules
 
@@ -334,7 +334,7 @@ embedding assay inside another admin UI. Full table + theme tokens in
 
 ## Stdlib Modules Quick Reference
 
-All 36 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 45 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module               | Description                                                                                                                                                      |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -597,7 +597,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 36 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: All 45 stdlib modules are embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use
@@ -689,7 +689,7 @@ Today: use `assay context <query>` from terminal and paste output into agent con
 
 ## MCP-Serve Vision (v0.6.0)
 
-`assay mcp-serve` will expose all 60 modules (36 stdlib + 24 builtins) as MCP tools over stdio/SSE
+`assay mcp-serve` will expose all 65 modules (45 stdlib + 20 builtins) as MCP tools over stdio/SSE
 transport:
 
 - Each stdlib module becomes an MCP tool (e.g., `grafana_health`, `k8s_pods`)

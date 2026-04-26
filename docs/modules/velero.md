@@ -1,3 +1,7 @@
+---
+category: Infrastructure
+---
+
 ## assay.velero
 
 Velero backup and restore. Backups, restores, schedules, storage locations. Client:

@@ -1,3 +1,7 @@
+---
+category: Text, URLs & Versions
+---
+
 ## assay.version
 
 Cross-scheme version comparison. Pure Lua, no I/O. Schemes: `semver` (default), `debian`, `rpm`,

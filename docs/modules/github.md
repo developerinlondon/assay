@@ -1,3 +1,7 @@
+---
+category: AI Agents & Workflow
+---
+
 ## assay.github
 
 GitHub REST API client. PRs, issues, actions, repositories, GraphQL, releases. No `gh` CLI

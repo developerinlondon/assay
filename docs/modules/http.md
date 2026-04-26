@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## http
 
 HTTP client and server. No `require()` needed. All responses return `{status, body, headers}`.

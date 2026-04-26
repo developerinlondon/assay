@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## fs
 
 Filesystem operations. No `require()` needed.

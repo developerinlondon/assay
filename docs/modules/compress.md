@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## compress
 
 Decompression primitives. Each function takes raw bytes (Lua strings are byte buffers) and returns

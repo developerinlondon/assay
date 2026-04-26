@@ -1,3 +1,7 @@
+---
+category: Kubernetes & GitOps
+---
+
 ## assay.argocd
 
 ArgoCD GitOps application management. Apps, sync, health, projects, repositories, clusters. Client:

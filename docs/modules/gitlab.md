@@ -1,3 +1,7 @@
+---
+category: AI Agents & Workflow
+---
+
 ## assay.gitlab
 
 GitLab REST API v4 client. Projects, repositories, commits, merge requests, pipelines, jobs, issues,

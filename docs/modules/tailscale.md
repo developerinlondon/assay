@@ -1,3 +1,7 @@
+---
+category: Infrastructure
+---
+
 ## assay.tailscale
 
 Tailscale REST API client. OAuth2 `client_credentials` flow with cached bearer tokens, mint

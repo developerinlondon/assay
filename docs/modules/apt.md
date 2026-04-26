@@ -1,3 +1,7 @@
+---
+category: Infrastructure
+---
+
 ## assay.apt
 
 Debian/Ubuntu apt package index reader. Fetches a `Packages` index from any apt-style HTTP

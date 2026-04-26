@@ -1,3 +1,7 @@
+---
+category: Text, URLs & Versions
+---
+
 ## assay.url
 
 Pure-Lua URL helpers. RFC 3986 percent-encoding plus a deterministic
