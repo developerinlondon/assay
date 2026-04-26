@@ -158,6 +158,19 @@ async fn build_vault_ctx_pg(
         let svc = assay_vault::share::ShareService::new(kp, revs);
         ctx = ctx.with_share(svc);
     }
+    #[cfg(feature = "vault-dynamic-postgres")]
+    {
+        let leases = std::sync::Arc::new(
+            assay_vault::store::postgres::PgLeaseStore::new(pool.clone()),
+        );
+        let registry = assay_vault::dynamic::DynamicCredsRegistry::new();
+        // Phase 5 default-config: registry is empty until an operator
+        // configures providers via /dynamic/* admin routes (or in
+        // future, engine.toml). The dispatcher returns NotFound for
+        // unknown providers, which surfaces as 404 to the caller.
+        let svc = assay_vault::dynamic::DynamicCredsService::new(registry, leases);
+        ctx = ctx.with_dynamic(svc);
+    }
     Ok(Some(ctx))
 }
 
@@ -203,6 +216,15 @@ async fn build_vault_ctx_sqlite(
         );
         let svc = assay_vault::share::ShareService::new(kp, revs);
         ctx = ctx.with_share(svc);
+    }
+    #[cfg(feature = "vault-dynamic-postgres")]
+    {
+        let leases = std::sync::Arc::new(
+            assay_vault::store::sqlite::SqliteLeaseStore::new(pool.clone()),
+        );
+        let registry = assay_vault::dynamic::DynamicCredsRegistry::new();
+        let svc = assay_vault::dynamic::DynamicCredsService::new(registry, leases);
+        ctx = ctx.with_dynamic(svc);
     }
     Ok(Some(ctx))
 }

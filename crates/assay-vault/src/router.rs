@@ -17,6 +17,13 @@ use crate::ctx::VaultCtx;
 
 #[cfg(feature = "vault-collections")]
 mod collections;
+#[cfg(any(
+    feature = "vault-dynamic-postgres",
+    feature = "vault-dynamic-aws",
+    feature = "vault-dynamic-gcp",
+    feature = "vault-dynamic-kubernetes",
+))]
+mod dynamic;
 #[cfg(feature = "vault-kv")]
 mod kv;
 #[cfg(feature = "vault-share")]
@@ -51,6 +58,15 @@ where
     #[cfg(feature = "vault-share")]
     {
         r = r.merge(share::router::<S>());
+    }
+    #[cfg(any(
+        feature = "vault-dynamic-postgres",
+        feature = "vault-dynamic-aws",
+        feature = "vault-dynamic-gcp",
+        feature = "vault-dynamic-kubernetes",
+    ))]
+    {
+        r = r.merge(dynamic::router::<S>());
     }
     r
 }

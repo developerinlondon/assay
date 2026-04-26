@@ -1186,3 +1186,164 @@ mod share {
 
 #[cfg(feature = "vault-share")]
 pub use share::{load_or_init_biscuit_root_postgres, PgRevocationStore};
+
+#[cfg(any(
+    feature = "vault-dynamic-postgres",
+    feature = "vault-dynamic-aws",
+    feature = "vault-dynamic-gcp",
+    feature = "vault-dynamic-kubernetes",
+))]
+mod dynamic {
+    use super::*;
+    use crate::dynamic::{LeaseRecord, LeaseStore};
+    use crate::error::{Result as VaultResult, VaultError};
+
+    #[derive(Clone)]
+    pub struct PgLeaseStore {
+        pool: PgPool,
+    }
+    impl PgLeaseStore {
+        pub fn new(pool: PgPool) -> Self {
+            Self { pool }
+        }
+    }
+    fn map_err(ctx: &'static str) -> impl FnOnce(sqlx::Error) -> VaultError {
+        move |e| VaultError::Backend(anyhow::anyhow!("{ctx}: {e}"))
+    }
+
+    #[async_trait]
+    impl LeaseStore for PgLeaseStore {
+        async fn create_lease(
+            &self,
+            id: &str,
+            provider: &str,
+            role: &str,
+            expires_at: f64,
+            metadata: &serde_json::Value,
+        ) -> VaultResult<()> {
+            sqlx::query(
+                "INSERT INTO vault.leases (id, provider, role, expires_at, metadata)
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(id)
+            .bind(provider)
+            .bind(role)
+            .bind(expires_at)
+            .bind(metadata)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("create_lease"))?;
+            Ok(())
+        }
+
+        async fn get_lease(&self, id: &str) -> VaultResult<Option<LeaseRecord>> {
+            let row: Option<(String, String, f64, f64, Option<f64>, serde_json::Value)> =
+                sqlx::query_as(
+                    "SELECT provider, role, issued_at, expires_at, revoked_at, metadata
+                       FROM vault.leases WHERE id = $1",
+                )
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(map_err("get_lease"))?;
+            Ok(row.map(|(p, r, ia, ea, ra, m)| LeaseRecord {
+                id: id.to_string(),
+                provider: p,
+                role: r,
+                issued_at: ia,
+                expires_at: ea,
+                revoked_at: ra,
+                metadata: m,
+            }))
+        }
+
+        async fn revoke_lease(&self, id: &str, now: f64) -> VaultResult<bool> {
+            let n = sqlx::query(
+                "UPDATE vault.leases SET revoked_at = $2
+                  WHERE id = $1 AND revoked_at IS NULL",
+            )
+            .bind(id)
+            .bind(now)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("revoke_lease"))?
+            .rows_affected();
+            Ok(n > 0)
+        }
+
+        async fn list_expired_unrevoked(
+            &self,
+            now: f64,
+            limit: i64,
+        ) -> VaultResult<Vec<LeaseRecord>> {
+            let rows: Vec<(String, String, String, f64, f64, Option<f64>, serde_json::Value)> =
+                sqlx::query_as(
+                    "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
+                       FROM vault.leases
+                      WHERE expires_at < $1 AND revoked_at IS NULL
+                      ORDER BY expires_at
+                      LIMIT $2",
+                )
+                .bind(now)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_err("list_expired_unrevoked"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(id, p, r, ia, ea, ra, m)| LeaseRecord {
+                    id,
+                    provider: p,
+                    role: r,
+                    issued_at: ia,
+                    expires_at: ea,
+                    revoked_at: ra,
+                    metadata: m,
+                })
+                .collect())
+        }
+
+        async fn list_leases(
+            &self,
+            provider: Option<&str>,
+        ) -> VaultResult<Vec<LeaseRecord>> {
+            let rows: Vec<(String, String, String, f64, f64, Option<f64>, serde_json::Value)> =
+                match provider {
+                    Some(p) => sqlx::query_as(
+                        "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
+                           FROM vault.leases WHERE provider = $1 ORDER BY issued_at DESC",
+                    )
+                    .bind(p)
+                    .fetch_all(&self.pool)
+                    .await,
+                    None => sqlx::query_as(
+                        "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
+                           FROM vault.leases ORDER BY issued_at DESC",
+                    )
+                    .fetch_all(&self.pool)
+                    .await,
+                }
+                .map_err(map_err("list_leases"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(id, p, r, ia, ea, ra, m)| LeaseRecord {
+                    id,
+                    provider: p,
+                    role: r,
+                    issued_at: ia,
+                    expires_at: ea,
+                    revoked_at: ra,
+                    metadata: m,
+                })
+                .collect())
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "vault-dynamic-postgres",
+    feature = "vault-dynamic-aws",
+    feature = "vault-dynamic-gcp",
+    feature = "vault-dynamic-kubernetes",
+))]
+pub use dynamic::PgLeaseStore;

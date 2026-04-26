@@ -1291,3 +1291,174 @@ mod share {
 
 #[cfg(feature = "vault-share")]
 pub use share::{load_or_init_biscuit_root_sqlite, SqliteRevocationStore};
+
+#[cfg(any(
+    feature = "vault-dynamic-postgres",
+    feature = "vault-dynamic-aws",
+    feature = "vault-dynamic-gcp",
+    feature = "vault-dynamic-kubernetes",
+))]
+mod dynamic {
+    use super::*;
+    use crate::dynamic::{LeaseRecord, LeaseStore};
+    use crate::error::{Result as VaultResult, VaultError};
+
+    #[derive(Clone)]
+    pub struct SqliteLeaseStore {
+        pool: SqlitePool,
+    }
+    impl SqliteLeaseStore {
+        pub fn new(pool: SqlitePool) -> Self {
+            Self { pool }
+        }
+    }
+    fn map_err(ctx: &'static str) -> impl FnOnce(sqlx::Error) -> VaultError {
+        move |e| VaultError::Backend(anyhow::anyhow!("{ctx}: {e}"))
+    }
+    fn unix_now() -> f64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64()
+    }
+
+    #[async_trait]
+    impl LeaseStore for SqliteLeaseStore {
+        async fn create_lease(
+            &self,
+            id: &str,
+            provider: &str,
+            role: &str,
+            expires_at: f64,
+            metadata: &serde_json::Value,
+        ) -> VaultResult<()> {
+            let md = serde_json::to_string(metadata).unwrap_or_else(|_| "{}".to_string());
+            sqlx::query(
+                "INSERT INTO vault.leases (id, provider, role, issued_at, expires_at, metadata)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(id)
+            .bind(provider)
+            .bind(role)
+            .bind(unix_now())
+            .bind(expires_at)
+            .bind(md)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("create_lease"))?;
+            Ok(())
+        }
+
+        async fn get_lease(&self, id: &str) -> VaultResult<Option<LeaseRecord>> {
+            let row: Option<(String, String, f64, f64, Option<f64>, String)> = sqlx::query_as(
+                "SELECT provider, role, issued_at, expires_at, revoked_at, metadata
+                   FROM vault.leases WHERE id = ?",
+            )
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err("get_lease"))?;
+            Ok(row.map(|(p, r, ia, ea, ra, md)| LeaseRecord {
+                id: id.to_string(),
+                provider: p,
+                role: r,
+                issued_at: ia,
+                expires_at: ea,
+                revoked_at: ra,
+                metadata: serde_json::from_str(&md)
+                    .unwrap_or(serde_json::Value::Object(Default::default())),
+            }))
+        }
+
+        async fn revoke_lease(&self, id: &str, now: f64) -> VaultResult<bool> {
+            let n = sqlx::query(
+                "UPDATE vault.leases SET revoked_at = ?
+                  WHERE id = ? AND revoked_at IS NULL",
+            )
+            .bind(now)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("revoke_lease"))?
+            .rows_affected();
+            Ok(n > 0)
+        }
+
+        async fn list_expired_unrevoked(
+            &self,
+            now: f64,
+            limit: i64,
+        ) -> VaultResult<Vec<LeaseRecord>> {
+            let rows: Vec<(String, String, String, f64, f64, Option<f64>, String)> =
+                sqlx::query_as(
+                    "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
+                       FROM vault.leases
+                      WHERE expires_at < ? AND revoked_at IS NULL
+                      ORDER BY expires_at
+                      LIMIT ?",
+                )
+                .bind(now)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_err("list_expired_unrevoked"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(id, p, r, ia, ea, ra, md)| LeaseRecord {
+                    id,
+                    provider: p,
+                    role: r,
+                    issued_at: ia,
+                    expires_at: ea,
+                    revoked_at: ra,
+                    metadata: serde_json::from_str(&md)
+                        .unwrap_or(serde_json::Value::Object(Default::default())),
+                })
+                .collect())
+        }
+
+        async fn list_leases(
+            &self,
+            provider: Option<&str>,
+        ) -> VaultResult<Vec<LeaseRecord>> {
+            let rows: Vec<(String, String, String, f64, f64, Option<f64>, String)> =
+                match provider {
+                    Some(p) => sqlx::query_as(
+                        "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
+                           FROM vault.leases WHERE provider = ? ORDER BY issued_at DESC",
+                    )
+                    .bind(p)
+                    .fetch_all(&self.pool)
+                    .await,
+                    None => sqlx::query_as(
+                        "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
+                           FROM vault.leases ORDER BY issued_at DESC",
+                    )
+                    .fetch_all(&self.pool)
+                    .await,
+                }
+                .map_err(map_err("list_leases"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(id, p, r, ia, ea, ra, md)| LeaseRecord {
+                    id,
+                    provider: p,
+                    role: r,
+                    issued_at: ia,
+                    expires_at: ea,
+                    revoked_at: ra,
+                    metadata: serde_json::from_str(&md)
+                        .unwrap_or(serde_json::Value::Object(Default::default())),
+                })
+                .collect())
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "vault-dynamic-postgres",
+    feature = "vault-dynamic-aws",
+    feature = "vault-dynamic-gcp",
+    feature = "vault-dynamic-kubernetes",
+))]
+pub use dynamic::SqliteLeaseStore;

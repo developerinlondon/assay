@@ -66,6 +66,14 @@ pub mod items;
 #[cfg(feature = "vault-share")]
 pub mod share;
 
+#[cfg(any(
+    feature = "vault-dynamic-postgres",
+    feature = "vault-dynamic-aws",
+    feature = "vault-dynamic-gcp",
+    feature = "vault-dynamic-kubernetes",
+))]
+pub mod dynamic;
+
 pub mod router;
 
 #[cfg(any(feature = "backend-postgres", feature = "backend-sqlite"))]

@@ -58,9 +58,11 @@ vault = [
   "vault-bitwarden-compat",
   "vault-sealing-shamir",
   "vault-audit-forwarding",
+  "vault-dynamic-postgres",
 ]
 vault-sealing-shamir = ["assay-vault?/vault-sealing-shamir"]
 vault-audit-forwarding = ["assay-vault?/vault-audit-forwarding"]
+vault-dynamic-postgres = ["assay-vault?/vault-dynamic-postgres"]
 # Per-surface pass-throughs. Mirroring assay-vault's flags here lets
 # downstream binaries opt out of a single surface (e.g. drop the BW
 # compat shim) without touching every cfg gate in the engine.

@@ -66,6 +66,14 @@ pub struct VaultCtx {
     /// Biscuit-share service (Phase 4) — mint/verify/revoke share links.
     #[cfg(feature = "vault-share")]
     pub share: Option<crate::share::ShareService>,
+    /// Dynamic-credentials dispatcher (Phase 5).
+    #[cfg(any(
+        feature = "vault-dynamic-postgres",
+        feature = "vault-dynamic-aws",
+        feature = "vault-dynamic-gcp",
+        feature = "vault-dynamic-kubernetes",
+    ))]
+    pub dynamic: Option<crate::dynamic::DynamicCredsService>,
 }
 
 impl Default for VaultCtx {
@@ -94,6 +102,13 @@ impl Default for VaultCtx {
             folders: None,
             #[cfg(feature = "vault-share")]
             share: None,
+            #[cfg(any(
+                feature = "vault-dynamic-postgres",
+                feature = "vault-dynamic-aws",
+                feature = "vault-dynamic-gcp",
+                feature = "vault-dynamic-kubernetes",
+            ))]
+            dynamic: None,
         }
     }
 }
@@ -194,6 +209,17 @@ impl VaultCtx {
     #[cfg(feature = "vault-share")]
     pub fn with_share(mut self, service: crate::share::ShareService) -> Self {
         self.share = Some(service);
+        self
+    }
+
+    #[cfg(any(
+        feature = "vault-dynamic-postgres",
+        feature = "vault-dynamic-aws",
+        feature = "vault-dynamic-gcp",
+        feature = "vault-dynamic-kubernetes",
+    ))]
+    pub fn with_dynamic(mut self, service: crate::dynamic::DynamicCredsService) -> Self {
+        self.dynamic = Some(service);
         self
     }
 }
