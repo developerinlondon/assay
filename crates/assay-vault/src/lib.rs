@@ -45,6 +45,9 @@ pub mod ctx;
 pub mod error;
 pub mod schema;
 
+#[cfg(feature = "vault-audit-forwarding")]
+pub mod audit;
+
 #[cfg(feature = "vault-kv")]
 pub mod kv;
 
