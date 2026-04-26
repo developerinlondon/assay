@@ -14,6 +14,25 @@
     || 'main';
   let currentView = 'workflows';
   let eventSource = null;
+
+  // Plan-15 slice 3 gates the workflow API on the engine layer; every
+  // /api/v1/engine/workflow/* call now needs an admin Bearer token.
+  // Re-use the same `assay-admin-token` localStorage key the auth +
+  // engine consoles set so the operator only types it once across all
+  // three SPAs. apiFetch/apiFetchRaw inject it on every request below.
+  const ADMIN_TOKEN_KEY = 'assay-admin-token';
+  function getAdminToken() {
+    try { return localStorage.getItem(ADMIN_TOKEN_KEY) || ''; }
+    catch (_) { return ''; }
+  }
+  function withAuth(opts) {
+    const merged = Object.assign({}, opts || {});
+    const headers = Object.assign({}, (opts && opts.headers) || {});
+    const token = getAdminToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    merged.headers = headers;
+    return merged;
+  }
   // Suppress hash-write side effects when we're applying state read
   // *from* the hash (e.g. on initial load or browser back/forward).
   let suppressHashWrite = false;
@@ -149,7 +168,7 @@
   async function apiFetch(path, opts) {
     const sep = path.includes('?') ? '&' : '?';
     const url = '/api/v1/engine/workflow' + path + sep + 'namespace=' + encodeURIComponent(currentNamespace);
-    const res = await fetch(url, opts);
+    const res = await fetch(url, withAuth(opts));
     if (!res.ok) {
       const body = await res.text();
       throw new Error(body || res.statusText);
@@ -161,7 +180,7 @@
   /// Fetch without auto-injecting the namespace query param — used for
   /// endpoints that don't take one (e.g. /version, /namespaces).
   async function apiFetchRaw(path, opts) {
-    const res = await fetch('/api/v1/engine/workflow' + path, opts);
+    const res = await fetch('/api/v1/engine/workflow' + path, withAuth(opts));
     if (!res.ok) {
       const body = await res.text();
       throw new Error(body || res.statusText);
@@ -200,7 +219,7 @@
     const select = document.getElementById('namespace-select');
     const statusSelect = document.getElementById('status-namespace-select');
     try {
-      const namespaces = await fetch('/api/v1/engine/workflow/namespaces').then((r) => r.json());
+      const namespaces = await apiFetchRaw('/namespaces');
       const options = namespaces
         .map((ns) => {
           const name = ns.name || ns;
