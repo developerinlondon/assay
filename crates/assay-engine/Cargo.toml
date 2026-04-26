@@ -79,6 +79,18 @@ toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
+# Direct dep just to flip on the `vendored` feature for the openssl-sys
+# transitive (pulled in by webauthn-rs via assay-auth's auth-passkey
+# feature). Without this, the release-pipeline cross-build to
+# x86_64-unknown-linux-musl can't find a musl-compatible libssl on the
+# Ubuntu runner and openssl-sys aborts with "Could not find directory
+# of OpenSSL installation". `vendored` makes openssl-sys statically
+# compile OpenSSL from bundled source — adds ~30s to musl builds but
+# removes the cross-compile sysroot dependency entirely. Cargo feature
+# unification spreads the flag to every openssl/openssl-sys consumer
+# in the graph, so no other crate has to change.
+openssl = { version = "0.10", features = ["vendored"] }
+
 [dev-dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tempfile = "3"
