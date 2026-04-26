@@ -1,20 +1,11 @@
-//! HTTP server wiring.
+//! HTTP server wiring — composes the workflow API + dashboard + auth
+//! routers into one axum `Router`. URL surface:
 //!
-//! Builds an axum `Router` that composes the workflow API + dashboard
-//! under one port. Plan-15 lays out the locked URL surface:
-//!
-//! - `/auth/*`                         → OIDC spec endpoints (well-known,
-//!   authorize, token, userinfo, revoke, introspect, logout, federation)
-//! - `/api/v1/engine/core/*`           → engine-core admin
-//! - `/api/v1/engine/workflow/*`       → workflow API
-//! - `/api/v1/engine/auth/*`           → engine-internal auth (login,
-//!   logout, whoami, passkey, admin)
-//! - `/healthz`                        → 1-line redirect to
-//!   `/api/v1/engine/core/health` for k8s probes
-//!
-//! The auth router is split into two routers (spec + engine-internal)
-//! and mounted at distinct paths; the workflow API now nests under
-//! `/api/v1/engine/workflow/`.
+//! - `/auth/*`                   OIDC spec (discovery, authorize, token, …)
+//! - `/api/v1/engine/core/*`     engine-core admin
+//! - `/api/v1/engine/workflow/*` workflow API (auth-gated below)
+//! - `/api/v1/engine/auth/*`     engine-internal auth + admin
+//! - `/healthz`                  redirect to `/api/v1/engine/core/health`
 
 use axum::Router;
 use axum::response::Redirect;

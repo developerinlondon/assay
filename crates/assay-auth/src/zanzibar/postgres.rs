@@ -9,7 +9,7 @@
 //! uses an in-CTE `path` array — if the next subject is already on
 //! the path, the join skips it.
 //!
-//! Performance notes (PG18 EXPLAIN-checked once during phase 6
+//! Performance notes (PG18 EXPLAIN-checked once during
 //! development against a 100k-tuple seed):
 //!
 //! - Forward walk hits the composite PK `(object_type, object_id,
@@ -286,7 +286,7 @@ impl ZanzibarStore for PostgresZanzibarStore {
         // candidate relation set, then post-filter via `check`.
         // Optimal for small fan-outs (the family/circle scale jeebon
         // ships at); a real production deployment will want a
-        // dedicated reverse index (phase 9).
+        // dedicated reverse index.
         let Some(schema) = self.get_namespace(resource_type).await? else {
             return Ok(Vec::new());
         };

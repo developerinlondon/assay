@@ -1,7 +1,7 @@
 //! WebAuthn / passkey registration + authentication.
 //!
 //! Plan 12c task 5.2 reference. Wraps [`webauthn_rs`] 0.5 so HTTP
-//! handlers (phase 8) can drive register / authenticate without
+//! handlers can drive register / authenticate without
 //! touching the library's verbose builder surface.
 //!
 //! In-progress state ([`PasskeyRegistration`], [`PasskeyAuthentication`])

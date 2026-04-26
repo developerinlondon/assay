@@ -58,7 +58,6 @@ pub fn builtin_modules() -> Vec<BuiltinModule> {
             version: env!("CARGO_PKG_VERSION"),
             default_enabled: true,
         },
-        // Plan-15 slice 3: auth is mandatory and default-enabled. The
         // engine itself authenticates every admin + workflow request via
         // the auth module; running with auth disabled isn't supported.
         BuiltinModule {
@@ -180,8 +179,7 @@ async fn pg_boot(url: &str, auto_enable: &[String]) -> anyhow::Result<PgBoot> {
         record_engine_migration_pg(&pool, name, 1).await?;
     }
 
-    // Auth schema migration — always runs (auth is mandatory per plan-15
-    // slice 3). Loads the biscuit root key (or initialises one on first
+    // Auth schema migration — always runs (auth is mandatory per
     // boot) and smoke-touches the OIDC provider tables so missing DDL or
     // permission issues surface here rather than at first request.
     if modules.iter().any(|m| m == "auth") {
@@ -370,8 +368,7 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
         record_engine_migration_sqlite(&pool, name, 1).await?;
     }
 
-    // Auth schema migration — always runs (auth is mandatory per plan-15
-    // slice 3). The ATTACH already happened on connect.
+    // Auth schema migration — always runs (auth is mandatory per
     if modules.iter().any(|m| m == "auth") {
         assay_auth::schema::migrate_sqlite(&pool)
             .await

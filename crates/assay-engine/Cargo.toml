@@ -18,7 +18,6 @@ name = "assay_engine"
 path = "src/lib.rs"
 
 [features]
-# Plan-15 slice 3: auth is mandatory. The engine doesn't run without
 # it, so the auth code is always linked. The fine-grained auth-* flags
 # stay so downstream slim builds can opt out of individual flavours
 # (e.g. drop passkey or OIDC-provider without touching the engine).

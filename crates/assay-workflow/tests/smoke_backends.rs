@@ -1137,7 +1137,7 @@ async fn leader_election(#[case] backend: Backend) {
 // ── Task 3.16 / 3.17 — Push streams ──────────────────────────────────────────
 //
 // SQLite is intentionally NOT tested here: it returns stream::empty() by
-// design (no cross-process notification primitive — hybrid model, plan 10
+// design (no cross-process notification primitive — hybrid model,
 // § "Dispatch wake-up").
 //
 // If the 5-second timeout proves flaky on a backend (e.g. slow CI), do NOT

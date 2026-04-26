@@ -214,7 +214,7 @@ fn random_token() -> String {
 }
 
 // =====================================================================
-//   HTTP router — phase 8
+//   HTTP router —
 // =====================================================================
 //
 // Endpoints:
@@ -424,7 +424,7 @@ async fn passkey_register_finish(
 struct PasskeyAuthStartBody {
     user_id: String,
     /// Optional pre-decoded passkeys (for tests + advanced clients).
-    /// In production we'd load these out of `auth.passkeys`; phase 8
+    /// In production we'd load these out of `auth.passkeys`;
     /// has no `passkey_json` column so we accept them as a body field.
     #[serde(default)]
     passkeys: Vec<serde_json::Value>,

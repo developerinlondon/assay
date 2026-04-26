@@ -25,14 +25,14 @@ use crate::store::WorkflowStore;
 ///    tasks, workers, queues, events. Authentication + authorization
 ///    happens at the engine layer (via [`assay_auth::gate`] in
 ///    `assay_engine::server`); the workflow router itself carries no
-///    gate. (The `workflow.api_keys` surface was retired in plan-15
+///    gate. (The `workflow.api_keys` surface was retired in
 ///    slice 3 — auth tokens come from the auth module now.)
 /// 2. **Public** — health, version. Always unauthenticated so
 ///    Kubernetes probes, load balancers, and third-party monitors can
 ///    reach them without a bearer token.
 /// 3. **OpenAPI** — `openapi.json` + `docs` HTML. Always public.
 ///
-/// The standalone `serve*` entry points were removed in plan-15
+/// The standalone `serve*` entry points were removed in
 /// slice 2 — workflow now only runs inside `assay-engine`, which owns
 /// the listener, the auth gate, and the surrounding state.
 pub fn router<S: WorkflowStore>(state: Arc<WorkflowCtx<S>>) -> Router {

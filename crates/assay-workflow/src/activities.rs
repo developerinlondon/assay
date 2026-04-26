@@ -179,7 +179,6 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                 timestamp: timestamp_now(),
             })
             .await?;
-        // Phase 9: the workflow has a new event the handler needs to see —
         // wake the workflow task back up.
         self.mark_and_emit_needs_dispatch(&workflow_id).await?;
         Ok(())

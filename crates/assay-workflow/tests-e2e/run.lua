@@ -30,7 +30,6 @@ local DB = env.get("ASSAY_E2E_DB") or "/tmp/assay-e2e.sqlite"
 local ENGINE_CONFIG = env.get("ASSAY_E2E_ENGINE_CONFIG") or "/tmp/assay-e2e-engine.toml"
 local ENGINE_LOG = env.get("ASSAY_E2E_ENGINE_LOG") or "/tmp/assay-e2e-engine.log"
 local WORKER_LOG = env.get("ASSAY_E2E_WORKER_LOG") or "/tmp/assay-e2e-worker.log"
--- Plan-15 slice 2 lifted the workflow-API auth gate to the engine layer:
 -- when state.auth is Some (now always), every /api/v1/engine/workflow/*
 -- call except /health|/version|/openapi.json|/docs requires a Bearer
 -- admin key. Match the break-glass key seeded in write_engine_config().

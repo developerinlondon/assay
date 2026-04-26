@@ -481,7 +481,7 @@ fn redact_secrets(v: &mut Value) {
 
 /// Engine-core admin gate.
 ///
-/// Auth is mandatory (plan-15 slice 3) so the engine always has an
+/// Auth is mandatory so the engine always has an
 /// [`AuthCtx`]. Dispatch to [`assay_auth::gate::require_role_for`]
 /// for `engine#core#admin`. Admin api-key callers bypass as
 /// break-glass; session/JWT callers go through Zanzibar.
