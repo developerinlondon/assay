@@ -74,12 +74,15 @@ See `docs/migration-to-0.3.0.md`.
 
 ### Out of scope (reserved for v0.3.x follow-ups)
 
-- Bitwarden-protocol compat shim (full mobile/browser/CLI) — schema + naming aligned, protocol
-  surface lands in v0.3.x.
-- Cloud KMS auto-unseal AWS sigv4 + GCP JWT — trait shape ready.
-- Dynamic creds AWS / GCP / Kubernetes providers — same trait shape.
-- KEK rotation flow (re-wrap every existing DEK).
-- Sealing dashboard pane.
+- Bitwarden-protocol compat shim — full BW client coverage. Phase 7 ships the BW HTTP shape
+  (identity, profile, sync, ciphers, folders, discovery probes); end-to-end mobile/browser/CLI
+  client coverage rides on a `bw` CLI in CI per plan §"Test plan".
+- Cross-method KEK rotation (rotate plaintext → shamir or shamir → KMS in one op). Phase 2 ships
+  in-method rewrap; cross-method needs a re-wrap-then-swap flow.
+- Recovery delegate (offline admin envelope wrap for collection sharing) — plan §"Deferred" reserves
+  this as a v0.4.x item.
+- AWS IMDS-based credential fetch — currently the AWS provider + KMS unseal take explicit
+  `AwsCredentials`; IMDS / IRSA / EC2-instance-role fetch lands in v0.3.x.
 
 ## [assay 0.14.2 / assay-auth 0.2.1 / assay-dashboard 0.2.1 / assay-engine 0.2.2] - 2026-04-26
 
