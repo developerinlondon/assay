@@ -38,7 +38,16 @@ pub struct Profile {
     pub object: &'static str,
 }
 
-/// One item / cipher.
+/// One item / cipher — BW's actual wire shape. Each type-specific
+/// field (Login, SecureNote, Card, Identity) holds client-pre-encrypted
+/// `encString`-format strings that ride through the server as
+/// opaque JSON. The server never decrypts; it just round-trips the
+/// JSON via items.ciphertext.
+///
+/// Passkey-as-cipher (plan §S6) lives in `Login.Fido2Credentials` — an
+/// array of FIDO2 credential objects each containing client-encrypted
+/// `credentialId`, `keyType`, `keyAlgorithm`, etc. The cipher's
+/// `item_type` stays 1 (Login); the Fido2Credentials array distinguishes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Cipher {
@@ -50,21 +59,21 @@ pub struct Cipher {
     #[serde(rename = "Type")]
     pub item_type: i32,
     pub name: String,
-    /// Free-form per-cipher data (login.username/password, secureNote.type, …).
-    /// Clients send JSON; we store the stringified form.
-    pub data: Option<serde_json::Value>,
+    pub notes: Option<String>,
     pub login: Option<serde_json::Value>,
     pub secure_note: Option<serde_json::Value>,
     pub card: Option<serde_json::Value>,
     pub identity: Option<serde_json::Value>,
+    #[serde(rename = "SshKey")]
+    pub ssh_key: Option<serde_json::Value>,
     pub favorite: bool,
     pub revision_date: String,
     #[serde(rename = "Object")]
     pub object: &'static str,
 }
 
-/// What the client POSTs / PUTs to /api/ciphers.
-#[derive(Clone, Debug, Deserialize)]
+/// What the client POSTs / PUTs to /api/ciphers — BW's wire shape.
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CipherInput {
     pub folder_id: Option<String>,
@@ -72,6 +81,8 @@ pub struct CipherInput {
     pub item_type: i32,
     pub name: String,
     #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
     pub favorite: bool,
     #[serde(default)]
     pub login: Option<serde_json::Value>,
@@ -81,10 +92,8 @@ pub struct CipherInput {
     pub card: Option<serde_json::Value>,
     #[serde(default)]
     pub identity: Option<serde_json::Value>,
-    /// Encrypted blob — the BW clients pre-encrypt the cipher's
-    /// fields client-side using the user's master key. We store the
-    /// ciphertext verbatim into vault.items.ciphertext.
-    pub data: Option<serde_json::Value>,
+    #[serde(default, rename = "SshKey")]
+    pub ssh_key: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

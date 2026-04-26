@@ -28,24 +28,34 @@ where
         )
 }
 
-fn ciphertext_pair(input: &CipherInput) -> (Vec<u8>, Vec<u8>) {
-    // BW clients pre-encrypt cipher fields client-side; the bytes
-    // arrive in the `Data` field of the input. We decode that into
-    // ciphertext + nonce.
-    let data = input.data.as_ref();
-    let ct_b64 = data
-        .and_then(|d| d.get("ciphertext_b64").and_then(|v| v.as_str()))
-        .unwrap_or("");
-    let nonce_b64 = data
-        .and_then(|d| d.get("nonce_b64").and_then(|v| v.as_str()))
-        .unwrap_or("");
-    let ct = data_encoding::BASE64
-        .decode(ct_b64.as_bytes())
-        .unwrap_or_default();
-    let nonce = data_encoding::BASE64
-        .decode(nonce_b64.as_bytes())
-        .unwrap_or_else(|_| vec![0u8; 12]);
-    (ct, nonce)
+/// Serialise the BW cipher's type-specific block into the bytes that
+/// land in `vault.items.ciphertext`. The server stores the JSON
+/// representation of (notes, login, secure_note, card, identity,
+/// ssh_key) as one blob; nonce is empty (BW does its own encryption
+/// — there's no server-side AEAD on these items, the type-specific
+/// `encString`-format strings inside are already pre-encrypted by the
+/// client).
+fn pack_cipher_blob(input: &CipherInput) -> Vec<u8> {
+    serde_json::to_vec(input).unwrap_or_default()
+}
+
+/// Reverse of [`pack_cipher_blob`] — read the stored JSON back into
+/// the per-type fields BW clients expect on /sync. Robust to legacy
+/// rows that hold opaque bytes (returns null for the structured
+/// fields and lets the client fall back to its previous state).
+fn unpack_cipher_blob(bytes: &[u8]) -> CipherInput {
+    serde_json::from_slice(bytes).unwrap_or(CipherInput {
+        folder_id: None,
+        item_type: 1,
+        name: String::new(),
+        notes: None,
+        favorite: false,
+        login: None,
+        secure_note: None,
+        card: None,
+        identity: None,
+        ssh_key: None,
+    })
 }
 
 async fn create<S>(
@@ -79,7 +89,8 @@ where
     };
 
     let id = uuid::Uuid::now_v7().to_string();
-    let (ct, nonce) = ciphertext_pair(&input);
+    let blob = pack_cipher_blob(&input);
+    let nonce: Vec<u8> = Vec::new();
     let item = match items
         .create_item(
             &id,
@@ -87,7 +98,7 @@ where
             input.folder_id.as_deref(),
             item_type_str(input.item_type),
             &input.name,
-            &ct,
+            &blob,
             &nonce,
         )
         .await
@@ -105,11 +116,12 @@ where
             folder_id: item.folder_id,
             item_type: input.item_type,
             name: item.name,
-            data: input.data.clone(),
+            notes: input.notes.clone(),
             login: input.login.clone(),
             secure_note: input.secure_note.clone(),
             card: input.card.clone(),
             identity: input.identity.clone(),
+            ssh_key: input.ssh_key.clone(),
             favorite: input.favorite,
             revision_date: rfc3339(item.updated_at),
             object: "cipher",
@@ -142,6 +154,7 @@ where
         Ok(None) => return super::not_found(),
         Err(e) => return super::vault_err(e),
     };
+    let unpacked = unpack_cipher_blob(&item.ciphertext);
     let cipher = Cipher {
         id: item.id,
         user_id: Some(user_id),
@@ -149,15 +162,13 @@ where
         folder_id: item.folder_id,
         item_type: parse_item_type(&item.item_type),
         name: item.name,
-        data: Some(serde_json::json!({
-            "ciphertext_b64": data_encoding::BASE64.encode(&item.ciphertext),
-            "nonce_b64": data_encoding::BASE64.encode(&item.nonce),
-        })),
-        login: None,
-        secure_note: None,
-        card: None,
-        identity: None,
-        favorite: false,
+        notes: unpacked.notes,
+        login: unpacked.login,
+        secure_note: unpacked.secure_note,
+        card: unpacked.card,
+        identity: unpacked.identity,
+        ssh_key: unpacked.ssh_key,
+        favorite: unpacked.favorite,
         revision_date: rfc3339(item.updated_at),
         object: "cipher",
     };
@@ -184,13 +195,14 @@ where
         Some(s) => s.clone(),
         None => return super::service_unavailable("items"),
     };
-    let (ct, nonce) = ciphertext_pair(&input);
+    let blob = pack_cipher_blob(&input);
+    let nonce: Vec<u8> = Vec::new();
     let updated = match items
         .update_item(
             &id,
             item_type_str(input.item_type),
             &input.name,
-            &ct,
+            &blob,
             &nonce,
             input.folder_id.as_deref(),
         )

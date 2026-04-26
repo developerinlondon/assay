@@ -85,6 +85,36 @@ where
         return error("invalid_grant", "invalid_username_or_password");
     }
 
+    // Plan §S6 — two-step auth detection. If the user has registered
+    // any passkey credentials in assay-auth, refuse password-only
+    // login and return BW's TwoFactorProviders shape so the client
+    // prompts for the second factor.
+    //
+    // BW's TwoFactorProviders is keyed by integer enum:
+    //   1 = Email, 2 = Authenticator (TOTP), 3 = Duo, 4 = YubiKey,
+    //   5 = U2F (deprecated), 6 = Remember, 7 = WebAuthn.
+    //
+    // assay-auth's webauthn-rs surface is the FIDO2 path — type 7.
+    // The actual second-factor challenge / response runs through the
+    // existing /api/v1/engine/auth/passkey/login ceremony; the BW
+    // client follows the same shape for type=7. Phase-7 v0.3.0 ships
+    // the *detection*; full BW WebAuthn round-trip via the BW client
+    // protocol lands in v0.3.x once the BW WebAuthn JSON wire-format
+    // adapter is in place.
+    if user_has_passkeys(&auth, &user.id).await {
+        // BW expects this exact 400 + body shape so the client knows
+        // to prompt for 2FA rather than re-prompting the password.
+        let two_factor = serde_json::json!({
+            "error": "invalid_grant",
+            "error_description": "Two factor required.",
+            "TwoFactorProviders": ["7"],
+            "TwoFactorProviders2": {
+                "7": {}
+            }
+        });
+        return (StatusCode::BAD_REQUEST, axum::Json(two_factor)).into_response();
+    }
+
     // Mint a JWT via the existing JwtConfig.
     let jwt = match auth.jwt.as_ref() {
         Some(j) => j,
@@ -125,6 +155,16 @@ where
         kdf_parallelism: 4,
     };
     axum::Json(resp).into_response()
+}
+
+/// Whether the user has any passkey credentials registered with
+/// assay-auth. Used to decide if the BW shim needs to demand 2FA.
+async fn user_has_passkeys(auth: &AuthCtx, user_id: &str) -> bool {
+    auth.users
+        .list_passkeys(user_id)
+        .await
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
 }
 
 fn error(code: &'static str, message: &'static str) -> Response {

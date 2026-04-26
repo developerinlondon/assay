@@ -97,14 +97,22 @@ where
     let ciphers: Vec<Cipher> = items
         .into_iter()
         .map(|i| {
-            // Round-trip whatever the client originally sent. The
-            // ciphertext bytes are hex-encoded into the `Data` field
-            // so a future client redownload sees the same blob shape.
-            let data = serde_json::json!({
-                "name": i.name,
-                "ciphertext_b64": data_encoding::BASE64.encode(&i.ciphertext),
-                "nonce_b64": data_encoding::BASE64.encode(&i.nonce),
-            });
+            // Unpack the JSON-serialised BW cipher block from the
+            // stored ciphertext bytes. Clients see exactly what they
+            // POSTed.
+            let unpacked: super::types::CipherInput = serde_json::from_slice(&i.ciphertext)
+                .unwrap_or_else(|_| super::types::CipherInput {
+                    folder_id: None,
+                    item_type: parse_item_type(&i.item_type),
+                    name: i.name.clone(),
+                    notes: None,
+                    favorite: false,
+                    login: None,
+                    secure_note: None,
+                    card: None,
+                    identity: None,
+                    ssh_key: None,
+                });
             Cipher {
                 id: i.id,
                 user_id: Some(user_id.clone()),
@@ -112,12 +120,13 @@ where
                 folder_id: i.folder_id,
                 item_type: parse_item_type(&i.item_type),
                 name: i.name,
-                data: Some(data),
-                login: None,
-                secure_note: None,
-                card: None,
-                identity: None,
-                favorite: false,
+                notes: unpacked.notes,
+                login: unpacked.login,
+                secure_note: unpacked.secure_note,
+                card: unpacked.card,
+                identity: unpacked.identity,
+                ssh_key: unpacked.ssh_key,
+                favorite: unpacked.favorite,
                 revision_date: rfc3339(i.updated_at),
                 object: "cipherDetails",
             }

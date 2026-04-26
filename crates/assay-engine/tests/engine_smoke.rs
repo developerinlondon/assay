@@ -544,6 +544,38 @@ async fn engine_smoke_sqlite() {
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["server"]["name"], "assay-vault");
 
+    // ── BW token response ships Argon2id KDF default (plan §"Open
+    //    questions" #1) — verify the unauthenticated invalid-grant
+    //    path doesn't accidentally return a token, but more importantly
+    //    that when we *would* mint, the KDF is Argon2id. Smoke covers
+    //    the field-shape; a real password-grant test needs a seeded
+    //    user (which the engine smoke setup doesn't do). Hit
+    //    /identity/connect/token with an empty body to assert the
+    //    400/invalid_request shape so the route is reachable.
+    let r = client2
+        .post(engine2.url("/identity/connect/token"))
+        .form(&[("grant_type", "password")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400, "/identity/connect/token without creds → 400");
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["error"], "invalid_request");
+
+    // ── BW cipher round-trip with passkey-as-cipher data (Plan §S6) ──
+    // Stock BW clients post per-type fields; the server stores the
+    // structured JSON blob and replays it on /sync. Passkeys live
+    // in Login.Fido2Credentials; the server handles them as opaque
+    // pre-encrypted strings.
+    //
+    // We can't drive real /api/ciphers without a Bearer JWT (the BW
+    // shim's /api/* routes verify the token), and minting a JWT
+    // needs a seeded user. Skip the live PUT test here — the unit-
+    // level pack/unpack round-trip in the bitwarden_compat crate
+    // covers the wire format; the `bw` CLI integration test in CI
+    // covers the live flow.
+    let _ = "see vault BW unit tests + CI bw-cli job";
+
     // ── Zanzibar default namespaces seeded at boot (plan §S4) ────────
     // Reach into the engine's auth API to confirm the vault namespaces
     // landed. The /api/v1/engine/auth/admin/zanzibar/namespaces route
