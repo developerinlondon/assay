@@ -1,26 +1,93 @@
-# Builder — standalone HTTP server binary (`assay-engine`) that
-# composes assay-workflow, assay-dashboard, and (in v0.14.0) assay-auth
-# behind one port. Published as `ghcr.io/developerinlondon/assay-engine`
-# — distinct from the runtime image (`ghcr.io/developerinlondon/assay`)
-# because operators who deploy the server need a different set of
-# features, ports, and expectations than devs running one-off scripts.
-FROM rust:1.92-slim AS builder
-RUN apt-get update && apt-get install -y musl-tools cmake make g++ protobuf-compiler && rm -rf /var/lib/apt/lists/*
+# assay-engine container image — published as
+# `ghcr.io/developerinlondon/assay-engine`. Distinct from the assay
+# runtime image because operators who deploy the server need a different
+# set of features, ports, and expectations than devs running one-off
+# scripts.
+#
+# Two build modes selected via the `BUILD_MODE` build arg:
+#
+#   BUILD_MODE=artifact (default)
+#     Consumes a pre-built linux-musl binary from the build context.
+#     The binary must be present at `assay-engine-linux-x86_64`. Used by
+#     the release pipeline after the `binaries` GH Actions job downloads
+#     the matching cross-compiled artifact. Build context: ~20 MB.
+#     Build time: ~10s.
+#
+#     For local use, produce the binary first:
+#       cargo build --release --target x86_64-unknown-linux-musl \
+#         -p assay-engine --bin assay-engine
+#       cp target/x86_64-unknown-linux-musl/release/assay-engine \
+#         ./assay-engine-linux-x86_64
+#       docker build -f Dockerfile.assay-engine -t assay-engine .
+#
+#   BUILD_MODE=source
+#     Cross-compiles inside Docker. Slow (~6 min, plus ~30s for the
+#     vendored OpenSSL static compile that webauthn-rs needs). Useful
+#     only when no local Rust toolchain is available.
+#
+#       docker build --build-arg BUILD_MODE=source \
+#         -f Dockerfile.assay-engine -t assay-engine .
+#
+# `RUST_VERSION` defaults to the version pinned in `.mise.toml` (the
+# single source of truth for the workspace toolchain). The release
+# workflow extracts it from .mise.toml and passes it as a build arg so
+# the Dockerfile default never goes stale; bump both together if you
+# bump rust manually.
+
+ARG BUILD_MODE=artifact
+ARG RUST_VERSION=1.95
+
+# ──────────────────────────────────────────────────────────────────────
+# artifact branch — copy pre-built musl binary from build context
+# ──────────────────────────────────────────────────────────────────────
+FROM scratch AS artifact
+COPY assay-engine-linux-x86_64 /assay-engine
+
+# ──────────────────────────────────────────────────────────────────────
+# source branch — full cross-compile (rare, local-dev only)
+# ──────────────────────────────────────────────────────────────────────
+# `perl` (full distribution, not just `perl-base`) is required by
+# `openssl-src`'s ./Configure script — the slim Debian image only ships
+# perl-base which is missing FindBin.pm. Without `perl` here the vendored
+# OpenSSL build fails with "Can't locate FindBin.pm in @INC".
+FROM rust:${RUST_VERSION}-slim AS source-builder
+RUN apt-get update && apt-get install -y \
+      musl-tools cmake make g++ protobuf-compiler perl \
+    && rm -rf /var/lib/apt/lists/*
 RUN rustup target add x86_64-unknown-linux-musl
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
-RUN cargo build --release --target x86_64-unknown-linux-musl -p assay-engine --bin assay-engine
+RUN cargo build --release --target x86_64-unknown-linux-musl -p assay-engine --bin assay-engine \
+    && cp /app/target/x86_64-unknown-linux-musl/release/assay-engine /assay-engine
 
-# Runtime — FROM scratch mirrors the policy of the runtime image: no
-# shell, no busybox, no alpine CVE surface. Just the static musl binary
-# + a CA bundle so HTTPS (reqwest, sqlx TLS) can verify server certs.
-#
-# Default port follows assay-engine's `EngineConfig.server.bind_addr`
-# conventional default of 0.0.0.0:8080. Operators override via config
-# or CLI flag; the EXPOSE is informational for orchestration tooling.
+# Normalise the source-builder output to a stage with the binary at
+# /assay-engine, matching the artifact stage's layout. Both branches
+# now expose `/assay-engine` so the picker below can select either.
+FROM source-builder AS source
+
+# ──────────────────────────────────────────────────────────────────────
+# Picker — Docker allows ARG interpolation inside `FROM` but NOT inside
+# `COPY --from=…`, so we use a small picker stage that resolves the
+# build mode here, then the runtime stage does a fixed
+# `COPY --from=picked` regardless of which branch was selected.
+# ──────────────────────────────────────────────────────────────────────
+FROM ${BUILD_MODE} AS picked
+
+# ──────────────────────────────────────────────────────────────────────
+# CA certificate bundle — alpine is used only as a vendored cert source.
+# Its files end up COPIED into FROM scratch; alpine itself never ships.
+# ──────────────────────────────────────────────────────────────────────
+FROM alpine:3 AS certs
+RUN apk add --no-cache ca-certificates
+
+# ──────────────────────────────────────────────────────────────────────
+# Runtime — FROM scratch + binary + cert bundle. No shell, no busybox,
+# no apk surface. Default port mirrors EngineConfig.server.bind_addr's
+# 0.0.0.0:8080 default; operators override via config or CLI flag.
+# ──────────────────────────────────────────────────────────────────────
 FROM scratch
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/assay-engine /assay-engine
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=picked /assay-engine /assay-engine
 EXPOSE 8080
 ENTRYPOINT ["/assay-engine"]
