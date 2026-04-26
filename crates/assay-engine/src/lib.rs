@@ -70,8 +70,20 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
                 .await
                 .map_err(|e| anyhow::anyhow!("workflow store (pg): {e}"))?;
             let auth_ctx = build_auth_ctx_pg(&cfg, &b.pool).await?;
-            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, Some(auth_ctx))
-                .await
+            #[cfg(feature = "vault")]
+            let vault_ctx = build_vault_ctx(&b.modules);
+            #[cfg(not(feature = "vault"))]
+            let vault_ctx: Option<()> = None;
+            run_with_store(
+                cfg,
+                store,
+                b.bus,
+                b.modules,
+                b.instance_id,
+                Some(auth_ctx),
+                vault_ctx,
+            )
+            .await
         }
         #[cfg(feature = "backend-sqlite")]
         init::EngineBoot::Sqlite(b) => {
@@ -79,9 +91,33 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
                 .await
                 .map_err(|e| anyhow::anyhow!("workflow store (sqlite): {e}"))?;
             let auth_ctx = build_auth_ctx_sqlite(&cfg, &b.pool).await?;
-            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, Some(auth_ctx))
-                .await
+            #[cfg(feature = "vault")]
+            let vault_ctx = build_vault_ctx(&b.modules);
+            #[cfg(not(feature = "vault"))]
+            let vault_ctx: Option<()> = None;
+            run_with_store(
+                cfg,
+                store,
+                b.bus,
+                b.modules,
+                b.instance_id,
+                Some(auth_ctx),
+                vault_ctx,
+            )
+            .await
         }
+    }
+}
+
+/// Build the vault context iff the runtime `engine.modules.vault.enabled`
+/// row is TRUE. Phase 0: empty ctx — Phase 1+ wire pool-backed stores
+/// here matching the AuthCtx pattern.
+#[cfg(feature = "vault")]
+fn build_vault_ctx(modules: &[String]) -> Option<assay_vault::VaultCtx> {
+    if modules.iter().any(|m| m == "vault") {
+        Some(assay_vault::VaultCtx::new())
+    } else {
+        None
     }
 }
 
@@ -317,6 +353,8 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
     modules: Vec<String>,
     instance_id: uuid::Uuid,
     auth_ctx: Option<assay_auth::AuthCtx>,
+    #[cfg(feature = "vault")] vault_ctx: Option<assay_vault::VaultCtx>,
+    #[cfg(not(feature = "vault"))] _vault_ctx: Option<()>,
 ) -> anyhow::Result<()> {
     // The engine refuses to start unless there's at least one operator
     // user (created via `bootstrap-admin`) or at least one entry in
@@ -369,6 +407,8 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
         workflow: workflow_ctx,
         dashboard: dashboard_ctx,
         auth: auth_ctx,
+        #[cfg(feature = "vault")]
+        vault: vault_ctx,
         admin_api_keys,
         modules: Arc::new(modules),
         instance_id,

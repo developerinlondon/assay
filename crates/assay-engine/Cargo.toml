@@ -32,6 +32,7 @@ default = [
   "auth-oidc",
   "auth-oidc-provider",
   "auth-zanzibar",
+  "vault",
 ]
 
 # Pass-through declarations so engine's `cfg` matches assay-auth's. Each
@@ -44,15 +45,30 @@ auth-oidc = ["assay-auth/auth-oidc"]
 auth-oidc-provider = ["assay-auth/auth-oidc-provider"]
 auth-zanzibar = ["assay-auth/auth-zanzibar"]
 
+# Vault module (plan 17 / v0.3.0). The umbrella `vault` flag pulls every
+# always-on submodule; PKCS#11-backed sealing is opt-in via
+# `vault-sealing-hsm` because most operators don't have an HSM.
+vault = ["dep:assay-vault", "assay-vault/vault"]
+vault-sealing-hsm = ["assay-vault/vault-sealing-hsm"]
+
 server = ["dep:clap"]
 
-backend-postgres = ["assay-workflow/backend-postgres", "assay-auth/backend-postgres"]
-backend-sqlite = ["assay-workflow/backend-sqlite", "assay-auth/backend-sqlite"]
+backend-postgres = [
+  "assay-workflow/backend-postgres",
+  "assay-auth/backend-postgres",
+  "assay-vault?/backend-postgres",
+]
+backend-sqlite = [
+  "assay-workflow/backend-sqlite",
+  "assay-auth/backend-sqlite",
+  "assay-vault?/backend-sqlite",
+]
 
 [dependencies]
 assay-auth = { path = "../assay-auth", version = "0.2" }
 assay-dashboard = { path = "../assay-dashboard", version = "0.2" }
 assay-domain = { path = "../assay-domain", version = "0.2" }
+assay-vault = { path = "../assay-vault", version = "0.1", optional = true, default-features = false }
 assay-workflow = { path = "../assay-workflow", version = "0.3" }
 
 axum = "0.8"
