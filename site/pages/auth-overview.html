@@ -13,7 +13,7 @@
   <main>
     <a href="changelog.html" class="release-banner">
       <span class="release-banner-tag">v0.2.0</span>
-      <span class="release-banner-text">assay-engine becomes a full Ory replacement: passkey, OIDC provider, biscuit, Zanzibar — all in one ~9 MB static binary.</span>
+      <span class="release-banner-text">assay-engine becomes a full Ory replacement: passkey, OIDC provider, biscuit, Zanzibar — all in one ~19 MB static binary.</span>
       <span class="release-banner-arrow">&rarr;</span>
     </a>
 
@@ -21,7 +21,7 @@
     <p style="font-size: 1.15rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
       <code>assay-engine v0.2.0</code> ships a complete identity provider in the same binary that
       runs the Temporal-replacement workflow engine. One process. PG18 or SQLite. Ory + Hydra +
-      Keto in ~9 MB.
+      Keto in ~19 MB.
     </p>
 
     <h2>What's in v0.2.0</h2>
@@ -47,7 +47,7 @@
 
     <h2>Why ditch Ory for assay-engine?</h2>
     <ul>
-      <li><strong>One static binary.</strong> ~9 MB stripped, <code>FROM scratch</code>-shippable.
+      <li><strong>One static binary.</strong> ~19 MB stripped, <code>FROM scratch</code>-shippable.
         Replaces a stack of Kratos + Hydra + Keto + Oathkeeper containers (typically 800 MB-1.5 GB
         compressed across 5+ images).</li>
       <li><strong>Backend symmetry.</strong> PG18 + SQLite are both first-class. SQLite means a

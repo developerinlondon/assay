@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## template
 
 Jinja2-compatible template rendering. No `require()` needed.

@@ -51,7 +51,7 @@ end
 
 -- =====================================================================
 -- =====================================================================
-local module_count = count_builtins() + #fs.glob("stdlib/**/*.lua")
+local module_count = count_builtins() + #fs.glob("crates/assay/stdlib/**/*.lua")
 
 local git_sha = "local-dev"
 local ok, result = pcall(function()
@@ -127,54 +127,124 @@ __FOOTER__
 </body>
 </html>]]
 
-local categories = {
-  { name = "Builtins (no require needed)", pattern = {"http", "serialization", "crypto", "regex", "db", "ws", "template", "async", "assert", "utilities", "fs", "markdown"} },
-  { name = "Monitoring &amp; Observability", pattern = {"prometheus", "alertmanager", "loki", "grafana"} },
-  { name = "Kubernetes &amp; GitOps", pattern = {"k8s", "argocd", "kargo", "flux", "traefik"} },
-  { name = "Security &amp; Identity", pattern = {"vault", "openbao", "certmanager", "eso", "dex", "zitadel", "ory"} },
-  { name = "Infrastructure", pattern = {"crossplane", "velero", "harbor"} },
-  { name = "Data &amp; Storage", pattern = {"postgres", "s3"} },
-  { name = "Feature Flags &amp; Utilities", pattern = {"unleash", "healthcheck"} },
-  { name = "AI Agent &amp; Workflow", pattern = {"ai-agents", "workflow"} },
+-- Display order for categories. Any category found in frontmatter that is
+-- not in this list is appended at the end in alphabetical order. Adding a
+-- new category to a module's frontmatter is the only step needed to make
+-- it appear; ordering it explicitly is optional.
+local category_order = {
+  "Builtins",
+  "Monitoring & Observability",
+  "Kubernetes & GitOps",
+  "Security & Identity",
+  "Infrastructure",
+  "Data & Storage",
+  "Feature Flags & Health",
+  "Text, URLs & Versions",
+  "AI Agents & Workflow",
 }
+
+-- Display name override (e.g. for the modules.html headers we want
+-- "Builtins (no require needed)" instead of just "Builtins").
+local category_display = {
+  ["Builtins"] = "Builtins (no require needed)",
+}
+
+-- Parse YAML-ish frontmatter from a markdown source. Returns
+-- (fields_table, body_without_frontmatter). Fields are key/value strings;
+-- only top-level scalar values are supported (sufficient for category +
+-- tagline). If the file has no frontmatter, fields is empty and body is
+-- the original content.
+local function parse_frontmatter(src)
+  local fields = {}
+  local rest = src:match("^%-%-%-\n(.-\n)%-%-%-\n+(.*)$")
+  if not rest then
+    return fields, src
+  end
+  local header = src:match("^%-%-%-\n(.-)\n%-%-%-\n")
+  local body   = src:match("^%-%-%-\n.-\n%-%-%-\n+(.*)$") or src
+  for line in (header or ""):gmatch("[^\n]+") do
+    local k, v = line:match("^([%w_]+)%s*:%s*(.*)$")
+    if k then fields[k] = v end
+  end
+  return fields, body
+end
+
+-- Take the first paragraph after the H2 header as a one-line tagline.
+-- Newlines collapsed to single spaces. Used for README/SKILL table cells.
+local function extract_tagline(body)
+  local first_para = body:match("^## [^\n]+\n+([^\n]+(\n[^\n]+)*)") or ""
+  -- The match is greedy across blank lines, so trim at first double-newline.
+  first_para = first_para:match("^([^\n].-)\n\n") or first_para
+  return (first_para:gsub("\n", " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", ""))
+end
 
 local modules = {}
 for _, md_file in ipairs(md_files) do
   local slug = md_file:match("([^/]+)%.md$")
-  local md_content = fs.read(md_file)
-  local title = md_content:match("^## ([^\n]+)") or slug
+  local raw  = fs.read(md_file)
+  local fields, body = parse_frontmatter(raw)
+  local title    = body:match("^## ([^\n]+)") or slug
+  local category = fields.category or "Uncategorised"
+  local tagline  = fields.tagline or extract_tagline(body)
 
   local page = module_template
   page = substitute(page, "{{title}}", title)
-  page = substitute(page, "{{content}}", markdown.to_html(md_content))
+  page = substitute(page, "{{content}}", markdown.to_html(body))
   page = apply_placeholders(page)
 
   fs.write(modules_out .. "/" .. slug .. ".html", page)
-  modules[#modules + 1] = { slug = slug, title = title }
+  modules[#modules + 1] = {
+    slug = slug, title = title, category = category, tagline = tagline,
+  }
 end
 log.info("Generated " .. #modules .. " module pages")
 
 -- =====================================================================
 -- =====================================================================
-local function modules_in_category(cat_pattern)
-  local items = {}
-  for _, m in ipairs(modules) do
-    for _, p in ipairs(cat_pattern) do
-      if m.slug == p then
-        items[#items + 1] = '        <li><a href="modules/' .. m.slug .. '.html">' .. m.title .. '</a></li>'
-        break
-      end
+-- Build categories dynamically from frontmatter, ordered by
+-- `category_order` (then any unknown categories alphabetically).
+local by_category = {}
+for _, m in ipairs(modules) do
+  by_category[m.category] = by_category[m.category] or {}
+  table.insert(by_category[m.category], m)
+end
+for cat, list in pairs(by_category) do
+  table.sort(list, function(a, b) return a.slug < b.slug end)
+end
+
+local function ordered_categories()
+  local seen = {}
+  local result = {}
+  for _, cat in ipairs(category_order) do
+    if by_category[cat] then
+      result[#result + 1] = cat
+      seen[cat] = true
     end
   end
-  return table.concat(items, "\n")
+  local extras = {}
+  for cat, _ in pairs(by_category) do
+    if not seen[cat] then extras[#extras + 1] = cat end
+  end
+  table.sort(extras)
+  for _, cat in ipairs(extras) do result[#result + 1] = cat end
+  return result
+end
+
+local html_escape = function(s)
+  return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
 end
 
 local sections = {}
-for _, cat in ipairs(categories) do
-  local items = modules_in_category(cat.pattern)
-  if #items > 0 then
-    sections[#sections + 1] = '    <h2>' .. cat.name .. '</h2>\n    <ul>\n' .. items .. '\n    </ul>'
+for _, cat in ipairs(ordered_categories()) do
+  local list = by_category[cat]
+  local items = {}
+  for _, m in ipairs(list) do
+    items[#items + 1] = '        <li><a href="modules/' .. m.slug .. '.html">'
+                     .. html_escape(m.title) .. '</a></li>'
   end
+  local display = category_display[cat] or cat
+  sections[#sections + 1] = '    <h2>' .. html_escape(display) .. '</h2>\n'
+                          .. '    <ul>\n' .. table.concat(items, "\n") .. '\n    </ul>'
 end
 
 local index_html = [[<!DOCTYPE html>
@@ -386,5 +456,69 @@ llms[#llms + 1] = [[## Optional
 ]]
 
 fs.write(out .. "/llms-full.txt", table.concat(llms))
+
+-- =====================================================================
+-- README.md / SKILL.md auto-rewrite
+-- =====================================================================
+-- Modules + categories live in `docs/modules/<slug>.md` frontmatter
+-- (`category:` field). The stdlib table in README and SKILL is generated
+-- from that, replacing whatever sits between the BEGIN/END markers. Run
+-- `assay site/build.lua` after adding/changing a module; CI should fail
+-- if `git diff README.md SKILL.md` is non-empty afterwards.
+
+local function render_stdlib_md_table()
+  local lines = {
+    "<!-- BEGIN STDLIB TABLE -->",
+    "<!-- Generated by site/build.lua from docs/modules/*.md frontmatter — do not edit by hand. -->",
+    "",
+    "| Module | Description |",
+    "| --- | --- |",
+  }
+  for _, cat in ipairs(ordered_categories()) do
+    if cat ~= "Builtins" then
+      lines[#lines + 1] = "| **" .. cat .. "** | |"
+      for _, m in ipairs(by_category[cat]) do
+        local desc = m.tagline or ""
+        -- Pipes inside table cells must be escaped.
+        desc = desc:gsub("|", "\\|")
+        lines[#lines + 1] = "| `assay." .. m.slug .. "` | " .. desc .. " |"
+      end
+    end
+  end
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = "<!-- END STDLIB TABLE -->"
+  return table.concat(lines, "\n")
+end
+
+local function replace_block(path, begin_marker, end_marker, replacement)
+  local ok, src = pcall(fs.read, path)
+  if not ok then
+    log.warn(path .. ": not found, skipping")
+    return false
+  end
+  local pre_pat  = "^(.-)(" .. begin_marker:gsub("%-", "%%-") .. ")"
+  local post_pat = "(" .. end_marker:gsub("%-", "%%-") .. ")(.*)$"
+  local pre  = src:match(pre_pat)
+  local post = src:match(post_pat)
+  if not pre or not post then
+    log.warn(path .. ": markers not found, skipping (add `"
+             .. begin_marker .. "` ... `" .. end_marker .. "`)")
+    return false
+  end
+  local new = pre .. replacement .. post
+  if new == src then
+    log.info(path .. ": stdlib table unchanged")
+    return false
+  end
+  fs.write(path, new)
+  log.info(path .. ": stdlib table rewritten")
+  return true
+end
+
+local table_md = render_stdlib_md_table()
+replace_block("README.md", "<!-- BEGIN STDLIB TABLE -->", "<!-- END STDLIB TABLE -->", table_md)
+-- SKILL.md does not currently host a stdlib table; if you want one,
+-- add the BEGIN/END markers anywhere in the file and rerun this script.
+replace_block("SKILL.md",  "<!-- BEGIN STDLIB TABLE -->", "<!-- END STDLIB TABLE -->", table_md)
 
 log.info("Done. Output at " .. out .. "/")

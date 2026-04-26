@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## log
 
 Structured logging. No `require()` needed.

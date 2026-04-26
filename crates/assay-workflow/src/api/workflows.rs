@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -247,11 +248,19 @@ pub struct CancelBody {
 pub async fn cancel_workflow<S: WorkflowStore>(
     State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
-    body: Option<Json<CancelBody>>,
+    body: Bytes,
 ) -> Result<axum::http::StatusCode, AppError> {
-    // Accept either no body (back-compat with callers that just POST
-    // /cancel) or a body with optional reason.
-    let reason = body.and_then(|Json(b)| b.reason);
+    // Accept any of: no body, "{}", "[]", '{"reason":"..."}'. Older Lua stdlib
+    // builds (and any caller that auto-fills empty tables) send "[]" which
+    // does not deserialize into CancelBody; treat such bodies as no-reason
+    // rather than 400. See issue #66.
+    let reason = if body.is_empty() {
+        None
+    } else {
+        serde_json::from_slice::<CancelBody>(&body)
+            .ok()
+            .and_then(|b| b.reason)
+    };
     let cancelled = state.cancel_workflow(&id, reason.as_deref()).await?;
     if cancelled {
         Ok(axum::http::StatusCode::OK)

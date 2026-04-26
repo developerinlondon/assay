@@ -1,3 +1,7 @@
+---
+category: Infrastructure
+---
+
 ## assay.crossplane
 
 Crossplane infrastructure management. Providers, XRDs, compositions, managed resources. Client:

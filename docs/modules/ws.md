@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## ws
 
 WebSocket client. No `require()` needed.

@@ -1,3 +1,7 @@
+---
+category: Security & Identity
+---
+
 ## assay.certmanager
 
 cert-manager certificate lifecycle. Certificates, issuers, ACME orders and challenges. Client:

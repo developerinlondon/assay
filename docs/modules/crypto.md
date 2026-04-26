@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## crypto
 
 Cryptography utilities. No `require()` needed.

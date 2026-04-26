@@ -1,3 +1,7 @@
+---
+category: Builtins
+---
+
 ## process
 
 OS-level process management — list, check, signal, spawn, wait. The

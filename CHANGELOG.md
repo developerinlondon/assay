@@ -2,6 +2,116 @@
 
 All notable changes to Assay are documented here.
 
+## [assay 0.14.1 / assay-workflow 0.3.1 / assay-engine 0.2.1] - 2026-04-26
+
+**Headline:** A patch release closing six open issues — one workflow API bug, six stdlib additions,
+one template-builtin gap, and one coroutine regression — without breaking changes. Two layers move:
+the Lua runtime side (`assay`) and the engine side (`assay-workflow` for the cancel handler change,
+`assay-engine` to ship the patched binary).
+
+| Crate            | Version         | Notes                                                                                                             |
+| ---------------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `assay`          | 0.14.0 → 0.14.1 | Six new stdlib modules (ansi, url, tailscale, version, apt, compress); github releases extension; template loader |
+| `assay-workflow` | 0.3.0 → 0.3.1   | Defensive empty-body parsing on `POST /workflows/{id}/cancel`                                                     |
+| `assay-engine`   | 0.2.0 → 0.2.1   | Re-ships the workflow patch in the binary                                                                         |
+
+### Fixed
+
+- **#66 — `workflow.cancel` rejected with empty-body deserialize error.** The Lua stdlib
+  `_api("POST", path)` helpers were synthesising `body or {}` on every call, which serialised to
+  `[]` (Lua can't distinguish empty array from empty object), and the `POST /workflows/{id}/cancel`
+  handler then failed to deserialise that `[]` into `CancelBody`. Two-layer fix:
+  - _Stdlib_ (`assay 0.14.1`): the engine + workflow + auth `_api` helpers now pass `body` through
+    unchanged so a `nil` body sends no body and no `Content-Type` header.
+  - _Server_ (`assay-workflow 0.3.1`): `cancel_workflow` now consumes the body as raw bytes and
+    tolerates any of: missing body, `{}`, `[]`, or `{"reason":"..."}`. Regression test in
+    `crates/assay-workflow/tests/api_integration.rs::cancel_accepts_any_body_shape`.
+
+- **#40 — Lua coroutine resume `error converting Lua nil to function`.** The bug was filed against
+  `assay 0.10.4` and the long-removed `temporal.worker(...)` API. The v0.13.0 engine rewrite
+  replaced the mlua `create_thread` path with pure-Lua `coroutine.create` in
+  `stdlib/engine/workflow/worker.lua`, which inherits globals from the parent state — so `os.date`
+  and `ctx:register_query` are reachable inside the coroutine. New regression test
+  (`crates/assay/tests/coroutine_ctx_resume.rs`) pins this contract.
+
+### Added — stdlib (assay 0.14.1)
+
+- **`assay.ansi`** — ANSI SGR → HTML conversion (`ansi.to_html`) and stripper (`ansi.strip`) for
+  browser-facing log viewers. Pure Lua, no deps. Covers fg/bg 30–37 / 90–97 / 40–47 / 100–107, bold,
+  reset, default-fg/bg; unknown codes dropped cleanly; non-SGR CSI pre-stripped; HTML-unsafe chars
+  escaped before span-wrapping. Closes #67.
+
+- **`assay.url`** — RFC 3986 percent encoding (`url.encode`, `url.decode`) plus form-body builder
+  (`url.encode_form`). Used by `assay.tailscale` for OAuth2 `application/x-www-form-urlencoded`
+  bodies; generally useful wherever a script builds query strings or form bodies by hand. Spaces
+  become `%20` (RFC 3986); `url.decode` does form-style `+` → space.
+
+- **`assay.tailscale`** — Tailscale REST client. `tailscale.client(...)` performs OAuth2
+  `client_credentials` exchange (form body built via `assay.url.encode_form`, so secrets containing
+  `&=+%` encode safely), caches the bearer token until `expires_at - 30s`, and exposes: `mint_key`,
+  `list_devices`, `find_device`, `get_device`, `set_key_expiry` (idempotent — returns `"changed"` or
+  `"unchanged"`), `authorize_device`, `set_device_tags`, `delete_device`, `acl_test`. Closes #72.
+
+- **`assay.version`** — Cross-scheme version comparison. `version.compare(a, b, scheme?)` returns
+  -1/0/1 across `"semver"` (default, semver.org-spec pre-release ordering), `"debian"` (epoch +
+  tilde-aware alternating digit/non-digit comparator), `"rpm"` (same shape, no tilde rule),
+  `"numeric"` (dotted ints, missing segments default to 0). `version.max(list, scheme?)` returns the
+  largest. Closes #71 (§3).
+
+- **`assay.compress`** — Decompression Rust builtin. `compress.gunzip`, `compress.unxz`,
+  `compress.unzstd`. Bytes in, bytes out (Lua strings are byte buffers). Used internally by
+  `assay.apt`; generally useful for any HTTP download with `Content-Encoding` compression.
+
+- **`assay.apt`** — Debian package index reader. `apt.packages({base_url,
+  dist, component, arch})`
+  fetches `dists/{dist}/{component}/binary-{arch}/Packages.{gz,xz,zst,plain}`, auto-decompresses,
+  parses the RFC 822 control file, and returns an index with
+  `:find(name) -> { version, versions[], architecture, depends, ... }`. Versions are sorted via
+  `assay.version.compare(..., "debian")`. Closes #71 (§2).
+
+- **`assay.github`** extension — Module-level GitHub Releases helpers alongside the existing client
+  API: `github.latest_release(owner, repo)`, `github.find_asset(release, name_pattern)`,
+  `github.fetch_asset_text/bytes(asset)`,
+  `github.release_checksum(release, { asset_pattern, digest })`. Used by release-version checkers.
+  Closes #71 (§1).
+
+### Added — Lua builtins (assay 0.14.1)
+
+- **`template.render_with_loader(template_dir, name, vars)`** — Renders a template through a
+  minijinja path loader so `{% extends %}`, `{% include %}`, and `{% import %}` resolve sibling
+  templates. The existing `template.render` and `template.render_string` constructed a fresh
+  `Environment::new()` per call with no loader and so could never resolve references between
+  templates. Closes #64.
+
+- **`compress.gunzip` / `compress.unxz` / `compress.unzstd`** — see stdlib section above.
+  Implemented as a Rust builtin via `flate2`, `xz2`, `zstd`.
+
+### Changed — http (assay 0.14.1)
+
+- `http.get/post/...` response `body` is now constructed from raw bytes rather than `resp.text()`
+  (UTF-8 lossy). Lua strings are byte buffers, so this round-trips binary payloads (gzip/xz/zst
+  index files, asset downloads) without corruption. Visible only to callers fetching non-UTF-8
+  content; UTF-8 callers see no behaviour change.
+
+### Changed — workflow API (assay-workflow 0.3.1)
+
+- `cancel_workflow` handler now consumes the raw body and tolerates any shape — the previous
+  `Option<Json<CancelBody>>` extractor would 400 on `[]`. See #66 fix above.
+
+### Migration
+
+No breaking changes. Stdlib additions are additive. The cancel handler contract is wider than before
+(more inputs accepted; same outputs). Engine binaries should be redeployed to pick up the cancel
+fix; library consumers of `assay-workflow` get it automatically with
+`cargo update -p assay-workflow`.
+
+See `docs/migration-to-0.14.1.md` for the short version.
+
+### Out of scope
+
+- **#75** (drop OpenSSL → RustCrypto for `webauthn-rs`) — left open; tracked for a dedicated minor
+  since it touches the auth crate and changes a build-time dependency tree.
+
 ## [assay-engine 0.2.0] - 2026-04-25
 
 **Headline:** assay-engine becomes a full Ory replacement + IdP, on top of the Temporal-replacement

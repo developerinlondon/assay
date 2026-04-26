@@ -49,6 +49,29 @@ pub fn register_template(lua: &Lua) -> mlua::Result<()> {
     })?;
     tmpl_table.set("render", render_fn)?;
 
+    let render_with_loader_fn =
+        lua.create_function(|_, (template_dir, template_name, vars): (String, String, Value)| {
+            let json_vars = match &vars {
+                Value::Table(_) => lua_value_to_json(&vars)?,
+                Value::Nil => serde_json::Value::Object(serde_json::Map::new()),
+                _ => {
+                    return Err(mlua::Error::runtime(
+                        "template.render_with_loader: third argument must be a table or nil",
+                    ));
+                }
+            };
+            let mini_vars = minijinja::value::Value::from_serialize(&json_vars);
+            let mut env = minijinja::Environment::new();
+            env.set_loader(minijinja::path_loader(&template_dir));
+            let tmpl = env.get_template(&template_name).map_err(|e| {
+                mlua::Error::runtime(format!("template.render_with_loader: {e}"))
+            })?;
+            tmpl.render(mini_vars).map_err(|e| {
+                mlua::Error::runtime(format!("template.render_with_loader: {e}"))
+            })
+        })?;
+    tmpl_table.set("render_with_loader", render_with_loader_fn)?;
+
     lua.globals().set("template", tmpl_table)?;
     Ok(())
 }

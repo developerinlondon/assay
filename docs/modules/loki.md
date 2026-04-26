@@ -1,3 +1,7 @@
+---
+category: Monitoring & Observability
+---
+
 ## assay.loki
 
 Loki log aggregation. Push logs, query with LogQL, labels, series, tail. Client: `loki.client(url)`.

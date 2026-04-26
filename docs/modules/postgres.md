@@ -1,3 +1,7 @@
+---
+category: Data & Storage
+---
+
 ## assay.postgres
 
 PostgreSQL database helpers. User/database management, grants, Vault integration. Client:

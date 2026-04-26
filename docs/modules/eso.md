@@ -1,3 +1,7 @@
+---
+category: Security & Identity
+---
+
 ## assay.eso
 
 External Secrets Operator. ExternalSecrets, SecretStores, ClusterSecretStores sync status. Client:

@@ -1,3 +1,7 @@
+---
+category: Security & Identity
+---
+
 ## assay.dex
 
 Dex OIDC identity provider. Discovery, JWKS, health, and configuration validation. Client:
