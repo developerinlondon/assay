@@ -45,6 +45,17 @@ pub mod ctx;
 pub mod error;
 pub mod schema;
 
+#[cfg(any(
+    feature = "vault-sealing-kms",
+    feature = "vault-dynamic-aws",
+    feature = "vault-dynamic-gcp",
+    feature = "vault-audit-forwarding",
+))]
+pub mod cloud;
+
+#[cfg(feature = "vault-sealing-kms")]
+pub mod sealing;
+
 #[cfg(feature = "vault-audit-forwarding")]
 pub mod audit;
 
