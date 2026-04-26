@@ -66,7 +66,7 @@ test.describe('Auth console panes', () => {
   test('Cross-nav highlights the Auth pill', async ({ page }) => {
     await withAdminToken(page, '/auth/console');
     await waitForCrossNav(page);
-    await expect(page.locator('.cross-nav-pill[data-pill="auth"]')).toHaveClass(/active/);
+    await expect(page.locator('.console-tab[data-tab="auth"]')).toHaveClass(/active/);
   });
 });
 

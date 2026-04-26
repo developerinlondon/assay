@@ -27,5 +27,5 @@ export async function withAdminToken(page: Page, route: string): Promise<void> {
  * async fetch of /api/v1/engine/core/active-modules + /api/v1/engine/core/info).
  */
 export async function waitForCrossNav(page: Page): Promise<void> {
-  await page.locator('.cross-nav-pill').first().waitFor({ state: 'visible' });
+  await page.locator('.console-tab').first().waitFor({ state: 'visible' });
 }

@@ -67,7 +67,7 @@ test.describe('Engine console', () => {
   test('Cross-nav strip renders + Engine pill is active', async ({ page }) => {
     await withAdminToken(page, '/engine/console');
     await waitForCrossNav(page);
-    const enginePill = page.locator('.cross-nav-pill[data-pill="engine"]');
+    const enginePill = page.locator('.console-tab[data-tab="engine"]');
     await expect(enginePill).toBeVisible();
     await expect(enginePill).toHaveClass(/active/);
   });

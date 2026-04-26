@@ -89,37 +89,82 @@
   font-weight: 500;
 }
 
+/* Right-side status group in the top strip — leader dot + instance id.
+   Lives where the pills used to; pills moved into the sidebar header
+   as icon tabs (.console-tab below). */
+.cross-nav-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The console switcher now renders inside `.sidebar-header` (top of
+   each console's sidebar), not in the top cross-nav strip. The
+   container hosts three .console-tab icon links — one per console. */
 .cross-nav-pills {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.cross-nav-pill {
+.console-tab {
   display: inline-flex;
   align-items: center;
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--border, hsl(214 32% 91%));
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--text-muted, #6e7781);
   text-decoration: none;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  cursor: pointer;
+  position: relative;
+  transition: background 120ms ease, color 120ms ease;
 }
 
-.cross-nav-pill:hover {
+.console-tab:hover {
   background: var(--surface-hover, hsl(214 32% 96%));
-  border-color: color-mix(in srgb, var(--accent, #e6662a) 30%, var(--border, hsl(214 32% 91%)));
+  color: var(--text);
 }
 
-.cross-nav-pill.active {
-  background: var(--accent, #e6662a);
-  border-color: var(--accent, #e6662a);
-  color: #fff;
-  font-weight: 600;
+.console-tab.active {
+  color: var(--accent, #e6662a);
+  background: color-mix(in srgb, var(--accent, #e6662a) 12%, transparent);
   cursor: default;
+}
+
+/* Active-state accent: bottom bar in expanded (horizontal) layout,
+   left bar in collapsed (vertical) layout. The collapsed-layout
+   override lives below under the .sidebar.collapsed selector so the
+   indicator stays visually anchored to the rail edge. */
+.console-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -2px;
+  height: 2px;
+  background: var(--accent, #e6662a);
+  border-radius: 2px;
+}
+
+/* Folded sidebar (.sidebar.collapsed): icons stack vertically, active
+   indicator becomes a left bar instead of a bottom underline so it
+   stays glued to the rail edge. */
+.sidebar.collapsed .cross-nav-pills {
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.sidebar.collapsed .console-tab.active::after {
+  left: -2px;
+  right: auto;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  height: auto;
 }
 
 /* Push the existing layouts down by the cross-nav height so the

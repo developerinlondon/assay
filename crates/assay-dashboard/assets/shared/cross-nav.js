@@ -9,13 +9,28 @@
 (function () {
   'use strict';
 
-  // The pill registry is intentionally tiny — three known consoles.
-  // Each pill knows whether its module must be enabled to render
+  // The console registry is intentionally tiny — three known consoles.
+  // Each entry knows whether its module must be enabled to render
   // (engine-core is always on; workflow + auth gate on /modules).
-  const PILLS = [
-    { id: 'workflow', label: 'Workflow', href: '/workflow/', requires: 'workflow' },
-    { id: 'auth',     label: 'Auth',     href: '/auth/console',  requires: 'auth' },
-    { id: 'engine',   label: 'Engine',   href: '/engine/console', requires: null },
+  // Icons are inline SVGs so they pick up currentColor and don't need a
+  // font dependency. Render output goes into #cross-nav-pills (now
+  // sitting at the top of the per-console sidebar, not the top strip).
+  const CONSOLES = [
+    {
+      id: 'workflow', label: 'Workflow', href: '/workflow/', requires: 'workflow',
+      // gear (settings/process)
+      svg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+    },
+    {
+      id: 'auth', label: 'Auth', href: '/auth/console', requires: 'auth',
+      // shield (auth/security)
+      svg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+    },
+    {
+      id: 'engine', label: 'Engine', href: '/engine/console', requires: null,
+      // bolt (engine/runtime)
+      svg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+    },
   ];
 
   function escapeHtml(s) {
@@ -45,12 +60,19 @@
     if (!container) return;
 
     const modules = await loadModules();
-    const html = PILLS
-      .filter(function (p) { return !p.requires || modules.indexOf(p.requires) !== -1; })
-      .map(function (p) {
-        const cls = 'cross-nav-pill' + (p.id === active ? ' active' : '');
-        return '<a href="' + escapeHtml(p.href) + '" class="' + cls + '"' +
-          ' data-pill="' + escapeHtml(p.id) + '">' + escapeHtml(p.label) + '</a>';
+    const html = CONSOLES
+      .filter(function (c) { return !c.requires || modules.indexOf(c.requires) !== -1; })
+      .map(function (c) {
+        const cls = 'console-tab' + (c.id === active ? ' active' : '');
+        // `title` gives the native browser tooltip on hover; aria-label
+        // mirrors it for screen readers since the visible content is
+        // icon-only. data-tab keeps an addressable hook for tests.
+        return '<a href="' + escapeHtml(c.href) + '" class="' + cls + '"' +
+          ' data-tab="' + escapeHtml(c.id) + '"' +
+          ' title="' + escapeHtml(c.label) + '"' +
+          ' aria-label="' + escapeHtml(c.label) + '">' +
+          c.svg +
+          '</a>';
       })
       .join('');
     container.innerHTML = html;

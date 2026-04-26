@@ -5,45 +5,45 @@ test.describe('Cross-console nav strip', () => {
   test('all three pills render on the workflow console', async ({ page }) => {
     await withAdminToken(page, '/workflow/');
     await waitForCrossNav(page);
-    await expect(page.locator('.cross-nav-pill[data-pill="workflow"]')).toBeVisible();
-    await expect(page.locator('.cross-nav-pill[data-pill="auth"]')).toBeVisible();
-    await expect(page.locator('.cross-nav-pill[data-pill="engine"]')).toBeVisible();
-    await expect(page.locator('.cross-nav-pill[data-pill="workflow"]')).toHaveClass(/active/);
+    await expect(page.locator('.console-tab[data-tab="workflow"]')).toBeVisible();
+    await expect(page.locator('.console-tab[data-tab="auth"]')).toBeVisible();
+    await expect(page.locator('.console-tab[data-tab="engine"]')).toBeVisible();
+    await expect(page.locator('.console-tab[data-tab="workflow"]')).toHaveClass(/active/);
   });
 
   test('all three pills render on the auth console', async ({ page }) => {
     await withAdminToken(page, '/auth/console');
     await waitForCrossNav(page);
-    await expect(page.locator('.cross-nav-pill[data-pill="workflow"]')).toBeVisible();
-    await expect(page.locator('.cross-nav-pill[data-pill="auth"]')).toBeVisible();
-    await expect(page.locator('.cross-nav-pill[data-pill="engine"]')).toBeVisible();
-    await expect(page.locator('.cross-nav-pill[data-pill="auth"]')).toHaveClass(/active/);
+    await expect(page.locator('.console-tab[data-tab="workflow"]')).toBeVisible();
+    await expect(page.locator('.console-tab[data-tab="auth"]')).toBeVisible();
+    await expect(page.locator('.console-tab[data-tab="engine"]')).toBeVisible();
+    await expect(page.locator('.console-tab[data-tab="auth"]')).toHaveClass(/active/);
   });
 
   test('all three pills render on the engine console', async ({ page }) => {
     await withAdminToken(page, '/engine/console');
     await waitForCrossNav(page);
-    await expect(page.locator('.cross-nav-pill[data-pill="workflow"]')).toBeVisible();
-    await expect(page.locator('.cross-nav-pill[data-pill="auth"]')).toBeVisible();
-    await expect(page.locator('.cross-nav-pill[data-pill="engine"]')).toBeVisible();
-    await expect(page.locator('.cross-nav-pill[data-pill="engine"]')).toHaveClass(/active/);
+    await expect(page.locator('.console-tab[data-tab="workflow"]')).toBeVisible();
+    await expect(page.locator('.console-tab[data-tab="auth"]')).toBeVisible();
+    await expect(page.locator('.console-tab[data-tab="engine"]')).toBeVisible();
+    await expect(page.locator('.console-tab[data-tab="engine"]')).toHaveClass(/active/);
   });
 
   test('clicking a pill navigates between consoles', async ({ page }) => {
     await withAdminToken(page, '/workflow/');
     await waitForCrossNav(page);
 
-    await page.locator('.cross-nav-pill[data-pill="auth"]').click();
+    await page.locator('.console-tab[data-tab="auth"]').click();
     await expect(page).toHaveURL(/\/auth\/console/);
     await waitForCrossNav(page);
-    await expect(page.locator('.cross-nav-pill[data-pill="auth"]')).toHaveClass(/active/);
+    await expect(page.locator('.console-tab[data-tab="auth"]')).toHaveClass(/active/);
 
-    await page.locator('.cross-nav-pill[data-pill="engine"]').click();
+    await page.locator('.console-tab[data-tab="engine"]').click();
     await expect(page).toHaveURL(/\/engine\/console/);
     await waitForCrossNav(page);
-    await expect(page.locator('.cross-nav-pill[data-pill="engine"]')).toHaveClass(/active/);
+    await expect(page.locator('.console-tab[data-tab="engine"]')).toHaveClass(/active/);
 
-    await page.locator('.cross-nav-pill[data-pill="workflow"]').click();
+    await page.locator('.console-tab[data-tab="workflow"]').click();
     await expect(page).toHaveURL(/\/workflow/);
   });
 
