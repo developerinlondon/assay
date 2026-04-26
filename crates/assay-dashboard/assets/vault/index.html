@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>__PAGE_TITLE__</title>
+  __FAVICON_LINK__
+  <link rel="stylesheet" href="/workflow/theme.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/workflow/style.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/auth/style.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/shared/cross-nav.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/engine/style.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/vault/style.css?v=__ASSETV__">
+  __EXTRA_CSS_LINK__
+</head>
+<body__DEFAULT_NAMESPACE_ATTR__>
+  <header class="cross-nav">
+    <div class="cross-nav-brand">
+      <span class="cross-nav-mark" aria-hidden="true">__BRAND_MARK__</span>
+      <span class="cross-nav-title">Assay Vault <span class="cross-nav-version" id="cross-nav-version">v—</span></span>
+    </div>
+    <nav class="cross-nav-links">
+      <a href="/workflow/" class="cross-nav-link">Workflow</a>
+      <a href="/auth/console" class="cross-nav-link">Auth</a>
+      <a href="/engine/console" class="cross-nav-link">Engine</a>
+      <a href="/vault/console" class="cross-nav-link active">Vault</a>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <h2>Vault</h2>
+      <ul class="sidebar-nav">
+        <li><a href="#sealing" data-view="sealing">Sealing</a></li>
+        <li><a href="#kv" data-view="kv">KV v2</a></li>
+        <li><a href="#transit" data-view="transit">Transit</a></li>
+        <li><a href="#leases" data-view="leases">Dynamic leases</a></li>
+        <li><a href="#share" data-view="share">Share manager</a></li>
+      </ul>
+      <div class="sidebar-token">
+        <label for="admin-token">Admin token</label>
+        <input id="admin-token" type="password" placeholder="Bearer ...">
+        <button id="admin-token-save">Save</button>
+      </div>
+    </aside>
+    <main id="content" class="content">
+      <p class="placeholder">Loading…</p>
+    </main>
+  </div>
+
+  <script src="/shared/cross-nav.js?v=__ASSETV__"></script>
+  <script src="/vault/app.js?v=__ASSETV__"></script>
+</body>
+</html>

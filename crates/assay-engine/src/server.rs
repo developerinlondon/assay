@@ -144,6 +144,14 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         app = app.merge(bw);
     }
 
+    // Vault console assets (plan 17 §S10). Always mounted when the
+    // vault feature is on; runtime visibility is gated by
+    // engine.modules.vault.enabled like every other console.
+    #[cfg(feature = "vault")]
+    {
+        app = app.merge(assay_dashboard::vault_router());
+    }
+
     app
 }
 

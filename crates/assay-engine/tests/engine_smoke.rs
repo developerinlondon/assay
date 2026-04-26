@@ -543,4 +543,31 @@ async fn engine_smoke_sqlite() {
     assert_eq!(r.status(), 200);
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["server"]["name"], "assay-vault");
+
+    // ── /vault/console — Phase-7 dashboard pane ──────────────────────
+    let r = client2
+        .get(engine2.url("/vault/console"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let ct = r
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert!(
+        ct.starts_with("text/html"),
+        "vault console should return text/html, got {ct}"
+    );
+    let body = r.text().await.unwrap();
+    assert!(body.contains("Assay Vault"));
+    // Pane controllers reference the documented endpoints.
+    let r = client2.get(engine2.url("/vault/app.js")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let body = r.text().await.unwrap();
+    assert!(body.contains("/sys/seal-status"));
+    assert!(body.contains("/transit/keys"));
+    assert!(body.contains("/dynamic/leases"));
 }

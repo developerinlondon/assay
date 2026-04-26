@@ -78,6 +78,16 @@ pub const ENGINE_AUDIT_JS: &str = include_str!("../assets/engine/components/audi
 pub const ENGINE_CONFIG_JS: &str = include_str!("../assets/engine/components/config.js");
 
 // =====================================================================
+//   Vault console assets (Phase 7 — gated by `vault` feature on the
+//   engine; the asset bundle itself ships unconditionally so a console
+//   asset can be link-ref'd from a slim engine without compile churn)
+// =====================================================================
+
+pub const VAULT_INDEX_HTML: &str = include_str!("../assets/vault/index.html");
+pub const VAULT_STYLE_CSS: &str = include_str!("../assets/vault/style.css");
+pub const VAULT_APP_JS: &str = include_str!("../assets/vault/app.js");
+
+// =====================================================================
 //   Shared cross-console nav strip — included by every console shell
 // =====================================================================
 
