@@ -1,26 +1,8 @@
 name: Release
 
-# Version-driven release pipeline. Trigger: any push to main (including the
-# merge commit of a feature PR). The `detect` job compares each workspace
-# crate's Cargo.toml version against crates.io and exposes per-crate
-# `bumped` flags; the library-publish steps key off those flags. The
-# product (binaries + release-assay-engine + release-assay-lua) jobs
-# now always run after their predecessors succeed — every individual
-# step is independently idempotent (200-check on crates.io, `git
-# rev-parse` on tags, `gh release view` on GH releases, and
-# `docker buildx imagetools inspect` on ghcr images) so a re-run can
-# fill in a missed publish/push without bumping versions just to
-# clear an `if:` gate. Re-running on an already-shipped main is safe.
-#
-# Tagging policy (plan 12 rev 3): product crates get git tags on every
-# publish — `assay-lua-v<ver>` and `assay-engine-v<ver>`. Library crates
-# (assay-domain, assay-workflow, assay-dashboard, assay-auth) publish to
-# crates.io but don't get git tags in coordinated releases — their versions
-# are traceable through the product tag's tree and the crates.io index.
-#
-# `workflow_dispatch` is kept for retries and for the human-triggered first
-# smoke test. Intentionally no `tags: [v*]` trigger — tags are output here,
-# not input.
+# Version-driven release: each step is idempotent (crates.io 200, git
+# rev-parse, gh release view, imagetools inspect) so re-runs on an
+# already-shipped main are safe.
 
 on:
   push:
@@ -28,11 +10,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # tags + GitHub releases
-  packages: write # ghcr.io Docker images + npm publish to GitHub Packages
+  contents: write
+  packages: write
 
-# Releases must not race: serialise by this workflow name, don't cancel an
-# in-flight run (half-published crates.io state is annoying to recover from).
+# Half-published crates.io state is hard to recover from — never cancel.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -43,12 +24,6 @@ jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
-      # Per-crate: `bumped` is "true" when the local manifest version is
-      # ahead of crates.io; `version` is always the local manifest version
-      # (downstream jobs use it for tag/release names regardless of whether
-      # we're publishing this run). The bumped flags drive *what* publish
-      # steps may push artifacts; downstream jobs themselves no longer
-      # gate on `bumped` so re-runs can fill in missed steps idempotently.
       assay_domain_bumped: ${{ steps.assay-domain.outputs.bumped }}
       assay_workflow_bumped: ${{ steps.assay-workflow.outputs.bumped }}
       assay_dashboard_bumped: ${{ steps.assay-dashboard.outputs.bumped }}
@@ -60,24 +35,8 @@ jobs:
       extension_bumped: ${{ steps.extension.outputs.bumped }}
       extension_version: ${{ steps.extension.outputs.version }}
       any_product_bumped: ${{ steps.any.outputs.any }}
-      # Workspace toolchain version — single source of truth lives in
-      # .mise.toml. Downstream jobs that need rust read this output
-      # instead of pinning their own version (or relying on @stable
-      # which silently rolls forward independently).
       rust_version: ${{ steps.rust.outputs.version }}
-      # `binaries_needed` is true when at least one product's GH release
-      # for the current Cargo.toml version is missing. When both GH
-      # releases exist, the per-product `release-*` jobs can fetch the
-      # already-published linux/darwin binaries via `gh release
-      # download` instead of paying ~6 min to cross-compile from
-      # scratch — that's exactly the case for re-runs that only need to
-      # fix a missed downstream artifact (e.g. the docker push that
-      # failed in run 24954145848).
       binaries_needed: ${{ steps.artifacts-state.outputs.binaries_needed }}
-      # Per-product GH release presence — the prepare step in each
-      # release-* job reads these to choose between `gh release
-      # download` (existing release) and `actions/download-artifact`
-      # (fresh build from the binaries job).
       assay_engine_release_exists: ${{ steps.artifacts-state.outputs.engine_release_exists }}
       assay_lua_release_exists: ${{ steps.artifacts-state.outputs.lua_release_exists }}
 
@@ -120,12 +79,9 @@ jobs:
       - id: assay-lua
         run: .github/release/check-bumped.sh assay-lua
 
-      # openclaw-extension follows its own version track (package.json),
-      # and GitHub Packages doesn't expose a public HEAD we can cheaply
-      # probe without auth. Keep it simple: diff the current version
-      # against the previous commit's version — if the push changed it,
-      # publish. `npm publish` is itself idempotent on exact version
-      # matches (returns 409), so mistaken re-runs are safe.
+      # GitHub Packages has no cheap unauthed HEAD probe; diff against
+      # HEAD~1 instead. `npm publish` returns 409 on exact match so
+      # re-runs are safe.
       - id: extension
         run: |
           set -euo pipefail
@@ -141,8 +97,6 @@ jobs:
           fi
           echo "version=$current" >> "$GITHUB_OUTPUT"
 
-      # Used by the binary-build job — only worth running if some product
-      # is actually shipping.
       - id: any
         run: |
           any=false
@@ -153,14 +107,10 @@ jobs:
           done
           echo "any=$any" >> "$GITHUB_OUTPUT"
 
-      # Are the per-product GH releases for the *current* Cargo.toml
-      # versions already published? If yes, the cross-compiled binaries
-      # are attached to those releases and we can fetch them via
-      # `gh release download` later — the `binaries` job becomes
-      # unnecessary and gets skipped (~6 min saved per re-run). The
-      # per-product `*_release_exists` outputs let each release-* job
-      # pick its `prepare assets` source: existing GH release or
-      # fresh build artifact from the `binaries` job.
+      # `binaries_needed` lets the binaries job skip when both products'
+      # GH releases already exist — the release-* jobs then `gh release
+      # download` the attached musl/darwin binaries instead of paying
+      # the cross-compile cost.
       - id: artifacts-state
         name: Check release artifact state
         env:
@@ -169,41 +119,31 @@ jobs:
           LUA_TAG: assay-lua-v${{ steps.assay-lua.outputs.version }}
         run: |
           set -uo pipefail
-          # `gh release view <tag>` resolves through the API; no need
-          # to fetch local tags. Treat any non-zero exit (404, transient
-          # API error) as "release missing" — false negatives just
-          # rebuild the binaries, which is the safe direction.
           if gh release view "$ENGINE_TAG" >/dev/null 2>&1; then
-            echo "GH release $ENGINE_TAG exists — assay-engine binaries will be reused"
             engine_release=true
           else
-            echo "GH release $ENGINE_TAG missing — assay-engine binaries will be rebuilt"
             engine_release=false
           fi
           if gh release view "$LUA_TAG" >/dev/null 2>&1; then
-            echo "GH release $LUA_TAG exists — assay-lua binaries will be reused"
             lua_release=true
           else
-            echo "GH release $LUA_TAG missing — assay-lua binaries will be rebuilt"
             lua_release=false
           fi
           if [ "$engine_release" = "true" ] && [ "$lua_release" = "true" ]; then
             binaries_needed=false
-            echo "both GH releases present — skipping binaries job"
           else
             binaries_needed=true
-            echo "at least one GH release missing — binaries job will run"
           fi
+          echo "engine=$engine_release lua=$lua_release binaries_needed=$binaries_needed"
           {
             echo "engine_release_exists=$engine_release"
             echo "lua_release_exists=$lua_release"
             echo "binaries_needed=$binaries_needed"
           } >> "$GITHUB_OUTPUT"
 
-  # ─────────────────────────────────────────────────────────────────────
-  # 2. Library crates: publish only, no tags, no GH releases. Strict
-  #    dependency order to respect crates.io's post-publish propagation
-  #    delay (the helper sleeps 30s after each publish).
+  # Library crates — publish only, no tags. Order matters because of
+  # crates.io's index propagation delay; the helper sleeps 30s after
+  # each new publish.
   libraries:
     needs: detect
     if: >
@@ -219,9 +159,6 @@ jobs:
         with:
           toolchain: ${{ needs.detect.outputs.rust_version }}
 
-      # Inline the helper so editing release.yml is one file, not two —
-      # the detection path is already factored out, this is just the
-      # publish side which is a thin wrapper over `cargo publish`.
       - name: Publish helper
         run: |
           cat > /tmp/publish-crate.sh <<'EOF'
@@ -269,18 +206,10 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: /tmp/publish-crate.sh assay-auth
 
-  # ─────────────────────────────────────────────────────────────────────
-  # 3. Build product binaries for both targets. Shared between the two
-  #    product release jobs so we don't pay the cross-compile cost twice.
+  # Cross-compile both products for both targets. Shared between the
+  # release-* jobs.
   binaries:
     needs: [detect, libraries]
-    # Skip the cross-compile entirely when both products' GH releases
-    # for the current versions already exist — the `release-*` jobs
-    # will fetch the attached binaries via `gh release download`
-    # instead. This keeps re-runs cheap (~2 min total) on top of the
-    # always-idempotent downstream steps. `(success || skipped)` for
-    # libraries is the standard GH Actions pattern to allow a skipped
-    # `if:` upstream to still gate "did anything fail outright?".
     if: |
       always() &&
       needs.detect.outputs.binaries_needed == 'true' &&
@@ -334,15 +263,6 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  # ─────────────────────────────────────────────────────────────────────
-  # 4. Product release: assay-engine. Publish the crate, push the
-  #    `assay-engine-v<ver>` tag, create a GH release with the engine
-  #    binaries + checksums + CHANGELOG section, and push the Docker
-  #    image to ghcr.io. Always runs after `binaries` succeeds — every
-  #    step below is independently idempotent (crates.io 200-check, git
-  #    tag existence check, gh release existence check, ghcr image
-  #    existence check) so a re-run can fill in missed artifacts
-  #    without re-bumping the version.
   release-assay-engine:
     needs: [detect, libraries, binaries]
     if: |
@@ -374,12 +294,8 @@ jobs:
             cargo publish --allow-dirty -p assay-engine
           fi
 
-      # Source the linux-musl + darwin binaries. Two paths depending on
-      # whether the GH release for this version is already there:
-      #   * release exists → fetch from the release (fast, ~5s, no
-      #     binaries job needed)
-      #   * release missing → use the artifact uploaded by the binaries
-      #     job (which only ran in the missing-release case anyway)
+      # Source the binaries: from a prior GH release if present, else
+      # from the binaries job's upload.
       - uses: actions/download-artifact@v8
         if: needs.detect.outputs.assay_engine_release_exists != 'true'
         with:
@@ -396,9 +312,6 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           cd artifacts
-          # Pattern matches both linux + darwin engine binaries; the
-          # checksum file is regenerated locally below so we don't
-          # bother re-downloading it.
           gh release download "assay-engine-v${VERSION}" \
             --pattern 'assay-engine-linux-x86_64' \
             --pattern 'assay-engine-darwin-aarch64'
@@ -427,21 +340,18 @@ jobs:
             git push origin "assay-engine-v${VERSION}"
           fi
 
+      # Coordinated releases share a CHANGELOG section keyed on the lua
+      # version; fall back to that when no engine-specific section exists.
       - name: Extract CHANGELOG section
         env:
           ENGINE_VER: ${{ needs.detect.outputs.assay_engine_version }}
           LUA_VER: ${{ needs.detect.outputs.assay_lua_version }}
         run: |
           set -euo pipefail
-          # Product releases share one CHANGELOG keyed on the assay-lua /
-          # coordinated release version (e.g. 0.13.0 covers everything
-          # shipped that day). Prefer the engine's own version section if
-          # one exists; otherwise fall back to the lua section for
-          # coordinated releases.
           if .github/release/extract-changelog.sh "$ENGINE_VER" > notes.md 2>/dev/null; then
-            echo "notes from CHANGELOG section $ENGINE_VER"
+            :
           elif .github/release/extract-changelog.sh "$LUA_VER" > notes.md 2>/dev/null; then
-            echo "notes from CHANGELOG section $LUA_VER (coordinated release)"
+            :
           else
             echo "Release assay-engine ${ENGINE_VER}." > notes.md
           fi
@@ -470,11 +380,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Idempotency check — `imagetools inspect` resolves the manifest
-      # via the registry API. Returns 0 when the tag exists, non-zero
-      # otherwise (404, network error, etc.). We treat any non-zero as
-      # "needs push" — false negatives just push redundantly, which is
-      # harmless when the destination tag is unchanged.
       - name: Check if assay-engine docker image already exists
         id: docker-check
         env:
@@ -489,16 +394,12 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # `context: artifacts` keeps the build context to just the binary
+      # the binaries job uploaded; the Dockerfile is workspace-absolute
+      # because buildx looks up `file:` relative to context by default.
       - uses: docker/build-push-action@v7
         if: steps.docker-check.outputs.exists != 'true'
         with:
-          # `context: artifacts` so the artifact-mode Dockerfile.assay-engine
-          # COPYs the linux-musl binary that the `binaries` job uploaded.
-          # Avoids re-running the cargo cross-compile inside Docker, which
-          # used to take ~6 min and tripped the openssl-src-needs-perl
-          # failure on rust:slim images. The Dockerfile lives at the
-          # workspace root so the `file:` path is workspace-absolute —
-          # buildx accepts that explicitly even with a smaller `context:`.
           context: artifacts
           file: ${{ github.workspace }}/Dockerfile.assay-engine
           push: true
@@ -508,12 +409,6 @@ jobs:
             ghcr.io/developerinlondon/assay-engine:${{ needs.detect.outputs.assay_engine_version }}
             ghcr.io/developerinlondon/assay-engine:latest
 
-  # ─────────────────────────────────────────────────────────────────────
-  # 5. Product release: assay-lua. Same shape as assay-engine — separate
-  #    job so the two can run in parallel after libraries+binaries finish.
-  #    Always runs after `binaries` succeeds; per-step idempotency
-  #    handles re-runs without version bumps (see release-assay-engine
-  #    above for the same pattern).
   release-assay-lua:
     needs: [detect, libraries, binaries]
     if: |
@@ -545,9 +440,6 @@ jobs:
             cargo publish --allow-dirty -p assay-lua
           fi
 
-      # Source the linux-musl + darwin binaries — same dual-source
-      # pattern as release-assay-engine: existing GH release wins,
-      # else fall back to the binaries-job artifact.
       - uses: actions/download-artifact@v8
         if: needs.detect.outputs.assay_lua_release_exists != 'true'
         with:
@@ -644,10 +536,6 @@ jobs:
       - uses: docker/build-push-action@v7
         if: steps.docker-check.outputs.exists != 'true'
         with:
-          # `context: artifacts` so the artifact-mode Dockerfile COPYs
-          # the linux-musl assay binary the `binaries` job uploaded.
-          # `file:` is workspace-absolute so buildx finds the Dockerfile
-          # outside the slimmer build context.
           context: artifacts
           file: ${{ github.workspace }}/Dockerfile
           push: true
@@ -657,10 +545,6 @@ jobs:
             ghcr.io/developerinlondon/assay:${{ needs.detect.outputs.assay_lua_version }}
             ghcr.io/developerinlondon/assay:latest
 
-  # ─────────────────────────────────────────────────────────────────────
-  # 6. openclaw-extension npm publish. Independent track — only fires
-  #    when openclaw-extension/package.json version changed. Can run in
-  #    parallel with everything else.
   publish-extension:
     needs: detect
     if: needs.detect.outputs.extension_bumped == 'true'
