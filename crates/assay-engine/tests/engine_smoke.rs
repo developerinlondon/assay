@@ -627,4 +627,7 @@ async fn engine_smoke_sqlite() {
     assert!(body.contains("/sys/seal-status"));
     assert!(body.contains("/transit/keys"));
     assert!(body.contains("/dynamic/leases"));
+    // Plan §S10 — My vault + Collections panes (A7).
+    assert!(body.contains("/me/"));
+    assert!(body.contains("/collections"));
 }

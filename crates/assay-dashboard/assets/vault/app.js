@@ -370,10 +370,199 @@
     },
   };
 
+  // ───────────── Personal vault pane ─────────────
+  // Plan §S10: "My vault (personal items, folders)". Operator surface;
+  // primary human UX is BW mobile/browser/CLI per the plan, but the
+  // admin console needs visibility + manual recovery + setup tools.
+  const Me = {
+    async render(el) {
+      el.innerHTML =
+        '<h1>My vault</h1>' +
+        '<div class="toolbar">' +
+        '<input type="text" id="me-user" placeholder="user_id">' +
+        '<button class="btn btn-primary" id="me-load">Load</button>' +
+        '<input type="text" id="me-pubkey" placeholder="public_key (base64, 32 bytes)">' +
+        '<button class="btn" id="me-ensure">Ensure / set pubkey</button>' +
+        '</div>' +
+        '<div id="me-meta"></div>' +
+        '<h2 style="margin-top:1.5rem;">Items</h2>' +
+        '<div id="me-items"></div>';
+
+      async function load() {
+        const u = document.getElementById('me-user').value.trim();
+        if (!u) return;
+        try {
+          const v = await api('GET', '/me/' + u);
+          if (v) {
+            document.getElementById('me-meta').innerHTML =
+              '<div class="pane-status"><div class="card"><h3>vault id</h3>' +
+              '<div class="value">' + escapeHtml(v.id) + '</div></div>' +
+              '<div class="card"><h3>owner</h3><div class="value">' + escapeHtml(v.owner_user) + '</div></div>' +
+              '<div class="card"><h3>created</h3><div class="value">' + fmtTime(v.created_at) + '</div></div></div>';
+          } else {
+            document.getElementById('me-meta').innerHTML =
+              '<p class="placeholder">No vault row yet. Click Ensure to create one.</p>';
+          }
+          const items = await api('GET', '/me/' + u + '/items');
+          renderItems(items.items || []);
+        } catch (e) {
+          document.getElementById('me-meta').innerHTML = errorBanner(e.message);
+        }
+      }
+
+      function renderItems(items) {
+        if (!items.length) {
+          document.getElementById('me-items').innerHTML =
+            '<p class="placeholder">No items.</p>';
+          return;
+        }
+        let html =
+          '<table class="data"><thead><tr><th>Name</th><th>Type</th>' +
+          '<th>Folder</th><th>Updated</th></tr></thead><tbody>';
+        for (const i of items) {
+          html +=
+            '<tr><td>' + escapeHtml(i.name) + '</td>' +
+            '<td>' + escapeHtml(i.item_type) + '</td>' +
+            '<td>' + escapeHtml(i.folder_id || '—') + '</td>' +
+            '<td>' + fmtTime(i.updated_at) + '</td></tr>';
+        }
+        html += '</tbody></table>';
+        document.getElementById('me-items').innerHTML = html;
+      }
+
+      document.getElementById('me-load').addEventListener('click', load);
+      document.getElementById('me-ensure').addEventListener('click', async () => {
+        const u = document.getElementById('me-user').value.trim();
+        const pk = document.getElementById('me-pubkey').value.trim();
+        if (!u || !pk) return;
+        try {
+          await api('POST', '/me/' + u, { public_key_b64: pk });
+          await load();
+        } catch (e) {
+          document.getElementById('me-meta').innerHTML = errorBanner('ensure: ' + e.message);
+        }
+      });
+    },
+  };
+
+  // ───────────── Collections pane ─────────────
+  const Collections = {
+    async render(el) {
+      el.innerHTML =
+        '<h1>Collections</h1>' +
+        '<div class="toolbar">' +
+        '<input type="text" id="co-org" placeholder="org_id (optional filter)">' +
+        '<button class="btn btn-primary" id="co-list">List</button>' +
+        '</div>' +
+        '<div class="toolbar">' +
+        '<input type="text" id="co-name" placeholder="name">' +
+        '<input type="text" id="co-org-create" placeholder="org_id">' +
+        '<input type="text" id="co-creator" placeholder="created_by user_id">' +
+        '<button class="btn" id="co-create">Create</button>' +
+        '</div>' +
+        '<div id="co-list-result"></div>' +
+        '<h2 style="margin-top:1.5rem;">Members of selected collection</h2>' +
+        '<div id="co-members-result"></div>';
+
+      let selected = null;
+
+      async function refresh() {
+        const org = document.getElementById('co-org').value.trim();
+        const url = org ? '/collections?org_id=' + encodeURIComponent(org) : '/collections';
+        try {
+          const out = await api('GET', url);
+          let html =
+            '<table class="data"><thead><tr><th>Name</th><th>Org</th>' +
+            '<th>Created by</th><th>Created at</th><th>ID</th><th></th></tr></thead><tbody>';
+          for (const c of (out.collections || [])) {
+            html +=
+              '<tr><td>' + escapeHtml(c.name) + '</td>' +
+              '<td>' + escapeHtml(c.org_id || '—') + '</td>' +
+              '<td>' + escapeHtml(c.created_by) + '</td>' +
+              '<td>' + fmtTime(c.created_at) + '</td>' +
+              '<td><code>' + escapeHtml(c.id) + '</code></td>' +
+              '<td><button class="btn" data-members="' + escapeHtml(c.id) + '">Members</button>' +
+              '<button class="btn btn-danger" data-delete="' + escapeHtml(c.id) + '">Delete</button></td></tr>';
+          }
+          html += '</tbody></table>';
+          document.getElementById('co-list-result').innerHTML = html;
+          document.querySelectorAll('button[data-members]').forEach((b) => {
+            b.addEventListener('click', async () => {
+              selected = b.getAttribute('data-members');
+              await loadMembers();
+            });
+          });
+          document.querySelectorAll('button[data-delete]').forEach((b) => {
+            b.addEventListener('click', async () => {
+              const id = b.getAttribute('data-delete');
+              if (!confirm('Delete collection ' + id + '? This cascades members + items.')) return;
+              try {
+                await api('DELETE', '/collections/' + id);
+                await refresh();
+              } catch (e) {
+                alert('delete: ' + e.message);
+              }
+            });
+          });
+        } catch (e) {
+          document.getElementById('co-list-result').innerHTML = errorBanner(e.message);
+        }
+      }
+
+      async function loadMembers() {
+        if (!selected) return;
+        try {
+          const out = await api('GET', '/collections/' + selected + '/members');
+          let html = '<p>Collection: <code>' + escapeHtml(selected) + '</code></p>' +
+            '<table class="data"><thead><tr><th>User</th><th>Role</th><th>Added</th><th></th></tr></thead><tbody>';
+          for (const m of (out.members || [])) {
+            html +=
+              '<tr><td>' + escapeHtml(m.user_id) + '</td>' +
+              '<td>' + escapeHtml(m.role) + '</td>' +
+              '<td>' + fmtTime(m.added_at) + '</td>' +
+              '<td><button class="btn btn-danger" data-remove="' + escapeHtml(m.user_id) + '">Remove</button></td></tr>';
+          }
+          html += '</tbody></table>';
+          document.getElementById('co-members-result').innerHTML = html;
+          document.querySelectorAll('button[data-remove]').forEach((b) => {
+            b.addEventListener('click', async () => {
+              const u = b.getAttribute('data-remove');
+              try {
+                await api('DELETE', '/collections/' + selected + '/members/' + u);
+                await loadMembers();
+              } catch (e) {
+                alert('remove: ' + e.message);
+              }
+            });
+          });
+        } catch (e) {
+          document.getElementById('co-members-result').innerHTML = errorBanner(e.message);
+        }
+      }
+
+      document.getElementById('co-list').addEventListener('click', refresh);
+      document.getElementById('co-create').addEventListener('click', async () => {
+        const name = document.getElementById('co-name').value.trim();
+        const org = document.getElementById('co-org-create').value.trim() || null;
+        const creator = document.getElementById('co-creator').value.trim();
+        if (!name || !creator) return;
+        try {
+          await api('POST', '/collections', { name, org_id: org, created_by: creator });
+          await refresh();
+        } catch (e) {
+          document.getElementById('co-list-result').innerHTML = errorBanner('create: ' + e.message);
+        }
+      });
+      await refresh();
+    },
+  };
+
   const PANES = {
     sealing: Sealing,
     kv: Kv,
     transit: Transit,
+    me: Me,
+    collections: Collections,
     leases: Leases,
     share: Share,
   };
