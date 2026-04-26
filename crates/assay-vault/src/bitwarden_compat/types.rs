@@ -147,11 +147,26 @@ pub struct TokenResponse {
     #[serde(rename = "PrivateKey")]
     pub private_key: Option<String>,
     /// Master-key Kdf info. BW clients use this to derive keys from
-    /// the master password; type=0 is PBKDF2-SHA256, type=1 is Argon2id.
-    /// Phase 7 ships PBKDF2 default; Argon2id support follows the
-    /// existing assay-auth password-hash flow.
+    /// the master password locally before sending the derived hash
+    /// to the server. type=0 is PBKDF2-SHA256, type=1 is Argon2id.
+    ///
+    /// Plan §"Open questions" #1 locks Argon2id as the default for
+    /// new accounts (matches assay-auth's own password-hash storage).
+    /// Imported BW vaults that were originally PBKDF2-SHA256 ride
+    /// through unchanged — clients negotiate via /api/accounts/prelogin
+    /// to read the per-user Kdf row when one exists.
     #[serde(rename = "Kdf")]
     pub kdf: i32,
+    /// Argon2id `t_cost` (number of passes). Matches assay-auth's
+    /// `DEFAULT_TIME_COST = 3`.
     #[serde(rename = "KdfIterations")]
     pub kdf_iterations: u32,
+    /// Argon2id memory cost in MiB. BW's UI calls this "Memory";
+    /// 64 MiB matches assay-auth's `DEFAULT_MEMORY_KIB / 1024`.
+    #[serde(rename = "KdfMemory")]
+    pub kdf_memory: u32,
+    /// Argon2id parallelism. 4 threads matches assay-auth's
+    /// `DEFAULT_PARALLELISM`.
+    #[serde(rename = "KdfParallelism")]
+    pub kdf_parallelism: u32,
 }

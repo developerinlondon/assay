@@ -326,15 +326,54 @@ pub mod aws_provider {
     use std::collections::HashMap;
     use std::sync::Arc;
 
+    /// One AWS dynamic-creds template. Two issuance shapes per plan §S3b:
+    ///   - AssumeRole — short-lived sts: temp credentials. Default.
+    ///   - CreateAccessKey — long-lived iam: access key for an IAM user.
+    ///     Rare for dynamic-creds (the credentials don't expire on
+    ///     their own), but plan-locked. revoke() runs DeleteAccessKey.
+    #[derive(Clone, Debug)]
+    pub enum RoleKind {
+        AssumeRole {
+            role_arn: String,
+            /// Defaults to `assay-vault-{lease_id}`; override per role
+            /// if the assumed role has trust-policy session-name
+            /// constraints.
+            session_name_prefix: Option<String>,
+        },
+        CreateAccessKey {
+            /// Existing IAM user the access key gets created under.
+            iam_user: String,
+        },
+    }
+
     #[derive(Clone, Debug)]
     pub struct RoleConfig {
-        /// Role name registered with this template — identifies which
-        /// AWS RoleArn to assume.
+        /// Role name registered with this template.
         pub name: String,
-        pub role_arn: String,
-        /// Defaults to `assay-vault-{lease_id}`; override per role if
-        /// the assumed role has trust-policy session-name constraints.
-        pub session_name_prefix: Option<String>,
+        pub kind: RoleKind,
+    }
+
+    impl RoleConfig {
+        /// Convenience for the common AssumeRole shape.
+        pub fn assume_role(name: impl Into<String>, role_arn: impl Into<String>) -> Self {
+            Self {
+                name: name.into(),
+                kind: RoleKind::AssumeRole {
+                    role_arn: role_arn.into(),
+                    session_name_prefix: None,
+                },
+            }
+        }
+
+        /// Convenience for iam:CreateAccessKey roles.
+        pub fn create_access_key(name: impl Into<String>, iam_user: impl Into<String>) -> Self {
+            Self {
+                name: name.into(),
+                kind: RoleKind::CreateAccessKey {
+                    iam_user: iam_user.into(),
+                },
+            }
+        }
     }
 
     pub struct AwsDynamicProvider {
@@ -370,11 +409,6 @@ pub mod aws_provider {
             Arc::new(self)
         }
 
-        fn endpoint(&self) -> String {
-            self.endpoint_override
-                .clone()
-                .unwrap_or_else(|| format!("https://sts.{}.amazonaws.com/", self.region))
-        }
     }
 
     /// Pull a `<TagName>value</TagName>` payload out of XML by tag name.
@@ -400,53 +434,80 @@ pub mod aws_provider {
                 .get(role)
                 .cloned()
                 .ok_or(crate::error::VaultError::NotFound)?;
+            match cfg.kind {
+                RoleKind::AssumeRole {
+                    role_arn,
+                    session_name_prefix,
+                } => self.issue_assume_role(&role_arn, session_name_prefix.as_deref(), ttl_secs).await,
+                RoleKind::CreateAccessKey { iam_user } => {
+                    self.issue_create_access_key(&iam_user).await
+                }
+            }
+        }
+
+        async fn revoke(&self, lease: &LeaseRecord) -> Result<()> {
+            // STS-issued temp creds expire on their own — no API call
+            // needed; the lease row's revoked_at is the auditable
+            // signal, and the credentials become unusable at their
+            // `expiration` timestamp regardless. For
+            // iam:CreateAccessKey creds we MUST DeleteAccessKey, since
+            // those are long-lived; the lease metadata carries the
+            // access_key_id + iam_user that the call needs.
+            let kind = lease.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            if kind != "create_access_key" {
+                return Ok(());
+            }
+            let user = lease
+                .metadata
+                .get("iam_user")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    crate::error::VaultError::Backend(anyhow::anyhow!(
+                        "create_access_key lease missing iam_user metadata"
+                    ))
+                })?;
+            let access_key_id = lease
+                .metadata
+                .get("access_key_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    crate::error::VaultError::Backend(anyhow::anyhow!(
+                        "create_access_key lease missing access_key_id metadata"
+                    ))
+                })?;
+            self.iam_call(
+                "DeleteAccessKey",
+                &[
+                    ("AccessKeyId", access_key_id),
+                    ("UserName", user),
+                ],
+            )
+            .await
+            .map(|_| ())
+        }
+    }
+
+    impl AwsDynamicProvider {
+        async fn issue_assume_role(
+            &self,
+            role_arn: &str,
+            session_name_prefix: Option<&str>,
+            ttl_secs: u64,
+        ) -> Result<IssuedCredentials> {
             let session_name = format!(
                 "{}-{}",
-                cfg.session_name_prefix
-                    .as_deref()
-                    .unwrap_or("assay-vault"),
+                session_name_prefix.unwrap_or("assay-vault"),
                 uuid::Uuid::new_v4().simple()
             );
             // STS minimum is 900s; clamp.
             let duration = ttl_secs.max(900);
             let body = format!(
                 "Action=AssumeRole&Version=2011-06-15&RoleArn={}&RoleSessionName={}&DurationSeconds={}",
-                urlencode(&cfg.role_arn),
+                urlencode(role_arn),
                 urlencode(&session_name),
                 duration
             );
-            let url = self.endpoint();
-            let amz_date = now_amz_date();
-            let signed = sign(SigV4Input {
-                access_key_id: &self.creds.access_key_id,
-                secret_access_key: &self.creds.secret_access_key,
-                session_token: self.creds.session_token.as_deref(),
-                region: &self.region,
-                service: "sts",
-                method: "POST",
-                url: &url,
-                headers: &[("content-type", "application/x-www-form-urlencoded")],
-                body: body.as_bytes(),
-                amz_date: &amz_date,
-            });
-            let mut req = self.client.post(&signed.url).body(signed.body.clone());
-            for (k, v) in &signed.headers {
-                req = req.header(k, v);
-            }
-            let resp = req.send().await.map_err(|e| {
-                crate::error::VaultError::Backend(anyhow::anyhow!("aws sts POST: {e}"))
-            })?;
-            if !resp.status().is_success() {
-                let status = resp.status();
-                let txt = resp.text().await.unwrap_or_default();
-                return Err(crate::error::VaultError::Backend(anyhow::anyhow!(
-                    "aws sts returned {status}: {txt}"
-                )));
-            }
-            let xml = resp.text().await.map_err(|e| {
-                crate::error::VaultError::Backend(anyhow::anyhow!("aws sts read body: {e}"))
-            })?;
-
+            let xml = self.aws_form_call("sts", &body).await?;
             let access_key = xml_tag(&xml, "AccessKeyId").ok_or_else(|| {
                 crate::error::VaultError::Backend(anyhow::anyhow!(
                     "aws sts response missing AccessKeyId: {xml}"
@@ -459,7 +520,6 @@ pub mod aws_provider {
             })?;
             let token = xml_tag(&xml, "SessionToken");
             let expiration = xml_tag(&xml, "Expiration");
-
             Ok(IssuedCredentials {
                 credentials: serde_json::json!({
                     "access_key_id": access_key,
@@ -468,20 +528,100 @@ pub mod aws_provider {
                     "expiration": expiration,
                 }),
                 metadata: serde_json::json!({
-                    "role_arn": cfg.role_arn,
+                    "kind": "assume_role",
+                    "role_arn": role_arn,
                     "session_name": session_name,
                 }),
             })
         }
 
-        async fn revoke(&self, _lease: &LeaseRecord) -> Result<()> {
-            // STS-issued temp creds expire on their own — no API call
-            // to revoke them mid-flight. The lease row's revoked_at
-            // marker is the auditable signal; the credentials become
-            // unusable at their `expiration` timestamp regardless.
-            // For long-lived `iam:CreateAccessKey` creds (not yet
-            // implemented), revoke would call iam:DeleteAccessKey here.
-            Ok(())
+        async fn issue_create_access_key(
+            &self,
+            iam_user: &str,
+        ) -> Result<IssuedCredentials> {
+            let xml = self
+                .iam_call("CreateAccessKey", &[("UserName", iam_user)])
+                .await?;
+            let access_key = xml_tag(&xml, "AccessKeyId").ok_or_else(|| {
+                crate::error::VaultError::Backend(anyhow::anyhow!(
+                    "iam CreateAccessKey missing AccessKeyId"
+                ))
+            })?;
+            let secret = xml_tag(&xml, "SecretAccessKey").ok_or_else(|| {
+                crate::error::VaultError::Backend(anyhow::anyhow!(
+                    "iam CreateAccessKey missing SecretAccessKey"
+                ))
+            })?;
+            let create_date = xml_tag(&xml, "CreateDate");
+            Ok(IssuedCredentials {
+                credentials: serde_json::json!({
+                    "access_key_id": access_key,
+                    "secret_access_key": secret,
+                    "create_date": create_date,
+                }),
+                metadata: serde_json::json!({
+                    "kind": "create_access_key",
+                    "iam_user": iam_user,
+                    "access_key_id": access_key,
+                }),
+            })
+        }
+
+        async fn aws_form_call(&self, service: &'static str, body: &str) -> Result<String> {
+            let url = match service {
+                "sts" => self
+                    .endpoint_override
+                    .clone()
+                    .unwrap_or_else(|| format!("https://sts.{}.amazonaws.com/", self.region)),
+                "iam" => self
+                    .endpoint_override
+                    .clone()
+                    .unwrap_or_else(|| "https://iam.amazonaws.com/".to_string()),
+                _ => unreachable!(),
+            };
+            let amz_date = now_amz_date();
+            // IAM is a global service; sigv4 region is "us-east-1" by spec.
+            let sig_region = if service == "iam" { "us-east-1" } else { &self.region };
+            let signed = sign(SigV4Input {
+                access_key_id: &self.creds.access_key_id,
+                secret_access_key: &self.creds.secret_access_key,
+                session_token: self.creds.session_token.as_deref(),
+                region: sig_region,
+                service,
+                method: "POST",
+                url: &url,
+                headers: &[("content-type", "application/x-www-form-urlencoded")],
+                body: body.as_bytes(),
+                amz_date: &amz_date,
+            });
+            let mut req = self.client.post(&signed.url).body(signed.body.clone());
+            for (k, v) in &signed.headers {
+                req = req.header(k, v);
+            }
+            let resp = req.send().await.map_err(|e| {
+                crate::error::VaultError::Backend(anyhow::anyhow!("aws {service} POST: {e}"))
+            })?;
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let txt = resp.text().await.unwrap_or_default();
+                return Err(crate::error::VaultError::Backend(anyhow::anyhow!(
+                    "aws {service} returned {status}: {txt}"
+                )));
+            }
+            resp.text().await.map_err(|e| {
+                crate::error::VaultError::Backend(anyhow::anyhow!("aws {service} read body: {e}"))
+            })
+        }
+
+        async fn iam_call(&self, action: &'static str, params: &[(&str, &str)]) -> Result<String> {
+            let mut body = format!("Action={action}&Version=2010-05-08");
+            for (k, v) in params {
+                body.push('&');
+                body.push_str(k);
+                body.push('=');
+                body.push_str(&urlencode(v));
+            }
+            self.aws_form_call("iam", &body).await
         }
     }
 
@@ -511,6 +651,14 @@ pub mod aws_provider {
             assert_eq!(xml_tag(xml, "AccessKeyId").as_deref(), Some("AKID"));
             assert_eq!(xml_tag(xml, "SecretAccessKey").as_deref(), Some("secret"));
             assert_eq!(xml_tag(xml, "SessionToken").as_deref(), Some("tok"));
+        }
+
+        #[test]
+        fn role_config_constructors() {
+            let r = RoleConfig::assume_role("ci-deploy", "arn:aws:iam::123:role/x");
+            assert!(matches!(r.kind, RoleKind::AssumeRole { .. }));
+            let r = RoleConfig::create_access_key("legacy-key", "iam-user-foo");
+            assert!(matches!(r.kind, RoleKind::CreateAccessKey { .. }));
         }
     }
 }

@@ -109,14 +109,20 @@ where
             return error("server_error", "jwt issue failed");
         }
     };
+    // Plan §"Open questions" #1: Argon2id default for new accounts.
+    // Parameters mirror `assay_auth::password::PasswordHasher::default()`
+    // so the BW client's locally-derived master-key hash and the
+    // server's Argon2id round share KDF posture.
     let resp = TokenResponse {
         access_token: token,
         expires_in: 3600,
         token_type: "Bearer".into(),
         refresh_token: None,
         private_key: None,
-        kdf: 0,
-        kdf_iterations: 600_000,
+        kdf: 1, // Argon2id
+        kdf_iterations: 3, // t_cost
+        kdf_memory: 64,    // MiB
+        kdf_parallelism: 4,
     };
     axum::Json(resp).into_response()
 }
