@@ -46,7 +46,7 @@ vault-sealing-kms = ["dep:reqwest", "dep:hmac", "dep:jsonwebtoken"]
 # Opt-in: requires a PKCS#11 device and the `cryptoki` dep. Phase 2
 # wires the actual implementation; Phase 0 just reserves the flag.
 vault-sealing-hsm = []
-vault-audit-forwarding = ["dep:reqwest"]
+vault-audit-forwarding = ["dep:reqwest", "dep:syslog", "dep:hmac"]
 vault-bitwarden-compat = []
 vault-dynamic-postgres = []
 vault-dynamic-aws = ["dep:reqwest", "dep:hmac"]
@@ -114,6 +114,10 @@ hmac = { version = "0.12", optional = true }
 # JWT signing — used by GCP KMS auto-unseal + GCP dynamic-creds
 # (service account impersonation). Already in tree via assay-auth.
 jsonwebtoken = { version = "10", optional = true }
+
+# RFC 5424 / 3164 syslog — TCP / UDP / UDS sinks for audit forwarding.
+# ~50 KB, zero transitive deps.
+syslog = { version = "7", optional = true }
 
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "any"], optional = true }
 
