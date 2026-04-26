@@ -846,3 +846,307 @@ mod collections {
 
 #[cfg(feature = "vault-collections")]
 pub use collections::SqliteCollectionStore;
+
+#[cfg(feature = "vault-collections")]
+mod items {
+    use super::*;
+    use crate::error::{Result as VaultResult, VaultError};
+    use crate::items::{Folder, FolderStore, Item, ItemStore, Parent};
+
+    #[derive(Clone)]
+    pub struct SqliteItemStore {
+        pool: SqlitePool,
+    }
+    #[derive(Clone)]
+    pub struct SqliteFolderStore {
+        pool: SqlitePool,
+    }
+
+    impl SqliteItemStore {
+        pub fn new(pool: SqlitePool) -> Self {
+            Self { pool }
+        }
+    }
+    impl SqliteFolderStore {
+        pub fn new(pool: SqlitePool) -> Self {
+            Self { pool }
+        }
+    }
+
+    fn map_err(ctx: &'static str) -> impl FnOnce(sqlx::Error) -> VaultError {
+        move |e| VaultError::Backend(anyhow::anyhow!("{ctx}: {e}"))
+    }
+
+    fn unix_now() -> f64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64()
+    }
+
+    fn parent_pair<'a>(p: Parent<'a>) -> (Option<&'a str>, Option<&'a str>) {
+        match p {
+            Parent::Vault(id) => (Some(id), None),
+            Parent::Collection(id) => (None, Some(id)),
+        }
+    }
+
+    #[async_trait]
+    impl ItemStore for SqliteItemStore {
+        async fn create_item(
+            &self,
+            id: &str,
+            parent: Parent<'_>,
+            folder_id: Option<&str>,
+            item_type: &str,
+            name: &str,
+            ciphertext: &[u8],
+            nonce: &[u8],
+        ) -> VaultResult<Item> {
+            let (vid, cid) = parent_pair(parent);
+            let now = unix_now();
+            let res = sqlx::query(
+                "INSERT INTO vault.items
+                    (id, vault_id, collection_id, folder_id, item_type, name, ciphertext, nonce, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(id)
+            .bind(vid)
+            .bind(cid)
+            .bind(folder_id)
+            .bind(item_type)
+            .bind(name)
+            .bind(ciphertext)
+            .bind(nonce)
+            .bind(now)
+            .bind(now)
+            .execute(&self.pool)
+            .await;
+            if let Err(sqlx::Error::Database(dberr)) = &res
+                && dberr.message().contains("UNIQUE")
+            {
+                return Err(VaultError::Conflict(format!(
+                    "item id '{id}' already exists"
+                )));
+            }
+            res.map_err(map_err("create_item"))?;
+            self.get_item(id)
+                .await?
+                .ok_or_else(|| VaultError::Backend(anyhow::anyhow!("item missing post-insert")))
+        }
+
+        async fn get_item(&self, id: &str) -> VaultResult<Option<Item>> {
+            let row: Option<(
+                Option<String>, Option<String>, Option<String>, String, String, Vec<u8>, Vec<u8>, f64, f64,
+            )> = sqlx::query_as(
+                "SELECT vault_id, collection_id, folder_id, item_type, name, ciphertext, nonce, created_at, updated_at
+                   FROM vault.items WHERE id = ?",
+            )
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err("get_item"))?;
+            Ok(row.map(|(v, c, f, t, n, ct, nc, ca, ua)| Item {
+                id: id.to_string(),
+                vault_id: v,
+                collection_id: c,
+                folder_id: f,
+                item_type: t,
+                name: n,
+                ciphertext: ct,
+                nonce: nc,
+                created_at: ca,
+                updated_at: ua,
+            }))
+        }
+
+        async fn list_items(&self, parent: Parent<'_>) -> VaultResult<Vec<Item>> {
+            let (vid, cid) = parent_pair(parent);
+            let rows: Vec<(String, Option<String>, Option<String>, Option<String>, String, String, Vec<u8>, Vec<u8>, f64, f64)> =
+                match (vid, cid) {
+                    (Some(v), None) => sqlx::query_as(
+                        "SELECT id, vault_id, collection_id, folder_id, item_type, name, ciphertext, nonce, created_at, updated_at
+                           FROM vault.items WHERE vault_id = ? ORDER BY created_at",
+                    )
+                    .bind(v)
+                    .fetch_all(&self.pool)
+                    .await,
+                    (None, Some(c)) => sqlx::query_as(
+                        "SELECT id, vault_id, collection_id, folder_id, item_type, name, ciphertext, nonce, created_at, updated_at
+                           FROM vault.items WHERE collection_id = ? ORDER BY created_at",
+                    )
+                    .bind(c)
+                    .fetch_all(&self.pool)
+                    .await,
+                    _ => unreachable!("Parent guarantees exactly one Some"),
+                }
+                .map_err(map_err("list_items"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(id, v, c, f, t, n, ct, nc, ca, ua)| Item {
+                    id,
+                    vault_id: v,
+                    collection_id: c,
+                    folder_id: f,
+                    item_type: t,
+                    name: n,
+                    ciphertext: ct,
+                    nonce: nc,
+                    created_at: ca,
+                    updated_at: ua,
+                })
+                .collect())
+        }
+
+        async fn update_item(
+            &self,
+            id: &str,
+            item_type: &str,
+            name: &str,
+            ciphertext: &[u8],
+            nonce: &[u8],
+            folder_id: Option<&str>,
+        ) -> VaultResult<bool> {
+            let n = sqlx::query(
+                "UPDATE vault.items
+                    SET item_type  = ?,
+                        name       = ?,
+                        ciphertext = ?,
+                        nonce      = ?,
+                        folder_id  = ?,
+                        updated_at = ?
+                  WHERE id = ?",
+            )
+            .bind(item_type)
+            .bind(name)
+            .bind(ciphertext)
+            .bind(nonce)
+            .bind(folder_id)
+            .bind(unix_now())
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("update_item"))?
+            .rows_affected();
+            Ok(n > 0)
+        }
+
+        async fn delete_item(&self, id: &str) -> VaultResult<bool> {
+            let n = sqlx::query("DELETE FROM vault.items WHERE id = ?")
+                .bind(id)
+                .execute(&self.pool)
+                .await
+                .map_err(map_err("delete_item"))?
+                .rows_affected();
+            Ok(n > 0)
+        }
+    }
+
+    #[async_trait]
+    impl FolderStore for SqliteFolderStore {
+        async fn create_folder(
+            &self,
+            id: &str,
+            parent: Parent<'_>,
+            parent_folder_id: Option<&str>,
+            name: &str,
+        ) -> VaultResult<Folder> {
+            let (vid, cid) = parent_pair(parent);
+            sqlx::query(
+                "INSERT INTO vault.folders
+                    (id, vault_id, collection_id, parent_id, name, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(id)
+            .bind(vid)
+            .bind(cid)
+            .bind(parent_folder_id)
+            .bind(name)
+            .bind(unix_now())
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("create_folder"))?;
+            self.get_folder(id)
+                .await?
+                .ok_or_else(|| VaultError::Backend(anyhow::anyhow!("folder missing post-insert")))
+        }
+
+        async fn get_folder(&self, id: &str) -> VaultResult<Option<Folder>> {
+            let row: Option<(Option<String>, Option<String>, Option<String>, String, f64)> =
+                sqlx::query_as(
+                    "SELECT vault_id, collection_id, parent_id, name, created_at
+                       FROM vault.folders WHERE id = ?",
+                )
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(map_err("get_folder"))?;
+            Ok(row.map(|(v, c, p, n, ca)| Folder {
+                id: id.to_string(),
+                vault_id: v,
+                collection_id: c,
+                parent_id: p,
+                name: n,
+                created_at: ca,
+            }))
+        }
+
+        async fn list_folders(&self, parent: Parent<'_>) -> VaultResult<Vec<Folder>> {
+            let (vid, cid) = parent_pair(parent);
+            let rows: Vec<(String, Option<String>, Option<String>, Option<String>, String, f64)> =
+                match (vid, cid) {
+                    (Some(v), None) => sqlx::query_as(
+                        "SELECT id, vault_id, collection_id, parent_id, name, created_at
+                           FROM vault.folders WHERE vault_id = ? ORDER BY name",
+                    )
+                    .bind(v)
+                    .fetch_all(&self.pool)
+                    .await,
+                    (None, Some(c)) => sqlx::query_as(
+                        "SELECT id, vault_id, collection_id, parent_id, name, created_at
+                           FROM vault.folders WHERE collection_id = ? ORDER BY name",
+                    )
+                    .bind(c)
+                    .fetch_all(&self.pool)
+                    .await,
+                    _ => unreachable!("Parent guarantees exactly one Some"),
+                }
+                .map_err(map_err("list_folders"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(id, v, c, p, n, ca)| Folder {
+                    id,
+                    vault_id: v,
+                    collection_id: c,
+                    parent_id: p,
+                    name: n,
+                    created_at: ca,
+                })
+                .collect())
+        }
+
+        async fn rename_folder(&self, id: &str, name: &str) -> VaultResult<bool> {
+            let n = sqlx::query("UPDATE vault.folders SET name = ? WHERE id = ?")
+                .bind(name)
+                .bind(id)
+                .execute(&self.pool)
+                .await
+                .map_err(map_err("rename_folder"))?
+                .rows_affected();
+            Ok(n > 0)
+        }
+
+        async fn delete_folder(&self, id: &str) -> VaultResult<bool> {
+            let n = sqlx::query("DELETE FROM vault.folders WHERE id = ?")
+                .bind(id)
+                .execute(&self.pool)
+                .await
+                .map_err(map_err("delete_folder"))?
+                .rows_affected();
+            Ok(n > 0)
+        }
+    }
+}
+
+#[cfg(feature = "vault-collections")]
+pub use items::{SqliteFolderStore, SqliteItemStore};
