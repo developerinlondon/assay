@@ -56,9 +56,16 @@ where
         None => return super::service_unavailable("folders"),
     };
 
-    let pv_row = match pv.get_by_owner(&user_id).await {
-        Ok(Some(v)) => v,
-        Ok(None) => return super::not_found(),
+    // Auto-create-on-first-touch (plan §S4 — "auto-created on signup").
+    // assay-auth currently has no post-create hook surface, so we
+    // lazy-create here with a zero-byte pubkey placeholder. The user
+    // (or their BW client) MUST set a real X25519 pubkey via
+    // PUT /api/v1/vault/me/{user_id} before any collection-share flow
+    // works — collection-key envelopes wrap to that pubkey via ECDH.
+    // A proper post-user-create hook in assay-auth lands in v0.3.x.
+    let id = uuid::Uuid::now_v7().to_string();
+    let pv_row = match pv.ensure_vault(&id, &user_id, &[]).await {
+        Ok(v) => v,
         Err(e) => return super::vault_err(e),
     };
     let items = match items_store.list_items(Parent::Vault(&pv_row.id)).await {

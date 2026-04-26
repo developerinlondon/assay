@@ -59,6 +59,9 @@ pub mod sealing;
 #[cfg(feature = "vault-bitwarden-compat")]
 pub mod bitwarden_compat;
 
+#[cfg(feature = "vault-collections")]
+pub mod zanzibar;
+
 #[cfg(feature = "vault-audit-forwarding")]
 pub mod audit;
 

@@ -544,6 +544,31 @@ async fn engine_smoke_sqlite() {
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["server"]["name"], "assay-vault");
 
+    // ── Zanzibar default namespaces seeded at boot (plan §S4) ────────
+    // Reach into the engine's auth API to confirm the vault namespaces
+    // landed. The /api/v1/engine/auth/admin/zanzibar/namespaces route
+    // is admin-key gated.
+    let r = client2
+        .get(engine2.url("/api/v1/engine/auth/admin/zanzibar/namespaces"))
+        .header("Authorization", admin_bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    let names: Vec<String> = body
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
+        .collect();
+    for expected in ["vault", "collection", "kv_path", "team", "family", "org"] {
+        assert!(
+            names.iter().any(|n| n == expected),
+            "vault should have seeded {expected} namespace; got {names:?}"
+        );
+    }
+
     // ── /vault/console — Phase-7 dashboard pane ──────────────────────
     let r = client2
         .get(engine2.url("/vault/console"))

@@ -146,6 +146,18 @@ async fn build_vault_ctx_pg(
             ))
             .with_items(assay_vault::store::postgres::PgItemStore::new(pool.clone()))
             .with_folders(assay_vault::store::postgres::PgFolderStore::new(pool.clone()));
+        // Plan §S4 — seed default Zanzibar namespaces (vault,
+        // collection, kv_path, team, family, org). Idempotent.
+        // Builds the same backing PG store assay-auth uses; the
+        // namespace rows live in `auth.zanzibar_namespaces` regardless
+        // of which crate writes them.
+        #[cfg(feature = "auth-zanzibar")]
+        {
+            let z = assay_auth::zanzibar::PostgresZanzibarStore::new(pool.clone());
+            assay_vault::zanzibar::seed_default_namespaces(&z)
+                .await
+                .map_err(|e| anyhow::anyhow!("seed vault zanzibar namespaces (pg): {e}"))?;
+        }
     }
     #[cfg(feature = "vault-share")]
     {
@@ -205,6 +217,13 @@ async fn build_vault_ctx_sqlite(
             ))
             .with_items(assay_vault::store::sqlite::SqliteItemStore::new(pool.clone()))
             .with_folders(assay_vault::store::sqlite::SqliteFolderStore::new(pool.clone()));
+        #[cfg(feature = "auth-zanzibar")]
+        {
+            let z = assay_auth::zanzibar::SqliteZanzibarStore::new(pool.clone());
+            assay_vault::zanzibar::seed_default_namespaces(&z)
+                .await
+                .map_err(|e| anyhow::anyhow!("seed vault zanzibar namespaces (sqlite): {e}"))?;
+        }
     }
     #[cfg(feature = "vault-share")]
     {
