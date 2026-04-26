@@ -181,4 +181,102 @@ async fn engine_smoke_sqlite() {
         "root should be 2xx or 3xx (redirect), got {}",
         r.status()
     );
+
+    // ── /api/v1/vault/kv/* ────────────────────────────────────────────
+    // Plan 17 / v0.3.0 vault module. Admin-key gated for Phase 1.
+    let admin_bearer = "Bearer engine-smoke-test-key";
+
+    // Unauthenticated: 401.
+    let r = client
+        .put(engine.url("/api/v1/vault/kv/api/stripe"))
+        .json(&serde_json::json!({ "data": "sk_live_xxx" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401, "vault must reject missing bearer");
+
+    // PUT with admin key.
+    let r = client
+        .put(engine.url("/api/v1/vault/kv/api/stripe"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({ "data": "sk_live_xxx" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "vault PUT should return 201; body: ?");
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["version"], 1);
+
+    // GET round-trip.
+    let r = client
+        .get(engine.url("/api/v1/vault/kv/api/stripe"))
+        .header("Authorization", admin_bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["data"], "sk_live_xxx");
+    assert_eq!(body["version"], 1);
+
+    // PUT another version, confirm GET returns the newer one.
+    let r = client
+        .put(engine.url("/api/v1/vault/kv/api/stripe"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({ "data": "sk_live_yyy" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let r = client
+        .get(engine.url("/api/v1/vault/kv/api/stripe"))
+        .header("Authorization", admin_bearer)
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["data"], "sk_live_yyy");
+    assert_eq!(body["version"], 2);
+
+    // ── /api/v1/vault/transit/* ───────────────────────────────────────
+    let r = client
+        .post(engine.url("/api/v1/vault/transit/keys/logs"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "transit create should return 201");
+
+    // Encrypt + decrypt round-trip.
+    use base64::engine::general_purpose::STANDARD as B64;
+    use base64::Engine;
+    let plaintext = b"hello-from-engine-smoke";
+    let r = client
+        .post(engine.url("/api/v1/vault/transit/encrypt/logs"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({
+            "plaintext_b64": B64.encode(plaintext),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let ct: serde_json::Value = r.json().await.unwrap();
+    let ciphertext = ct["ciphertext"].as_str().unwrap();
+    assert!(ciphertext.starts_with("vault:v1:"));
+
+    let r = client
+        .post(engine.url("/api/v1/vault/transit/decrypt/logs"))
+        .header("Authorization", admin_bearer)
+        .json(&serde_json::json!({ "ciphertext": ciphertext }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let body: serde_json::Value = r.json().await.unwrap();
+    let decoded = B64
+        .decode(body["plaintext_b64"].as_str().unwrap().as_bytes())
+        .unwrap();
+    assert_eq!(decoded, plaintext);
 }
