@@ -8,30 +8,40 @@
 // (process-wide). cargo's default test harness runs tests on threads
 // in the same process, so any test that builds a VM races against any
 // test that mutates that env var. ENV_LOCK serializes ALL VM creation
-// in this file — both the "no env set" baseline tests and the env-
-// mutating ones must acquire it before calling create_vm.
+// in this file. Crucially, the lock is held ONLY across the synchronous
+// `create_vm` call — never across an `await` — so we don't trip
+// `clippy::await_holding_lock`.
 
 use std::sync::Mutex;
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn make_vm() -> mlua::Lua {
+    let _g = ENV_LOCK.lock().unwrap();
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .unwrap();
     assay::lua::create_vm(client).unwrap()
+    // _g dropped here, before any caller awaits.
 }
 
 fn make_vm_with_env(blocks: &str) -> mlua::Lua {
-    // SAFETY: caller holds ENV_LOCK while mutating env.
+    let _g = ENV_LOCK.lock().unwrap();
+    // SAFETY: ENV_LOCK serialises every test in this file that mutates
+    // ASSAY_BLOCK_GLOBALS or constructs a VM that reads it.
     unsafe {
         std::env::set_var(assay::lua::BLOCK_GLOBALS_ENV, blocks);
     }
-    let vm = make_vm();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let vm = assay::lua::create_vm(client).unwrap();
     unsafe {
         std::env::remove_var(assay::lua::BLOCK_GLOBALS_ENV);
     }
     vm
+    // _g dropped here.
 }
 
 async fn run(script: &str, vm: mlua::Lua) {
@@ -41,7 +51,6 @@ async fn run(script: &str, vm: mlua::Lua) {
 
 #[tokio::test]
 async fn load_loadfile_dofile_are_callable_by_default() {
-    let _g = ENV_LOCK.lock().unwrap();
     let vm = make_vm();
     let script = r#"
         assert.eq(type(load), "function")
@@ -58,7 +67,6 @@ async fn load_loadfile_dofile_are_callable_by_default() {
 
 #[tokio::test]
 async fn string_dump_stays_blocked_for_safety() {
-    let _g = ENV_LOCK.lock().unwrap();
     let vm = make_vm();
     let script = r#"
         -- string.dump produces Lua bytecode and is the documented
@@ -70,7 +78,6 @@ async fn string_dump_stays_blocked_for_safety() {
 
 #[tokio::test]
 async fn assay_block_globals_nils_top_level_names() {
-    let _g = ENV_LOCK.lock().unwrap();
     let vm = make_vm_with_env("dofile,loadfile");
     let script = r#"
         assert.eq(dofile, nil)
@@ -82,7 +89,6 @@ async fn assay_block_globals_nils_top_level_names() {
 
 #[tokio::test]
 async fn assay_block_globals_nils_dotted_paths() {
-    let _g = ENV_LOCK.lock().unwrap();
     let vm = make_vm_with_env("os.execute,os.exit");
     let script = r#"
         assert.eq(os.execute, nil)
@@ -94,7 +100,6 @@ async fn assay_block_globals_nils_dotted_paths() {
 
 #[tokio::test]
 async fn assay_block_globals_silently_skips_typos() {
-    let _g = ENV_LOCK.lock().unwrap();
     // Unknown table prefixes (no `bogus` table in globals) and pure
     // whitespace entries must not error VM creation — that would turn
     // a typo into a CrashLoopBackOff.
