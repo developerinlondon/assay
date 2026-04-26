@@ -564,3 +564,210 @@ mod personal_vault {
 
 #[cfg(feature = "vault-collections")]
 pub use personal_vault::PgPersonalVaultStore;
+
+#[cfg(feature = "vault-collections")]
+mod collections {
+    use super::*;
+    use crate::collections::{Collection, CollectionMember, CollectionStore};
+    use crate::error::{Result as VaultResult, VaultError};
+
+    #[derive(Clone)]
+    pub struct PgCollectionStore {
+        pool: PgPool,
+    }
+
+    impl PgCollectionStore {
+        pub fn new(pool: PgPool) -> Self {
+            Self { pool }
+        }
+    }
+
+    fn map_err(ctx: &'static str) -> impl FnOnce(sqlx::Error) -> VaultError {
+        move |e| VaultError::Backend(anyhow::anyhow!("{ctx}: {e}"))
+    }
+
+    #[async_trait]
+    impl CollectionStore for PgCollectionStore {
+        async fn create_collection(
+            &self,
+            id: &str,
+            org_id: Option<&str>,
+            name: &str,
+            created_by: &str,
+        ) -> VaultResult<Collection> {
+            let res = sqlx::query(
+                "INSERT INTO vault.collections (id, org_id, name, created_by)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(id)
+            .bind(org_id)
+            .bind(name)
+            .bind(created_by)
+            .execute(&self.pool)
+            .await;
+            if let Err(sqlx::Error::Database(dberr)) = &res
+                && dberr.code().as_deref() == Some("23505")
+            {
+                return Err(VaultError::Conflict(format!(
+                    "collection id '{id}' already exists"
+                )));
+            }
+            res.map_err(map_err("create_collection"))?;
+            self.get_collection(id)
+                .await?
+                .ok_or_else(|| VaultError::Backend(anyhow::anyhow!("collection missing post-insert")))
+        }
+
+        async fn get_collection(&self, id: &str) -> VaultResult<Option<Collection>> {
+            let row: Option<(Option<String>, String, String, f64)> = sqlx::query_as(
+                "SELECT org_id, name, created_by, created_at
+                   FROM vault.collections WHERE id = $1",
+            )
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err("get_collection"))?;
+            Ok(row.map(|(org, name, by, ca)| Collection {
+                id: id.to_string(),
+                org_id: org,
+                name,
+                created_by: by,
+                created_at: ca,
+            }))
+        }
+
+        async fn list_collections(
+            &self,
+            org_id: Option<&str>,
+        ) -> VaultResult<Vec<Collection>> {
+            let rows: Vec<(String, Option<String>, String, String, f64)> = match org_id {
+                Some(o) => sqlx::query_as(
+                    "SELECT id, org_id, name, created_by, created_at
+                       FROM vault.collections
+                      WHERE org_id = $1
+                      ORDER BY name",
+                )
+                .bind(o)
+                .fetch_all(&self.pool)
+                .await,
+                None => sqlx::query_as(
+                    "SELECT id, org_id, name, created_by, created_at
+                       FROM vault.collections
+                      ORDER BY name",
+                )
+                .fetch_all(&self.pool)
+                .await,
+            }
+            .map_err(map_err("list_collections"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(id, org, name, by, ca)| Collection {
+                    id,
+                    org_id: org,
+                    name,
+                    created_by: by,
+                    created_at: ca,
+                })
+                .collect())
+        }
+
+        async fn delete_collection(&self, id: &str) -> VaultResult<bool> {
+            let n = sqlx::query("DELETE FROM vault.collections WHERE id = $1")
+                .bind(id)
+                .execute(&self.pool)
+                .await
+                .map_err(map_err("delete_collection"))?
+                .rows_affected();
+            Ok(n > 0)
+        }
+
+        async fn upsert_member(
+            &self,
+            collection_id: &str,
+            user_id: &str,
+            wrapped_key: &[u8],
+            role: &str,
+        ) -> VaultResult<()> {
+            sqlx::query(
+                "INSERT INTO vault.collection_members
+                    (collection_id, user_id, wrapped_key, role)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (collection_id, user_id) DO UPDATE
+                   SET wrapped_key = excluded.wrapped_key,
+                       role        = excluded.role",
+            )
+            .bind(collection_id)
+            .bind(user_id)
+            .bind(wrapped_key)
+            .bind(role)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("upsert_member"))?;
+            Ok(())
+        }
+
+        async fn list_members(
+            &self,
+            collection_id: &str,
+        ) -> VaultResult<Vec<CollectionMember>> {
+            let rows: Vec<(String, Vec<u8>, String, f64)> = sqlx::query_as(
+                "SELECT user_id, wrapped_key, role, added_at
+                   FROM vault.collection_members
+                  WHERE collection_id = $1
+                  ORDER BY added_at",
+            )
+            .bind(collection_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_err("list_members"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(uid, wk, role, at)| CollectionMember {
+                    collection_id: collection_id.to_string(),
+                    user_id: uid,
+                    wrapped_key: wk,
+                    role,
+                    added_at: at,
+                })
+                .collect())
+        }
+
+        async fn remove_member(
+            &self,
+            collection_id: &str,
+            user_id: &str,
+        ) -> VaultResult<bool> {
+            let n = sqlx::query(
+                "DELETE FROM vault.collection_members
+                  WHERE collection_id = $1 AND user_id = $2",
+            )
+            .bind(collection_id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err("remove_member"))?
+            .rows_affected();
+            Ok(n > 0)
+        }
+
+        async fn is_member(
+            &self,
+            collection_id: &str,
+            user_id: &str,
+        ) -> VaultResult<bool> {
+            let row: Option<(i64,)> = sqlx::query_as(
+                "SELECT 1 FROM vault.collection_members
+                  WHERE collection_id = $1 AND user_id = $2",
+            )
+            .bind(collection_id)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err("is_member"))?;
+            Ok(row.is_some())
+        }
+    }
+}
+
+#[cfg(feature = "vault-collections")]
+pub use collections::PgCollectionStore;

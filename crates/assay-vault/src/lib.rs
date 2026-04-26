@@ -57,6 +57,9 @@ pub mod transit;
 #[cfg(feature = "vault-collections")]
 pub mod personal_vault;
 
+#[cfg(feature = "vault-collections")]
+pub mod collections;
+
 pub mod router;
 
 #[cfg(any(feature = "backend-postgres", feature = "backend-sqlite"))]
