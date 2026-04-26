@@ -2,19 +2,40 @@
 
 All notable changes to Assay are documented here.
 
-## [assay 0.14.2] - 2026-04-26
+## [assay 0.14.2 / assay-auth 0.2.1 / assay-dashboard 0.2.1 / assay-engine 0.2.2] - 2026-04-26
+
+| Crate             | Bump            |
+| ----------------- | --------------- |
+| `assay`           | 0.14.1 → 0.14.2 |
+| `assay-auth`      | 0.2.0 → 0.2.1   |
+| `assay-dashboard` | 0.2.0 → 0.2.1   |
+| `assay-engine`    | 0.2.1 → 0.2.2   |
 
 ### Fixed
 
-- `assay run <script> -- <args>` now passes trailing positionals as the Lua `arg` global (`arg[0]` =
-  script path, `arg[1..]` = user values). Stock `lua`/`luajit` shape.
-- `dofile`, `load`, `loadfile` are usable again — the old sandbox over-blocked them. `string.dump`
-  stays blocked (bytecode escape).
+- `assay run <script> -- <args>` passes trailing positionals to Lua's `arg` global (`arg[0]` =
+  script path, `arg[1..]` = user values).
+- `dofile`, `load`, `loadfile` are usable again — old sandbox over-blocked them. `string.dump` stays
+  blocked (bytecode escape).
+- Zanzibar tuple writes no longer 500 (#82). `subject_rel` was implicitly NOT NULL via the PK but
+  every code path treated it as nullable. Schema stores `''` for direct subjects, the relation name
+  for usersets; queries use plain equality.
+- Zanzibar namespace POST no longer rejects with `missing field 'wildcard'` (#81). Field is
+  `#[serde(default)]` on `TypeRef`.
+- Auth Console: removed leaked `phase 8b` planning shorthand (#83) from the Keys empty state and
+  three header comments.
 
 ### Added
 
 - `ASSAY_BLOCK_GLOBALS` env var: comma-separated names to nil at VM creation. Supports dotted paths
   (`os.execute`, `debug.getinfo`). Typos silently skip.
+
+### Changed
+
+- `Tuple` / `SubjectRef` `subject_rel` is now `String` (was `Option<String>`). Empty string = direct
+  subject, non-empty = userset. JSON callers can omit the field; serde defaults to `""`.
+- Schema migration is destructive — drop and recreate `auth.zanzibar_tuples` for any existing
+  install. (No production assay 0.14.x deployment on file at this writing.)
 
 ## [assay 0.14.1 / assay-workflow 0.3.1 / assay-engine 0.2.1] - 2026-04-26
 

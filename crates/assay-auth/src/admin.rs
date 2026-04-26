@@ -646,8 +646,10 @@ pub struct TupleBody {
     pub relation: String,
     pub subject_type: String,
     pub subject_id: String,
+    /// Empty string (or omitted) for direct subjects; the userset
+    /// relation name for userset subjects. See `zanzibar::SubjectRef`.
     #[serde(default)]
-    pub subject_rel: Option<String>,
+    pub subject_rel: String,
 }
 
 async fn zanzibar_write_tuple(
@@ -716,8 +718,10 @@ pub struct CheckBody {
     pub permission: String,
     pub subject_type: String,
     pub subject_id: String,
+    /// Empty string (or omitted) for direct subjects; the userset
+    /// relation name for userset subjects.
     #[serde(default)]
-    pub subject_rel: Option<String>,
+    pub subject_rel: String,
 }
 
 #[derive(Clone, Debug, Serialize)]

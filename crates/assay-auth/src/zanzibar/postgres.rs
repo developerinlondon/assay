@@ -152,13 +152,13 @@ impl ZanzibarStore for PostgresZanzibarStore {
     }
 
     async fn delete_tuple(&self, t: &Tuple) -> Result<bool> {
-        // PG: NULL distinct in equality, so the `subject_rel IS NOT
-        // DISTINCT FROM $6` form is needed when subject_rel is NULL.
+        // subject_rel is NOT NULL ('' for direct), so plain equality
+        // suffices — no IS NOT DISTINCT FROM dance.
         let res = sqlx::query(
             "DELETE FROM auth.zanzibar_tuples
              WHERE object_type = $1 AND object_id = $2 AND relation = $3
                AND subject_type = $4 AND subject_id = $5
-               AND subject_rel IS NOT DISTINCT FROM $6",
+               AND subject_rel = $6",
         )
         .bind(&t.object_type)
         .bind(&t.object_id)
@@ -194,15 +194,11 @@ impl ZanzibarStore for PostgresZanzibarStore {
         }
         let relation_list: Vec<String> = resolved.union_relations.into_iter().collect();
 
-        // 2) Run the recursive walk. Postgres' arrays + the
-        //    `IS NOT DISTINCT FROM` operator handle the `subject_rel`
-        //    nullable comparison cleanly. Cycle guard via the in-CTE
-        //    `path` array — if the next subject is already on the
-        //    path, the join produces zero rows.
-        //
-        //    The seed binds `subject_rel IS NULL` for direct subjects
-        //    (the only kind `check` answers — usersets are intermediate
-        //    states the CTE walks through, never the terminal answer).
+        // 2) Run the recursive walk. subject_rel is NOT NULL — '' for
+        //    direct subjects (the terminal kind `check` answers) and a
+        //    relation name for usersets the CTE walks through. Cycle
+        //    guard via the in-CTE `path` array — if the next subject is
+        //    already on the path, the join produces zero rows.
         let row: Option<(i32,)> = sqlx::query_as(
             r#"
             WITH RECURSIVE walk(subject_type, subject_id, subject_rel, depth, path) AS (
@@ -223,7 +219,7 @@ impl ZanzibarStore for PostgresZanzibarStore {
                 JOIN walk w
                   ON t.object_type = w.subject_type
                  AND t.object_id   = w.subject_id
-                 AND w.subject_rel IS NOT NULL
+                 AND w.subject_rel <> ''
                  AND t.relation = w.subject_rel
                 WHERE w.depth < $4
                   AND NOT (t.subject_type || ':' || t.subject_id) = ANY(w.path)
@@ -231,7 +227,7 @@ impl ZanzibarStore for PostgresZanzibarStore {
             SELECT CASE
                 WHEN EXISTS (
                     SELECT 1 FROM walk
-                    WHERE subject_type = $5 AND subject_id = $6 AND subject_rel IS NULL
+                    WHERE subject_type = $5 AND subject_id = $6 AND subject_rel = ''
                 ) THEN 1
                 WHEN EXISTS (SELECT 1 FROM walk WHERE depth >= $4) THEN 2
                 ELSE 0
@@ -359,14 +355,14 @@ impl ZanzibarStore for PostgresZanzibarStore {
                 JOIN walk w
                   ON t.object_type = w.subject_type
                  AND t.object_id   = w.subject_id
-                 AND w.subject_rel IS NOT NULL
+                 AND w.subject_rel <> ''
                  AND t.relation = w.subject_rel
                 WHERE w.depth < $4
                   AND NOT (t.subject_type || ':' || t.subject_id) = ANY(w.path)
             )
             SELECT DISTINCT subject_type, subject_id
             FROM walk
-            WHERE subject_type = $5 AND subject_rel IS NULL
+            WHERE subject_type = $5 AND subject_rel = ''
             "#,
         )
         .bind(&resource.object_type)
@@ -424,27 +420,26 @@ fn expand_pg<'a>(
         for row in rows {
             let st: String = row.get("subject_type");
             let sid: String = row.get("subject_id");
-            let sr: Option<String> = row.get("subject_rel");
-            match sr {
-                None => children.push(UsersetTree::Leaf {
+            let sr: String = row.get("subject_rel");
+            if sr.is_empty() {
+                children.push(UsersetTree::Leaf {
                     subject: SubjectRef::direct(st, sid),
-                }),
-                Some(r) => {
-                    let inner_resource = ObjectRef::new(st.clone(), sid.clone());
-                    let sub = expand_pg(store, &inner_resource, &r, depth - 1, seen).await?;
-                    children.push(UsersetTree::Node {
-                        op: TreeOp::TuplesetArrow,
-                        children: vec![
-                            UsersetTree::Leaf {
-                                subject: SubjectRef::userset(st, sid, r),
-                            },
-                            UsersetTree::Node {
-                                op: TreeOp::Direct,
-                                children: sub,
-                            },
-                        ],
-                    });
-                }
+                });
+            } else {
+                let inner_resource = ObjectRef::new(st.clone(), sid.clone());
+                let sub = expand_pg(store, &inner_resource, &sr, depth - 1, seen).await?;
+                children.push(UsersetTree::Node {
+                    op: TreeOp::TuplesetArrow,
+                    children: vec![
+                        UsersetTree::Leaf {
+                            subject: SubjectRef::userset(st, sid, sr.clone()),
+                        },
+                        UsersetTree::Node {
+                            op: TreeOp::Direct,
+                            children: sub,
+                        },
+                    ],
+                });
             }
         }
         Ok(children)

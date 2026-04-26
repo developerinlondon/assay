@@ -62,16 +62,23 @@ impl ObjectRef {
 
 /// `<type>:<id>[#<relation>]` reference. A subject is either:
 ///
-/// - a **direct** user (`subject_rel = None`) — terminal, e.g.
+/// - a **direct** user (`subject_rel = ""`) — terminal, e.g.
 ///   `user:alice`, that's the leaf the recursive CTE walks toward.
-/// - a **userset** (`subject_rel = Some("member")`) — every member of
+/// - a **userset** (`subject_rel = "member"`) — every member of
 ///   `<type>:<id>`'s `relation`, e.g. `family:smith#member`. The walk
 ///   follows these one hop at a time.
+///
+/// We use the empty string rather than `Option<String>` so the column
+/// can stay in the primary key (PG implicitly NOT-NULLs PK members) and
+/// so SQLite/PG queries can use plain equality (`subject_rel = ?`)
+/// instead of `IS NOT DISTINCT FROM`. JSON callers may either omit the
+/// field or send `""` for direct tuples; both deserialize the same way.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SubjectRef {
     pub subject_type: String,
     pub subject_id: String,
-    pub subject_rel: Option<String>,
+    #[serde(default)]
+    pub subject_rel: String,
 }
 
 impl SubjectRef {
@@ -79,7 +86,7 @@ impl SubjectRef {
         Self {
             subject_type: ty.into(),
             subject_id: id.into(),
-            subject_rel: None,
+            subject_rel: String::new(),
         }
     }
 
@@ -91,17 +98,23 @@ impl SubjectRef {
         Self {
             subject_type: ty.into(),
             subject_id: id.into(),
-            subject_rel: Some(relation.into()),
+            subject_rel: relation.into(),
         }
+    }
+
+    /// `true` for `user:alice` (direct subject); `false` for
+    /// `family:smith#member` (userset).
+    pub fn is_direct(&self) -> bool {
+        self.subject_rel.is_empty()
     }
 
     /// Parse `"<type>:<id>"` (direct) or `"<type>:<id>#<relation>"`
     /// (userset). Returns `None` if the structural shape is invalid.
     pub fn parse(s: &str) -> Option<Self> {
         let (head, rel) = match s.split_once('#') {
-            Some((h, r)) if !r.is_empty() => (h, Some(r.to_string())),
+            Some((h, r)) if !r.is_empty() => (h, r.to_string()),
             Some(_) => return None,
-            None => (s, None),
+            None => (s, String::new()),
         };
         let (ty, id) = head.split_once(':')?;
         if ty.is_empty() || id.is_empty() {
@@ -116,15 +129,19 @@ impl SubjectRef {
 
     /// Round-trip rendering with [`Self::parse`].
     pub fn render(&self) -> String {
-        match &self.subject_rel {
-            Some(r) => format!("{}:{}#{}", self.subject_type, self.subject_id, r),
-            None => format!("{}:{}", self.subject_type, self.subject_id),
+        if self.subject_rel.is_empty() {
+            format!("{}:{}", self.subject_type, self.subject_id)
+        } else {
+            format!("{}:{}#{}", self.subject_type, self.subject_id, self.subject_rel)
         }
     }
 }
 
 /// One row of `auth.zanzibar_tuples`. Field names mirror the columns
-/// 1:1 so hand-rolled SQL stays readable.
+/// 1:1 so hand-rolled SQL stays readable. `subject_rel` is the empty
+/// string for a direct subject (e.g. `user:alice`) and the relation
+/// name for a userset subject (e.g. `family:smith#member`); see
+/// [`SubjectRef`] for the rationale.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Tuple {
     pub object_type: String,
@@ -132,7 +149,8 @@ pub struct Tuple {
     pub relation: String,
     pub subject_type: String,
     pub subject_id: String,
-    pub subject_rel: Option<String>,
+    #[serde(default)]
+    pub subject_rel: String,
 }
 
 impl Tuple {
@@ -334,11 +352,14 @@ pub enum RelationKind {
 pub struct TypeRef {
     pub object_type: String,
     /// Userset reference — `family#member`. `None` = a direct subject.
+    #[serde(default)]
     pub relation: Option<String>,
     /// Wildcard subject id — `user:*`. When `true` the parser saw
     /// `user:*` (any user is allowed) instead of just `user`. Treated
     /// as a permission shape rather than a sentinel value at the SQL
-    /// layer.
+    /// layer. Defaults to `false` when the field is omitted by Lua /
+    /// JSON callers (the common case — wildcards are an escape hatch).
+    #[serde(default)]
     pub wildcard: bool,
 }
 
