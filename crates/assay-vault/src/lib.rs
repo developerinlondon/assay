@@ -45,12 +45,17 @@ pub mod ctx;
 pub mod error;
 pub mod schema;
 
+#[cfg(feature = "vault-kv")]
+pub mod kv;
+
 #[cfg(any(feature = "backend-postgres", feature = "backend-sqlite"))]
 pub mod store;
 
 pub use crypto::KekHandle;
 pub use ctx::VaultCtx;
 pub use error::{Result, VaultError};
+#[cfg(feature = "vault-kv")]
+pub use kv::{KvMeta, KvRead, KvRow, KvService, KvStore};
 pub use schema::{MIGRATION_VERSION, MODULE_NAME};
 
 /// Stable module name registered in `engine.modules` and used as the
