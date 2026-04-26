@@ -48,6 +48,9 @@ pub mod schema;
 #[cfg(feature = "vault-kv")]
 pub mod kv;
 
+#[cfg(feature = "vault-transit")]
+pub mod transit;
+
 #[cfg(any(feature = "backend-postgres", feature = "backend-sqlite"))]
 pub mod store;
 
@@ -56,6 +59,8 @@ pub use ctx::VaultCtx;
 pub use error::{Result, VaultError};
 #[cfg(feature = "vault-kv")]
 pub use kv::{KvMeta, KvRead, KvRow, KvService, KvStore};
+#[cfg(feature = "vault-transit")]
+pub use transit::{TransitKey, TransitService, TransitStore, TransitVersion};
 pub use schema::{MIGRATION_VERSION, MODULE_NAME};
 
 /// Stable module name registered in `engine.modules` and used as the

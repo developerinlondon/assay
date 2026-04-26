@@ -242,3 +242,176 @@ mod kv {
 
 #[cfg(feature = "vault-kv")]
 pub use kv::PgKvStore;
+
+#[cfg(feature = "vault-transit")]
+mod transit {
+    use super::*;
+    use crate::error::{Result as VaultResult, VaultError};
+    use crate::transit::{TransitKey, TransitStore, TransitVersion};
+
+    /// Postgres-backed transit store.
+    #[derive(Clone)]
+    pub struct PgTransitStore {
+        pool: PgPool,
+    }
+
+    impl PgTransitStore {
+        pub fn new(pool: PgPool) -> Self {
+            Self { pool }
+        }
+    }
+
+    fn map_err(ctx: &'static str) -> impl FnOnce(sqlx::Error) -> VaultError {
+        move |e| VaultError::Backend(anyhow::anyhow!("{ctx}: {e}"))
+    }
+
+    #[async_trait]
+    impl TransitStore for PgTransitStore {
+        async fn create_key(
+            &self,
+            name: &str,
+            algo: &str,
+            version_wrapped: &[u8],
+            kek_kid: &str,
+        ) -> VaultResult<()> {
+            let mut tx = self.pool.begin().await.map_err(map_err("transit create begin"))?;
+
+            // Strict create: 23505 (unique violation) → Conflict; everything
+            // else surfaces as Backend.
+            let res = sqlx::query(
+                "INSERT INTO vault.transit_keys (name, latest_ver, algo, created_at)
+                 VALUES ($1, 1, $2, EXTRACT(EPOCH FROM NOW()))",
+            )
+            .bind(name)
+            .bind(algo)
+            .execute(&mut *tx)
+            .await;
+            if let Err(sqlx::Error::Database(dberr)) = &res
+                && dberr.code().as_deref() == Some("23505")
+            {
+                return Err(VaultError::Conflict(format!(
+                    "transit key '{name}' already exists"
+                )));
+            }
+            res.map_err(map_err("transit create insert key"))?;
+
+            sqlx::query(
+                "INSERT INTO vault.transit_versions (name, version, key_wrapped, kek_kid)
+                 VALUES ($1, 1, $2, $3)",
+            )
+            .bind(name)
+            .bind(version_wrapped)
+            .bind(kek_kid)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err("transit create insert version"))?;
+
+            tx.commit().await.map_err(map_err("transit create commit"))?;
+            Ok(())
+        }
+
+        async fn get_key(&self, name: &str) -> VaultResult<Option<TransitKey>> {
+            let row: Option<(String, i64, f64)> = sqlx::query_as(
+                "SELECT algo, latest_ver, created_at FROM vault.transit_keys WHERE name = $1",
+            )
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err("transit get_key"))?;
+            Ok(row.map(|(algo, lv, ca)| TransitKey {
+                name: name.to_string(),
+                algo,
+                latest_ver: lv,
+                created_at: ca,
+            }))
+        }
+
+        async fn get_version(&self, name: &str, version: i64) -> VaultResult<Option<TransitVersion>> {
+            let row: Option<(Vec<u8>, String, f64)> = sqlx::query_as(
+                "SELECT key_wrapped, kek_kid, created_at
+                   FROM vault.transit_versions
+                  WHERE name = $1 AND version = $2",
+            )
+            .bind(name)
+            .bind(version)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err("transit get_version"))?;
+            Ok(row.map(|(kw, kk, ca)| TransitVersion {
+                name: name.to_string(),
+                version,
+                key_wrapped: kw,
+                kek_kid: kk,
+                created_at: ca,
+            }))
+        }
+
+        async fn get_latest_version(&self, name: &str) -> VaultResult<Option<TransitVersion>> {
+            // Two-step (read latest_ver, fetch row) keeps the SELECT
+            // simple and lets sqlx infer types cleanly. The transit_keys
+            // row is the source of truth for "which version is latest".
+            let lv: Option<i64> = sqlx::query_scalar(
+                "SELECT latest_ver FROM vault.transit_keys WHERE name = $1",
+            )
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err("transit get_latest version-ptr"))?;
+            match lv {
+                None => Ok(None),
+                Some(v) => self.get_version(name, v).await,
+            }
+        }
+
+        async fn rotate(&self, name: &str, version_wrapped: &[u8], kek_kid: &str) -> VaultResult<i64> {
+            let mut tx = self.pool.begin().await.map_err(map_err("transit rotate begin"))?;
+            let new_ver: i64 = sqlx::query_scalar(
+                "UPDATE vault.transit_keys
+                    SET latest_ver = latest_ver + 1
+                  WHERE name = $1
+                  RETURNING latest_ver",
+            )
+            .bind(name)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_err("transit rotate bump"))?
+            .ok_or(VaultError::NotFound)?;
+            sqlx::query(
+                "INSERT INTO vault.transit_versions (name, version, key_wrapped, kek_kid)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(name)
+            .bind(new_ver)
+            .bind(version_wrapped)
+            .bind(kek_kid)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err("transit rotate insert version"))?;
+            tx.commit().await.map_err(map_err("transit rotate commit"))?;
+            Ok(new_ver)
+        }
+
+        async fn list_keys(&self) -> VaultResult<Vec<TransitKey>> {
+            let rows: Vec<(String, String, i64, f64)> = sqlx::query_as(
+                "SELECT name, algo, latest_ver, created_at
+                   FROM vault.transit_keys
+                  ORDER BY name",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_err("transit list_keys"))?;
+            Ok(rows
+                .into_iter()
+                .map(|(n, a, lv, ca)| TransitKey {
+                    name: n,
+                    algo: a,
+                    latest_ver: lv,
+                    created_at: ca,
+                })
+                .collect())
+        }
+    }
+}
+
+#[cfg(feature = "vault-transit")]
+pub use transit::PgTransitStore;
