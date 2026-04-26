@@ -46,11 +46,26 @@ jobs:
       - name: Install clippy component
         run: rustup component add clippy
 
+      # Swatinem/rust-cache@v2 with a Cargo.lock-keyed cache. The
+      # `key` input ties saves to the locked dep graph, so unchanged
+      # PR pushes hit the exact key (no rebuild) instead of falling
+      # back to a restore-key partial match (rebuild affected crates).
+      # `save-if: contains` skips the ~250MB upload on cache-hit-no-
+      # changes runs.
+      #
+      # `cache-targets: true` keeps target/ in the cache too — main
+      # win is that aws-lc-sys + ring + sqlx-macros + webauthn-rs's
+      # build-script outputs round-trip rather than rebuild. Heavy
+      # build crates dominate cold-restore time on this workspace.
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "ci-${{ matrix.target }}-v3"
+          shared-key: "ci-${{ matrix.target }}-v4"
+          key: ${{ hashFiles('**/Cargo.lock') }}
           cache-all-crates: "true"
-          save-if: "true"
+          cache-targets: "true"
+          # Save the cache only when Cargo.lock changed AND the build
+          # succeeds, so unchanged PR pushes don't re-upload ~250MB.
+          save-if: ${{ github.event_name == 'pull_request' && success() }}
 
       # Playwright stores browsers under an OS-specific default path —
       # list both so the cache action matches whichever the runner uses.
