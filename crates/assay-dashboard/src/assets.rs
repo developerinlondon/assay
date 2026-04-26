@@ -44,3 +44,42 @@ pub const SELECT_JS: &str = include_str!("../assets/workflow/components/select.j
 
 /// Inline SVG favicon — single accent-coloured "A" mark on a dark surface.
 pub const FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#0d1117"/><text x="32" y="46" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="44" font-weight="800" fill="#e6662a" text-anchor="middle">A</text></svg>"##;
+
+// =====================================================================
+//   Auth console assets (feature = "auth")
+// =====================================================================
+
+pub const AUTH_INDEX_HTML: &str = include_str!("../assets/auth/index.html");
+pub const AUTH_STYLE_CSS: &str = include_str!("../assets/auth/style.css");
+pub const AUTH_APP_JS: &str = include_str!("../assets/auth/app.js");
+pub const AUTH_API_JS: &str = include_str!("../assets/auth/components/api.js");
+pub const AUTH_USERS_JS: &str = include_str!("../assets/auth/components/users.js");
+pub const AUTH_SESSIONS_JS: &str = include_str!("../assets/auth/components/sessions.js");
+pub const AUTH_OIDC_CLIENTS_JS: &str =
+    include_str!("../assets/auth/components/oidc_clients.js");
+pub const AUTH_OIDC_UPSTREAM_JS: &str =
+    include_str!("../assets/auth/components/oidc_upstream.js");
+pub const AUTH_ZANZIBAR_JS: &str = include_str!("../assets/auth/components/zanzibar.js");
+pub const AUTH_KEYS_JS: &str = include_str!("../assets/auth/components/keys.js");
+pub const AUTH_AUDIT_JS: &str = include_str!("../assets/auth/components/audit.js");
+
+// =====================================================================
+//   Engine console assets (always present — engine-core is always on)
+// =====================================================================
+
+pub const ENGINE_INDEX_HTML: &str = include_str!("../assets/engine/index.html");
+pub const ENGINE_STYLE_CSS: &str = include_str!("../assets/engine/style.css");
+pub const ENGINE_APP_JS: &str = include_str!("../assets/engine/app.js");
+pub const ENGINE_API_JS: &str = include_str!("../assets/engine/components/api.js");
+pub const ENGINE_INFO_JS: &str = include_str!("../assets/engine/components/info.js");
+pub const ENGINE_MODULES_JS: &str = include_str!("../assets/engine/components/modules.js");
+pub const ENGINE_INSTANCES_JS: &str = include_str!("../assets/engine/components/instances.js");
+pub const ENGINE_AUDIT_JS: &str = include_str!("../assets/engine/components/audit.js");
+pub const ENGINE_CONFIG_JS: &str = include_str!("../assets/engine/components/config.js");
+
+// =====================================================================
+//   Shared cross-console nav strip — included by every console shell
+// =====================================================================
+
+pub const CROSS_NAV_CSS: &str = include_str!("../assets/shared/cross-nav.css");
+pub const CROSS_NAV_JS: &str = include_str!("../assets/shared/cross-nav.js");

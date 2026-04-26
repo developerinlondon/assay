@@ -1,0 +1,39 @@
+//! Zanzibar / ReBAC layer — Keto / SpiceDB-equivalent authorization.
+//!
+//! Module shape:
+//!
+//! - [`types`] — POD types: [`Tuple`], [`ObjectRef`], [`SubjectRef`],
+//!   [`NamespaceSchema`], [`PermissionExpr`], [`Consistency`],
+//!   [`CheckResult`], [`UsersetTree`].
+//! - [`schema`] — SpiceDB-compatible DSL parser.
+//! - [`resolve`] — permission-expression → seed relation set
+//!   computation, shared by both backend impls.
+//! - [`store`] — the [`ZanzibarStore`] async trait.
+//! - [`postgres`] / [`sqlite`] — recursive-CTE-backed implementations.
+//!
+//! Why a directory module: phase 6 is the largest single auth module
+//! by line count. Splitting it keeps each file under ~500 LOC while
+//! preserving the `assay_auth::zanzibar::ZanzibarStore` import shape
+//! callers expect. Compile-time `auth-zanzibar` feature still gates
+//! the entire tree.
+
+#[cfg(feature = "backend-postgres")]
+pub mod postgres;
+pub mod resolve;
+pub mod schema;
+#[cfg(feature = "backend-sqlite")]
+pub mod sqlite;
+pub mod store;
+pub mod types;
+
+pub use schema::{parse_schema, ParseError};
+pub use store::ZanzibarStore;
+pub use types::{
+    CheckResult, Consistency, NamespaceSchema, ObjectRef, PermissionExpr, RelationDef,
+    RelationKind, SubjectRef, TreeOp, Tuple, TypeRef, UsersetTree, MAX_DEPTH,
+};
+
+#[cfg(feature = "backend-postgres")]
+pub use postgres::PostgresZanzibarStore;
+#[cfg(feature = "backend-sqlite")]
+pub use sqlite::SqliteZanzibarStore;

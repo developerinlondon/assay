@@ -66,7 +66,7 @@ fn default_timezone() -> String {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/schedules",
+    post, path = "/api/v1/engine/workflow/schedules",
     tag = "schedules",
     request_body = CreateScheduleRequest,
     responses(
@@ -122,7 +122,7 @@ pub struct NsQuery {
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/schedules",
+    get, path = "/api/v1/engine/workflow/schedules",
     tag = "schedules",
     params(("namespace" = Option<String>, Query, description = "Namespace (default: main)")),
     responses((status = 200, description = "List of schedules", body = Vec<WorkflowSchedule>)),
@@ -140,7 +140,7 @@ pub async fn list_schedules<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/schedules/{name}",
+    get, path = "/api/v1/engine/workflow/schedules/{name}",
     tag = "schedules",
     params(("name" = String, Path, description = "Schedule name")),
     responses(
@@ -162,7 +162,7 @@ pub async fn get_schedule<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    delete, path = "/api/v1/schedules/{name}",
+    delete, path = "/api/v1/engine/workflow/schedules/{name}",
     tag = "schedules",
     params(("name" = String, Path, description = "Schedule name")),
     responses(
@@ -199,7 +199,7 @@ pub struct PatchScheduleRequest {
 }
 
 #[utoipa::path(
-    patch, path = "/api/v1/schedules/{name}",
+    patch, path = "/api/v1/engine/workflow/schedules/{name}",
     tag = "schedules",
     params(
         ("name" = String, Path, description = "Schedule name"),
@@ -244,7 +244,7 @@ pub async fn patch_schedule<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/schedules/{name}/pause",
+    post, path = "/api/v1/engine/workflow/schedules/{name}/pause",
     tag = "schedules",
     params(
         ("name" = String, Path, description = "Schedule name"),
@@ -268,7 +268,7 @@ pub async fn pause_schedule<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/schedules/{name}/resume",
+    post, path = "/api/v1/engine/workflow/schedules/{name}/resume",
     tag = "schedules",
     params(
         ("name" = String, Path, description = "Schedule name"),

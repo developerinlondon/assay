@@ -14,6 +14,25 @@
     || 'main';
   let currentView = 'workflows';
   let eventSource = null;
+
+  // Plan-15 slice 3 gates the workflow API on the engine layer; every
+  // /api/v1/engine/workflow/* call now needs an admin Bearer token.
+  // Re-use the same `assay-admin-token` localStorage key the auth +
+  // engine consoles set so the operator only types it once across all
+  // three SPAs. apiFetch/apiFetchRaw inject it on every request below.
+  const ADMIN_TOKEN_KEY = 'assay-admin-token';
+  function getAdminToken() {
+    try { return localStorage.getItem(ADMIN_TOKEN_KEY) || ''; }
+    catch (_) { return ''; }
+  }
+  function withAuth(opts) {
+    const merged = Object.assign({}, opts || {});
+    const headers = Object.assign({}, (opts && opts.headers) || {});
+    const token = getAdminToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    merged.headers = headers;
+    return merged;
+  }
   // Suppress hash-write side effects when we're applying state read
   // *from* the hash (e.g. on initial load or browser back/forward).
   let suppressHashWrite = false;
@@ -148,8 +167,8 @@
 
   async function apiFetch(path, opts) {
     const sep = path.includes('?') ? '&' : '?';
-    const url = '/api/v1' + path + sep + 'namespace=' + encodeURIComponent(currentNamespace);
-    const res = await fetch(url, opts);
+    const url = '/api/v1/engine/workflow' + path + sep + 'namespace=' + encodeURIComponent(currentNamespace);
+    const res = await fetch(url, withAuth(opts));
     if (!res.ok) {
       const body = await res.text();
       throw new Error(body || res.statusText);
@@ -161,7 +180,7 @@
   /// Fetch without auto-injecting the namespace query param — used for
   /// endpoints that don't take one (e.g. /version, /namespaces).
   async function apiFetchRaw(path, opts) {
-    const res = await fetch('/api/v1' + path, opts);
+    const res = await fetch('/api/v1/engine/workflow' + path, withAuth(opts));
     if (!res.ok) {
       const body = await res.text();
       throw new Error(body || res.statusText);
@@ -200,7 +219,7 @@
     const select = document.getElementById('namespace-select');
     const statusSelect = document.getElementById('status-namespace-select');
     try {
-      const namespaces = await fetch('/api/v1/namespaces').then((r) => r.json());
+      const namespaces = await apiFetchRaw('/namespaces');
       const options = namespaces
         .map((ns) => {
           const name = ns.name || ns;
@@ -229,7 +248,7 @@
       eventSource.close();
     }
 
-    const url = '/api/v1/events/stream?namespace=' + encodeURIComponent(currentNamespace);
+    const url = '/api/v1/engine/workflow/events/stream?namespace=' + encodeURIComponent(currentNamespace);
     eventSource = new EventSource(url);
 
     const dot = document.getElementById('connection-dot');
@@ -539,6 +558,12 @@
     // build they're talking to. Fire-and-forget: if /version doesn't
     // exist (older engine), the placeholder stays.
     loadVersion();
+    // Cross-console nav strip — pills + header bar (version, leader,
+    // instance). Mounted globally; engine console renders the same.
+    if (window.AssayCrossNav) {
+      window.AssayCrossNav.render({ active: 'workflow' });
+    }
+    loadHeaderIdentity();
   }
 
   async function loadVersion() {
@@ -554,6 +579,30 @@
     } catch (_) {
       // Leave the placeholder — not worth surfacing as an error.
     }
+  }
+
+  // Populate the cross-nav header bar (version + leader + instance) from
+  // the public /api/v1/engine/core/info endpoint. Same loader the engine
+  // console runs — duplicated here so the workflow shell doesn't depend
+  // on the engine SPA's app.js.
+  async function loadHeaderIdentity() {
+    try {
+      const r = await fetch('/api/v1/engine/core/info', { headers: { 'accept': 'application/json' } });
+      if (!r.ok) return;
+      const info = await r.json();
+      const v = document.getElementById('cross-nav-version');
+      if (v && info.version) v.textContent = 'v' + info.version;
+      const dot = document.getElementById('cross-nav-leader-dot');
+      const txt = document.getElementById('cross-nav-leader-text');
+      if (dot) dot.classList.toggle('leader', !!info.leader);
+      if (txt) txt.textContent = info.leader ? 'leader' : 'follower';
+      const inst = document.getElementById('cross-nav-instance');
+      if (inst && info.instance_id) {
+        const id = info.instance_id;
+        inst.textContent = 'instance:' + id.slice(0, 6) + '…' + id.slice(-4);
+        inst.title = 'instance ' + id;
+      }
+    } catch (_) { /* leave placeholders */ }
   }
 
   // Expose globals for components

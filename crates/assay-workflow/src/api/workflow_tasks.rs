@@ -44,7 +44,7 @@ pub struct PollWorkflowTaskRequest {
 /// Claim a dispatchable workflow on the requested queue. Response is `null`
 /// when nothing is available (worker should sleep + retry).
 #[utoipa::path(
-    post, path = "/api/v1/workflow-tasks/poll",
+    post, path = "/api/v1/engine/workflow/workflow-tasks/poll",
     tag = "workflow-tasks",
     request_body = PollWorkflowTaskRequest,
     responses(
@@ -88,7 +88,7 @@ pub struct SubmitCommandsRequest {
 /// status + appends WorkflowCompleted, etc.) and the worker's claim is
 /// released on success.
 #[utoipa::path(
-    post, path = "/api/v1/workflow-tasks/{id}/commands",
+    post, path = "/api/v1/engine/workflow/workflow-tasks/{id}/commands",
     tag = "workflow-tasks",
     params(("id" = String, Path, description = "Workflow ID")),
     request_body = SubmitCommandsRequest,

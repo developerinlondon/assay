@@ -19,7 +19,10 @@ pub struct EngineClient {
 impl EngineClient {
     pub fn new(opts: &GlobalOpts) -> Self {
         Self {
-            base: format!("{}/api/v1", opts.engine_url.trim_end_matches('/')),
+            base: format!(
+                "{}/api/v1/engine/workflow",
+                opts.engine_url.trim_end_matches('/')
+            ),
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()

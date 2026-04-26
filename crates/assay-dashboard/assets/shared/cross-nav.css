@@ -1,0 +1,197 @@
+/* Cross-console navigation strip — Workflow / Auth / Engine pills.
+ *
+ * Sits at the very top of every console (.cross-nav element). The
+ * underlying console layouts (workflow / auth / engine) shift their
+ * sidebar + content down by `--cross-nav-h` so the strip never
+ * overlaps the existing chrome.
+ */
+
+:root {
+  --cross-nav-h: 48px;
+}
+
+.cross-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--cross-nav-h);
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--border, hsl(214 32% 91%));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  gap: 16px;
+  font-size: 13px;
+  z-index: 200;
+}
+
+.cross-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cross-nav-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--accent, #e6662a);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.cross-nav-title {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cross-nav-version {
+  color: var(--text-muted, #6e7781);
+  font-weight: 500;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.cross-nav-leader {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted, #6e7781);
+  font-weight: 500;
+}
+
+.cross-nav-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted, #6e7781);
+}
+
+.cross-nav-dot.leader {
+  background: hsl(140 60% 45%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, hsl(140 60% 45%) 30%, transparent);
+}
+
+.cross-nav-instance {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  color: var(--text-muted, #6e7781);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Right-side status group in the top strip — leader dot + instance id.
+   Lives where the pills used to; pills moved into the sidebar header
+   as icon tabs (.console-tab below). */
+.cross-nav-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The console switcher now renders inside `.sidebar-header` (top of
+   each console's sidebar), not in the top cross-nav strip. The
+   container hosts three .console-tab icon links — one per console. */
+.cross-nav-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.console-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--text-muted, #6e7781);
+  text-decoration: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.console-tab:hover {
+  background: var(--surface-hover, hsl(214 32% 96%));
+  color: var(--text);
+}
+
+.console-tab.active {
+  color: var(--accent, #e6662a);
+  background: color-mix(in srgb, var(--accent, #e6662a) 12%, transparent);
+  cursor: default;
+}
+
+/* Active-state accent: bottom bar in expanded (horizontal) layout,
+   left bar in collapsed (vertical) layout. The collapsed-layout
+   override lives below under the .sidebar.collapsed selector so the
+   indicator stays visually anchored to the rail edge. */
+.console-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -2px;
+  height: 2px;
+  background: var(--accent, #e6662a);
+  border-radius: 2px;
+}
+
+/* Folded sidebar (.sidebar.collapsed): icons stack vertically, active
+   indicator becomes a left bar instead of a bottom underline so it
+   stays glued to the rail edge. */
+.sidebar.collapsed .cross-nav-pills {
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.sidebar.collapsed .console-tab.active::after {
+  left: -2px;
+  right: auto;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  height: auto;
+}
+
+/* Push the existing layouts down by the cross-nav height so the
+   sidebar + content don't get clipped. Workflow + auth layouts use
+   `.layout` as their wrapper; the engine layout adds `.layout-engine`
+   which already accounts for it via padding-top — we still set top
+   here for the fixed sidebars that anchor to viewport. */
+.layout {
+  padding-top: var(--cross-nav-h);
+}
+
+.sidebar {
+  top: var(--cross-nav-h) !important;
+}
+
+@media (max-width: 720px) {
+  .cross-nav {
+    padding: 0 8px;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .cross-nav-instance,
+  .cross-nav-leader {
+    display: none;
+  }
+  .cross-nav-pill {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+}

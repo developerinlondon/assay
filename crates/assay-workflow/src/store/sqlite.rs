@@ -1,19 +1,32 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
-use crate::store::{ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats, WorkflowStore};
+use crate::store::{NamespaceRecord, NamespaceStats, QueueStats, WorkflowStore};
 use crate::types::*;
 
+/// Workflow-module DDL. v0.1.2 schema-qualifies every table to the
+/// `workflow` schema, which on SQLite is an attached database (one
+/// `workflow.db` file per data dir, attached on connect). On PG the
+/// same DDL targets the `workflow` schema.
+///
+/// `engine.events` and `engine.lock` (engine-core infrastructure) live
+/// in the `engine` attachment; engine-core DDL is owned by
+/// `assay_domain::engine::SqliteEngineSchema`. We still bootstrap them
+/// here for v0.1.2 because the workflow store is the embedder for the
+/// `engine.events` notification outbox and for the SQLite single-instance
+/// lock — both pre-date the engine-core schema and stay co-located on
+/// SQLite to keep `SqliteStore::new(url)` self-sufficient for tests.
 const SCHEMA: &str = r#"
-CREATE TABLE IF NOT EXISTS namespaces (
+CREATE TABLE IF NOT EXISTS workflow.namespaces (
     name            TEXT PRIMARY KEY,
     created_at      REAL NOT NULL
 );
 
-INSERT OR IGNORE INTO namespaces (name, created_at)
+INSERT OR IGNORE INTO workflow.namespaces (name, created_at)
     VALUES ('main', strftime('%s', 'now'));
 
-CREATE TABLE IF NOT EXISTS workflows (
+CREATE TABLE IF NOT EXISTS workflow.workflows (
     id              TEXT PRIMARY KEY,
     namespace       TEXT NOT NULL DEFAULT 'main',
     run_id          TEXT NOT NULL,
@@ -39,11 +52,11 @@ CREATE TABLE IF NOT EXISTS workflows (
     updated_at      REAL NOT NULL,
     completed_at    REAL
 );
-CREATE INDEX IF NOT EXISTS idx_wf_status_queue ON workflows(status, task_queue);
-CREATE INDEX IF NOT EXISTS idx_wf_namespace ON workflows(namespace);
-CREATE INDEX IF NOT EXISTS idx_wf_dispatch ON workflows(task_queue, needs_dispatch, dispatch_claimed_by);
+CREATE INDEX IF NOT EXISTS workflow.idx_wf_status_queue ON workflows(status, task_queue);
+CREATE INDEX IF NOT EXISTS workflow.idx_wf_namespace ON workflows(namespace);
+CREATE INDEX IF NOT EXISTS workflow.idx_wf_dispatch ON workflows(task_queue, needs_dispatch, dispatch_claimed_by);
 
-CREATE TABLE IF NOT EXISTS workflow_events (
+CREATE TABLE IF NOT EXISTS workflow.events (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id     TEXT NOT NULL REFERENCES workflows(id),
     seq             INTEGER NOT NULL,
@@ -51,9 +64,9 @@ CREATE TABLE IF NOT EXISTS workflow_events (
     payload         TEXT,
     timestamp       REAL NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_wf_events_lookup ON workflow_events(workflow_id, seq);
+CREATE INDEX IF NOT EXISTS workflow.idx_wf_events_lookup ON events(workflow_id, seq);
 
-CREATE TABLE IF NOT EXISTS workflow_activities (
+CREATE TABLE IF NOT EXISTS workflow.activities (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id     TEXT NOT NULL REFERENCES workflows(id),
     seq             INTEGER NOT NULL,
@@ -76,9 +89,9 @@ CREATE TABLE IF NOT EXISTS workflow_activities (
     last_heartbeat  REAL,
     UNIQUE (workflow_id, seq)
 );
-CREATE INDEX IF NOT EXISTS idx_wf_act_pending ON workflow_activities(task_queue, status, scheduled_at);
+CREATE INDEX IF NOT EXISTS workflow.idx_wf_act_pending ON activities(task_queue, status, scheduled_at);
 
-CREATE TABLE IF NOT EXISTS workflow_timers (
+CREATE TABLE IF NOT EXISTS workflow.timers (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id     TEXT NOT NULL REFERENCES workflows(id),
     seq             INTEGER NOT NULL,
@@ -86,9 +99,9 @@ CREATE TABLE IF NOT EXISTS workflow_timers (
     fired           INTEGER NOT NULL DEFAULT 0,
     UNIQUE (workflow_id, seq)
 );
-CREATE INDEX IF NOT EXISTS idx_wf_timers_due ON workflow_timers(fire_at);
+CREATE INDEX IF NOT EXISTS workflow.idx_wf_timers_due ON timers(fire_at);
 
-CREATE TABLE IF NOT EXISTS workflow_signals (
+CREATE TABLE IF NOT EXISTS workflow.signals (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id     TEXT NOT NULL REFERENCES workflows(id),
     name            TEXT NOT NULL,
@@ -96,9 +109,9 @@ CREATE TABLE IF NOT EXISTS workflow_signals (
     consumed        INTEGER NOT NULL DEFAULT 0,
     received_at     REAL NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_wf_signals_lookup ON workflow_signals(workflow_id, name, consumed);
+CREATE INDEX IF NOT EXISTS workflow.idx_wf_signals_lookup ON signals(workflow_id, name, consumed);
 
-CREATE TABLE IF NOT EXISTS workflow_schedules (
+CREATE TABLE IF NOT EXISTS workflow.schedules (
     name            TEXT NOT NULL,
     namespace       TEXT NOT NULL DEFAULT 'main',
     workflow_type   TEXT NOT NULL,
@@ -115,7 +128,7 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
     PRIMARY KEY (namespace, name)
 );
 
-CREATE TABLE IF NOT EXISTS workflow_workers (
+CREATE TABLE IF NOT EXISTS workflow.workers (
     id              TEXT PRIMARY KEY,
     namespace       TEXT NOT NULL DEFAULT 'main',
     identity        TEXT NOT NULL,
@@ -129,7 +142,7 @@ CREATE TABLE IF NOT EXISTS workflow_workers (
     registered_at   REAL NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS workflow_snapshots (
+CREATE TABLE IF NOT EXISTS workflow.snapshots (
     workflow_id     TEXT NOT NULL REFERENCES workflows(id),
     event_seq       INTEGER NOT NULL,
     state_json      TEXT NOT NULL,
@@ -137,22 +150,18 @@ CREATE TABLE IF NOT EXISTS workflow_snapshots (
     PRIMARY KEY (workflow_id, event_seq)
 );
 
-CREATE TABLE IF NOT EXISTS api_keys (
-    key_hash        TEXT PRIMARY KEY,
-    prefix          TEXT NOT NULL,
-    label           TEXT,
-    created_at      REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
+-- workflow.api_keys retired in plan-15 slice 3 (auth tokens come from
+-- the auth module).
+DROP TABLE IF EXISTS workflow.api_keys;
 
-CREATE TABLE IF NOT EXISTS engine_lock (
+CREATE TABLE IF NOT EXISTS engine.lock (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
     instance_id     TEXT NOT NULL,
     started_at      REAL NOT NULL,
     last_heartbeat  REAL NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS engine_events (
+CREATE TABLE IF NOT EXISTS engine.events (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     ts              REAL NOT NULL DEFAULT (CAST(strftime('%s','now') AS REAL)),
     namespace       TEXT NOT NULL,
@@ -160,8 +169,8 @@ CREATE TABLE IF NOT EXISTS engine_events (
     kind            TEXT NOT NULL,
     payload         TEXT NOT NULL DEFAULT '{}'
 );
-CREATE INDEX IF NOT EXISTS idx_engine_events_ns_id ON engine_events(namespace, id);
-CREATE INDEX IF NOT EXISTS idx_engine_events_ts_prune ON engine_events(ts);
+CREATE INDEX IF NOT EXISTS engine.idx_engine_events_ns_id ON events(namespace, id);
+CREATE INDEX IF NOT EXISTS engine.idx_engine_events_ts_prune ON events(ts);
 "#;
 
 /// Stale lock timeout — if the lock holder hasn't heartbeated in this
@@ -170,21 +179,89 @@ const LOCK_STALE_SECS: f64 = 60.0;
 /// How often to refresh the lock heartbeat.
 const LOCK_HEARTBEAT_SECS: u64 = 15;
 
+/// `Clone` is derived because the underlying `SqlitePool` is itself
+/// `Clone` (it's `Arc<PoolInner>` internally) — cloning the store hands
+/// back a new wrapper around the same connection pool. The
+/// `instance_id` is per-store identity (heartbeat row tag), shared
+/// across clones so all clones look like the same instance to
+/// `engine.lock`.
+#[derive(Clone)]
 pub struct SqliteStore {
     pool: SqlitePool,
     instance_id: String,
 }
 
+/// Build a fresh [`SqlitePool`] with `engine` + `workflow` ATTACHed to
+/// in-memory shared-cache databases (one alias per pool). Each connection
+/// in the pool inherits the same ATTACHed databases via `after_connect`.
+///
+/// This is the test-friendly path for `SqliteStore::new(url)` callers that
+/// pass `sqlite::memory:` or any path-based URL — every connection sees
+/// the same `engine.*` / `workflow.*` data because the shared-cache URI
+/// pins the in-memory DB to a process-global name.
+///
+/// Production embedders (the engine binary) build their own pool with
+/// file-backed ATTACHes (`<data_dir>/engine.db`, `<data_dir>/workflow.db`)
+/// and call [`SqliteStore::from_attached_pool`] instead.
+async fn build_default_pool(url: &str) -> Result<SqlitePool> {
+    use std::str::FromStr;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let suffix = format!(
+        "{}_{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    let engine_alias = format!(
+        "file:assay_engine_{suffix}?mode=memory&cache=shared"
+    );
+    let workflow_alias = format!(
+        "file:assay_workflow_{suffix}?mode=memory&cache=shared"
+    );
+
+    let opts = SqliteConnectOptions::from_str(url)?
+        .create_if_missing(true);
+
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .after_connect(move |conn, _meta| {
+            let engine_alias = engine_alias.clone();
+            let workflow_alias = workflow_alias.clone();
+            Box::pin(async move {
+                use sqlx::Executor;
+                conn.execute(
+                    format!("ATTACH DATABASE '{engine_alias}' AS engine").as_str(),
+                )
+                .await?;
+                conn.execute(
+                    format!("ATTACH DATABASE '{workflow_alias}' AS workflow").as_str(),
+                )
+                .await?;
+                Ok(())
+            })
+        })
+        .connect_with(opts)
+        .await?;
+    Ok(pool)
+}
+
 impl SqliteStore {
+    /// Open a SqliteStore at `url`. Provisions an in-memory `engine` +
+    /// `workflow` ATTACH automatically — convenient for tests and
+    /// embedders that don't need persistent module isolation. Production
+    /// deployments use [`SqliteStore::from_attached_pool`] with the
+    /// engine-controlled pool that ATTACHes to `<data_dir>/*.db` files.
     pub async fn new(url: &str) -> Result<Self> {
-        let pool = SqlitePool::connect(url).await?;
-        Self::from_pool(pool).await
+        let pool = build_default_pool(url).await?;
+        Self::from_attached_pool(pool).await
     }
 
-    /// Construct from an externally-managed pool. Use this when the engine
-    /// shares the pool with the engine-events bus so both touch the same
-    /// in-memory instance (:memory: SQLite is per-connection).
-    pub async fn from_pool(pool: SqlitePool) -> Result<Self> {
+    /// Construct from an externally-managed pool that already has the
+    /// `engine` and `workflow` databases ATTACHed. The engine binary
+    /// uses this — its pool's `after_connect` hook ATTACHes the
+    /// per-module file paths from `[backend].data_dir`.
+    pub async fn from_attached_pool(pool: SqlitePool) -> Result<Self> {
         let instance_id = format!("assay-{:016x}", {
             use std::collections::hash_map::DefaultHasher;
             use std::hash::{Hash, Hasher};
@@ -196,6 +273,15 @@ impl SqliteStore {
         let store = Self { pool, instance_id };
         store.migrate().await?;
         Ok(store)
+    }
+
+    /// Backward-compat alias for [`SqliteStore::from_attached_pool`].
+    /// Older call sites passed a bare pool from `SqlitePool::connect()`;
+    /// after v0.1.2 the pool must already have the engine + workflow
+    /// databases attached. The implementation is identical, kept under
+    /// the legacy name so external embedders don't break on upgrade.
+    pub async fn from_pool(pool: SqlitePool) -> Result<Self> {
+        Self::from_attached_pool(pool).await
     }
 
     /// Expose the underlying pool (used by the engine to build an
@@ -211,7 +297,7 @@ impl SqliteStore {
 
         // Try to insert the lock
         let result = sqlx::query(
-            "INSERT INTO engine_lock (id, instance_id, started_at, last_heartbeat) VALUES (1, ?, ?, ?)",
+            "INSERT INTO engine.lock (id, instance_id, started_at, last_heartbeat) VALUES (1, ?, ?, ?)",
         )
         .bind(&self.instance_id)
         .bind(now)
@@ -224,7 +310,7 @@ impl SqliteStore {
             Err(_) => {
                 // Lock exists — check if it's stale
                 let row: Option<(String, f64)> = sqlx::query_as(
-                    "SELECT instance_id, last_heartbeat FROM engine_lock WHERE id = 1",
+                    "SELECT instance_id, last_heartbeat FROM engine.lock WHERE id = 1",
                 )
                 .fetch_optional(&self.pool)
                 .await?;
@@ -233,7 +319,7 @@ impl SqliteStore {
                     if now - last_hb > LOCK_STALE_SECS {
                         // Stale lock — take over
                         sqlx::query(
-                            "UPDATE engine_lock SET instance_id = ?, started_at = ?, last_heartbeat = ? WHERE id = 1",
+                            "UPDATE engine.lock SET instance_id = ?, started_at = ?, last_heartbeat = ? WHERE id = 1",
                         )
                         .bind(&self.instance_id)
                         .bind(now)
@@ -264,7 +350,7 @@ impl SqliteStore {
 
     /// Refresh the engine lock heartbeat. Called periodically by the engine.
     pub async fn refresh_engine_lock(&self) -> Result<()> {
-        sqlx::query("UPDATE engine_lock SET last_heartbeat = ? WHERE id = 1 AND instance_id = ?")
+        sqlx::query("UPDATE engine.lock SET last_heartbeat = ? WHERE id = 1 AND instance_id = ?")
             .bind(timestamp_now())
             .bind(&self.instance_id)
             .execute(&self.pool)
@@ -274,7 +360,7 @@ impl SqliteStore {
 
     /// Release the engine lock on shutdown.
     pub async fn release_engine_lock(&self) -> Result<()> {
-        sqlx::query("DELETE FROM engine_lock WHERE id = 1 AND instance_id = ?")
+        sqlx::query("DELETE FROM engine.lock WHERE id = 1 AND instance_id = ?")
             .bind(&self.instance_id)
             .execute(&self.pool)
             .await?;
@@ -352,7 +438,7 @@ impl WorkflowStore for SqliteStore {
     // ── Namespaces ─────────────────────────────────────────
 
     async fn create_namespace(&self, name: &str) -> Result<()> {
-        sqlx::query("INSERT INTO namespaces (name, created_at) VALUES (?, ?)")
+        sqlx::query("INSERT INTO workflow.namespaces (name, created_at) VALUES (?, ?)")
             .bind(name)
             .bind(timestamp_now())
             .execute(&self.pool)
@@ -362,7 +448,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn list_namespaces(&self) -> Result<Vec<NamespaceRecord>> {
         let rows = sqlx::query_as::<_, (String, f64)>(
-            "SELECT name, created_at FROM namespaces ORDER BY name",
+            "SELECT name, created_at FROM workflow.namespaces ORDER BY name",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -374,7 +460,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn delete_namespace(&self, name: &str) -> Result<bool> {
         // Mirror PG: 'main' is always available, can't be deleted.
-        let res = sqlx::query("DELETE FROM namespaces WHERE name = ? AND name != 'main'")
+        let res = sqlx::query("DELETE FROM workflow.namespaces WHERE name = ? AND name != 'main'")
             .bind(name)
             .execute(&self.pool)
             .await?;
@@ -383,41 +469,41 @@ impl WorkflowStore for SqliteStore {
 
     async fn get_namespace_stats(&self, namespace: &str) -> Result<NamespaceStats> {
         let total: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM workflows WHERE namespace = ?")
+            sqlx::query_as("SELECT COUNT(*) FROM workflow.workflows WHERE namespace = ?")
                 .bind(namespace)
                 .fetch_one(&self.pool)
                 .await?;
         let running: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM workflows WHERE namespace = ? AND status = 'RUNNING'",
+            "SELECT COUNT(*) FROM workflow.workflows WHERE namespace = ? AND status = 'RUNNING'",
         )
         .bind(namespace)
         .fetch_one(&self.pool)
         .await?;
         let pending: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM workflows WHERE namespace = ? AND status = 'PENDING'",
+            "SELECT COUNT(*) FROM workflow.workflows WHERE namespace = ? AND status = 'PENDING'",
         )
         .bind(namespace)
         .fetch_one(&self.pool)
         .await?;
         let completed: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM workflows WHERE namespace = ? AND status = 'COMPLETED'",
+            "SELECT COUNT(*) FROM workflow.workflows WHERE namespace = ? AND status = 'COMPLETED'",
         )
         .bind(namespace)
         .fetch_one(&self.pool)
         .await?;
         let failed: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM workflows WHERE namespace = ? AND status = 'FAILED'",
+            "SELECT COUNT(*) FROM workflow.workflows WHERE namespace = ? AND status = 'FAILED'",
         )
         .bind(namespace)
         .fetch_one(&self.pool)
         .await?;
         let schedules: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM workflow_schedules WHERE namespace = ?")
+            sqlx::query_as("SELECT COUNT(*) FROM workflow.schedules WHERE namespace = ?")
                 .bind(namespace)
                 .fetch_one(&self.pool)
                 .await?;
         let workers: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM workflow_workers WHERE namespace = ?")
+            sqlx::query_as("SELECT COUNT(*) FROM workflow.workers WHERE namespace = ?")
                 .bind(namespace)
                 .fetch_one(&self.pool)
                 .await?;
@@ -438,7 +524,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn create_workflow(&self, wf: &WorkflowRecord) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at)
+            "INSERT INTO workflow.workflows (id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&wf.id)
@@ -465,7 +551,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn get_workflow(&self, id: &str) -> Result<Option<WorkflowRecord>> {
         let row = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at FROM workflows WHERE id = ?",
+            "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at FROM workflow.workflows WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -496,7 +582,7 @@ impl WorkflowStore for SqliteStore {
 
         let mut sql = String::from(
             "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
-             FROM workflows
+             FROM workflow.workflows
              WHERE namespace = ?
                AND (? IS NULL OR status = ?)
                AND (? IS NULL OR workflow_type = ?)",
@@ -551,7 +637,7 @@ impl WorkflowStore for SqliteStore {
         let now = timestamp_now();
         let completed_at = if status.is_terminal() { Some(now) } else { None };
         sqlx::query(
-            "UPDATE workflows SET status = ?, result = COALESCE(?, result), error = COALESCE(?, error), updated_at = ?, completed_at = COALESCE(?, completed_at) WHERE id = ?",
+            "UPDATE workflow.workflows SET status = ?, result = COALESCE(?, result), error = COALESCE(?, error), updated_at = ?, completed_at = COALESCE(?, completed_at) WHERE id = ?",
         )
         .bind(status.to_string())
         .bind(result)
@@ -566,7 +652,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn claim_workflow(&self, id: &str, worker_id: &str) -> Result<bool> {
         let res = sqlx::query(
-            "UPDATE workflows SET claimed_by = ?, status = 'RUNNING', updated_at = ? WHERE id = ? AND claimed_by IS NULL",
+            "UPDATE workflow.workflows SET claimed_by = ?, status = 'RUNNING', updated_at = ? WHERE id = ? AND claimed_by IS NULL",
         )
         .bind(worker_id)
         .bind(timestamp_now())
@@ -577,7 +663,7 @@ impl WorkflowStore for SqliteStore {
     }
 
     async fn mark_workflow_dispatchable(&self, workflow_id: &str) -> Result<()> {
-        sqlx::query("UPDATE workflows SET needs_dispatch = 1 WHERE id = ?")
+        sqlx::query("UPDATE workflow.workflows SET needs_dispatch = 1 WHERE id = ?")
             .bind(workflow_id)
             .execute(&self.pool)
             .await?;
@@ -592,10 +678,10 @@ impl WorkflowStore for SqliteStore {
         let now = timestamp_now();
         // Atomic: pick the oldest dispatchable + unclaimed workflow on the queue
         let row = sqlx::query_as::<_, SqliteWorkflowRow>(
-            "UPDATE workflows
+            "UPDATE workflow.workflows
              SET dispatch_claimed_by = ?, dispatch_last_heartbeat = ?, needs_dispatch = 0
              WHERE id = (
-                SELECT id FROM workflows
+                SELECT id FROM workflow.workflows
                 WHERE task_queue = ?
                   AND needs_dispatch = 1
                   AND dispatch_claimed_by IS NULL
@@ -615,7 +701,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn release_workflow_task(&self, workflow_id: &str, worker_id: &str) -> Result<()> {
         sqlx::query(
-            "UPDATE workflows
+            "UPDATE workflow.workflows
              SET dispatch_claimed_by = NULL, dispatch_last_heartbeat = NULL
              WHERE id = ? AND dispatch_claimed_by = ?",
         )
@@ -635,7 +721,7 @@ impl WorkflowStore for SqliteStore {
         // touch workflows that have reached a terminal state — those should
         // never be re-dispatched.
         let res = sqlx::query(
-            "UPDATE workflows
+            "UPDATE workflow.workflows
              SET dispatch_claimed_by = NULL,
                  dispatch_last_heartbeat = NULL,
                  needs_dispatch = 1
@@ -654,7 +740,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn append_event(&self, ev: &WorkflowEvent) -> Result<i64> {
         let res = sqlx::query(
-            "INSERT INTO workflow_events (workflow_id, seq, event_type, payload, timestamp) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO workflow.events (workflow_id, seq, event_type, payload, timestamp) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(&ev.workflow_id)
         .bind(ev.seq)
@@ -668,7 +754,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn list_events(&self, workflow_id: &str) -> Result<Vec<WorkflowEvent>> {
         let rows = sqlx::query_as::<_, SqliteEventRow>(
-            "SELECT id, workflow_id, seq, event_type, payload, timestamp FROM workflow_events WHERE workflow_id = ? ORDER BY seq ASC",
+            "SELECT id, workflow_id, seq, event_type, payload, timestamp FROM workflow.events WHERE workflow_id = ? ORDER BY seq ASC",
         )
         .bind(workflow_id)
         .fetch_all(&self.pool)
@@ -678,7 +764,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn get_event_count(&self, workflow_id: &str) -> Result<i64> {
         let row: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM workflow_events WHERE workflow_id = ?")
+            sqlx::query_as("SELECT COUNT(*) FROM workflow.events WHERE workflow_id = ?")
                 .bind(workflow_id)
                 .fetch_one(&self.pool)
                 .await?;
@@ -689,7 +775,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn create_activity(&self, act: &WorkflowActivity) -> Result<i64> {
         let res = sqlx::query(
-            "INSERT INTO workflow_activities (workflow_id, seq, name, task_queue, input, status, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, scheduled_at)
+            "INSERT INTO workflow.activities (workflow_id, seq, name, task_queue, input, status, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, scheduled_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&act.workflow_id)
@@ -713,7 +799,7 @@ impl WorkflowStore for SqliteStore {
     async fn get_activity(&self, id: i64) -> Result<Option<WorkflowActivity>> {
         let row = sqlx::query_as::<_, SqliteActivityRow>(
             "SELECT id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat
-             FROM workflow_activities WHERE id = ?",
+             FROM workflow.activities WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -728,7 +814,7 @@ impl WorkflowStore for SqliteStore {
     ) -> Result<Option<WorkflowActivity>> {
         let row = sqlx::query_as::<_, SqliteActivityRow>(
             "SELECT id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat
-             FROM workflow_activities WHERE workflow_id = ? AND seq = ?",
+             FROM workflow.activities WHERE workflow_id = ? AND seq = ?",
         )
         .bind(workflow_id)
         .bind(seq)
@@ -744,9 +830,9 @@ impl WorkflowStore for SqliteStore {
     ) -> Result<Option<WorkflowActivity>> {
         let now = timestamp_now();
         let row = sqlx::query_as::<_, SqliteActivityRow>(
-            "UPDATE workflow_activities SET status = 'RUNNING', claimed_by = ?, started_at = ?
+            "UPDATE workflow.activities SET status = 'RUNNING', claimed_by = ?, started_at = ?
              WHERE id = (
-                SELECT id FROM workflow_activities
+                SELECT id FROM workflow.activities
                 WHERE task_queue = ? AND status = 'PENDING'
                 ORDER BY scheduled_at ASC
                 LIMIT 1
@@ -768,7 +854,7 @@ impl WorkflowStore for SqliteStore {
         next_scheduled_at: f64,
     ) -> Result<()> {
         sqlx::query(
-            "UPDATE workflow_activities
+            "UPDATE workflow.activities
              SET status = 'PENDING', attempt = ?, scheduled_at = ?,
                  claimed_by = NULL, started_at = NULL, last_heartbeat = NULL,
                  error = NULL
@@ -791,7 +877,7 @@ impl WorkflowStore for SqliteStore {
     ) -> Result<()> {
         let status = if failed { "FAILED" } else { "COMPLETED" };
         sqlx::query(
-            "UPDATE workflow_activities SET status = ?, result = ?, error = ?, completed_at = ? WHERE id = ?",
+            "UPDATE workflow.activities SET status = ?, result = ?, error = ?, completed_at = ? WHERE id = ?",
         )
         .bind(status)
         .bind(result)
@@ -804,7 +890,7 @@ impl WorkflowStore for SqliteStore {
     }
 
     async fn heartbeat_activity(&self, id: i64, _details: Option<&str>) -> Result<()> {
-        sqlx::query("UPDATE workflow_activities SET last_heartbeat = ? WHERE id = ?")
+        sqlx::query("UPDATE workflow.activities SET last_heartbeat = ? WHERE id = ?")
             .bind(timestamp_now())
             .bind(id)
             .execute(&self.pool)
@@ -815,7 +901,7 @@ impl WorkflowStore for SqliteStore {
     async fn get_timed_out_activities(&self, now: f64) -> Result<Vec<WorkflowActivity>> {
         let rows = sqlx::query_as::<_, SqliteActivityRow>(
             "SELECT id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat
-             FROM workflow_activities
+             FROM workflow.activities
              WHERE status = 'RUNNING'
                AND heartbeat_timeout_secs IS NOT NULL
                AND last_heartbeat IS NOT NULL
@@ -833,7 +919,7 @@ impl WorkflowStore for SqliteStore {
         // Idempotent: INSERT OR IGNORE on UNIQUE (workflow_id, seq).
         // If the row already existed, last_insert_rowid() is 0 — fall back to SELECT.
         let res = sqlx::query(
-            "INSERT OR IGNORE INTO workflow_timers (workflow_id, seq, fire_at, fired) VALUES (?, ?, ?, 0)",
+            "INSERT OR IGNORE INTO workflow.timers (workflow_id, seq, fire_at, fired) VALUES (?, ?, ?, 0)",
         )
         .bind(&timer.workflow_id)
         .bind(timer.seq)
@@ -848,7 +934,7 @@ impl WorkflowStore for SqliteStore {
 
         // Row already existed — return its id.
         let (existing_id,): (i64,) = sqlx::query_as(
-            "SELECT id FROM workflow_timers WHERE workflow_id = ? AND seq = ?",
+            "SELECT id FROM workflow.timers WHERE workflow_id = ? AND seq = ?",
         )
         .bind(&timer.workflow_id)
         .bind(timer.seq)
@@ -859,7 +945,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn cancel_pending_activities(&self, workflow_id: &str) -> Result<u64> {
         let res = sqlx::query(
-            "UPDATE workflow_activities SET status = 'CANCELLED', completed_at = ?
+            "UPDATE workflow.activities SET status = 'CANCELLED', completed_at = ?
              WHERE workflow_id = ? AND status = 'PENDING'",
         )
         .bind(timestamp_now())
@@ -871,7 +957,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn cancel_pending_timers(&self, workflow_id: &str) -> Result<u64> {
         let res = sqlx::query(
-            "UPDATE workflow_timers SET fired = 1
+            "UPDATE workflow.timers SET fired = 1
              WHERE workflow_id = ? AND fired = 0",
         )
         .bind(workflow_id)
@@ -887,7 +973,7 @@ impl WorkflowStore for SqliteStore {
     ) -> Result<Option<WorkflowTimer>> {
         let row = sqlx::query_as::<_, SqliteTimerRow>(
             "SELECT id, workflow_id, seq, fire_at, fired
-             FROM workflow_timers WHERE workflow_id = ? AND seq = ?",
+             FROM workflow.timers WHERE workflow_id = ? AND seq = ?",
         )
         .bind(workflow_id)
         .bind(seq)
@@ -898,7 +984,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn fire_due_timers(&self, now: f64) -> Result<Vec<WorkflowTimer>> {
         let rows = sqlx::query_as::<_, SqliteTimerRow>(
-            "UPDATE workflow_timers SET fired = 1
+            "UPDATE workflow.timers SET fired = 1
              WHERE fired = 0 AND fire_at <= ?
              RETURNING id, workflow_id, seq, fire_at, fired",
         )
@@ -912,7 +998,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn send_signal(&self, sig: &WorkflowSignal) -> Result<i64> {
         let res = sqlx::query(
-            "INSERT INTO workflow_signals (workflow_id, name, payload, consumed, received_at) VALUES (?, ?, ?, 0, ?)",
+            "INSERT INTO workflow.signals (workflow_id, name, payload, consumed, received_at) VALUES (?, ?, ?, 0, ?)",
         )
         .bind(&sig.workflow_id)
         .bind(&sig.name)
@@ -929,7 +1015,7 @@ impl WorkflowStore for SqliteStore {
         name: &str,
     ) -> Result<Vec<WorkflowSignal>> {
         let rows = sqlx::query_as::<_, SqliteSignalRow>(
-            "UPDATE workflow_signals SET consumed = 1
+            "UPDATE workflow.signals SET consumed = 1
              WHERE workflow_id = ? AND name = ? AND consumed = 0
              RETURNING id, workflow_id, name, payload, consumed, received_at",
         )
@@ -944,7 +1030,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn create_schedule(&self, sched: &WorkflowSchedule) -> Result<()> {
         sqlx::query(
-            "INSERT INTO workflow_schedules (name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
+            "INSERT INTO workflow.schedules (name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&sched.name)
@@ -968,7 +1054,7 @@ impl WorkflowStore for SqliteStore {
     async fn get_schedule(&self, namespace: &str, name: &str) -> Result<Option<WorkflowSchedule>> {
         let row = sqlx::query_as::<_, SqliteScheduleRow>(
             "SELECT name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
-             FROM workflow_schedules WHERE namespace = ? AND name = ?",
+             FROM workflow.schedules WHERE namespace = ? AND name = ?",
         )
         .bind(namespace)
         .bind(name)
@@ -980,7 +1066,7 @@ impl WorkflowStore for SqliteStore {
     async fn list_schedules(&self, namespace: &str) -> Result<Vec<WorkflowSchedule>> {
         let rows = sqlx::query_as::<_, SqliteScheduleRow>(
             "SELECT name, namespace, workflow_type, cron_expr, timezone, input, task_queue, overlap_policy, paused, last_run_at, next_run_at, last_workflow_id, created_at
-             FROM workflow_schedules WHERE namespace = ? ORDER BY name",
+             FROM workflow.schedules WHERE namespace = ? ORDER BY name",
         )
         .bind(namespace)
         .fetch_all(&self.pool)
@@ -997,7 +1083,7 @@ impl WorkflowStore for SqliteStore {
         workflow_id: &str,
     ) -> Result<()> {
         sqlx::query(
-            "UPDATE workflow_schedules SET last_run_at = ?, next_run_at = ?, last_workflow_id = ? WHERE namespace = ? AND name = ?",
+            "UPDATE workflow.schedules SET last_run_at = ?, next_run_at = ?, last_workflow_id = ? WHERE namespace = ? AND name = ?",
         )
         .bind(last_run_at)
         .bind(next_run_at)
@@ -1011,7 +1097,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn delete_schedule(&self, namespace: &str, name: &str) -> Result<bool> {
         let res =
-            sqlx::query("DELETE FROM workflow_schedules WHERE namespace = ? AND name = ?")
+            sqlx::query("DELETE FROM workflow.schedules WHERE namespace = ? AND name = ?")
                 .bind(namespace)
                 .bind(name)
                 .execute(&self.pool)
@@ -1026,7 +1112,7 @@ impl WorkflowStore for SqliteStore {
     ) -> Result<Vec<WorkflowRecord>> {
         let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
             "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
-             FROM workflows
+             FROM workflow.workflows
              WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT')
                AND completed_at IS NOT NULL
                AND completed_at < ?
@@ -1048,28 +1134,28 @@ impl WorkflowStore for SqliteStore {
         archived_at: f64,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-        sqlx::query("DELETE FROM workflow_events WHERE workflow_id = ?")
+        sqlx::query("DELETE FROM workflow.events WHERE workflow_id = ?")
             .bind(workflow_id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("DELETE FROM workflow_activities WHERE workflow_id = ?")
+        sqlx::query("DELETE FROM workflow.activities WHERE workflow_id = ?")
             .bind(workflow_id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("DELETE FROM workflow_timers WHERE workflow_id = ?")
+        sqlx::query("DELETE FROM workflow.timers WHERE workflow_id = ?")
             .bind(workflow_id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("DELETE FROM workflow_signals WHERE workflow_id = ?")
+        sqlx::query("DELETE FROM workflow.signals WHERE workflow_id = ?")
             .bind(workflow_id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("DELETE FROM workflow_snapshots WHERE workflow_id = ?")
+        sqlx::query("DELETE FROM workflow.snapshots WHERE workflow_id = ?")
             .bind(workflow_id)
             .execute(&mut *tx)
             .await?;
         sqlx::query(
-            "UPDATE workflows SET archived_at = ?, archive_uri = ? WHERE id = ?",
+            "UPDATE workflow.workflows SET archived_at = ?, archive_uri = ? WHERE id = ?",
         )
         .bind(archived_at)
         .bind(archive_uri)
@@ -1088,7 +1174,7 @@ impl WorkflowStore for SqliteStore {
         // Merge at the application layer so we don't depend on SQLite's
         // `json_patch`, which is only available with the json1 extension.
         let current: Option<(Option<String>,)> =
-            sqlx::query_as("SELECT search_attributes FROM workflows WHERE id = ?")
+            sqlx::query_as("SELECT search_attributes FROM workflow.workflows WHERE id = ?")
                 .bind(workflow_id)
                 .fetch_optional(&self.pool)
                 .await?;
@@ -1096,7 +1182,7 @@ impl WorkflowStore for SqliteStore {
             current.and_then(|(s,)| s).as_deref(),
             patch_json,
         )?;
-        sqlx::query("UPDATE workflows SET search_attributes = ? WHERE id = ?")
+        sqlx::query("UPDATE workflow.workflows SET search_attributes = ? WHERE id = ?")
             .bind(merged)
             .bind(workflow_id)
             .execute(&self.pool)
@@ -1134,7 +1220,7 @@ impl WorkflowStore for SqliteStore {
         }
 
         let sql = format!(
-            "UPDATE workflow_schedules SET {} WHERE namespace = ? AND name = ?",
+            "UPDATE workflow.schedules SET {} WHERE namespace = ? AND name = ?",
             sets.join(", ")
         );
         let mut q = sqlx::query(&sql);
@@ -1171,7 +1257,7 @@ impl WorkflowStore for SqliteStore {
         paused: bool,
     ) -> Result<Option<WorkflowSchedule>> {
         let res = sqlx::query(
-            "UPDATE workflow_schedules SET paused = ? WHERE namespace = ? AND name = ?",
+            "UPDATE workflow.schedules SET paused = ? WHERE namespace = ? AND name = ?",
         )
         .bind(paused)
         .bind(namespace)
@@ -1188,7 +1274,7 @@ impl WorkflowStore for SqliteStore {
 
     async fn register_worker(&self, w: &WorkflowWorker) -> Result<()> {
         sqlx::query(
-            "INSERT OR REPLACE INTO workflow_workers (id, namespace, identity, task_queue, workflows, activities, max_concurrent_workflows, max_concurrent_activities, active_tasks, last_heartbeat, registered_at)
+            "INSERT OR REPLACE INTO workflow.workers (id, namespace, identity, task_queue, workflows, activities, max_concurrent_workflows, max_concurrent_activities, active_tasks, last_heartbeat, registered_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&w.id)
@@ -1208,7 +1294,7 @@ impl WorkflowStore for SqliteStore {
     }
 
     async fn heartbeat_worker(&self, id: &str, now: f64) -> Result<()> {
-        sqlx::query("UPDATE workflow_workers SET last_heartbeat = ? WHERE id = ?")
+        sqlx::query("UPDATE workflow.workers SET last_heartbeat = ? WHERE id = ?")
             .bind(now)
             .bind(id)
             .execute(&self.pool)
@@ -1219,7 +1305,7 @@ impl WorkflowStore for SqliteStore {
     async fn list_workers(&self, namespace: &str) -> Result<Vec<WorkflowWorker>> {
         let rows = sqlx::query_as::<_, SqliteWorkerRow>(
             "SELECT id, namespace, identity, task_queue, workflows, activities, max_concurrent_workflows, max_concurrent_activities, active_tasks, last_heartbeat, registered_at
-             FROM workflow_workers WHERE namespace = ? ORDER BY registered_at",
+             FROM workflow.workers WHERE namespace = ? ORDER BY registered_at",
         )
         .bind(namespace)
         .fetch_all(&self.pool)
@@ -1229,13 +1315,13 @@ impl WorkflowStore for SqliteStore {
 
     async fn remove_dead_workers(&self, cutoff: f64) -> Result<Vec<String>> {
         let rows: Vec<(String,)> =
-            sqlx::query_as("SELECT id FROM workflow_workers WHERE last_heartbeat < ?")
+            sqlx::query_as("SELECT id FROM workflow.workers WHERE last_heartbeat < ?")
                 .bind(cutoff)
                 .fetch_all(&self.pool)
                 .await?;
         let ids: Vec<String> = rows.into_iter().map(|r| r.0).collect();
         if !ids.is_empty() {
-            sqlx::query("DELETE FROM workflow_workers WHERE last_heartbeat < ?")
+            sqlx::query("DELETE FROM workflow.workers WHERE last_heartbeat < ?")
                 .bind(cutoff)
                 .execute(&self.pool)
                 .await?;
@@ -1243,87 +1329,12 @@ impl WorkflowStore for SqliteStore {
         Ok(ids)
     }
 
-    // ── API Keys ────────────────────────────────────────────
-
-    async fn create_api_key(
-        &self,
-        key_hash: &str,
-        prefix: &str,
-        label: Option<&str>,
-        created_at: f64,
-    ) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO api_keys (key_hash, prefix, label, created_at) VALUES (?, ?, ?, ?)",
-        )
-        .bind(key_hash)
-        .bind(prefix)
-        .bind(label)
-        .bind(created_at)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn validate_api_key(&self, key_hash: &str) -> Result<bool> {
-        let row: Option<(i64,)> =
-            sqlx::query_as("SELECT 1 FROM api_keys WHERE key_hash = ?")
-                .bind(key_hash)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.is_some())
-    }
-
-    async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>> {
-        let rows = sqlx::query_as::<_, (String, Option<String>, f64)>(
-            "SELECT prefix, label, created_at FROM api_keys ORDER BY created_at DESC",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows
-            .into_iter()
-            .map(|(prefix, label, created_at)| ApiKeyRecord {
-                prefix,
-                label,
-                created_at,
-            })
-            .collect())
-    }
-
-    async fn revoke_api_key(&self, prefix: &str) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM api_keys WHERE prefix = ?")
-            .bind(prefix)
-            .execute(&self.pool)
-            .await?;
-        Ok(res.rows_affected() > 0)
-    }
-
-    async fn api_keys_empty(&self) -> Result<bool> {
-        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM api_keys")
-            .fetch_one(&self.pool)
-            .await?;
-        Ok(row.0 == 0)
-    }
-
-    async fn get_api_key_by_label(&self, label: &str) -> Result<Option<ApiKeyRecord>> {
-        let row: Option<(String, Option<String>, f64)> = sqlx::query_as(
-            "SELECT prefix, label, created_at FROM api_keys WHERE label = ? LIMIT 1",
-        )
-        .bind(label)
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(row.map(|(prefix, label, created_at)| ApiKeyRecord {
-            prefix,
-            label,
-            created_at,
-        }))
-    }
-
     // ── Child Workflows ─────────────────────────────────────
 
     async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {
         let rows = sqlx::query_as::<_, SqliteWorkflowRow>(
             "SELECT id, namespace, run_id, workflow_type, task_queue, status, input, result, error, parent_id, claimed_by, search_attributes, archived_at, archive_uri, created_at, updated_at, completed_at
-             FROM workflows WHERE parent_id = ? ORDER BY created_at ASC",
+             FROM workflow.workflows WHERE parent_id = ? ORDER BY created_at ASC",
         )
         .bind(parent_id)
         .fetch_all(&self.pool)
@@ -1340,7 +1351,7 @@ impl WorkflowStore for SqliteStore {
         state_json: &str,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT OR REPLACE INTO workflow_snapshots (workflow_id, event_seq, state_json, created_at)
+            "INSERT OR REPLACE INTO workflow.snapshots (workflow_id, event_seq, state_json, created_at)
              VALUES (?, ?, ?, ?)",
         )
         .bind(workflow_id)
@@ -1358,7 +1369,7 @@ impl WorkflowStore for SqliteStore {
     ) -> Result<Option<WorkflowSnapshot>> {
         let row = sqlx::query_as::<_, (String, i32, String, f64)>(
             "SELECT workflow_id, event_seq, state_json, created_at
-             FROM workflow_snapshots WHERE workflow_id = ?
+             FROM workflow.snapshots WHERE workflow_id = ?
              ORDER BY event_seq DESC LIMIT 1",
         )
         .bind(workflow_id)
@@ -1381,8 +1392,8 @@ impl WorkflowStore for SqliteStore {
             "SELECT a.task_queue,
                     SUM(CASE WHEN a.status = 'PENDING' THEN 1 ELSE 0 END),
                     SUM(CASE WHEN a.status = 'RUNNING' THEN 1 ELSE 0 END)
-             FROM workflow_activities a
-             INNER JOIN workflows w ON w.id = a.workflow_id
+             FROM workflow.activities a
+             INNER JOIN workflow.workflows w ON w.id = a.workflow_id
              WHERE w.namespace = ?
              GROUP BY a.task_queue",
         )
@@ -1402,7 +1413,7 @@ impl WorkflowStore for SqliteStore {
 
         // Gather worker counts per queue in this namespace
         let worker_rows = sqlx::query_as::<_, (String, i64)>(
-            "SELECT task_queue, COUNT(*) FROM workflow_workers WHERE namespace = ? GROUP BY task_queue",
+            "SELECT task_queue, COUNT(*) FROM workflow.workers WHERE namespace = ? GROUP BY task_queue",
         )
         .bind(namespace)
         .fetch_all(&self.pool)

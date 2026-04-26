@@ -55,7 +55,7 @@ pub struct RegisterWorkerResponse {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/workers/register",
+    post, path = "/api/v1/engine/workflow/workers/register",
     tag = "tasks",
     request_body = RegisterWorkerRequest,
     responses(
@@ -93,7 +93,7 @@ pub struct HeartbeatRequest {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/workers/heartbeat",
+    post, path = "/api/v1/engine/workflow/workers/heartbeat",
     tag = "tasks",
     responses((status = 200, description = "Heartbeat recorded")),
 )]
@@ -114,7 +114,7 @@ pub struct PollRequest {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/tasks/poll",
+    post, path = "/api/v1/engine/workflow/tasks/poll",
     tag = "tasks",
     request_body = PollRequest,
     responses(
@@ -142,7 +142,7 @@ pub struct CompleteTaskBody {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/tasks/{id}/complete",
+    post, path = "/api/v1/engine/workflow/tasks/{id}/complete",
     tag = "tasks",
     params(("id" = i64, Path, description = "Activity task ID")),
     request_body = CompleteTaskBody,
@@ -167,7 +167,7 @@ pub struct FailTaskBody {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/tasks/{id}/fail",
+    post, path = "/api/v1/engine/workflow/tasks/{id}/fail",
     tag = "tasks",
     params(("id" = i64, Path, description = "Activity task ID")),
     request_body = FailTaskBody,
@@ -191,7 +191,7 @@ pub struct HeartbeatTaskBody {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/tasks/{id}/heartbeat",
+    post, path = "/api/v1/engine/workflow/tasks/{id}/heartbeat",
     tag = "tasks",
     params(("id" = i64, Path, description = "Activity task ID")),
     responses((status = 200, description = "Heartbeat recorded")),

@@ -27,9 +27,10 @@
   margin-left: auto;
 }
 
-/* "Powered by Assay" attribution link — only rendered in whitelabel
-   mode. Inherits the status-bar colour so it doesn't shout at the
-   user; accent on hover hints it's clickable. */
+/* "Powered by Assay Engine vX.Y.Z" attribution link — only rendered
+   in whitelabel mode (vanilla footer uses the same prefix but without
+   the link). Inherits the status-bar colour so it doesn't shout at
+   the user; accent on hover hints it's clickable. */
 .assay-attribution {
   color: inherit;
   text-decoration: none;

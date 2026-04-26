@@ -28,7 +28,7 @@ fn unique_ns(prefix: &str) -> String {
     format!("{prefix}_{pid}_{n}")
 }
 
-/// Prepare the `engine_events` table once per process. Concurrent
+/// Prepare the `engine.events` table once per process. Concurrent
 /// `CREATE TABLE IF NOT EXISTS` races the PG catalog (it inserts into
 /// pg_class/pg_type before checking), so wrap the DDL in a `OnceCell`.
 async fn prepare_pool() -> PgPool {
@@ -36,8 +36,31 @@ async fn prepare_pool() -> PgPool {
     let pool = PgPool::connect(&url).await.unwrap();
     SCHEMA_READY
         .get_or_init(|| async {
+            // PG's `CREATE SCHEMA IF NOT EXISTS` is documented as
+            // idempotent but its implementation inserts into pg_namespace
+            // *then* checks for the conflict — so two backends running it
+            // at the same moment can both make it past the existence
+            // probe and one then trips the unique index on
+            // pg_namespace.nspname (SQLSTATE 23505). The OnceCell above
+            // serialises this within one test binary, but multiple
+            // crates' tests share the CI postgres container and race
+            // each other across processes. Tolerate the duplicate-key
+            // path: if the schema is already there, that's exactly the
+            // post-condition we wanted.
+            if let Err(e) = sqlx::query("CREATE SCHEMA IF NOT EXISTS engine")
+                .execute(&pool)
+                .await
+            {
+                let is_dup = e
+                    .as_database_error()
+                    .map(|d| d.code().as_deref() == Some("23505"))
+                    .unwrap_or(false);
+                if !is_dup {
+                    panic!("create schema engine: {e}");
+                }
+            }
             sqlx::query(
-                "CREATE TABLE IF NOT EXISTS engine_events (
+                "CREATE TABLE IF NOT EXISTS engine.events (
                     id BIGSERIAL PRIMARY KEY,
                     ts DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
                     namespace TEXT NOT NULL,
@@ -49,7 +72,7 @@ async fn prepare_pool() -> PgPool {
             .await
             .unwrap();
             sqlx::query(
-                "CREATE INDEX IF NOT EXISTS idx_engine_events_ns_id ON engine_events(namespace, id)",
+                "CREATE INDEX IF NOT EXISTS idx_engine_events_ns_id ON engine.events(namespace, id)",
             )
             .execute(&pool)
             .await
@@ -296,7 +319,7 @@ async fn cursor_before_oldest_returns_gone() {
     .unwrap();
     // Prune via namespace-scoped ts cutoff — global prune would fight
     // parallel tests.
-    sqlx::query("DELETE FROM engine_events WHERE namespace = $1")
+    sqlx::query("DELETE FROM engine.events WHERE namespace = $1")
         .bind(&ns)
         .execute(&pool)
         .await

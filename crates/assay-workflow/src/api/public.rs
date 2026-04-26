@@ -3,11 +3,11 @@
 //!
 //! Two routes live here today:
 //!
-//!   - `GET /api/v1/health`  — static liveness/readiness probe. Used by
+//!   - `GET /api/v1/engine/workflow/health`  — static liveness/readiness probe. Used by
 //!     Kubernetes kubelet, load balancers, and any in-cluster monitor
 //!     without a bearer token.
 //!
-//!   - `GET /api/v1/version` — engine version + build profile. Used by
+//!   - `GET /api/v1/engine/workflow/version` — engine version + build profile. Used by
 //!     the CLI, dashboard, and third-party monitors to identify the
 //!     running build. Cheap, static, no sensitive data.
 //!
@@ -32,7 +32,7 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/health",
+    get, path = "/api/v1/engine/workflow/health",
     tag = "public",
     responses((status = 200, description = "Engine health — always unauthenticated")),
 )]
@@ -53,7 +53,7 @@ pub struct VersionInfo {
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/version",
+    get, path = "/api/v1/engine/workflow/version",
     tag = "public",
     responses((status = 200, description = "Engine version info", body = VersionInfo)),
 )]

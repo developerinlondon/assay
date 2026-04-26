@@ -324,14 +324,6 @@ pub struct WorkflowSnapshot {
 
 // ── Store-level DTOs (moved from assay-workflow::store::mod) ────────
 
-/// API key metadata (hash is never exposed).
-#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
-pub struct ApiKeyRecord {
-    pub prefix: String,
-    pub label: Option<String>,
-    pub created_at: f64,
-}
-
 /// Namespace record.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub struct NamespaceRecord {

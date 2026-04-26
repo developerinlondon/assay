@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — Zanzibar permissions guide</title>
+  <meta name="description" content="ReBAC tuples + recursive-CTE walk on PG18 + SQLite — assay-engine's Keto/SpiceDB-equivalent permission model.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-modules">
+  __HEADER__
+
+  <main>
+    <p><a href="auth-overview.html">&larr; Auth &amp; IdP overview</a></p>
+    <h1>Zanzibar permissions guide</h1>
+    <p style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+      <code>assay-engine v0.2.0</code>'s <code>auth-zanzibar</code> module implements Google's
+      Zanzibar paper as a Keto / SpiceDB drop-in: namespaces, relation tuples, and a recursive-CTE
+      walk that resolves <code>check</code>, <code>expand</code>, <code>lookup_resources</code>,
+      and <code>lookup_subjects</code> on PG18 + SQLite.
+    </p>
+
+    <h2>Mental model</h2>
+    <p>Three concepts:</p>
+    <ul>
+      <li><strong>Namespace</strong> — a resource type (<code>doc</code>, <code>folder</code>,
+        <code>group</code>, <code>user</code>) with a schema declaring its relations and how
+        relations rewrite into other relations.</li>
+      <li><strong>Tuple</strong> — a <code>(object, relation, subject)</code> triple. e.g.
+        <code>doc:doc-42#owner@user:alice</code> means "alice is owner of doc-42".</li>
+      <li><strong>Userset</strong> — a subject that's itself a relation on another object. e.g.
+        <code>doc:doc-42#viewer@group:eng#member</code> means "members of the eng group are
+        viewers of doc-42".</li>
+    </ul>
+
+    <h2>Define a namespace schema</h2>
+    <p>Schemas declare relations and computed-relation rewrites. Example: a document with owners,
+      editors, and viewers, where every owner is automatically also an editor and every editor is
+      automatically a viewer.</p>
+
+    <pre><code>local auth = require("assay.auth")
+local c    = auth.client({
+  engine_url = "http://localhost:3000",
+  api_key    = env.get("ASSAY_ADMIN_KEY"),
+})
+
+c.zanzibar:define_namespace({
+  name = "doc",
+  relations = {
+    owner  = {},
+    editor = { union = { "this", { computed_userset = "owner" } } },
+    viewer = { union = { "this", { computed_userset = "editor" } } },
+  },
+})</code></pre>
+
+    <p>Or write the equivalent JSON to <code>auth.zanzibar_namespaces</code> via the admin HTTP
+      API. The schema is JSON-serialised; the parser validates it on write.</p>
+
+    <h2>Write tuples</h2>
+    <pre><code>-- alice owns doc-42
+c.zanzibar:write({
+  object_type  = "doc",  object_id  = "doc-42",  relation = "owner",
+  subject_type = "user", subject_id = "alice",
+})
+
+-- the eng group's members are viewers of doc-42
+c.zanzibar:write({
+  object_type  = "doc",   object_id  = "doc-42", relation = "viewer",
+  subject_type = "group", subject_id = "eng",    subject_rel = "member",
+})
+
+-- bob is a member of the eng group
+c.zanzibar:write({
+  object_type  = "group", object_id  = "eng", relation = "member",
+  subject_type = "user",  subject_id = "bob",
+})</code></pre>
+
+    <h2>Check a permission</h2>
+    <pre><code>local can_view = c.zanzibar:check("doc", "doc-42", "viewer", "user", "bob")
+-- true: bob ∈ eng#member ⊆ doc-42#viewer
+
+local can_edit = c.zanzibar:check("doc", "doc-42", "editor", "user", "bob")
+-- false: bob is only a viewer transitively
+
+local alice_owns = c.zanzibar:check("doc", "doc-42", "owner", "user", "alice")
+-- true: direct tuple</code></pre>
+
+    <p>The check resolves via a single recursive CTE — no application-side traversal, no N+1.
+      Identical SQL on PG18 and SQLite (recursive CTE is in both standards).</p>
+
+    <h2>Expand a userset</h2>
+    <pre><code>local tree = c.zanzibar:expand("doc", "doc-42", "viewer")
+-- {
+--   relation = "viewer",
+--   children = {
+--     { type = "this", subjects = { "user:bob (via group:eng#member)" } },
+--     { type = "computed_userset", relation = "editor", children = {
+--         { type = "computed_userset", relation = "owner", children = {
+--             { type = "this", subjects = { "user:alice" } } } } } },
+--   },
+-- }</code></pre>
+
+    <h2>HTTP surface</h2>
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Path</th><th>Purpose</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/auth/zanzibar/check</code></td><td>Resolve <code>(object, relation, subject)</code> → bool</td></tr>
+        <tr><td>POST</td><td><code>/auth/zanzibar/expand</code></td><td>Return the userset tree for a relation</td></tr>
+        <tr><td>POST</td><td><code>/auth/zanzibar/write</code></td><td>Insert a tuple (admin)</td></tr>
+        <tr><td>DELETE</td><td><code>/auth/zanzibar/tuples</code></td><td>Delete a tuple (admin)</td></tr>
+        <tr><td>GET</td><td><code>/auth/admin/auth/zanzibar/namespaces</code></td><td>List all namespaces</td></tr>
+        <tr><td>GET</td><td><code>/auth/admin/auth/zanzibar/namespaces/{name}</code></td><td>Get a single namespace schema</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Storage</h2>
+    <pre><code>auth.zanzibar_namespaces (
+  name        TEXT PRIMARY KEY,
+  schema_json TEXT  -- serialised NamespaceSchema
+)
+
+auth.zanzibar_tuples (
+  object_type  TEXT,
+  object_id    TEXT,
+  relation     TEXT,
+  subject_type TEXT,
+  subject_id   TEXT,
+  subject_rel  TEXT  -- NULL for direct subjects, set for usersets
+)</code></pre>
+
+    <p>Indexed both forward (<code>(object_type, object_id, relation, ...)</code>) and reverse
+      (<code>(subject_type, subject_id, relation)</code>) so <code>check</code> and
+      <code>lookup_resources</code>/<code>lookup_subjects</code> are both fast.</p>
+
+    <h2>Dashboard</h2>
+    <p>The <strong>Zanzibar</strong> pane in <code>/auth/console</code> exposes:</p>
+    <ul>
+      <li>Namespace browser (read schemas)</li>
+      <li>Tuple inspector with filter (<code>WHERE object_type = '...' AND ...</code>)</li>
+      <li>Check evaluator — interactive "does subject X have permission Y on resource Z?"</li>
+      <li>Expand viewer — the userset tree as a collapsible widget</li>
+    </ul>
+
+    <p>See <a href="auth-overview.html">Auth &amp; IdP overview</a> for the rest of the v0.2.0 IdP
+      surface, and <a href="compare-vs-ory.html">Compare vs Ory</a> for how this stacks up against
+      Keto.</p>
+
+  </main>
+
+  __FOOTER__
+</body>
+</html>

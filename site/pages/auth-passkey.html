@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — Passkey login flow</title>
+  <meta name="description" content="WebAuthn passkey register + auth ceremonies on assay-engine, with Lua and HTTP examples for the assay.auth.passkey API.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-modules">
+  __HEADER__
+
+  <main>
+    <p><a href="auth-overview.html">&larr; Auth &amp; IdP overview</a></p>
+    <h1>Passkey login flow</h1>
+    <p style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+      <code>assay-engine v0.2.0</code>'s <code>auth-passkey</code> module wraps
+      <code>webauthn-rs</code> and exposes WebAuthn register + authenticate ceremonies behind four
+      HTTP endpoints (and four Lua wrappers).
+    </p>
+
+    <h2>Configure the relying party</h2>
+    <p>Passkeys need a stable origin. The engine derives it from <code>server.public_url</code>;
+      override the relying-party id and label in <code>engine.toml</code> if you want them to
+      differ from the default (the host of the public URL):</p>
+
+    <pre><code># engine.toml
+[server]
+public_url = "https://auth.example.com"
+
+[auth.passkey]
+rp_id = "auth.example.com"     # defaults to host of public_url
+rp_name = "Acme Identity"      # defaults to "Assay"</code></pre>
+
+    <h2>HTTP surface</h2>
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Path</th><th>Purpose</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/auth/passkey/register/start</code></td><td>Begin registration ceremony — returns <code>publicKey</code> options + opaque <code>state</code></td></tr>
+        <tr><td>POST</td><td><code>/auth/passkey/register/finish</code></td><td>Verify the browser's <code>navigator.credentials.create()</code> response, persist the credential</td></tr>
+        <tr><td>POST</td><td><code>/auth/passkey/auth/start</code></td><td>Begin authentication ceremony — returns challenge + allowed credentials</td></tr>
+        <tr><td>POST</td><td><code>/auth/passkey/auth/finish</code></td><td>Verify the browser's <code>navigator.credentials.get()</code> response, mint a session</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Lua API — <code>assay.auth.passkey</code></h2>
+    <p>The <code>assay.auth</code> stdlib module exposes the same ceremonies. The
+      <code>state</code> blob round-trips opaquely between start and finish — keep it in the
+      session/local storage on the browser side and pass it back unchanged.</p>
+
+    <pre><code>local auth = require("assay.auth")
+local c    = auth.client({ engine_url = "http://localhost:3000" })
+
+-- 1. Registration
+local opts, state = c.passkey:start_register(user_id, user_name, display_name)
+-- ship `opts` to the browser → navigator.credentials.create(opts)
+-- collect `reg_response` from the browser
+local cred = c.passkey:finish_register(reg_response, state)
+-- credential is now stored in auth.passkeys for `user_id`
+
+-- 2. Authentication
+local challenge, state2 = c.passkey:start_auth(user_id)
+-- ship `challenge` to the browser → navigator.credentials.get(challenge)
+-- collect `auth_response` from the browser
+local sess = c.passkey:finish_auth(auth_response, state2)
+-- sess = { session_id, csrf_token, user }</code></pre>
+
+    <h2>Browser side (JS sketch)</h2>
+    <pre><code>// Registration
+const start = await fetch("/auth/passkey/register/start", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ user_id, user_name, display_name }),
+}).then(r =&gt; r.json());
+
+const cred = await navigator.credentials.create({ publicKey: start.options });
+
+await fetch("/auth/passkey/register/finish", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ reg_response: cred, state: start.state }),
+});
+
+// Authentication mirrors the same shape with auth/start + auth/finish,
+// using navigator.credentials.get(...).</code></pre>
+
+    <h2>Storage</h2>
+    <p>Each credential lands in <code>auth.passkeys</code>:</p>
+    <pre><code>credential_id   BLOB / BYTEA  PRIMARY KEY
+user_id         TEXT          REFERENCES auth.users(id) ON DELETE CASCADE
+public_key      BLOB / BYTEA
+sign_count      INTEGER       -- monotonic, replay-protection
+transports      TEXT          -- JSON array (usb, nfc, ble, internal, hybrid)
+created_at      REAL / DOUBLE PRECISION</code></pre>
+
+    <p>The dashboard's <strong>Users</strong> pane shows every credential per user, with the
+      ability to remove a single key (e.g. when a device is lost). Removing a user cascades to
+      their passkeys via the foreign-key.</p>
+
+    <p>See <a href="auth-overview.html">Auth &amp; IdP overview</a> for the rest of the surface,
+      and <a href="compare-vs-ory.html">Compare vs Ory</a> for how this stacks up against
+      Kratos's WebAuthn flow.</p>
+
+  </main>
+
+  __FOOTER__
+</body>
+</html>

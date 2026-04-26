@@ -9,6 +9,63 @@
 > 11 explains _why_ each choice (Biscuit vs Macaroons, `openidconnect` vs hand-rolled, Zanzibar
 > backend selection, etc.).
 
+## v0.2.0 alignment (read first)
+
+**Product positioning (locked):** assay is a **full Temporal replacement for workflows + full Ory
+replacement for auth + IdP**. Every scope decision goes through that lens — not "what jeebon needs
+at family scale." Build features that a serious self-hosted Ory/Temporal alternative would ship out
+of the box.
+
+**Release naming (locked):** the umbrella release is `assay-engine v0.2.0`. Per-crate bumps:
+
+| Crate             | Current → Target                                |
+| ----------------- | ----------------------------------------------- |
+| `assay-engine`    | 0.1.1 → **0.2.0** ← headline release name       |
+| `assay-workflow`  | 0.2.1 → **0.3.0** (tracks `assay-domain` 0.2)   |
+| `assay-domain`    | 0.1.1 → **0.2.0** (engine module + new types)   |
+| `assay-auth`      | 0.1.0 → **0.2.0** (first real content release)  |
+| `assay-dashboard` | 0.1.0 → **0.2.0** (auth panes added)            |
+| `assay` (Lua)     | 0.13.1 → **0.14.0** (Lua wrappers for new auth) |
+
+Assay-engine v0.1.2 (the schema/attach refactor — first 5 commits of this branch) is rolled into the
+v0.2.0 release; no separate 0.1.2 tag.
+
+**Schema/attach storage model** (carries forward from v0.1.2 — see
+[14-v0.13.2-engine-schemas.md](./14-v0.13.2-engine-schemas.md)). All auth tables live in the `auth`
+schema (PG) / attached `auth` database (SQLite, file `data/auth.db` by default).
+
+- **Schema-qualified naming**: `auth.users`, `auth.sessions`, `auth.zanzibar_tuples` (plural),
+  `auth.zanzibar_namespaces` (plural), `auth.passkeys`, `auth.user_upstream`, `auth.audit`,
+  `auth.jwks_keys`, `auth.biscuit_root_keys`. No `_assay_` prefix.
+- **Migration tracker**: one shared `engine.migrations` table
+  (`module TEXT, version INTEGER, applied_at TIMESTAMPTZ`). Auth records its migrations under
+  `module = 'auth'`. Replaces the per-module `_assay_auth_migrations` references in earlier drafts.
+- **Boot lifecycle**: schema/file is created at boot when `engine.modules` shows auth enabled
+  (`SELECT enabled FROM engine.modules WHERE name = 'auth'`). Compile-time features still control
+  whether auth code is _linked_; runtime `engine.modules` controls whether it's _active_.
+- **Compliance audit log**: new `auth.audit` table (append-only, long retention,
+  security-restricted). Distinct from `engine.audit` (engine-level operations) and from any auth
+  real-time event stream.
+- **Auth does NOT write to `engine.events`.** Auth is independent at the event level. If real-time
+  dashboard visibility into auth activity is wanted, auth uses its own NOTIFY channel on
+  `auth.audit` (or a small `auth.outbox` table introduced if needed).
+- **Biscuit is built-in, not optional.** Capability tokens with Datalog attenuation are a
+  fundamental foundation of assay's auth solution and a real differentiator vs Ory (Ory has nothing
+  equivalent). `biscuit-auth` is a non-optional dep; there is no `auth-biscuit` Cargo feature gate;
+  `crates/assay-auth/src/biscuit.rs` always compiles; `AuthCtx::biscuit:
+  BiscuitConfig` is a
+  required field; engine boot always loads or generates the root key from `auth.biscuit_root_keys`.
+  Same posture as session/JWT — fundamental, always-on.
+- **Atomic transactions across schemas/attached DBs are preserved** by the v0.1.2 model. Signup
+  atomically inserts `auth.users` + `auth.passkeys` + initial `auth.zanzibar_tuples` in one
+  transaction. Cross-module FKs (`workflow.workflows.created_by` REFERENCES `auth.users(id)`) work
+  since both schemas live in one DB.
+- **Default SQLite path**: `./data/auth.db`. Configurable via `[backend].data_dir` in engine.toml.
+- **Prerequisite**: assay-engine v0.1.2 schema refactor (already committed as the first 5 commits on
+  `feature/v0.14.0-auth`).
+- **Task 5.3 — Lua wrappers** stays in scope and lands in phase 8 (or 8a), since it consumes the
+  HTTP endpoints phase 8 mounts. This is what justifies the `assay` (Lua) → 0.14.0 bump.
+
 **Phase 4 goal:** Auth foundations built — session cookie jar + CSRF, Argon2 password hashing, JWT
 issue/verify with JWKS rotation, Biscuit capability tokens. Each is a small, focused module in
 `assay-auth`. No HTTP handlers yet; just library surface.
@@ -770,7 +827,11 @@ git commit -m "feat(auth/biscuit): issue / verify / attenuate"
 
 ```sql
 -- migrations/postgres/01_auth.sql
-CREATE TABLE users (
+-- All auth tables live in the `auth` schema (created at boot via the
+-- engine.modules-driven attach/create flow from v0.1.2). SQLite mirrors
+-- this layout in the attached `auth` database (data/auth.db).
+
+CREATE TABLE auth.users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE,
     email_verified BOOLEAN NOT NULL DEFAULT FALSE,
@@ -779,38 +840,70 @@ CREATE TABLE users (
     created_at DOUBLE PRECISION NOT NULL
 );
 
-CREATE TABLE user_upstream (
+CREATE TABLE auth.user_upstream (
     provider TEXT NOT NULL,
     subject TEXT NOT NULL,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     PRIMARY KEY (provider, subject)
 );
-CREATE INDEX user_upstream_user ON user_upstream (user_id);
+CREATE INDEX user_upstream_user ON auth.user_upstream (user_id);
 
-CREATE TABLE passkeys (
+CREATE TABLE auth.passkeys (
     credential_id BYTEA PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     public_key BYTEA NOT NULL,
     sign_count INTEGER NOT NULL DEFAULT 0,
     transports TEXT NOT NULL,  -- csv
     created_at DOUBLE PRECISION NOT NULL
 );
-CREATE INDEX passkeys_user ON passkeys (user_id);
+CREATE INDEX passkeys_user ON auth.passkeys (user_id);
 
-CREATE TABLE sessions (
+CREATE TABLE auth.sessions (
     id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     csrf_token TEXT NOT NULL,
     created_at DOUBLE PRECISION NOT NULL,
     expires_at DOUBLE PRECISION NOT NULL,
     ip_hash TEXT,
     user_agent_hash TEXT
 );
-CREATE INDEX sessions_user ON sessions (user_id);
-CREATE INDEX sessions_expires ON sessions (expires_at);
+CREATE INDEX sessions_user ON auth.sessions (user_id);
+CREATE INDEX sessions_expires ON auth.sessions (expires_at);
+
+-- JWKS rotation (per task 4.4). Keys persisted, rotated by the JWKS
+-- workflow in jeebon (or by an internal scheduler when assay-engine
+-- runs standalone).
+CREATE TABLE auth.jwks_keys (
+    kid TEXT PRIMARY KEY,
+    alg TEXT NOT NULL,                  -- e.g. EdDSA, RS256
+    public_jwk JSONB NOT NULL,
+    private_pem_encrypted BYTEA,        -- nullable for verifier-only nodes
+    created_at DOUBLE PRECISION NOT NULL,
+    rotated_at DOUBLE PRECISION,
+    expires_at DOUBLE PRECISION
+);
+CREATE INDEX jwks_keys_active ON auth.jwks_keys (rotated_at) WHERE rotated_at IS NULL;
+
+-- Compliance audit log: append-only, security-restricted access,
+-- long retention (1+ year per jeebon plan). Distinct from engine.audit
+-- (engine-level operations) and from auth's real-time event stream.
+CREATE TABLE auth.audit (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    actor TEXT,                         -- user_id, "system", or NULL for unauthenticated
+    action TEXT NOT NULL,               -- e.g. "login.success", "passkey.register", "session.revoke"
+    target TEXT,                        -- subject of the action (user_id, session_id, etc.)
+    ip_hash TEXT,
+    user_agent_hash TEXT,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX audit_ts ON auth.audit (ts DESC);
+CREATE INDEX audit_actor ON auth.audit (actor, ts DESC);
+CREATE INDEX audit_action ON auth.audit (action, ts DESC);
 ```
 
-SQLite version uses `BLOB` for `BYTEA` and `REAL` for `DOUBLE PRECISION`. Otherwise identical.
+SQLite version uses `BLOB` for `BYTEA` and `REAL` for `DOUBLE PRECISION`, plus a Rust-generated
+UUIDv7 string for `auth.audit.id`. Otherwise identical.
 
 - [ ] **Step 2: Implement `PostgresUserStore` + `PostgresSessionStore`**
 
@@ -1183,7 +1276,7 @@ Plan 11 lines 181–217: schema + recursive CTE walk, depth limit 50, cycle dete
 
 ```sql
 -- migrations/postgres/02_zanzibar.sql
-CREATE TABLE zanzibar_tuple (
+CREATE TABLE auth.zanzibar_tuples (
     object_type  TEXT NOT NULL,
     object_id    TEXT NOT NULL,
     relation     TEXT NOT NULL,
@@ -1193,10 +1286,10 @@ CREATE TABLE zanzibar_tuple (
     created_at   DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
     PRIMARY KEY (object_type, object_id, relation, subject_type, subject_id, subject_rel)
 );
-CREATE INDEX zanzibar_tuple_rev ON zanzibar_tuple
+CREATE INDEX zanzibar_tuples_rev ON auth.zanzibar_tuples
     (subject_type, subject_id, relation);
 
-CREATE TABLE zanzibar_namespace (
+CREATE TABLE auth.zanzibar_namespaces (
     name TEXT PRIMARY KEY,
     schema_json JSONB NOT NULL,
     updated_at DOUBLE PRECISION NOT NULL

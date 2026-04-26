@@ -24,7 +24,7 @@ fn default_namespace() -> String {
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/workers",
+    get, path = "/api/v1/engine/workflow/workers",
     tag = "workers",
     params(("namespace" = Option<String>, Query, description = "Namespace (default: main)")),
     responses(

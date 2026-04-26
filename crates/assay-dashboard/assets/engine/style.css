@@ -1,0 +1,74 @@
+/* Assay Engine Console — pane-specific styles.
+ *
+ * Layered on top of /workflow/style.css + /auth/style.css; only the
+ * pieces unique to the engine console live here (info card grid,
+ * config viewer, module-table action layout). The cross-nav strip
+ * styles itself from /shared/cross-nav.css.
+ */
+
+.layout-engine {
+  /* The engine console pushes the layout below the cross-nav strip
+     (~48px). The status bar at the bottom keeps its own height; we
+     just budge the top so the sidebar starts below the nav. */
+  padding-top: 48px;
+}
+
+.engine-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.engine-info-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, hsl(214 32% 91%));
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.engine-info-card .label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #6e7781);
+}
+
+.engine-info-card .value {
+  font-size: 14px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.engine-info-card .value.regular {
+  font-family: inherit;
+  font-weight: 500;
+}
+
+.engine-config-pre {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, hsl(214 32% 91%));
+  padding: 14px;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.engine-restart-banner {
+  background: color-mix(in srgb, var(--accent, #e6662a) 12%, transparent);
+  border: 1px solid var(--accent, #e6662a);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}

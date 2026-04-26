@@ -1,9 +1,14 @@
 //! Standalone assay-engine binary.
 //!
-//! Phase 3 scope: workflow + dashboard on PG18 / SQLite, no auth. Loads
-//! a TOML config, connects to the backend, runs migrations via
+//! Loads a TOML config, connects to the backend, runs migrations via
 //! `{Postgres,Sqlite}Store::new` (which migrate on first connect), and
 //! serves the composed router on the configured port.
+//!
+//! First-time setup is done from the assay-lua client — see
+//! `examples/init/init.lua` for the canonical bootstrap script that
+//! seeds Zanzibar namespaces, creates the admin user, and writes the
+//! operator-grant tuples in one shot using `auth.admin_api_keys` as
+//! the break-glass.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

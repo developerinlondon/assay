@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay vs Ory — feature matrix</title>
+  <meta name="description" content="Side-by-side comparison: assay-engine v0.2.0 (one binary) vs the Ory stack (Kratos + Hydra + Keto + Oathkeeper).">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-comparison">
+  __HEADER__
+
+  <main>
+    <h1>assay-engine vs Ory</h1>
+    <p style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+      <code>assay-engine v0.2.0</code> ships a complete Ory replacement in one ~9 MB static
+      binary. Same features as Kratos + Hydra + Keto stacked together, plus biscuit (Ory has
+      nothing equivalent), plus a Temporal-replacement workflow engine in the same process.
+    </p>
+
+    <h2>Footprint</h2>
+    <table>
+      <thead>
+        <tr><th>Stack</th><th>Containers</th><th>Compressed</th><th>RAM (idle)</th></tr>
+      </thead>
+      <tbody>
+        <tr style="font-weight: 600; color: var(--accent);"><td>assay-engine</td><td>1</td><td>~9 MB</td><td>&lt;50 MB</td></tr>
+        <tr><td>Ory Kratos</td><td>1</td><td>~120 MB</td><td>~150 MB</td></tr>
+        <tr><td>Ory Hydra</td><td>1</td><td>~80 MB</td><td>~100 MB</td></tr>
+        <tr><td>Ory Keto</td><td>1</td><td>~80 MB</td><td>~100 MB</td></tr>
+        <tr><td>Ory Oathkeeper (optional)</td><td>1</td><td>~50 MB</td><td>~80 MB</td></tr>
+        <tr><td>Postgres (shared)</td><td>1</td><td>~80 MB</td><td>~200 MB</td></tr>
+        <tr style="border-top: 2px solid var(--border); font-weight: 600;"><td>Ory total</td><td>5</td><td>~410 MB</td><td>~630 MB</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Feature matrix</h2>
+    <table>
+      <thead>
+        <tr><th>Capability</th><th>Ory</th><th>assay-engine</th></tr>
+      </thead>
+      <tbody>
+
+        <tr><td colspan="3" style="font-weight: 600; background: var(--accent-bg); padding: 0.5rem;">Identity (Kratos)</td></tr>
+        <tr><td>Password login (Argon2id)</td><td>Kratos</td><td>Yes — <code>auth-password</code></td></tr>
+        <tr><td>WebAuthn / passkey</td><td>Kratos</td><td>Yes — <code>auth-passkey</code> (<code>webauthn-rs</code>)</td></tr>
+        <tr><td>Cookie + CSRF sessions</td><td>Kratos</td><td>Yes — <code>auth-session</code></td></tr>
+        <tr><td>Federated SSO (OIDC client)</td><td>Kratos</td><td>Yes — <code>auth-oidc</code> (Google/Apple/GitHub/any OIDC)</td></tr>
+        <tr><td>Self-service password reset</td><td>Kratos flows</td><td>Admin password-reset endpoint; UI flows on roadmap</td></tr>
+        <tr><td>TOTP / SMS MFA</td><td>Kratos</td><td>Roadmap (v0.3.0)</td></tr>
+        <tr><td>SAML</td><td>Kratos</td><td>Not planned (open issue if you need it)</td></tr>
+
+        <tr><td colspan="3" style="font-weight: 600; background: var(--accent-bg); padding: 0.5rem;">OAuth2 / OIDC OP (Hydra)</td></tr>
+        <tr><td>Authorization-code + PKCE</td><td>Hydra</td><td>Yes — <code>auth-oidc-provider</code></td></tr>
+        <tr><td>Refresh tokens</td><td>Hydra</td><td>Yes (SHA-256 hashed at rest)</td></tr>
+        <tr><td>RFC 7009 token revocation</td><td>Hydra</td><td>Yes</td></tr>
+        <tr><td>RFC 7662 token introspection</td><td>Hydra</td><td>Yes</td></tr>
+        <tr><td>OIDC discovery (<code>/.well-known/openid-configuration</code>)</td><td>Hydra</td><td>Yes</td></tr>
+        <tr><td>JWKS rotation (<code>/.well-known/jwks.json</code>)</td><td>Hydra</td><td>Yes — active + history in <code>auth.jwks_keys</code></td></tr>
+        <tr><td>Back-channel logout</td><td>Hydra</td><td>Yes (SSO session registry in <code>auth.oidc_sessions</code>)</td></tr>
+        <tr><td>Consent screen + per-(user, client) grants</td><td>Hydra</td><td>Yes — <code>auth.oidc_consents</code></td></tr>
+        <tr><td>Client CRUD via admin API</td><td>Hydra</td><td>Yes — admin HTTP API + dashboard pane</td></tr>
+        <tr><td>Dynamic client registration (RFC 7591)</td><td>Hydra</td><td>Roadmap</td></tr>
+
+        <tr><td colspan="3" style="font-weight: 600; background: var(--accent-bg); padding: 0.5rem;">Authorization (Keto)</td></tr>
+        <tr><td>Zanzibar relation tuples</td><td>Keto</td><td>Yes — <code>auth-zanzibar</code></td></tr>
+        <tr><td><code>check</code> (subject ∈ relation(object))</td><td>Keto</td><td>Yes — recursive CTE on PG18 + SQLite</td></tr>
+        <tr><td><code>expand</code> (userset tree)</td><td>Keto</td><td>Yes</td></tr>
+        <tr><td><code>lookup_resources</code> / <code>lookup_subjects</code></td><td>Keto</td><td>Yes — reverse-indexed</td></tr>
+        <tr><td>Namespace schema with computed-userset rewrites</td><td>Keto</td><td>Yes — <code>auth.zanzibar_namespaces</code></td></tr>
+        <tr><td>Caveats / temporal predicates</td><td>SpiceDB only</td><td>Roadmap</td></tr>
+
+        <tr><td colspan="3" style="font-weight: 600; background: var(--accent-bg); padding: 0.5rem;">Capability tokens</td></tr>
+        <tr><td>Biscuit / macaroons</td><td><strong>Nothing</strong></td><td>Yes — <code>biscuit-auth</code> built-in (always-on)</td></tr>
+        <tr><td>Datalog-attenuable tokens</td><td>—</td><td>Yes</td></tr>
+        <tr><td>Offline verification</td><td>JWT-only</td><td>Both JWT + biscuit</td></tr>
+
+        <tr><td colspan="3" style="font-weight: 600; background: var(--accent-bg); padding: 0.5rem;">Operations</td></tr>
+        <tr><td>Single binary deployment</td><td>5 binaries</td><td>Yes — one process</td></tr>
+        <tr><td>SQLite backend (no DB server needed)</td><td>No</td><td>Yes — first-class via <code>backend-sqlite</code></td></tr>
+        <tr><td>PostgreSQL backend</td><td>Yes</td><td>Yes — PG18 first-class</td></tr>
+        <tr><td>Cross-module atomic transactions</td><td>No (each Ory app has its own DB)</td><td>Yes — <code>auth.users</code> ⇄ <code>workflow.workflows</code> in one TX</td></tr>
+        <tr><td>Built-in dashboard / admin SPA</td><td>Console (separate Cloud product)</td><td>Yes — bundled, free, self-hosted</td></tr>
+        <tr><td>Lua scripting bindings</td><td>No</td><td>Yes — <code>assay.auth</code> stdlib</td></tr>
+        <tr><td>Workflow engine in same binary</td><td>No</td><td>Yes — Temporal-replacement, same process</td></tr>
+        <tr><td>Module enable/disable at runtime</td><td>No</td><td>Yes — <code>engine.modules</code> table</td></tr>
+        <tr><td>Compile-time feature gates for slim builds</td><td>No</td><td>Yes — fine-grained Cargo features</td></tr>
+
+      </tbody>
+    </table>
+
+    <h2>What's not in v0.2.0</h2>
+    <p>Honest gaps to know about before swapping out Ory:</p>
+    <ul>
+      <li><strong>TOTP / SMS MFA.</strong> Planned for v0.3.0. Today, MFA via passkey works
+        (passkeys are phishing-resistant, NIST-recognised second-factor by themselves).</li>
+      <li><strong>SAML.</strong> Not planned. If you need SAML SSO, file an issue with the use
+        case; OIDC covers ~98% of modern apps.</li>
+      <li><strong>Self-service registration / recovery / verification UI flows.</strong> The
+        admin endpoints exist; the public-facing UI flows ship in v0.3.0.</li>
+      <li><strong>Dynamic client registration (RFC 7591).</strong> Roadmap.</li>
+      <li><strong>Caveats in Zanzibar.</strong> SpiceDB has these; we don't yet. Roadmap.</li>
+      <li><strong>HSM / KMS for signing keys.</strong> Today JWKS + biscuit root keys are
+        plaintext-at-rest in the DB. <code>private_pem_encrypted</code> column already exists for
+        a future envelope-encryption upgrade.</li>
+    </ul>
+
+    <h2>When NOT to use assay-engine</h2>
+    <ul>
+      <li>You need SAML and can't switch to OIDC.</li>
+      <li>You need Ory's hosted Cloud (compliance, support contracts) — assay-engine is BYO
+        ops.</li>
+      <li>You're already running Ory at scale and the migration cost outweighs the operational
+        win.</li>
+    </ul>
+
+    <p>Otherwise, you're trading 5 containers + ~600 MB RAM for one ~9 MB static binary that does
+      the same job, scripts in Lua, and runs your workflows too.</p>
+
+    <p><a href="auth-overview.html">&larr; Back to Auth &amp; IdP overview</a></p>
+
+  </main>
+
+  __FOOTER__
+</body>
+</html>
