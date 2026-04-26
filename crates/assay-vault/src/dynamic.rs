@@ -306,6 +306,516 @@ impl DynamicCredsService {
     }
 }
 
+#[cfg(feature = "vault-dynamic-aws")]
+pub mod aws_provider {
+    //! AWS IAM dynamic-creds provider — calls `sts:AssumeRole` to mint
+    //! short-lived credentials for a configured role ARN. Plan §S3b.
+    //!
+    //! Wire shape:
+    //!   POST https://sts.{region}.amazonaws.com/
+    //!   Body (form): Action=AssumeRole&Version=2011-06-15&RoleArn=…&RoleSessionName=…&DurationSeconds=…
+    //!   Response: XML AssumeRoleResponse with AccessKeyId / SecretAccessKey / SessionToken / Expiration
+    //!
+    //! XML extraction is regex-based (~30 LOC) since the response shape
+    //! is fixed and well-documented; pulling a full XML parser for one
+    //! call is overkill.
+
+    use super::*;
+    use crate::cloud::sigv4::{now_amz_date, sign, SigV4Input};
+    use crate::sealing::kms_aws::AwsCredentials;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[derive(Clone, Debug)]
+    pub struct RoleConfig {
+        /// Role name registered with this template — identifies which
+        /// AWS RoleArn to assume.
+        pub name: String,
+        pub role_arn: String,
+        /// Defaults to `assay-vault-{lease_id}`; override per role if
+        /// the assumed role has trust-policy session-name constraints.
+        pub session_name_prefix: Option<String>,
+    }
+
+    pub struct AwsDynamicProvider {
+        region: String,
+        creds: AwsCredentials,
+        roles: parking_lot::RwLock<HashMap<String, RoleConfig>>,
+        endpoint_override: Option<String>,
+        client: reqwest::Client,
+    }
+
+    impl AwsDynamicProvider {
+        pub fn new(region: impl Into<String>, creds: AwsCredentials) -> Self {
+            Self {
+                region: region.into(),
+                creds,
+                roles: parking_lot::RwLock::new(HashMap::new()),
+                endpoint_override: None,
+                client: reqwest::Client::new(),
+            }
+        }
+
+        pub fn with_role(self, role: RoleConfig) -> Self {
+            self.roles.write().insert(role.name.clone(), role);
+            self
+        }
+
+        pub fn with_endpoint(mut self, ep: impl Into<String>) -> Self {
+            self.endpoint_override = Some(ep.into());
+            self
+        }
+
+        pub fn into_arc(self) -> Arc<Self> {
+            Arc::new(self)
+        }
+
+        fn endpoint(&self) -> String {
+            self.endpoint_override
+                .clone()
+                .unwrap_or_else(|| format!("https://sts.{}.amazonaws.com/", self.region))
+        }
+    }
+
+    /// Pull a `<TagName>value</TagName>` payload out of XML by tag name.
+    /// Ad-hoc but the STS response shape is fixed + well-known.
+    fn xml_tag(xml: &str, tag: &str) -> Option<String> {
+        let open = format!("<{tag}>");
+        let close = format!("</{tag}>");
+        let start = xml.find(&open)? + open.len();
+        let end_rel = xml[start..].find(&close)?;
+        Some(xml[start..start + end_rel].trim().to_string())
+    }
+
+    #[async_trait]
+    impl DynamicCredsProvider for AwsDynamicProvider {
+        fn name(&self) -> &str {
+            "aws"
+        }
+
+        async fn issue(&self, role: &str, ttl_secs: u64) -> Result<IssuedCredentials> {
+            let cfg = self
+                .roles
+                .read()
+                .get(role)
+                .cloned()
+                .ok_or(crate::error::VaultError::NotFound)?;
+            let session_name = format!(
+                "{}-{}",
+                cfg.session_name_prefix
+                    .as_deref()
+                    .unwrap_or("assay-vault"),
+                uuid::Uuid::new_v4().simple()
+            );
+            // STS minimum is 900s; clamp.
+            let duration = ttl_secs.max(900) as u64;
+            let body = format!(
+                "Action=AssumeRole&Version=2011-06-15&RoleArn={}&RoleSessionName={}&DurationSeconds={}",
+                urlencode(&cfg.role_arn),
+                urlencode(&session_name),
+                duration
+            );
+            let url = self.endpoint();
+            let amz_date = now_amz_date();
+            let signed = sign(SigV4Input {
+                access_key_id: &self.creds.access_key_id,
+                secret_access_key: &self.creds.secret_access_key,
+                session_token: self.creds.session_token.as_deref(),
+                region: &self.region,
+                service: "sts",
+                method: "POST",
+                url: &url,
+                headers: &[("content-type", "application/x-www-form-urlencoded")],
+                body: body.as_bytes(),
+                amz_date: &amz_date,
+            });
+            let mut req = self.client.post(&signed.url).body(signed.body.clone());
+            for (k, v) in &signed.headers {
+                req = req.header(k, v);
+            }
+            let resp = req.send().await.map_err(|e| {
+                crate::error::VaultError::Backend(anyhow::anyhow!("aws sts POST: {e}"))
+            })?;
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let txt = resp.text().await.unwrap_or_default();
+                return Err(crate::error::VaultError::Backend(anyhow::anyhow!(
+                    "aws sts returned {status}: {txt}"
+                )));
+            }
+            let xml = resp.text().await.map_err(|e| {
+                crate::error::VaultError::Backend(anyhow::anyhow!("aws sts read body: {e}"))
+            })?;
+
+            let access_key = xml_tag(&xml, "AccessKeyId").ok_or_else(|| {
+                crate::error::VaultError::Backend(anyhow::anyhow!(
+                    "aws sts response missing AccessKeyId: {xml}"
+                ))
+            })?;
+            let secret = xml_tag(&xml, "SecretAccessKey").ok_or_else(|| {
+                crate::error::VaultError::Backend(anyhow::anyhow!(
+                    "aws sts response missing SecretAccessKey"
+                ))
+            })?;
+            let token = xml_tag(&xml, "SessionToken");
+            let expiration = xml_tag(&xml, "Expiration");
+
+            Ok(IssuedCredentials {
+                credentials: serde_json::json!({
+                    "access_key_id": access_key,
+                    "secret_access_key": secret,
+                    "session_token": token,
+                    "expiration": expiration,
+                }),
+                metadata: serde_json::json!({
+                    "role_arn": cfg.role_arn,
+                    "session_name": session_name,
+                }),
+            })
+        }
+
+        async fn revoke(&self, _lease: &LeaseRecord) -> Result<()> {
+            // STS-issued temp creds expire on their own — no API call
+            // to revoke them mid-flight. The lease row's revoked_at
+            // marker is the auditable signal; the credentials become
+            // unusable at their `expiration` timestamp regardless.
+            // For long-lived `iam:CreateAccessKey` creds (not yet
+            // implemented), revoke would call iam:DeleteAccessKey here.
+            Ok(())
+        }
+    }
+
+    fn urlencode(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for b in s.as_bytes() {
+            let c = *b as char;
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~') {
+                out.push(c);
+            } else {
+                out.push_str(&format!("%{:02X}", b));
+            }
+        }
+        out
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn xml_extraction() {
+            let xml = r#"<AssumeRoleResponse><AssumeRoleResult><Credentials>
+<AccessKeyId>AKID</AccessKeyId><SecretAccessKey>secret</SecretAccessKey>
+<SessionToken>tok</SessionToken><Expiration>2030-01-01T00:00:00Z</Expiration>
+</Credentials></AssumeRoleResult></AssumeRoleResponse>"#;
+            assert_eq!(xml_tag(xml, "AccessKeyId").as_deref(), Some("AKID"));
+            assert_eq!(xml_tag(xml, "SecretAccessKey").as_deref(), Some("secret"));
+            assert_eq!(xml_tag(xml, "SessionToken").as_deref(), Some("tok"));
+        }
+    }
+}
+
+#[cfg(feature = "vault-dynamic-gcp")]
+pub mod gcp_provider {
+    //! GCP IAM dynamic-creds provider — service-account impersonation
+    //! via `iamcredentials.googleapis.com:generateAccessToken`. Plan §S3c.
+
+    use super::*;
+    use crate::cloud::gcp_jwt::{fetch_access_token, ServiceAccount};
+    use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    const SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
+
+    #[derive(Clone, Debug)]
+    pub struct RoleConfig {
+        pub name: String,
+        /// The service account to impersonate (e.g.
+        /// `target-sa@project.iam.gserviceaccount.com`).
+        pub target_service_account: String,
+        /// OAuth scopes the impersonation token should carry.
+        pub scopes: Vec<String>,
+    }
+
+    pub struct GcpDynamicProvider {
+        sa: Arc<ServiceAccount>,
+        roles: parking_lot::RwLock<HashMap<String, RoleConfig>>,
+        endpoint_override: Option<String>,
+        client: reqwest::Client,
+    }
+
+    impl GcpDynamicProvider {
+        pub fn new(sa: ServiceAccount) -> Self {
+            Self {
+                sa: Arc::new(sa),
+                roles: parking_lot::RwLock::new(HashMap::new()),
+                endpoint_override: None,
+                client: reqwest::Client::new(),
+            }
+        }
+
+        pub fn with_role(self, role: RoleConfig) -> Self {
+            self.roles.write().insert(role.name.clone(), role);
+            self
+        }
+
+        pub fn with_endpoint(mut self, ep: impl Into<String>) -> Self {
+            self.endpoint_override = Some(ep.into());
+            self
+        }
+
+        pub fn into_arc(self) -> Arc<Self> {
+            Arc::new(self)
+        }
+
+        fn endpoint_for(&self, target_sa: &str) -> String {
+            let base = self
+                .endpoint_override
+                .as_deref()
+                .unwrap_or("https://iamcredentials.googleapis.com");
+            format!(
+                "{base}/v1/projects/-/serviceAccounts/{target_sa}:generateAccessToken"
+            )
+        }
+    }
+
+    #[derive(Serialize)]
+    struct GenTokenBody<'a> {
+        scope: &'a [String],
+        lifetime: String,
+    }
+
+    #[derive(Deserialize)]
+    struct GenTokenResp {
+        #[serde(rename = "accessToken")]
+        access_token: String,
+        #[serde(rename = "expireTime")]
+        expire_time: String,
+    }
+
+    #[async_trait]
+    impl DynamicCredsProvider for GcpDynamicProvider {
+        fn name(&self) -> &str {
+            "gcp"
+        }
+
+        async fn issue(&self, role: &str, ttl_secs: u64) -> Result<IssuedCredentials> {
+            let cfg = self
+                .roles
+                .read()
+                .get(role)
+                .cloned()
+                .ok_or(crate::error::VaultError::NotFound)?;
+            // Fetch caller-side bearer first.
+            let caller = fetch_access_token(&self.sa, SCOPE).await?;
+            let lifetime = format!("{}s", ttl_secs.max(60));
+            let scopes = if cfg.scopes.is_empty() {
+                vec![SCOPE.to_string()]
+            } else {
+                cfg.scopes.clone()
+            };
+            let url = self.endpoint_for(&cfg.target_service_account);
+            let body = GenTokenBody {
+                scope: &scopes,
+                lifetime,
+            };
+            let resp = self
+                .client
+                .post(&url)
+                .bearer_auth(&caller.access_token)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| {
+                    crate::error::VaultError::Backend(anyhow::anyhow!(
+                        "gcp generateAccessToken POST: {e}"
+                    ))
+                })?;
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let txt = resp.text().await.unwrap_or_default();
+                return Err(crate::error::VaultError::Backend(anyhow::anyhow!(
+                    "gcp generateAccessToken {status}: {txt}"
+                )));
+            }
+            let parsed: GenTokenResp = resp.json().await.map_err(|e| {
+                crate::error::VaultError::Backend(anyhow::anyhow!("gcp resp decode: {e}"))
+            })?;
+            Ok(IssuedCredentials {
+                credentials: serde_json::json!({
+                    "access_token": parsed.access_token,
+                    "expire_time": parsed.expire_time,
+                }),
+                metadata: serde_json::json!({
+                    "target_service_account": cfg.target_service_account,
+                }),
+            })
+        }
+
+        async fn revoke(&self, _lease: &LeaseRecord) -> Result<()> {
+            // Generated access tokens expire on their own; the lease
+            // row's revoked_at is the auditable signal.
+            Ok(())
+        }
+    }
+}
+
+#[cfg(feature = "vault-dynamic-kubernetes")]
+pub mod k8s_provider {
+    //! Kubernetes projected-SA-token dynamic-creds provider. Plan §S3d.
+    //!
+    //! Calls
+    //! `POST /api/v1/namespaces/{ns}/serviceaccounts/{sa}/token`
+    //! against the configured kube-apiserver to mint a token bound to
+    //! the requested audiences with the requested expiry.
+
+    use super::*;
+    use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[derive(Clone, Debug)]
+    pub struct RoleConfig {
+        pub name: String,
+        pub namespace: String,
+        pub service_account: String,
+        pub audiences: Vec<String>,
+    }
+
+    pub struct K8sDynamicProvider {
+        api_server: String,
+        /// Bearer token for the engine's own identity (e.g. the
+        /// in-cluster /var/run/secrets/kubernetes.io/serviceaccount/token
+        /// payload, or an admin kubeconfig token).
+        caller_token: String,
+        ca_pem: Option<String>,
+        roles: parking_lot::RwLock<HashMap<String, RoleConfig>>,
+        client: reqwest::Client,
+    }
+
+    impl K8sDynamicProvider {
+        pub fn new(
+            api_server: impl Into<String>,
+            caller_token: impl Into<String>,
+        ) -> Self {
+            Self {
+                api_server: api_server.into(),
+                caller_token: caller_token.into(),
+                ca_pem: None,
+                roles: parking_lot::RwLock::new(HashMap::new()),
+                client: reqwest::Client::new(),
+            }
+        }
+
+        pub fn with_ca_pem(mut self, ca: impl Into<String>) -> Self {
+            self.ca_pem = Some(ca.into());
+            self
+        }
+
+        pub fn with_role(self, role: RoleConfig) -> Self {
+            self.roles.write().insert(role.name.clone(), role);
+            self
+        }
+
+        pub fn into_arc(self) -> Arc<Self> {
+            Arc::new(self)
+        }
+    }
+
+    #[derive(Serialize)]
+    struct TokenRequest<'a> {
+        kind: &'a str,
+        #[serde(rename = "apiVersion")]
+        api_version: &'a str,
+        spec: TokenRequestSpec<'a>,
+    }
+    #[derive(Serialize)]
+    struct TokenRequestSpec<'a> {
+        audiences: &'a [String],
+        #[serde(rename = "expirationSeconds")]
+        expiration_seconds: u64,
+    }
+    #[derive(Deserialize)]
+    struct TokenResponse {
+        status: TokenStatus,
+    }
+    #[derive(Deserialize)]
+    struct TokenStatus {
+        token: String,
+        #[serde(rename = "expirationTimestamp")]
+        expiration_timestamp: String,
+    }
+
+    #[async_trait]
+    impl DynamicCredsProvider for K8sDynamicProvider {
+        fn name(&self) -> &str {
+            "kubernetes"
+        }
+
+        async fn issue(&self, role: &str, ttl_secs: u64) -> Result<IssuedCredentials> {
+            let cfg = self
+                .roles
+                .read()
+                .get(role)
+                .cloned()
+                .ok_or(crate::error::VaultError::NotFound)?;
+            let url = format!(
+                "{}/api/v1/namespaces/{}/serviceaccounts/{}/token",
+                self.api_server.trim_end_matches('/'),
+                cfg.namespace,
+                cfg.service_account
+            );
+            let body = TokenRequest {
+                kind: "TokenRequest",
+                api_version: "authentication.k8s.io/v1",
+                spec: TokenRequestSpec {
+                    audiences: &cfg.audiences,
+                    expiration_seconds: ttl_secs.max(600),
+                },
+            };
+            let resp = self
+                .client
+                .post(&url)
+                .bearer_auth(&self.caller_token)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| {
+                    crate::error::VaultError::Backend(anyhow::anyhow!("k8s token POST: {e}"))
+                })?;
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let txt = resp.text().await.unwrap_or_default();
+                return Err(crate::error::VaultError::Backend(anyhow::anyhow!(
+                    "k8s token {status}: {txt}"
+                )));
+            }
+            let parsed: TokenResponse = resp.json().await.map_err(|e| {
+                crate::error::VaultError::Backend(anyhow::anyhow!("k8s token decode: {e}"))
+            })?;
+            Ok(IssuedCredentials {
+                credentials: serde_json::json!({
+                    "token": parsed.status.token,
+                    "expiration_timestamp": parsed.status.expiration_timestamp,
+                }),
+                metadata: serde_json::json!({
+                    "namespace": cfg.namespace,
+                    "service_account": cfg.service_account,
+                    "audiences": cfg.audiences,
+                }),
+            })
+        }
+
+        async fn revoke(&self, _lease: &LeaseRecord) -> Result<()> {
+            // Projected SA tokens expire on their own. K8s does not
+            // expose an explicit revoke API for SA tokens — rotate
+            // the SA itself if you need pre-expiry revocation.
+            Ok(())
+        }
+    }
+}
+
 #[cfg(feature = "vault-dynamic-postgres")]
 pub mod postgres_provider {
     //! Built-in Postgres provider — pre-configured master role with
