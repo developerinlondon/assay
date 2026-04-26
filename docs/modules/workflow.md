@@ -88,7 +88,7 @@ read as part of that product.
 | `ASSAY_WHITELABEL_PAGE_TITLE`   | `Assay Workflow Dashboard` | Browser tab title                                               |
 | `ASSAY_WHITELABEL_PARENT_URL`   | (unset, link hidden)       | If set, adds a back-link in the sidebar footer to the parent app |
 | `ASSAY_WHITELABEL_PARENT_NAME`  | `Back`                     | Label for the back-link                                         |
-| `ASSAY_WHITELABEL_API_DOCS_URL` | `/api/v1/docs`             | Override or hide the API Docs sidebar link                      |
+| `ASSAY_WHITELABEL_API_DOCS_URL` | `/api/v1/engine/workflow/docs`             | Override or hide the API Docs sidebar link                      |
 | `ASSAY_WHITELABEL_CSS_URL`      | (unset, no extra sheet)    | Extra stylesheet loaded after assay's own CSS                   |
 | `ASSAY_WHITELABEL_SUBTITLE`     | (unset, no subtitle)       | Small muted line rendered under the brand name                  |
 | `ASSAY_WHITELABEL_MARK`         | First char of `NAME` (uppercased) | Glyph in the always-visible brand badge square           |
@@ -98,7 +98,7 @@ read as part of that product.
 `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link entirely.
 Any other value redirects the link to that URL. Setting the variable
 explicitly to empty is distinct from leaving it unset — unset keeps the
-default `/api/v1/docs` link, empty hides it.
+default `/api/v1/engine/workflow/docs` link, empty hides it.
 
 **Theming via CSS custom properties.** Every colour, radius, and shadow
 on the dashboard is a CSS variable on `:root`. An extra stylesheet
@@ -169,12 +169,12 @@ The engine serves:
 
 | Path                        | Purpose                                     |
 | --------------------------- | ------------------------------------------- |
-| `GET /api/v1/health`        | Liveness probe                              |
-| `GET /api/v1/version`       | `{ version, build_profile }` — CLI + UI use |
-| `GET /api/v1/openapi.json`  | Full OpenAPI 3 spec (all ~30 endpoints)     |
-| `GET /api/v1/docs`          | Interactive API docs (Scalar)               |
+| `GET /api/v1/engine/workflow/health`        | Liveness probe                              |
+| `GET /api/v1/engine/workflow/version`       | `{ version, build_profile }` — CLI + UI use |
+| `GET /api/v1/engine/workflow/openapi.json`  | Full OpenAPI 3 spec (all ~30 endpoints)     |
+| `GET /api/v1/engine/workflow/docs`          | Interactive API docs (Scalar)               |
 | `GET /workflow/`            | Built-in dashboard (see "Dashboard" below)  |
-| `GET /api/v1/events/stream` | SSE event stream                            |
+| `GET /api/v1/engine/workflow/events/stream` | SSE event stream                            |
 
 Full endpoint list in the OpenAPI spec — workflow lifecycle, state queries, events, children,
 continue-as-new, signals, schedules (CRUD + patch/pause/resume), namespaces, workers, queues, worker
@@ -420,7 +420,7 @@ AND-join; unchanged keys are preserved across upserts.
 | Queues    | Pending + running per queue                         | —                                                                                 |
 | Settings  | Engine version, build profile, namespaces, API docs | Namespace create / delete                                                         |
 
-Status-bar footer always shows the engine version (fetched from `/api/v1/version`). Live list
+Status-bar footer always shows the engine version (fetched from `/api/v1/engine/workflow/version`). Live list
 updates via SSE. Cache-busted asset URLs per startup.
 
 ### Steps tab convention (v0.12.0+)
@@ -490,7 +490,7 @@ dashboard renders one button per action under the step's circle. A click POSTs a
 signal:
 
 ```http
-POST /api/v1/workflows/{id}/signal/step_action
+POST /api/v1/engine/workflow/workflows/{id}/signal/step_action
 Content-Type: application/json
 
 { "payload": { "step": "Approval", "action": "approve", "user": "alice" } }
@@ -598,7 +598,7 @@ assay workflow wait deploy-1234 --timeout 300   # exit 0 on COMPLETED, 1 on fail
 - The cron crate requires **6- or 7-field** expressions. The common 5-field form fails to parse.
 - The engine is also publishable as a standalone Rust crate (`assay-workflow`) for embedding in
   non-Lua Rust apps. The CLI injects its own `CARGO_PKG_VERSION` via
-  `assay_workflow::api::serve_with_version` so `/api/v1/version` reflects the user-facing binary
+  `assay_workflow::api::serve_with_version` so `/api/v1/engine/workflow/version` reflects the user-facing binary
   version, not the internal crate version.
 - S3 archival is behind the `s3-archival` cargo feature (default off) and no-op at runtime unless
   `ASSAY_ARCHIVE_S3_BUCKET` is set.

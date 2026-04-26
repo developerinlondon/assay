@@ -1,6 +1,6 @@
 [package]
 name = "assay-engine"
-version = "0.1.1"
+version = "0.2.0"
 categories = ["asynchronous", "database", "web-programming::http-server"]
 edition = "2024"
 keywords = ["workflow", "auth", "oidc", "zanzibar", "postgres"]
@@ -18,31 +18,58 @@ name = "assay_engine"
 path = "src/lib.rs"
 
 [features]
-# Phase 3 defaults: workflow + dashboard + both backends, no auth. Auth
-# is feature-gated so the crate compiles with or without `assay-auth`
-# until Phase 8 composes it in.
+# Plan-15 slice 3: auth is mandatory. The engine doesn't run without
+# it, so the auth code is always linked. The fine-grained auth-* flags
+# stay so downstream slim builds can opt out of individual flavours
+# (e.g. drop passkey or OIDC-provider without touching the engine).
 default = [
   "backend-postgres",
   "backend-sqlite",
   "server",
+  "auth-jwt",
+  "auth-session",
+  "auth-password",
+  "auth-passkey",
+  "auth-oidc",
+  "auth-oidc-provider",
+  "auth-zanzibar",
 ]
 
-auth = ["dep:assay-auth"]
+# Pass-through declarations so engine's `cfg` matches assay-auth's. Each
+# can be turned off independently for a slimmer build.
+auth-jwt = ["assay-auth/auth-jwt"]
+auth-session = ["assay-auth/auth-session"]
+auth-password = ["assay-auth/auth-password"]
+auth-passkey = ["assay-auth/auth-passkey"]
+auth-oidc = ["assay-auth/auth-oidc"]
+auth-oidc-provider = ["assay-auth/auth-oidc-provider"]
+auth-zanzibar = ["assay-auth/auth-zanzibar"]
+
 server = ["dep:clap"]
 
-backend-postgres = ["assay-workflow/backend-postgres", "assay-auth?/backend-postgres"]
-backend-sqlite = ["assay-workflow/backend-sqlite", "assay-auth?/backend-sqlite"]
+backend-postgres = ["assay-workflow/backend-postgres", "assay-auth/backend-postgres"]
+backend-sqlite = ["assay-workflow/backend-sqlite", "assay-auth/backend-sqlite"]
 
 [dependencies]
-assay-auth = { path = "../assay-auth", version = "0.1", optional = true }
-assay-dashboard = { path = "../assay-dashboard", version = "0.1" }
-assay-domain = { path = "../assay-domain", version = "0.1" }
-assay-workflow = { path = "../assay-workflow", version = "0.2" }
+assay-auth = { path = "../assay-auth", version = "0.2" }
+assay-dashboard = { path = "../assay-dashboard", version = "0.2" }
+assay-domain = { path = "../assay-domain", version = "0.2" }
+assay-workflow = { path = "../assay-workflow", version = "0.3" }
 
 axum = "0.8"
 clap = { version = "4", features = ["derive", "env"], optional = true }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Direct DB access for the v0.1.2 boot sequence (engine_init): the
+# orchestrator opens its own pool, ATTACHes module databases on SQLite or
+# `CREATE SCHEMA` on PG, then hands the pool to per-module stores.
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite"] }
+uuid = { version = "1.18", features = ["v7", "serde"] }
+
+# Direct dep so rustdoc can resolve `url::Url` references in lib.rs
+# auth-composition helpers (transitive through assay-auth otherwise).
+url = "2"
 
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }

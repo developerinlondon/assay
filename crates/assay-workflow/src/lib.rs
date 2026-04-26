@@ -1,7 +1,6 @@
 pub mod activities;
 pub mod api;
 pub mod archival;
-pub mod auth_mode;
 pub mod children;
 pub mod ctx;
 pub mod dispatch_recovery;

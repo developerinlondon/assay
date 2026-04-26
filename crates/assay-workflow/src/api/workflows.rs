@@ -55,7 +55,7 @@ pub struct WorkflowResponse {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/workflows",
+    post, path = "/api/v1/engine/workflow/workflows",
     tag = "workflows",
     request_body = StartWorkflowRequest,
     responses(
@@ -117,7 +117,7 @@ fn default_limit() -> i64 {
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/workflows",
+    get, path = "/api/v1/engine/workflow/workflows",
     tag = "workflows",
     params(
         ("status" = Option<String>, Query, description = "Filter by status"),
@@ -158,7 +158,7 @@ pub async fn list_workflows<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/workflows/{id}",
+    get, path = "/api/v1/engine/workflow/workflows/{id}",
     tag = "workflows",
     params(("id" = String, Path, description = "Workflow ID")),
     responses(
@@ -179,7 +179,7 @@ pub async fn describe_workflow<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/workflows/{id}/events",
+    get, path = "/api/v1/engine/workflow/workflows/{id}/events",
     tag = "workflows",
     params(("id" = String, Path, description = "Workflow ID")),
     responses(
@@ -204,7 +204,7 @@ pub struct SignalBody {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/workflows/{id}/signal/{name}",
+    post, path = "/api/v1/engine/workflow/workflows/{id}/signal/{name}",
     tag = "workflows",
     params(
         ("id" = String, Path, description = "Workflow ID"),
@@ -235,7 +235,7 @@ pub struct CancelBody {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/workflows/{id}/cancel",
+    post, path = "/api/v1/engine/workflow/workflows/{id}/cancel",
     tag = "workflows",
     params(("id" = String, Path, description = "Workflow ID")),
     request_body = CancelBody,
@@ -268,7 +268,7 @@ pub struct TerminateBody {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/workflows/{id}/terminate",
+    post, path = "/api/v1/engine/workflow/workflows/{id}/terminate",
     tag = "workflows",
     params(("id" = String, Path, description = "Workflow ID")),
     responses(
@@ -295,7 +295,7 @@ pub async fn terminate_workflow<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/workflows/{id}/children",
+    get, path = "/api/v1/engine/workflow/workflows/{id}/children",
     tag = "workflows",
     params(("id" = String, Path, description = "Parent workflow ID")),
     responses(
@@ -326,7 +326,7 @@ pub struct ContinueAsNewBody {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/workflows/{id}/continue-as-new",
+    post, path = "/api/v1/engine/workflow/workflows/{id}/continue-as-new",
     tag = "workflows",
     params(("id" = String, Path, description = "Workflow ID to continue")),
     request_body = ContinueAsNewBody,
@@ -368,7 +368,7 @@ pub async fn continue_as_new<S: WorkflowStore>(
 /// yet (either the workflow hasn't registered any queries, or the first
 /// replay hasn't completed).
 #[utoipa::path(
-    get, path = "/api/v1/workflows/{id}/state",
+    get, path = "/api/v1/engine/workflow/workflows/{id}/state",
     tag = "workflows",
     params(("id" = String, Path, description = "Workflow ID")),
     responses(
@@ -400,7 +400,7 @@ pub async fn get_workflow_state<S: WorkflowStore>(
 /// Returns the value under the given key in the latest snapshot's state
 /// object, or 404 if no snapshot exists or the key is absent.
 #[utoipa::path(
-    get, path = "/api/v1/workflows/{id}/state/{name}",
+    get, path = "/api/v1/engine/workflow/workflows/{id}/state/{name}",
     tag = "workflows",
     params(
         ("id" = String, Path, description = "Workflow ID"),

@@ -8,4 +8,4 @@ pub mod postgres;
 pub mod sqlite;
 
 pub use assay_domain::store::WorkflowStore;
-pub use assay_domain::{ApiKeyRecord, NamespaceRecord, NamespaceStats, QueueStats};
+pub use assay_domain::{NamespaceRecord, NamespaceStats, QueueStats};

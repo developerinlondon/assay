@@ -245,7 +245,7 @@ async fn execute_http_request(
         }
     };
 
-    let (body_str, auto_json, opts) = if has_body {
+    let (mut body_str, mut auto_json, opts) = if has_body {
         let (body, is_json) = match args_iter.next() {
             Some(Value::String(s)) => (s.to_str()?.to_string(), false),
             Some(Value::Table(t)) => {
@@ -285,6 +285,36 @@ async fn execute_http_request(
         (String::new(), false, opts)
     };
 
+
+    // RFC 7231 permits a body on DELETE; some assay-* admin endpoints
+    // (e.g. `DELETE /admin/auth/zanzibar/tuples`) require a JSON body
+    // to identify which row to remove. The Lua DELETE shorthand only
+    // accepts `(url, opts)`, so we surface a body via `opts.body`
+    // (string OR table for auto-JSON). `Content-Type: application/json`
+    // is set automatically when a table is passed, mirroring `http.post`.
+    if !has_body
+        && let Some(ref opts_table) = opts
+        && let Ok(body_val) = opts_table.get::<Value>("body")
+    {
+        match body_val {
+            Value::String(s) => body_str = s.to_str()?.to_string(),
+            Value::Table(t) => {
+                let json_val = lua_table_to_json(&t)?;
+                let serialized = serde_json::to_string(&json_val).map_err(|e| {
+                    mlua::Error::runtime(format!("http.{method_name}: JSON encode failed: {e}"))
+                })?;
+                body_str = serialized;
+                auto_json = true;
+            }
+            Value::Nil => {}
+            _ => {
+                return Err(mlua::Error::runtime(format!(
+                    "http.{method_name}: opts.body must be a string, table, or nil"
+                )));
+            }
+        }
+    }
+
     let mut req = match method_name {
         "get" => client.get(&url),
         "post" => client.post(&url),
@@ -298,7 +328,7 @@ async fn execute_http_request(
         }
     };
 
-    if has_body && !body_str.is_empty() {
+    if !body_str.is_empty() {
         req = req.body(body_str);
     }
     if auto_json {

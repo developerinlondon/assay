@@ -94,7 +94,7 @@ impl PgEngineEventBus {
                                     };
                                     match sqlx::query_as::<_, PgEventRow>(
                                         "SELECT id, ts, namespace, subsystem, kind, payload
-                                         FROM engine_events WHERE id = $1",
+                                         FROM engine.events WHERE id = $1",
                                     )
                                     .bind(id)
                                     .fetch_optional(&pool)
@@ -129,7 +129,7 @@ impl PgEngineEventBus {
 
     async fn oldest_id_inner(&self, namespace: &str) -> Result<Option<i64>> {
         let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM engine_events WHERE namespace = $1 ORDER BY id ASC LIMIT 1",
+            "SELECT id FROM engine.events WHERE namespace = $1 ORDER BY id ASC LIMIT 1",
         )
         .bind(namespace)
         .fetch_optional(&self.pool)
@@ -168,7 +168,7 @@ impl EngineEventBus for PgEngineEventBus {
     async fn publish_committed(&self, ev: NewEvent<'_>) -> Result<i64> {
         let mut tx = self.pool.begin().await?;
         let row: (i64, f64) = sqlx::query_as(
-            "INSERT INTO engine_events (namespace, subsystem, kind, payload)
+            "INSERT INTO engine.events (namespace, subsystem, kind, payload)
              VALUES ($1, $2, $3, $4)
              RETURNING id, ts",
         )
@@ -212,7 +212,7 @@ impl EngineEventBus for PgEngineEventBus {
         }
         let rows: Vec<PgEventRow> = sqlx::query_as(
             "SELECT id, ts, namespace, subsystem, kind, payload
-             FROM engine_events
+             FROM engine.events
              WHERE namespace = $1 AND ($2::bigint IS NULL OR id > $2)
              ORDER BY id ASC
              LIMIT $3",
@@ -242,7 +242,7 @@ impl EngineEventBus for PgEngineEventBus {
     }
 
     async fn prune(&self, before_ts: f64) -> Result<u64> {
-        let n = sqlx::query("DELETE FROM engine_events WHERE ts < $1")
+        let n = sqlx::query("DELETE FROM engine.events WHERE ts < $1")
             .bind(before_ts)
             .execute(&self.pool)
             .await

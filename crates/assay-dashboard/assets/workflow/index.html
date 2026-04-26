@@ -7,20 +7,33 @@
   __FAVICON_LINK__
   <link rel="stylesheet" href="/workflow/theme.css?v=__ASSETV__">
   <link rel="stylesheet" href="/workflow/style.css?v=__ASSETV__">
+  <link rel="stylesheet" href="/shared/cross-nav.css?v=__ASSETV__">
   __EXTRA_CSS_LINK__
 </head>
 <body__DEFAULT_NAMESPACE_ATTR__>
+  <header class="cross-nav">
+    <div class="cross-nav-brand">
+      <span class="cross-nav-mark" aria-hidden="true">__BRAND_MARK__</span>
+      <span class="cross-nav-title">Assay Engine <span class="cross-nav-version" id="cross-nav-version">v—</span></span>
+    </div>
+    <div class="cross-nav-status">
+      <span class="cross-nav-leader" id="cross-nav-leader" title="Leader / instance status">
+        <span class="cross-nav-dot" id="cross-nav-leader-dot"></span><span id="cross-nav-leader-text">leader</span>
+      </span>
+      <span class="cross-nav-instance" id="cross-nav-instance" title="Instance ID">instance:—</span>
+    </div>
+  </header>
+
   <div class="layout">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <h1 class="logo">
-          __BRAND_LOGO_IMG__
-          <span class="logo-mark" aria-hidden="true">__BRAND_MARK__</span>
-          <span class="logo-text">
-            <span class="logo-full">__BRAND_NAME__</span>
-            __BRAND_SUBTITLE__
-          </span>
-        </h1>
+        <!-- Per-console switcher: renders three icon tabs (Workflow /
+             Auth / Engine) via /shared/cross-nav.js. Replaces the old
+             duplicated `Assay / Workflow Console` brand block — the
+             top cross-nav already shows `Assay Engine vX.Y.Z`, so the
+             sidebar header just identifies the active console via the
+             highlighted tab. Hover any tab → tooltip with its label. -->
+        <nav class="cross-nav-pills" id="cross-nav-pills" aria-label="Console switcher"></nav>
         <button type="button" class="header-icon-btn" id="sidebar-collapse" title="Collapse sidebar" aria-label="Toggle sidebar">
           <!--
             Chevron icons replace the ASCII `<` / `>` that used to live
@@ -103,6 +116,9 @@
   <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">&#9776;</button>
 
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- Cross-console nav strip controller. Renders pills + populates the
+       version + instance + leader bits in the header bar. -->
+  <script src="/shared/cross-nav.js?v=__ASSETV__"></script>
   <!-- Modal + select must load before actions/workflows so the
        AssayActions handlers + namespace selectors can reference
        them during init. -->

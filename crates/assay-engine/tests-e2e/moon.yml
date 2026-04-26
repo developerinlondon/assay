@@ -1,0 +1,59 @@
+# Headless browser tests for the engine + auth consoles + cross-nav
+# strip. Boots assay-engine with auth + admin api-keys configured,
+# runs examples/seed-sample/seed.lua via the assay binary to populate
+# fixture rows (replaces the v0.13.x Rust seed-sample subcommand,
+# retired in plan-15 slice 5), then drives the consoles with
+# Playwright. Lifecycle script is `run.sh` in this dir.
+
+language: "typescript"
+layer: "automation"
+stack: "frontend"
+
+tasks:
+  install:
+    command: "npm install --no-audit --no-fund"
+    inputs:
+      - "package.json"
+      - "package-lock.json"
+    outputs:
+      - "node_modules"
+    options:
+      cache: true
+      runInCI: true
+
+  install-browsers:
+    command: "npx playwright install --with-deps chromium"
+    deps:
+      - "install"
+      # Serialize against dashboard-e2e:install-browsers — both run
+      # `playwright install --with-deps` which shells to `sudo apt-get`,
+      # and on Ubuntu CI runners the parallel apt-get processes race for
+      # /var/lib/apt/lists/lock and one fails. Ordering them here is
+      # cheaper than turning off concurrency for the whole job.
+      - "dashboard-e2e:install-browsers"
+    options:
+      cache: false
+      runInCI: true
+
+  test:
+    # Build the engine binary first, then hand over to run.sh which
+    # boots it, seeds fixtures, runs Playwright, and tears down. The
+    # `assay-lua:build` task already does `cargo build --release` for
+    # both `assay` and `assay-engine` (see crates/assay/moon.yml) so
+    # we reuse it here rather than declaring a separate engine-only
+    # build task that would shadow the workspace cache.
+    command: "bash run.sh"
+    deps:
+      - "assay-lua:build"
+      - "install-browsers"
+    inputs:
+      - "**/*.{ts,sh,toml,json}"
+      - "fixtures/**/*"
+      - "/crates/assay-dashboard/src/**/*"
+      - "/crates/assay-dashboard/assets/**/*"
+      - "/crates/assay-engine/src/**/*"
+      - "/crates/assay-auth/src/**/*"
+    options:
+      cache: true
+      runInCI: true
+      retryCount: 1

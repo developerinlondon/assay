@@ -1,21 +1,18 @@
 //! Dashboard — typed asset bundle + axum router composition.
 //!
-//! Feature flags:
-//!  - `workflow` (default): workflow run lists, events, timers, retries
-//!  - `auth`: user + session + Zanzibar + OIDC client registry views
+//! Three consoles are always compiled in (plan-15 slice 3): workflow,
+//! auth, and engine-core. The engine binary mounts them all; runtime
+//! visibility per console is gated by `engine.modules` rows.
 
-#[cfg(feature = "workflow")]
 pub mod assets;
-#[cfg(feature = "workflow")]
+pub mod auth_router;
 pub mod ctx;
-#[cfg(feature = "workflow")]
+pub mod engine_router;
 pub mod router;
-#[cfg(feature = "workflow")]
 pub mod whitelabel;
 
-#[cfg(feature = "workflow")]
+pub use auth_router::router as auth_router;
 pub use ctx::DashboardCtx;
-#[cfg(feature = "workflow")]
+pub use engine_router::router as engine_router;
 pub use router::router as workflow_router;
-#[cfg(feature = "workflow")]
-pub use whitelabel::{WhitelabelConfig, WHITELABEL};
+pub use whitelabel::{WHITELABEL, WhitelabelConfig};

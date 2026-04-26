@@ -23,19 +23,47 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 /// stand up an axum server with just the events router, and return the
 /// base URL + bus so the test can push events directly.
 async fn spawn_sse_server() -> (String, Arc<dyn EngineEventBus>) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let suffix = format!(
+        "{}_{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    let engine_alias =
+        format!("file:assay_sse_engine_{suffix}?mode=memory&cache=shared");
+    let workflow_alias =
+        format!("file:assay_sse_workflow_{suffix}?mode=memory&cache=shared");
+
     let opts = SqliteConnectOptions::new()
         .filename(":memory:")
         .create_if_missing(true);
     let pool: SqlitePool = SqlitePoolOptions::new()
         .max_connections(1)
+        .after_connect(move |conn, _meta| {
+            let engine_alias = engine_alias.clone();
+            let workflow_alias = workflow_alias.clone();
+            Box::pin(async move {
+                use sqlx::Executor;
+                conn.execute(
+                    format!("ATTACH DATABASE '{engine_alias}' AS engine").as_str(),
+                )
+                .await?;
+                conn.execute(
+                    format!("ATTACH DATABASE '{workflow_alias}' AS workflow").as_str(),
+                )
+                .await?;
+                Ok(())
+            })
+        })
         .connect_with(opts)
         .await
         .unwrap();
 
-    // Build the engine_events table + the rest of the schema the
-    // SqliteStore migrates in. SqliteStore::from_pool does both.
+    // Build the engine.events table + the rest of the schema the
+    // SqliteStore migrates in. SqliteStore::from_attached_pool does both.
     let store = Arc::new(
-        assay_workflow::SqliteStore::from_pool(pool.clone())
+        assay_workflow::SqliteStore::from_attached_pool(pool.clone())
             .await
             .unwrap(),
     );

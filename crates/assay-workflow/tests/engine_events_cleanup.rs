@@ -19,8 +19,20 @@ async fn fresh_bus() -> Arc<dyn EngineEventBus> {
         .connect_with(opts)
         .await
         .unwrap();
+    // v0.1.2: engine.events lives in an attached `engine` database.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let alias = format!(
+        "file:assay_evcleanup_{}_{}?mode=memory&cache=shared",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    sqlx::query(&format!("ATTACH DATABASE '{alias}' AS engine"))
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query(
-        "CREATE TABLE IF NOT EXISTS engine_events (
+        "CREATE TABLE IF NOT EXISTS engine.events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts REAL NOT NULL DEFAULT (CAST(strftime('%s','now') AS REAL)),
             namespace TEXT NOT NULL,

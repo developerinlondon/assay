@@ -94,7 +94,11 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('crates/assay-workflow/tests-e2e/package.json') }}
+          # Hash both e2e package.json files so a Playwright bump in
+          # either project invalidates the cache. The engine console e2e
+          # suite (tests-e2e/ on assay-engine) lives next to the
+          # workflow one and shares the same browser binaries.
+          key: playwright-${{ runner.os }}-${{ hashFiles('crates/assay-workflow/tests-e2e/package.json', 'crates/assay-engine/tests-e2e/package.json') }}
           restore-keys: |
             playwright-${{ runner.os }}-
 
@@ -153,8 +157,11 @@ jobs:
           path: |
             crates/assay-workflow/tests-e2e/playwright-report
             crates/assay-workflow/tests-e2e/test-results
+            crates/assay-engine/tests-e2e/playwright-report
+            crates/assay-engine/tests-e2e/test-results
             /tmp/assay-e2e-engine.log
             /tmp/assay-e2e-worker.log
+            /tmp/assay-engine-e2e.log
           if-no-files-found: ignore
           retention-days: 7
 

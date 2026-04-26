@@ -4,10 +4,7 @@ use std::sync::Arc;
 /// Helper: start engine + API on a random port, return the base URL.
 async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
-    let state = Arc::new(
-        WorkflowCtx::start(Arc::new(store))
-            .with_auth_mode(assay_workflow::api::auth::AuthMode::no_auth()),
-    );
+    let state = Arc::new(WorkflowCtx::start(Arc::new(store)));
 
     let app = assay_workflow::api::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -33,7 +30,7 @@ async fn health_check() {
     let (url, _handle) = start_test_server().await;
 
     let resp = client()
-        .get(format!("{url}/api/v1/health"))
+        .get(format!("{url}/api/v1/engine/workflow/health"))
         .send()
         .await
         .unwrap();
@@ -51,7 +48,7 @@ async fn start_and_list_workflows() {
 
     // Start a workflow
     let resp = c
-        .post(format!("{url}/api/v1/workflows"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "IngestData",
             "workflow_id": "wf-test-1",
@@ -68,7 +65,7 @@ async fn start_and_list_workflows() {
 
     // List workflows
     let resp = c
-        .get(format!("{url}/api/v1/workflows"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows"))
         .send()
         .await
         .unwrap();
@@ -80,7 +77,7 @@ async fn start_and_list_workflows() {
 
     // Describe workflow
     let resp = c
-        .get(format!("{url}/api/v1/workflows/wf-test-1"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-test-1"))
         .send()
         .await
         .unwrap();
@@ -91,7 +88,7 @@ async fn start_and_list_workflows() {
 
     // Get events
     let resp = c
-        .get(format!("{url}/api/v1/workflows/wf-test-1/events"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-test-1/events"))
         .send()
         .await
         .unwrap();
@@ -108,7 +105,7 @@ async fn signal_and_cancel_workflow() {
     let c = client();
 
     // Start
-    c.post(format!("{url}/api/v1/workflows"))
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
         .json(&serde_json::json!({
             "workflow_type": "Approval",
             "workflow_id": "wf-sig-1",
@@ -119,7 +116,7 @@ async fn signal_and_cancel_workflow() {
 
     // Send signal
     let resp = c
-        .post(format!("{url}/api/v1/workflows/wf-sig-1/signal/approve"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-sig-1/signal/approve"))
         .json(&serde_json::json!({ "payload": {"approved": true} }))
         .send()
         .await
@@ -128,7 +125,7 @@ async fn signal_and_cancel_workflow() {
 
     // Cancel
     let resp = c
-        .post(format!("{url}/api/v1/workflows/wf-sig-1/cancel"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-sig-1/cancel"))
         .send()
         .await
         .unwrap();
@@ -136,7 +133,7 @@ async fn signal_and_cancel_workflow() {
 
     // Cancel again — should 404 (already terminal)
     let resp = c
-        .post(format!("{url}/api/v1/workflows/wf-sig-1/cancel"))
+        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-sig-1/cancel"))
         .send()
         .await
         .unwrap();
@@ -150,7 +147,7 @@ async fn worker_register_and_poll() {
 
     // Register worker
     let resp = c
-        .post(format!("{url}/api/v1/workers/register"))
+        .post(format!("{url}/api/v1/engine/workflow/workers/register"))
         .json(&serde_json::json!({
             "identity": "test-worker-1",
             "queue": "default",
@@ -167,7 +164,7 @@ async fn worker_register_and_poll() {
 
     // List workers
     let resp = c
-        .get(format!("{url}/api/v1/workers"))
+        .get(format!("{url}/api/v1/engine/workflow/workers"))
         .send()
         .await
         .unwrap();
@@ -177,7 +174,7 @@ async fn worker_register_and_poll() {
 
     // Poll for task (none available)
     let resp = c
-        .post(format!("{url}/api/v1/tasks/poll"))
+        .post(format!("{url}/api/v1/engine/workflow/tasks/poll"))
         .json(&serde_json::json!({
             "queue": "default",
             "worker_id": worker_id,
@@ -197,7 +194,7 @@ async fn schedule_crud() {
 
     // Create schedule
     let resp = c
-        .post(format!("{url}/api/v1/schedules"))
+        .post(format!("{url}/api/v1/engine/workflow/schedules"))
         .json(&serde_json::json!({
             "name": "hourly-ingest",
             "workflow_type": "IngestData",
@@ -210,7 +207,7 @@ async fn schedule_crud() {
 
     // List schedules
     let resp = c
-        .get(format!("{url}/api/v1/schedules"))
+        .get(format!("{url}/api/v1/engine/workflow/schedules"))
         .send()
         .await
         .unwrap();
@@ -221,7 +218,7 @@ async fn schedule_crud() {
 
     // Get schedule
     let resp = c
-        .get(format!("{url}/api/v1/schedules/hourly-ingest"))
+        .get(format!("{url}/api/v1/engine/workflow/schedules/hourly-ingest"))
         .send()
         .await
         .unwrap();
@@ -229,7 +226,7 @@ async fn schedule_crud() {
 
     // Delete schedule
     let resp = c
-        .delete(format!("{url}/api/v1/schedules/hourly-ingest"))
+        .delete(format!("{url}/api/v1/engine/workflow/schedules/hourly-ingest"))
         .send()
         .await
         .unwrap();
@@ -237,7 +234,7 @@ async fn schedule_crud() {
 
     // Verify deleted
     let resp = c
-        .get(format!("{url}/api/v1/schedules/hourly-ingest"))
+        .get(format!("{url}/api/v1/engine/workflow/schedules/hourly-ingest"))
         .send()
         .await
         .unwrap();
@@ -250,7 +247,7 @@ async fn workflow_not_found() {
     let c = client();
 
     let resp = c
-        .get(format!("{url}/api/v1/workflows/nonexistent"))
+        .get(format!("{url}/api/v1/engine/workflow/workflows/nonexistent"))
         .send()
         .await
         .unwrap();
@@ -264,7 +261,7 @@ async fn schedule_patch_updates_fields() {
 
     // Create
     let resp = c
-        .post(format!("{url}/api/v1/schedules"))
+        .post(format!("{url}/api/v1/engine/workflow/schedules"))
         .json(&serde_json::json!({
             "name": "nightly",
             "workflow_type": "Report",
@@ -278,7 +275,7 @@ async fn schedule_patch_updates_fields() {
 
     // Patch cron + timezone + input
     let resp = c
-        .patch(format!("{url}/api/v1/schedules/nightly"))
+        .patch(format!("{url}/api/v1/engine/workflow/schedules/nightly"))
         .json(&serde_json::json!({
             "cron_expr": "0 0 3 * * *",
             "timezone": "Europe/Berlin",
@@ -297,7 +294,7 @@ async fn schedule_patch_updates_fields() {
 
     // Patch with unchanged fields preserves them
     let resp = c
-        .patch(format!("{url}/api/v1/schedules/nightly"))
+        .patch(format!("{url}/api/v1/engine/workflow/schedules/nightly"))
         .json(&serde_json::json!({ "task_queue": "reports" }))
         .send()
         .await
@@ -314,7 +311,7 @@ async fn schedule_pause_and_resume() {
     let (url, _h) = start_test_server().await;
     let c = client();
 
-    c.post(format!("{url}/api/v1/schedules"))
+    c.post(format!("{url}/api/v1/engine/workflow/schedules"))
         .json(&serde_json::json!({
             "name": "hourly",
             "workflow_type": "Report",
@@ -326,7 +323,7 @@ async fn schedule_pause_and_resume() {
 
     // Pause
     let resp = c
-        .post(format!("{url}/api/v1/schedules/hourly/pause"))
+        .post(format!("{url}/api/v1/engine/workflow/schedules/hourly/pause"))
         .send()
         .await
         .unwrap();
@@ -336,7 +333,7 @@ async fn schedule_pause_and_resume() {
 
     // Resume
     let resp = c
-        .post(format!("{url}/api/v1/schedules/hourly/resume"))
+        .post(format!("{url}/api/v1/engine/workflow/schedules/hourly/resume"))
         .send()
         .await
         .unwrap();
@@ -350,7 +347,7 @@ async fn schedule_patch_404_on_missing() {
     let (url, _h) = start_test_server().await;
     let c = client();
     let resp = c
-        .patch(format!("{url}/api/v1/schedules/ghost"))
+        .patch(format!("{url}/api/v1/engine/workflow/schedules/ghost"))
         .json(&serde_json::json!({ "cron_expr": "0 0 * * * *" }))
         .send()
         .await
@@ -362,7 +359,7 @@ async fn schedule_patch_404_on_missing() {
 async fn schedule_patch_rejects_invalid_timezone() {
     let (url, _h) = start_test_server().await;
     let c = client();
-    c.post(format!("{url}/api/v1/schedules"))
+    c.post(format!("{url}/api/v1/engine/workflow/schedules"))
         .json(&serde_json::json!({
             "name": "x",
             "workflow_type": "T",
@@ -372,7 +369,7 @@ async fn schedule_patch_rejects_invalid_timezone() {
         .await
         .unwrap();
     let resp = c
-        .patch(format!("{url}/api/v1/schedules/x"))
+        .patch(format!("{url}/api/v1/engine/workflow/schedules/x"))
         .json(&serde_json::json!({ "timezone": "Not/AZone" }))
         .send()
         .await
@@ -384,7 +381,7 @@ async fn schedule_patch_rejects_invalid_timezone() {
 async fn version_endpoint_returns_shape() {
     let (url, _h) = start_test_server().await;
     let c = client();
-    let resp = c.get(format!("{url}/api/v1/version")).send().await.unwrap();
+    let resp = c.get(format!("{url}/api/v1/engine/workflow/version")).send().await.unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(body["version"].is_string(), "version is a string");

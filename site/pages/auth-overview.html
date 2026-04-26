@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — Auth & IdP (v0.2.0)</title>
+  <meta name="description" content="assay-engine v0.2.0 ships a full Ory replacement: passkey, OIDC client + provider, biscuit capability tokens, Zanzibar ReBAC, JWT/JWKS rotation, sessions — one binary.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-modules">
+  __HEADER__
+
+  <main>
+    <a href="changelog.html" class="release-banner">
+      <span class="release-banner-tag">v0.2.0</span>
+      <span class="release-banner-text">assay-engine becomes a full Ory replacement: passkey, OIDC provider, biscuit, Zanzibar — all in one ~9 MB static binary.</span>
+      <span class="release-banner-arrow">&rarr;</span>
+    </a>
+
+    <h1>Auth &amp; IdP overview</h1>
+    <p style="font-size: 1.15rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+      <code>assay-engine v0.2.0</code> ships a complete identity provider in the same binary that
+      runs the Temporal-replacement workflow engine. One process. PG18 or SQLite. Ory + Hydra +
+      Keto in ~9 MB.
+    </p>
+
+    <h2>What's in v0.2.0</h2>
+    <p>Every primitive a serious self-hosted IdP needs, packaged into one Rust crate
+      (<code>assay-auth</code>) and composed into <code>assay-engine</code>:</p>
+
+    <table>
+      <thead>
+        <tr><th>Module</th><th>Replaces</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>session</code></td><td>Ory Kratos (sessions)</td><td>Cookie + CSRF + 30-day TTL session manager</td></tr>
+        <tr><td><code>password</code></td><td>Ory Kratos (passwords)</td><td>Argon2id PHC strings, peppered hashing</td></tr>
+        <tr><td><code>jwt</code></td><td>Hydra (JWT)</td><td>RS256 issue/verify with rotated JWKS (active + history)</td></tr>
+        <tr><td><code>oidc</code> (client)</td><td>Kratos (federation)</td><td>Log in via Google / Apple / GitHub / any OIDC IdP</td></tr>
+        <tr><td><code>oidc_provider</code></td><td><strong>Ory Hydra</strong></td><td>Full <code>/authorize</code>, <code>/token</code>, <code>/userinfo</code>, RFC 7009 revoke, RFC 7662 introspect, back-channel logout</td></tr>
+        <tr><td><code>passkey</code></td><td>Kratos (WebAuthn)</td><td><code>webauthn-rs</code>-backed passkey register + auth ceremonies</td></tr>
+        <tr><td><code>zanzibar</code></td><td><strong>Ory Keto / SpiceDB</strong></td><td>ReBAC tuples + recursive-CTE walk on PG18 + SQLite</td></tr>
+        <tr><td><code>biscuit</code></td><td>(Ory has nothing)</td><td>Datalog-attenuable capability tokens — <strong>always-on</strong></td></tr>
+        <tr><td><code>admin</code></td><td>Ory Console (HTTP API)</td><td>Cross-cutting users / sessions / Zanzibar / keys / audit endpoints</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Why ditch Ory for assay-engine?</h2>
+    <ul>
+      <li><strong>One static binary.</strong> ~9 MB stripped, <code>FROM scratch</code>-shippable.
+        Replaces a stack of Kratos + Hydra + Keto + Oathkeeper containers (typically 800 MB-1.5 GB
+        compressed across 5+ images).</li>
+      <li><strong>Backend symmetry.</strong> PG18 + SQLite are both first-class. SQLite means a
+        self-hosted single-tenant deployment needs no database server at all — unique vs Ory.</li>
+      <li><strong>Biscuit out of the box.</strong> Datalog-attenuable capability tokens that
+        callers can scope down further without a server round-trip. Ory has nothing equivalent;
+        this is a real differentiator.</li>
+      <li><strong>Workflow + auth share storage.</strong> Atomic transactions across
+        <code>auth.users</code> &harr; <code>workflow.workflows</code> (cross-schema FKs on PG,
+        both attachments on SQLite). Splitting Ory + Temporal forces 2-phase commit.</li>
+      <li><strong>Lua-scriptable.</strong> Every auth surface is reachable from the
+        <code>assay.auth</code> Lua stdlib module — operators build login, admin, and federation
+        flows in scripts the runtime binary ships with.</li>
+      <li><strong>Module enablement is runtime, not build-time.</strong> Compile auth in once;
+        flip <code>engine.modules.auth.enabled</code> per environment without redeploying.</li>
+    </ul>
+
+    <h2>Storage model</h2>
+    <p>All auth tables live in the <code>auth</code> schema (PG) or attached <code>auth</code>
+      database (SQLite, default <code>./data/auth.db</code>). Migrations are idempotent and
+      version-tracked in the shared <code>engine.migrations</code> table:</p>
+
+    <table>
+      <thead>
+        <tr><th>Table</th><th>Purpose</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>auth.users</code></td><td>Authoritative user records</td></tr>
+        <tr><td><code>auth.sessions</code></td><td>Opaque session ids + CSRF tokens + expiry</td></tr>
+        <tr><td><code>auth.passkeys</code></td><td>WebAuthn credentials per user</td></tr>
+        <tr><td><code>auth.user_upstream</code></td><td>Federated identity links</td></tr>
+        <tr><td><code>auth.audit</code></td><td>Append-only compliance log</td></tr>
+        <tr><td><code>auth.jwks_keys</code></td><td>Rotated JWT signing keys (active + history)</td></tr>
+        <tr><td><code>auth.biscuit_root_keys</code></td><td>Biscuit capability-token root keys</td></tr>
+        <tr><td><code>auth.zanzibar_tuples</code></td><td>ReBAC relation tuples</td></tr>
+        <tr><td><code>auth.zanzibar_namespaces</code></td><td>Per-namespace schema definitions</td></tr>
+        <tr><td><code>auth.oidc_clients</code></td><td>Registered consumer apps (engine = OP)</td></tr>
+        <tr><td><code>auth.upstream_providers</code></td><td>Federated identity providers</td></tr>
+        <tr><td><code>auth.oidc_authorization_codes</code></td><td>Single-use codes from <code>/authorize</code></td></tr>
+        <tr><td><code>auth.oidc_refresh_tokens</code></td><td>SHA-256-hashed long-lived bearer tokens</td></tr>
+        <tr><td><code>auth.oidc_sessions</code></td><td>SSO session registry (one per id_token)</td></tr>
+        <tr><td><code>auth.oidc_consents</code></td><td>Per-(user, client) consent grants</td></tr>
+        <tr><td><code>auth.oidc_upstream_states</code></td><td>Short-lived federation state</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Minimum viable config</h2>
+    <pre><code># engine.toml
+auto_enable_modules = ["auth"]
+
+[server]
+bind_addr = "0.0.0.0:3000"
+public_url = "https://auth.example.com"   # OIDC iss + passkey origin
+
+[backend]
+type = "postgres"
+url = "postgres://postgres:postgres@localhost/assay"
+# Or: type = "sqlite", data_dir = "./data"
+
+[auth]
+issuer = "https://auth.example.com/auth"
+admin_api_keys = ["sk_admin_replace_me"]
+
+[auth.passkey]
+rp_id = "auth.example.com"
+rp_name = "Acme Identity"
+
+[auth.oidc_provider]
+enabled = true</code></pre>
+
+    <pre><code>assay-engine serve --config engine.toml
+#   /auth/console                          → admin SPA
+#   /.well-known/openid-configuration      → OIDC discovery (Hydra-equivalent)
+#   /auth/login, /auth/passkey/*           → user-facing auth flows
+#   /auth/admin/auth/*                     → admin HTTP API (api-key gated)</code></pre>
+
+    <h2>Dashboard panes</h2>
+    <p>When the auth module is enabled in <code>engine.modules</code>, the engine's dashboard SPA
+      lights up with these panes:</p>
+    <ul>
+      <li><strong>Users</strong> — list, search, view (with passkeys + sessions + upstream
+        links), enable/disable, delete, send password-reset.</li>
+      <li><strong>Sessions</strong> — global session list, per-user view, revoke single,
+        revoke-all-for-user.</li>
+      <li><strong>OIDC clients</strong> — CRUD for consumer apps that authenticate against this
+        IdP. Create + view secret-once + rotate-secret + delete.</li>
+      <li><strong>OIDC upstream providers</strong> — CRUD for federated SSO sources.</li>
+      <li><strong>Zanzibar</strong> — namespace browser, tuple inspector with filter, check
+        evaluator, expand viewer.</li>
+      <li><strong>JWKS / Biscuit keys</strong> — list active + history, view public material,
+        trigger rotation.</li>
+      <li><strong>Audit log</strong> — paginated viewer with filter by actor / action / time
+        range.</li>
+    </ul>
+
+    <h2>Where to next?</h2>
+    <ul>
+      <li><a href="auth-passkey.html">Passkey login flow</a> — code samples + Lua API</li>
+      <li><a href="auth-oidc-quickstart.html">OIDC provider quick-start</a> — register a client + plug into Immich/Grafana/etc.</li>
+      <li><a href="auth-zanzibar.html">Zanzibar permissions guide</a> — schema, tuples, check API</li>
+      <li><a href="auth-biscuit.html">Biscuit capability tokens</a> — issue / verify / attenuate</li>
+      <li><a href="compare-vs-ory.html">Compare vs Ory</a> — side-by-side feature matrix</li>
+    </ul>
+
+  </main>
+
+  __FOOTER__
+</body>
+</html>

@@ -44,7 +44,7 @@ pub struct ScheduleActivityRequest {
 }
 
 #[utoipa::path(
-    post, path = "/api/v1/workflows/{id}/activities",
+    post, path = "/api/v1/engine/workflow/workflows/{id}/activities",
     tag = "activities",
     params(("id" = String, Path, description = "Workflow ID")),
     request_body = ScheduleActivityRequest,
@@ -79,7 +79,7 @@ pub async fn schedule_activity<S: WorkflowStore>(
 }
 
 #[utoipa::path(
-    get, path = "/api/v1/activities/{id}",
+    get, path = "/api/v1/engine/workflow/activities/{id}",
     tag = "activities",
     params(("id" = i64, Path, description = "Activity ID")),
     responses(

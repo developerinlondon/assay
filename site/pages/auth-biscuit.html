@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — Biscuit capability tokens</title>
+  <meta name="description" content="Datalog-attenuable capability tokens built into assay-engine v0.2.0 — Ory has nothing equivalent.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-modules">
+  __HEADER__
+
+  <main>
+    <p><a href="auth-overview.html">&larr; Auth &amp; IdP overview</a></p>
+    <h1>Biscuit capability tokens</h1>
+    <p style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+      Biscuit is a Datalog-based capability-token format with offline verification and caller-side
+      attenuation. <code>assay-engine v0.2.0</code> ships <code>biscuit-auth</code> as a
+      non-optional dependency — every engine has biscuit support, no feature flag required. This
+      is a real differentiator vs Ory: Hydra and Kratos have nothing equivalent.
+    </p>
+
+    <h2>Why biscuit?</h2>
+    <ul>
+      <li><strong>Caller-side attenuation.</strong> Hand a holder a powerful token; they can
+        scope it down further (add Datalog facts/checks) without contacting the issuer. Useful
+        for delegating limited authority to a sub-process or a downstream service.</li>
+      <li><strong>Offline verification.</strong> Verifiers only need the public key — no JWKS
+        round-trip per request, no cache eviction, no clock-skew worries.</li>
+      <li><strong>Datalog.</strong> Authorization policies are expressed as logical rules
+        (<code>allow if user("alice"), action("read"), resource_owner("alice");</code>), much
+        more expressive than JWT scopes or ad-hoc claims.</li>
+      <li><strong>Compact.</strong> Protobuf-serialised + binary-signed. Smaller than equivalent
+        JWTs.</li>
+    </ul>
+
+    <h2>Root key bootstrap</h2>
+    <p>Every assay-engine boot reads or generates an Ed25519 root key in
+      <code>auth.biscuit_root_keys</code>. The active key (<code>rotated_at IS NULL</code>) signs
+      newly-issued tokens; rotated keys stay around for verification of in-flight tokens until
+      they expire naturally.</p>
+
+    <pre><code>-- DDL excerpt
+CREATE TABLE auth.biscuit_root_keys (
+  kid             TEXT PRIMARY KEY,
+  private_pem     BYTEA NOT NULL,
+  public_pem      TEXT NOT NULL,
+  created_at      DOUBLE PRECISION NOT NULL,
+  rotated_at      DOUBLE PRECISION
+);</code></pre>
+
+    <p>The dashboard's <strong>Biscuit keys</strong> pane exposes the active <code>kid</code>,
+      the public PEM, and a <strong>Rotate</strong> action. Clients should cache the public PEM
+      locally and refresh on signature failure.</p>
+
+    <h2>Issue a token</h2>
+    <pre><code>local auth = require("assay.auth")
+local c    = auth.client({ engine_url = "http://localhost:3000" })
+
+-- via HTTP
+local token = c.biscuit:issue({
+  facts = {
+    { 'user("alice")' },
+    { 'allowed_action("read")' },
+    { 'resource("doc-42")' },
+  },
+  checks = {
+    'check if time($t), $t < 2026-12-31T00:00:00Z',  -- expires Dec 31
+  },
+})
+
+-- token is a base64url-serialised biscuit; ship it to the holder.</code></pre>
+
+    <p>Equivalent HTTP:</p>
+    <pre><code>curl -X POST https://auth.example.com/auth/biscuit/issue \
+  -H "Authorization: Bearer sk_admin_replace_me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "facts": [["user(\"alice\")"], ["allowed_action(\"read\")"]],
+    "checks": ["check if time($t), $t < 2026-12-31T00:00:00Z"]
+  }'</code></pre>
+
+    <h2>Attenuate a token (caller-side)</h2>
+    <p>The token holder can append a block of Datalog before forwarding it. Anything appended is
+      conjunctive — strictly narrowing, never broadening:</p>
+
+    <pre><code>local attenuated = c.biscuit:attenuate(token, {
+  facts = {
+    { 'allowed_action("read")' },                -- still read-only
+    { 'allowed_resource("doc-42")' },             -- and only doc-42
+  },
+  checks = {
+    'check if time($t), $t < 2026-04-26T18:00:00Z',  -- and only for the next hour
+  },
+})
+-- forward `attenuated` to a sub-process; even if it leaks, scope is bounded.</code></pre>
+
+    <p>Critically: this is purely client-side. No round-trip to the engine. The holder's local
+      <code>biscuit-auth</code> library appends the block and re-signs with their own
+      block-key.</p>
+
+    <h2>Verify a token</h2>
+    <pre><code>-- Cache the engine's public PEM locally on startup.
+local pem = c.biscuit:public_pem()
+
+-- Then verify offline on every request.
+local ok, info = c.biscuit:verify(token, pem, {
+  facts = {
+    { 'time(2026-04-25T12:00:00Z)' },
+    { 'operation("read")' },
+    { 'resource("doc-42")' },
+  },
+  policies = { 'allow if user($u), allowed_action("read")' },
+})
+if not ok then return { status = 401 } end
+log.info("biscuit verified for user " .. info.user)</code></pre>
+
+    <h2>When to use biscuit vs JWT?</h2>
+    <table>
+      <thead>
+        <tr><th>Need</th><th>Use</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>OIDC id_token / access_token for a downstream RP</td><td><strong>JWT (RS256)</strong></td><td>Standards-compliant, every client library supports it.</td></tr>
+        <tr><td>Service-to-service capability handed to a sub-process</td><td><strong>Biscuit</strong></td><td>Sub-process can attenuate further without re-issuing.</td></tr>
+        <tr><td>Browser session</td><td><strong>Session cookie</strong></td><td>Server-side revocation, CSRF protection, no token-in-URL.</td></tr>
+        <tr><td>Offline verification at high QPS</td><td><strong>Biscuit</strong></td><td>No JWKS fetch per request; smaller wire size than JWT.</td></tr>
+        <tr><td>Datalog-expressible policy ("can read if owner OR shared with group ∋ user")</td><td><strong>Biscuit</strong></td><td>Native Datalog; JWT would push policy back to the verifier.</td></tr>
+        <tr><td>Cross-org federation with arbitrary OIDC consumers</td><td><strong>JWT</strong></td><td>Universal interop.</td></tr>
+      </tbody>
+    </table>
+
+    <p>Mixing is fine: an OIDC-minted JWT can carry a biscuit in a custom claim for
+      capability-based authorization downstream.</p>
+
+    <h2>References</h2>
+    <ul>
+      <li><a href="https://www.biscuitsec.org/" target="_blank" rel="noopener">biscuitsec.org</a> — official Biscuit spec + libraries</li>
+      <li><a href="https://docs.rs/biscuit-auth" target="_blank" rel="noopener">biscuit-auth on docs.rs</a> — the Rust crate assay vendors</li>
+      <li><a href="auth-overview.html">Auth &amp; IdP overview</a> — the rest of the v0.2.0 surface</li>
+      <li><a href="compare-vs-ory.html">Compare vs Ory</a> — Hydra/Kratos/Keto have no biscuit equivalent</li>
+    </ul>
+
+  </main>
+
+  __FOOTER__
+</body>
+</html>

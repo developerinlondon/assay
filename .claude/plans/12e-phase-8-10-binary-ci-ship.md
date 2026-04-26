@@ -3,6 +3,91 @@
 > Sub-plan of [12-v0.13.0-execution.md](./12-v0.13.0-execution.md). Prerequisites: Phases 3, 5, 6, 7
 > complete.
 
+## v0.2.0 alignment
+
+This plan is part of the umbrella **`assay-engine v0.2.0`** release.
+
+Module enablement is driven by `engine.modules`, not just compile features or static config. Phase 8
+boot sequence:
+
+1. Open engine storage; CREATE SCHEMA / open file for `engine`; run engine schema migrations.
+2. `SELECT name, version, config FROM engine.modules WHERE enabled = TRUE`.
+3. For each enabled module: PG `CREATE SCHEMA IF NOT EXISTS <m>` / SQLite
+   `ATTACH DATABASE 'data/<m>.db' AS <m>`; run pending migrations recorded in `engine.migrations`.
+4. Wire trait routing per module; mount HTTP routes; start scheduler/workers.
+
+When auth is added to `engine.modules` (insert row with
+`name='auth', enabled=TRUE,
+version='0.2.0'`), the auth schema is created/attached on next boot.
+Dashboard panes (workflow, auth) render conditionally based on enabled modules read from
+`engine.modules` at startup.
+
+### Phase 8 scope (locked for v0.2.0)
+
+**8.1 — Engine wire-up:** Compose `assay-auth::AuthCtx` into `EngineState` via `axum::FromRef`.
+Mount the auth router at `/auth/*`. Register `('auth', enabled=TRUE, version='0.2.0', '{}')` in
+`engine.modules` on first boot when the `auth` Cargo feature is compiled in (or via
+`auto_enable_modules = ["auth"]` in engine.toml).
+
+**8.2 — Dashboard auth panes:** New panes in `assay-dashboard` rendered when auth module is enabled
+per `engine.modules`:
+
+- **Users** — list, search, view (with passkeys + sessions + upstream links), enable/disable,
+  delete, send password-reset.
+- **Sessions** — global session list (admin), per-user view, revoke single, revoke-all-for-user.
+- **OIDC clients** — CRUD for `auth.oidc_clients` (consumer apps that authenticate against this
+  IdP). Create + view secret-once + rotate-secret + delete.
+- **OIDC upstream providers** — CRUD for `auth.upstream_providers` (federated SSO sources).
+- **Zanzibar** — namespace browser (read schema), tuple inspector with filter, check evaluator
+  ("does subject X have permission Y on resource Z?"), expand viewer.
+- **JWKS / Biscuit keys** — list active + history, view public material, trigger rotation.
+- **Audit log** — paginated `auth.audit` viewer with filter by actor / action / time range.
+
+Panes consume the auth module's HTTP API (`/auth/*` admin endpoints — separate from the user-facing
+auth flow endpoints), not direct DB queries; preserves the trait abstraction.
+
+**8.3 — Lua wrappers (was task 5.3 in plan 12c, lands here):** assay-lua gains binding modules
+covering the new auth surface. This is what justifies the `assay` (Lua) → 0.14.0 version bump.
+
+```lua
+-- Authn flow
+assay.auth.login(email, password)        -- POST /auth/login → session cookie + token
+assay.auth.logout()                      -- DELETE /auth/session
+assay.auth.whoami()                      -- GET /auth/whoami → User
+
+-- Passkey ceremony
+assay.auth.passkey.start_register(user_id)
+assay.auth.passkey.finish_register(reg_response, state)
+assay.auth.passkey.start_auth(user_id)
+assay.auth.passkey.finish_auth(auth_response, state)
+
+-- OIDC client (federated SSO)
+assay.auth.oidc.start(provider_slug)     -- returns redirect URL + state to round-trip
+assay.auth.oidc.complete(provider_slug, code, state)
+
+-- Biscuit
+assay.auth.biscuit.issue(facts, checks)  -- mint a capability token via /auth/biscuit/issue
+assay.auth.biscuit.verify(token)         -- local verification with cached engine public key
+assay.auth.biscuit.attenuate(token, block_facts)  -- caller-side; no API call needed
+
+-- Zanzibar
+assay.auth.zanzibar.check(resource, action, subject?)
+assay.auth.zanzibar.expand(resource, relation)
+assay.auth.zanzibar.write(tuple)         -- admin
+
+-- Admin (require admin session/api_key)
+assay.auth.users.list()  / get(id)  / create({...})  / update(id, {...})  / delete(id)
+assay.auth.sessions.list_for_user(id)  / revoke(session_id)  / revoke_all_for_user(id)
+assay.auth.oidc_clients.list()  / create({...})  / rotate_secret(id)
+```
+
+mlua bindings + a covering test that runs each function against a live `assay-engine` instance.
+
+See [14-v0.13.2-engine-schemas.md](./14-v0.13.2-engine-schemas.md) for storage model details and
+[12c §"v0.2.0 alignment"](./12c-phase-4-6-auth-identity-zanzibar.md) for auth-specific deltas.
+
+---
+
 **Phase 8 goal:** `assay-engine` is a runnable binary that loads a config, connects to a backend,
 runs migrations, composes module routers via `FromRef`, and serves workflow + auth + dashboard on
 one port. Runtime binary's dashboard is restored (via engine's composition helper).
@@ -880,8 +965,8 @@ Key messages:
   (unchanged); internal module paths changed. Update `use assay_workflow::...` imports (previously
   `use assay::workflow::...`).
 - **`assay-workflow` 0.1 embedders:** the workflow store trait moved to `assay-domain`. Update
-  imports: `use assay_workflow::WorkflowStore` → `use assay_domain::WorkflowStore`. The `Engine` is no
-  longer generic — drop the type parameter.
+  imports: `use assay_workflow::WorkflowStore` → `use assay_domain::WorkflowStore`. The `Engine` is
+  no longer generic — drop the type parameter.
 - **New engine consumers:** follow `docs/engine-quickstart.md` (to be written).
 
 - [ ] **Step 1: Write migration doc with code snippets.**

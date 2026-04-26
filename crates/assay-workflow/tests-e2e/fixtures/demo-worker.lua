@@ -3,9 +3,16 @@
 -- shape so the dashboard can render circles + connectors + log tail and
 -- the suite can verify each state transition end-to-end.
 
-local workflow = require("assay.workflow")
+-- Plan-15 slice 4 reorganized the Lua client into the
+-- assay.engine.{core,auth,workflow} trio; the old top-level
+-- assay.workflow module is gone. The worker reads the engine URL +
+-- admin Bearer key from env so the e2e harness (run.lua) can drive
+-- both via spawned-process env vars.
+local workflow = require("assay.engine.workflow")
 
-workflow.connect("http://localhost:8080", { namespace = "demo" })
+local c = workflow.client({
+  engine_url = env.get("ASSAY_ENGINE_URL") or "http://localhost:8080",
+})
 
 local STEP_NAMES = { "Approval", "Tag & Retag", "GitOps Update", "ArgoCD Sync", "Health Check" }
 
@@ -35,7 +42,7 @@ end
 -- shorter for live preview / e2e so operators don't have to wait.
 local APPROVAL_TIMEOUT_SECS = 600
 
-workflow.define("DemoPipeline", function(ctx, input)
+c:register_workflow("DemoPipeline", function(ctx, input)
   local now_unix = os.time()
   local state = {
     status = "pending_approval",
@@ -142,4 +149,4 @@ workflow.define("DemoPipeline", function(ctx, input)
   add_log(state, "Pipeline complete", #state.steps)
 end)
 
-workflow.listen({ queue = "demo-q", namespace = "demo" })
+c:listen({ queue = "demo-q", namespace = "demo" })

@@ -1,6 +1,6 @@
 [package]
 name = "assay-dashboard"
-version = "0.1.0"
+version = "0.2.0"
 categories = ["web-programming::http-server"]
 edition = "2024"
 keywords = ["dashboard", "workflow", "auth", "assay"]
@@ -9,12 +9,14 @@ repository = "https://github.com/developerinlondon/assay"
 description = "Dashboard (HTML + JS + CSS) for assay-workflow and assay-engine. Feature-gated per view set."
 
 [features]
-default = ["workflow"]
-workflow = []
-auth = []
+# Plan-15 slice 3: workflow + auth are mandatory. The engine ships
+# both consoles and gates them at runtime via `engine.modules`, not
+# at compile time. The features here are kept empty for now in case
+# a slim downstream dashboard build wants to opt out one console.
+default = []
 
 [dependencies]
-assay-domain = { path = "../assay-domain", version = "0.1" }
+assay-domain = { path = "../assay-domain", version = "0.2" }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

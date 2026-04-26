@@ -29,8 +29,8 @@ var AssaySettings = (function () {
             metaItem('Service', 'assay-workflow') +
             metaItem('Version', '<span class="mono" id="settings-version">loading…</span>') +
             metaItem('Build', '<span id="settings-build-profile">—</span>') +
-            metaItem('API Docs', '<a href="/api/v1/docs" target="_blank" class="clickable">/api/v1/docs</a>') +
-            metaItem('OpenAPI Spec', '<a href="/api/v1/openapi.json" target="_blank" class="clickable">/api/v1/openapi.json</a>') +
+            metaItem('API Docs', '<a href="/api/v1/engine/workflow/docs" target="_blank" class="clickable">/api/v1/engine/workflow/docs</a>') +
+            metaItem('OpenAPI Spec', '<a href="/api/v1/engine/workflow/openapi.json" target="_blank" class="clickable">/api/v1/engine/workflow/openapi.json</a>') +
           '</div>' +
         '</div>' +
       '</div>';
@@ -78,12 +78,11 @@ var AssaySettings = (function () {
   async function loadNamespaces() {
     var tableWrap = container.querySelector('#settings-ns-table');
     try {
-      var namespaces = await fetch('/api/v1/namespaces').then(function (r) { return r.json(); });
+      var namespaces = await ctx.apiFetchRaw('/namespaces');
       var statsPromises = namespaces.map(async function (ns) {
         var name = ns.name || ns;
         try {
-          var r = await fetch('/api/v1/namespaces/' + encodeURIComponent(name));
-          return await r.json();
+          return await ctx.apiFetchRaw('/namespaces/' + encodeURIComponent(name));
         } catch (_) {
           return { namespace: name, total_workflows: 0, schedules: 0, workers: 0 };
         }
@@ -146,15 +145,11 @@ var AssaySettings = (function () {
     }
 
     try {
-      var res = await fetch('/api/v1/namespaces', {
+      await ctx.apiFetchRaw('/namespaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name }),
       });
-      if (!res.ok) {
-        var body = await res.text();
-        throw new Error(body || res.statusText);
-      }
       input.value = '';
       ctx.toast("Created namespace '" + name + "'", 'success');
       loadNamespaces();
@@ -170,11 +165,7 @@ var AssaySettings = (function () {
   async function handleDeleteNs(name) {
     if (!confirm('Delete namespace "' + name + '"? This cannot be undone.')) return;
     try {
-      var res = await fetch('/api/v1/namespaces/' + encodeURIComponent(name), { method: 'DELETE' });
-      if (!res.ok) {
-        var body = await res.text();
-        throw new Error(body || res.statusText);
-      }
+      await ctx.apiFetchRaw('/namespaces/' + encodeURIComponent(name), { method: 'DELETE' });
       ctx.toast("Deleted namespace '" + name + "'", 'success');
       loadNamespaces();
       if (window.AssayApp && window.AssayApp.refreshCurrentView) {
