@@ -2,6 +2,128 @@
 
 All notable changes to Assay are documented here.
 
+## [assay 0.15.1] - 2026-04-27
+
+| Crate   | Bump            |
+| ------- | --------------- |
+| `assay` | 0.15.0 → 0.15.1 |
+
+**Headline:** native Linux observability and systemd control for assay scripts. Three new Rust
+builtins (`linux`, `cgroup`, `systemd`) plus two new Lua stdlib modules (`assay.cron`,
+`assay.system`) collapse the "shell out to `systemctl` / `machinectl` / `journalctl` and parse
+stdout" pattern into single-digit-millisecond native calls. Operator dashboards, health-check
+scripts, and host-introspection automation no longer fork a subprocess per refresh cycle.
+
+All additions are purely additive — no breaking changes, no migration shim needed. Closes #88.
+
+### Added — `linux` Rust builtin (`/proc` + `/sys/...` readers)
+
+Linux-only. Backed by the `procfs` crate (0.17). Empty table on non-Linux.
+
+```lua
+linux.kernel()              -- {version, hostname, os_release, btime}
+linux.uptime()              -- {uptime_secs, idle_secs}
+linux.loadavg()             -- {one, five, fifteen, running, total, last_pid}
+linux.cpu_stat()            -- /proc/stat aggregate row, jiffies
+linux.cpu_stat_per_core()   -- per-CPU rows
+linux.cpu_percent(prev, curr)
+                            -- Lua-side delta math, no kernel call
+linux.meminfo()             -- /proc/meminfo as bytes (procfs reports kB)
+linux.netdev()              -- /proc/net/dev
+linux.diskstats()           -- /proc/diskstats
+linux.proc_stat(pid)        -- /proc/<pid>/stat
+linux.proc_status(pid)      -- /proc/<pid>/status
+```
+
+### Added — `cgroup` Rust builtin (cgroup v2 unified hierarchy)
+
+Linux-only. Pure `std::fs` + small parsers; no new crate dep. Path canonicalisation +
+`/sys/fs/cgroup/` prefix check before every read.
+
+```lua
+cgroup.version()            -- "v2" | "v1" | "hybrid"
+cgroup.list(slice_path)     -- child cgroup directories
+cgroup.cpu_stat(path)       -- cpu.stat parsed
+cgroup.memory(path)         -- memory.{current,max,swap.*,peak,low,high}
+                            -- + memory.events (oom, oom_kill).
+                            -- "max" sentinel maps to Lua nil.
+cgroup.io(path)             -- io.stat per device
+cgroup.pids(path)           -- pids.{current, max}
+cgroup.procs(path)          -- cgroup.procs (pid list)
+```
+
+### Added — `systemd` Rust builtin (D-Bus + journal)
+
+Linux-only. `zbus` 5 async client; one persistent system-bus connection per Lua VM. Stub table on
+non-Linux returns "Linux only" runtime errors.
+
+```lua
+-- Units (org.freedesktop.systemd1)
+systemd.list_units(filter?), unit_status(name), is_active(name)
+systemd.list_timers()
+systemd.start, stop, restart, reload   -- return job object path
+
+-- Machines (org.freedesktop.machine1)
+systemd.list_machines(), machine_status(name)
+systemd.machine_start, machine_poweroff, machine_reboot, machine_terminate
+
+-- Journal
+systemd.journal({unit?, machine?, since?, until?, lines?, priority?})
+                            -- one-shot read via `journalctl --output=json`
+systemd.journal_follow(opts, fn)
+                            -- not yet implemented; explicit runtime error.
+                            -- Tracked as a Phase 3 followup.
+```
+
+`*UsecRealtime` D-Bus values are exposed as integer microseconds since the epoch under `*_realtime`
+keys.
+
+### Added — `assay.cron` Lua stdlib (scheduled-job inspector)
+
+Pure Lua — file walks of `/etc/crontab`, `/etc/cron.d/*`,
+`/etc/cron.{hourly,daily,weekly,monthly}/*`, `/var/spool/cron/crontabs/*`, plus a passthrough to
+`systemd.list_timers()`. 5/6-field crontab parsing with `@reboot` / `@daily` / `@hourly` / `@yearly`
+shorthand.
+
+```lua
+local cron = require("assay.cron")
+cron.system_crontab()       -- /etc/crontab + /etc/cron.d/*
+cron.user_crontabs()        -- per-user crontabs
+cron.daily_dropins()        -- /etc/cron.{hourly,daily,weekly,monthly}/
+cron.timers()               -- thin wrapper around systemd.list_timers()
+cron.all()                  -- unified schedule list across every source
+```
+
+### Added — `assay.system` Lua umbrella stdlib
+
+Single `require("assay.system")` re-export of `linux`, `cgroup`, `systemd`, and `assay.cron`, plus
+convenience aggregates that span sub-modules:
+
+```lua
+local sys = require("assay.system")
+sys.linux.cpu_stat()
+sys.cgroup.memory(path)
+sys.systemd.list_machines()
+sys.cron.all()
+
+sys.host_snapshot()         -- {cpu, mem, load, uptime, netdev, kernel}
+sys.machine_snapshot(name)  -- {info, cgroup={cpu,memory,io,pids}, journal_tail}
+sys.machines()              -- list_machines() with cgroup utilisation joined
+```
+
+### Tests
+
+15 new unit tests on Linux (5 in `linux::tests`, 10 in `cgroup::tests`). Plus 5 D-Bus / journal
+tests in `systemd::tests` gated `#[ignore]` (require a running system bus); pass on a typical Linux
+box with `--include-ignored`.
+
+### Out of scope (reserved for v0.15.x follow-ups)
+
+- `systemd.journal_follow` streaming. sd_journal_wait + tokio bridge + cancellation handle across
+  the FFI/mlua boundary. Returns a runtime error today.
+- macOS / Windows ports of these modules — `/proc` and the systemd D-Bus surface have no analogues,
+  so the modules stay Linux-only by design.
+
 ## [assay 0.15.0 / assay-vault 0.1.0 / assay-engine 0.3.0 / assay-dashboard 0.3.0] - 2026-04-26
 
 | Crate             | Bump            |
