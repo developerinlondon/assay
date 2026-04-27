@@ -1,17 +1,19 @@
-# assay-engine PostgreSQL 18 example config (Phase 3 — workflow + dashboard, no auth)
+# assay-engine PostgreSQL 18 example config — workflow + dashboard
+# with JWT pass-through auth from an upstream OIDC provider (Hydra,
+# Keycloak, Auth0, …). Pass-through means: the upstream IdP mints the
+# JWT, your edge forwards it as `Authorization: Bearer ...`, and the
+# engine validates the signature against the upstream's JWKS without
+# managing users itself. See `site/pages/auth-pass-through.html`.
 
 [server]
 bind_addr = "0.0.0.0:3000"
-# Env-var substitution lands in 0.3.1 — `${VAR}` and `${VAR:-default}`
-# references are expanded against the process environment at load time.
+# Env-var substitution (0.3.1+): `${VAR}` and `${VAR:-default}`.
 public_url = "${PUBLIC_URL:-http://localhost:3000}"
 
 [backend]
 type = "postgres"
 # PG18 minimum. Inject DATABASE_URL via environment (K8s Secret env,
-# systemd EnvironmentFile, etc.) to keep credentials out of the config
-# file. Falling back to a localhost default keeps the example runnable
-# without setup.
+# systemd EnvironmentFile, etc.) to keep credentials out of the config.
 url = "${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/assay}"
 
 [workflow]
@@ -19,6 +21,19 @@ enabled = true
 
 [dashboard]
 enabled = true
+
+# Pass-through JWT validation against an upstream OIDC provider
+# (added in 0.3.2). Configure one block per trusted issuer. Tokens
+# whose `iss` matches a configured `issuer_url` are verified against
+# that issuer's JWKS; everything else falls through to the engine's
+# internal JWT path. When this list is non-empty the engine no longer
+# requires operator users / admin_api_keys — the upstream IdP is the
+# source of truth.
+#
+# [[auth.external_issuers]]
+# issuer_url = "${HYDRA_ISSUER:-https://hydra.example.com/}"
+# audience = ["my-app"]
+# jwks_refresh_secs = 3600    # default; minimum 60
 
 [logging]
 level = "info"

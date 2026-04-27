@@ -12,6 +12,8 @@ use crate::biscuit::BiscuitConfig;
 use crate::store::{SessionStore, UserStore};
 
 #[cfg(feature = "auth-jwt")]
+use crate::external_jwt::ExternalJwtIssuer;
+#[cfg(feature = "auth-jwt")]
 use crate::jwt::JwtConfig;
 #[cfg(feature = "auth-oidc")]
 use crate::oidc::OidcRegistry;
@@ -41,6 +43,15 @@ pub struct AuthCtx {
     /// `auth-jwt` feature is enabled.
     #[cfg(feature = "auth-jwt")]
     pub jwt: Option<JwtConfig>,
+    /// External OIDC issuers trusted to mint JWTs the engine accepts
+    /// pass-through. Empty by default; populated by engine boot from
+    /// `[[auth.external_issuers]]` blocks in `engine.toml`. See
+    /// [`crate::external_jwt::ExternalJwtIssuer`] for the verifier
+    /// shape. When non-empty, the engine boots without requiring
+    /// operator users / `admin_api_keys` — pass-through tokens are
+    /// considered sufficient identity proof.
+    #[cfg(feature = "auth-jwt")]
+    pub external_issuers: Vec<Arc<ExternalJwtIssuer>>,
     /// Slug-keyed registry of discovered upstream OIDC providers.
     /// Engine boot constructs an empty registry; admin CRUD (or seed
     /// config) populates it. See [`crate::oidc::OidcRegistry`].
@@ -82,6 +93,8 @@ impl AuthCtx {
             biscuit: BiscuitConfig::generate_ephemeral(),
             #[cfg(feature = "auth-jwt")]
             jwt: None,
+            #[cfg(feature = "auth-jwt")]
+            external_issuers: Vec::new(),
             #[cfg(feature = "auth-oidc")]
             oidc: None,
             #[cfg(feature = "auth-passkey")]
@@ -98,6 +111,14 @@ impl AuthCtx {
     #[cfg(feature = "auth-jwt")]
     pub fn with_jwt(mut self, jwt: JwtConfig) -> Self {
         self.jwt = Some(jwt);
+        self
+    }
+
+    /// Replace the external-issuer list. Used by engine boot after
+    /// each issuer's discovery + initial JWKS fetch completes.
+    #[cfg(feature = "auth-jwt")]
+    pub fn with_external_issuers(mut self, issuers: Vec<Arc<ExternalJwtIssuer>>) -> Self {
+        self.external_issuers = issuers;
         self
     }
 

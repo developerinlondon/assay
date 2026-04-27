@@ -284,6 +284,8 @@ async fn build_auth_ctx_pg(
                 .map_err(|e| anyhow::anyhow!("seed JWKS (pg): {e}"))?;
         }
         ctx = ctx.with_jwt(jwt);
+
+        ctx = ctx.with_external_issuers(discover_external_issuers(cfg).await?);
     }
 
     #[cfg(feature = "auth-oidc")]
@@ -362,6 +364,8 @@ async fn build_auth_ctx_sqlite(
                 .map_err(|e| anyhow::anyhow!("seed JWKS (sqlite): {e}"))?;
         }
         ctx = ctx.with_jwt(jwt);
+
+        ctx = ctx.with_external_issuers(discover_external_issuers(cfg).await?);
     }
 
     #[cfg(feature = "auth-oidc")]
@@ -402,6 +406,38 @@ async fn build_auth_ctx_sqlite(
     }
 
     Ok(ctx)
+}
+
+/// Discover each configured external OIDC issuer once at boot and
+/// hand back ready-to-use verifiers. Each verifier owns a background
+/// task that refreshes its JWKS on the configured interval.
+///
+/// Errors here are fatal — if Hydra (or whichever IdP) is unreachable
+/// at boot the engine shouldn't pretend it can validate tokens. The
+/// alternative (silently degrading to "no external issuer trusted")
+/// would surface as 401s and look like a session bug.
+#[cfg(feature = "auth-jwt")]
+async fn discover_external_issuers(
+    cfg: &EngineConfig,
+) -> anyhow::Result<Vec<Arc<assay_auth::external_jwt::ExternalJwtIssuer>>> {
+    let mut out = Vec::with_capacity(cfg.auth.external_issuers.len());
+    for entry in &cfg.auth.external_issuers {
+        let verifier = assay_auth::external_jwt::ExternalJwtIssuer::discover(
+            entry.issuer_url.clone(),
+            entry.audience.clone(),
+            entry.jwks_refresh_secs,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("discover external issuer `{}`: {e}", entry.issuer_url))?;
+        tracing::info!(
+            target: "assay-engine",
+            issuer = %entry.issuer_url,
+            audience = ?entry.audience,
+            "trusted external OIDC issuer for JWT pass-through"
+        );
+        out.push(Arc::new(verifier));
+    }
+    Ok(out)
 }
 
 /// Issuer for JWTs minted via the `auth-jwt` module. Defaults to
@@ -494,13 +530,20 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
             .count_users(None)
             .await
             .map_err(|e| anyhow::anyhow!("count auth.users: {e}"))?;
-        if user_count == 0 && cfg.auth.admin_api_keys.is_empty() {
+        if user_count == 0
+            && cfg.auth.admin_api_keys.is_empty()
+            && cfg.auth.external_issuers.is_empty()
+        {
             anyhow::bail!(
-                "engine refuses to start: no operator users exist and \
-                 `auth.admin_api_keys` is empty. Either run \
-                 `assay-engine bootstrap-admin --email <e> --password <p>` \
-                 to seed the first user, or add at least one entry to \
-                 `auth.admin_api_keys` in engine.toml as a break-glass."
+                "engine refuses to start: no operator users exist, \
+                 `auth.admin_api_keys` is empty, and no external issuers \
+                 are configured. Either run `assay-engine bootstrap-admin \
+                 --email <e> --password <p>` to seed the first user, add \
+                 at least one entry to `auth.admin_api_keys` in \
+                 engine.toml as a break-glass, or configure \
+                 `[[auth.external_issuers]]` with an upstream OIDC \
+                 provider (e.g. Hydra) that mints the JWTs your callers \
+                 forward."
             );
         }
     }

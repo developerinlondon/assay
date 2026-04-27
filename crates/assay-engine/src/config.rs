@@ -151,6 +151,44 @@ pub struct AuthConfig {
     /// admin routes entirely (404 → 401).
     #[serde(default)]
     pub admin_api_keys: Vec<String>,
+    /// External OIDC issuers trusted to mint JWTs the engine accepts
+    /// pass-through (v0.3.2). Each entry's JWKS is discovered via
+    /// `<issuer_url>/.well-known/openid-configuration` at boot and
+    /// refreshed periodically thereafter. Tokens whose `iss` claim
+    /// matches a configured issuer are verified against that issuer's
+    /// keys; everything else falls through to the engine's internal
+    /// JWT path. When this list is non-empty, the engine boots without
+    /// requiring operator users / `admin_api_keys` — the upstream IdP
+    /// is the source of truth for identity.
+    ///
+    /// Mirrors the v0.12.1 `--auth-issuer` / `--auth-audience` CLI
+    /// flags in the new TOML config shape. Multiple issuers are allowed
+    /// for deployments that span more than one IdP.
+    #[serde(default)]
+    pub external_issuers: Vec<ExternalIssuerConfig>,
+}
+
+/// One trusted external OIDC issuer for pass-through JWT validation.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct ExternalIssuerConfig {
+    /// Issuer URL — the value the JWT's `iss` claim is matched against
+    /// and the base for `<issuer_url>/.well-known/openid-configuration`
+    /// discovery. Trailing slashes are normalized.
+    pub issuer_url: String,
+    /// Accepted `aud` claim values. A token whose `aud` isn't in this
+    /// list is rejected. Empty list = audience check disabled (NOT
+    /// recommended; set explicitly per deployment).
+    #[serde(default)]
+    pub audience: Vec<String>,
+    /// JWKS refresh interval in seconds (background task). Default 3600
+    /// (1 hour). Minimum effective value 60 seconds — anything smaller
+    /// is clamped to avoid hammering the upstream's JWKS endpoint.
+    #[serde(default = "default_jwks_refresh_secs")]
+    pub jwks_refresh_secs: u64,
+}
+
+fn default_jwks_refresh_secs() -> u64 {
+    3600
 }
 
 /// Session module knobs.

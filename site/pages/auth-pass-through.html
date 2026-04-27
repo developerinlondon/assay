@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — JWT pass-through validation</title>
+  <meta name="description" content="assay-engine v0.3.2 accepts JWTs from any OIDC provider — Hydra, Keycloak, Auth0 — without managing its own users. One TOML block, automatic JWKS refresh, multi-issuer routing.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-modules">
+  __HEADER__
+
+  <main>
+    <p><a href="auth-overview.html">&larr; Auth &amp; IdP overview</a></p>
+
+    <a href="changelog.html" class="release-banner">
+      <span class="release-banner-tag">v0.3.2</span>
+      <span class="release-banner-text">JWT pass-through: keep your existing IdP, point assay-engine at it, accept upstream-minted JWTs natively.</span>
+      <span class="release-banner-arrow">&rarr;</span>
+    </a>
+
+    <h1>JWT pass-through validation</h1>
+    <p style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+      Already running an IdP? Tell <code>assay-engine</code> who to trust and it accepts JWTs
+      that IdP minted — verifying signatures against the upstream JWKS, refreshing keys in the
+      background, routing tokens by <code>iss</code> claim across multiple issuers. No engine
+      user table, no engine sessions, no schema migrations on the auth side.
+    </p>
+
+    <h2>What this is</h2>
+    <p>
+      The integration shape every operator who already runs an IdP wanted: keep your existing
+      identity stack (Hydra, Keycloak, Auth0, Okta, your in-house provider — anything that
+      publishes a standard <code>/.well-known/openid-configuration</code> discovery doc),
+      point <code>assay-engine</code> at it, and accept JWTs forwarded by a trusted edge. The
+      engine validates the signature against the upstream's published JWKS, checks
+      <code>iss</code>, <code>aud</code>, <code>exp</code>, and treats the request as that
+      user. Done.
+    </p>
+
+    <h2>What it isn't</h2>
+    <p>
+      This is <strong>not</strong> OIDC federation. There's no <code>/login/&lt;slug&gt;</code>
+      redirect, no PKCE, no callback handling. For that case (operators wanting the engine to
+      <em>own</em> the login flow against an upstream provider) see
+      <a href="auth-oidc-quickstart.html">OIDC provider quick-start</a> — assay-engine ALSO
+      ships as a full IdP. The two modes coexist on one binary.
+    </p>
+
+    <h2>Why it matters</h2>
+    <p>
+      Most comparable auth stacks — Ory Hydra, Keycloak, the Auth0 SDKs — assume you bring
+      your own edge that does the JWT validation and forwards. Few of them ship a single
+      binary that <em>does</em> the validation natively, with JWKS caching, automatic refresh,
+      multi-issuer routing, and a sensible default config — without making you stand up the
+      IdP itself. That's the point of pass-through:
+    </p>
+    <ul>
+      <li><strong>Zero schema impact.</strong> The engine doesn't write to <code>auth.users</code>, <code>auth.sessions</code>, or any other auth table when callers authenticate via pass-through. The upstream IdP is the source of truth.</li>
+      <li><strong>Single binary.</strong> No sidecar JWKS proxy, no envoy filter, no nginx auth_request module. The same binary that runs your workflows / vault / dashboards is the one validating the JWT.</li>
+      <li><strong>Multi-issuer.</strong> Trust two or more IdPs simultaneously. Each is routed by <code>iss</code> claim — no signature work for tokens from issuers we don't trust.</li>
+      <li><strong>Automatic JWKS refresh.</strong> Keys are re-fetched on the configured interval (default 1h, minimum 60s) so upstream key rotation Just Works.</li>
+      <li><strong>Coexists with native auth.</strong> Engine-issued JWTs (from the OIDC provider mode) and pass-through tokens both flow through the same gate. Internal verification first, fall through to external verifiers, deny otherwise.</li>
+    </ul>
+
+    <h2>Configure it</h2>
+    <p>
+      One TOML block per trusted issuer. Empty list = pass-through disabled (existing
+      operator-user / <code>admin_api_keys</code> auth still works as before).
+    </p>
+    <pre><code># engine.toml
+auto_enable_modules = ["auth"]
+
+[server]
+bind_addr = "0.0.0.0:3000"
+public_url = "${PUBLIC_URL}"
+
+[backend]
+type = "postgres"
+url = "${DATABASE_URL}"
+
+[[auth.external_issuers]]
+issuer_url = "https://hydra.example.com/"
+audience = ["my-app"]
+jwks_refresh_secs = 3600       # default; minimum 60
+
+# Multiple issuers? Add more blocks. Tokens are routed by `iss` claim.
+[[auth.external_issuers]]
+issuer_url = "https://login.partner.example.com/"
+audience = ["my-app", "shared-with-partner"]</code></pre>
+
+    <p>
+      When <code>[[auth.external_issuers]]</code> is non-empty, the engine boots without
+      requiring operator users or <code>admin_api_keys</code> — the upstream IdP is the
+      source of truth. Add either of those alongside if you want a break-glass admin path
+      that survives upstream outage.
+    </p>
+
+    <h2>How verification flows</h2>
+    <pre><code>     Client request
+     Authorization: Bearer eyJhbGc...
+            |
+            v
+     ┌────────────────────────┐
+     │ Internal JWT verify    │   Engine-issued tokens (OIDC provider mode)
+     │ assay_auth::jwt        │   verify here first — no network round trip.
+     └────────────────────────┘
+            | failed (or no internal JWT config)
+            v
+     ┌────────────────────────────────────┐
+     │ Peek at `iss` claim (unverified)   │   Cheap base64 split. No crypto.
+     └────────────────────────────────────┘
+            |
+            v
+     ┌────────────────────────────────────┐
+     │ Match `iss` to a configured        │   Tokens from unconfigured
+     │ external issuer's `issuer_url`     │   issuers fall through to 401.
+     └────────────────────────────────────┘
+            | matched
+            v
+     ┌────────────────────────────────────┐
+     │ jsonwebtoken::decode against the   │   Cached JWKS, looked up by kid.
+     │ matching issuer's cached JWKS      │   Refreshed in the background.
+     └────────────────────────────────────┘
+            |
+            v
+     Caller { user_id: jwt.sub, source: Jwt }</code></pre>
+
+    <h2>Reference deployment: Xandar (the SIMONS gitops dashboard)</h2>
+    <p>
+      Siemens GTI's deployment-management dashboard, Xandar, runs the assay-engine workflow
+      module behind Traefik ForwardAuth that injects an Ory Hydra ID-token into the
+      <code>Authorization</code> header. Hydra mints. Xandar's edge forwards. The engine
+      validates against Hydra's JWKS and treats the request as the authenticated user.
+      <code>assay-engine 0.3.2</code> made this a single TOML block:
+    </p>
+    <pre><code>[[auth.external_issuers]]
+issuer_url = "https://hydra.dev.pe.gti.disw.siemens.com/"
+audience = ["xandar"]</code></pre>
+    <p>
+      This restores the exact integration model <code>assay 0.12.1</code> supported via
+      <code>--auth-issuer</code> / <code>--auth-audience</code> CLI flags, in the new TOML
+      config shape, with multi-issuer routing and background JWKS refresh added.
+    </p>
+
+    <h2>Comparison with other approaches</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Approach</th>
+          <th>Components</th>
+          <th>JWKS handling</th>
+          <th>Multi-issuer</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>nginx <code>auth_request</code> + JWT module</td>
+          <td>nginx + njs / lua-resty-jwt + your app</td>
+          <td>Manual cache + refresh</td>
+          <td>Possible but config-heavy</td>
+        </tr>
+        <tr>
+          <td>Envoy JWT filter</td>
+          <td>Envoy + your app</td>
+          <td>Built-in, polling</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>OAuth2 Proxy in front</td>
+          <td>oauth2-proxy + your app</td>
+          <td>Handled by oauth2-proxy</td>
+          <td>One issuer per proxy</td>
+        </tr>
+        <tr>
+          <td>Keycloak / Hydra adapter SDK</td>
+          <td>Library inside your app</td>
+          <td>Library-managed</td>
+          <td>Per-app integration</td>
+        </tr>
+        <tr>
+          <td><strong>assay-engine 0.3.2 pass-through</strong></td>
+          <td><strong>One binary</strong></td>
+          <td><strong>Built-in, background refresh, fail-soft</strong></td>
+          <td><strong>Yes — TOML block per issuer</strong></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Operational notes</h2>
+    <ul>
+      <li><strong>Discovery is fail-fast at boot.</strong> If the upstream IdP is unreachable when the engine starts, boot fails with a clear message. The alternative — silently degrading to "no external issuer trusted" — would surface as 401s and look like a session bug.</li>
+      <li><strong>JWKS refresh is fail-soft.</strong> If a scheduled refresh fails the previous keys are kept and a WARN is logged. Stops a transient network blip from rejecting every request.</li>
+      <li><strong>Per-request cost</strong> is one base64 decode + one HMAC-or-RSA verify against an in-memory key set. Same shape as any nginx/envoy JWT filter.</li>
+      <li><strong>Audience can be empty</strong> for development setups where you don't want an <code>aud</code> check, but production deployments should always set it explicitly.</li>
+    </ul>
+
+    <h2>Implementation reference</h2>
+    <ul>
+      <li>Source: <code>crates/assay-auth/src/external_jwt.rs</code> — the verifier type, JWKS fetch + cache, multi-issuer routing.</li>
+      <li>Wire-up: <code>crates/assay-engine/src/lib.rs::discover_external_issuers</code> — boot-time discovery for each configured issuer.</li>
+      <li>Auth gate: <code>crates/assay-auth/src/gate.rs::extract_caller</code> — internal-JWT first, external-JWT fall-through, then 401.</li>
+      <li>Config: <code>crates/assay-engine/src/config.rs::ExternalIssuerConfig</code> — TOML shape.</li>
+      <li>Tests: 9 unit tests in <code>external_jwt.rs</code> covering happy path, wrong issuer, wrong audience, unknown kid, expired token, audience opt-out, multi-issuer routing, unknown-issuer fall-through, empty-list short-circuit.</li>
+    </ul>
+
+    <h2>Other ways into auth</h2>
+    <ul>
+      <li><a href="auth-overview.html">Auth &amp; IdP overview</a> — the wider story (passkey, OIDC client + provider, Zanzibar, biscuit)</li>
+      <li><a href="auth-oidc-quickstart.html">OIDC provider quick-start</a> — assay-engine acting as the IdP</li>
+      <li><a href="auth-passkey.html">Passkey flow</a> — WebAuthn registration and login</li>
+      <li><a href="auth-zanzibar.html">Zanzibar permissions</a> — schema, tuples, check API</li>
+      <li><a href="auth-biscuit.html">Biscuit capability tokens</a> — issue / verify / attenuate</li>
+    </ul>
+  </main>
+
+  __FOOTER__
+</body>
+</html>
