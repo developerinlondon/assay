@@ -423,6 +423,51 @@ jobs:
             ghcr.io/developerinlondon/assay-engine:${{ needs.detect.outputs.assay_engine_version }}
             ghcr.io/developerinlondon/assay-engine:latest
 
+  # Roll the in-cluster deployment to the version we just pushed, then
+  # smoke-check the engine_version field via port-forward. We hit the
+  # in-cluster service rather than https://assay.agenteda.com because
+  # Cloudflare Access guards the public URL and we don't want a service
+  # token in CI just for a healthcheck.
+  deploy-assay-engine:
+    needs: [detect, release-assay-engine]
+    if: always() && needs.release-assay-engine.result == 'success'
+    runs-on: [self-hosted, assay]
+    timeout-minutes: 10
+    env:
+      NAMESPACE: assay
+      DEPLOYMENT: assay-engine
+      SERVICE: assay-engine
+      SERVICE_PORT: "8420"
+      VERSION: ${{ needs.detect.outputs.assay_engine_version }}
+    steps:
+      - name: Roll deployment to assay-engine:${{ needs.detect.outputs.assay_engine_version }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/developerinlondon/assay-engine:${VERSION}"
+          kubectl set image -n "$NAMESPACE" \
+            "deployment/$DEPLOYMENT" \
+            "$DEPLOYMENT=$IMAGE"
+          kubectl rollout status -n "$NAMESPACE" \
+            "deployment/$DEPLOYMENT" --timeout=5m
+
+      - name: Smoke-check engine_version via in-cluster service
+        run: |
+          set -euo pipefail
+          kubectl port-forward -n "$NAMESPACE" \
+            "svc/$SERVICE" "18420:$SERVICE_PORT" >/dev/null 2>&1 &
+          PF=$!
+          trap "kill $PF 2>/dev/null || true" EXIT
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            curl -sSf -o /dev/null http://127.0.0.1:18420/api/v1/engine/core/health && break
+            sleep 1
+          done
+          actual=$(curl -sSf http://127.0.0.1:18420/api/v1/engine/core/health | jq -r .engine_version)
+          if [ "$actual" != "$VERSION" ]; then
+            echo "::error::engine_version mismatch — expected ${VERSION}, got ${actual}"
+            exit 1
+          fi
+          echo "OK — assay-engine ${actual} live in cluster"
+
   release-assay-lua:
     needs: [detect, libraries, binaries]
     if: |
