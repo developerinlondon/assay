@@ -46,8 +46,8 @@ failing test (relaxing an assertion, changing an expected value, loosening a reg
 operator** before committing. No exceptions — not "while debugging", not "just to unblock CI", not
 "the test was wrong anyway". Ask, wait for a clear yes, then change.
 
-Why this rule exists: AI agents have a known failure mode where a failing assertion gets "solved"
-by weakening the check until it passes, masking the real regression behind green CI. The test is a
+Why this rule exists: AI agents have a known failure mode where a failing assertion gets "solved" by
+weakening the check until it passes, masking the real regression behind green CI. The test is a
 specification the code is supposed to meet; weakening it silently changes the specification without
 the human realising the behavioural guarantee has shrunk.
 
@@ -60,16 +60,16 @@ When a test fails, the expected agent workflow is:
 4. Wait for approval before editing anything test-related.
 
 If the test genuinely has a bug (e.g. wrong assertion, stale fixture, pre-existing flake), that's
-also a conversation, not a silent rewrite. Flag it, describe the bug, propose the correction,
-wait for confirmation. Tests are the repo's behavioural contract; changes to them need the same
-care as changes to published API surface.
+also a conversation, not a silent rewrite. Flag it, describe the bug, propose the correction, wait
+for confirmation. Tests are the repo's behavioural contract; changes to them need the same care as
+changes to published API surface.
 
 ## Release docs checklist
 
 Every release (patch, minor, or major) must update **all** of the following before the PR merges —
 never ship a release that only touches source + CHANGELOG. The site, llms.txt, and sub-crate
-manifests drift silently if you forget them, and agents downstream (including future-you) see
-stale information.
+manifests drift silently if you forget them, and agents downstream (including future-you) see stale
+information.
 
 ### Version bumps
 
@@ -78,35 +78,34 @@ stale information.
   Rust API**, not the binary's version. Today that's `crates/assay-workflow/Cargo.toml`. Skip this
   and the crates.io publish step of the release workflow fails at tag push time (the crate version
   already exists on the index).
-- When a sub-crate version bumps, the workspace root `Cargo.toml` dependency spec must bump to
-  match (e.g. `assay-workflow = { ..., version = "0.2" }`). Cargo's lockfile will regenerate on the
-  next build; commit the resulting `Cargo.lock` update.
+- When a sub-crate version bumps, the workspace root `Cargo.toml` dependency spec must bump to match
+  (e.g. `assay-workflow = { ..., version = "0.2" }`). Cargo's lockfile will regenerate on the next
+  build; commit the resulting `Cargo.lock` update.
 
 ### Pre-1.0 semver: patch bumps by default
 
 **Every release bumps the patch digit. Never jump the minor without an explicit conversation.**
 
-Rationale: assay is pre-1.0. Both the binary (`assay-lua`) and the engine library
-(`assay-workflow`) are young and do not have a stable promised API yet. A minor bump on a 0.x
-crate conventionally signals a breaking change to downstream Cargo consumers — which matters
-once there are downstream consumers. While there aren't, a patch bump is both sufficient and
-keeps Cargo dep specs (`version = "0.1"` = `^0.1`, `version = "0.11"` = `^0.11`) stable across
-the upgrade.
+Rationale: assay is pre-1.0. Both the binary (`assay-lua`) and the engine library (`assay-workflow`)
+are young and do not have a stable promised API yet. A minor bump on a 0.x crate conventionally
+signals a breaking change to downstream Cargo consumers — which matters once there are downstream
+consumers. While there aren't, a patch bump is both sufficient and keeps Cargo dep specs
+(`version = "0.1"` = `^0.1`, `version = "0.11"` = `^0.11`) stable across the upgrade.
 
 - `assay-lua` (binary): always patch bump (`0.11.4 → 0.11.5`) unless the user says otherwise.
 - `assay-workflow` (engine sub-crate): always patch bump (`0.1.2 → 0.1.3`) unless the user says
   otherwise.
-- **Don't pick a minor bump unilaterally.** If a change looks like it justifies one (e.g. a
-  public enum becomes a struct, a trait signature changes), surface the tradeoff to the user and
-  ask before touching the version field. Discussion first, edit second.
+- **Don't pick a minor bump unilaterally.** If a change looks like it justifies one (e.g. a public
+  enum becomes a struct, a trait signature changes), surface the tradeoff to the user and ask before
+  touching the version field. Discussion first, edit second.
 
-The binary version and sub-crate version are independent. It's normal for `assay-lua 0.11.5` to
-ship `assay-workflow 0.1.3`; they have unrelated bump cadences.
+The binary version and sub-crate version are independent. It's normal for `assay-lua 0.11.5` to ship
+`assay-workflow 0.1.3`; they have unrelated bump cadences.
 
 ### Non-source files
 
-- `CHANGELOG.md` — new section at the top; describe the OIDC/Kubernetes/HTTP scenario enabled, not
-  a specific consumer.
+- `CHANGELOG.md` — new section at the top; describe the OIDC/Kubernetes/HTTP scenario enabled, not a
+  specific consumer.
 - `docs/modules/*.md` — any module whose surface changed.
 - `README.md`, `SKILL.md`, `AGENTS.md`, `skills/assay/SKILL.md` — auth / CLI / API tables if
   touched.
@@ -115,8 +114,8 @@ ship `assay-workflow 0.1.3`; they have unrelated bump cadences.
   feature cards (e.g. the Workflow Engine card).
 - `site/static/llms.txt` — site's static teaser; keep it reasonably fresh (not auto-generated from
   the root `llms.txt`).
-- Any site page that references the previous version in prose or code (e.g. the `mise` /
-  `crates.io` install snippets on `index.html`).
+- Any site page that references the previous version in prose or code (e.g. the `mise` / `crates.io`
+  install snippets on `index.html`).
 
 ### Verification before opening the PR
 
@@ -131,21 +130,45 @@ grep -E '^version = ' Cargo.toml crates/*/Cargo.toml
 grep -A0 'assay-workflow' Cargo.toml | grep 'version ='
 ```
 
-Only matches that should remain for the first grep are historical CHANGELOG entries and
-"introduced in vX.Y.Z" feature markers. The second and third greps exist because v0.11.4's
-crates.io publish failed when the sub-crate version was missed — do not skip them.
+Only matches that should remain for the first grep are historical CHANGELOG entries and "introduced
+in vX.Y.Z" feature markers. The second and third greps exist because v0.11.4's crates.io publish
+failed when the sub-crate version was missed — do not skip them.
+
+### Regenerate README when adding/removing modules
+
+The stdlib table inside `<!-- BEGIN STDLIB TABLE -->` ... `<!-- END STDLIB TABLE -->` in `README.md`
+is auto-generated by `assay site/build.lua` from the `category:` frontmatter of `docs/modules/*.md`.
+CI enforces it with `git diff --exit-code -- README.md` after running the generator, so any
+new/renamed/removed module doc requires a regen commit:
+
+```sh
+cargo build -p assay-lua --bin assay         # if not already built
+./target/release/assay site/build.lua
+git add README.md && git commit
+```
+
+A pre-commit hook lives at `.githooks/pre-commit` to catch this locally — it runs the regenerator
+whenever a staged change touches `docs/modules/` or `crates/assay/stdlib/` and fails the commit if
+`README.md` ends up out of sync. Enable it once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+Bypass with `git commit --no-verify` only when you're explicitly committing the regen as a
+follow-up.
 
 ## PR merge process
 
 Follow this sequence for every PR merge into `main`, even as an admin who could bypass branch
-protection. Branch protection is the enforcement layer, the process below is the discipline
-layer — protection is the last line of defence, not the only one.
+protection. Branch protection is the enforcement layer, the process below is the discipline layer —
+protection is the last line of defence, not the only one.
 
 ### 0. Create the PR with the right assignee
 
 Every PR in this repo is owned by the repo owner — `developerinlondon`. Always pass
-`--assignee developerinlondon` (or `--assignee @me` when you're authenticated as that user)
-when running `gh pr create`:
+`--assignee developerinlondon` (or `--assignee @me` when you're authenticated as that user) when
+running `gh pr create`:
 
 ```sh
 gh pr create --title "..." --body "..." --assignee developerinlondon
@@ -165,8 +188,8 @@ gh pr checks <PR> --watch
 
 **Do not use `--required`.** On repos without required-check protection, `--required` prints "no
 required checks reported" and exits immediately, letting a merge-chain proceed while checks are
-still running. Even on protected repos, `--required` only watches the required contexts — other
-CI in the same workflow may still be running. Plain `--watch` blocks on every check.
+still running. Even on protected repos, `--required` only watches the required contexts — other CI
+in the same workflow may still be running. Plain `--watch` blocks on every check.
 
 ### 2. Never merge through red
 
@@ -188,8 +211,8 @@ gh api repos/developerinlondon/assay/actions/jobs/<job-id>/logs
 
   Merging through an infra flake is gambling that the flake hides nothing. Occasionally it does.
 
-- **Code failures** — test assertion, clippy error, compile error — fix in a new commit on the
-  same branch, push, wait for CI. Never merge a PR with a known code failure on the promise of a
+- **Code failures** — test assertion, clippy error, compile error — fix in a new commit on the same
+  branch, push, wait for CI. Never merge a PR with a known code failure on the promise of a
   "follow-up fix" — the follow-up lives in the same PR.
 
 ### 3. Squash-merge with branch delete
@@ -203,27 +226,27 @@ Prefer `--squash` over `--merge` so `main` history stays one-commit-per-PR and g
 
 ### 4. Verify the post-merge CI run
 
-The `push` trigger on `ci.yml` fires a fresh CI run on the merge commit itself. Occasionally a
-merge commit behaves differently than the PR HEAD (e.g. silent conflict with concurrent merges,
-unrelated upstream drift). Confirm it lands green before triggering anything downstream (tag
-push, release workflow, deploy):
+The `push` trigger on `ci.yml` fires a fresh CI run on the merge commit itself. Occasionally a merge
+commit behaves differently than the PR HEAD (e.g. silent conflict with concurrent merges, unrelated
+upstream drift). Confirm it lands green before triggering anything downstream (tag push, release
+workflow, deploy):
 
 ```sh
 gh run list --workflow=ci.yml --branch main --limit 3
 ```
 
-If the first entry isn't `success`, treat `main` as broken and fix before anything else. Don't
-tag a release off a main that isn't green.
+If the first entry isn't `success`, treat `main` as broken and fix before anything else. Don't tag a
+release off a main that isn't green.
 
 ### Why this exists
 
 v0.11.5 was merged with one CI check still in progress because the merge-chain used
-`gh pr checks 46 --watch --required` on a repo that had no required checks configured. The
-watch command exited immediately, the auto-merge fired, and the still-running ubuntu check job
-later errored on a runner infrastructure flake (`No space left on device`). The post-merge CI
-on `main` was green, so nothing broke — but the only reason was luck. Branch protection on
-`main` was added retroactively (see "PR merge process → 1" above for the correct watch
-invocation that would have caught this).
+`gh pr checks 46 --watch --required` on a repo that had no required checks configured. The watch
+command exited immediately, the auto-merge fired, and the still-running ubuntu check job later
+errored on a runner infrastructure flake (`No space left on device`). The post-merge CI on `main`
+was green, so nothing broke — but the only reason was luck. Branch protection on `main` was added
+retroactively (see "PR merge process → 1" above for the correct watch invocation that would have
+caught this).
 
 ## What is Assay
 
@@ -300,11 +323,11 @@ create/delete). Engine version shown in the status bar, fetched from `/api/v1/ve
 `ASSAY_WHITELABEL_*` env vars so platform teams fronting assay inside another admin UI can match
 their own identity. Nine knobs: `_NAME`, `_SUBTITLE` (v0.11.11), `_MARK` (v0.11.11), `_LOGO_URL`,
 `_PAGE_TITLE`, `_PARENT_URL` + `_PARENT_NAME` (sidebar-footer back-link to the parent app),
-`_API_DOCS_URL` (override or set to `""` to hide the built-in API Docs link), and `_CSS_URL`
-(extra stylesheet loaded after assay's own CSS for re-skinning via CSS custom properties). v0.11.11
-also flips the footer to `Powered by Assay Workflow Engine vX.Y.Z` (linked to assay.rs) whenever
-any identity is customised. All optional; unset env preserves assay's built-in identity. Full
-table + examples in `docs/modules/workflow.md#dashboard-whitelabel`.
+`_API_DOCS_URL` (override or set to `""` to hide the built-in API Docs link), and `_CSS_URL` (extra
+stylesheet loaded after assay's own CSS for re-skinning via CSS custom properties). v0.11.11 also
+flips the footer to `Powered by Assay Workflow Engine vX.Y.Z` (linked to assay.rs) whenever any
+identity is customised. All optional; unset env preserves assay's built-in identity. Full table +
+examples in `docs/modules/workflow.md#dashboard-whitelabel`.
 
 **Optional S3 archival** (cargo feature `s3-archival`, default-off). Enabled when
 `ASSAY_ARCHIVE_S3_BUCKET` is set. Bundles completed workflows to S3 after
