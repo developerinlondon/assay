@@ -2,6 +2,40 @@
 
 All notable changes to Assay are documented here.
 
+## [assay-engine 0.3.1] - 2026-04-27
+
+| Crate          | Bump          |
+| -------------- | ------------- |
+| `assay-engine` | 0.3.0 → 0.3.1 |
+| (others)       | unchanged     |
+
+**Headline:** `engine.toml` now expands `${VAR}` and `${VAR:-default}` env-var references at load
+time, so credentials and per-environment URLs can stay out of config files. Operators wiring the
+engine into Kubernetes Secret env vars, systemd `EnvironmentFile=`, or Compose `environment:`
+blocks no longer need an external rendering step.
+
+### Added
+
+- **`engine.toml` env-var substitution** — `${VAR}` (required, errors if unset) and
+  `${VAR:-default}` (optional, falls back to the inline default) work in any string field of the
+  config: `[backend].url`, `[server].public_url`, `[auth].admin_api_keys`, `[auth].issuer`, etc.
+  Bracket-less `$VAR` is left untouched so passwords / paths containing literal `$` are safe.
+  Sequences whose contents aren't a valid identifier (e.g. `${1NOT_VALID}`, `${has space}`) pass
+  through verbatim. README quick-start and `examples/postgres.toml` show the typical Kubernetes
+  Secret-env pattern.
+
+### Changed
+
+- `crates/assay-engine/examples/postgres.toml` and `sqlite.toml` updated to demonstrate the new
+  `${DATABASE_URL}` / `${DATA_DIR:-./data}` patterns.
+- README quick-start now shows env-var-driven configuration.
+
+### Internal
+
+- 14 unit tests added covering set-var, unset-var-with-default, unset-var-no-default error,
+  multiple substitutions per line, bracket-less `$VAR` pass-through, invalid identifier
+  pass-through, unclosed `${`, plus a from-file integration test.
+
 ## [assay 0.15.0 / assay-vault 0.1.0 / assay-engine 0.3.0 / assay-dashboard 0.3.0] - 2026-04-26
 
 | Crate             | Bump            |
