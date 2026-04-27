@@ -8,7 +8,7 @@ local grafana = require("assay.grafana")
 assert.not_nil(grafana, "assay.grafana should be loadable")
 assert.not_nil(grafana.client, "assay.grafana should have client function")
 
-local vault = require("assay.vault")
+local vault = require("assay.hashicorp_vault")
 assert.not_nil(vault, "assay.vault should be loadable")
 assert.not_nil(vault.client, "assay.vault should have client function")
 

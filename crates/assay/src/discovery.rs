@@ -349,32 +349,50 @@ fn discover_filesystem_modules(
 }
 
 /// Discover embedded stdlib `.lua` files from `include_dir!`.
+///
+/// Recurses into subdirectories so nested namespaces like
+/// `engine/vault.lua` register as `assay.engine.vault`. The path-to-
+/// module-name mapping replaces the OS separator with `.`. Both
+/// `engine.lua` (the facade) and `engine/vault.lua` (a submodule) get
+/// registered as separate `assay.engine` and `assay.engine.vault`
+/// entries respectively, matching what `require()` already resolves.
 fn discover_embedded_stdlib(modules: &mut Vec<DiscoveredModule>) {
-    for file in STDLIB_DIR.files() {
-        let path = file.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("lua") {
-            continue;
+    fn walk(dir: &include_dir::Dir<'_>, modules: &mut Vec<DiscoveredModule>) {
+        for file in dir.files() {
+            let path = file.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("lua") {
+                continue;
+            }
+            let Some(lua_source) = file.contents_utf8() else {
+                continue;
+            };
+            // Build dotted path from "stdlib"-relative components,
+            // dropping the trailing `.lua`.
+            let segments: Vec<&str> = path
+                .iter()
+                .filter_map(|c| c.to_str())
+                .collect();
+            if segments.is_empty() {
+                continue;
+            }
+            let mut joined = segments.join(".");
+            if joined.ends_with(".lua") {
+                joined.truncate(joined.len() - 4);
+            }
+            let module_name = format!("assay.{joined}");
+            let meta = metadata::parse_metadata(lua_source);
+            modules.push(DiscoveredModule {
+                module_name,
+                source: ModuleSource::BuiltIn,
+                metadata: meta,
+                lua_source: lua_source.to_string(),
+            });
         }
-
-        let lua_source = match file.contents_utf8() {
-            Some(s) => s,
-            None => continue,
-        };
-
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default();
-        let module_name = format!("assay.{stem}");
-        let meta = metadata::parse_metadata(lua_source);
-
-        modules.push(DiscoveredModule {
-            module_name,
-            source: ModuleSource::BuiltIn,
-            metadata: meta,
-            lua_source: lua_source.to_string(),
-        });
+        for sub in dir.dirs() {
+            walk(sub, modules);
+        }
     }
+    walk(&STDLIB_DIR, modules);
 }
 
 /// Add hardcoded Rust builtins (not Lua files) to the module list.

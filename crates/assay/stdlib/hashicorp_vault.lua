@@ -1,5 +1,5 @@
---- @module assay.vault
---- @description HashiCorp Vault secrets management. KV, policies, auth, transit, PKI, token management.
+--- @module assay.hashicorp_vault
+--- @description HashiCorp Vault / OpenBao client. KV, policies, auth, transit, PKI, token management. For the assay-engine native vault module use `assay.vault`.
 --- @keywords vault, secrets, kv, policies, auth, transit, pki, tokens, encryption, decryption, certificate, seal, initialization, authentication, secret-engine, password, rotation
 --- @quickref c.kv:get(mount, key) -> {data}|nil | Read KV v2 secret
 --- @quickref c.kv:put(mount, key, data) -> result | Write KV v2 secret

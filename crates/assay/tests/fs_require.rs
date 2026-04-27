@@ -35,13 +35,13 @@ async fn test_fs_require_loads_external_module() {
 async fn test_fs_require_filesystem_takes_priority() {
     let dir = setup_lib_dir("fs_require_priority");
     std::fs::write(
-        dir.join("vault.lua"),
+        dir.join("hashicorp_vault.lua"),
         "local M = {}\nfunction M.custom() return \"filesystem vault\" end\nreturn M\n",
     )
     .unwrap();
 
     let script = r#"
-        local vault = require("assay.vault")
+        local vault = require("assay.hashicorp_vault")
         assert.not_nil(vault)
         assert.eq(vault.custom(), "filesystem vault")
     "#;
@@ -94,7 +94,7 @@ async fn test_fs_require_module_can_require_embedded() {
     std::fs::write(
         dir.join("wrapper.lua"),
         r#"
-local vault = require("assay.vault")
+local vault = require("assay.hashicorp_vault")
 local M = {}
 function M.has_vault()
     return vault ~= nil and vault.client ~= nil

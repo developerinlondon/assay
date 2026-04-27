@@ -12,6 +12,8 @@ use std::sync::Arc;
 
 use assay_auth::AuthCtx;
 use assay_dashboard::DashboardCtx;
+#[cfg(feature = "vault")]
+use assay_vault::VaultCtx;
 use assay_workflow::{WorkflowCtx, WorkflowStore};
 
 pub use assay_auth::state::AdminApiKeys;
@@ -26,6 +28,12 @@ pub struct EngineState<S: WorkflowStore> {
     /// `engine.modules.auth.enabled` row is TRUE. `axum::FromRef`
     /// extracts it for the auth router's handlers.
     pub auth: Option<AuthCtx>,
+    /// Composed vault context — present iff the `vault` Cargo feature
+    /// is on AND the runtime `engine.modules.vault.enabled` row is
+    /// TRUE. Plan 17's v0.3.0 module — KV / transit / collections /
+    /// share / sealing / dynamic creds / BW-compat all hang off this.
+    #[cfg(feature = "vault")]
+    pub vault: Option<VaultCtx>,
     /// Admin API keys for the `/admin/*` HTTP surface — checked by
     /// auth handlers via `axum::extract::FromRef<EngineState<S>>` so
     /// the same value flows from `engine.toml` through to per-request
@@ -73,5 +81,18 @@ impl<S: WorkflowStore> axum::extract::FromRef<EngineState<S>> for AuthCtx {
 impl<S: WorkflowStore> axum::extract::FromRef<EngineState<S>> for AdminApiKeys {
     fn from_ref(s: &EngineState<S>) -> Self {
         AdminApiKeys(Arc::clone(&s.admin_api_keys))
+    }
+}
+
+#[cfg(feature = "vault")]
+impl<S: WorkflowStore> axum::extract::FromRef<EngineState<S>> for VaultCtx {
+    /// FromRef impl so vault handlers (added Phase 1+) can extract the
+    /// resolved VaultCtx via `State<VaultCtx>`. Panics when the vault
+    /// router is mounted without composing a VaultCtx — same engine-
+    /// boot-bug surface AuthCtx uses.
+    fn from_ref(s: &EngineState<S>) -> Self {
+        s.vault
+            .clone()
+            .expect("vault router mounted without a VaultCtx — engine boot bug")
     }
 }
