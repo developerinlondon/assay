@@ -193,10 +193,11 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
         lua.globals().set("_SERVER_PORT", actual_port)?;
 
         loop {
-            let (stream, _addr) = listener
+            let (stream, addr) = listener
                 .accept()
                 .await
                 .map_err(|e| mlua::Error::runtime(format!("http.serve: accept failed: {e}")))?;
+            let peer_addr = addr.to_string();
 
             let routes = routes.clone();
             let lua_clone = lua.clone();
@@ -205,14 +206,19 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
                 let io = hyper_util::rt::TokioIo::new(stream);
                 let routes = routes.clone();
                 let lua = lua_clone.clone();
+                let peer_addr = peer_addr.clone();
 
                 let service = service_fn(move |req: Request<Incoming>| {
                     let routes = routes.clone();
                     let lua = lua.clone();
-                    async move { handle_request(&lua, &routes, req).await }
+                    let peer_addr = peer_addr.clone();
+                    async move { handle_request(&lua, &routes, peer_addr, req).await }
                 });
 
-                if let Err(e) = http1::Builder::new().serve_connection(io, service).await
+                if let Err(e) = http1::Builder::new()
+                    .serve_connection(io, service)
+                    .with_upgrades()
+                    .await
                     && !e.to_string().contains("connection closed")
                 {
                     error!("http.serve: connection error: {e}");
@@ -527,9 +533,87 @@ fn parse_routes(routes_table: &Table) -> mlua::Result<HashMap<(String, String), 
 type ServerBody = Either<Full<Bytes>, SseBody>;
 
 #[cfg(feature = "server")]
+fn lookup_route<'a>(
+    routes: &'a HashMap<(String, String), mlua::Function>,
+    method: &str,
+    path: &str,
+) -> Option<&'a mlua::Function> {
+    let key = (method.to_string(), path.to_string());
+    if let Some(f) = routes.get(&key) {
+        return Some(f);
+    }
+    let mut search = path;
+    while let Some(pos) = search.rfind('/') {
+        let prefix = &search[..pos];
+        let wildcard_key = (method.to_string(), format!("{prefix}/*"));
+        if let Some(f) = routes.get(&wildcard_key) {
+            return Some(f);
+        }
+        if pos == 0 {
+            let root_key = (method.to_string(), "/*".to_string());
+            return routes.get(&root_key);
+        }
+        search = prefix;
+    }
+    None
+}
+
+#[cfg(feature = "server")]
+fn is_websocket_upgrade(headers: &[(String, String)]) -> bool {
+    headers
+        .iter()
+        .any(|(k, v)| k.eq_ignore_ascii_case("upgrade") && v.to_ascii_lowercase().contains("websocket"))
+}
+
+#[cfg(feature = "server")]
+fn validate_ws_request(headers: &[(String, String)]) -> Result<String, &'static str> {
+    let mut has_connection_upgrade = false;
+    let mut version_ok = false;
+    let mut key: Option<String> = None;
+    for (k, v) in headers {
+        let kl = k.to_ascii_lowercase();
+        match kl.as_str() {
+            "connection" => {
+                if v.to_ascii_lowercase().contains("upgrade") {
+                    has_connection_upgrade = true;
+                }
+            }
+            "sec-websocket-version" => {
+                if v.trim() == "13" {
+                    version_ok = true;
+                }
+            }
+            "sec-websocket-key" => {
+                key = Some(v.clone());
+            }
+            _ => {}
+        }
+    }
+    if !has_connection_upgrade {
+        return Err("missing Connection: Upgrade header");
+    }
+    if !version_ok {
+        return Err("Sec-WebSocket-Version must be 13");
+    }
+    key.ok_or("missing Sec-WebSocket-Key header")
+}
+
+#[cfg(feature = "server")]
+fn compute_ws_accept(key: &str) -> String {
+    use sha1::Digest;
+    const MAGIC: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(key.as_bytes());
+    hasher.update(MAGIC);
+    let digest = hasher.finalize();
+    data_encoding::BASE64.encode(&digest)
+}
+
+#[cfg(feature = "server")]
 async fn handle_request(
     lua: &Lua,
     routes: &HashMap<(String, String), mlua::Function>,
+    peer_addr: String,
     req: Request<Incoming>,
 ) -> Result<Response<ServerBody>, hyper::Error> {
     let method = req.method().to_string();
@@ -541,52 +625,51 @@ async fn handle_request(
         .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
         .collect();
 
+    let is_ws = is_websocket_upgrade(&headers);
+
+    let handler = match lookup_route(routes, &method, &path) {
+        Some(h) => h.clone(),
+        None => {
+            return Ok(Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .header("content-type", "text/plain")
+                .body(Either::Left(Full::new(Bytes::from("not found"))))
+                .unwrap());
+        }
+    };
+
+    if is_ws {
+        let lua_resp = match build_lua_request_and_call(
+            lua, &handler, &method, &path, &query, &headers, "",
+        )
+        .await
+        {
+            Ok(t) => t,
+            Err(e) => {
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .header("content-type", "text/plain")
+                    .body(Either::Left(Full::new(Bytes::from(format!(
+                        "handler error: {e}"
+                    )))))
+                    .unwrap());
+            }
+        };
+
+        if let Ok(Some(ws_fn)) = lua_resp.get::<Option<mlua::Function>>("ws") {
+            return build_ws_upgrade_response(lua, &headers, lua_resp, ws_fn, peer_addr, req);
+        }
+
+        return lua_response_to_http(lua, &lua_resp);
+    }
+
     let body_bytes = match http_body_util::BodyExt::collect(req.into_body()).await {
         Ok(collected) => collected.to_bytes(),
         Err(_) => Bytes::new(),
     };
     let body_str = String::from_utf8_lossy(&body_bytes).to_string();
 
-    // Route matching: try exact match first, then wildcard prefixes.
-    // Wildcard routes end with "/*" and match any path with that prefix.
-    // More specific wildcards match first: "/api/*" beats "/*".
-    let key = (method.clone(), path.clone());
-    let handler = if let Some(f) = routes.get(&key) {
-        f
-    } else {
-        // Try wildcard routes: "/a/b/c" → try "/a/b/*", "/a/*", "/*"
-        let mut matched = None;
-        let mut search = path.as_str();
-        while let Some(pos) = search.rfind('/') {
-            let prefix = &search[..pos];
-            let wildcard_key = (method.clone(), format!("{prefix}/*"));
-            if let Some(f) = routes.get(&wildcard_key) {
-                matched = Some(f);
-                break;
-            }
-            // Try the root wildcard
-            if pos == 0 {
-                let root_key = (method.clone(), "/*".to_string());
-                if let Some(f) = routes.get(&root_key) {
-                    matched = Some(f);
-                }
-                break;
-            }
-            search = prefix;
-        }
-        match matched {
-            Some(f) => f,
-            None => {
-                return Ok(Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .header("content-type", "text/plain")
-                    .body(Either::Left(Full::new(Bytes::from("not found"))))
-                    .unwrap());
-            }
-        }
-    };
-
-    match build_lua_request_and_call(lua, handler, &method, &path, &query, &headers, &body_str)
+    match build_lua_request_and_call(lua, &handler, &method, &path, &query, &headers, &body_str)
         .await
     {
         Ok(lua_resp) => lua_response_to_http(lua, &lua_resp),
@@ -598,6 +681,91 @@ async fn handle_request(
             )))))
             .unwrap()),
     }
+}
+
+#[cfg(feature = "server")]
+fn build_ws_upgrade_response(
+    lua: &Lua,
+    headers: &[(String, String)],
+    resp_table: Table,
+    ws_fn: mlua::Function,
+    peer_addr: String,
+    req: Request<Incoming>,
+) -> Result<Response<ServerBody>, hyper::Error> {
+    let key = match validate_ws_request(headers) {
+        Ok(k) => k,
+        Err(msg) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("content-type", "text/plain")
+                .body(Either::Left(Full::new(Bytes::from(format!(
+                    "websocket upgrade rejected: {msg}"
+                )))))
+                .unwrap());
+        }
+    };
+    let accept = compute_ws_accept(&key);
+
+    let mut builder = Response::builder()
+        .status(StatusCode::SWITCHING_PROTOCOLS)
+        .header(hyper::header::UPGRADE, "websocket")
+        .header(hyper::header::CONNECTION, "Upgrade")
+        .header("sec-websocket-accept", accept);
+
+    // User-supplied headers (e.g., for auth or tracing). Skip the protocol-controlled ones
+    // we just set, in case the handler accidentally returns them too.
+    if let Ok(Some(headers_table)) = resp_table.get::<Option<Table>>("headers") {
+        for pair in headers_table.pairs::<String, mlua::String>().flatten() {
+            let (k, v) = pair;
+            let kl = k.to_ascii_lowercase();
+            if matches!(
+                kl.as_str(),
+                "upgrade" | "connection" | "sec-websocket-accept"
+            ) {
+                continue;
+            }
+            if let Ok(s) = v.to_str() {
+                builder = builder.header(&k, s.as_ref());
+            }
+        }
+    }
+
+    let response = builder
+        .body(Either::Left(Full::new(Bytes::new())))
+        .unwrap();
+
+    let lua_clone = lua.clone();
+    tokio::task::spawn_local(async move {
+        let upgraded = match hyper::upgrade::on(req).await {
+            Ok(u) => u,
+            Err(e) => {
+                error!("http.serve: ws upgrade failed: {e}");
+                return;
+            }
+        };
+        let io = hyper_util::rt::TokioIo::new(upgraded);
+        let stream = tokio_tungstenite::WebSocketStream::from_raw_socket(
+            io,
+            tokio_tungstenite::tungstenite::protocol::Role::Server,
+            None,
+        )
+        .await;
+        let conn = super::ws::WsServerConn::new(stream, peer_addr);
+        let ud = match lua_clone.create_userdata(conn) {
+            Ok(u) => u,
+            Err(e) => {
+                error!("http.serve: ws userdata creation failed: {e}");
+                return;
+            }
+        };
+        if let Err(e) = ws_fn.call_async::<()>(ud).await
+            && !e.to_string().contains("conn:read: ")
+        {
+            error!("http.serve: ws handler error: {e}");
+        }
+    });
+
+    Ok(response)
 }
 
 #[cfg(feature = "server")]
@@ -796,3 +964,4 @@ fn lua_response_to_http(
 
     Ok(builder.body(Either::Left(Full::new(body_bytes))).unwrap())
 }
+
