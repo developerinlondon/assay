@@ -571,17 +571,12 @@ fn validate_ws_request(headers: &[(String, String)]) -> Result<String, &'static 
     let mut version_ok = false;
     let mut key: Option<String> = None;
     for (k, v) in headers {
-        let kl = k.to_ascii_lowercase();
-        match kl.as_str() {
-            "connection" => {
-                if v.to_ascii_lowercase().contains("upgrade") {
-                    has_connection_upgrade = true;
-                }
+        match k.to_ascii_lowercase().as_str() {
+            "connection" if v.to_ascii_lowercase().contains("upgrade") => {
+                has_connection_upgrade = true;
             }
-            "sec-websocket-version" => {
-                if v.trim() == "13" {
-                    version_ok = true;
-                }
+            "sec-websocket-version" if v.trim() == "13" => {
+                version_ok = true;
             }
             "sec-websocket-key" => {
                 key = Some(v.clone());
