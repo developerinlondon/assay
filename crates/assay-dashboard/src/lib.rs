@@ -9,10 +9,12 @@ pub mod auth_router;
 pub mod ctx;
 pub mod engine_router;
 pub mod router;
+pub mod vault_router;
 pub mod whitelabel;
 
 pub use auth_router::router as auth_router;
 pub use ctx::DashboardCtx;
 pub use engine_router::router as engine_router;
 pub use router::router as workflow_router;
+pub use vault_router::router as vault_router;
 pub use whitelabel::{WHITELABEL, WhitelabelConfig};

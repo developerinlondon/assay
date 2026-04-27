@@ -17,7 +17,7 @@ async fn test_openbao_alias_loads() {
 #[tokio::test]
 async fn test_openbao_alias_matches_vault() {
     let script = r#"
-        local vault = require("assay.vault")
+        local vault = require("assay.hashicorp_vault")
         local bao = require("assay.openbao")
         if vault ~= bao then
             error("openbao module should be the same table as vault module")

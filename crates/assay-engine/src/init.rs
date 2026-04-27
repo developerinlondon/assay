@@ -52,7 +52,8 @@ pub struct BuiltinModule {
 /// auth migrations on upgrade. Local dev flips this via
 /// `EngineConfig.auto_enable_modules = ["auth"]`.
 pub fn builtin_modules() -> Vec<BuiltinModule> {
-    vec![
+    #[cfg_attr(not(feature = "vault"), allow(unused_mut))]
+    let mut mods = vec![
         BuiltinModule {
             name: "workflow",
             version: env!("CARGO_PKG_VERSION"),
@@ -65,17 +66,41 @@ pub fn builtin_modules() -> Vec<BuiltinModule> {
             version: env!("CARGO_PKG_VERSION"),
             default_enabled: true,
         },
-    ]
+    ];
+    // Vault module (plan 17 / v0.3.0). Default-enabled when compiled in —
+    // this is the marquee module of v0.3.0 and the engine binary's vault
+    // wiring panics if the module is on without a backing VaultCtx.
+    #[cfg(feature = "vault")]
+    mods.push(BuiltinModule {
+        name: "vault",
+        version: env!("CARGO_PKG_VERSION"),
+        default_enabled: true,
+    });
+    mods
 }
 
-/// Sweep interval for the stale-instance cleanup task. Removes
-/// `engine.instances` rows whose `last_heartbeat` is older than
-/// [`INSTANCE_STALE_SECS`].
-const INSTANCE_HEARTBEAT_SECS: u64 = 15;
+/// Heartbeat interval for the engine.instances row. Tightened in
+/// v0.3.0 (plan 17 §S9) so secondary engine pods can detect a failed
+/// primary within [`INSTANCE_STALE_SECS`] of the actual failure.
+///
+/// 3-second heartbeat × 10-second stale-cutoff = primary loss is
+/// observed by every other instance within ~10s (worst case: a
+/// heartbeat just succeeded, then the primary dies; the row stays
+/// "fresh" for the remainder of the 10-second window).
+///
+/// HA tradeoffs:
+/// - Lower heartbeat → faster failover detection, more PG writes per
+///   second per pod (~1 row/s/pod is negligible at any realistic
+///   fleet size).
+/// - Higher stale cutoff → reduces false-positive failovers from
+///   transient network blips, but slows real-failure detection.
+///
+/// 3s × 10s is plan §S9's locked target.
+const INSTANCE_HEARTBEAT_SECS: u64 = 3;
 // Used by the PG cleanup task that prunes dead `engine.instances` rows.
 // SQLite path is single-instance and never accumulates stale rows.
 #[cfg(feature = "backend-postgres")]
-const INSTANCE_STALE_SECS: f64 = 60.0;
+const INSTANCE_STALE_SECS: f64 = 10.0;
 
 /// Result of the engine boot sequence — the parts each backend wired up.
 /// The engine binary uses these to compose its `WorkflowStore` /
@@ -193,6 +218,19 @@ async fn pg_boot(url: &str, auto_enable: &[String]) -> anyhow::Result<PgBoot> {
             .fetch_one(&pool)
             .await
             .map_err(|e| anyhow::anyhow!("oidc provider tables (pg): {e}"))?;
+    }
+
+    // Vault schema migration (plan 17 / v0.3.0). Smoke-touches one of
+    // the locked tables so missing DDL or permission issues surface here.
+    #[cfg(feature = "vault")]
+    if modules.iter().any(|m| m == "vault") {
+        assay_vault::schema::migrate_postgres(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("vault schema migrate (pg): {e}"))?;
+        sqlx::query("SELECT COUNT(*) FROM vault.kv_meta")
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("vault tables (pg): {e}"))?;
     }
 
     let bus: Arc<dyn EngineEventBus> = Arc::new(
@@ -320,6 +358,8 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
     let engine_attach = sqlite_attach_uri(data_dir, "engine", in_memory);
     let workflow_attach = sqlite_attach_uri(data_dir, "workflow", in_memory);
     let auth_attach = sqlite_attach_uri(data_dir, "auth", in_memory);
+    #[cfg(feature = "vault")]
+    let vault_attach = sqlite_attach_uri(data_dir, "vault", in_memory);
 
     info!(
         target: "assay-engine",
@@ -335,6 +375,8 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
             let engine_attach = engine_attach.clone();
             let workflow_attach = workflow_attach.clone();
             let auth_attach = auth_attach.clone();
+            #[cfg(feature = "vault")]
+            let vault_attach = vault_attach.clone();
             Box::pin(async move {
                 use sqlx::Executor;
                 conn.execute(
@@ -347,6 +389,11 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
                 .await?;
                 conn.execute(
                     format!("ATTACH DATABASE '{auth_attach}' AS auth").as_str(),
+                )
+                .await?;
+                #[cfg(feature = "vault")]
+                conn.execute(
+                    format!("ATTACH DATABASE '{vault_attach}' AS vault").as_str(),
                 )
                 .await?;
                 Ok(())
@@ -380,6 +427,18 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
             .fetch_one(&pool)
             .await
             .map_err(|e| anyhow::anyhow!("oidc provider tables (sqlite): {e}"))?;
+    }
+
+    // Vault schema migration (plan 17 / v0.3.0).
+    #[cfg(feature = "vault")]
+    if modules.iter().any(|m| m == "vault") {
+        assay_vault::schema::migrate_sqlite(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("vault schema migrate (sqlite): {e}"))?;
+        sqlx::query("SELECT COUNT(*) FROM vault.kv_meta")
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("vault tables (sqlite): {e}"))?;
     }
 
     let bus: Arc<dyn EngineEventBus> = Arc::new(

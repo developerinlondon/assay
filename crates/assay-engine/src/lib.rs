@@ -70,8 +70,20 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
                 .await
                 .map_err(|e| anyhow::anyhow!("workflow store (pg): {e}"))?;
             let auth_ctx = build_auth_ctx_pg(&cfg, &b.pool).await?;
-            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, Some(auth_ctx))
-                .await
+            #[cfg(feature = "vault")]
+            let vault_ctx = build_vault_ctx_pg(&b.modules, &b.pool).await?;
+            #[cfg(not(feature = "vault"))]
+            let vault_ctx: Option<()> = None;
+            run_with_store(
+                cfg,
+                store,
+                b.bus,
+                b.modules,
+                b.instance_id,
+                Some(auth_ctx),
+                vault_ctx,
+            )
+            .await
         }
         #[cfg(feature = "backend-sqlite")]
         init::EngineBoot::Sqlite(b) => {
@@ -79,10 +91,161 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
                 .await
                 .map_err(|e| anyhow::anyhow!("workflow store (sqlite): {e}"))?;
             let auth_ctx = build_auth_ctx_sqlite(&cfg, &b.pool).await?;
-            run_with_store(cfg, store, b.bus, b.modules, b.instance_id, Some(auth_ctx))
-                .await
+            #[cfg(feature = "vault")]
+            let vault_ctx = build_vault_ctx_sqlite(&b.modules, &b.pool).await?;
+            #[cfg(not(feature = "vault"))]
+            let vault_ctx: Option<()> = None;
+            run_with_store(
+                cfg,
+                store,
+                b.bus,
+                b.modules,
+                b.instance_id,
+                Some(auth_ctx),
+                vault_ctx,
+            )
+            .await
         }
     }
+}
+
+/// Build the vault context iff the runtime `engine.modules.vault.enabled`
+/// row is TRUE. Loads the master KEK from `vault.kek_metadata` (or seeds
+/// a fresh one on first boot) and composes the per-feature stores
+/// against the same pool the rest of the engine uses.
+#[cfg(all(feature = "vault", feature = "backend-postgres"))]
+async fn build_vault_ctx_pg(
+    modules: &[String],
+    pool: &sqlx::PgPool,
+) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
+    if !modules.iter().any(|m| m == "vault") {
+        return Ok(None);
+    }
+    let kek = assay_vault::crypto::kek_store::load_or_init_postgres(pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (pg): {e}"))?;
+    // The `vault` umbrella feature on assay-vault implies vault-kv +
+    // vault-transit, so the with_* methods are unconditionally
+    // available here.
+    let mut ctx = assay_vault::VaultCtx::new()
+        .with_kek(kek)
+        .with_kv(assay_vault::store::postgres::PgKvStore::new(pool.clone()))
+        .with_transit(assay_vault::store::postgres::PgTransitStore::new(pool.clone()));
+    #[cfg(feature = "vault-sealing-shamir")]
+    {
+        ctx = ctx.with_seal_store(assay_vault::store::postgres::PgSealStore::new(pool.clone()));
+    }
+    #[cfg(feature = "vault-collections")]
+    {
+        ctx = ctx
+            .with_personal_vaults(assay_vault::store::postgres::PgPersonalVaultStore::new(
+                pool.clone(),
+            ))
+            .with_collections(assay_vault::store::postgres::PgCollectionStore::new(
+                pool.clone(),
+            ))
+            .with_items(assay_vault::store::postgres::PgItemStore::new(pool.clone()))
+            .with_folders(assay_vault::store::postgres::PgFolderStore::new(pool.clone()));
+        // Plan §S4 — seed default Zanzibar namespaces (vault,
+        // collection, kv_path, team, family, org). Idempotent.
+        // Builds the same backing PG store assay-auth uses; the
+        // namespace rows live in `auth.zanzibar_namespaces` regardless
+        // of which crate writes them.
+        #[cfg(feature = "auth-zanzibar")]
+        {
+            let z = assay_auth::zanzibar::PostgresZanzibarStore::new(pool.clone());
+            assay_vault::zanzibar::seed_default_namespaces(&z)
+                .await
+                .map_err(|e| anyhow::anyhow!("seed vault zanzibar namespaces (pg): {e}"))?;
+        }
+    }
+    #[cfg(feature = "vault-share")]
+    {
+        let kp = assay_vault::store::postgres::load_or_init_biscuit_root_postgres(pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("vault biscuit root bootstrap (pg): {e}"))?;
+        let revs = std::sync::Arc::new(
+            assay_vault::store::postgres::PgRevocationStore::new(pool.clone()),
+        );
+        let svc = assay_vault::share::ShareService::new(kp, revs);
+        ctx = ctx.with_share(svc);
+    }
+    #[cfg(feature = "vault-dynamic-postgres")]
+    {
+        let leases = std::sync::Arc::new(
+            assay_vault::store::postgres::PgLeaseStore::new(pool.clone()),
+        );
+        let registry = assay_vault::dynamic::DynamicCredsRegistry::new();
+        // Phase 5 default-config: registry is empty until an operator
+        // configures providers via /dynamic/* admin routes (or in
+        // future, engine.toml). The dispatcher returns NotFound for
+        // unknown providers, which surfaces as 404 to the caller.
+        let svc = assay_vault::dynamic::DynamicCredsService::new(registry, leases);
+        ctx = ctx.with_dynamic(svc);
+    }
+    Ok(Some(ctx))
+}
+
+/// SQLite mirror of [`build_vault_ctx_pg`].
+#[cfg(all(feature = "vault", feature = "backend-sqlite"))]
+async fn build_vault_ctx_sqlite(
+    modules: &[String],
+    pool: &sqlx::SqlitePool,
+) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
+    if !modules.iter().any(|m| m == "vault") {
+        return Ok(None);
+    }
+    let kek = assay_vault::crypto::kek_store::load_or_init_sqlite(pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (sqlite): {e}"))?;
+    let mut ctx = assay_vault::VaultCtx::new()
+        .with_kek(kek)
+        .with_kv(assay_vault::store::sqlite::SqliteKvStore::new(pool.clone()))
+        .with_transit(assay_vault::store::sqlite::SqliteTransitStore::new(pool.clone()));
+    #[cfg(feature = "vault-sealing-shamir")]
+    {
+        ctx = ctx.with_seal_store(assay_vault::store::sqlite::SqliteSealStore::new(pool.clone()));
+    }
+    #[cfg(feature = "vault-collections")]
+    {
+        ctx = ctx
+            .with_personal_vaults(assay_vault::store::sqlite::SqlitePersonalVaultStore::new(
+                pool.clone(),
+            ))
+            .with_collections(assay_vault::store::sqlite::SqliteCollectionStore::new(
+                pool.clone(),
+            ))
+            .with_items(assay_vault::store::sqlite::SqliteItemStore::new(pool.clone()))
+            .with_folders(assay_vault::store::sqlite::SqliteFolderStore::new(pool.clone()));
+        #[cfg(feature = "auth-zanzibar")]
+        {
+            let z = assay_auth::zanzibar::SqliteZanzibarStore::new(pool.clone());
+            assay_vault::zanzibar::seed_default_namespaces(&z)
+                .await
+                .map_err(|e| anyhow::anyhow!("seed vault zanzibar namespaces (sqlite): {e}"))?;
+        }
+    }
+    #[cfg(feature = "vault-share")]
+    {
+        let kp = assay_vault::store::sqlite::load_or_init_biscuit_root_sqlite(pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("vault biscuit root bootstrap (sqlite): {e}"))?;
+        let revs = std::sync::Arc::new(
+            assay_vault::store::sqlite::SqliteRevocationStore::new(pool.clone()),
+        );
+        let svc = assay_vault::share::ShareService::new(kp, revs);
+        ctx = ctx.with_share(svc);
+    }
+    #[cfg(feature = "vault-dynamic-postgres")]
+    {
+        let leases = std::sync::Arc::new(
+            assay_vault::store::sqlite::SqliteLeaseStore::new(pool.clone()),
+        );
+        let registry = assay_vault::dynamic::DynamicCredsRegistry::new();
+        let svc = assay_vault::dynamic::DynamicCredsService::new(registry, leases);
+        ctx = ctx.with_dynamic(svc);
+    }
+    Ok(Some(ctx))
 }
 
 #[cfg(feature = "backend-postgres")]
@@ -317,6 +480,8 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
     modules: Vec<String>,
     instance_id: uuid::Uuid,
     auth_ctx: Option<assay_auth::AuthCtx>,
+    #[cfg(feature = "vault")] vault_ctx: Option<assay_vault::VaultCtx>,
+    #[cfg(not(feature = "vault"))] _vault_ctx: Option<()>,
 ) -> anyhow::Result<()> {
     // The engine refuses to start unless there's at least one operator
     // user (created via `bootstrap-admin`) or at least one entry in
@@ -369,6 +534,8 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
         workflow: workflow_ctx,
         dashboard: dashboard_ctx,
         auth: auth_ctx,
+        #[cfg(feature = "vault")]
+        vault: vault_ctx,
         admin_api_keys,
         modules: Arc::new(modules),
         instance_id,

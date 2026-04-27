@@ -1,4 +1,7 @@
 /target
+# rust-analyzer / per-crate cargo invocations leave a target/ dir
+# inside whichever crate they ran from; ignore at any depth.
+**/target/
 /.cargo/
 /.env
 /.wrangler/

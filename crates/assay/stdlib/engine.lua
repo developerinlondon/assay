@@ -1,19 +1,22 @@
 --- @module assay.engine
---- @description Convenience umbrella for the assay-engine client trio (core, auth, workflow). One `engine.connect()` call returns all three clients sharing a base URL + admin key. Prefer requiring the individual submodules directly (`assay.engine.core`, etc.) if you only need one.
---- @keywords engine, assay, core, auth, workflow, idp, oidc, zanzibar, scheduler
+--- @description Convenience umbrella for the assay-engine clients (core, auth, workflow, vault). One `engine.connect()` call returns all four sharing a base URL + admin key. Prefer requiring the individual submodules directly (`assay.engine.core`, etc.) if you only need one.
+--- @keywords engine, assay, core, auth, workflow, vault, secrets, idp, oidc, zanzibar, scheduler
 --- @quickref engine.core — engine-core admin (info, modules, instances, audit, config)
 --- @quickref engine.auth — auth (login, passkey, OIDC client + provider, biscuit, zanzibar, admin)
 --- @quickref engine.workflow — workflow (CRUD, schedules, namespaces, workers, queues; worker mode via :register_* + :listen)
---- @quickref engine.connect(url|opts, api_key?) -> {core, auth, workflow} | Build all three clients in one call
+--- @quickref engine.vault — vault (KV v2, transit, share, dynamic creds, sealing)
+--- @quickref engine.connect(url|opts, api_key?) -> {core, auth, workflow, vault} | Build all clients in one call
 
 local core = require("assay.engine.core")
 local auth = require("assay.engine.auth")
 local workflow = require("assay.engine.workflow")
+local vault = require("assay.engine.vault")
 
 local M = {
   core = core,
   auth = auth,
   workflow = workflow,
+  vault = vault,
 }
 
 --- Build the full client trio against one assay-engine.
@@ -42,6 +45,7 @@ function M.connect(url_or_opts, api_key)
     core = core.client(opts),
     auth = auth.client(opts),
     workflow = workflow.client(opts),
+    vault = vault.client(opts),
   }
 end
 

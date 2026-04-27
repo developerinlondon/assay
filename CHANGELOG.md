@@ -2,6 +2,88 @@
 
 All notable changes to Assay are documented here.
 
+## [assay 0.15.0 / assay-vault 0.1.0 / assay-engine 0.3.0 / assay-dashboard 0.3.0] - 2026-04-26
+
+| Crate             | Bump            |
+| ----------------- | --------------- |
+| `assay`           | 0.14.2 → 0.15.0 |
+| `assay-vault`     | NEW → 0.1.0     |
+| `assay-engine`    | 0.2.2 → 0.3.0   |
+| `assay-dashboard` | 0.2.1 → 0.3.0   |
+| `assay-auth`      | unchanged       |
+| `assay-workflow`  | unchanged       |
+
+**Headline:** assay-engine adds the **vault module** — KV v2, transit, dynamic credentials,
+Bitwarden-aligned vaults + collections + items, biscuit-attenuated share links, sealing (Shamir +
+Cloud KMS shape), audit forwarding, and the foundation for a Bitwarden-protocol compatibility shim.
+One static binary now covers Vault (HashiCorp / OpenBao), 1Password / Bitwarden self-host, Ory
+Kratos / Hydra / Keto, and Temporal — at +1.7 MB on the existing `assay-engine` binary.
+
+See `docs/migration-to-0.3.0.md` for the full migration guide.
+
+### Added — `assay-vault` (new crate)
+
+- KV v2 — versioned, server-decryptable secrets storage. AES-256-GCM-SIV per-record DEK wrapped by
+  the master KEK; full lifecycle (PUT/GET/LIST/soft-delete/hard-destroy/undelete with version
+  history); path-bound AAD rejects cross-row ciphertext substitution.
+- Transit — encrypt/decrypt without exposing key material. `vault:vN:b64` envelope wire format
+  (Vault-style); rotation appends a new version, old ciphertexts stay decryptable; AAD binds key
+  name + version so cross-key-name decrypt fails.
+- Personal vaults + shared collections + items + folders. E2E: collection key encrypted client-side
+  via X25519 ECDH to each member's pubkey; server stores ciphertext + envelope blobs only.
+- Biscuit-attenuated share links — mint, redeem (public), revoke. Per-block revocation IDs,
+  time-bound caveats, content-addressed kid validation catches Shamir's silent-reconstruction attack
+  on unseal too.
+- Sealing — Shamir SSS init unseal, runtime SealState (sealed → every KV / transit / collection-key
+  op fails closed with 503). POST `/sys/init` returns shares once for operator distribution; POST
+  `/sys/unseal` accumulates threshold shares.
+- Audit forwarding — webhook sink + SinkRegistry that fans events out to every matching glob filter.
+  Syslog + S3 sinks reserved in trait shape (land in v0.3.x).
+- Dynamic credentials — `DynamicCredsProvider` trait + Postgres provider. Operators register a
+  role + grants; `issue` runs `CREATE ROLE … LOGIN PASSWORD …`, `revoke` drops the role. Lease
+  tracking in `vault.leases` with a sweepable expiry. AWS / GCP / Kubernetes providers reserved in
+  trait shape.
+
+### Added — HTTP
+
+All routes mounted under `/api/v1/vault/*`, admin-key gated except `GET /share/{token}` (public —
+biscuit + revocation are the access controls). See `docs/migration-to-0.3.0.md` for the full route
+table.
+
+### Added — Lua stdlib
+
+- `assay.vault` — full KV / transit client built on the engine's HTTP surface.
+- The pre-existing HashiCorp Vault / OpenBao client moved to `assay.hashicorp_vault`. The
+  `assay.openbao` alias still loads through the renamed module.
+
+### Added — `assay-engine`
+
+- New `vault` Cargo feature (default-on); composes `VaultCtx` into `EngineState` via
+  `axum::extract::FromRef`. `engine.modules.vault.enabled` controls runtime activation.
+- New schema namespace `vault.*` (PG) / attached `vault.db` (SQLite). Migration runs automatically
+  on boot.
+
+### Changed — HA failover (plan §S9)
+
+`engine.instances` heartbeat tightened: 15s → 3s; stale cutoff: 60s → 10s. Worst-case failover
+detection is now ~10s vs ~60s. No config changes required; takes effect on next boot.
+
+### Migration
+
+See `docs/migration-to-0.3.0.md`.
+
+### Out of scope (reserved for v0.3.x follow-ups)
+
+- Bitwarden-protocol compat shim — full BW client coverage. Phase 7 ships the BW HTTP shape
+  (identity, profile, sync, ciphers, folders, discovery probes); end-to-end mobile/browser/CLI
+  client coverage rides on a `bw` CLI in CI per plan §"Test plan".
+- Cross-method KEK rotation (rotate plaintext → shamir or shamir → KMS in one op). Phase 2 ships
+  in-method rewrap; cross-method needs a re-wrap-then-swap flow.
+- Recovery delegate (offline admin envelope wrap for collection sharing) — plan §"Deferred" reserves
+  this as a v0.4.x item.
+- AWS IMDS-based credential fetch — currently the AWS provider + KMS unseal take explicit
+  `AwsCredentials`; IMDS / IRSA / EC2-instance-role fetch lands in v0.3.x.
+
 ## [assay 0.14.2 / assay-auth 0.2.1 / assay-dashboard 0.2.1 / assay-engine 0.2.2] - 2026-04-26
 
 | Crate             | Bump            |

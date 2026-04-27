@@ -120,6 +120,38 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         app = app.merge(asset_router);
     }
 
+    // Vault module — plan 17 / v0.3.0. Mounted under /api/v1/vault when
+    // both the Cargo feature is on AND a VaultCtx was composed at boot
+    // (i.e. engine.modules.vault.enabled was TRUE). Phase 1 routes are
+    // admin-key-gated; Phase 3+ adds biscuit-share and Phase 7 the
+    // BW-compat shim's per-user session auth.
+    #[cfg(feature = "vault")]
+    if state.vault.is_some() {
+        let vault = assay_vault::router::vault_router::<EngineState<S>>()
+            .with_state(state.clone());
+        app = app.nest("/api/v1/vault", vault);
+    }
+
+    // BW-compat shim (Phase 7). Stock BW mobile / browser / CLI
+    // clients hardcode /identity/* and /api/* — mount the compat
+    // router at root so those clients work without a reverse-proxy
+    // rewrite. Only reachable when both vault + bitwarden-compat
+    // features are on AND VaultCtx + AuthCtx are composed.
+    #[cfg(all(feature = "vault", feature = "vault-bitwarden-compat"))]
+    if state.vault.is_some() && state.auth.is_some() {
+        let bw = assay_vault::bitwarden_compat::router::<EngineState<S>>()
+            .with_state(state.clone());
+        app = app.merge(bw);
+    }
+
+    // Vault console assets (plan 17 §S10). Always mounted when the
+    // vault feature is on; runtime visibility is gated by
+    // engine.modules.vault.enabled like every other console.
+    #[cfg(feature = "vault")]
+    {
+        app = app.merge(assay_dashboard::vault_router());
+    }
+
     app
 }
 
