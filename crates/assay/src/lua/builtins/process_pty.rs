@@ -473,9 +473,12 @@ mod tests {
         local.block_on(&rt, async {
             lua.load(
                 r#"
+                -- stty size prints "<rows> <cols>" by querying TIOCGWINSZ
+                -- directly off the controlling terminal — no TERM env var
+                -- required, so this works in stripped-down CI environments.
                 local pty = process.spawn_pty({
-                    cmd = "bash",
-                    args = { "-c", "tput cols; tput lines" },
+                    cmd = "stty",
+                    args = { "size" },
                     cols = 120, rows = 40,
                 })
                 local out = ""
@@ -484,8 +487,8 @@ mod tests {
                     if chunk == nil then break end
                     out = out .. chunk
                 end
-                assert(string.find(out, "120", 1, true), "expected 120 cols in: " .. out)
                 assert(string.find(out, "40", 1, true), "expected 40 rows in: " .. out)
+                assert(string.find(out, "120", 1, true), "expected 120 cols in: " .. out)
             "#,
             )
             .exec_async()
