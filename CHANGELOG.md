@@ -2,13 +2,23 @@
 
 All notable changes to Assay are documented here.
 
-## [assay-engine 0.3.2 / assay-auth 0.2.3] - 2026-04-27
+## [assay-engine 0.4.0 / assay-auth 0.3.0] - 2026-04-27
 
 | Crate          | Bump          |
 | -------------- | ------------- |
-| `assay-engine` | 0.3.1 → 0.3.2 |
-| `assay-auth`   | 0.2.2 → 0.2.3 |
+| `assay-engine` | 0.3.1 → 0.4.0 |
+| `assay-auth`   | 0.2.2 → 0.3.0 |
 | (others)       | unchanged     |
+
+**Breaking change (pre-1.0 minor bump).** Adding the `external_issuers` field to `AuthCtx` and
+`AuthConfig` changes their shapes; per pre-1.0 semver convention the minor version is the
+breaking-change bump. While doing it, every public config struct in both crates is now marked
+`#[non_exhaustive]` so future field additions are non-breaking — `AuthCtx`, `AuthConfig`,
+`EngineConfig`, `BackendConfig`, `ServerConfig`, `WorkflowConfig`, `AuthSessionConfig`,
+`AuthPasskeyConfig`, `AuthOidcProviderConfig`, `DashboardConfig`, `LoggingConfig`, and
+`ExternalIssuerConfig` all now require `Default::default()` + field assignment (or the existing
+builder methods on `AuthCtx`) for external construction. Pattern matches on `BackendConfig` from
+outside the crate must include a wildcard arm.
 
 **Headline:** **JWT pass-through validation.** The engine now accepts JWTs minted by an upstream
 OIDC provider (Hydra, Keycloak, Auth0, …) on incoming `Authorization: Bearer ...` requests

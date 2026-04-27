@@ -25,6 +25,7 @@ use crate::passkey::PasskeyManager;
 use crate::zanzibar::ZanzibarStore;
 
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct AuthCtx {
     /// Authoritative user record store. Carries password hashes,
     /// upstream-provider links, and passkeys.

@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct EngineConfig {
     pub server: ServerConfig,
     pub backend: BackendConfig,
@@ -47,6 +48,7 @@ fn default_engine_events_ttl_secs() -> u64 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct ServerConfig {
     #[serde(default = "default_bind_addr")]
     pub bind_addr: String,
@@ -69,6 +71,7 @@ fn default_public_url() -> String {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum BackendConfig {
     Postgres {
         /// Postgres connection URL, e.g. `postgres://user:pass@host:5432/db`.
@@ -120,6 +123,7 @@ impl BackendConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct WorkflowConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -129,6 +133,7 @@ pub struct WorkflowConfig {
 /// `auth` Cargo feature is compiled in AND `engine.modules.auth.enabled`
 /// is TRUE; otherwise the defaults are harmless.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct AuthConfig {
     /// JWT issuer + OIDC `iss` claim. Defaults to
     /// `<server.public_url>/auth` when unset, which matches the route
@@ -181,6 +186,7 @@ impl AuthConfig {
 
 /// One trusted external OIDC issuer for pass-through JWT validation.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct ExternalIssuerConfig {
     /// Issuer URL — the value the JWT's `iss` claim is matched against
     /// and the base for `<issuer_url>/.well-known/openid-configuration`
@@ -204,6 +210,7 @@ fn default_jwks_refresh_secs() -> u64 {
 
 /// Session module knobs.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct AuthSessionConfig {
     /// Default session lifetime in seconds. `None` ⇒ uses the
     /// `assay_auth::session::DEFAULT_SESSION_DURATION` (30 days).
@@ -212,6 +219,7 @@ pub struct AuthSessionConfig {
 
 /// WebAuthn / passkey module knobs.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct AuthPasskeyConfig {
     /// Relying-party id — the host (no scheme/port) the browser will
     /// scope passkeys to. Defaults to the host of `server.public_url`.
@@ -222,6 +230,7 @@ pub struct AuthPasskeyConfig {
 
 /// OIDC provider knobs.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct AuthOidcProviderConfig {
     /// Whether the OIDC provider routes (/authorize /token /userinfo …)
     /// are mounted. Defaults to `true` when the Cargo feature is on.
@@ -233,12 +242,14 @@ pub struct AuthOidcProviderConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct DashboardConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
