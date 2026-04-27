@@ -8,11 +8,13 @@ All notable changes to Assay are documented here.
 | ------- | --------------- |
 | `assay` | 0.15.0 → 0.15.1 |
 
-**Headline:** native Linux observability and systemd control for assay scripts. Three new Rust
-builtins (`linux`, `cgroup`, `systemd`) plus two new Lua stdlib modules (`assay.cron`,
-`assay.system`) collapse the "shell out to `systemctl` / `machinectl` / `journalctl` and parse
-stdout" pattern into single-digit-millisecond native calls. Operator dashboards, health-check
-scripts, and host-introspection automation no longer fork a subprocess per refresh cycle.
+**Headline:** native Linux observability and systemd control for assay scripts, plus native
+browser-shell capability. Three new Rust builtins (`linux`, `cgroup`, `systemd`), two new Lua stdlib
+modules (`assay.cron`, `assay.system`), one new PTY primitive (`process.spawn_pty`), one new
+`http.serve` response shape (`{ws = function(conn) ... end}` for server-side WebSocket upgrades),
+and an `assay.shell` umbrella that bridges the two. Operator dashboards, health-check scripts,
+host-introspection automation, and "Open Shell" buttons over xterm.js no longer fork a subprocess
+per refresh cycle or sit behind a separate websocket sidecar.
 
 All additions are purely additive — no breaking changes, no migration shim needed. Closes #88.
 
