@@ -27,6 +27,7 @@ use crate::error::Result;
 /// patterns operators set on each sink (e.g. `vault.kv.put`,
 /// `vault.transit.encrypt`, `auth.login.success`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AuditEvent {
     pub event: String,
     pub actor: Option<String>,
@@ -389,6 +390,7 @@ pub use s3_sink::S3Sink;
 /// Owns every configured sink. Cheap to clone — sinks live behind
 /// `Arc`s. Cloning the registry shares the same set across handlers.
 #[derive(Default, Clone)]
+#[non_exhaustive]
 pub struct SinkRegistry {
     sinks: std::sync::Arc<Vec<std::sync::Arc<dyn Sink>>>,
 }

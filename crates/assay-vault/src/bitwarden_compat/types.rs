@@ -21,6 +21,7 @@ pub mod cipher_type {
 /// `GET /api/accounts/profile` returns.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[non_exhaustive]
 pub struct Profile {
     pub id: String,
     pub email: String,
@@ -50,6 +51,7 @@ pub struct Profile {
 /// `item_type` stays 1 (Login); the Fido2Credentials array distinguishes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[non_exhaustive]
 pub struct Cipher {
     pub id: String,
     pub user_id: Option<String>,
@@ -75,6 +77,7 @@ pub struct Cipher {
 /// What the client POSTs / PUTs to /api/ciphers — BW's wire shape.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
+#[non_exhaustive]
 pub struct CipherInput {
     pub folder_id: Option<String>,
     #[serde(rename = "Type")]
@@ -98,6 +101,7 @@ pub struct CipherInput {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[non_exhaustive]
 pub struct Folder {
     pub id: String,
     pub name: String,
@@ -108,6 +112,7 @@ pub struct Folder {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[non_exhaustive]
 pub struct FolderInput {
     pub name: String,
 }
@@ -115,6 +120,7 @@ pub struct FolderInput {
 /// What `GET /api/sync` returns — the full vault dump for a user.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
+#[non_exhaustive]
 pub struct SyncResponse {
     pub profile: Profile,
     pub folders: Vec<Folder>,
@@ -129,6 +135,7 @@ pub struct SyncResponse {
 
 #[derive(Clone, Debug, Deserialize)]
 #[allow(dead_code)]
+#[non_exhaustive]
 pub struct ConnectTokenForm {
     pub grant_type: String,
     pub username: Option<String>,
@@ -146,6 +153,7 @@ pub struct ConnectTokenForm {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct TokenResponse {
     pub access_token: String,
     pub expires_in: u64,

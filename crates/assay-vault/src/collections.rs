@@ -19,6 +19,7 @@ use crate::error::Result;
 
 /// One row in `vault.collections`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Collection {
     pub id: String,
     pub org_id: Option<String>,
@@ -31,6 +32,7 @@ pub struct Collection {
 /// the server — it's the collection's symmetric key encrypted to the
 /// member's X25519 pubkey, produced client-side.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct CollectionMember {
     pub collection_id: String,
     pub user_id: String,

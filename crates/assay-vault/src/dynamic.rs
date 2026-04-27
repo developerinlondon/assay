@@ -21,6 +21,7 @@ use crate::error::Result;
 
 /// Lease metadata returned from `issue`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Lease {
     pub id: String,
     pub provider: String,
@@ -38,6 +39,7 @@ pub struct Lease {
 /// existence + expiry + revocation, the credential bytes themselves
 /// are short-lived ephemera.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct LeaseRecord {
     pub id: String,
     pub provider: String,
@@ -106,6 +108,7 @@ pub trait DynamicCredsProvider: Send + Sync + 'static {
 /// (e.g. the AWS access-key-id, the PG role name) without keeping the
 /// plaintext credential server-side.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct IssuedCredentials {
     pub credentials: serde_json::Value,
     pub metadata: serde_json::Value,
@@ -114,6 +117,7 @@ pub struct IssuedCredentials {
 /// Top-level dispatcher held by [`crate::ctx::VaultCtx`]. Registers
 /// providers at boot; the HTTP layer + sweeper consult it.
 #[derive(Clone, Default)]
+#[non_exhaustive]
 pub struct DynamicCredsRegistry {
     providers: std::sync::Arc<
         parking_lot::RwLock<
@@ -199,6 +203,7 @@ mod tests {
 /// credentials via the right provider, persists the lease row, runs
 /// background revocation on expiry.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct DynamicCredsService {
     registry: DynamicCredsRegistry,
     leases: std::sync::Arc<dyn LeaseStore>,

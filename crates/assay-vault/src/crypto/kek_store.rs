@@ -26,6 +26,7 @@ pub const METHOD_SHAMIR: &str = "shamir";
 
 /// Outcome of [`load_active_*`] — fully describes the at-rest state so
 /// engine boot can construct the right [`crate::crypto::seal_state::SealState`].
+#[non_exhaustive]
 pub enum ActiveKek {
     /// Plaintext sealing (Phase 1 placeholder). The KEK is in memory.
     Plaintext { kid: String, handle: KekHandle },

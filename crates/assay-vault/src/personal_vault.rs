@@ -21,6 +21,7 @@ use crate::error::Result;
 
 /// One personal-vault row. The `public_key` is X25519 raw (32 bytes).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PersonalVault {
     pub id: String,
     pub owner_user: String,
