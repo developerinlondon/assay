@@ -2,6 +2,12 @@
 
 All notable changes to Assay are documented here.
 
+## [assay 0.15.2] - 2026-04-27
+
+- **`crypto.jwt_verify(token, key, opts?)`** — verify-side mirror of `jwt_sign`. PEM
+  (RS256/384/512) or JWKS table (dispatched by `kid`). Validates `aud`/`iss`/`exp`/`nbf`
+  with optional `leeway`. Lets pure-Lua services accept JWTs without an `assay-engine`.
+
 ## [assay-engine 0.4.0 / assay-auth 0.3.0 / assay-vault 0.2.0] - 2026-04-27
 
 | Crate          | Bump          |

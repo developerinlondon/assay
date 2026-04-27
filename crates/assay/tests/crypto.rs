@@ -172,6 +172,430 @@ async fn test_jwt_decode_roundtrip_with_jwt_sign() {
 }
 
 #[tokio::test]
+async fn test_jwt_verify_rs256_roundtrip() {
+    // Sign with the private key, verify with the matching public key.
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let exp = now + 3600;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
+    vm.globals().set("test_iat", now as i64).unwrap();
+    vm.globals().set("test_exp", exp as i64).unwrap();
+
+    vm.load(
+        r#"
+        local token = crypto.jwt_sign({
+            iss = "test-issuer",
+            sub = "test-subject",
+            aud = "test-audience",
+            iat = test_iat,
+            exp = test_exp,
+        }, priv_pem)
+        local out = crypto.jwt_verify(token, pub_pem, {
+            audience = "test-audience",
+            issuer = "test-issuer",
+        })
+        assert.eq(out.header.alg, "RS256")
+        assert.eq(out.claims.iss, "test-issuer")
+        assert.eq(out.claims.sub, "test-subject")
+        assert.eq(out.claims.aud, "test-audience")
+        "#,
+    )
+    .exec_async()
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_jwt_verify_rejects_wrong_audience() {
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
+    vm.globals().set("test_iat", now).unwrap();
+    vm.globals().set("test_exp", now + 3600).unwrap();
+
+    let result = vm
+        .load(
+            r#"
+            local token = crypto.jwt_sign({
+                iss = "test-issuer",
+                aud = "intended-audience",
+                iat = test_iat,
+                exp = test_exp,
+            }, priv_pem)
+            return crypto.jwt_verify(token, pub_pem, { audience = "different-audience" })
+            "#,
+        )
+        .exec_async()
+        .await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("audience") || err.contains("Audience") || err.contains("aud"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn test_jwt_verify_rejects_wrong_issuer() {
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
+    vm.globals().set("test_iat", now).unwrap();
+    vm.globals().set("test_exp", now + 3600).unwrap();
+
+    let result = vm
+        .load(
+            r#"
+            local token = crypto.jwt_sign({
+                iss = "real-issuer",
+                aud = "test-audience",
+                iat = test_iat,
+                exp = test_exp,
+            }, priv_pem)
+            return crypto.jwt_verify(token, pub_pem, {
+                audience = "test-audience",
+                issuer = "expected-issuer",
+            })
+            "#,
+        )
+        .exec_async()
+        .await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("issuer") || err.contains("Issuer") || err.contains("iss"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn test_jwt_verify_rejects_expired_token() {
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
+    vm.globals().set("test_iat", now - 7200).unwrap();
+    vm.globals().set("test_exp", now - 3600).unwrap();
+
+    let result = vm
+        .load(
+            r#"
+            local token = crypto.jwt_sign({
+                iss = "test-issuer",
+                aud = "test-audience",
+                iat = test_iat,
+                exp = test_exp,
+            }, priv_pem)
+            return crypto.jwt_verify(token, pub_pem, { audience = "test-audience" })
+            "#,
+        )
+        .exec_async()
+        .await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("expired") || err.contains("ExpiredSignature") || err.contains("exp"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn test_jwt_verify_rejects_tampered_signature() {
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
+    vm.globals().set("test_iat", now).unwrap();
+    vm.globals().set("test_exp", now + 3600).unwrap();
+
+    let result = vm
+        .load(
+            r#"
+            -- Two different payloads → different signatures over the same key.
+            -- Splice token_a's header.payload onto token_b's signature; result
+            -- is well-formed base64url everywhere but signature ≠ message.
+            local token_a = crypto.jwt_sign({
+                iss = "test-issuer",
+                aud = "test-audience",
+                iat = test_iat,
+                exp = test_exp,
+                marker = "alpha",
+            }, priv_pem)
+            local token_b = crypto.jwt_sign({
+                iss = "test-issuer",
+                aud = "test-audience",
+                iat = test_iat,
+                exp = test_exp,
+                marker = "beta",
+            }, priv_pem)
+            local sig_b = token_b:match("[^.]+$")
+            local prefix_a = token_a:match("^(.+)%.[^.]+$")
+            local tampered = prefix_a .. "." .. sig_b
+            return crypto.jwt_verify(tampered, pub_pem, { audience = "test-audience" })
+            "#,
+        )
+        .exec_async()
+        .await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("InvalidSignature") || err.contains("signature") || err.contains("Signature"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn test_jwt_verify_jwks_dispatch_by_kid() {
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let jwks_json = std::fs::read_to_string("tests/fixtures/test_rsa_pub.jwks.json").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("jwks_json", vm.create_string(&jwks_json).unwrap()).unwrap();
+    vm.globals().set("test_iat", now).unwrap();
+    vm.globals().set("test_exp", now + 3600).unwrap();
+
+    vm.load(
+        r#"
+        local jwks = json.parse(jwks_json)
+        local token = crypto.jwt_sign({
+            iss = "test-issuer",
+            aud = "test-audience",
+            iat = test_iat,
+            exp = test_exp,
+        }, priv_pem, "RS256", { kid = "test-key-1" })
+        local out = crypto.jwt_verify(token, jwks, { audience = "test-audience" })
+        assert.eq(out.header.kid, "test-key-1")
+        assert.eq(out.claims.iss, "test-issuer")
+        "#,
+    )
+    .exec_async()
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_jwt_verify_jwks_rejects_unknown_kid() {
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let jwks_json = std::fs::read_to_string("tests/fixtures/test_rsa_pub.jwks.json").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("jwks_json", vm.create_string(&jwks_json).unwrap()).unwrap();
+    vm.globals().set("test_iat", now).unwrap();
+    vm.globals().set("test_exp", now + 3600).unwrap();
+
+    let result = vm
+        .load(
+            r#"
+            local jwks = json.parse(jwks_json)
+            local token = crypto.jwt_sign({
+                iss = "test-issuer",
+                aud = "test-audience",
+                iat = test_iat,
+                exp = test_exp,
+            }, priv_pem, "RS256", { kid = "missing-key" })
+            return crypto.jwt_verify(token, jwks, { audience = "test-audience" })
+            "#,
+        )
+        .exec_async()
+        .await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("no key in JWKS matches kid") || err.contains("missing-key"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn test_jwt_verify_jwks_requires_kid_in_token() {
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let jwks_json = std::fs::read_to_string("tests/fixtures/test_rsa_pub.jwks.json").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("jwks_json", vm.create_string(&jwks_json).unwrap()).unwrap();
+    vm.globals().set("test_iat", now).unwrap();
+    vm.globals().set("test_exp", now + 3600).unwrap();
+
+    let result = vm
+        .load(
+            r#"
+            local jwks = json.parse(jwks_json)
+            -- Sign without a kid header.
+            local token = crypto.jwt_sign({
+                iss = "test-issuer",
+                aud = "test-audience",
+                iat = test_iat,
+                exp = test_exp,
+            }, priv_pem)
+            return crypto.jwt_verify(token, jwks, { audience = "test-audience" })
+            "#,
+        )
+        .exec_async()
+        .await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("missing 'kid'"), "got: {err}");
+}
+
+#[tokio::test]
+async fn test_jwt_verify_audience_array() {
+    // `audience` accepts both a string and an array of strings; either acts
+    // as an allowlist (token's aud must match at least one entry).
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
+    vm.globals().set("test_iat", now).unwrap();
+    vm.globals().set("test_exp", now + 3600).unwrap();
+
+    vm.load(
+        r#"
+        local token = crypto.jwt_sign({
+            iss = "test-issuer",
+            aud = "second-audience",
+            iat = test_iat,
+            exp = test_exp,
+        }, priv_pem)
+        local out = crypto.jwt_verify(token, pub_pem, {
+            audience = { "first-audience", "second-audience", "third-audience" },
+        })
+        assert.eq(out.claims.aud, "second-audience")
+        "#,
+    )
+    .exec_async()
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_jwt_verify_skip_exp_validation() {
+    let priv_pem = std::fs::read_to_string("tests/fixtures/test_rsa.pem").unwrap();
+    let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let vm = create_vm();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
+    vm.globals().set("test_iat", now - 7200).unwrap();
+    vm.globals().set("test_exp", now - 3600).unwrap();
+
+    vm.load(
+        r#"
+        local token = crypto.jwt_sign({
+            iss = "test-issuer",
+            aud = "test-audience",
+            iat = test_iat,
+            exp = test_exp,
+        }, priv_pem)
+        -- An expired token verifies fine when validate_exp is off and the
+        -- exp claim is no longer required.
+        local out = crypto.jwt_verify(token, pub_pem, {
+            audience = "test-audience",
+            validate_exp = false,
+            required_claims = {},
+        })
+        assert.eq(out.claims.iss, "test-issuer")
+        "#,
+    )
+    .exec_async()
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_jwt_verify_rejects_malformed_token() {
+    let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
+    let vm = create_vm();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
+
+    let result = vm
+        .load(r#"return crypto.jwt_verify("only.two", pub_pem)"#)
+        .exec_async()
+        .await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_jwt_verify_rejects_invalid_pem() {
+    let result = run_lua(
+        r#"
+        crypto.jwt_verify("a.b.c", "not-a-real-pem-key")
+        "#,
+    )
+    .await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("invalid PEM key"), "got: {err}");
+}
+
+#[tokio::test]
 async fn test_jwt_decode_rejects_malformed_token() {
     // Not three segments
     let result = run_lua(r#"crypto.jwt_decode("only.two")"#).await;
