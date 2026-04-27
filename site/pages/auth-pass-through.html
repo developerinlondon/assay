@@ -126,17 +126,16 @@ audience = ["my-app", "shared-with-partner"]</code></pre>
             v
      Caller { user_id: jwt.sub, source: Jwt }</code></pre>
 
-    <h2>Reference deployment: Xandar (the SIMONS gitops dashboard)</h2>
+    <h2>Typical deployment shape</h2>
     <p>
-      Siemens GTI's deployment-management dashboard, Xandar, runs the assay-engine workflow
-      module behind Traefik ForwardAuth that injects an Ory Hydra ID-token into the
-      <code>Authorization</code> header. Hydra mints. Xandar's edge forwards. The engine
-      validates against Hydra's JWKS and treats the request as the authenticated user.
-      <code>assay-engine 0.3.2</code> made this a single TOML block:
+      A reverse proxy (Traefik, nginx, Envoy, …) terminates user sessions against an upstream
+      OIDC provider and forwards an <code>Authorization: Bearer &lt;jwt&gt;</code> header to
+      <code>assay-engine</code>. The proxy doesn't need to validate the JWT itself — that's
+      the engine's job:
     </p>
     <pre><code>[[auth.external_issuers]]
-issuer_url = "https://hydra.dev.pe.gti.disw.siemens.com/"
-audience = ["xandar"]</code></pre>
+issuer_url = "https://hydra.example.com/"
+audience = ["my-app"]</code></pre>
     <p>
       This restores the exact integration model <code>assay 0.12.1</code> supported via
       <code>--auth-issuer</code> / <code>--auth-audience</code> CLI flags, in the new TOML

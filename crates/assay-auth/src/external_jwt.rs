@@ -309,7 +309,7 @@ mod tests {
         let secret = b"unit-test-secret-key-32bytes!!!!";
         let kid = "test-key-1";
         let issuer = "https://hydra.example.com";
-        let aud = "xandar";
+        let aud = "test-app";
         let claims = TestClaims {
             iss: issuer.to_string(),
             aud: aud.to_string(),
@@ -333,7 +333,7 @@ mod tests {
         let kid = "test-key-1";
         let claims = TestClaims {
             iss: "https://other.example.com".to_string(),
-            aud: "xandar".to_string(),
+            aud: "test-app".to_string(),
             sub: "user-42".to_string(),
             exp: (std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -345,7 +345,7 @@ mod tests {
 
         let v = verifier_for_tests(
             "https://hydra.example.com",
-            vec!["xandar".to_string()],
+            vec!["test-app".to_string()],
             hs256_jwks_with_kid(kid, secret),
         );
         assert!(v.verify::<TestClaims>(&token).is_err());
@@ -370,7 +370,7 @@ mod tests {
 
         let v = verifier_for_tests(
             issuer,
-            vec!["xandar".to_string()],
+            vec!["test-app".to_string()],
             hs256_jwks_with_kid(kid, secret),
         );
         assert!(v.verify::<TestClaims>(&token).is_err());
@@ -382,7 +382,7 @@ mod tests {
         let issuer = "https://hydra.example.com";
         let claims = TestClaims {
             iss: issuer.to_string(),
-            aud: "xandar".to_string(),
+            aud: "test-app".to_string(),
             sub: "user-42".to_string(),
             exp: (std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -395,7 +395,7 @@ mod tests {
 
         let v = verifier_for_tests(
             issuer,
-            vec!["xandar".to_string()],
+            vec!["test-app".to_string()],
             hs256_jwks_with_kid("current-key", secret),
         );
         let err = v.verify::<TestClaims>(&token).unwrap_err().to_string();
@@ -409,7 +409,7 @@ mod tests {
         let issuer = "https://hydra.example.com";
         let claims = TestClaims {
             iss: issuer.to_string(),
-            aud: "xandar".to_string(),
+            aud: "test-app".to_string(),
             sub: "user-42".to_string(),
             // 1 hour ago — already expired.
             exp: (std::time::SystemTime::now()
@@ -422,7 +422,7 @@ mod tests {
 
         let v = verifier_for_tests(
             issuer,
-            vec!["xandar".to_string()],
+            vec!["test-app".to_string()],
             hs256_jwks_with_kid(kid, secret),
         );
         assert!(v.verify::<TestClaims>(&token).is_err());
@@ -459,18 +459,18 @@ mod tests {
 
         let v_a = Arc::new(verifier_for_tests(
             issuer_a,
-            vec!["xandar".to_string()],
+            vec!["test-app".to_string()],
             hs256_jwks_with_kid("a-key", secret_a),
         ));
         let v_b = Arc::new(verifier_for_tests(
             issuer_b,
-            vec!["xandar".to_string()],
+            vec!["test-app".to_string()],
             hs256_jwks_with_kid("b-key", secret_b),
         ));
 
         let claims_b = TestClaims {
             iss: issuer_b.to_string(),
-            aud: "xandar".to_string(),
+            aud: "test-app".to_string(),
             sub: "user-42".to_string(),
             exp: (std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -492,12 +492,12 @@ mod tests {
         let secret = b"unit-test-secret-key-32bytes!!!!";
         let v = Arc::new(verifier_for_tests(
             "https://hydra.example.com",
-            vec!["xandar".to_string()],
+            vec!["test-app".to_string()],
             hs256_jwks_with_kid("a-key", secret),
         ));
         let claims = TestClaims {
             iss: "https://stranger.example.com".to_string(),
-            aud: "xandar".to_string(),
+            aud: "test-app".to_string(),
             sub: "user-42".to_string(),
             exp: (std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -516,7 +516,7 @@ mod tests {
         let secret = b"unit-test-secret-key-32bytes!!!!";
         let claims = TestClaims {
             iss: "https://anywhere.example.com".to_string(),
-            aud: "xandar".to_string(),
+            aud: "test-app".to_string(),
             sub: "user-42".to_string(),
             exp: 9999999999,
         };
