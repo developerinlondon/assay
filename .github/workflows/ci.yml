@@ -219,3 +219,14 @@ jobs:
         run: moon run openclaw-extension:test --color
         env:
           MOON_LOG: "info"
+
+  # Catches public-API drift in workspace crates so the release-time
+  # `cargo publish --verify` step doesn't fail on a method that was
+  # added to a workspace dep without bumping that dep's Cargo.toml.
+  semver-checks:
+    name: cargo-semver-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
