@@ -27,6 +27,7 @@ use crate::error::{Result, VaultError};
 /// surface accepts explicit credentials so a localstack test path
 /// works out of the box.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct AwsCredentials {
     pub access_key_id: String,
     pub secret_access_key: String,
@@ -34,6 +35,7 @@ pub struct AwsCredentials {
 }
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct AwsKmsSeal {
     pub region: String,
     pub key_id: String,

@@ -26,6 +26,7 @@ use crate::transit::{TransitService, TransitStore};
 /// `axum::extract::FromRef`. Cheap to clone — every service is
 /// `Arc`-shared underneath the type-erased trait object.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct VaultCtx {
     /// Master KEK handle. Always present so KV / transit services can
     /// hold a clone — but the live sealing state in `seal_state`
