@@ -28,6 +28,7 @@ jobs:
       assay_workflow_bumped: ${{ steps.assay-workflow.outputs.bumped }}
       assay_dashboard_bumped: ${{ steps.assay-dashboard.outputs.bumped }}
       assay_auth_bumped: ${{ steps.assay-auth.outputs.bumped }}
+      assay_vault_bumped: ${{ steps.assay-vault.outputs.bumped }}
       assay_engine_bumped: ${{ steps.assay-engine.outputs.bumped }}
       assay_lua_bumped: ${{ steps.assay-lua.outputs.bumped }}
       assay_engine_version: ${{ steps.assay-engine.outputs.version }}
@@ -72,6 +73,9 @@ jobs:
 
       - id: assay-auth
         run: .github/release/check-bumped.sh assay-auth
+
+      - id: assay-vault
+        run: .github/release/check-bumped.sh assay-vault
 
       - id: assay-engine
         run: .github/release/check-bumped.sh assay-engine
@@ -150,7 +154,8 @@ jobs:
       needs.detect.outputs.assay_domain_bumped    == 'true' ||
       needs.detect.outputs.assay_workflow_bumped  == 'true' ||
       needs.detect.outputs.assay_dashboard_bumped == 'true' ||
-      needs.detect.outputs.assay_auth_bumped      == 'true'
+      needs.detect.outputs.assay_auth_bumped      == 'true' ||
+      needs.detect.outputs.assay_vault_bumped     == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -205,6 +210,15 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: /tmp/publish-crate.sh assay-auth
+
+      # assay-vault depends on assay-domain + assay-auth — the
+      # publish-crate.sh helper sleeps 30s after each publish so the
+      # crates.io index has caught up by the time we hit it.
+      - name: Publish assay-vault
+        if: needs.detect.outputs.assay_vault_bumped == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: /tmp/publish-crate.sh assay-vault
 
   # Cross-compile both products for both targets. Shared between the
   # release-* jobs.
