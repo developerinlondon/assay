@@ -12,6 +12,8 @@ use crate::biscuit::BiscuitConfig;
 use crate::store::{SessionStore, UserStore};
 
 #[cfg(feature = "auth-jwt")]
+use crate::external_jwt::ExternalJwtIssuer;
+#[cfg(feature = "auth-jwt")]
 use crate::jwt::JwtConfig;
 #[cfg(feature = "auth-oidc")]
 use crate::oidc::OidcRegistry;
@@ -23,6 +25,7 @@ use crate::passkey::PasskeyManager;
 use crate::zanzibar::ZanzibarStore;
 
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct AuthCtx {
     /// Authoritative user record store. Carries password hashes,
     /// upstream-provider links, and passkeys.
@@ -41,6 +44,26 @@ pub struct AuthCtx {
     /// `auth-jwt` feature is enabled.
     #[cfg(feature = "auth-jwt")]
     pub jwt: Option<JwtConfig>,
+    /// External OIDC issuers trusted to mint JWTs the engine accepts
+    /// pass-through. Empty by default; populated by engine boot from
+    /// `[[auth.external_issuers]]` blocks in `engine.toml` via the
+    /// [`AuthCtx::with_external_issuers`] builder. See
+    /// [`crate::external_jwt::ExternalJwtIssuer`] for the verifier
+    /// shape. When non-empty, the engine boots without requiring
+    /// operator users / `admin_api_keys` — pass-through tokens are
+    /// considered sufficient identity proof.
+    ///
+    /// `Arc<[T]>` so cloning `AuthCtx` (which axum's `FromRef` does
+    /// per request that extracts it) bumps a single refcount instead
+    /// of allocating a fresh `Vec`. Each `ExternalJwtIssuer` already
+    /// owns its mutable state (the JWKS) behind its own `Arc<RwLock>`,
+    /// so the inner type doesn't need an extra `Arc` wrap.
+    ///
+    /// Field is private so future entries (per-issuer policy, claim
+    /// mappers, etc.) can be added without breaking downstream
+    /// construction. Read via [`AuthCtx::external_issuers`].
+    #[cfg(feature = "auth-jwt")]
+    external_issuers: Arc<[ExternalJwtIssuer]>,
     /// Slug-keyed registry of discovered upstream OIDC providers.
     /// Engine boot constructs an empty registry; admin CRUD (or seed
     /// config) populates it. See [`crate::oidc::OidcRegistry`].
@@ -82,6 +105,8 @@ impl AuthCtx {
             biscuit: BiscuitConfig::generate_ephemeral(),
             #[cfg(feature = "auth-jwt")]
             jwt: None,
+            #[cfg(feature = "auth-jwt")]
+            external_issuers: Arc::from([]),
             #[cfg(feature = "auth-oidc")]
             oidc: None,
             #[cfg(feature = "auth-passkey")]
@@ -99,6 +124,23 @@ impl AuthCtx {
     pub fn with_jwt(mut self, jwt: JwtConfig) -> Self {
         self.jwt = Some(jwt);
         self
+    }
+
+    /// Replace the external-issuer list. Used by engine boot after
+    /// each issuer's discovery + initial JWKS fetch completes. The
+    /// `Vec` is consumed and stored as `Arc<[T]>` so subsequent
+    /// `AuthCtx` clones share the same slice via refcount.
+    #[cfg(feature = "auth-jwt")]
+    pub fn with_external_issuers(mut self, issuers: Vec<ExternalJwtIssuer>) -> Self {
+        self.external_issuers = issuers.into();
+        self
+    }
+
+    /// Read access to the configured external issuers. Used by the
+    /// auth gate's JWT pass-through fallthrough.
+    #[cfg(feature = "auth-jwt")]
+    pub fn external_issuers(&self) -> &[ExternalJwtIssuer] {
+        &self.external_issuers
     }
 
     /// Replace the OIDC registry. Engine boot creates an empty registry

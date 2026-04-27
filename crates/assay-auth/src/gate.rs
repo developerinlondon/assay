@@ -109,14 +109,31 @@ pub async fn extract_caller(
 
     // 3. JWT bearer.
     #[cfg(feature = "auth-jwt")]
-    if let Some(token) = bearer_token(headers)
-        && let Some(jwt) = ctx.jwt.as_ref()
-    {
+    if let Some(token) = bearer_token(headers) {
         #[derive(serde::Deserialize)]
         struct SubClaim {
             sub: String,
         }
-        if let Ok(td) = jwt.verify::<SubClaim>(token) {
+
+        // 3a. Internal issuer first — fastest path, no network
+        //     dependency. Engine-issued sessions / OIDC-provider tokens
+        //     fall here.
+        if let Some(jwt) = ctx.jwt.as_ref()
+            && let Ok(td) = jwt.verify::<SubClaim>(token)
+        {
+            return Ok(Caller {
+                user_id: td.claims.sub,
+                source: CallerSource::Jwt,
+            });
+        }
+
+        // 3b. External issuers (Hydra, Keycloak, Auth0, …). Routed by
+        //     `iss` claim so we don't burn CPU verifying against
+        //     mismatched key sets.
+        if let Some(result) =
+            crate::external_jwt::verify_with_any::<SubClaim>(ctx.external_issuers(), token)
+            && let Ok(td) = result
+        {
             return Ok(Caller {
                 user_id: td.claims.sub,
                 source: CallerSource::Jwt,
