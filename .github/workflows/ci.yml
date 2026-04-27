@@ -144,14 +144,25 @@ jobs:
         run: echo "TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres" >> $GITHUB_ENV
 
       # Self-hosted runners persist /tmp between jobs. The dashboard
-      # e2e (workflow/tests-e2e/run.lua) defaults to /tmp/assay-e2e.sqlite
-      # and doesn't wipe it on startup the way engine-e2e/run.sh does
-      # for /tmp/assay-engine-e2e-data. Without this step, the second
-      # run hits a UNIQUE constraint on `namespaces.name` because
-      # 'demo' was created on a previous run.
+      # e2e (workflow/tests-e2e/run.lua) sets engine.toml's *legacy*
+      # `path = "/tmp/assay-e2e.sqlite"`, which the engine resolves to
+      # `data_dir = parent(path) = /tmp`, scattering /tmp/engine.db,
+      # /tmp/workflow.db, /tmp/auth.db, /tmp/vault.db across runs.
+      # Without this step the second run hits UNIQUE constraint on
+      # `namespaces.name` because 'demo' is still in /tmp/workflow.db.
+      # Follow-up: switch run.lua to `data_dir = ...` and a per-run
+      # subdir; until then the workflow nukes the lot.
       - name: Wipe stale e2e state (self-hosted)
         if: runner.environment == 'self-hosted'
-        run: rm -rf /tmp/assay-e2e.* /tmp/assay-engine-e2e-* /tmp/assay-e2e-*.toml /tmp/assay-e2e-*.log
+        run: |
+          rm -rf /tmp/assay-e2e.* /tmp/assay-engine-e2e-*
+          rm -rf /tmp/assay-e2e-*.toml /tmp/assay-e2e-*.log
+          rm -f  /tmp/engine.db /tmp/engine.db-* \
+                 /tmp/auth.db   /tmp/auth.db-* \
+                 /tmp/vault.db  /tmp/vault.db-* \
+                 /tmp/workflow.db /tmp/workflow.db-*
+          rm -rf /tmp/assay-resume-state-* /tmp/assay-tool-mode-* /tmp/assay-18*
+          rm -f  /tmp/assay_e2e_test.txt
 
       - name: moon ci
         run: moon ci --color
