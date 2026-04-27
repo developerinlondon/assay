@@ -21,6 +21,7 @@ use crate::error::{Result, VaultError};
 
 /// A Google Cloud service account loaded from the JSON key file.
 #[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
 pub struct ServiceAccount {
     pub client_email: String,
     pub private_key: String,
@@ -50,6 +51,7 @@ struct TokenResponse {
 
 /// One acquired access token with the absolute expiry epoch.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct AccessToken {
     pub access_token: String,
     pub expires_at: u64,

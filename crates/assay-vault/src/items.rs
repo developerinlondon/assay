@@ -17,6 +17,7 @@ use crate::error::Result;
 
 /// Which container the item / folder belongs to.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Parent<'a> {
     /// Personal vault, identified by its `vault.vaults.id`.
     Vault(&'a str),
@@ -41,6 +42,7 @@ impl<'a> Parent<'a> {
 
 /// One row in `vault.items`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Item {
     pub id: String,
     pub vault_id: Option<String>,
@@ -56,6 +58,7 @@ pub struct Item {
 
 /// One row in `vault.folders`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Folder {
     pub id: String,
     pub vault_id: Option<String>,

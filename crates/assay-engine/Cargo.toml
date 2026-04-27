@@ -90,7 +90,7 @@ backend-sqlite = [
 assay-auth = { path = "../assay-auth", version = "0.3" }
 assay-dashboard = { path = "../assay-dashboard", version = "0.3" }
 assay-domain = { path = "../assay-domain", version = "0.2" }
-assay-vault = { path = "../assay-vault", version = "0.1", optional = true, default-features = false }
+assay-vault = { path = "../assay-vault", version = "0.2", optional = true, default-features = false }
 assay-workflow = { path = "../assay-workflow", version = "0.3" }
 
 axum = "0.8"

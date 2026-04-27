@@ -29,6 +29,7 @@ use crate::error::{Result, VaultError};
 
 /// Per-key metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TransitKey {
     pub name: String,
     pub algo: String,
@@ -38,6 +39,7 @@ pub struct TransitKey {
 
 /// One version of a transit key — DEK wrapped by the master KEK.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct TransitVersion {
     pub name: String,
     pub version: i64,
@@ -82,6 +84,7 @@ pub trait TransitStore: Send + Sync + 'static {
 /// crypto op fails closed with [`VaultError::Sealed`] when the vault
 /// is sealed.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct TransitService<S: TransitStore> {
     store: S,
     seal_state: crate::crypto::seal_state::SealState,

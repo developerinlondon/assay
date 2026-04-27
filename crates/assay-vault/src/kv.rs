@@ -28,6 +28,7 @@ use crate::error::{Result, VaultError};
 
 /// One stored version of a KV path. Returned by store-layer reads.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct KvRow {
     pub path: String,
     pub version: i64,
@@ -42,6 +43,7 @@ pub struct KvRow {
 
 /// Path-level metadata. One row in `vault.kv_meta` per path.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct KvMeta {
     pub path: String,
     pub latest_version: i64,
@@ -103,6 +105,7 @@ pub trait KvStore: Send + Sync + 'static {
 
 /// Decrypted read result.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct KvRead {
     pub path: String,
     pub version: i64,
@@ -118,6 +121,7 @@ pub struct KvRead {
 /// which fails closed with [`VaultError::Sealed`] when the vault is
 /// sealed.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct KvService<S: KvStore> {
     store: S,
     seal_state: crate::crypto::seal_state::SealState,

@@ -37,6 +37,7 @@ use crate::error::{Result, VaultError};
 
 /// Outcome of a single rotate pass.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct RotationReport {
     pub old_kid: String,
     pub new_kid: String,

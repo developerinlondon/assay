@@ -19,6 +19,7 @@ type HmacSha256 = Hmac<Sha256>;
 /// One signed request — all the fields the caller needs to construct an
 /// `http::Request` against the target service.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct SignedRequest {
     pub url: String,
     pub method: String,
@@ -28,6 +29,7 @@ pub struct SignedRequest {
 
 /// Inputs to [`sign`].
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct SigV4Input<'a> {
     /// IAM access key ID.
     pub access_key_id: &'a str,

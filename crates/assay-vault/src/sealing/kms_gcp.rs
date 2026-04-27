@@ -24,6 +24,7 @@ use crate::error::{Result, VaultError};
 const KMS_SCOPE: &str = "https://www.googleapis.com/auth/cloudkms";
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct GcpKmsSeal {
     pub project: String,
     pub location: String,

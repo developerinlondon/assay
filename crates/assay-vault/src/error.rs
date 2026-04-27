@@ -4,6 +4,7 @@ use thiserror::Error;
 /// responses in the admin layer (added in Phase 1) and onto Lua runtime
 /// errors for the stdlib client.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum VaultError {
     #[error("not found")]
     NotFound,

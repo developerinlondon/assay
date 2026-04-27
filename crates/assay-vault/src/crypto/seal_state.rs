@@ -21,6 +21,7 @@ use crate::error::{Result, VaultError};
 
 /// Snapshot of the live sealing state. Cheap to clone.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct SealStatus {
     pub method: SealingMethod,
     pub sealed: bool,
@@ -35,6 +36,7 @@ pub struct SealStatus {
 
 /// Mutable runtime state. Held by [`crate::ctx::VaultCtx`] behind an
 /// `Arc<RwLock<…>>`.
+#[non_exhaustive]
 pub struct SealStateInner {
     pub method: SealingMethod,
     pub kid: Option<String>,
@@ -49,6 +51,7 @@ pub struct SealStateInner {
 
 /// Cheap clonable wrapper.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct SealState {
     inner: Arc<RwLock<SealStateInner>>,
 }
@@ -214,6 +217,7 @@ impl SealState {
 }
 
 /// Collected shares during a Shamir unseal ceremony.
+#[non_exhaustive]
 pub struct UnsealAccumulator {
     threshold: u8,
     #[cfg(feature = "vault-sealing-shamir")]

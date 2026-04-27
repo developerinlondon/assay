@@ -25,6 +25,7 @@ use crate::error::{Result, VaultError};
 /// Sealing method recorded in `vault.kek_metadata.sealing_method`.
 /// `Display` emits the wire-format string the column expects.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SealingMethod {
     /// Phase-1 placeholder. Blob IS the raw 32 bytes. WARN-logged.
     Plaintext,

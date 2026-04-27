@@ -25,6 +25,7 @@ use crate::error::{Result, VaultError};
 /// In-memory KEK material. Cheap to clone — the inner Arc shares the
 /// raw bytes across consumers without re-allocating.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct KekHandle {
     inner: Arc<KekInner>,
 }
@@ -38,6 +39,7 @@ struct KekInner {
 /// disk. Layout: `nonce (12) || wrapped DEK ciphertext (32+16 = 48)`.
 /// Total 60 bytes. Stored as a single BYTEA / BLOB column.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct WrappedDek(pub Vec<u8>);
 
 impl WrappedDek {

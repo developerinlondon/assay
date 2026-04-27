@@ -29,6 +29,7 @@ use crate::error::Result;
 /// future targets (e.g. transit key) just add a variant.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", content = "id")]
+#[non_exhaustive]
 pub enum ShareTarget {
     Item(String),
     Vault(String),
@@ -53,6 +54,7 @@ impl ShareTarget {
 
 /// Caveats wired into the biscuit at mint time.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct ShareCaveats {
     /// Token expires this many seconds after mint.
     pub ttl_secs: u64,
@@ -70,6 +72,7 @@ pub struct ShareCaveats {
 /// the caller hands out. The `revocation_ids` are the IDs an operator
 /// uses with [`ShareService::revoke`] to disable the token.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct MintedShare {
     pub token: String,
     pub revocation_ids: Vec<String>,
@@ -78,6 +81,7 @@ pub struct MintedShare {
 
 /// Verified-token grant — what `verify` returns when caveats pass.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ShareGrant {
     pub target: ShareTarget,
 }
@@ -100,6 +104,7 @@ pub trait RevocationStore: Send + Sync + 'static {
 
 /// One row in `vault.share_revoked`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct RevocationEntry {
     pub key_id: String,
     pub revoked_at: f64,
