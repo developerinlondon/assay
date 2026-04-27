@@ -23,7 +23,11 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: macos-14
             target: aarch64-apple-darwin
-    runs-on: ${{ matrix.os }}
+    # On the linux row, route to the self-hosted runner when the actor
+    # is the maintainer; any other actor (Dependabot, future outside
+    # contributors) falls back to ubuntu-latest. The macOS row always
+    # uses GitHub-hosted — there is no local mac.
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || matrix.os }}
     timeout-minutes: 25
 
     steps:
@@ -87,8 +91,12 @@ jobs:
       # eliminates the per-test testcontainer churn that intermittently
       # hung the docker daemon. macOS is SQLite-only (PG cases cfg-gated
       # `target_os = "linux"`).
+      #
+      # Skipped on self-hosted: the assay-runner nspawn container has
+      # postgres-18 installed as a systemd service, listening on
+      # localhost:5432 with the same trust-auth credentials.
       - name: Start Postgres 18 (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
         run: |
           docker run -d --name assay-pg-test \
             -e POSTGRES_PASSWORD=postgres \
@@ -149,7 +157,7 @@ jobs:
   # Dedicated extension gate so an extension-only break fails this job
   # specifically rather than hiding behind a generic "moon ci failed".
   extension-tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
