@@ -110,6 +110,13 @@ pub mod password;
 #[cfg(feature = "auth-jwt")]
 pub mod jwt;
 
+/// External JWT issuer pass-through validation (v0.3.2). Trust JWTs
+/// minted by an upstream OIDC provider (e.g. Hydra) without managing
+/// engine-side users. Configured via `[[auth.external_issuers]]` in
+/// `engine.toml`. See module-level docs for the why and how.
+#[cfg(feature = "auth-jwt")]
+pub mod external_jwt;
+
 #[cfg(feature = "auth-oidc")]
 pub mod oidc;
 

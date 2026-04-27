@@ -60,7 +60,7 @@ backend-postgres = ["dep:sqlx", "sqlx/postgres"]
 backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 
 [dependencies]
-assay-auth = { path = "../assay-auth", version = "0.2" }
+assay-auth = { path = "../assay-auth", version = "0.3" }
 assay-domain = { path = "../assay-domain", version = "0.2" }
 
 # Phase 0 holds the dep set deliberately small: just what the schema

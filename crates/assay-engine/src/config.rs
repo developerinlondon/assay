@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct EngineConfig {
     pub server: ServerConfig,
     pub backend: BackendConfig,
@@ -47,6 +48,7 @@ fn default_engine_events_ttl_secs() -> u64 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct ServerConfig {
     #[serde(default = "default_bind_addr")]
     pub bind_addr: String,
@@ -69,6 +71,7 @@ fn default_public_url() -> String {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum BackendConfig {
     Postgres {
         /// Postgres connection URL, e.g. `postgres://user:pass@host:5432/db`.
@@ -120,6 +123,7 @@ impl BackendConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct WorkflowConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -129,6 +133,7 @@ pub struct WorkflowConfig {
 /// `auth` Cargo feature is compiled in AND `engine.modules.auth.enabled`
 /// is TRUE; otherwise the defaults are harmless.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct AuthConfig {
     /// JWT issuer + OIDC `iss` claim. Defaults to
     /// `<server.public_url>/auth` when unset, which matches the route
@@ -151,10 +156,61 @@ pub struct AuthConfig {
     /// admin routes entirely (404 → 401).
     #[serde(default)]
     pub admin_api_keys: Vec<String>,
+    /// External OIDC issuers trusted to mint JWTs the engine accepts
+    /// pass-through (v0.3.2). Each entry's JWKS is discovered via
+    /// `<issuer_url>/.well-known/openid-configuration` at boot and
+    /// refreshed periodically thereafter. Tokens whose `iss` claim
+    /// matches a configured issuer are verified against that issuer's
+    /// keys; everything else falls through to the engine's internal
+    /// JWT path. When this list is non-empty, the engine boots without
+    /// requiring operator users / `admin_api_keys` — the upstream IdP
+    /// is the source of truth for identity.
+    ///
+    /// Mirrors the v0.12.1 `--auth-issuer` / `--auth-audience` CLI
+    /// flags in the new TOML config shape. Multiple issuers are allowed
+    /// for deployments that span more than one IdP.
+    ///
+    /// Field is private so future entries (per-issuer policy, claim
+    /// mappers, etc.) can be added without breaking downstream
+    /// construction. Read via [`AuthConfig::external_issuers`].
+    #[serde(default)]
+    external_issuers: Vec<ExternalIssuerConfig>,
+}
+
+impl AuthConfig {
+    /// Read access to the parsed `[[auth.external_issuers]]` blocks.
+    pub fn external_issuers(&self) -> &[ExternalIssuerConfig] {
+        &self.external_issuers
+    }
+}
+
+/// One trusted external OIDC issuer for pass-through JWT validation.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct ExternalIssuerConfig {
+    /// Issuer URL — the value the JWT's `iss` claim is matched against
+    /// and the base for `<issuer_url>/.well-known/openid-configuration`
+    /// discovery. Trailing slashes are normalized.
+    pub issuer_url: String,
+    /// Accepted `aud` claim values. A token whose `aud` isn't in this
+    /// list is rejected. Empty list = audience check disabled (NOT
+    /// recommended; set explicitly per deployment).
+    #[serde(default)]
+    pub audience: Vec<String>,
+    /// JWKS refresh interval in seconds (background task). Default 3600
+    /// (1 hour). Minimum effective value 60 seconds — anything smaller
+    /// is clamped to avoid hammering the upstream's JWKS endpoint.
+    #[serde(default = "default_jwks_refresh_secs")]
+    pub jwks_refresh_secs: u64,
+}
+
+fn default_jwks_refresh_secs() -> u64 {
+    3600
 }
 
 /// Session module knobs.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct AuthSessionConfig {
     /// Default session lifetime in seconds. `None` ⇒ uses the
     /// `assay_auth::session::DEFAULT_SESSION_DURATION` (30 days).
@@ -163,6 +219,7 @@ pub struct AuthSessionConfig {
 
 /// WebAuthn / passkey module knobs.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct AuthPasskeyConfig {
     /// Relying-party id — the host (no scheme/port) the browser will
     /// scope passkeys to. Defaults to the host of `server.public_url`.
@@ -173,6 +230,7 @@ pub struct AuthPasskeyConfig {
 
 /// OIDC provider knobs.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct AuthOidcProviderConfig {
     /// Whether the OIDC provider routes (/authorize /token /userinfo …)
     /// are mounted. Defaults to `true` when the Cargo feature is on.
@@ -184,12 +242,14 @@ pub struct AuthOidcProviderConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct DashboardConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
