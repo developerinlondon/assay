@@ -1,7 +1,8 @@
 use super::json::{json_value_to_lua, lua_value_to_json};
 use data_encoding::BASE64URL_NOPAD;
 use digest::Digest;
-use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use jsonwebtoken::jwk::{JwkSet, KeyAlgorithm};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, decode_header};
 use mlua::{Lua, Value};
 use rand::RngExt;
 use zeroize::Zeroizing;
@@ -114,6 +115,171 @@ pub fn register_crypto(lua: &Lua) -> mlua::Result<()> {
         Ok(result)
     })?;
     crypto_table.set("jwt_decode", jwt_decode_fn)?;
+
+    // crypto.jwt_verify(token, key, opts?) -> { header, claims }
+    //
+    // Verify a JWT's signature and validate its claims. Mirrors
+    // `crypto.jwt_sign` for the receive side. Use this for tokens
+    // arriving from untrusted sources; for tokens travelling through a
+    // trusted channel (e.g. your own session cookie over TLS) where
+    // you only need to read claims, prefer `crypto.jwt_decode`.
+    //
+    // `key` accepts either:
+    //   - a PEM-encoded RSA public key string (algorithm taken from
+    //     `opts.algorithm`, default RS256)
+    //   - a JWKS table `{ keys = { ... } }` — the verifier dispatches on
+    //     the JWT header's `kid`, picks the matching JWK, and uses the
+    //     JWK's `alg` (or the JWT header's `alg` if the key omits it)
+    //
+    // `opts` (table, optional):
+    //   - `algorithm`: "RS256" | "RS384" | "RS512" — only used for the PEM path
+    //   - `audience`: string or array of strings — validates `aud`
+    //   - `issuer`:   string or array of strings — validates `iss`
+    //   - `leeway`: integer seconds of clock skew tolerance (default 0)
+    //   - `validate_exp`: boolean (default true)
+    //   - `validate_nbf`: boolean (default false)
+    //   - `required_claims`: array of strings (default ["exp"]; pass {} to skip)
+    //
+    // Returns `{ header = {...}, claims = {...} }`. Raises on signature
+    // mismatch, expired token, audience/issuer mismatch, malformed token,
+    // missing JWK, or bad arguments.
+    let jwt_verify_fn = lua.create_function(|lua, args: mlua::MultiValue| {
+        let mut args_iter = args.into_iter();
+
+        let token: String = match args_iter.next() {
+            Some(Value::String(s)) => s.to_str()?.to_string(),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.jwt_verify: first argument must be a JWT string",
+                ));
+            }
+        };
+
+        let key_arg = match args_iter.next() {
+            Some(v) => v,
+            None => {
+                return Err(mlua::Error::runtime(
+                    "crypto.jwt_verify: second argument must be a PEM string or JWKS table",
+                ));
+            }
+        };
+
+        let opts: Option<mlua::Table> = match args_iter.next() {
+            Some(Value::Table(t)) => Some(t),
+            Some(Value::Nil) | None => None,
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.jwt_verify: third argument must be an options table or nil",
+                ));
+            }
+        };
+
+        // Dispatch on key type (PEM string vs JWKS table).
+        let (decoding_key, algorithm) = match key_arg {
+            Value::String(pem) => {
+                let pem_str = pem.to_str()?.to_string();
+                let alg_str = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<Option<String>>("algorithm").ok().flatten());
+                let alg = match alg_str.as_deref() {
+                    Some(s) => match s.to_uppercase().as_str() {
+                        "RS256" => Algorithm::RS256,
+                        "RS384" => Algorithm::RS384,
+                        "RS512" => Algorithm::RS512,
+                        other => {
+                            return Err(mlua::Error::runtime(format!(
+                                "crypto.jwt_verify: unsupported algorithm: {other}"
+                            )));
+                        }
+                    },
+                    None => Algorithm::RS256,
+                };
+                let pem_bytes = Zeroizing::new(pem_str.into_bytes());
+                let key = DecodingKey::from_rsa_pem(&pem_bytes).map_err(|e| {
+                    mlua::Error::runtime(format!("crypto.jwt_verify: invalid PEM key: {e}"))
+                })?;
+                (key, alg)
+            }
+            Value::Table(jwks_table) => {
+                let jwks_json = lua_value_to_json(&Value::Table(jwks_table))?;
+                let jwks: JwkSet = serde_json::from_value(jwks_json).map_err(|e| {
+                    mlua::Error::runtime(format!("crypto.jwt_verify: invalid JWKS table: {e}"))
+                })?;
+
+                let header = decode_header(&token).map_err(|e| {
+                    mlua::Error::runtime(format!(
+                        "crypto.jwt_verify: malformed token header: {e}"
+                    ))
+                })?;
+                let kid = header.kid.as_deref().ok_or_else(|| {
+                    mlua::Error::runtime(
+                        "crypto.jwt_verify: token header missing 'kid' (required for JWKS dispatch)",
+                    )
+                })?;
+                let jwk = jwks.find(kid).ok_or_else(|| {
+                    mlua::Error::runtime(format!(
+                        "crypto.jwt_verify: no key in JWKS matches kid '{kid}'"
+                    ))
+                })?;
+
+                let alg = jwk
+                    .common
+                    .key_algorithm
+                    .and_then(key_algorithm_to_algorithm)
+                    .unwrap_or(header.alg);
+                let key = DecodingKey::from_jwk(jwk).map_err(|e| {
+                    mlua::Error::runtime(format!("crypto.jwt_verify: cannot decode JWK: {e}"))
+                })?;
+                (key, alg)
+            }
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.jwt_verify: second argument must be a PEM string or JWKS table",
+                ));
+            }
+        };
+
+        let mut validation = Validation::new(algorithm);
+
+        if let Some(opts_table) = opts.as_ref() {
+            if let Some(audience) = lua_string_or_array(opts_table, "audience", "crypto.jwt_verify")? {
+                validation.set_audience(&audience);
+            }
+            if let Some(issuer) = lua_string_or_array(opts_table, "issuer", "crypto.jwt_verify")? {
+                validation.set_issuer(&issuer);
+            }
+            if let Ok(Some(leeway)) = opts_table.get::<Option<u64>>("leeway") {
+                validation.leeway = leeway;
+            }
+            if let Ok(Some(validate_exp)) = opts_table.get::<Option<bool>>("validate_exp") {
+                validation.validate_exp = validate_exp;
+            }
+            if let Ok(Some(validate_nbf)) = opts_table.get::<Option<bool>>("validate_nbf") {
+                validation.validate_nbf = validate_nbf;
+            }
+            if let Ok(Some(required_table)) = opts_table.get::<Option<mlua::Table>>("required_claims") {
+                let mut required: Vec<String> = Vec::new();
+                for item in required_table.sequence_values::<mlua::String>() {
+                    required.push(item?.to_str()?.to_string());
+                }
+                let required_refs: Vec<&str> = required.iter().map(String::as_str).collect();
+                validation.set_required_spec_claims(&required_refs);
+            }
+        }
+
+        let token_data: jsonwebtoken::TokenData<serde_json::Value> =
+            decode(&token, &decoding_key, &validation)
+                .map_err(|e| mlua::Error::runtime(format!("crypto.jwt_verify: {e}")))?;
+
+        let header_json = serde_json::to_value(&token_data.header).map_err(|e| {
+            mlua::Error::runtime(format!("crypto.jwt_verify: serialize header: {e}"))
+        })?;
+        let result = lua.create_table()?;
+        result.set("header", json_value_to_lua(lua, &header_json)?)?;
+        result.set("claims", json_value_to_lua(lua, &token_data.claims)?)?;
+        Ok(result)
+    })?;
+    crypto_table.set("jwt_verify", jwt_verify_fn)?;
 
     let hash_fn = lua.create_function(|_, args: mlua::MultiValue| {
         let mut args_iter = args.into_iter();
@@ -246,6 +412,53 @@ pub fn register_crypto(lua: &Lua) -> mlua::Result<()> {
 
     lua.globals().set("crypto", crypto_table)?;
     Ok(())
+}
+
+// Read a Lua opts-table field that accepts either a string or an array of
+// strings. Returns Ok(None) if the field is absent or nil. Used by jwt_verify
+// for `audience` and `issuer`.
+fn lua_string_or_array(
+    opts: &mlua::Table,
+    field: &str,
+    fn_name: &str,
+) -> mlua::Result<Option<Vec<String>>> {
+    let raw: Value = opts.get(field)?;
+    match raw {
+        Value::Nil => Ok(None),
+        Value::String(s) => Ok(Some(vec![s.to_str()?.to_string()])),
+        Value::Table(t) => {
+            let mut out = Vec::new();
+            for item in t.sequence_values::<mlua::String>() {
+                out.push(item?.to_str()?.to_string());
+            }
+            Ok(Some(out))
+        }
+        _ => Err(mlua::Error::runtime(format!(
+            "{fn_name}: '{field}' must be a string or array of strings"
+        ))),
+    }
+}
+
+// Map a JWK's declared key algorithm to the matching JWT algorithm enum.
+// Returns None for algorithms not representable in jsonwebtoken's `Algorithm`
+// (none in the current crate version, but kept Option-shaped for forward
+// compatibility) so the caller can fall back to the JWT header's `alg`.
+fn key_algorithm_to_algorithm(key_alg: KeyAlgorithm) -> Option<Algorithm> {
+    Some(match key_alg {
+        KeyAlgorithm::HS256 => Algorithm::HS256,
+        KeyAlgorithm::HS384 => Algorithm::HS384,
+        KeyAlgorithm::HS512 => Algorithm::HS512,
+        KeyAlgorithm::RS256 => Algorithm::RS256,
+        KeyAlgorithm::RS384 => Algorithm::RS384,
+        KeyAlgorithm::RS512 => Algorithm::RS512,
+        KeyAlgorithm::PS256 => Algorithm::PS256,
+        KeyAlgorithm::PS384 => Algorithm::PS384,
+        KeyAlgorithm::PS512 => Algorithm::PS512,
+        KeyAlgorithm::ES256 => Algorithm::ES256,
+        KeyAlgorithm::ES384 => Algorithm::ES384,
+        KeyAlgorithm::EdDSA => Algorithm::EdDSA,
+        _ => return None,
+    })
 }
 
 fn compute_hmac_bytes(key: &[u8], data: &[u8], algorithm: &str) -> Result<Vec<u8>, String> {

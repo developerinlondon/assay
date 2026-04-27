@@ -15,7 +15,15 @@ Cryptography utilities. No `require()` needed.
   - Returns `header` and `claims` parsed from the base64url segments
   - Use when the JWT travels through a trusted channel (your own session cookie over TLS) and you
     just need to read the claims
-  - For untrusted JWTs, verify the signature with a JWKS-aware verifier instead
+  - For untrusted JWTs, use `crypto.jwt_verify` instead
+- `crypto.jwt_verify(token, key, opts?)` → `{header, claims}` — Verify signature and validate claims
+  - `key`: PEM-encoded RSA public key string, OR a JWKS table `{ keys = { ... } }`
+    - PEM path uses `opts.algorithm` (default `"RS256"`)
+    - JWKS path dispatches on the JWT header's `kid` and uses the matching JWK's `alg`
+  - `opts`: `{algorithm = "RS256"|"RS384"|"RS512", audience = "x" | {"x","y"}, issuer = "x" | {"x","y"}, leeway = 0, validate_exp = true, validate_nbf = false, required_claims = {"exp"}}`
+  - Returns the same shape as `jwt_decode`; raises on signature mismatch, expired token, claim
+    mismatch, malformed token, or missing JWK
+  - Pair with `assay.ory.hydra` `c.discovery:jwks()` to fetch the issuer's JWKS table at boot
 - `crypto.hash(str, alg)` → string — Hash string (hex output)
   - `alg`: `"sha256"` | `"sha384"` | `"sha512"` | `"md5"`
 - `crypto.hmac(key, data, alg?, raw?)` → string — HMAC signature
