@@ -5,6 +5,13 @@
 //! session/cookie shape). When `auth` isn't compiled in (Cargo feature
 //! off) the auth section is parsed but never read — keeping the TOML
 //! shape stable across feature configurations.
+//!
+//! Env-var substitution: `${VAR}` and `${VAR:-default}` references in
+//! the TOML are expanded against the process environment before parsing
+//! (added in 0.3.1). This keeps secrets out of config files when the
+//! engine runs under K8s/systemd/etc. — the typical pattern is
+//! `url = "${DATABASE_URL}"` with `DATABASE_URL` injected from a
+//! Secret/EnvironmentFile.
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -212,11 +219,219 @@ fn default_log_format() -> String {
 }
 
 impl EngineConfig {
+    /// Load `engine.toml`. String fields support `${VAR}` and
+    /// `${VAR:-default}` env-var references; references with no default
+    /// error out at load time when the variable is unset. Bracket-less
+    /// `$VAR` is left untouched, and `${...}` whose contents aren't a
+    /// valid identifier are passed through verbatim.
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
         let raw = std::fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("read config {}: {e}", path.display()))?;
-        let cfg: Self = toml::from_str(&raw)
+        let expanded = expand_env_vars(&raw, |name| std::env::var(name).ok())
+            .map_err(|e| anyhow::anyhow!("expand env vars in {}: {e}", path.display()))?;
+        let cfg: Self = toml::from_str(&expanded)
             .map_err(|e| anyhow::anyhow!("parse config {}: {e}", path.display()))?;
         Ok(cfg)
+    }
+}
+
+/// Expand `${VAR}` and `${VAR:-default}` references in `raw` using
+/// `lookup` to resolve names. The lookup-by-closure shape keeps this
+/// pure for unit tests (the binary path uses `std::env::var`).
+///
+/// Behavior:
+/// - `${VAR}` → value if set, error if unset.
+/// - `${VAR:-default}` → value if set, else the default (which may be empty).
+/// - Bracket-less `$VAR` is untouched.
+/// - `${...}` whose contents aren't a valid identifier are passed
+///   through verbatim — keeps non-substitution `${...}` literals usable
+///   in odd field values without false positives.
+fn expand_env_vars<F>(raw: &str, lookup: F) -> anyhow::Result<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let mut out = String::with_capacity(raw.len());
+    let mut rest = raw;
+    while let Some(idx) = rest.find("${") {
+        out.push_str(&rest[..idx]);
+        let after_open = &rest[idx + 2..];
+        let close_idx = after_open
+            .find('}')
+            .ok_or_else(|| anyhow::anyhow!("unclosed `${{` in config"))?;
+        let inner = &after_open[..close_idx];
+        let (var_name, default) = match inner.split_once(":-") {
+            Some((n, d)) => (n, Some(d)),
+            None => (inner, None),
+        };
+        if !is_valid_var_name(var_name) {
+            // Not a valid identifier — pass the whole `${...}` through.
+            out.push_str("${");
+            out.push_str(inner);
+            out.push('}');
+        } else {
+            match lookup(var_name) {
+                Some(val) => out.push_str(&val),
+                None => match default {
+                    Some(def) => out.push_str(def),
+                    None => {
+                        return Err(anyhow::anyhow!(
+                            "env var `{}` is not set and has no default",
+                            var_name
+                        ));
+                    }
+                },
+            }
+        }
+        rest = &after_open[close_idx + 1..];
+    }
+    out.push_str(rest);
+    Ok(out)
+}
+
+fn is_valid_var_name(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c == '_' || c.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lookup_from<'a>(map: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |name: &str| {
+            map.iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, v)| (*v).to_string())
+        }
+    }
+
+    #[test]
+    fn no_substitution_passes_through() {
+        let s = "plain string with $literal but no expansion markers";
+        assert_eq!(expand_env_vars(s, lookup_from(&[])).unwrap(), s);
+    }
+
+    #[test]
+    fn substitutes_set_var() {
+        let out = expand_env_vars("value=${FOO}", lookup_from(&[("FOO", "hello")])).unwrap();
+        assert_eq!(out, "value=hello");
+    }
+
+    #[test]
+    fn errors_on_unset_var_with_no_default() {
+        let err = expand_env_vars("${MISSING}", lookup_from(&[])).unwrap_err();
+        assert!(err.to_string().contains("MISSING"));
+    }
+
+    #[test]
+    fn falls_back_to_default_when_unset() {
+        let out = expand_env_vars("${MISSING:-fallback}", lookup_from(&[])).unwrap();
+        assert_eq!(out, "fallback");
+    }
+
+    #[test]
+    fn ignores_default_when_var_set() {
+        let out =
+            expand_env_vars("${FOO:-fallback}", lookup_from(&[("FOO", "actual")])).unwrap();
+        assert_eq!(out, "actual");
+    }
+
+    #[test]
+    fn empty_default_yields_empty_string() {
+        let out = expand_env_vars("[${MISSING:-}]", lookup_from(&[])).unwrap();
+        assert_eq!(out, "[]");
+    }
+
+    #[test]
+    fn substitutes_multiple_vars_in_one_string() {
+        let out = expand_env_vars(
+            "postgres://u:p@${HOST}:${PORT}/x",
+            lookup_from(&[("HOST", "db.example.com"), ("PORT", "5432")]),
+        )
+        .unwrap();
+        assert_eq!(out, "postgres://u:p@db.example.com:5432/x");
+    }
+
+    #[test]
+    fn dollar_without_braces_passes_through() {
+        // Bracket-less `$IDENT` is intentionally left alone — only the
+        // `${...}` form is treated as an env reference.
+        let s = "$HOME and $USER stay literal";
+        let out = expand_env_vars(s, lookup_from(&[])).unwrap();
+        assert_eq!(out, s);
+    }
+
+    #[test]
+    fn invalid_identifier_passes_through_verbatim() {
+        // Digit-leading is not a valid identifier; `${1NOT_VALID}` stays literal.
+        let s = "${1NOT_VALID}";
+        assert_eq!(expand_env_vars(s, lookup_from(&[])).unwrap(), s);
+    }
+
+    #[test]
+    fn unclosed_brace_errors() {
+        let err = expand_env_vars("${UNCLOSED", lookup_from(&[])).unwrap_err();
+        assert!(err.to_string().contains("unclosed"));
+    }
+
+    #[test]
+    fn substitutes_inside_toml_string_values() {
+        let toml_input = r#"
+[backend]
+type = "postgres"
+url = "${DB}"
+"#;
+        let expanded =
+            expand_env_vars(toml_input, lookup_from(&[("DB", "postgres://u:p@h/d")])).unwrap();
+        assert!(expanded.contains(r#"url = "postgres://u:p@h/d""#));
+    }
+
+    #[test]
+    fn is_valid_var_name_accepts_typical_names() {
+        assert!(is_valid_var_name("DATABASE_URL"));
+        assert!(is_valid_var_name("_PRIVATE"));
+        assert!(is_valid_var_name("X"));
+        assert!(is_valid_var_name("X1"));
+    }
+
+    #[test]
+    fn is_valid_var_name_rejects_bad_names() {
+        assert!(!is_valid_var_name(""));
+        assert!(!is_valid_var_name("1LEADING_DIGIT"));
+        assert!(!is_valid_var_name("HAS SPACE"));
+        assert!(!is_valid_var_name("HAS-DASH"));
+        assert!(!is_valid_var_name("HAS.DOT"));
+    }
+
+    #[test]
+    fn from_file_loads_static_toml() {
+        // Integration sanity that the from_file path still works after the
+        // expansion step is wired in. Uses a config with no env-var
+        // references to keep the test hermetic.
+        let path = std::env::temp_dir().join("assay-engine-config-from-file-static.toml");
+        std::fs::write(
+            &path,
+            r#"
+[server]
+bind_addr = "127.0.0.1:3000"
+
+[backend]
+type = "sqlite"
+data_dir = "/tmp/assay-engine-test-data-static"
+"#,
+        )
+        .unwrap();
+        let cfg = EngineConfig::from_file(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        match cfg.backend {
+            BackendConfig::Sqlite { ref data_dir, .. } => {
+                assert_eq!(data_dir, "/tmp/assay-engine-test-data-static");
+            }
+            _ => panic!("expected sqlite backend"),
+        }
     }
 }

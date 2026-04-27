@@ -11,8 +11,10 @@ bind_addr = "127.0.0.1:3000"
 [backend]
 type = "sqlite"
 # Production deployments override to e.g. /var/lib/assay or a mounted
-# volume. The leading dot relativises against the working directory.
-data_dir = "./data"
+# volume. As of 0.3.1, env-var substitution (`${VAR}` / `${VAR:-default}`)
+# is supported in any string field — `data_dir = "${DATA_DIR:-./data}"`
+# lets ops override the path without rewriting the file.
+data_dir = "${DATA_DIR:-./data}"
 
 [workflow]
 enabled = true
