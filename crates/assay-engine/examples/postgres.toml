@@ -2,13 +2,17 @@
 
 [server]
 bind_addr = "0.0.0.0:3000"
+# Env-var substitution lands in 0.3.1 — `${VAR}` and `${VAR:-default}`
+# references are expanded against the process environment at load time.
+public_url = "${PUBLIC_URL:-http://localhost:3000}"
 
 [backend]
 type = "postgres"
-# PG18 minimum. Set DATABASE_URL via environment variable in production to
-# avoid exposing credentials in config files:
-#   url = "$DATABASE_URL"  (not yet; substitute manually for now)
-url = "postgres://postgres:postgres@localhost:5432/assay"
+# PG18 minimum. Inject DATABASE_URL via environment (K8s Secret env,
+# systemd EnvironmentFile, etc.) to keep credentials out of the config
+# file. Falling back to a localhost default keeps the example runnable
+# without setup.
+url = "${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/assay}"
 
 [workflow]
 enabled = true
