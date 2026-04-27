@@ -67,9 +67,11 @@ jobs:
           key: ${{ hashFiles('**/Cargo.lock') }}
           cache-all-crates: "true"
           cache-targets: "true"
-          # Save the cache only when Cargo.lock changed AND the build
-          # succeeds, so unchanged PR pushes don't re-upload ~250MB.
-          save-if: ${{ github.event_name == 'pull_request' && success() }}
+          # Save the cache only on PR runs (Swatinem/rust-cache already
+          # gates internally on job success). Avoids re-uploading ~250MB
+          # for non-PR contexts. `success()` cannot appear in `with:`
+          # inputs — it's restricted to `if:` of jobs/steps.
+          save-if: ${{ github.event_name == 'pull_request' }}
 
       # Playwright stores browsers under an OS-specific default path —
       # list both so the cache action matches whichever the runner uses.
