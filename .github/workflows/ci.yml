@@ -143,6 +143,16 @@ jobs:
         if: runner.os == 'Linux'
         run: echo "TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres" >> $GITHUB_ENV
 
+      # Self-hosted runners persist /tmp between jobs. The dashboard
+      # e2e (workflow/tests-e2e/run.lua) defaults to /tmp/assay-e2e.sqlite
+      # and doesn't wipe it on startup the way engine-e2e/run.sh does
+      # for /tmp/assay-engine-e2e-data. Without this step, the second
+      # run hits a UNIQUE constraint on `namespaces.name` because
+      # 'demo' was created on a previous run.
+      - name: Wipe stale e2e state (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: rm -rf /tmp/assay-e2e.* /tmp/assay-engine-e2e-* /tmp/assay-e2e-*.toml /tmp/assay-e2e-*.log
+
       - name: moon ci
         run: moon ci --color
         env:

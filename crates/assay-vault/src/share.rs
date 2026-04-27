@@ -321,7 +321,10 @@ mod biscuit_impl {
                     },
                 )
                 .unwrap();
-            let grant = svc.verify(&m.token, None).await.unwrap();
+            let grant = svc
+                .verify(&m.token, None)
+                .await
+                .unwrap_or_else(|e| panic!("verify of just-minted ttl=60 token must succeed: {e:?}"));
             assert_eq!(grant.target, ShareTarget::Item("item-1".into()));
         }
 
@@ -360,7 +363,9 @@ mod biscuit_impl {
                     },
                 )
                 .unwrap();
-            assert!(svc.verify(&m.token, None).await.is_ok());
+            svc.verify(&m.token, None)
+                .await
+                .unwrap_or_else(|e| panic!("first verify before revoke must succeed: {e:?}"));
             // Revoke and re-verify.
             svc.revoke(&m.revocation_ids[0], "compromised").await.unwrap();
             let res = svc.verify(&m.token, None).await;
