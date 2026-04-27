@@ -12,6 +12,7 @@ mod linux;
 mod markdown;
 mod os_info;
 mod process;
+mod process_pty;
 mod serialization;
 mod shell;
 mod systemd;
@@ -41,6 +42,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     markdown::register_markdown(lua)?;
     shell::register_shell(lua)?;
     process::register_process(lua)?;
+    process_pty::register_process_pty(lua)?;
     disk::register_disk(lua)?;
     os_info::register_os(lua)?;
     compress::register_compress(lua)?;

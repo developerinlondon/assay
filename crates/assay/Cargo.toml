@@ -63,8 +63,10 @@ data-encoding = "2.10.0"
 # Embed stdlib .lua files in binary
 include_dir = "0.7.4"
 
-# Hashing (SHA2 + SHA3)
+# Hashing (SHA1 + SHA2 + SHA3). SHA1 is required for the WebSocket
+# server-upgrade handshake (Sec-WebSocket-Accept = base64(SHA1(key + magic))).
 digest = "0.10.7"
+sha1 = "0.10.6"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
 
@@ -127,3 +129,8 @@ zbus = { version = "5", default-features = false, features = ["tokio"] }
 
 # dlopen libsystemd.so.0 at runtime for journal_follow (no libsystemd-dev needed)
 libloading = "0.8"
+
+# Unix-family deps (process.spawn_pty builtin). Linux + macOS only; openpty +
+# friends. Other targets register a stub spawn_pty that errors at runtime.
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+nix = { version = "0.30", default-features = false, features = ["term"] }
