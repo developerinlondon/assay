@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.15.0"
+version = "0.15.1"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -115,3 +115,15 @@ tower-http = { version = "0.6.8", features = ["cors", "trace"] }
 tempfile = "3.27.0"
 tokio-test = "0.4"
 wiremock = "0.6.5"
+
+# Linux-only dependencies (linux/cgroup/systemd builtins). On non-Linux
+# targets the modules register tables whose functions return runtime errors.
+[target.'cfg(target_os = "linux")'.dependencies]
+# /proc and /sys/fs reader (linux builtin)
+procfs = { version = "0.17", default-features = false }
+
+# D-Bus client (systemd builtin: org.freedesktop.systemd1, org.freedesktop.machine1)
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+
+# sd_journal_open / sd_journal_wait wrapper (systemd.journal / journal_follow)
+libsystemd = "0.7"
