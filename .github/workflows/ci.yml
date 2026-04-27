@@ -61,7 +61,14 @@ jobs:
       # win is that aws-lc-sys + ring + sqlx-macros + webauthn-rs's
       # build-script outputs round-trip rather than rebuild. Heavy
       # build crates dominate cold-restore time on this workspace.
+      #
+      # Skipped on self-hosted: the assay-runner container has a
+      # locally-persistent target/ (warmer than any GH cache hit) and
+      # the post-step's ~250MB upload over the home internet wipes
+      # out half the speedup. Github-hosted (macOS, Dependabot) still
+      # needs the cache.
       - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: "ci-${{ matrix.target }}-v4"
           key: ${{ hashFiles('**/Cargo.lock') }}
@@ -77,7 +84,13 @@ jobs:
       # list both so the cache action matches whichever the runner uses.
       # Hash both e2e package.json files: a Playwright bump in either
       # project invalidates the cache and forces a fresh install.
+      #
+      # Skipped on self-hosted for the same reason as rust-cache: the
+      # local container has its own warm Playwright install path on a
+      # persistent disk; round-tripping ~150MB to GH cache wastes the
+      # speedup.
       - name: Cache Playwright browsers
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@v5
         with:
           path: |
