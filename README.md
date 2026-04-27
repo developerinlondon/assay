@@ -111,28 +111,53 @@ Once `assay-engine` is running with the auth module enabled, every IdP capabilit
 HTTP and from Lua via the `assay.auth` stdlib module:
 
 ```bash
-# engine.toml — minimum viable v0.2.0 with auth on
+# engine.toml — minimum viable v0.2.0 with auth on (0.3.1 adds env-var
+# substitution for `${VAR}` / `${VAR:-default}` in any string field).
 cat > engine.toml <<'TOML'
 auto_enable_modules = ["auth"]
 
 [server]
 bind_addr = "0.0.0.0:3000"
-public_url = "https://auth.example.com"
+public_url = "${PUBLIC_URL:-https://auth.example.com}"
 
 [backend]
 type = "postgres"
-url = "postgres://postgres:postgres@localhost/assay"
+url = "${DATABASE_URL}"
 
 [auth]
-issuer = "https://auth.example.com/auth"
-admin_api_keys = ["sk_admin_replace_me"]
+issuer = "${PUBLIC_URL:-https://auth.example.com}/auth"
+admin_api_keys = ["${ADMIN_API_KEY}"]
 TOML
 
+# Inject the secrets via the environment — never bake them into the file.
+export DATABASE_URL='postgres://postgres:postgres@localhost/assay'
+export ADMIN_API_KEY='sk_admin_replace_me'
 assay-engine serve --config engine.toml
 #   /auth/console                          → admin SPA
 #   /.well-known/openid-configuration      → OIDC discovery (Hydra-equivalent)
 #   /auth/login, /auth/passkey/*           → user-facing auth flows
 #   /auth/admin/auth/*                     → admin HTTP API (api-key gated)
+```
+
+Same `engine.toml` works under Kubernetes — keep the TOML in a ConfigMap, project the secrets in
+via env from a Secret:
+
+```yaml
+spec:
+  containers:
+    - name: engine
+      image: ghcr.io/developerinlondon/assay-engine:0.3.1
+      args: ["serve", "--config", "/etc/assay/engine.toml"]
+      env:
+        - name: DATABASE_URL
+          valueFrom: { secretKeyRef: { name: engine-db, key: url } }
+        - name: ADMIN_API_KEY
+          valueFrom: { secretKeyRef: { name: engine-admin, key: api-key } }
+      volumeMounts:
+        - { name: cfg, mountPath: /etc/assay, readOnly: true }
+  volumes:
+    - name: cfg
+      configMap: { name: engine-toml }
 ```
 
 ```lua
