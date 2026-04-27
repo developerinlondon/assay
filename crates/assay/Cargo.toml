@@ -125,5 +125,5 @@ procfs = { version = "0.17", default-features = false }
 # D-Bus client (systemd builtin: org.freedesktop.systemd1, org.freedesktop.machine1)
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 
-# sd_journal_open / sd_journal_wait wrapper (systemd.journal / journal_follow)
-libsystemd = "0.7"
+# dlopen libsystemd.so.0 at runtime for journal_follow (no libsystemd-dev needed)
+libloading = "0.8"

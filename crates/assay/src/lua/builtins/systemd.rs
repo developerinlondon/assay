@@ -10,14 +10,12 @@
 /// `lua.create_async_function` so mlua drives them as Lua coroutines.
 ///
 /// Journal reading uses `journalctl --output=json` (one-shot subprocess).
-/// The pure-Rust `libsystemd` 0.7 crate covers daemon notifications only
-/// and has no journal-reading surface.
 ///
 /// # journal_follow
 ///
-/// Not implemented — streaming sd_journal_wait across the FFI/tokio boundary
-/// requires a cancellation handle that is tricky to wire through mlua safely.
-/// Returns an explicit runtime error.
+/// Streams the journal via `sd_journal_wait` from `libsystemd.so.0`, dlopened
+/// at runtime via `libloading`. No `libsystemd-dev` headers required at build
+/// time; the library is resolved on first call and cached in a `OnceCell`.
 use mlua::Lua;
 
 pub fn register_systemd(lua: &Lua) -> mlua::Result<()> {
@@ -632,9 +630,7 @@ mod impl_linux {
         // opts = { unit?, machine?, since?, until?, lines?=200, priority?=7 }
         // Returns [{ts, hostname, unit, message, priority, transport}, ...]
         //
-        // Uses `journalctl --output=json` subprocess — the pure-Rust
-        // `libsystemd` 0.7 crate has no journal-reading surface (it covers
-        // daemon notifications only).
+        // Uses `journalctl --output=json` subprocess.
         let journal =
             lua.create_async_function(|lua, opts: Option<mlua::Table>| async move {
                 let (unit, machine, since, until, lines, priority) =
@@ -735,16 +731,358 @@ mod impl_linux {
             })?;
         t.set("journal", journal)?;
 
+        // systemd.journal_follow(opts, callback) -> handle
+        //
+        // Streams live journal entries via sd_journal_wait, dlopened from
+        // libsystemd.so.0 at runtime (no libsystemd-dev headers needed).
+        //
+        // opts = { unit?, machine?, since?, priority? }
+        // callback receives the same {ts, hostname, unit, message, priority, transport} table.
+        // Returns a handle UserData with :close() / :is_closed().
         let journal_follow =
-            lua.create_async_function(|_, _args: mlua::MultiValue| async move {
-                Err::<mlua::Value, _>(mlua::Error::runtime(
-                    "systemd.journal_follow: not yet implemented; \
-                     tracked in plan 18 Phase 3 followup",
-                ))
+            lua.create_async_function(|_lua, (opts, cb): (Option<mlua::Table>, mlua::Function)| async move {
+                use std::sync::{Arc, atomic::AtomicBool};
+                use tokio::sync::mpsc;
+
+                let unit     = opts.as_ref().and_then(|o| o.get::<Option<String>>("unit").ok().flatten());
+                let machine  = opts.as_ref().and_then(|o| o.get::<Option<String>>("machine").ok().flatten());
+                let since    = opts.as_ref().and_then(|o| o.get::<Option<u64>>("since").ok().flatten());
+                let priority = opts.as_ref().and_then(|o| o.get::<Option<u8>>("priority").ok().flatten()).unwrap_or(7);
+
+                let cancel = Arc::new(AtomicBool::new(false));
+                let (tx, mut rx) = mpsc::channel::<journal_follow_impl::JournalEntry>(64);
+
+                let cancel_bg = Arc::clone(&cancel);
+                tokio::task::spawn_blocking(move || {
+                    journal_follow_impl::follow_loop(
+                        unit, machine, since, priority, cancel_bg, tx,
+                    );
+                });
+
+                let handle = journal_follow_impl::FollowHandle { cancel: Arc::clone(&cancel) };
+
+                // Drive the callback from the async context so mlua can schedule it.
+                tokio::select! {
+                    _ = async {
+                        while let Some(entry) = rx.recv().await {
+                            let t = _lua.create_table()?;
+                            t.set("ts", entry.ts)?;
+                            t.set("hostname", entry.hostname)?;
+                            t.set("unit", entry.unit)?;
+                            t.set("message", entry.message)?;
+                            t.set("priority", entry.priority)?;
+                            t.set("transport", entry.transport)?;
+                            cb.call_async::<()>(t).await?;
+                        }
+                        Ok::<(), mlua::Error>(())
+                    } => {}
+                };
+
+                Ok(handle)
             })?;
         t.set("journal_follow", journal_follow)?;
 
         Ok(())
+    }
+
+    // ── journal_follow internals ──────────────────────────────────────────────
+
+    pub(super) mod journal_follow_impl {
+        use libloading::{Library, Symbol};
+        use std::{
+            ffi::{CString, c_char, c_int, c_void},
+            sync::{Arc, OnceLock, atomic::{AtomicBool, Ordering}},
+        };
+        use tokio::sync::mpsc;
+        use tracing::warn;
+
+        // ── ABI types ─────────────────────────────────────────────────────────
+
+        type SdJournal = c_void;
+
+        #[allow(non_snake_case)]
+        struct Syms {
+            sd_journal_open:             unsafe extern "C" fn(*mut *mut SdJournal, c_int) -> c_int,
+            sd_journal_close:            unsafe extern "C" fn(*mut SdJournal),
+            sd_journal_seek_tail:        unsafe extern "C" fn(*mut SdJournal) -> c_int,
+            sd_journal_seek_realtime_usec: unsafe extern "C" fn(*mut SdJournal, u64) -> c_int,
+            sd_journal_add_match:        unsafe extern "C" fn(*mut SdJournal, *const c_void, usize) -> c_int,
+            sd_journal_next:             unsafe extern "C" fn(*mut SdJournal) -> c_int,
+            sd_journal_previous:         unsafe extern "C" fn(*mut SdJournal) -> c_int,
+            sd_journal_wait:             unsafe extern "C" fn(*mut SdJournal, u64) -> c_int,
+            sd_journal_get_data:         unsafe extern "C" fn(*mut SdJournal, *const c_char, *mut *const c_void, *mut usize) -> c_int,
+            sd_journal_get_realtime_usec: unsafe extern "C" fn(*mut SdJournal, *mut u64) -> c_int,
+        }
+
+        // SAFETY: the raw fn pointers are stateless and safe to share across threads.
+        unsafe impl Send for Syms {}
+        unsafe impl Sync for Syms {}
+
+        static SYMS: OnceLock<Result<Syms, String>> = OnceLock::new();
+
+        fn load_syms() -> Result<&'static Syms, String> {
+            SYMS.get_or_init(|| unsafe {
+                let lib = Library::new("libsystemd.so.0")
+                    .map_err(|e| format!("systemd.journal_follow: libsystemd.so.0 not found on this host: {e}"))?;
+
+                macro_rules! sym {
+                    ($name:ident) => {{
+                        let s: Symbol<_> = lib
+                            .get(stringify!($name).as_bytes())
+                            .map_err(|e| format!("systemd.journal_follow: symbol {}: {e}", stringify!($name)))?;
+                        *s
+                    }};
+                }
+
+                let syms = Syms {
+                    sd_journal_open:              sym!(sd_journal_open),
+                    sd_journal_close:             sym!(sd_journal_close),
+                    sd_journal_seek_tail:         sym!(sd_journal_seek_tail),
+                    sd_journal_seek_realtime_usec: sym!(sd_journal_seek_realtime_usec),
+                    sd_journal_add_match:         sym!(sd_journal_add_match),
+                    sd_journal_next:              sym!(sd_journal_next),
+                    sd_journal_previous:          sym!(sd_journal_previous),
+                    sd_journal_wait:              sym!(sd_journal_wait),
+                    sd_journal_get_data:          sym!(sd_journal_get_data),
+                    sd_journal_get_realtime_usec: sym!(sd_journal_get_realtime_usec),
+                };
+
+                // Intentionally leak the Library so the symbols remain valid for
+                // the process lifetime (safe: it's a shared library, the OS owns it).
+                std::mem::forget(lib);
+                Ok(syms)
+            })
+            .as_ref()
+            .map_err(|e| e.clone())
+        }
+
+        // ── safe Journal wrapper ──────────────────────────────────────────────
+
+        struct Journal {
+            ptr: *mut SdJournal,
+            syms: &'static Syms,
+        }
+
+        // SAFETY: Journal owns its ptr; we never share it across threads concurrently.
+        unsafe impl Send for Journal {}
+
+        impl Journal {
+            // SD_JOURNAL_LOCAL_ONLY = 1
+            fn open() -> Result<Self, String> {
+                let syms = load_syms()?;
+                let mut ptr: *mut SdJournal = std::ptr::null_mut();
+                let rc = unsafe { (syms.sd_journal_open)(&mut ptr, 1) };
+                if rc < 0 {
+                    return Err(format!("systemd.journal_follow: sd_journal_open failed: {rc}"));
+                }
+                Ok(Journal { ptr, syms })
+            }
+
+            fn seek_tail(&self) -> c_int {
+                unsafe { (self.syms.sd_journal_seek_tail)(self.ptr) }
+            }
+
+            fn seek_realtime_usec(&self, usec: u64) -> c_int {
+                unsafe { (self.syms.sd_journal_seek_realtime_usec)(self.ptr, usec) }
+            }
+
+            fn add_match(&self, expr: &str) -> c_int {
+                let bytes = expr.as_bytes();
+                unsafe {
+                    (self.syms.sd_journal_add_match)(
+                        self.ptr,
+                        bytes.as_ptr() as *const c_void,
+                        bytes.len(),
+                    )
+                }
+            }
+
+            fn next(&self) -> c_int {
+                unsafe { (self.syms.sd_journal_next)(self.ptr) }
+            }
+
+            fn previous(&self) -> c_int {
+                unsafe { (self.syms.sd_journal_previous)(self.ptr) }
+            }
+
+            // timeout_us: 0 = non-blocking, u64::MAX = infinite
+            fn wait(&self, timeout_us: u64) -> c_int {
+                unsafe { (self.syms.sd_journal_wait)(self.ptr, timeout_us) }
+            }
+
+            fn read_field(&self, field: &str) -> Option<String> {
+                let cfield = CString::new(field).ok()?;
+                let mut data: *const c_void = std::ptr::null();
+                let mut len: usize = 0;
+                let rc = unsafe {
+                    (self.syms.sd_journal_get_data)(self.ptr, cfield.as_ptr(), &mut data, &mut len)
+                };
+                if rc < 0 || data.is_null() {
+                    return None;
+                }
+                let bytes = unsafe { std::slice::from_raw_parts(data as *const u8, len) };
+                // sd_journal_get_data returns "FIELD=value"; strip the "FIELD=" prefix.
+                let prefix = format!("{field}=");
+                let raw = std::str::from_utf8(bytes).unwrap_or("");
+                Some(raw.strip_prefix(&prefix).unwrap_or(raw).to_owned())
+            }
+
+            fn realtime_usec(&self) -> u64 {
+                let mut usec: u64 = 0;
+                unsafe { (self.syms.sd_journal_get_realtime_usec)(self.ptr, &mut usec) };
+                usec
+            }
+        }
+
+        impl Drop for Journal {
+            fn drop(&mut self) {
+                if !self.ptr.is_null() {
+                    unsafe { (self.syms.sd_journal_close)(self.ptr) };
+                }
+            }
+        }
+
+        // ── entry type ────────────────────────────────────────────────────────
+
+        #[derive(Debug)]
+        pub struct JournalEntry {
+            pub ts:        u64,
+            pub hostname:  String,
+            pub unit:      String,
+            pub message:   String,
+            pub priority:  u8,
+            pub transport: String,
+        }
+
+        // ── blocking follow loop ──────────────────────────────────────────────
+
+        pub fn follow_loop(
+            unit:     Option<String>,
+            machine:  Option<String>,
+            since:    Option<u64>,
+            priority: u8,
+            cancel:   Arc<AtomicBool>,
+            tx:       mpsc::Sender<JournalEntry>,
+        ) {
+            let journal = match Journal::open() {
+                Ok(j) => j,
+                Err(e) => {
+                    warn!("{e}");
+                    return;
+                }
+            };
+
+            // Filters
+            if let Some(ref u) = unit {
+                journal.add_match(&format!("_SYSTEMD_UNIT={u}"));
+            }
+
+            if let Some(ref m) = machine {
+                // Try to resolve machine name → machine ID via /run/systemd/machines/<name>
+                let machine_id = resolve_machine_id(m);
+                match machine_id {
+                    Some(id) => {
+                        journal.add_match(&format!("_MACHINE_ID={id}"));
+                    }
+                    None => {
+                        warn!(
+                            "systemd.journal_follow: could not resolve machine ID for '{}'; \
+                             falling back to _MACHINE= match",
+                            m
+                        );
+                        journal.add_match(&format!("_MACHINE={m}"));
+                    }
+                }
+            }
+
+            // Priority: add one match per level 0..=N (libsystemd OR-combines them)
+            for p in 0..=priority {
+                journal.add_match(&format!("PRIORITY={p}"));
+            }
+
+            // Seek position
+            if let Some(secs) = since {
+                journal.seek_realtime_usec(secs * 1_000_000);
+            } else {
+                journal.seek_tail();
+                // After seek_tail, calling next() would move past the last entry.
+                // We need to step back one so the first next() call lands on a real entry.
+                journal.previous();
+            }
+
+            // SD_JOURNAL_APPEND = 1 (new entries), SD_JOURNAL_INVALIDATE = 2
+            loop {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                // Drain available entries
+                loop {
+                    let r = journal.next();
+                    if r <= 0 {
+                        break;
+                    }
+                    let entry = JournalEntry {
+                        ts:        journal.realtime_usec(),
+                        hostname:  journal.read_field("_HOSTNAME").unwrap_or_default(),
+                        unit:      journal.read_field("_SYSTEMD_UNIT").unwrap_or_default(),
+                        message:   journal.read_field("MESSAGE").unwrap_or_default(),
+                        priority:  journal.read_field("PRIORITY")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(7),
+                        transport: journal.read_field("_TRANSPORT").unwrap_or_default(),
+                    };
+                    if tx.blocking_send(entry).is_err() {
+                        return; // receiver dropped → handle closed
+                    }
+                }
+
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                // Wait up to 500 ms for new data
+                journal.wait(500_000);
+            }
+        }
+
+        fn resolve_machine_id(name: &str) -> Option<String> {
+            let path = format!("/run/systemd/machines/{name}");
+            let content = std::fs::read_to_string(&path).ok()?;
+            for line in content.lines() {
+                if let Some(id) = line.strip_prefix("MACHINE_ID=") {
+                    let id = id.trim();
+                    if id.len() == 32 && id.chars().all(|c| c.is_ascii_hexdigit()) {
+                        return Some(id.to_owned());
+                    }
+                }
+            }
+            None
+        }
+
+        // ── handle UserData ───────────────────────────────────────────────────
+
+        pub struct FollowHandle {
+            pub cancel: Arc<AtomicBool>,
+        }
+
+        impl mlua::UserData for FollowHandle {
+            fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
+                methods.add_method("close", |_, this, ()| {
+                    this.cancel.store(true, Ordering::Relaxed);
+                    Ok(())
+                });
+                methods.add_method("is_closed", |_, this, ()| {
+                    Ok(this.cancel.load(Ordering::Relaxed))
+                });
+            }
+        }
+
+        impl Drop for FollowHandle {
+            fn drop(&mut self) {
+                self.cancel.store(true, Ordering::Relaxed);
+            }
+        }
     }
 
     // ── tests ─────────────────────────────────────────────────────────────────
@@ -851,6 +1189,148 @@ mod impl_linux {
                     "expected priority <= 3, got {pri} in entry {i}"
                 );
             }
+        }
+
+        // ── journal_follow live-fire tests ────────────────────────────────────
+        // Require a host journal with write access via `logger`.
+        // Run with: cargo test --lib systemd:: -- --include-ignored
+        //
+        // These tests drive follow_loop directly (bypassing the Lua layer) so
+        // that the async/Lua callback scheduling doesn't interfere with test
+        // assertion timing.
+
+        #[tokio::test]
+        #[ignore = "requires journal write access (logger)"]
+        async fn journal_follow_smoke() {
+            use super::journal_follow_impl;
+            use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+            use tokio::sync::mpsc;
+            use tokio::time::{Duration, timeout};
+
+            // Write the marker first so the journal has it before we start following.
+            tokio::process::Command::new("logger")
+                .args(["-t", "assay-jf-test", "marker-XYZ"])
+                .status()
+                .await
+                .expect("logger failed");
+
+            // Give the journal a moment to flush.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+
+            let cancel = Arc::new(AtomicBool::new(false));
+            let (tx, mut rx) = mpsc::channel::<journal_follow_impl::JournalEntry>(64);
+            let cancel_bg = Arc::clone(&cancel);
+
+            // Seek from ~2 seconds ago so we pick up the marker we just wrote.
+            let since = Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    .saturating_sub(2),
+            );
+
+            tokio::task::spawn_blocking(move || {
+                journal_follow_impl::follow_loop(None, None, since, 7, cancel_bg, tx);
+            });
+
+            let found = timeout(Duration::from_secs(5), async {
+                while let Some(entry) = rx.recv().await {
+                    if entry.message.contains("marker-XYZ") {
+                        return true;
+                    }
+                }
+                false
+            })
+            .await
+            .unwrap_or(false);
+
+            cancel.store(true, Ordering::Relaxed);
+
+            assert!(found, "marker-XYZ not seen within 5 s");
+        }
+
+        #[tokio::test]
+        #[ignore = "requires journal write access (logger)"]
+        async fn journal_follow_priority_filter() {
+            use super::journal_follow_impl;
+            use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+            use tokio::sync::mpsc;
+            use tokio::time::{Duration, timeout};
+
+            tokio::process::Command::new("logger")
+                .args(["-p", "user.err", "-t", "assay-jf-test", "err-marker-XYZ"])
+                .status()
+                .await
+                .expect("logger failed");
+            tokio::process::Command::new("logger")
+                .args(["-p", "user.info", "-t", "assay-jf-test", "info-marker-XYZ"])
+                .status()
+                .await
+                .expect("logger failed");
+
+            tokio::time::sleep(Duration::from_millis(200)).await;
+
+            let cancel = Arc::new(AtomicBool::new(false));
+            let (tx, mut rx) = mpsc::channel::<journal_follow_impl::JournalEntry>(64);
+            let cancel_bg = Arc::clone(&cancel);
+
+            let since = Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    .saturating_sub(2),
+            );
+
+            // priority=3 means only ERR and more critical pass through.
+            tokio::task::spawn_blocking(move || {
+                journal_follow_impl::follow_loop(None, None, since, 3, cancel_bg, tx);
+            });
+
+            let mut entries: Vec<(String, u8)> = Vec::new();
+
+            let found_err = timeout(Duration::from_secs(5), async {
+                while let Some(entry) = rx.recv().await {
+                    let is_err = entry.message.contains("err-marker-XYZ");
+                    entries.push((entry.message.clone(), entry.priority));
+                    if is_err {
+                        return true;
+                    }
+                }
+                false
+            })
+            .await
+            .unwrap_or(false);
+
+            cancel.store(true, Ordering::Relaxed);
+
+            assert!(found_err, "err-marker-XYZ not seen within 5 s");
+
+            let info_leaked = entries.iter().any(|(m, _)| m.contains("info-marker-XYZ"));
+            assert!(!info_leaked, "info-marker-XYZ should have been filtered by priority=3");
+
+            for (msg, pri) in &entries {
+                assert!(*pri <= 3, "got priority {pri} > 3 for message: {msg}");
+            }
+        }
+
+        #[tokio::test]
+        #[ignore = "requires journal write access (logger)"]
+        async fn journal_follow_close_idempotent() {
+            use super::journal_follow_impl::FollowHandle;
+            use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+
+            let cancel = Arc::new(AtomicBool::new(false));
+            let handle = FollowHandle { cancel: Arc::clone(&cancel) };
+
+            // first close
+            handle.cancel.store(true, Ordering::Relaxed);
+            assert!(handle.cancel.load(Ordering::Relaxed));
+
+            // second close — must not panic
+            handle.cancel.store(true, Ordering::Relaxed);
+            assert!(handle.cancel.load(Ordering::Relaxed));
         }
     }
 }

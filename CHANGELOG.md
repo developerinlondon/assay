@@ -70,9 +70,12 @@ systemd.machine_start, machine_poweroff, machine_reboot, machine_terminate
 -- Journal
 systemd.journal({unit?, machine?, since?, until?, lines?, priority?})
                             -- one-shot read via `journalctl --output=json`
-systemd.journal_follow(opts, fn)
-                            -- not yet implemented; explicit runtime error.
-                            -- Tracked as a Phase 3 followup.
+systemd.journal_follow(opts, fn) -> handle
+                            -- streaming follow via sd_journal_wait
+                            -- (libsystemd.so.0 dlopened at runtime via
+                            --  libloading; no libsystemd-dev needed).
+                            -- handle:close() stops the stream; worst-case
+                            -- shutdown latency 500 ms.
 ```
 
 `*UsecRealtime` D-Bus values are exposed as integer microseconds since the epoch under `*_realtime`
@@ -113,14 +116,12 @@ sys.machines()              -- list_machines() with cgroup utilisation joined
 
 ### Tests
 
-15 new unit tests on Linux (5 in `linux::tests`, 10 in `cgroup::tests`). Plus 5 D-Bus / journal
-tests in `systemd::tests` gated `#[ignore]` (require a running system bus); pass on a typical Linux
-box with `--include-ignored`.
+15 new unit tests on Linux (5 in `linux::tests`, 10 in `cgroup::tests`) + 3 #[ignore]-gated
+journal_follow live-fire tests. Plus 5 D-Bus / journal tests in `systemd::tests` gated `#[ignore]`
+(require a running system bus); pass on a typical Linux box with `--include-ignored`.
 
 ### Out of scope (reserved for v0.15.x follow-ups)
 
-- `systemd.journal_follow` streaming. sd_journal_wait + tokio bridge + cancellation handle across
-  the FFI/mlua boundary. Returns a runtime error today.
 - macOS / Windows ports of these modules — `/proc` and the systemd D-Bus surface have no analogues,
   so the modules stay Linux-only by design.
 
