@@ -430,7 +430,13 @@ jobs:
   # token in CI just for a healthcheck.
   deploy-assay-engine:
     needs: [detect, release-assay-engine]
-    if: always() && needs.release-assay-engine.result == 'success'
+    # Disabled — see https://github.com/developerinlondon/assay/issues/94.
+    # The [self-hosted, assay] runner has no kubectl + no kubeconfig + no
+    # confirmed network reach to the EDA k3s API. Releases still publish to
+    # GHCR; this job only handled auto-rollout to the personal cluster.
+    # Flip back to `always() && needs.release-assay-engine.result == 'success'`
+    # once #94's checklist is done.
+    if: false
     runs-on: [self-hosted, assay]
     timeout-minutes: 10
     env:
