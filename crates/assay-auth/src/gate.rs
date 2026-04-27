@@ -131,7 +131,7 @@ pub async fn extract_caller(
         //     `iss` claim so we don't burn CPU verifying against
         //     mismatched key sets.
         if let Some(result) =
-            crate::external_jwt::verify_with_any::<SubClaim>(&ctx.external_issuers, token)
+            crate::external_jwt::verify_with_any::<SubClaim>(ctx.external_issuers(), token)
             && let Ok(td) = result
         {
             return Ok(Caller {

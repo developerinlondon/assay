@@ -208,7 +208,7 @@ async fn fetch_jwks(client: &reqwest::Client, uri: &str) -> Result<JwkSet> {
 /// configured verifier accepts the token's `iss` (caller falls through
 /// to the next auth strategy).
 pub fn verify_with_any<T: DeserializeOwned>(
-    issuers: &[Arc<ExternalJwtIssuer>],
+    issuers: &[ExternalJwtIssuer],
     token: &str,
 ) -> Option<Result<jsonwebtoken::TokenData<T>>> {
     if issuers.is_empty() {
@@ -457,16 +457,16 @@ mod tests {
         let issuer_a = "https://hydra-a.example.com";
         let issuer_b = "https://hydra-b.example.com";
 
-        let v_a = Arc::new(verifier_for_tests(
+        let v_a = verifier_for_tests(
             issuer_a,
             vec!["test-app".to_string()],
             hs256_jwks_with_kid("a-key", secret_a),
-        ));
-        let v_b = Arc::new(verifier_for_tests(
+        );
+        let v_b = verifier_for_tests(
             issuer_b,
             vec!["test-app".to_string()],
             hs256_jwks_with_kid("b-key", secret_b),
-        ));
+        );
 
         let claims_b = TestClaims {
             iss: issuer_b.to_string(),
@@ -490,11 +490,11 @@ mod tests {
     #[test]
     fn verify_with_any_returns_none_for_unknown_issuer() {
         let secret = b"unit-test-secret-key-32bytes!!!!";
-        let v = Arc::new(verifier_for_tests(
+        let v = verifier_for_tests(
             "https://hydra.example.com",
             vec!["test-app".to_string()],
             hs256_jwks_with_kid("a-key", secret),
-        ));
+        );
         let claims = TestClaims {
             iss: "https://stranger.example.com".to_string(),
             aud: "test-app".to_string(),

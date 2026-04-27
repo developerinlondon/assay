@@ -419,9 +419,10 @@ async fn build_auth_ctx_sqlite(
 #[cfg(feature = "auth-jwt")]
 async fn discover_external_issuers(
     cfg: &EngineConfig,
-) -> anyhow::Result<Vec<Arc<assay_auth::external_jwt::ExternalJwtIssuer>>> {
-    let mut out = Vec::with_capacity(cfg.auth.external_issuers.len());
-    for entry in &cfg.auth.external_issuers {
+) -> anyhow::Result<Vec<assay_auth::external_jwt::ExternalJwtIssuer>> {
+    let entries = cfg.auth.external_issuers();
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
         let verifier = assay_auth::external_jwt::ExternalJwtIssuer::discover(
             entry.issuer_url.clone(),
             entry.audience.clone(),
@@ -435,7 +436,7 @@ async fn discover_external_issuers(
             audience = ?entry.audience,
             "trusted external OIDC issuer for JWT pass-through"
         );
-        out.push(Arc::new(verifier));
+        out.push(verifier);
     }
     Ok(out)
 }
@@ -532,7 +533,7 @@ async fn run_with_store<S: WorkflowStore + Clone + 'static>(
             .map_err(|e| anyhow::anyhow!("count auth.users: {e}"))?;
         if user_count == 0
             && cfg.auth.admin_api_keys.is_empty()
-            && cfg.auth.external_issuers.is_empty()
+            && cfg.auth.external_issuers().is_empty()
         {
             anyhow::bail!(
                 "engine refuses to start: no operator users exist, \

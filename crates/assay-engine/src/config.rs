@@ -164,8 +164,19 @@ pub struct AuthConfig {
     /// Mirrors the v0.12.1 `--auth-issuer` / `--auth-audience` CLI
     /// flags in the new TOML config shape. Multiple issuers are allowed
     /// for deployments that span more than one IdP.
+    ///
+    /// Field is private so future entries (per-issuer policy, claim
+    /// mappers, etc.) can be added without breaking downstream
+    /// construction. Read via [`AuthConfig::external_issuers`].
     #[serde(default)]
-    pub external_issuers: Vec<ExternalIssuerConfig>,
+    external_issuers: Vec<ExternalIssuerConfig>,
+}
+
+impl AuthConfig {
+    /// Read access to the parsed `[[auth.external_issuers]]` blocks.
+    pub fn external_issuers(&self) -> &[ExternalIssuerConfig] {
+        &self.external_issuers
+    }
 }
 
 /// One trusted external OIDC issuer for pass-through JWT validation.
