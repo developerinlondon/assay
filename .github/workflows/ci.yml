@@ -46,6 +46,15 @@ jobs:
           install: true
           cache: true
 
+      # On self-hosted, ~/.cargo/bin contains rustup but isn't on the
+      # default GH Actions step PATH. The hosted runners have it because
+      # Swatinem/rust-cache@v2 implicitly installs rustup and prepends
+      # ~/.cargo/bin; we skip that action on self-hosted (target/ is
+      # already warm locally) so we have to add it ourselves.
+      - name: Add ~/.cargo/bin to PATH (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
       # mise's rust plugin defaults to the `minimal` profile (no clippy).
       - name: Install clippy component
         run: rustup component add clippy
