@@ -2,6 +2,10 @@ pub mod async_bridge;
 pub mod builtins;
 pub mod file_source;
 
+#[cfg(feature = "server")]
+#[allow(unused_imports)]
+pub use builtins::LuaAxumRouter;
+
 use anyhow::Result;
 use include_dir::{Dir, include_dir};
 use mlua::{Lua, LuaOptions, StdLib};

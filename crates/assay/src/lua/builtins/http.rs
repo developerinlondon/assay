@@ -2,7 +2,7 @@ use super::json::lua_table_to_json;
 #[cfg(feature = "server")]
 use super::json::lua_value_to_json;
 #[cfg(feature = "server")]
-use http_body_util::{Either, Full};
+use http_body_util::Full;
 #[cfg(feature = "server")]
 use hyper::body::{Bytes, Frame, Incoming};
 #[cfg(feature = "server")]
@@ -26,6 +26,24 @@ use std::task::{Context, Poll};
 use tokio::net::TcpListener;
 #[cfg(feature = "server")]
 use tracing::error;
+
+/// Public newtype wrapping an [`axum::Router`] so it can round-trip through
+/// the Lua VM as a [`mlua::AnyUserData`].
+///
+/// Downstream binaries (e.g. knowhere) build a Rust-side `axum::Router`
+/// (typically holding `assay-engine` HTTP routes), wrap it in this type,
+/// stash it in a Lua global (or pass it positionally), and the Lua-defined
+/// `http.serve_with_extra(port, routes, extra)` builtin pulls the router
+/// back out and folds its routes into the dispatcher.
+///
+/// The type is intentionally a tuple-struct with a `pub` inner so callers
+/// can construct one trivially: `LuaAxumRouter(my_router)`.
+#[cfg(feature = "server")]
+#[derive(Clone)]
+pub struct LuaAxumRouter(pub axum::Router);
+
+#[cfg(feature = "server")]
+impl mlua::UserData for LuaAxumRouter {}
 
 struct HttpClient(reqwest::Client);
 impl UserData for HttpClient {}
@@ -212,7 +230,7 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
                     let routes = routes.clone();
                     let lua = lua.clone();
                     let peer_addr = peer_addr.clone();
-                    async move { handle_request(&lua, &routes, peer_addr, req).await }
+                    async move { handle_request(&lua, &routes, None, peer_addr, req).await }
                 });
 
                 if let Err(e) = http1::Builder::new()
@@ -228,6 +246,119 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     })?;
     #[cfg(feature = "server")]
     http_table.set("serve", serve_fn)?;
+
+    // ── http.serve_with_extra(port, routes_table, extra_router) ───────────────
+    //
+    // Same shape as `http.serve` plus a third argument: a [`LuaAxumRouter`]
+    // userdata wrapping a Rust-built `axum::Router`. Lua-defined routes are
+    // matched first; on miss, the request is forwarded to the extra
+    // `axum::Router` (which can produce 404 itself if it doesn't match either).
+    //
+    // Precedence: Lua wins. If the same path is defined by both, the Lua
+    // handler is invoked. This is the inverse of `axum::Router::merge` (where
+    // a duplicate panics) and was chosen because the Lua side is the
+    // existing surface — the extra router is purely additive routes the
+    // host binary contributes (typically engine APIs under a non-overlapping
+    // path prefix like `/api/v1/engine/*`).
+    //
+    // The extra router is cloned per-connection (`axum::Router: Clone` is a
+    // shallow `Arc` clone — cheap).
+    #[cfg(feature = "server")]
+    let serve_with_extra_fn = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
+        let mut args_iter = args.into_iter();
+
+        let port: u16 = match args_iter.next() {
+            Some(Value::Integer(n)) => n as u16,
+            _ => {
+                return Err::<(), _>(mlua::Error::runtime(
+                    "http.serve_with_extra: first argument must be a port number",
+                ));
+            }
+        };
+
+        let routes_table = match args_iter.next() {
+            Some(Value::Table(t)) => t,
+            _ => {
+                return Err::<(), _>(mlua::Error::runtime(
+                    "http.serve_with_extra: second argument must be a routes table",
+                ));
+            }
+        };
+
+        let extra_router: axum::Router = match args_iter.next() {
+            Some(Value::UserData(ud)) => {
+                let r = ud.borrow::<LuaAxumRouter>().map_err(|_| {
+                    mlua::Error::runtime(
+                        "http.serve_with_extra: third argument must be a LuaAxumRouter userdata",
+                    )
+                })?;
+                r.0.clone()
+            }
+            _ => {
+                return Err::<(), _>(mlua::Error::runtime(
+                    "http.serve_with_extra: third argument must be a LuaAxumRouter userdata",
+                ));
+            }
+        };
+
+        let routes = Rc::new(parse_routes(&routes_table)?);
+
+        let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+            .await
+            .map_err(|e| {
+                mlua::Error::runtime(format!("http.serve_with_extra: bind failed: {e}"))
+            })?;
+
+        let actual_port = listener
+            .local_addr()
+            .map_err(|e| {
+                mlua::Error::runtime(format!(
+                    "http.serve_with_extra: failed to get local addr: {e}"
+                ))
+            })?
+            .port();
+        lua.globals().set("_SERVER_PORT", actual_port)?;
+
+        loop {
+            let (stream, addr) = listener.accept().await.map_err(|e| {
+                mlua::Error::runtime(format!("http.serve_with_extra: accept failed: {e}"))
+            })?;
+            let peer_addr = addr.to_string();
+
+            let routes = routes.clone();
+            let lua_clone = lua.clone();
+            let extra_router = extra_router.clone();
+
+            tokio::task::spawn_local(async move {
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let routes = routes.clone();
+                let lua = lua_clone.clone();
+                let peer_addr = peer_addr.clone();
+                let extra_router = extra_router.clone();
+
+                let service = service_fn(move |req: Request<Incoming>| {
+                    let routes = routes.clone();
+                    let lua = lua.clone();
+                    let peer_addr = peer_addr.clone();
+                    let extra_router = extra_router.clone();
+                    async move {
+                        handle_request(&lua, &routes, Some(extra_router), peer_addr, req).await
+                    }
+                });
+
+                if let Err(e) = http1::Builder::new()
+                    .serve_connection(io, service)
+                    .with_upgrades()
+                    .await
+                    && !e.to_string().contains("connection closed")
+                {
+                    error!("http.serve_with_extra: connection error: {e}");
+                }
+            });
+        }
+    })?;
+    #[cfg(feature = "server")]
+    http_table.set("serve_with_extra", serve_with_extra_fn)?;
 
     lua.globals().set("http", http_table)?;
     Ok(())
@@ -529,8 +660,17 @@ fn parse_routes(routes_table: &Table) -> mlua::Result<HashMap<(String, String), 
     Ok(routes)
 }
 
+/// Unified response body type.
+///
+/// Originally `Either<Full<Bytes>, SseBody>`; widened to [`axum::body::Body`]
+/// so we can transparently forward responses produced by an external
+/// `axum::Router` (see `http.serve_with_extra`). `axum::body::Body` is a
+/// thin wrapper over `UnsyncBoxBody<Bytes, axum::Error>` and accepts any
+/// `http_body::Body<Data = Bytes>` via [`axum::body::Body::new`], so all
+/// existing body shapes (static `Full<Bytes>`, the SSE channel body) still
+/// fit; only the construction surface changes.
 #[cfg(feature = "server")]
-type ServerBody = Either<Full<Bytes>, SseBody>;
+type ServerBody = axum::body::Body;
 
 #[cfg(feature = "server")]
 fn lookup_route<'a>(
@@ -604,10 +744,38 @@ fn compute_ws_accept(key: &str) -> String {
     data_encoding::BASE64.encode(&digest)
 }
 
+/// Forward a `hyper` request into an `axum::Router` (used as a [`tower::Service`])
+/// and return its response.
+///
+/// `axum::Router` implements `Service<Request<B>>` for any `B` that is an
+/// `HttpBody<Data = Bytes>`, which `hyper::body::Incoming` is. The router's
+/// response body is `axum::body::Body`, which is exactly our unified
+/// [`ServerBody`].
+///
+/// The router's `Service::call` signature is `Infallible`, so the only way
+/// this can fail is if there's a `hyper::Error` upstream — there isn't —
+/// hence the `unreachable!()` on the error branch.
+#[cfg(feature = "server")]
+async fn forward_to_axum_router(
+    mut router: axum::Router,
+    req: Request<Incoming>,
+) -> Result<Response<ServerBody>, hyper::Error> {
+    use tower::Service;
+    // `axum::Router::poll_ready` is `Poll::Ready(Ok(()))`, so we can call
+    // straight through without driving readiness. We rely on the
+    // `Service<Request<B>>` impl (not the `Service<IncomingStream>` one)
+    // which is selected by the `Request<Incoming>` argument type.
+    match <axum::Router as Service<Request<Incoming>>>::call(&mut router, req).await {
+        Ok(resp) => Ok(resp),
+        Err(_) => unreachable!("axum::Router::call is Infallible"),
+    }
+}
+
 #[cfg(feature = "server")]
 async fn handle_request(
     lua: &Lua,
     routes: &HashMap<(String, String), mlua::Function>,
+    extra_router: Option<axum::Router>,
     peer_addr: String,
     req: Request<Incoming>,
 ) -> Result<Response<ServerBody>, hyper::Error> {
@@ -625,10 +793,17 @@ async fn handle_request(
     let handler = match lookup_route(routes, &method, &path) {
         Some(h) => h.clone(),
         None => {
+            // Lua dispatch missed. If an extra `axum::Router` was supplied via
+            // `http.serve_with_extra`, hand the request off to it so its routes
+            // (typically Rust-built, e.g. `assay-engine`'s `/api/v1/engine/*`)
+            // can produce the response. Otherwise, fall back to a 404.
+            if let Some(router) = extra_router {
+                return forward_to_axum_router(router, req).await;
+            }
             return Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .header("content-type", "text/plain")
-                .body(Either::Left(Full::new(Bytes::from("not found"))))
+                .body(axum::body::Body::new(Full::new(Bytes::from("not found"))))
                 .unwrap());
         }
     };
@@ -644,7 +819,7 @@ async fn handle_request(
                 return Ok(Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .header("content-type", "text/plain")
-                    .body(Either::Left(Full::new(Bytes::from(format!(
+                    .body(axum::body::Body::new(Full::new(Bytes::from(format!(
                         "handler error: {e}"
                     )))))
                     .unwrap());
@@ -671,7 +846,7 @@ async fn handle_request(
         Err(e) => Ok(Response::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
             .header("content-type", "text/plain")
-            .body(Either::Left(Full::new(Bytes::from(format!(
+            .body(axum::body::Body::new(Full::new(Bytes::from(format!(
                 "handler error: {e}"
             )))))
             .unwrap()),
@@ -693,7 +868,7 @@ fn build_ws_upgrade_response(
             return Ok(Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .header("content-type", "text/plain")
-                .body(Either::Left(Full::new(Bytes::from(format!(
+                .body(axum::body::Body::new(Full::new(Bytes::from(format!(
                     "websocket upgrade rejected: {msg}"
                 )))))
                 .unwrap());
@@ -726,7 +901,7 @@ fn build_ws_upgrade_response(
     }
 
     let response = builder
-        .body(Either::Left(Full::new(Bytes::new())))
+        .body(axum::body::Body::new(Full::new(Bytes::new())))
         .unwrap();
 
     let lua_clone = lua.clone();
@@ -839,7 +1014,7 @@ fn lua_response_to_http(
             }
         }
 
-        let mut response = builder.body(Either::Right(SseBody { rx })).unwrap();
+        let mut response = builder.body(axum::body::Body::new(SseBody { rx })).unwrap();
         let response_headers = response.headers_mut();
         if !response_headers.contains_key(hyper::header::CONTENT_TYPE) {
             response_headers.insert(
@@ -957,6 +1132,58 @@ fn lua_response_to_http(
         Bytes::new()
     };
 
-    Ok(builder.body(Either::Left(Full::new(body_bytes))).unwrap())
+    Ok(builder.body(axum::body::Body::new(Full::new(body_bytes))).unwrap())
 }
 
+// ── tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+    use axum::Router;
+    use axum::routing::get;
+    use mlua::Lua;
+
+    /// `LuaAxumRouter` wraps an `axum::Router` so it can be passed through Lua
+    /// as `mlua` userdata. This test mirrors what knowhere does at startup:
+    /// build a Router in Rust, wrap it in `LuaAxumRouter`, hand it to the Lua
+    /// VM via `create_userdata`, stash it as a global, then read it back out
+    /// and confirm the round-trip preserves the underlying type.
+    #[test]
+    fn lua_axum_router_round_trips_through_mlua_globals() {
+        let lua = Lua::new();
+        let router = Router::new().route("/ping", get(|| async { "pong" }));
+        let wrapped = LuaAxumRouter(router);
+
+        let ud = lua
+            .create_userdata(wrapped)
+            .expect("create_userdata for LuaAxumRouter");
+        lua.globals()
+            .set("EXTRA_ROUTER", ud)
+            .expect("stash userdata in globals");
+
+        let value: mlua::Value = lua
+            .globals()
+            .get("EXTRA_ROUTER")
+            .expect("read userdata back from globals");
+        let ud = match value {
+            mlua::Value::UserData(u) => u,
+            other => panic!("expected UserData, got {other:?}"),
+        };
+        let _borrowed = ud
+            .borrow::<LuaAxumRouter>()
+            .expect("downcast to LuaAxumRouter");
+    }
+
+    /// `Clone` on `LuaAxumRouter` should be cheap and preserve route
+    /// dispatch — `axum::Router::clone` is a shallow `Arc` clone, so cloning
+    /// the wrapper just clones that handle. We verify both clones still
+    /// produce the same route at the type level (compile check).
+    #[test]
+    fn lua_axum_router_is_clone_and_preserves_routes() {
+        let router = Router::<()>::new().route("/health", get(|| async { "ok" }));
+        let wrapped = LuaAxumRouter(router);
+        let _cloned = wrapped.clone();
+        // If this compiles and `clone()` is callable, the public bound holds.
+    }
+}
