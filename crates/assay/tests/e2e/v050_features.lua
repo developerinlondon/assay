@@ -8,9 +8,9 @@ local grafana = require("assay.grafana")
 assert.not_nil(grafana, "assay.grafana should be loadable")
 assert.not_nil(grafana.client, "assay.grafana should have client function")
 
-local vault = require("assay.hashicorp_vault")
-assert.not_nil(vault, "assay.vault should be loadable")
-assert.not_nil(vault.client, "assay.vault should have client function")
+local vault = require("assay.hashicorp.vault")
+assert.not_nil(vault, "assay.hashicorp.vault should be loadable")
+assert.not_nil(vault.client, "assay.hashicorp.vault should have client function")
 
 local prom = require("assay.prometheus")
 assert.not_nil(prom, "assay.prometheus should be loadable")

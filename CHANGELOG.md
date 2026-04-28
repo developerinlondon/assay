@@ -2,6 +2,21 @@
 
 All notable changes to Assay are documented here.
 
+## [assay 0.15.4] - 2026-04-28
+
+- **Rename `assay.hashicorp_vault` → `assay.hashicorp.vault`** (closes #92). Establishes a proper
+  `hashicorp` namespace mirroring `assay.ory.*`, leaving room for future submodules (consul,
+  nomad, boundary, terraform, packer, waypoint). New `assay.hashicorp` umbrella module re-exports
+  `vault`. The `assay.openbao` alias now loads through the renamed path. **Breaking** (no
+  back-compat shim): scripts requiring `assay.hashicorp_vault` must update to
+  `assay.hashicorp.vault`.
+- **Fix `M.ensure_credentials` and `M.assert_secret` mount handling.** Both helpers previously
+  hardcoded the KV mount as `"secrets"`, making them unusable against any other mount. Signatures
+  now take an explicit `mount` arg: `ensure_credentials(client, mount, path, check_key, generator)`
+  and `assert_secret(client, mount, path, expected_keys)`. **Breaking** signature change for any
+  existing callers (in practice none, since the hardcoded-mount limitation made the helpers
+  unusable for non-`secrets` mounts).
+
 ## [assay 0.15.2] - 2026-04-27
 
 - **`crypto.jwt_verify(token, key, opts?)`** — verify-side mirror of `jwt_sign`. PEM

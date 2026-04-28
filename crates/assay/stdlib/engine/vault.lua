@@ -1,5 +1,5 @@
 --- @module assay.engine.vault
---- @description Lua client for assay-engine's vault module (plan 17 / v0.3.0) mounted at `/api/v1/vault/*`. KV v2, transit, plus collections / share / dynamic-creds / sealing surfaces. For HashiCorp Vault / OpenBao use `assay.hashicorp_vault`.
+--- @description Lua client for assay-engine's vault module (plan 17 / v0.3.0) mounted at `/api/v1/vault/*`. KV v2, transit, plus collections / share / dynamic-creds / sealing surfaces. For HashiCorp Vault / OpenBao use `assay.hashicorp.vault`.
 --- @keywords vault, secrets, kv, transit, encrypt, decrypt, encryption, decryption, rotate, rotation, password, key, share, sealing, lease, credential, biscuit, kdf, assay-engine
 --- @quickref vault.client(opts) -> client | Build a vault client (engine_url + optional api_key)
 --- @quickref c.kv:put(path, data, custom_md?) -> {path, version} | Store new KV version

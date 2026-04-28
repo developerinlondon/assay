@@ -2,11 +2,13 @@
 category: Security & Identity
 ---
 
-## assay.vault
+## assay.hashicorp.vault
 
-HashiCorp Vault secrets management. KV v2, policies, auth methods, transit encryption, PKI
-certificates, tokens. Client: `vault.client(url, token)`. Module helpers: `M.wait()`,
+HashiCorp Vault / OpenBao secrets management. KV v2, policies, auth methods, transit encryption,
+PKI certificates, tokens. Client: `vault.client(url, token)`. Module helpers: `M.wait()`,
 `M.authenticated_client()`, `M.ensure_credentials()`, `M.assert_secret()`.
+
+For the assay-engine native vault module use `assay.engine.vault`.
 
 ### Raw API
 
@@ -88,15 +90,15 @@ certificates, tokens. Client: `vault.client(url, token)`. Module helpers: `M.wai
   `{timeout, interval, health_path}`
 - `M.authenticated_client(url, opts?)` -> client -- Create client using K8s secret for token.
   `opts`: `{secret_namespace, secret_name, secret_key, timeout}`
-- `M.ensure_credentials(client, path, check_key, generator)` -> creds -- Check if creds exist at KV
-  path, generate if missing
-- `M.assert_secret(client, path, expected_keys)` -> data -- Assert secret exists with all expected
-  keys
+- `M.ensure_credentials(client, mount, path, check_key, generator)` -> creds -- Check if creds
+  exist at `<mount>/<path>`, generate via `generator()` and write if `check_key` missing
+- `M.assert_secret(client, mount, path, expected_keys)` -> data -- Assert secret exists at
+  `<mount>/<path>` with all expected keys
 
 Example:
 
 ```lua
-local vault = require("assay.vault")
+local vault = require("assay.hashicorp.vault")
 local c = vault.authenticated_client("http://vault:8200")
 c.kv:put("secrets", "myapp/db", {username = "admin", password = crypto.random(32)})
 local creds = c.kv:get("secrets", "myapp/db")

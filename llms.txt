@@ -42,7 +42,7 @@
 - [assay.traefik](https://assay.rs/modules/traefik.html): Traefik routers, services, middlewares
 
 ## Security & Identity
-- [assay.vault](https://assay.rs/modules/vault.html): HashiCorp Vault KV, transit, PKI, auth
+- [assay.hashicorp.vault](https://assay.rs/modules/vault.html): HashiCorp Vault KV, transit, PKI, auth
 - [assay.openbao](https://assay.rs/modules/openbao.html): OpenBao (Vault API-compatible)
 - [assay.certmanager](https://assay.rs/modules/certmanager.html): cert-manager certificates, issuers, ACME
 - [assay.eso](https://assay.rs/modules/eso.html): External Secrets Operator
