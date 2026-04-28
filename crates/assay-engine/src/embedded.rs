@@ -182,6 +182,12 @@ async fn build_sqlite(
 /// task, and constructs the [`axum::Router`]. The caller (this
 /// module's `build`, or the standalone `run` wrapper) decides what
 /// to do with the resulting router.
+//
+// 8 args (1 over clippy's default limit) — splitting them into a
+// struct just to placate the lint adds boilerplate without making
+// the call sites clearer (each call site is a single-use match
+// arm). Allow the lint here.
+#[allow(clippy::too_many_arguments)]
 async fn compose<S: WorkflowStore + Clone + 'static>(
     cfg: EngineConfig,
     store: S,
