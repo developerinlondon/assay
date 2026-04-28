@@ -16,8 +16,8 @@ fn test_context_vault_finds_module() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        stdout.contains("assay.vault"),
-        "context vault should find assay.vault, got: {stdout}"
+        stdout.contains("assay.hashicorp.vault") || stdout.contains("assay.engine.vault"),
+        "context vault should find assay.hashicorp.vault or assay.engine.vault, got: {stdout}"
     );
 }
 
@@ -80,7 +80,7 @@ fn test_modules_lists_all_stdlib() {
     );
     for module in &[
         "assay.grafana",
-        "assay.vault",
+        "assay.hashicorp.vault",
         "assay.prometheus",
         "assay.k8s",
         "assay.argocd",
