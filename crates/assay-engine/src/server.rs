@@ -219,11 +219,29 @@ async fn workflow_gate_middleware<S: WorkflowStore + Clone + 'static>(
 use axum::response::IntoResponse;
 
 /// Bind a TCP listener on `bind_addr` and serve the composed app.
+///
+/// Convenience wrapper that composes [`EngineState`] into an
+/// [`axum::Router`] via [`build_app`] and hands off to
+/// [`bind_and_serve`]. Used by the standalone `assay-engine` binary.
 pub async fn serve<S: WorkflowStore + Clone + 'static>(
     bind_addr: &str,
     state: EngineState<S>,
 ) -> anyhow::Result<()> {
     let app = build_app(state);
+    bind_and_serve(bind_addr, app).await
+}
+
+/// Bind a TCP listener on `bind_addr` and serve a pre-built
+/// [`axum::Router`].
+///
+/// Used by [`crate::run`] (after `embedded::build` returns the
+/// composed router) and by downstream embedders who want to add
+/// their own middleware / merge with their own router before
+/// serving.
+pub async fn bind_and_serve(
+    bind_addr: &str,
+    app: axum::Router,
+) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(bind_addr)
         .await
         .map_err(|e| anyhow::anyhow!("bind {bind_addr}: {e}"))?;
