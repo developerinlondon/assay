@@ -30,9 +30,9 @@ use tracing::error;
 /// Public newtype wrapping an [`axum::Router`] so it can round-trip through
 /// the Lua VM as a [`mlua::AnyUserData`].
 ///
-/// Downstream binaries (e.g. knowhere) build a Rust-side `axum::Router`
-/// (typically holding `assay-engine` HTTP routes), wrap it in this type,
-/// stash it in a Lua global (or pass it positionally), and the Lua-defined
+/// Downstream binaries build a Rust-side `axum::Router` (typically
+/// holding `assay-engine` HTTP routes), wrap it in this type, stash it in
+/// a Lua global (or pass it positionally), and the Lua-defined
 /// `http.serve_with_extra(port, routes, extra)` builtin pulls the router
 /// back out and folds its routes into the dispatcher.
 ///
@@ -1145,10 +1145,10 @@ mod tests {
     use mlua::Lua;
 
     /// `LuaAxumRouter` wraps an `axum::Router` so it can be passed through Lua
-    /// as `mlua` userdata. This test mirrors what knowhere does at startup:
-    /// build a Router in Rust, wrap it in `LuaAxumRouter`, hand it to the Lua
-    /// VM via `create_userdata`, stash it as a global, then read it back out
-    /// and confirm the round-trip preserves the underlying type.
+    /// as `mlua` userdata. This test mirrors a typical downstream embedding
+    /// pattern: build a Router in Rust, wrap it in `LuaAxumRouter`, hand it
+    /// to the Lua VM via `create_userdata`, stash it as a global, then read
+    /// it back out and confirm the round-trip preserves the underlying type.
     #[test]
     fn lua_axum_router_round_trips_through_mlua_globals() {
         let lua = Lua::new();

@@ -1,8 +1,8 @@
 //! Embedded-mode entrypoints for `assay-engine`.
 //!
-//! Use case: a parent binary (knowhere v2, …) wants to compose engine
-//! into its own [`axum::Router`] rather than running engine standalone
-//! via [`crate::run`].
+//! Use case: a parent binary wants to compose engine into its own
+//! [`axum::Router`] rather than running engine standalone via
+//! [`crate::run`].
 //!
 //! ```no_run
 //! # async fn example() -> anyhow::Result<()> {
