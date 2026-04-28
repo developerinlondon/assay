@@ -107,18 +107,41 @@ pub fn register_time(lua: &Lua) -> mlua::Result<()> {
 }
 
 pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
+    use crate::lua::file_source::FileSourceHandle;
+
     let fs_table = lua.create_table()?;
 
-    let read_fn = lua.create_function(|_, path: String| {
-        std::fs::read_to_string(&path)
-            .map_err(|e| mlua::Error::runtime(format!("fs.read: failed to read {path:?}: {e}")))
+    let read_fn = lua.create_function(|lua, path: String| -> mlua::Result<String> {
+        let bytes = match lua.app_data_ref::<FileSourceHandle>() {
+            Some(source) => source.read(&path).ok_or_else(|| {
+                mlua::Error::runtime(format!(
+                    "fs.read: failed to read {path:?}: not found in file source"
+                ))
+            })?,
+            None => std::fs::read(&path).map_err(|e| {
+                mlua::Error::runtime(format!("fs.read: failed to read {path:?}: {e}"))
+            })?,
+        };
+        String::from_utf8(bytes).map_err(|e| {
+            mlua::Error::runtime(format!("fs.read: invalid UTF-8 in {path:?}: {e}"))
+        })
     })?;
     fs_table.set("read", read_fn)?;
 
-    // fs.read_bytes(path) → string (binary-safe, Lua strings can hold any bytes)
+    // fs.read_bytes(path) → string (binary-safe; Lua strings can hold any bytes)
     let read_bytes_fn = lua.create_function(|lua, path: String| {
-        let bytes = std::fs::read(&path)
-            .map_err(|e| mlua::Error::runtime(format!("fs.read_bytes: failed to read {path:?}: {e}")))?;
+        let bytes = match lua.app_data_ref::<FileSourceHandle>() {
+            Some(source) => source.read(&path).ok_or_else(|| {
+                mlua::Error::runtime(format!(
+                    "fs.read_bytes: failed to read {path:?}: not found in file source"
+                ))
+            })?,
+            None => std::fs::read(&path).map_err(|e| {
+                mlua::Error::runtime(format!(
+                    "fs.read_bytes: failed to read {path:?}: {e}"
+                ))
+            })?,
+        };
         lua.create_string(&bytes)
     })?;
     fs_table.set("read_bytes", read_bytes_fn)?;

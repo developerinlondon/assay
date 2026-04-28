@@ -1,7 +1,7 @@
 mod assert;
 mod cgroup;
 mod compress;
-mod core;
+pub mod core;
 mod crypto;
 #[cfg(feature = "db")]
 mod db;
