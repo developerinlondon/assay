@@ -6,7 +6,7 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
 use super::*;
-use crate::events::{EngineEventBus, EventFilter, NewEvent, Subsystem};
+use crate::events::{EngineEventBus, EventFilter, NewEvent, PruneOpts, Subsystem};
 
 async fn fresh_pool() -> SqlitePool {
     let opts = SqliteConnectOptions::new()
@@ -101,8 +101,14 @@ async fn sqlite_prune_idempotent() {
     })
     .await
     .unwrap();
-    let n = bus.prune(f64::MAX).await.unwrap();
+    let n = bus
+        .prune_with(PruneOpts::new(f64::MAX).namespace("main"))
+        .await
+        .unwrap();
     assert_eq!(n, 1);
-    let n2 = bus.prune(f64::MAX).await.unwrap();
-    assert_eq!(n2, 0, "prune must be idempotent");
+    let n2 = bus
+        .prune_with(PruneOpts::new(f64::MAX).namespace("main"))
+        .await
+        .unwrap();
+    assert_eq!(n2, 0, "prune_with must be idempotent");
 }

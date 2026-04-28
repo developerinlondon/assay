@@ -35,7 +35,7 @@ fn test_format_single_module() {
 #[test]
 fn test_format_env_vars() {
     let entries = vec![ModuleContextEntry {
-        module_name: "assay.vault".to_string(),
+        module_name: "assay.hashicorp.vault".to_string(),
         description: "Vault secret management.".to_string(),
         env_vars: vec!["VAULT_ADDR".to_string(), "VAULT_TOKEN".to_string()],
         quickrefs: vec![],

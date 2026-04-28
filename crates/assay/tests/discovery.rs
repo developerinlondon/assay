@@ -21,7 +21,7 @@ fn test_discover_modules_returns_stdlib() {
     );
     assert!(
         names.contains(&"assay.engine.vault"),
-        "should contain assay.vault stdlib, got: {names:?}"
+        "should contain assay.engine.vault stdlib, got: {names:?}"
     );
 }
 
@@ -147,7 +147,7 @@ fn test_search_keyword_password_finds_vault() {
     let ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
     assert!(
         ids.contains(&"assay.engine.vault"),
-        "search for 'password' should find assay.vault, got: {ids:?}"
+        "search for 'password' should find assay.engine.vault, got: {ids:?}"
     );
 }
 
@@ -187,7 +187,7 @@ fn test_search_keyword_rotation_finds_vault() {
     let ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
     assert!(
         ids.contains(&"assay.engine.vault") || ids.contains(&"assay.certmanager"),
-        "search for 'rotation' should find assay.vault or assay.certmanager, got: {ids:?}"
+        "search for 'rotation' should find assay.engine.vault or assay.certmanager, got: {ids:?}"
     );
 }
 
@@ -197,7 +197,7 @@ fn test_search_keyword_encryption_finds_vault() {
     let ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
     assert!(
         ids.contains(&"assay.engine.vault"),
-        "search for 'encryption' should find assay.vault, got: {ids:?}"
+        "search for 'encryption' should find assay.engine.vault, got: {ids:?}"
     );
 }
 
@@ -276,7 +276,7 @@ fn test_search_regression_vault_in_results() {
     let ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
     assert!(
         ids.contains(&"assay.engine.vault"),
-        "search for 'vault' should find assay.vault in results, got: {ids:?}"
+        "search for 'vault' should find assay.engine.vault in results, got: {ids:?}"
     );
 }
 

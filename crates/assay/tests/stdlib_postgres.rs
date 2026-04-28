@@ -78,7 +78,7 @@ async fn test_postgres_client_from_vault_missing_secret() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local pg = require("assay.postgres")
         
         local vault_client = vault.client("{}", "test-token")

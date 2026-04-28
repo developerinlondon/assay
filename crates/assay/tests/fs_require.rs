@@ -34,14 +34,15 @@ async fn test_fs_require_loads_external_module() {
 #[tokio::test]
 async fn test_fs_require_filesystem_takes_priority() {
     let dir = setup_lib_dir("fs_require_priority");
+    std::fs::create_dir_all(dir.join("hashicorp")).unwrap();
     std::fs::write(
-        dir.join("hashicorp_vault.lua"),
+        dir.join("hashicorp/vault.lua"),
         "local M = {}\nfunction M.custom() return \"filesystem vault\" end\nreturn M\n",
     )
     .unwrap();
 
     let script = r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         assert.not_nil(vault)
         assert.eq(vault.custom(), "filesystem vault")
     "#;
@@ -94,7 +95,7 @@ async fn test_fs_require_module_can_require_embedded() {
     std::fs::write(
         dir.join("wrapper.lua"),
         r#"
-local vault = require("assay.hashicorp_vault")
+local vault = require("assay.hashicorp.vault")
 local M = {}
 function M.has_vault()
     return vault ~= nil and vault.client ~= nil

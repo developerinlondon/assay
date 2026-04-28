@@ -40,7 +40,7 @@ Example:
 
 ```lua
 local postgres = require("assay.postgres")
-local vault = require("assay.vault")
+local vault = require("assay.hashicorp.vault")
 local vc = vault.authenticated_client("http://vault:8200")
 local pg = postgres.client_from_vault(vc, "myapp/postgres", "postgres.default.svc", 5432)
 pg.users:ensure("myapp", crypto.random(16), {createdb = true})

@@ -121,8 +121,9 @@ local pt = c.transit:decrypt("logs", ct)
 c.transit:rotate("logs")
 ```
 
-The pre-existing HashiCorp Vault / OpenBao client moved to `require("assay.hashicorp_vault")`. The
-`assay.openbao` alias still loads through the renamed module.
+The pre-existing HashiCorp Vault / OpenBao client moved to `require("assay.hashicorp.vault")`
+(originally landed as `assay.hashicorp_vault` in 0.3.0; renamed in 0.15.4 for namespace
+consistency with `assay.ory.*`). The `assay.openbao` alias still loads through the renamed module.
 
 ## Required changes
 
@@ -153,8 +154,8 @@ assay-engine = "0.3"
 ### Lua-script consumers
 
 If your scripts called `require("assay.vault")` against HashiCorp Vault / OpenBao, switch to
-`require("assay.hashicorp_vault")`. The new `assay.vault` module talks to the assay-engine's own
-vault surface.
+`require("assay.hashicorp.vault")`. The new `assay.vault` (now `assay.engine.vault`) module talks
+to the assay-engine's own vault surface.
 
 ### Operators
 

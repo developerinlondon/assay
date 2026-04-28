@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use assay_domain::events::{EngineEventBus, NewEvent, SqliteEngineEventBus, Subsystem};
+use assay_domain::events::{EngineEventBus, NewEvent, PruneOpts, SqliteEngineEventBus, Subsystem};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
 async fn fresh_bus() -> Arc<dyn EngineEventBus> {
@@ -59,8 +59,14 @@ async fn cleanup_prunes_old_events_and_is_idempotent() {
         .await
         .unwrap();
     }
-    let n1 = bus.prune(f64::MAX).await.unwrap();
+    let n1 = bus
+        .prune_with(PruneOpts::new(f64::MAX).namespace("main"))
+        .await
+        .unwrap();
     assert_eq!(n1, 5);
-    let n2 = bus.prune(f64::MAX).await.unwrap();
-    assert_eq!(n2, 0, "prune must be idempotent");
+    let n2 = bus
+        .prune_with(PruneOpts::new(f64::MAX).namespace("main"))
+        .await
+        .unwrap();
+    assert_eq!(n2, 0, "prune_with must be idempotent");
 }
