@@ -241,13 +241,24 @@ impl EngineEventBus for PgEngineEventBus {
         self.local.subscribe()
     }
 
-    async fn prune(&self, before_ts: f64) -> Result<u64> {
-        let n = sqlx::query("DELETE FROM engine.events WHERE ts < $1")
+    async fn prune(&self, namespace: Option<&str>, before_ts: f64) -> Result<u64> {
+        let n = match namespace {
+            Some(ns) => sqlx::query(
+                "DELETE FROM engine.events WHERE namespace = $1 AND ts < $2",
+            )
+            .bind(ns)
             .bind(before_ts)
             .execute(&self.pool)
             .await
-            .context("engine_events prune")?
-            .rows_affected();
+            .context("engine_events prune (scoped)")?
+            .rows_affected(),
+            None => sqlx::query("DELETE FROM engine.events WHERE ts < $1")
+                .bind(before_ts)
+                .execute(&self.pool)
+                .await
+                .context("engine_events prune (global)")?
+                .rows_affected(),
+        };
         Ok(n)
     }
 

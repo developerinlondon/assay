@@ -2,6 +2,19 @@
 
 All notable changes to Assay are documented here.
 
+## [assay-domain 0.2.1] - 2026-04-28
+
+- **Fix `EngineEventBus::prune` cross-namespace data loss.** The previous signature
+  `prune(before_ts)` issued a `DELETE WHERE ts < ?` with no namespace filter, which deleted events
+  from every namespace in the table. Tests caught this as flake (`append_then_read_round_trip`
+  could lose its row when `prune_removes_older_than_cutoff` ran concurrently in another
+  multi-thread runtime — `serial_test::serial` only synchronises tagged tests, so a non-tagged
+  test in the same suite races freely). Production callers can also now scope pruning to a single
+  tenant namespace instead of the global sweep. New signature:
+  `prune(namespace: Option<&str>, before_ts: f64)`. Pass `None` for the existing global cleanup
+  semantics; pass `Some(ns)` to scope the delete. **Breaking** for any external implementor of
+  `EngineEventBus` (pre-1.0 patch bump).
+
 ## [assay 0.15.4] - 2026-04-28
 
 - **Rename `assay.hashicorp_vault` → `assay.hashicorp.vault`** (closes #92). Establishes a proper

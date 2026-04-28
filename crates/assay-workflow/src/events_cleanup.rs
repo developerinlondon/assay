@@ -20,7 +20,7 @@ pub async fn run_events_cleanup(
     loop {
         tick.tick().await;
         let cutoff = now_secs() - ttl_secs as f64;
-        match bus.prune(cutoff).await {
+        match bus.prune(None, cutoff).await {
             Ok(n) if n > 0 => tracing::info!(pruned = n, "engine_events cleanup swept"),
             Ok(_) => tracing::debug!("engine_events cleanup: nothing to prune"),
             Err(e) => tracing::warn!(?e, "engine_events prune failed; will retry next tick"),

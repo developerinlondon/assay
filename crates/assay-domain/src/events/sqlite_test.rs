@@ -101,8 +101,8 @@ async fn sqlite_prune_idempotent() {
     })
     .await
     .unwrap();
-    let n = bus.prune(f64::MAX).await.unwrap();
+    let n = bus.prune(Some("main"), f64::MAX).await.unwrap();
     assert_eq!(n, 1);
-    let n2 = bus.prune(f64::MAX).await.unwrap();
+    let n2 = bus.prune(Some("main"), f64::MAX).await.unwrap();
     assert_eq!(n2, 0, "prune must be idempotent");
 }

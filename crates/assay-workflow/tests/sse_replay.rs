@@ -182,7 +182,7 @@ async fn sse_returns_410_when_cursor_before_retention() {
     })
     .await
     .unwrap();
-    bus.prune(f64::MAX).await.unwrap();
+    bus.prune(Some("main"), f64::MAX).await.unwrap();
 
     // Re-seed so oldest_id > 0.
     let new_id = bus

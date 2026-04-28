@@ -134,10 +134,12 @@ pub trait EngineEventBus: Send + Sync + 'static {
     /// layer maps that to force-close.
     fn subscribe(&self, namespace: &str) -> broadcast::Receiver<Arc<Event>>;
 
-    /// Prune events older than the given unix-epoch timestamp.
+    /// Prune events older than the given unix-epoch timestamp. Pass
+    /// `Some(ns)` to restrict deletion to a single namespace, or `None`
+    /// for the global cleanup path used by the housekeeping loop.
     /// Idempotent; callable from any node. Returns the number of rows
     /// deleted.
-    async fn prune(&self, before_ts: f64) -> Result<u64>;
+    async fn prune(&self, namespace: Option<&str>, before_ts: f64) -> Result<u64>;
 
     /// Look up the oldest retained id for a namespace. Used by the SSE
     /// layer to decide 410 Gone when a client's `Last-Event-ID` is

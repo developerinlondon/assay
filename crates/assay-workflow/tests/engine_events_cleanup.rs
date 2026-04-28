@@ -59,8 +59,8 @@ async fn cleanup_prunes_old_events_and_is_idempotent() {
         .await
         .unwrap();
     }
-    let n1 = bus.prune(f64::MAX).await.unwrap();
+    let n1 = bus.prune(Some("main"), f64::MAX).await.unwrap();
     assert_eq!(n1, 5);
-    let n2 = bus.prune(f64::MAX).await.unwrap();
+    let n2 = bus.prune(Some("main"), f64::MAX).await.unwrap();
     assert_eq!(n2, 0, "prune must be idempotent");
 }

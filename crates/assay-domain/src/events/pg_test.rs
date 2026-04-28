@@ -221,7 +221,6 @@ async fn subscribe_receives_cross_node_notify() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial_test::serial]
 async fn prune_removes_older_than_cutoff() {
     let Some(url) = test_db_url() else {
         eprintln!("skipped: TEST_DATABASE_URL not set");
@@ -238,10 +237,8 @@ async fn prune_removes_older_than_cutoff() {
     })
     .await
     .unwrap();
-    // prune(f64::MAX) is global; serial_test keeps this from racing
-    // namespace-isolated tests that might otherwise lose rows.
-    let n = bus.prune(f64::MAX).await.unwrap();
-    assert!(n >= 1, "prune should have removed at least our row");
+    let n = bus.prune(Some(&ns), f64::MAX).await.unwrap();
+    assert_eq!(n, 1, "prune should have removed exactly our row");
     let rest = bus
         .read_since(&ns, None, &EventFilter::default(), 10)
         .await
