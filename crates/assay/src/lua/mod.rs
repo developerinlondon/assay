@@ -1,5 +1,6 @@
 pub mod async_bridge;
 pub mod builtins;
+pub mod file_source;
 
 use anyhow::Result;
 use include_dir::{Dir, include_dir};
