@@ -64,6 +64,37 @@ pub struct NewEvent<'a> {
     pub payload: serde_json::Value,
 }
 
+/// Options for [`EngineEventBus::prune_with`]. Marked `#[non_exhaustive]`
+/// so additional filter fields (e.g. `subsystem`, `kind`, `dry_run`) can
+/// be added later without breaking external callers — construct via
+/// [`PruneOpts::new`] and the fluent setters.
+#[non_exhaustive]
+#[derive(Debug, Clone, Default)]
+pub struct PruneOpts {
+    /// If set, only delete events in this namespace. `None` deletes
+    /// across every namespace — the cluster-wide cleanup path.
+    pub namespace: Option<String>,
+    /// Delete events whose `ts` is strictly less than this unix epoch.
+    pub before_ts: f64,
+}
+
+impl PruneOpts {
+    /// Cluster-wide prune of events older than `before_ts`. Use the
+    /// fluent setters to scope further.
+    pub fn new(before_ts: f64) -> Self {
+        Self {
+            before_ts,
+            ..Default::default()
+        }
+    }
+
+    /// Restrict the prune to a single namespace.
+    pub fn namespace(mut self, ns: impl Into<String>) -> Self {
+        self.namespace = Some(ns.into());
+        self
+    }
+}
+
 /// Filter applied server-side before an event is sent to a subscriber.
 /// Empty vecs / `None`s mean "no filter on this dimension".
 #[derive(Debug, Clone, Default)]
@@ -134,12 +165,26 @@ pub trait EngineEventBus: Send + Sync + 'static {
     /// layer maps that to force-close.
     fn subscribe(&self, namespace: &str) -> broadcast::Receiver<Arc<Event>>;
 
-    /// Prune events older than the given unix-epoch timestamp. Pass
-    /// `Some(ns)` to restrict deletion to a single namespace, or `None`
-    /// for the global cleanup path used by the housekeeping loop.
-    /// Idempotent; callable from any node. Returns the number of rows
-    /// deleted.
-    async fn prune(&self, namespace: Option<&str>, before_ts: f64) -> Result<u64>;
+    /// Prune events older than the given unix-epoch timestamp across
+    /// every namespace. Used by the production housekeeping loop, which
+    /// genuinely wants a cluster-wide sweep. Tests and tenant-scoped
+    /// callers should prefer [`prune_with`](Self::prune_with) so they
+    /// don't accidentally delete other namespaces' rows.
+    /// Idempotent; callable from any node.
+    async fn prune(&self, before_ts: f64) -> Result<u64>;
+
+    /// Prune events according to the supplied [`PruneOpts`]. The
+    /// default implementation forwards to `prune` when no namespace is
+    /// set, and errors otherwise — bus implementations that support
+    /// namespace-scoped pruning override this.
+    async fn prune_with(&self, opts: PruneOpts) -> Result<u64> {
+        if opts.namespace.is_some() {
+            anyhow::bail!(
+                "prune_with: namespace-scoped prune not supported by this bus implementation"
+            );
+        }
+        self.prune(opts.before_ts).await
+    }
 
     /// Look up the oldest retained id for a namespace. Used by the SSE
     /// layer to decide 410 Gone when a client's `Last-Event-ID` is

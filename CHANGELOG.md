@@ -4,16 +4,19 @@ All notable changes to Assay are documented here.
 
 ## [assay-domain 0.2.1] - 2026-04-28
 
-- **Fix `EngineEventBus::prune` cross-namespace data loss.** The previous signature
-  `prune(before_ts)` issued a `DELETE WHERE ts < ?` with no namespace filter, which deleted events
-  from every namespace in the table. Tests caught this as flake (`append_then_read_round_trip`
-  could lose its row when `prune_removes_older_than_cutoff` ran concurrently in another
-  multi-thread runtime — `serial_test::serial` only synchronises tagged tests, so a non-tagged
-  test in the same suite races freely). Production callers can also now scope pruning to a single
-  tenant namespace instead of the global sweep. New signature:
-  `prune(namespace: Option<&str>, before_ts: f64)`. Pass `None` for the existing global cleanup
-  semantics; pass `Some(ns)` to scope the delete. **Breaking** for any external implementor of
-  `EngineEventBus` (pre-1.0 patch bump).
+- **Add `EngineEventBus::prune_with(PruneOpts)` for namespace-scoped pruning.** The existing
+  `prune(before_ts)` issues `DELETE WHERE ts < ?` with no namespace filter, which deletes events
+  from every namespace in the shared table. That's correct for the global cluster-wide cleanup
+  loop in `assay-workflow::events_cleanup`, but it made tests (and tenant-scoped callers) racy:
+  one bus instance's `prune` would silently delete another instance's rows. The
+  non-`#[serial]` test `append_then_read_round_trip` started losing its row when
+  `prune_removes_older_than_cutoff` ran concurrently — `serial_test::serial` only synchronises
+  tagged tests, so a non-tagged test in the same suite races freely. New `prune_with` takes a
+  `PruneOpts` struct (`#[non_exhaustive]`, so future filter fields like `subsystem`, `kind`, or
+  `dry_run` add non-breakingly): `namespace = Some(ns)` scopes the delete; `namespace = None`
+  matches the global semantic. The trait method has a default impl that forwards to `prune` for
+  the `None` case and errors otherwise — non-breaking for external implementors of
+  `EngineEventBus`.
 
 ## [assay 0.15.4] - 2026-04-28
 

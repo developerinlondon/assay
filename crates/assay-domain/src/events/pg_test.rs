@@ -7,7 +7,7 @@ use sqlx::PgPool;
 use tokio::sync::OnceCell;
 
 use super::*;
-use crate::events::{EngineEventBus, EventFilter, NewEvent, Subsystem};
+use crate::events::{EngineEventBus, EventFilter, NewEvent, PruneOpts, Subsystem};
 
 static NS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SCHEMA_READY: OnceCell<()> = OnceCell::const_new();
@@ -237,8 +237,11 @@ async fn prune_removes_older_than_cutoff() {
     })
     .await
     .unwrap();
-    let n = bus.prune(Some(&ns), f64::MAX).await.unwrap();
-    assert_eq!(n, 1, "prune should have removed exactly our row");
+    let n = bus
+        .prune_with(PruneOpts::new(f64::MAX).namespace(&ns))
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "prune_with should have removed exactly our row");
     let rest = bus
         .read_since(&ns, None, &EventFilter::default(), 10)
         .await

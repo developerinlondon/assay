@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use assay_domain::events::{
-    EngineEventBus, NewEvent, SqliteEngineEventBus, Subsystem,
+    EngineEventBus, NewEvent, PruneOpts, SqliteEngineEventBus, Subsystem,
 };
 use assay_workflow::WorkflowCtx;
 use assay_workflow::events::WorkflowEventBus;
@@ -182,7 +182,9 @@ async fn sse_returns_410_when_cursor_before_retention() {
     })
     .await
     .unwrap();
-    bus.prune(Some("main"), f64::MAX).await.unwrap();
+    bus.prune_with(PruneOpts::new(f64::MAX).namespace("main"))
+        .await
+        .unwrap();
 
     // Re-seed so oldest_id > 0.
     let new_id = bus

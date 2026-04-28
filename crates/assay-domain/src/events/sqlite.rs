@@ -5,7 +5,9 @@ use async_trait::async_trait;
 use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 
-use super::trait_::{CursorGoneError, EngineEventBus, Event, EventFilter, NewEvent, Subsystem};
+use super::trait_::{
+    CursorGoneError, EngineEventBus, Event, EventFilter, NewEvent, PruneOpts, Subsystem,
+};
 
 const LOCAL_BROADCAST_CAPACITY: usize = 1024;
 
@@ -117,22 +119,32 @@ impl EngineEventBus for SqliteEngineEventBus {
         self.local.subscribe()
     }
 
-    async fn prune(&self, namespace: Option<&str>, before_ts: f64) -> Result<u64> {
-        let n = match namespace {
+    async fn prune(&self, before_ts: f64) -> Result<u64> {
+        let n = sqlx::query("DELETE FROM engine.events WHERE ts < ?1")
+            .bind(before_ts)
+            .execute(&self.pool)
+            .await
+            .context("sqlite prune (global)")?
+            .rows_affected();
+        Ok(n)
+    }
+
+    async fn prune_with(&self, opts: PruneOpts) -> Result<u64> {
+        let n = match &opts.namespace {
             Some(ns) => sqlx::query(
                 "DELETE FROM engine.events WHERE namespace = ?1 AND ts < ?2",
             )
             .bind(ns)
-            .bind(before_ts)
+            .bind(opts.before_ts)
             .execute(&self.pool)
             .await
-            .context("sqlite prune (scoped)")?
+            .context("sqlite prune_with (scoped)")?
             .rows_affected(),
             None => sqlx::query("DELETE FROM engine.events WHERE ts < ?1")
-                .bind(before_ts)
+                .bind(opts.before_ts)
                 .execute(&self.pool)
                 .await
-                .context("sqlite prune (global)")?
+                .context("sqlite prune_with (global)")?
                 .rows_affected(),
         };
         Ok(n)
