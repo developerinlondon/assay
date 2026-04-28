@@ -114,7 +114,7 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
 /// a fresh one on first boot) and composes the per-feature stores
 /// against the same pool the rest of the engine uses.
 #[cfg(all(feature = "vault", feature = "backend-postgres"))]
-async fn build_vault_ctx_pg(
+pub async fn build_vault_ctx_pg(
     modules: &[String],
     pool: &sqlx::PgPool,
 ) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
@@ -188,7 +188,7 @@ async fn build_vault_ctx_pg(
 
 /// SQLite mirror of [`build_vault_ctx_pg`].
 #[cfg(all(feature = "vault", feature = "backend-sqlite"))]
-async fn build_vault_ctx_sqlite(
+pub async fn build_vault_ctx_sqlite(
     modules: &[String],
     pool: &sqlx::SqlitePool,
 ) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
@@ -249,7 +249,7 @@ async fn build_vault_ctx_sqlite(
 }
 
 #[cfg(feature = "backend-postgres")]
-async fn build_auth_ctx_pg(
+pub async fn build_auth_ctx_pg(
     cfg: &EngineConfig,
     pool: &sqlx::PgPool,
 ) -> anyhow::Result<assay_auth::AuthCtx> {
@@ -329,7 +329,7 @@ async fn build_auth_ctx_pg(
 }
 
 #[cfg(feature = "backend-sqlite")]
-async fn build_auth_ctx_sqlite(
+pub async fn build_auth_ctx_sqlite(
     cfg: &EngineConfig,
     pool: &sqlx::SqlitePool,
 ) -> anyhow::Result<assay_auth::AuthCtx> {
