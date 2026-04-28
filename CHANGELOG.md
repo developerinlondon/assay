@@ -2,6 +2,37 @@
 
 All notable changes to Assay are documented here.
 
+## [assay-domain 0.2.1] - 2026-04-28
+
+- **Add `EngineEventBus::prune_with(PruneOpts)` for namespace-scoped pruning.** The existing
+  `prune(before_ts)` issues `DELETE WHERE ts < ?` with no namespace filter, which deletes events
+  from every namespace in the shared table. That's correct for the global cluster-wide cleanup
+  loop in `assay-workflow::events_cleanup`, but it made tests (and tenant-scoped callers) racy:
+  one bus instance's `prune` would silently delete another instance's rows. The
+  non-`#[serial]` test `append_then_read_round_trip` started losing its row when
+  `prune_removes_older_than_cutoff` ran concurrently — `serial_test::serial` only synchronises
+  tagged tests, so a non-tagged test in the same suite races freely. New `prune_with` takes a
+  `PruneOpts` struct (`#[non_exhaustive]`, so future filter fields like `subsystem`, `kind`, or
+  `dry_run` add non-breakingly): `namespace = Some(ns)` scopes the delete; `namespace = None`
+  matches the global semantic. The trait method has a default impl that forwards to `prune` for
+  the `None` case and errors otherwise — non-breaking for external implementors of
+  `EngineEventBus`.
+
+## [assay 0.15.4] - 2026-04-28
+
+- **Rename `assay.hashicorp_vault` → `assay.hashicorp.vault`** (closes #92). Establishes a proper
+  `hashicorp` namespace mirroring `assay.ory.*`, leaving room for future submodules (consul,
+  nomad, boundary, terraform, packer, waypoint). New `assay.hashicorp` umbrella module re-exports
+  `vault`. The `assay.openbao` alias now loads through the renamed path. **Breaking** (no
+  back-compat shim): scripts requiring `assay.hashicorp_vault` must update to
+  `assay.hashicorp.vault`.
+- **Fix `M.ensure_credentials` and `M.assert_secret` mount handling.** Both helpers previously
+  hardcoded the KV mount as `"secrets"`, making them unusable against any other mount. Signatures
+  now take an explicit `mount` arg: `ensure_credentials(client, mount, path, check_key, generator)`
+  and `assert_secret(client, mount, path, expected_keys)`. **Breaking** signature change for any
+  existing callers (in practice none, since the hardcoded-mount limitation made the helpers
+  unusable for non-`secrets` mounts).
+
 ## [assay 0.15.2] - 2026-04-27
 
 - **`crypto.jwt_verify(token, key, opts?)`** — verify-side mirror of `jwt_sign`. PEM

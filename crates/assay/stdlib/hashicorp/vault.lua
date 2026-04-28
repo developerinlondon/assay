@@ -1,4 +1,4 @@
---- @module assay.hashicorp_vault
+--- @module assay.hashicorp.vault
 --- @description HashiCorp Vault / OpenBao client. KV, policies, auth, transit, PKI, token management. For the assay-engine native vault module use `assay.vault`.
 --- @keywords vault, secrets, kv, policies, auth, transit, pki, tokens, encryption, decryption, certificate, seal, initialization, authentication, secret-engine, password, rotation
 --- @quickref c.kv:get(mount, key) -> {data}|nil | Read KV v2 secret
@@ -39,8 +39,8 @@
 --- @quickref c.pki:create_role(mount, role_name, opts?) -> nil | Create PKI role
 --- @quickref M.wait(url, opts?) -> true | Wait for Vault to become healthy
 --- @quickref M.authenticated_client(url, opts?) -> client | Create client with K8s secret auth
---- @quickref M.ensure_credentials(client, path, check_key, generator) -> creds | Ensure credentials exist
---- @quickref M.assert_secret(client, path, expected_keys) -> data | Assert secret exists with keys
+--- @quickref M.ensure_credentials(client, mount, path, check_key, generator) -> creds | Ensure credentials exist
+--- @quickref M.assert_secret(client, mount, path, expected_keys) -> data | Assert secret exists with keys
 
 local M = {}
 
@@ -382,31 +382,29 @@ function M.authenticated_client(url, opts)
   return M.client(url, token)
 end
 
-function M.ensure_credentials(client, path, check_key, generator)
-  -- Check if credentials already exist
-  local existing = client.kv:get("secrets", path)
+function M.ensure_credentials(client, mount, path, check_key, generator)
+  local existing = client.kv:get(mount, path)
   if existing and existing.data and existing.data[check_key] then
-    log.info("Credentials already exist at secrets/" .. path)
+    log.info("Credentials already exist at " .. mount .. "/" .. path)
     return existing.data
   end
 
-  -- Generate new credentials
   local creds = generator()
-  client.kv:put("secrets", path, creds)
-  log.info("Generated and stored credentials at secrets/" .. path)
+  client.kv:put(mount, path, creds)
+  log.info("Generated and stored credentials at " .. mount .. "/" .. path)
   return creds
 end
 
-function M.assert_secret(client, path, expected_keys)
-  local data = client.kv:get("secrets", path)
-  assert.not_nil(data, "vault.assert_secret: secret not found at secrets/" .. path)
-  assert.not_nil(data.data, "vault.assert_secret: no data at secrets/" .. path)
+function M.assert_secret(client, mount, path, expected_keys)
+  local data = client.kv:get(mount, path)
+  assert.not_nil(data, "vault.assert_secret: secret not found at " .. mount .. "/" .. path)
+  assert.not_nil(data.data, "vault.assert_secret: no data at " .. mount .. "/" .. path)
 
   for _, key in ipairs(expected_keys) do
-    assert.not_nil(data.data[key], "vault.assert_secret: key '" .. key .. "' missing at secrets/" .. path)
+    assert.not_nil(data.data[key], "vault.assert_secret: key '" .. key .. "' missing at " .. mount .. "/" .. path)
   end
 
-  log.info("Secret verified at secrets/" .. path .. " (" .. tostring(#expected_keys) .. " keys)")
+  log.info("Secret verified at " .. mount .. "/" .. path .. " (" .. tostring(#expected_keys) .. " keys)")
   return data.data
 end
 

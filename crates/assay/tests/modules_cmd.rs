@@ -45,8 +45,12 @@ fn test_modules_lists_vault() {
     let output = assay_bin().arg("modules").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("assay.vault"),
-        "should list assay.vault: {stdout}"
+        stdout.contains("assay.hashicorp.vault"),
+        "should list assay.hashicorp.vault: {stdout}"
+    );
+    assert!(
+        stdout.contains("assay.engine.vault"),
+        "should list assay.engine.vault: {stdout}"
     );
 }
 

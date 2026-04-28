@@ -8,7 +8,9 @@ use async_trait::async_trait;
 use sqlx::postgres::{PgConnectOptions, PgListener, PgPool, PgPoolOptions};
 use tokio::sync::broadcast;
 
-use super::trait_::{CursorGoneError, EngineEventBus, Event, EventFilter, NewEvent, Subsystem};
+use super::trait_::{
+    CursorGoneError, EngineEventBus, Event, EventFilter, NewEvent, PruneOpts, Subsystem,
+};
 
 /// Default capacity of the node-local broadcast channel. A slow SSE
 /// client that lags past this will be force-closed and reconnects
@@ -246,8 +248,29 @@ impl EngineEventBus for PgEngineEventBus {
             .bind(before_ts)
             .execute(&self.pool)
             .await
-            .context("engine_events prune")?
+            .context("engine_events prune (global)")?
             .rows_affected();
+        Ok(n)
+    }
+
+    async fn prune_with(&self, opts: PruneOpts) -> Result<u64> {
+        let n = match &opts.namespace {
+            Some(ns) => sqlx::query(
+                "DELETE FROM engine.events WHERE namespace = $1 AND ts < $2",
+            )
+            .bind(ns)
+            .bind(opts.before_ts)
+            .execute(&self.pool)
+            .await
+            .context("engine_events prune_with (scoped)")?
+            .rows_affected(),
+            None => sqlx::query("DELETE FROM engine.events WHERE ts < $1")
+                .bind(opts.before_ts)
+                .execute(&self.pool)
+                .await
+                .context("engine_events prune_with (global)")?
+                .rows_affected(),
+        };
         Ok(n)
     }
 

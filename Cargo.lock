@@ -288,7 +288,7 @@ dependencies = [
 
 [[package]]
 name = "assay-domain"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -337,7 +337,7 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "anyhow",
  "axum",

@@ -7,7 +7,7 @@ use sqlx::PgPool;
 use tokio::sync::OnceCell;
 
 use super::*;
-use crate::events::{EngineEventBus, EventFilter, NewEvent, Subsystem};
+use crate::events::{EngineEventBus, EventFilter, NewEvent, PruneOpts, Subsystem};
 
 static NS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SCHEMA_READY: OnceCell<()> = OnceCell::const_new();
@@ -221,7 +221,6 @@ async fn subscribe_receives_cross_node_notify() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial_test::serial]
 async fn prune_removes_older_than_cutoff() {
     let Some(url) = test_db_url() else {
         eprintln!("skipped: TEST_DATABASE_URL not set");
@@ -238,10 +237,11 @@ async fn prune_removes_older_than_cutoff() {
     })
     .await
     .unwrap();
-    // prune(f64::MAX) is global; serial_test keeps this from racing
-    // namespace-isolated tests that might otherwise lose rows.
-    let n = bus.prune(f64::MAX).await.unwrap();
-    assert!(n >= 1, "prune should have removed at least our row");
+    let n = bus
+        .prune_with(PruneOpts::new(f64::MAX).namespace(&ns))
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "prune_with should have removed exactly our row");
     let rest = bus
         .read_since(&ns, None, &EventFilter::default(), 10)
         .await

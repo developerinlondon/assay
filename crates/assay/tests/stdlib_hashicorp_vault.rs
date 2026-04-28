@@ -7,7 +7,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[tokio::test]
 async fn test_require_vault() {
     let script = r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         assert.not_nil(vault)
         assert.not_nil(vault.client)
     "#;
@@ -27,7 +27,7 @@ async fn test_vault_read() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local data = c:read("secret/data/mykey")
         assert.eq(data.data.username, "admin")
@@ -49,7 +49,7 @@ async fn test_vault_read_404() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local data = c:read("secret/data/missing")
         assert.eq(data, nil)
@@ -70,7 +70,7 @@ async fn test_vault_write() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c:write("secret/data/newkey", {{ data = {{ key = "value" }} }})
         "#,
@@ -90,7 +90,7 @@ async fn test_vault_delete() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c:delete("secret/data/oldkey")
         "#,
@@ -112,7 +112,7 @@ async fn test_vault_list() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local keys = c:list("secret/metadata")
         assert.eq(#keys, 3)
@@ -135,7 +135,7 @@ async fn test_vault_list_empty() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local keys = c:list("secret/metadata")
         assert.eq(#keys, 0)
@@ -158,7 +158,7 @@ async fn test_vault_kv_get() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local data = c.kv:get("secret", "mykey")
         assert.eq(data.data.foo, "bar")
@@ -179,7 +179,7 @@ async fn test_vault_kv_put() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.kv:put("secret", "mykey", {{ username = "admin", password = "s3cret" }})
         "#,
@@ -199,7 +199,7 @@ async fn test_vault_kv_delete() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.kv:delete("secret", "mykey")
         "#,
@@ -221,7 +221,7 @@ async fn test_vault_kv_list() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local keys = c.kv:list("secret")
         assert.eq(#keys, 3)
@@ -256,7 +256,7 @@ async fn test_vault_kv_metadata() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local meta = c.kv:metadata("secret", "mykey")
         assert.eq(meta.data.current_version, 3)
@@ -289,7 +289,7 @@ async fn test_vault_health() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local h = c.sys:health()
         assert.eq(h.initialized, true)
@@ -327,7 +327,7 @@ async fn test_vault_seal_status() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local s = c.sys:seal_status()
         assert.eq(s.sealed, false)
@@ -357,7 +357,7 @@ async fn test_vault_is_sealed() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         assert.eq(c.sys:is_sealed(), true)
         "#,
@@ -383,7 +383,7 @@ async fn test_vault_is_initialized() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         assert.eq(c.sys:is_initialized(), true)
         "#,
@@ -408,7 +408,7 @@ async fn test_vault_policy_get() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local pol = c.policies:get("my-policy")
         assert.eq(pol.name, "my-policy")
@@ -430,7 +430,7 @@ async fn test_vault_policy_put() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.policies:create("my-policy", 'path "secret/data/*" {{ capabilities = ["read"] }}')
         "#,
@@ -450,7 +450,7 @@ async fn test_vault_policy_delete() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.policies:delete("my-policy")
         "#,
@@ -472,7 +472,7 @@ async fn test_vault_policy_list() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local policies = c.policies:list()
         assert.eq(#policies, 3)
@@ -495,7 +495,7 @@ async fn test_vault_auth_enable() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.auth:enable("kubernetes", "kubernetes", {{ description = "K8s auth" }})
         "#,
@@ -515,7 +515,7 @@ async fn test_vault_auth_disable() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.auth:disable("kubernetes")
         "#,
@@ -546,7 +546,7 @@ async fn test_vault_auth_list() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local auths = c.auth:methods()
         assert.not_nil(auths["token/"])
@@ -569,7 +569,7 @@ async fn test_vault_auth_config() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.auth:config("kubernetes", {{
             kubernetes_host = "https://kubernetes.default.svc",
@@ -591,7 +591,7 @@ async fn test_vault_auth_create_role() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.auth:create_role("kubernetes", "my-app", {{
             bound_service_account_names = {{ "my-app" }},
@@ -624,7 +624,7 @@ async fn test_vault_auth_read_role() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local role = c.auth:get_role("kubernetes", "my-app")
         assert.eq(role.policies[1], "my-policy")
@@ -648,7 +648,7 @@ async fn test_vault_auth_list_roles() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local roles = c.auth:list_roles("kubernetes")
         assert.eq(#roles, 3)
@@ -670,7 +670,7 @@ async fn test_vault_engine_enable() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.engines:enable("transit", "transit", {{ description = "Encryption as a service" }})
         "#,
@@ -690,7 +690,7 @@ async fn test_vault_engine_disable() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.engines:disable("transit")
         "#,
@@ -725,7 +725,7 @@ async fn test_vault_engine_list() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local engines = c.engines:list()
         assert.not_nil(engines["secret/"])
@@ -748,7 +748,7 @@ async fn test_vault_engine_tune() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.engines:tune("secret", {{ max_lease_ttl = "87600h", default_lease_ttl = "1h" }})
         "#,
@@ -778,7 +778,7 @@ async fn test_vault_token_create() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local auth = c.token:create({{ policies = {{ "my-policy" }}, ttl = "1h" }})
         assert.eq(auth.client_token, "hvs.CAESI_new_child_token")
@@ -813,7 +813,7 @@ async fn test_vault_token_lookup() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local info = c.token:lookup("hvs.CAESI_some_token")
         assert.eq(info.id, "hvs.CAESI_some_token")
@@ -844,7 +844,7 @@ async fn test_vault_token_lookup_self() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local info = c.token:lookup_self()
         assert.eq(info.id, "hvs.CAESI_self_token")
@@ -866,7 +866,7 @@ async fn test_vault_token_revoke() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.token:revoke("hvs.CAESI_revoke_me")
         "#,
@@ -886,7 +886,7 @@ async fn test_vault_token_revoke_self() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.token:revoke_self()
         "#,
@@ -910,7 +910,7 @@ async fn test_vault_transit_encrypt() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local ct = c.transit:encrypt("my-key", "hello world")
         assert.eq(ct, "vault:v1:ABCDEF1234567890encrypted")
@@ -935,7 +935,7 @@ async fn test_vault_transit_decrypt() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local pt = c.transit:decrypt("my-key", "vault:v1:ABCDEF1234567890encrypted")
         assert.eq(pt, "hello world")
@@ -956,7 +956,7 @@ async fn test_vault_transit_create_key() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.transit:create_key("new-key", {{ type = "aes256-gcm96" }})
         "#,
@@ -978,7 +978,7 @@ async fn test_vault_transit_list_keys() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local keys = c.transit:list_keys()
         assert.eq(#keys, 3)
@@ -1011,7 +1011,7 @@ async fn test_vault_pki_issue() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local cert = c.pki:issue("pki", "web-certs", {{ common_name = "example.com", ttl = "720h" }})
         assert.contains(cert.certificate, "BEGIN CERTIFICATE")
@@ -1038,7 +1038,7 @@ async fn test_vault_pki_ca_cert() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local pem = c.pki:ca_cert("pki")
         assert.contains(pem, "BEGIN CERTIFICATE")
@@ -1060,7 +1060,7 @@ async fn test_vault_pki_create_role() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         c.pki:create_role("pki", "web-certs", {{
             allowed_domains = {{ "example.com" }},
@@ -1086,7 +1086,7 @@ async fn test_vault_wait_success() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local result = vault.wait("{}", {{ timeout = 5, interval = 0.1 }})
         assert.eq(result, true)
         "#,
@@ -1106,7 +1106,7 @@ async fn test_vault_wait_timeout() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         vault.wait("{}", {{ timeout = 1, interval = 0.5 }})
         "#,
         server.uri()
@@ -1128,14 +1128,14 @@ async fn test_vault_ensure_credentials_existing() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local generator_called = false
         local function generator()
             generator_called = true
             return {{ password = "new_secret" }}
         end
-        local data = vault.ensure_credentials(c, "db/postgres", "password", generator)
+        local data = vault.ensure_credentials(c, "secrets", "db/postgres", "password", generator)
         assert.eq(data.username, "admin")
         assert.eq(data.password, "existing_secret")
         assert.eq(generator_called, false)
@@ -1161,14 +1161,14 @@ async fn test_vault_ensure_credentials_new() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
         local generator_called = false
         local function generator()
             generator_called = true
             return {{ password = "generated_secret" }}
         end
-        local data = vault.ensure_credentials(c, "db/new", "password", generator)
+        local data = vault.ensure_credentials(c, "secrets", "db/new", "password", generator)
         assert.eq(data.password, "generated_secret")
         assert.eq(generator_called, true)
         "#,
@@ -1190,9 +1190,9 @@ async fn test_vault_assert_secret_success() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
-        local data = vault.assert_secret(c, "db/postgres", {{"username", "password"}})
+        local data = vault.assert_secret(c, "secrets", "db/postgres", {{"username", "password"}})
         assert.eq(data.username, "admin")
         assert.eq(data.password, "secret123")
         "#,
@@ -1212,9 +1212,9 @@ async fn test_vault_assert_secret_missing() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
-        vault.assert_secret(c, "db/missing", {{"username"}})
+        vault.assert_secret(c, "secrets", "db/missing", {{"username"}})
         "#,
         server.uri()
     );
@@ -1235,9 +1235,9 @@ async fn test_vault_assert_secret_missing_key() {
 
     let script = format!(
         r#"
-        local vault = require("assay.hashicorp_vault")
+        local vault = require("assay.hashicorp.vault")
         local c = vault.client("{}", "test-token")
-        vault.assert_secret(c, "db/partial", {{"username", "missing_key"}})
+        vault.assert_secret(c, "secrets", "db/partial", {{"username", "missing_key"}})
         "#,
         server.uri()
     );
