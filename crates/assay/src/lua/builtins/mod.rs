@@ -6,7 +6,7 @@ mod crypto;
 #[cfg(feature = "db")]
 mod db;
 mod disk;
-mod http;
+pub mod http;
 mod json;
 mod linux;
 mod markdown;
@@ -18,6 +18,9 @@ mod shell;
 mod systemd;
 mod template;
 mod ws;
+
+#[cfg(feature = "server")]
+pub use http::LuaAxumRouter;
 
 pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()> {
     http::register_http(lua, client)?;

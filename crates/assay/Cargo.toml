@@ -112,6 +112,7 @@ http-body-util = { version = "0.1", optional = true }
 hyper = { version = "1", features = ["http1", "server"], optional = true }
 hyper-util = { version = "0.1", features = ["tokio"], optional = true }
 tower-http = { version = "0.6.8", features = ["cors", "trace"] }
+tower = { version = "0.5", features = ["util"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

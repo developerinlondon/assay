@@ -337,7 +337,7 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.15.2"
+version = "0.15.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -375,6 +375,7 @@ dependencies = [
  "tokio-test",
  "tokio-tungstenite",
  "toml",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",

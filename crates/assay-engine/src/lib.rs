@@ -39,11 +39,8 @@
 
 use std::sync::Arc;
 
-use assay_dashboard::{DashboardCtx, WhitelabelConfig};
-use assay_domain::events::EngineEventBus;
-use assay_workflow::WorkflowStore;
-
 pub mod config;
+pub mod embedded;
 pub mod engine_api;
 pub mod init;
 pub mod server;
@@ -60,53 +57,16 @@ pub use config::{
 };
 pub use state::{AdminApiKeys, EngineState};
 
-/// Top-level entrypoint: pick the backend from config, build state, serve.
+/// Top-level entrypoint for the standalone `assay-engine` binary.
+/// Picks the backend from config, composes engine via
+/// [`embedded::build`], and serves forever on `cfg.server.bind_addr`.
+///
+/// For embedded use (composing engine into a parent binary's
+/// router), call [`embedded::build`] directly.
 pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
-    let boot = init::EngineBoot::run(&cfg).await?;
-    match boot {
-        #[cfg(feature = "backend-postgres")]
-        init::EngineBoot::Postgres(b) => {
-            let store = assay_workflow::PostgresStore::from_pool(b.pool.clone())
-                .await
-                .map_err(|e| anyhow::anyhow!("workflow store (pg): {e}"))?;
-            let auth_ctx = build_auth_ctx_pg(&cfg, &b.pool).await?;
-            #[cfg(feature = "vault")]
-            let vault_ctx = build_vault_ctx_pg(&b.modules, &b.pool).await?;
-            #[cfg(not(feature = "vault"))]
-            let vault_ctx: Option<()> = None;
-            run_with_store(
-                cfg,
-                store,
-                b.bus,
-                b.modules,
-                b.instance_id,
-                Some(auth_ctx),
-                vault_ctx,
-            )
-            .await
-        }
-        #[cfg(feature = "backend-sqlite")]
-        init::EngineBoot::Sqlite(b) => {
-            let store = assay_workflow::SqliteStore::from_attached_pool(b.pool.clone())
-                .await
-                .map_err(|e| anyhow::anyhow!("workflow store (sqlite): {e}"))?;
-            let auth_ctx = build_auth_ctx_sqlite(&cfg, &b.pool).await?;
-            #[cfg(feature = "vault")]
-            let vault_ctx = build_vault_ctx_sqlite(&b.modules, &b.pool).await?;
-            #[cfg(not(feature = "vault"))]
-            let vault_ctx: Option<()> = None;
-            run_with_store(
-                cfg,
-                store,
-                b.bus,
-                b.modules,
-                b.instance_id,
-                Some(auth_ctx),
-                vault_ctx,
-            )
-            .await
-        }
-    }
+    let bind_addr = cfg.server.bind_addr.clone();
+    let engine = embedded::build(cfg).await?;
+    server::bind_and_serve(&bind_addr, engine.router).await
 }
 
 /// Build the vault context iff the runtime `engine.modules.vault.enabled`
@@ -510,82 +470,8 @@ fn build_passkey_manager(
     }
 }
 
-async fn run_with_store<S: WorkflowStore + Clone + 'static>(
-    cfg: EngineConfig,
-    store: S,
-    bus: Arc<dyn EngineEventBus>,
-    modules: Vec<String>,
-    instance_id: uuid::Uuid,
-    auth_ctx: Option<assay_auth::AuthCtx>,
-    #[cfg(feature = "vault")] vault_ctx: Option<assay_vault::VaultCtx>,
-    #[cfg(not(feature = "vault"))] _vault_ctx: Option<()>,
-) -> anyhow::Result<()> {
-    // The engine refuses to start unless there's at least one operator
-    // user (created via `bootstrap-admin`) or at least one entry in
-    // `admin_api_keys` as a break-glass. Without either, every admin
-    // request would 401 and the operator would be locked out — fail
-    // fast with a helpful message instead.
-    if let Some(auth) = auth_ctx.as_ref() {
-        let user_count = auth
-            .users
-            .count_users(None)
-            .await
-            .map_err(|e| anyhow::anyhow!("count auth.users: {e}"))?;
-        if user_count == 0
-            && cfg.auth.admin_api_keys.is_empty()
-            && cfg.auth.external_issuers().is_empty()
-        {
-            anyhow::bail!(
-                "engine refuses to start: no operator users exist, \
-                 `auth.admin_api_keys` is empty, and no external issuers \
-                 are configured. Either run `assay-engine bootstrap-admin \
-                 --email <e> --password <p>` to seed the first user, add \
-                 at least one entry to `auth.admin_api_keys` in \
-                 engine.toml as a break-glass, or configure \
-                 `[[auth.external_issuers]]` with an upstream OIDC \
-                 provider (e.g. Hydra) that mints the JWTs your callers \
-                 forward."
-            );
-        }
-    }
-
-    let workflow_ctx = server::build_workflow_ctx_with_bus(store, Arc::clone(&bus));
-
-    // Hourly sweep of the engine_events outbox. Detached — the handle
-    // lives for the process lifetime; there's nothing to await for
-    // clean shutdown (prune is idempotent so a missed tick is fine).
-    tokio::spawn(assay_workflow::events_cleanup::run_events_cleanup(
-        Arc::clone(&bus),
-        std::time::Duration::from_secs(3600),
-        cfg.engine_events_ttl_secs,
-    ));
-
-    let whitelabel = Arc::new(WhitelabelConfig::from_env());
-    let asset_version = env!("CARGO_PKG_VERSION").to_string();
-    let dashboard_ctx = Arc::new(DashboardCtx::new(whitelabel, asset_version));
-    let admin_api_keys = Arc::new(cfg.auth.admin_api_keys.clone());
-    // Wall-clock seconds since epoch — uptime baseline for the
-    // /api/v1/engine/core/info response. Captured here (just before serve)
-    // so the value reflects the moment HTTP becomes ready, not the
-    // earlier boot-sequence start.
-    let started_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs_f64();
-    let bind_addr = cfg.server.bind_addr.clone();
-    let engine_config = Arc::new(cfg);
-    let state = EngineState {
-        workflow: workflow_ctx,
-        dashboard: dashboard_ctx,
-        auth: auth_ctx,
-        #[cfg(feature = "vault")]
-        vault: vault_ctx,
-        admin_api_keys,
-        modules: Arc::new(modules),
-        instance_id,
-        engine_version: env!("CARGO_PKG_VERSION"),
-        started_at,
-        engine_config,
-    };
-    server::serve(&bind_addr, state).await
-}
+// `run_with_store` (the previous private composition helper) is gone.
+// Its body lives in `embedded::compose` (this module's `embedded` sibling),
+// minus the final `server::serve` call. `pub async fn run` above
+// composes the engine via `embedded::build` and then binds + serves
+// the resulting `axum::Router` via `server::bind_and_serve`.
