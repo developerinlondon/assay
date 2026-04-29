@@ -2,6 +2,16 @@
 
 All notable changes to Assay are documented here.
 
+## [assay-engine 0.4.1] - 2026-04-29
+
+- **Re-publish so `assay_engine::embedded` is reachable from crates.io.** PR #104 added
+  `pub mod embedded` (the `embedded::build()` API used to compose assay-engine into a parent
+  binary's tokio runtime + axum router), but it landed *after* `assay-engine 0.4.0` was tagged
+  on commit `eae2296`. The published `0.4.0` therefore ships `lib.rs` with `config / engine_api /
+  init / server / state` and no `embedded`, so any consumer wanting a registry version pin
+  against the embedded API was forced onto a `git`/`rev` pin against `main`. Patch bump cuts
+  a release that actually contains the module. No source changes vs. main HEAD.
+
 ## [assay-domain 0.2.1] - 2026-04-28
 
 - **Add `EngineEventBus::prune_with(PruneOpts)` for namespace-scoped pruning.** The existing
