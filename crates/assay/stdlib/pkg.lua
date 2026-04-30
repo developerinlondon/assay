@@ -271,6 +271,15 @@ M.target = {}
 local Target = {}
 Target.__index = Target
 
+--- Run a command on the target. Returns shell.exec-shaped table:
+---   { status, stdout, stderr, timed_out }
+---
+--- opts is a subset of the underlying builtins' opts, restricted to keys both
+--- shell.exec and systemd.machine_exec accept:
+---   timeout : seconds (finite, >= 0; 0 means "no timeout")
+---   env     : { [name] = value } map
+--- Other shell.exec-only opts (cwd, stdin) are ignored on machine targets
+--- to preserve cross-target semantics.
 function Target:exec(cmd, opts)
   opts = opts or {}
   if self.kind == "host" then
