@@ -335,7 +335,57 @@ end
 -- ── Reconciler stubs (filled in Task 13+; query/apply/reconcile owned by knowhere) ──
 function M.query() error("pkg.query: not implemented yet") end
 function M.query_all() error("pkg.query_all: not implemented yet") end
-function M.plan() error("pkg.plan: not implemented yet") end
+
+--- Build a deterministic plan to converge `actual` toward `desired_set` using
+--- entries from `catalog_entries`. Pure function: no side effects, no I/O.
+---
+--- @param target_id    string       informational only ("host" or machine name)
+--- @param desired_set  string[]     desired catalog ids (order ignored, sorted internally)
+--- @param actual       table        { [id] = {installed=bool, version=string?, available=string?} }
+--- @param catalog_entries table     loaded catalog map
+--- @return table[]                  array of operations: {op, id, method, ...}
+---
+--- Reconcile NEVER removes — packages in `actual` but not `desired_set` are ignored.
+function M.plan(target_id, desired_set, actual, catalog_entries)
+  if type(desired_set) ~= "table" then
+    error("pkg.plan: desired_set must be array", 2)
+  end
+  -- Sort desired_set for determinism — operator order shouldn't influence the plan.
+  local sorted = {}
+  for _, id in ipairs(desired_set) do sorted[#sorted+1] = id end
+  table.sort(sorted)
+
+  local plan = {}
+  for _, id in ipairs(sorted) do
+    local entry = catalog_entries[id]
+    if not entry then
+      -- Catalog dropped or never had this id; record but don't crash.
+      plan[#plan+1] = {
+        op = "skip", id = id, method = nil,
+        reason = "no catalog entry for id",
+      }
+    else
+      local act = actual[id] or { installed = false }
+      local method = entry.methods[1]  -- priority order; reconciler may fall back at apply time
+      if not act.installed then
+        plan[#plan+1] = {
+          op = "install", id = id, method = method,
+          target_version = act.available,
+        }
+      elseif act.available
+             and act.version
+             and M.version.cmp(act.version, act.available) < 0 then
+        plan[#plan+1] = {
+          op = "upgrade", id = id, method = method,
+          from = act.version, to = act.available,
+        }
+      end
+      -- else: installed and up-to-date → no op.
+    end
+  end
+  return plan
+end
+
 function M.apply() error("pkg.apply: not implemented yet") end
 function M.reconcile() error("pkg.reconcile: not implemented yet") end
 
