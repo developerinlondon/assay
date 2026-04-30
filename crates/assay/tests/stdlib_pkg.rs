@@ -32,3 +32,8 @@ async fn pkg_version_compare() {
     run_pkg_lua("tests/pkg_lua/version_compare.lua").await;
 }
 
+#[tokio::test]
+async fn pkg_target_host_machine() {
+    run_pkg_lua("tests/pkg_lua/target_host_machine.lua").await;
+}
+

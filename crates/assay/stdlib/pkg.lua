@@ -264,8 +264,39 @@ function M.templates.list(entries)
   return arr
 end
 
--- ── Targets (stub — filled in Task 12) ───────────────────────────────────────
+-- ── Targets ──────────────────────────────────────────────────────────────────
+
 M.target = {}
+
+local Target = {}
+Target.__index = Target
+
+function Target:exec(cmd, opts)
+  opts = opts or {}
+  if self.kind == "host" then
+    return shell.exec(cmd, opts)
+  elseif self.kind == "machine" then
+    return systemd.machine_exec(self.id, cmd, opts)
+  else
+    error("unknown target kind: " .. tostring(self.kind))
+  end
+end
+
+--- Return the host target singleton.
+function M.target.host()
+  return setmetatable({ kind = "host", id = "host" }, Target)
+end
+
+--- Return a machine target wrapping the given nspawn machine name.
+function M.target.machine(name)
+  if type(name) ~= "string" or name == "" then
+    error("pkg.target.machine: name required", 2)
+  end
+  if name == "host" then
+    error("pkg.target.machine: 'host' is reserved; use pkg.target.host()", 2)
+  end
+  return setmetatable({ kind = "machine", id = name }, Target)
+end
 
 -- ── Version comparator ───────────────────────────────────────────────────────
 
