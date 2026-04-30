@@ -21,3 +21,9 @@ async fn pkg_catalog_validation() {
 async fn pkg_catalog_layering() {
     run_pkg_lua("tests/pkg_lua/catalog_layering.lua").await;
 }
+
+#[tokio::test]
+async fn pkg_templates_loader() {
+    run_pkg_lua("tests/pkg_lua/templates.lua").await;
+}
+

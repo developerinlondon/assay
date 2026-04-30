@@ -167,8 +167,102 @@ function M.catalog.list(entries)
   return arr
 end
 
--- ── Templates (stub — filled in Task 10) ─────────────────────────────────────
+-- ── Templates ────────────────────────────────────────────────────────────────
+
 M.templates = {}
+
+local function validate_template_entry(decoded, catalog_entries)
+  local errs = {}
+  local t = decoded and decoded.template
+  if type(t) ~= "table" then
+    errs[#errs+1] = { field = "template", message = "missing [template] table" }
+    return errs
+  end
+  if type(t.id) ~= "string" or not t.id:match(ID_PATTERN) then
+    errs[#errs+1] = { field = "template.id", message = "id must match [a-z0-9-]+" }
+  end
+  if type(t.display_name) ~= "string" or t.display_name == "" then
+    errs[#errs+1] = { field = "template.display_name", message = "required" }
+  end
+  if not is_array(t.packages) then
+    errs[#errs+1] = { field = "template.packages", message = "must be array (may be empty)" }
+  else
+    for _, pkg_id in ipairs(t.packages) do
+      if type(catalog_entries) == "table" and catalog_entries[pkg_id] == nil then
+        errs[#errs+1] = {
+          field = "template.packages",
+          message = "references unknown catalog id: " .. tostring(pkg_id),
+        }
+      end
+    end
+  end
+  return errs
+end
+
+--- Load templates from layered paths. `catalog_entries` is the catalog map
+--- returned by `pkg.catalog.load(...).entries`; templates with packages not in
+--- it are rejected.
+---
+--- Layering matches the catalog loader: last-wins full-entry override + strict
+--- override (an invalid override clears any earlier valid entry with the same id).
+--- `_origin` is synthetic; downstream serializers must strip it.
+function M.templates.load(paths, catalog_entries)
+  if type(paths) ~= "table" then
+    error("pkg.templates.load: paths must be array of directory paths", 2)
+  end
+  local entries, errors = {}, {}
+
+  for layer_idx, dir in ipairs(paths) do
+    local files = list_toml_files(dir)
+    for _, file in ipairs(files) do
+      local raw = fs.read(file)
+      local ok, decoded = pcall(toml.parse, raw)
+      if not ok then
+        errors[#errors+1] = {
+          path = file, template_id = nil, field = nil,
+          message = "TOML parse error: " .. tostring(decoded),
+        }
+      else
+        local entry_errs = validate_template_entry(decoded, catalog_entries)
+        if #entry_errs > 0 then
+          local id = (decoded.template and decoded.template.id) or file
+          for _, e in ipairs(entry_errs) do
+            errors[#errors+1] = {
+              path = file, template_id = id,
+              field = e.field, message = e.message,
+            }
+          end
+          -- Strict-override: an invalid template entry clears any valid
+          -- earlier-layer entry with the same id (matches catalog semantics).
+          if type(decoded.template) == "table" and type(decoded.template.id) == "string" then
+            entries[decoded.template.id] = nil
+          end
+        else
+          local entry = decoded.template
+          if layer_idx == 1 then
+            entry._origin = "built-in"
+          elseif layer_idx == 2 then
+            entry._origin = "plugin:" .. (dir:gsub("/+$", ""):match("([^/]+)$") or dir)
+          else
+            entry._origin = "operator:" .. (file:match("([^/]+)$") or file)
+          end
+          entries[entry.id] = entry
+        end
+      end
+    end
+  end
+
+  return { entries = entries, errors = errors }
+end
+
+function M.templates.get(entries, id) return entries[id] end
+
+function M.templates.list(entries)
+  local arr = {}
+  for _, e in pairs(entries) do arr[#arr+1] = e end
+  table.sort(arr, function(a, b) return a.id < b.id end)
+  return arr
+end
 
 -- ── Targets (stub — filled in Task 12) ───────────────────────────────────────
 M.target = {}
