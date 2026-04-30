@@ -41,6 +41,7 @@ pub fn register_systemd(lua: &Lua) -> mlua::Result<()> {
             "machine_poweroff",
             "machine_reboot",
             "machine_terminate",
+            "machine_exec",   // NEW
             "journal",
             "journal_follow",
         ] {
@@ -179,6 +180,7 @@ mod impl_linux {
         register_units(lua, t)?;
         register_machines(lua, t)?;
         register_journal(lua, t)?;
+        register_machine_exec(lua, t)?;   // NEW
         Ok(())
     }
 
@@ -782,6 +784,84 @@ mod impl_linux {
             })?;
         t.set("journal_follow", journal_follow)?;
 
+        Ok(())
+    }
+
+    // ── machine_exec ──────────────────────────────────────────────────────────
+
+    fn register_machine_exec(lua: &Lua, t: &Table) -> mlua::Result<()> {
+        let machine_exec = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
+            let mut args_iter = args.into_iter();
+            let machine: String = match args_iter.next() {
+                Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
+                _ => return Err(mlua::Error::runtime(
+                    "systemd.machine_exec: first arg must be machine name string",
+                )),
+            };
+            let command: String = match args_iter.next() {
+                Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
+                _ => return Err(mlua::Error::runtime(
+                    "systemd.machine_exec: second arg must be command string",
+                )),
+            };
+            // Optional opts: { timeout = secs, env = {...} }
+            let opts: Option<mlua::Table> = match args_iter.next() {
+                Some(mlua::Value::Table(t)) => Some(t),
+                _ => None,
+            };
+            let timeout_secs: Option<f64> = opts
+                .as_ref()
+                .and_then(|t| t.get::<f64>("timeout").ok())
+                .filter(|f| f.is_finite() && *f > 0.0);
+
+            // Build: systemd-run --machine=<name> --pipe --quiet --wait --collect /bin/sh -c '<cmd>'
+            // --pipe captures stdout/stderr to caller; --wait blocks until completion;
+            // --collect cleans up the transient unit on exit.
+            let mut tokio_cmd = tokio::process::Command::new("systemd-run");
+            tokio_cmd
+                .arg(format!("--machine={machine}"))
+                .arg("--pipe")
+                .arg("--quiet")
+                .arg("--wait")
+                .arg("--collect");
+
+            if let Some(ref t) = opts
+                && let Ok(env_table) = t.get::<mlua::Table>("env")
+            {
+                for pair in env_table.pairs::<String, String>() {
+                    let (k, v) = pair?;
+                    tokio_cmd.arg(format!("--setenv={k}={v}"));
+                }
+            }
+
+            tokio_cmd.arg("/bin/sh").arg("-c").arg(&command);
+            tokio_cmd.stdin(std::process::Stdio::null());
+            tokio_cmd.stdout(std::process::Stdio::piped());
+            tokio_cmd.stderr(std::process::Stdio::piped());
+
+            let exec = tokio_cmd.output();
+            let output = if let Some(secs) = timeout_secs {
+                tokio::time::timeout(std::time::Duration::from_secs_f64(secs), exec)
+                    .await
+                    .map_err(|_| mlua::Error::runtime(format!(
+                        "systemd.machine_exec: timeout after {secs}s"
+                    )))?
+                    .map_err(|e| mlua::Error::runtime(format!(
+                        "systemd.machine_exec: spawn: {e}"
+                    )))?
+            } else {
+                exec.await.map_err(|e| mlua::Error::runtime(format!(
+                    "systemd.machine_exec: spawn: {e}"
+                )))?
+            };
+
+            let result = lua.create_table()?;
+            result.set("status", output.status.code().unwrap_or(-1) as i64)?;
+            result.set("stdout", String::from_utf8_lossy(&output.stdout).to_string())?;
+            result.set("stderr", String::from_utf8_lossy(&output.stderr).to_string())?;
+            Ok(result)
+        })?;
+        t.set("machine_exec", machine_exec)?;
         Ok(())
     }
 
