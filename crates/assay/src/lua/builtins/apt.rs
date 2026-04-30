@@ -95,6 +95,7 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
             r.set("status", status as i64)?;
             r.set("stdout", stdout)?;
             r.set("stderr", stderr)?;
+            r.set("timed_out", false)?;
             Ok(r)
         })?,
     )?;
@@ -128,6 +129,7 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
             r.set("status", status as i64)?;
             r.set("stdout", stdout)?;
             r.set("stderr", stderr)?;
+            r.set("timed_out", false)?;
             Ok(r)
         })?,
     )?;
@@ -153,6 +155,7 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
             r.set("status", status as i64)?;
             r.set("stdout", stdout)?;
             r.set("stderr", stderr)?;
+            r.set("timed_out", false)?;
             Ok(r)
         })?,
     )?;
