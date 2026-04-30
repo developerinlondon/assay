@@ -134,4 +134,11 @@ async fn test_apt_add_source_writes_files_and_is_idempotent() {
         .unwrap();
     let changed2: bool = res2.get("changed").unwrap();
     assert!(!changed2, "second add with identical inputs should report changed=false");
+
+    // Verify content was preserved (not truncated/corrupted by the second call).
+    let content_after = std::fs::read_to_string(&list_path).unwrap();
+    assert_eq!(content, content_after, "second add must not alter list content");
+    let key_after = std::fs::read(&key_dst).unwrap();
+    let key_orig = std::fs::read(&fake_key).unwrap();
+    assert_eq!(key_after, key_orig, "second add must not alter key content");
 }

@@ -226,6 +226,9 @@ async fn run_command(program: &str, args: &[&str]) -> mlua::Result<(i32, String,
     cmd.args(args);
     cmd.env("DEBIAN_FRONTEND", "noninteractive");
     cmd.env("LC_ALL", "C");
+    cmd.env_remove("APT_CONFIG");
+    cmd.env_remove("APT_LISTCHANGES_FRONTEND");
+    cmd.env_remove("DEBCONF_NONINTERACTIVE_SEEN");
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
@@ -259,10 +262,16 @@ fn add_source(lua: &Lua, opts: Table) -> mlua::Result<Table> {
         .get::<Option<String>>("_keyrings_dir")?
         .unwrap_or_else(|| "/usr/share/keyrings".into());
 
-    if !id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
         return Err(mlua::Error::runtime(format!(
             "apt.add_source: id {id:?} must match [a-z0-9-]+"
         )));
+    }
+
+    if source_list.contains('\n') || source_list.contains('\r') {
+        return Err(mlua::Error::runtime(
+            "apt.add_source: source_list must be a single line (no \\n or \\r)",
+        ));
     }
 
     std::fs::create_dir_all(&sources_dir).map_err(|e| {
@@ -277,20 +286,9 @@ fn add_source(lua: &Lua, opts: Table) -> mlua::Result<Table> {
 
     let mut changed = false;
 
-    // Idempotent list write: only write if missing or content differs.
-    let want_list = format!("{}\n", source_list.trim_end());
-    let cur_list = std::fs::read_to_string(&list_dst).ok();
-    if cur_list.as_deref() != Some(&want_list) {
-        let tmp = format!("{list_dst}.tmp.{}", std::process::id());
-        std::fs::write(&tmp, &want_list).map_err(|e| {
-            mlua::Error::runtime(format!("apt.add_source: write {tmp:?}: {e}"))
-        })?;
-        std::fs::rename(&tmp, &list_dst).map_err(|e| {
-            mlua::Error::runtime(format!("apt.add_source: rename: {e}"))
-        })?;
-        changed = true;
-    }
-
+    // Write key BEFORE list: a stranded keyring is harmless, but a stranded
+    // .list referring to a missing keyring breaks `apt-get update`.
+    //
     // Idempotent key copy: read key_path, compare to dst, copy if different.
     let want_key = std::fs::read(&key_path).map_err(|e| {
         mlua::Error::runtime(format!("apt.add_source: read key {key_path:?}: {e}"))
@@ -303,6 +301,20 @@ fn add_source(lua: &Lua, opts: Table) -> mlua::Result<Table> {
         })?;
         std::fs::rename(&tmp, &key_dst).map_err(|e| {
             mlua::Error::runtime(format!("apt.add_source: rename key: {e}"))
+        })?;
+        changed = true;
+    }
+
+    // Idempotent list write: only write if missing or content differs.
+    let want_list = format!("{}\n", source_list.trim_end());
+    let cur_list = std::fs::read_to_string(&list_dst).ok();
+    if cur_list.as_deref() != Some(&want_list) {
+        let tmp = format!("{list_dst}.tmp.{}", std::process::id());
+        std::fs::write(&tmp, &want_list).map_err(|e| {
+            mlua::Error::runtime(format!("apt.add_source: write {tmp:?}: {e}"))
+        })?;
+        std::fs::rename(&tmp, &list_dst).map_err(|e| {
+            mlua::Error::runtime(format!("apt.add_source: rename: {e}"))
         })?;
         changed = true;
     }
