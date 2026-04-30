@@ -360,6 +360,112 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     #[cfg(feature = "server")]
     http_table.set("serve_with_extra", serve_with_extra_fn)?;
 
+    // http.download(url, path, opts?) -> bytes_written
+    // Streams the response body to disk via a temp file, then atomic-renames into place.
+    // Creates parent directories as needed. On any failure (4xx/5xx, IO error, network),
+    // the temp file is removed and the error propagates — no partial file at `path`.
+    let download_client = client.clone();
+    let download_fn = lua.create_async_function(move |_, args: mlua::MultiValue| {
+        let client = download_client.clone();
+        async move {
+            use futures_util::StreamExt;
+            use tokio::io::AsyncWriteExt;
+
+            let mut args_iter = args.into_iter();
+            let url: String = match args_iter.next() {
+                Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
+                _ => return Err(mlua::Error::runtime("http.download: first arg must be url string")),
+            };
+            let path: String = match args_iter.next() {
+                Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
+                _ => return Err(mlua::Error::runtime("http.download: second arg must be dest path string")),
+            };
+            // Optional opts table: { headers = {...}, timeout = secs }
+            let opts: Option<mlua::Table> = match args_iter.next() {
+                Some(mlua::Value::Table(t)) => Some(t),
+                _ => None,
+            };
+
+            // Build request
+            let mut req = client.get(&url);
+            if let Some(ref t) = opts {
+                if let Ok(h) = t.get::<mlua::Table>("headers") {
+                    for pair in h.pairs::<String, String>() {
+                        let (k, v) = pair?;
+                        req = req.header(&k, &v);
+                    }
+                }
+                if let Ok(secs) = t.get::<f64>("timeout")
+                    && secs.is_finite()
+                    && secs > 0.0
+                {
+                    req = req.timeout(std::time::Duration::from_secs_f64(secs));
+                }
+            }
+
+            // Ensure parent dir
+            if let Some(parent) = std::path::Path::new(&path).parent()
+                && !parent.as_os_str().is_empty()
+            {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    mlua::Error::runtime(format!("http.download: mkdir parent: {e}"))
+                })?;
+            }
+
+            // Open temp file at <path>.tmp.<pid>
+            let tmp = format!("{path}.tmp.{}", std::process::id());
+            let mut file = tokio::fs::File::create(&tmp).await.map_err(|e| {
+                mlua::Error::runtime(format!("http.download: create temp {tmp:?}: {e}"))
+            })?;
+
+            // Cleanup helper closure result
+            let do_download = async {
+                let resp = req.send().await.map_err(|e| {
+                    mlua::Error::runtime(format!("http.download: request: {e}"))
+                })?;
+                if !resp.status().is_success() {
+                    return Err(mlua::Error::runtime(format!(
+                        "http.download: HTTP {} for {url}",
+                        resp.status()
+                    )));
+                }
+                let mut total: i64 = 0;
+                let mut stream = resp.bytes_stream();
+                while let Some(chunk) = stream.next().await {
+                    let bytes = chunk.map_err(|e| {
+                        mlua::Error::runtime(format!("http.download: stream: {e}"))
+                    })?;
+                    total += bytes.len() as i64;
+                    file.write_all(&bytes).await.map_err(|e| {
+                        mlua::Error::runtime(format!("http.download: write: {e}"))
+                    })?;
+                }
+                file.flush().await.map_err(|e| {
+                    mlua::Error::runtime(format!("http.download: flush: {e}"))
+                })?;
+                file.sync_all().await.map_err(|e| {
+                    mlua::Error::runtime(format!("http.download: fsync: {e}"))
+                })?;
+                drop(file); // close before rename on Windows; harmless on Linux
+                Ok(total)
+            };
+
+            match do_download.await {
+                Ok(total) => {
+                    tokio::fs::rename(&tmp, &path).await.map_err(|e| {
+                        mlua::Error::runtime(format!("http.download: rename {tmp:?} -> {path:?}: {e}"))
+                    })?;
+                    Ok(total)
+                }
+                Err(e) => {
+                    let _ = tokio::fs::remove_file(&tmp).await;
+                    Err(e)
+                }
+            }
+        }
+    })?;
+    http_table.set("download", download_fn)?;
+
     lua.globals().set("http", http_table)?;
     Ok(())
 }
