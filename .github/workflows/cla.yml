@@ -17,6 +17,8 @@ permissions:
 jobs:
   cla:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     if: |
       github.event_name == 'pull_request_target'
         || github.event_name == 'pull_request'
