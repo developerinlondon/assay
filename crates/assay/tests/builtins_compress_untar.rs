@@ -1,7 +1,6 @@
 mod common;
 
 use common::create_vm;
-use std::io::Write;
 
 /// Build a gzip-compressed tar archive in memory with one member.
 fn build_tar_gz(member_name: &str, member_bytes: &[u8]) -> Vec<u8> {

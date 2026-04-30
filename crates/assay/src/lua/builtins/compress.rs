@@ -1,4 +1,4 @@
-//! Decompression builtins: gunzip, unxz, unzstd.
+//! Compression / archive builtins: gunzip, unxz, unzstd, untar.
 //!
 //! Each function takes a Lua string (treated as raw bytes) and returns the
 //! decompressed bytes as a Lua string. Lua strings in mlua are byte buffers,
@@ -103,6 +103,10 @@ fn untar(_: &mlua::Lua, args: mlua::MultiValue) -> mlua::Result<i64> {
         let path_in_tar = entry.path().map_err(|e| {
             mlua::Error::runtime(format!("compress.untar: entry path: {e}"))
         })?;
+        // Safety: dest_path is supplied by the caller; the in-tar path
+        // is used only for member-name matching and is never written to
+        // disk. If this is ever extended to extract a tree, sanitize
+        // entry paths to prevent path-traversal (CVE-2007-4559).
         if path_in_tar.to_string_lossy() == member {
             // Ensure dest parent exists
             if let Some(parent) = std::path::Path::new(&dest_path).parent() {
