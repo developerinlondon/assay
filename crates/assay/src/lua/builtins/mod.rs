@@ -1,3 +1,4 @@
+mod apt;
 mod assert;
 mod cgroup;
 mod compress;
@@ -48,6 +49,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     process_pty::register_process_pty(lua)?;
     disk::register_disk(lua)?;
     os_info::register_os(lua)?;
+    apt::register_apt(lua)?;
     compress::register_compress(lua)?;
     linux::register_linux(lua)?;
     cgroup::register_cgroup(lua)?;
