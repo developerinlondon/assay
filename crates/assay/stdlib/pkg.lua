@@ -350,6 +350,7 @@ function M.plan(target_id, desired_set, actual, catalog_entries)
   if type(desired_set) ~= "table" then
     error("pkg.plan: desired_set must be array", 2)
   end
+  actual = actual or {}
   -- Sort desired_set for determinism — operator order shouldn't influence the plan.
   local sorted = {}
   for _, id in ipairs(desired_set) do sorted[#sorted+1] = id end

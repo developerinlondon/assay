@@ -78,13 +78,26 @@ local actual_with_extra = {
 local plan_no_remove = pkg.plan("host", { "alpha", "beta" }, actual_with_extra, catalog_entries)
 check(#plan_no_remove == 0, "extras must NOT trigger remove ops, got " .. #plan_no_remove)
 
--- Determinism: re-plan same inputs → byte-identical output sequence.
+-- Determinism: re-plan same inputs → identical output (full op shape, not just op+id).
 local plan_a = pkg.plan("host", desired, actual_empty, catalog_entries)
 local plan_b = pkg.plan("host", desired, actual_empty, catalog_entries)
-for i, op in ipairs(plan_a) do
-  check(op.id == plan_b[i].id and op.op == plan_b[i].op,
-        "plan determinism broke at i=" .. i)
+check(#plan_a == #plan_b, "plan length must be stable across calls")
+for i = 1, #plan_a do
+  local a, b = plan_a[i], plan_b[i]
+  check(a.op == b.op,                    "op[" .. i .. "].op differs")
+  check(a.id == b.id,                    "op[" .. i .. "].id differs")
+  check(a.method == b.method,            "op[" .. i .. "].method differs")
+  check(a.target_version == b.target_version, "op[" .. i .. "].target_version differs")
+  check(a.from == b.from,                "op[" .. i .. "].from differs")
+  check(a.to == b.to,                    "op[" .. i .. "].to differs")
+  check(a.reason == b.reason,            "op[" .. i .. "].reason differs")
 end
+
+-- actual = nil should be tolerated (treated as empty actual map).
+local plan_nil_actual = pkg.plan("host", { "alpha" }, nil, catalog_entries)
+check(#plan_nil_actual == 1, "nil actual should be treated as empty")
+check(plan_nil_actual[1].op == "install" and plan_nil_actual[1].id == "alpha",
+      "nil actual: should propose install for alpha")
 
 -- Sort independence: desired list given in different orders should produce same plan.
 local plan_c = pkg.plan("host", { "beta", "alpha" }, actual_empty, catalog_entries)
