@@ -2,6 +2,27 @@
 
 All notable changes to Assay are documented here.
 
+## 0.16.0 — UNRELEASED
+
+### Added
+- `apt` builtin: `apt.query`, `apt.list_installed`, `apt.list_upgradable`,
+  `apt.add_source`, `apt.update`, `apt.install`, `apt.remove`. Wraps
+  `apt-get` and `dpkg-query` for use by the package manager framework.
+- `http.download(url, path, opts)`: streams a URL to disk via temp-file +
+  atomic rename, with optional headers and timeout.
+- `crypto.hash_file(path, algo)`: file-streamed hashing (sha2/sha3 family),
+  avoids loading multi-MB binaries into Lua strings.
+- `compress.untar(archive_path, dest_path, opts)`: extracts a single named
+  member from a tar archive (auto-detects gz/xz/zst from extension).
+- `systemd.machine_exec(name, cmd, opts)`: runs a command inside an nspawn
+  machine via `systemd-run --machine=<name> --pipe --quiet --wait --collect`.
+  Returns the same `{status, stdout, stderr, timed_out}` shape as `shell.exec`.
+- `assay.pkg` Lua stdlib (`require("assay.pkg")`): catalog/template loaders
+  with three-layer overlay (built-in / plugin / operator), strict-override
+  on invalid entries, version comparator (semver/v-prefix/calver),
+  host/machine target abstractions, deterministic plan generator.
+  Foundation for knowhere's package management UI (see knowhere plan 11).
+
 ## [assay-engine 0.4.1] - 2026-04-29
 
 - **Re-publish so `assay_engine::embedded` is reachable from crates.io.** PR #104 added
