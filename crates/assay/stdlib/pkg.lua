@@ -267,8 +267,39 @@ end
 -- ── Targets (stub — filled in Task 12) ───────────────────────────────────────
 M.target = {}
 
--- ── Version (stub — filled in Task 11) ───────────────────────────────────────
+-- ── Version comparator ───────────────────────────────────────────────────────
+
 M.version = {}
+
+--- Parse a version string into an array of integers. Strips a leading "v",
+--- splits on ".", drops trailing non-numeric components silently. Returns {0}
+--- for unparseable input rather than nil so cmp() always works.
+function M.version.parse(s)
+  if type(s) ~= "string" then return {0} end
+  local t = (s:gsub("^v", ""))
+  local out = {}
+  for piece in t:gmatch("[^%.]+") do
+    local n = tonumber(piece:match("^(%d+)"))
+    if n then out[#out+1] = n end
+  end
+  if #out == 0 then out[1] = 0 end
+  return out
+end
+
+--- Compare two version strings: -1 if a<b, 0 if equal, 1 if a>b.
+--- Shorter input is treated as zero-padded to match the longer.
+function M.version.cmp(a, b)
+  local pa = M.version.parse(a)
+  local pb = M.version.parse(b)
+  local n = math.max(#pa, #pb)
+  for i = 1, n do
+    local ai = pa[i] or 0
+    local bi = pb[i] or 0
+    if ai < bi then return -1
+    elseif ai > bi then return 1 end
+  end
+  return 0
+end
 
 -- ── Reconciler stubs (filled in Task 13+; query/apply/reconcile owned by knowhere) ──
 function M.query() error("pkg.query: not implemented yet") end

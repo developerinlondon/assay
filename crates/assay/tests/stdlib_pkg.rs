@@ -27,3 +27,8 @@ async fn pkg_templates_loader() {
     run_pkg_lua("tests/pkg_lua/templates.lua").await;
 }
 
+#[tokio::test]
+async fn pkg_version_compare() {
+    run_pkg_lua("tests/pkg_lua/version_compare.lua").await;
+}
+
