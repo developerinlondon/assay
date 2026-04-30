@@ -1,0 +1,6 @@
+[package]
+id           = "invalid-apt-missing"
+display_name = "Invalid: methods=apt but no [package.apt] block"
+description  = "Should be rejected by validator"
+homepage     = "https://example.com"
+methods      = ["apt"]
