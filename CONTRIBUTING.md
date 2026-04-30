@@ -45,9 +45,18 @@ proprietary commercial editions) in the future without needing to track down eve
 permission. You retain the copyright on your contribution; you grant the project owner a broad
 license to use it.
 
-**How to sign**: when you open your first PR, the CLA Assistant bot will post a comment with a link.
-Click the link, agree to the terms with your GitHub account, and you're done — your signature is
-recorded for all future PRs to this project.
+**How to sign**: when you open a PR, the **CLA Assistant** workflow comments on it. To sign, post a
+new comment on the PR containing exactly this single line:
+
+> I have read the CLA Document and I hereby sign the CLA
+
+The workflow records your GitHub username and timestamp in
+[`signatures/version1/cla.json`](https://github.com/developerinlondon/assay/blob/cla-signatures/signatures/version1/cla.json)
+on the `cla-signatures` branch. You only need to sign once — the signature applies to all your
+future PRs at the current CLA version.
+
+If you push new commits to a PR after signing, post `recheck` as a comment to re-trigger the
+workflow.
 
 If you can't or won't sign the CLA (for example, because your employer prohibits it), please open an
 issue describing the change instead and we'll figure out an alternative path together.
