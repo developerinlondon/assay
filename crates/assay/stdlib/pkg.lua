@@ -103,6 +103,8 @@ end
 ---
 --- Each entry is tagged with `_origin`:
 ---   layer 1 → "built-in", layer 2 → "plugin:<dirname>", layer 3+ → "operator:<filename>"
+--- NOTE: `_origin` is synthetic — not part of the on-disk schema. Downstream
+--- serializers (e.g. plan writers, API responses) must strip it before output.
 function M.catalog.load(paths)
   if type(paths) ~= "table" then
     error("pkg.catalog.load: paths must be array of directory paths", 2)
@@ -130,12 +132,18 @@ function M.catalog.load(paths)
               field = e.field, message = e.message,
             }
           end
+          -- Strict-override: an invalid entry shadows any valid earlier-layer entry
+          -- with the same id. Operator deliberately tried to override; failure surfaces
+          -- as a missing entry rather than silent fallback.
+          if type(decoded.package) == "table" and type(decoded.package.id) == "string" then
+            entries[decoded.package.id] = nil
+          end
         else
           local entry = decoded.package
           if layer_idx == 1 then
             entry._origin = "built-in"
           elseif layer_idx == 2 then
-            entry._origin = "plugin:" .. (dir:match("([^/]+)/?$") or dir)
+            entry._origin = "plugin:" .. (dir:gsub("/+$", ""):match("([^/]+)$") or dir)
           else
             entry._origin = "operator:" .. (file:match("([^/]+)$") or file)
           end

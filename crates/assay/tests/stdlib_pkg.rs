@@ -16,3 +16,8 @@ async fn run_pkg_lua(script_path: &str) {
 async fn pkg_catalog_validation() {
     run_pkg_lua("tests/pkg_lua/catalog_validation.lua").await;
 }
+
+#[tokio::test]
+async fn pkg_catalog_layering() {
+    run_pkg_lua("tests/pkg_lua/catalog_layering.lua").await;
+}
