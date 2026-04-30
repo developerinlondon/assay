@@ -789,6 +789,12 @@ mod impl_linux {
 
     // ── machine_exec ──────────────────────────────────────────────────────────
 
+    /// systemd.machine_exec(name, cmd, opts?) -> {status, stdout, stderr, timed_out}
+    ///
+    /// Runs <cmd> inside the named nspawn machine via
+    /// `systemd-run --machine=<name> --pipe --quiet --wait --collect /bin/sh -c <cmd>`.
+    /// NOTE: <cmd> is passed to /bin/sh -c; caller is responsible for quoting.
+    /// Not safe for untrusted input.
     fn register_machine_exec(lua: &Lua, t: &Table) -> mlua::Result<()> {
         let machine_exec = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
             let mut args_iter = args.into_iter();
@@ -811,8 +817,14 @@ mod impl_linux {
             };
             let timeout_secs: Option<f64> = opts
                 .as_ref()
-                .and_then(|t| t.get::<f64>("timeout").ok())
-                .filter(|f| f.is_finite() && *f > 0.0);
+                .and_then(|t| t.get::<f64>("timeout").ok());
+            if let Some(secs) = timeout_secs
+                && (!secs.is_finite() || secs < 0.0)
+            {
+                return Err(mlua::Error::runtime(
+                    "systemd.machine_exec: timeout must be a non-negative finite number",
+                ));
+            }
 
             // Build: systemd-run --machine=<name> --pipe --quiet --wait --collect /bin/sh -c '<cmd>'
             // --pipe captures stdout/stderr to caller; --wait blocks until completion;
@@ -824,6 +836,10 @@ mod impl_linux {
                 .arg("--quiet")
                 .arg("--wait")
                 .arg("--collect");
+
+            // Ensure timeout teardown SIGKILLs systemd-run so the transient unit
+            // doesn't linger after the future is dropped.
+            tokio_cmd.kill_on_drop(true);
 
             if let Some(ref t) = opts
                 && let Ok(env_table) = t.get::<mlua::Table>("env")
@@ -840,15 +856,21 @@ mod impl_linux {
             tokio_cmd.stderr(std::process::Stdio::piped());
 
             let exec = tokio_cmd.output();
-            let output = if let Some(secs) = timeout_secs {
-                tokio::time::timeout(std::time::Duration::from_secs_f64(secs), exec)
-                    .await
-                    .map_err(|_| mlua::Error::runtime(format!(
-                        "systemd.machine_exec: timeout after {secs}s"
-                    )))?
-                    .map_err(|e| mlua::Error::runtime(format!(
+            let output = if let Some(secs) = timeout_secs.filter(|s| *s > 0.0) {
+                match tokio::time::timeout(std::time::Duration::from_secs_f64(secs), exec).await {
+                    Ok(spawn_result) => spawn_result.map_err(|e| mlua::Error::runtime(format!(
                         "systemd.machine_exec: spawn: {e}"
-                    )))?
+                    )))?,
+                    Err(_elapsed) => {
+                        // Timeout fired. Return a shell.exec-shaped result with timed_out=true.
+                        let result = lua.create_table()?;
+                        result.set("status", -1i64)?;
+                        result.set("stdout", "")?;
+                        result.set("stderr", "")?;
+                        result.set("timed_out", true)?;
+                        return Ok(result);
+                    }
+                }
             } else {
                 exec.await.map_err(|e| mlua::Error::runtime(format!(
                     "systemd.machine_exec: spawn: {e}"
@@ -859,6 +881,7 @@ mod impl_linux {
             result.set("status", output.status.code().unwrap_or(-1) as i64)?;
             result.set("stdout", String::from_utf8_lossy(&output.stdout).to_string())?;
             result.set("stderr", String::from_utf8_lossy(&output.stderr).to_string())?;
+            result.set("timed_out", false)?;
             Ok(result)
         })?;
         t.set("machine_exec", machine_exec)?;
