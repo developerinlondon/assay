@@ -93,10 +93,20 @@ would make the representations in this Agreement inaccurate in any respect.
 
 ## How to sign
 
-When You open a pull request, the **CLA Assistant** bot will post a comment asking You to sign this
-Agreement. You sign by clicking the link in the bot's comment and agreeing to these terms with Your
-GitHub account. You only need to sign once — the signature applies to all Your future Contributions
-to the Project.
+When You open a pull request, the **CLA Assistant** workflow posts a comment listing the
+contributors on the PR who have not yet signed this Agreement. You sign by adding a new comment to
+the PR containing exactly this single line:
+
+> I have read the CLA Document and I hereby sign the CLA
+
+The workflow records Your GitHub username and signing timestamp in
+[`signatures/version1/cla.json`](https://github.com/developerinlondon/assay/blob/cla-signatures/signatures/version1/cla.json)
+on the `cla-signatures` branch of this repository. You only need to sign once — Your signature
+applies to all Your future Contributions to the Project at the current Agreement version.
+
+If the Agreement is materially revised, the signatures path will be bumped (e.g.
+`signatures/version2/cla.json`) and You will be prompted to sign again. Prior signatures remain in
+the previous-version file for audit.
 
 If You are contributing on behalf of an employer, please ensure You have Your employer's permission
 before signing.
