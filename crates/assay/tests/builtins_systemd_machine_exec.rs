@@ -32,7 +32,9 @@ async fn test_machine_exec_nonexistent_machine_errors_or_nonzero() {
     } else {
         // Non-Linux path: hard error is fine.
         let msg = format!("{:?}", result.unwrap_err());
-        assert!(msg.contains("machine_exec") || msg.contains("Linux only"),
-                "unexpected error: {msg}");
+        assert!(
+            msg.contains("machine_exec") || msg.contains("Linux only"),
+            "unexpected error: {msg}"
+        );
     }
 }

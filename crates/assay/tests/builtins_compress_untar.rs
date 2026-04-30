@@ -66,8 +66,12 @@ async fn test_untar_plain_tar_no_compression() {
     std::fs::write(&archive, build_tar("hello", b"hi")).unwrap();
 
     let vm = create_vm();
-    vm.globals().set("a", archive.to_str().unwrap().to_string()).unwrap();
-    vm.globals().set("d", dest.to_str().unwrap().to_string()).unwrap();
+    vm.globals()
+        .set("a", archive.to_str().unwrap().to_string())
+        .unwrap();
+    vm.globals()
+        .set("d", dest.to_str().unwrap().to_string())
+        .unwrap();
     let n: i64 = vm
         .load(r#"return compress.untar(a, d, { member = "hello" })"#)
         .eval_async()
@@ -85,15 +89,22 @@ async fn test_untar_member_not_found_errors() {
     let dest = dir.path().join("out");
 
     let vm = create_vm();
-    vm.globals().set("a", archive.to_str().unwrap().to_string()).unwrap();
-    vm.globals().set("d", dest.to_str().unwrap().to_string()).unwrap();
+    vm.globals()
+        .set("a", archive.to_str().unwrap().to_string())
+        .unwrap();
+    vm.globals()
+        .set("d", dest.to_str().unwrap().to_string())
+        .unwrap();
     let result: mlua::Result<i64> = vm
         .load(r#"return compress.untar(a, d, { member = "beta" })"#)
         .eval_async()
         .await;
     assert!(result.is_err());
     let msg = format!("{:?}", result.unwrap_err());
-    assert!(msg.contains("beta"), "error should name missing member: {msg}");
+    assert!(
+        msg.contains("beta"),
+        "error should name missing member: {msg}"
+    );
 }
 
 #[tokio::test]
@@ -109,8 +120,12 @@ async fn test_untar_nested_member_path() {
     .unwrap();
 
     let vm = create_vm();
-    vm.globals().set("a", archive.to_str().unwrap().to_string()).unwrap();
-    vm.globals().set("d", dest.to_str().unwrap().to_string()).unwrap();
+    vm.globals()
+        .set("a", archive.to_str().unwrap().to_string())
+        .unwrap();
+    vm.globals()
+        .set("d", dest.to_str().unwrap().to_string())
+        .unwrap();
     let n: i64 = vm
         .load(r#"return compress.untar(a, d, { member = "tailscale_1.78.1_amd64/tailscale" })"#)
         .eval_async()

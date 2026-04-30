@@ -52,7 +52,10 @@ async fn test_hash_file_missing_path_errors() {
         .await;
     assert!(result.is_err());
     let msg = format!("{:?}", result.unwrap_err());
-    assert!(msg.contains("hash_file"), "error should mention hash_file: {msg}");
+    assert!(
+        msg.contains("hash_file"),
+        "error should mention hash_file: {msg}"
+    );
 }
 
 #[tokio::test]

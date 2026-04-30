@@ -6,21 +6,31 @@ use common::create_vm;
 async fn test_apt_table_registered() {
     let vm = create_vm();
     let names: Vec<String> = vm
-        .load(r#"
+        .load(
+            r#"
             local out = {}
             for k, _ in pairs(apt) do out[#out+1] = k end
             table.sort(out)
             return out
-        "#)
+        "#,
+        )
         .eval_async()
         .await
         .unwrap();
     let want = vec![
-        "add_source", "install", "list_installed", "list_upgradable",
-        "query", "remove", "update",
+        "add_source",
+        "install",
+        "list_installed",
+        "list_upgradable",
+        "query",
+        "remove",
+        "update",
     ];
     for w in want {
-        assert!(names.iter().any(|n| n == w), "missing apt.{w}; have {names:?}");
+        assert!(
+            names.iter().any(|n| n == w),
+            "missing apt.{w}; have {names:?}"
+        );
     }
 }
 
@@ -28,14 +38,16 @@ async fn test_apt_table_registered() {
 async fn test_apt_parse_dpkg_query_output() {
     let vm = create_vm();
     let result: mlua::Table = vm
-        .load(r#"
+        .load(
+            r#"
             local sample = [[
 cloudflared	2024.10.1	install ok installed
 tailscale	1.78.1	install ok installed
 ghost	1.0	deinstall ok config-files
 ]]
             return apt._parse_dpkg_lines(sample)
-        "#)
+        "#,
+        )
         .eval_async()
         .await
         .unwrap();
@@ -57,7 +69,8 @@ ghost	1.0	deinstall ok config-files
 async fn test_apt_parse_upgradable_output() {
     let vm = create_vm();
     let result: mlua::Table = vm
-        .load(r#"
+        .load(
+            r#"
             local sample = [[
 Listing...
 cloudflared/bookworm 2024.10.1 amd64 [upgradable from: 2024.9.0]
@@ -65,7 +78,8 @@ tailscale/bookworm 1.78.1 amd64 [upgradable from: 1.76.0]
 N: There is 1 additional version. Please use the '-a' switch to see it
 ]]
             return apt._parse_upgradable_lines(sample)
-        "#)
+        "#,
+        )
         .eval_async()
         .await
         .unwrap();
@@ -90,12 +104,19 @@ async fn test_apt_add_source_writes_files_and_is_idempotent() {
     std::fs::write(&fake_key, b"-----BEGIN PGP PUBLIC KEY BLOCK-----\nfake\n").unwrap();
 
     let vm = create_vm();
-    vm.globals().set("sources_dir", sources_dir.to_str().unwrap().to_string()).unwrap();
-    vm.globals().set("keyrings_dir", keyrings_dir.to_str().unwrap().to_string()).unwrap();
-    vm.globals().set("key_path", fake_key.to_str().unwrap().to_string()).unwrap();
+    vm.globals()
+        .set("sources_dir", sources_dir.to_str().unwrap().to_string())
+        .unwrap();
+    vm.globals()
+        .set("keyrings_dir", keyrings_dir.to_str().unwrap().to_string())
+        .unwrap();
+    vm.globals()
+        .set("key_path", fake_key.to_str().unwrap().to_string())
+        .unwrap();
 
     let res1: mlua::Table = vm
-        .load(r#"
+        .load(
+            r#"
             return apt.add_source({
                 id           = "test-vendor",
                 source_list  = "deb https://example.com/repo bookworm main",
@@ -103,7 +124,8 @@ async fn test_apt_add_source_writes_files_and_is_idempotent() {
                 _sources_dir = sources_dir,
                 _keyrings_dir = keyrings_dir,
             })
-        "#)
+        "#,
+        )
         .eval_async()
         .await
         .unwrap();
@@ -120,7 +142,8 @@ async fn test_apt_add_source_writes_files_and_is_idempotent() {
 
     // Idempotency: second call should report changed=false.
     let res2: mlua::Table = vm
-        .load(r#"
+        .load(
+            r#"
             return apt.add_source({
                 id           = "test-vendor",
                 source_list  = "deb https://example.com/repo bookworm main",
@@ -128,16 +151,23 @@ async fn test_apt_add_source_writes_files_and_is_idempotent() {
                 _sources_dir = sources_dir,
                 _keyrings_dir = keyrings_dir,
             })
-        "#)
+        "#,
+        )
         .eval_async()
         .await
         .unwrap();
     let changed2: bool = res2.get("changed").unwrap();
-    assert!(!changed2, "second add with identical inputs should report changed=false");
+    assert!(
+        !changed2,
+        "second add with identical inputs should report changed=false"
+    );
 
     // Verify content was preserved (not truncated/corrupted by the second call).
     let content_after = std::fs::read_to_string(&list_path).unwrap();
-    assert_eq!(content, content_after, "second add must not alter list content");
+    assert_eq!(
+        content, content_after,
+        "second add must not alter list content"
+    );
     let key_after = std::fs::read(&key_dst).unwrap();
     let key_orig = std::fs::read(&fake_key).unwrap();
     assert_eq!(key_after, key_orig, "second add must not alter key content");

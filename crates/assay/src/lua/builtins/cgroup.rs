@@ -102,7 +102,7 @@ mod cgroup_impl {
 
     pub(crate) struct MemoryStat {
         pub current: Option<u64>,
-        pub max: Option<u64>,    // None means sentinel "max"
+        pub max: Option<u64>, // None means sentinel "max"
         pub swap_current: Option<u64>,
         pub swap_max: Option<u64>, // None means sentinel "max"
         pub peak: Option<u64>,
@@ -249,8 +249,7 @@ mod cgroup_impl {
 
         // cgroup.list(slice_path)
         let list_fn = _lua.create_function(|lua, path: String| {
-            let canon = validate_cgroup_path(&path)
-                .map_err(mlua::Error::runtime)?;
+            let canon = validate_cgroup_path(&path).map_err(mlua::Error::runtime)?;
 
             let rd = std::fs::read_dir(&canon).map_err(|e| {
                 mlua::Error::runtime(format!(
@@ -287,8 +286,7 @@ mod cgroup_impl {
 
         // cgroup.cpu_stat(path)
         let cpu_stat_fn = _lua.create_function(|lua, path: String| {
-            let canon = validate_cgroup_path(&path)
-                .map_err(mlua::Error::runtime)?;
+            let canon = validate_cgroup_path(&path).map_err(mlua::Error::runtime)?;
 
             let content = std::fs::read_to_string(canon.join("cpu.stat")).map_err(|e| {
                 mlua::Error::runtime(format!("cgroup.cpu_stat: failed to read cpu.stat: {e}"))
@@ -296,43 +294,75 @@ mod cgroup_impl {
 
             let s = parse_cpu_stat(&content);
             let tbl = lua.create_table()?;
-            if let Some(v) = s.usage_usec { tbl.set("usage_usec", v)?; }
-            if let Some(v) = s.user_usec { tbl.set("user_usec", v)?; }
-            if let Some(v) = s.system_usec { tbl.set("system_usec", v)?; }
-            if let Some(v) = s.nr_periods { tbl.set("nr_periods", v)?; }
-            if let Some(v) = s.nr_throttled { tbl.set("nr_throttled", v)?; }
-            if let Some(v) = s.throttled_usec { tbl.set("throttled_usec", v)?; }
-            if let Some(v) = s.nr_bursts { tbl.set("nr_bursts", v)?; }
-            if let Some(v) = s.burst_usec { tbl.set("burst_usec", v)?; }
+            if let Some(v) = s.usage_usec {
+                tbl.set("usage_usec", v)?;
+            }
+            if let Some(v) = s.user_usec {
+                tbl.set("user_usec", v)?;
+            }
+            if let Some(v) = s.system_usec {
+                tbl.set("system_usec", v)?;
+            }
+            if let Some(v) = s.nr_periods {
+                tbl.set("nr_periods", v)?;
+            }
+            if let Some(v) = s.nr_throttled {
+                tbl.set("nr_throttled", v)?;
+            }
+            if let Some(v) = s.throttled_usec {
+                tbl.set("throttled_usec", v)?;
+            }
+            if let Some(v) = s.nr_bursts {
+                tbl.set("nr_bursts", v)?;
+            }
+            if let Some(v) = s.burst_usec {
+                tbl.set("burst_usec", v)?;
+            }
             Ok(tbl)
         })?;
         t.set("cpu_stat", cpu_stat_fn)?;
 
         // cgroup.memory(path)
         let memory_fn = _lua.create_function(|lua, path: String| {
-            let canon = validate_cgroup_path(&path)
-                .map_err(mlua::Error::runtime)?;
+            let canon = validate_cgroup_path(&path).map_err(mlua::Error::runtime)?;
 
             let m = parse_memory_stat(&canon);
             let tbl = lua.create_table()?;
-            if let Some(v) = m.current { tbl.set("current", v)?; }
+            if let Some(v) = m.current {
+                tbl.set("current", v)?;
+            }
             // max = nil when sentinel "max" (unlimited)
-            if let Some(v) = m.max { tbl.set("max", v)?; }
-            if let Some(v) = m.swap_current { tbl.set("swap_current", v)?; }
-            if let Some(v) = m.swap_max { tbl.set("swap_max", v)?; }
-            if let Some(v) = m.peak { tbl.set("peak", v)?; }
-            if let Some(v) = m.low { tbl.set("low", v)?; }
-            if let Some(v) = m.high { tbl.set("high", v)?; }
-            if let Some(v) = m.oom_kill { tbl.set("oom_kill", v)?; }
-            if let Some(v) = m.oom { tbl.set("oom", v)?; }
+            if let Some(v) = m.max {
+                tbl.set("max", v)?;
+            }
+            if let Some(v) = m.swap_current {
+                tbl.set("swap_current", v)?;
+            }
+            if let Some(v) = m.swap_max {
+                tbl.set("swap_max", v)?;
+            }
+            if let Some(v) = m.peak {
+                tbl.set("peak", v)?;
+            }
+            if let Some(v) = m.low {
+                tbl.set("low", v)?;
+            }
+            if let Some(v) = m.high {
+                tbl.set("high", v)?;
+            }
+            if let Some(v) = m.oom_kill {
+                tbl.set("oom_kill", v)?;
+            }
+            if let Some(v) = m.oom {
+                tbl.set("oom", v)?;
+            }
             Ok(tbl)
         })?;
         t.set("memory", memory_fn)?;
 
         // cgroup.io(path)
         let io_fn = _lua.create_function(|lua, path: String| {
-            let canon = validate_cgroup_path(&path)
-                .map_err(mlua::Error::runtime)?;
+            let canon = validate_cgroup_path(&path).map_err(mlua::Error::runtime)?;
 
             let content = std::fs::read_to_string(canon.join("io.stat")).map_err(|e| {
                 mlua::Error::runtime(format!("cgroup.io: failed to read io.stat: {e}"))
@@ -357,8 +387,7 @@ mod cgroup_impl {
 
         // cgroup.pids(path)
         let pids_fn = _lua.create_function(|lua, path: String| {
-            let canon = validate_cgroup_path(&path)
-                .map_err(mlua::Error::runtime)?;
+            let canon = validate_cgroup_path(&path).map_err(mlua::Error::runtime)?;
 
             let current: Option<u64> = std::fs::read_to_string(canon.join("pids.current"))
                 .ok()
@@ -373,16 +402,19 @@ mod cgroup_impl {
                 });
 
             let tbl = lua.create_table()?;
-            if let Some(v) = current { tbl.set("current", v)?; }
-            if let Some(v) = max { tbl.set("max", v)?; }
+            if let Some(v) = current {
+                tbl.set("current", v)?;
+            }
+            if let Some(v) = max {
+                tbl.set("max", v)?;
+            }
             Ok(tbl)
         })?;
         t.set("pids", pids_fn)?;
 
         // cgroup.procs(path)
         let procs_fn = _lua.create_function(|lua, path: String| {
-            let canon = validate_cgroup_path(&path)
-                .map_err(mlua::Error::runtime)?;
+            let canon = validate_cgroup_path(&path).map_err(mlua::Error::runtime)?;
 
             let content = std::fs::read_to_string(canon.join("cgroup.procs")).map_err(|e| {
                 mlua::Error::runtime(format!("cgroup.procs: failed to read cgroup.procs: {e}"))
@@ -452,9 +484,7 @@ mod cgroup_impl {
                 .any(|e| {
                     let n = e.file_name();
                     let name = n.to_string_lossy();
-                    (name == "machine.slice"
-                        || name == "system.slice"
-                        || name == "user.slice")
+                    (name == "machine.slice" || name == "system.slice" || name == "user.slice")
                         && e.path().join("cgroup.controllers").exists()
                 });
 
@@ -612,4 +642,3 @@ throttled_usec 0
         }
     }
 }
-

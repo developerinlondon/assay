@@ -16,58 +16,70 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
     // ── parsers (pure, exported for tests) ────────────────────────────────
 
     t.set("_parse_dpkg_lines", lua.create_function(parse_dpkg_lines)?)?;
-    t.set("_parse_upgradable_lines", lua.create_function(parse_upgradable_lines)?)?;
+    t.set(
+        "_parse_upgradable_lines",
+        lua.create_function(parse_upgradable_lines)?,
+    )?;
 
     // ── query / list_installed / list_upgradable ──────────────────────────
 
-    t.set("query", lua.create_async_function(|lua, name: String| async move {
-        let (status, stdout, _stderr) = run_command(
-            "dpkg-query",
-            &["-W", "-f=${Package}\t${Version}\t${Status}\n", &name],
-        )
-        .await?;
-        let result = lua.create_table()?;
-        if status != 0 {
-            result.set("installed", false)?;
-            result.set("version", mlua::Value::Nil)?;
-            return Ok(result);
-        }
-        let parsed = parse_dpkg_lines(&lua, stdout)?;
-        if let Ok(entry) = parsed.get::<Table>(name.clone()) {
-            let installed: bool = entry.get("installed")?;
-            let version: String = entry.get("version")?;
-            result.set("installed", installed)?;
-            if installed {
-                result.set("version", version)?;
+    t.set(
+        "query",
+        lua.create_async_function(|lua, name: String| async move {
+            let (status, stdout, _stderr) = run_command(
+                "dpkg-query",
+                &["-W", "-f=${Package}\t${Version}\t${Status}\n", &name],
+            )
+            .await?;
+            let result = lua.create_table()?;
+            if status != 0 {
+                result.set("installed", false)?;
+                result.set("version", mlua::Value::Nil)?;
+                return Ok(result);
+            }
+            let parsed = parse_dpkg_lines(&lua, stdout)?;
+            if let Ok(entry) = parsed.get::<Table>(name.clone()) {
+                let installed: bool = entry.get("installed")?;
+                let version: String = entry.get("version")?;
+                result.set("installed", installed)?;
+                if installed {
+                    result.set("version", version)?;
+                } else {
+                    result.set("version", mlua::Value::Nil)?;
+                }
             } else {
+                result.set("installed", false)?;
                 result.set("version", mlua::Value::Nil)?;
             }
-        } else {
-            result.set("installed", false)?;
-            result.set("version", mlua::Value::Nil)?;
-        }
-        Ok(result)
-    })?)?;
+            Ok(result)
+        })?,
+    )?;
 
-    t.set("list_installed", lua.create_async_function(|lua, ()| async move {
-        let (status, stdout, stderr) = run_command(
-            "dpkg-query",
-            &["-W", "-f=${Package}\t${Version}\t${Status}\n"],
-        )
-        .await?;
-        if status != 0 {
-            return Err(mlua::Error::runtime(format!(
-                "apt.list_installed: dpkg-query exit {status}: {stderr}"
-            )));
-        }
-        parse_dpkg_lines(&lua, stdout)
-    })?)?;
+    t.set(
+        "list_installed",
+        lua.create_async_function(|lua, ()| async move {
+            let (status, stdout, stderr) = run_command(
+                "dpkg-query",
+                &["-W", "-f=${Package}\t${Version}\t${Status}\n"],
+            )
+            .await?;
+            if status != 0 {
+                return Err(mlua::Error::runtime(format!(
+                    "apt.list_installed: dpkg-query exit {status}: {stderr}"
+                )));
+            }
+            parse_dpkg_lines(&lua, stdout)
+        })?,
+    )?;
 
-    t.set("list_upgradable", lua.create_async_function(|lua, ()| async move {
-        let (_status, stdout, _stderr) =
-            run_command("apt", &["list", "--upgradable", "-a"]).await?;
-        parse_upgradable_lines(&lua, stdout)
-    })?)?;
+    t.set(
+        "list_upgradable",
+        lua.create_async_function(|lua, ()| async move {
+            let (_status, stdout, _stderr) =
+                run_command("apt", &["list", "--upgradable", "-a"]).await?;
+            parse_upgradable_lines(&lua, stdout)
+        })?,
+    )?;
 
     // ── source management ─────────────────────────────────────────────────
 
@@ -75,66 +87,75 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
 
     // ── apt-get wrappers ──────────────────────────────────────────────────
 
-    t.set("update", lua.create_async_function(|lua, ()| async move {
-        let (status, stdout, stderr) = run_command("apt-get", &["update"]).await?;
-        let r = lua.create_table()?;
-        r.set("status", status as i64)?;
-        r.set("stdout", stdout)?;
-        r.set("stderr", stderr)?;
-        Ok(r)
-    })?)?;
+    t.set(
+        "update",
+        lua.create_async_function(|lua, ()| async move {
+            let (status, stdout, stderr) = run_command("apt-get", &["update"]).await?;
+            let r = lua.create_table()?;
+            r.set("status", status as i64)?;
+            r.set("stdout", stdout)?;
+            r.set("stderr", stderr)?;
+            Ok(r)
+        })?,
+    )?;
 
-    t.set("install", lua.create_async_function(|lua, opts: Table| async move {
-        let names_table: Table = opts.get("names")?;
-        let only_upgrade: bool = opts.get::<Option<bool>>("only_upgrade")?.unwrap_or(false);
-        let mut names: Vec<String> = Vec::new();
-        for v in names_table.sequence_values::<String>() {
-            names.push(v?);
-        }
-        if names.is_empty() {
-            return Err(mlua::Error::runtime("apt.install: names array is empty"));
-        }
-        let mut args: Vec<String> = vec![
-            "install".into(),
-            "-y".into(),
-            "--no-install-recommends".into(),
-        ];
-        if only_upgrade {
-            args.push("--only-upgrade".into());
-        }
-        for n in &names {
-            args.push(n.clone());
-        }
-        let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let (status, stdout, stderr) = run_command("apt-get", &args_refs).await?;
-        let r = lua.create_table()?;
-        r.set("status", status as i64)?;
-        r.set("stdout", stdout)?;
-        r.set("stderr", stderr)?;
-        Ok(r)
-    })?)?;
+    t.set(
+        "install",
+        lua.create_async_function(|lua, opts: Table| async move {
+            let names_table: Table = opts.get("names")?;
+            let only_upgrade: bool = opts.get::<Option<bool>>("only_upgrade")?.unwrap_or(false);
+            let mut names: Vec<String> = Vec::new();
+            for v in names_table.sequence_values::<String>() {
+                names.push(v?);
+            }
+            if names.is_empty() {
+                return Err(mlua::Error::runtime("apt.install: names array is empty"));
+            }
+            let mut args: Vec<String> = vec![
+                "install".into(),
+                "-y".into(),
+                "--no-install-recommends".into(),
+            ];
+            if only_upgrade {
+                args.push("--only-upgrade".into());
+            }
+            for n in &names {
+                args.push(n.clone());
+            }
+            let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+            let (status, stdout, stderr) = run_command("apt-get", &args_refs).await?;
+            let r = lua.create_table()?;
+            r.set("status", status as i64)?;
+            r.set("stdout", stdout)?;
+            r.set("stderr", stderr)?;
+            Ok(r)
+        })?,
+    )?;
 
-    t.set("remove", lua.create_async_function(|lua, opts: Table| async move {
-        let names_table: Table = opts.get("names")?;
-        let mut names: Vec<String> = Vec::new();
-        for v in names_table.sequence_values::<String>() {
-            names.push(v?);
-        }
-        if names.is_empty() {
-            return Err(mlua::Error::runtime("apt.remove: names array is empty"));
-        }
-        let mut args: Vec<String> = vec!["remove".into(), "-y".into()];
-        for n in &names {
-            args.push(n.clone());
-        }
-        let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let (status, stdout, stderr) = run_command("apt-get", &args_refs).await?;
-        let r = lua.create_table()?;
-        r.set("status", status as i64)?;
-        r.set("stdout", stdout)?;
-        r.set("stderr", stderr)?;
-        Ok(r)
-    })?)?;
+    t.set(
+        "remove",
+        lua.create_async_function(|lua, opts: Table| async move {
+            let names_table: Table = opts.get("names")?;
+            let mut names: Vec<String> = Vec::new();
+            for v in names_table.sequence_values::<String>() {
+                names.push(v?);
+            }
+            if names.is_empty() {
+                return Err(mlua::Error::runtime("apt.remove: names array is empty"));
+            }
+            let mut args: Vec<String> = vec!["remove".into(), "-y".into()];
+            for n in &names {
+                args.push(n.clone());
+            }
+            let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+            let (status, stdout, stderr) = run_command("apt-get", &args_refs).await?;
+            let r = lua.create_table()?;
+            r.set("status", status as i64)?;
+            r.set("stdout", stdout)?;
+            r.set("stderr", stderr)?;
+            Ok(r)
+        })?,
+    )?;
 
     lua.globals().set("apt", t)?;
     Ok(())
@@ -262,7 +283,11 @@ fn add_source(lua: &Lua, opts: Table) -> mlua::Result<Table> {
         .get::<Option<String>>("_keyrings_dir")?
         .unwrap_or_else(|| "/usr/share/keyrings".into());
 
-    if id.is_empty() || !id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if id.is_empty()
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         return Err(mlua::Error::runtime(format!(
             "apt.add_source: id {id:?} must match [a-z0-9-]+"
         )));
@@ -274,9 +299,8 @@ fn add_source(lua: &Lua, opts: Table) -> mlua::Result<Table> {
         ));
     }
 
-    std::fs::create_dir_all(&sources_dir).map_err(|e| {
-        mlua::Error::runtime(format!("apt.add_source: mkdir {sources_dir:?}: {e}"))
-    })?;
+    std::fs::create_dir_all(&sources_dir)
+        .map_err(|e| mlua::Error::runtime(format!("apt.add_source: mkdir {sources_dir:?}: {e}")))?;
     std::fs::create_dir_all(&keyrings_dir).map_err(|e| {
         mlua::Error::runtime(format!("apt.add_source: mkdir {keyrings_dir:?}: {e}"))
     })?;
@@ -290,18 +314,15 @@ fn add_source(lua: &Lua, opts: Table) -> mlua::Result<Table> {
     // .list referring to a missing keyring breaks `apt-get update`.
     //
     // Idempotent key copy: read key_path, compare to dst, copy if different.
-    let want_key = std::fs::read(&key_path).map_err(|e| {
-        mlua::Error::runtime(format!("apt.add_source: read key {key_path:?}: {e}"))
-    })?;
+    let want_key = std::fs::read(&key_path)
+        .map_err(|e| mlua::Error::runtime(format!("apt.add_source: read key {key_path:?}: {e}")))?;
     let cur_key = std::fs::read(&key_dst).ok();
     if cur_key.as_deref() != Some(&want_key) {
         let tmp = format!("{key_dst}.tmp.{}", std::process::id());
-        std::fs::write(&tmp, &want_key).map_err(|e| {
-            mlua::Error::runtime(format!("apt.add_source: write key {tmp:?}: {e}"))
-        })?;
-        std::fs::rename(&tmp, &key_dst).map_err(|e| {
-            mlua::Error::runtime(format!("apt.add_source: rename key: {e}"))
-        })?;
+        std::fs::write(&tmp, &want_key)
+            .map_err(|e| mlua::Error::runtime(format!("apt.add_source: write key {tmp:?}: {e}")))?;
+        std::fs::rename(&tmp, &key_dst)
+            .map_err(|e| mlua::Error::runtime(format!("apt.add_source: rename key: {e}")))?;
         changed = true;
     }
 
@@ -310,12 +331,10 @@ fn add_source(lua: &Lua, opts: Table) -> mlua::Result<Table> {
     let cur_list = std::fs::read_to_string(&list_dst).ok();
     if cur_list.as_deref() != Some(&want_list) {
         let tmp = format!("{list_dst}.tmp.{}", std::process::id());
-        std::fs::write(&tmp, &want_list).map_err(|e| {
-            mlua::Error::runtime(format!("apt.add_source: write {tmp:?}: {e}"))
-        })?;
-        std::fs::rename(&tmp, &list_dst).map_err(|e| {
-            mlua::Error::runtime(format!("apt.add_source: rename: {e}"))
-        })?;
+        std::fs::write(&tmp, &want_list)
+            .map_err(|e| mlua::Error::runtime(format!("apt.add_source: write {tmp:?}: {e}")))?;
+        std::fs::rename(&tmp, &list_dst)
+            .map_err(|e| mlua::Error::runtime(format!("apt.add_source: rename: {e}")))?;
         changed = true;
     }
 

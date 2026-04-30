@@ -114,9 +114,7 @@ async fn test_apt_packages_all_404_errors() {
     let server = MockServer::start().await;
     for name in ["Packages.gz", "Packages.xz", "Packages.zst", "Packages"] {
         Mock::given(method("GET"))
-            .and(path(format!(
-                "/dists/noble/main/binary-amd64/{name}"
-            )))
+            .and(path(format!("/dists/noble/main/binary-amd64/{name}")))
             .respond_with(ResponseTemplate::new(404))
             .mount(&server)
             .await;

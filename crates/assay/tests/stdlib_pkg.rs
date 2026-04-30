@@ -3,8 +3,8 @@ mod common;
 use common::create_vm;
 
 async fn run_pkg_lua(script_path: &str) {
-    let script = std::fs::read_to_string(script_path)
-        .unwrap_or_else(|e| panic!("read {script_path}: {e}"));
+    let script =
+        std::fs::read_to_string(script_path).unwrap_or_else(|e| panic!("read {script_path}: {e}"));
     let vm = create_vm();
     vm.load(&script)
         .exec_async()
@@ -41,4 +41,3 @@ async fn pkg_target_host_machine() {
 async fn pkg_plan_idempotency() {
     run_pkg_lua("tests/pkg_lua/plan_idempotency.lua").await;
 }
-

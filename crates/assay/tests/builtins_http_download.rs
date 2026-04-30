@@ -48,10 +48,7 @@ async fn test_download_404_errors_no_partial_file() {
     let vm = create_vm();
     vm.globals().set("u", url).unwrap();
     vm.globals().set("d", dest_str.clone()).unwrap();
-    let result: mlua::Result<i64> = vm
-        .load(r#"return http.download(u, d)"#)
-        .eval_async()
-        .await;
+    let result: mlua::Result<i64> = vm.load(r#"return http.download(u, d)"#).eval_async().await;
     assert!(result.is_err());
     // No partial file should exist.
     assert!(!std::path::Path::new(&dest_str).exists());

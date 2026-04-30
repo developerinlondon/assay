@@ -58,63 +58,77 @@ fn untar(_: &mlua::Lua, args: mlua::MultiValue) -> mlua::Result<i64> {
     let mut args_iter = args.into_iter();
     let archive_path: String = match args_iter.next() {
         Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
-        _ => return Err(mlua::Error::runtime("compress.untar: first arg must be archive path string")),
+        _ => {
+            return Err(mlua::Error::runtime(
+                "compress.untar: first arg must be archive path string",
+            ));
+        }
     };
     let dest_path: String = match args_iter.next() {
         Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
-        _ => return Err(mlua::Error::runtime("compress.untar: second arg must be dest path string")),
+        _ => {
+            return Err(mlua::Error::runtime(
+                "compress.untar: second arg must be dest path string",
+            ));
+        }
     };
     let opts: mlua::Table = match args_iter.next() {
         Some(mlua::Value::Table(t)) => t,
-        _ => return Err(mlua::Error::runtime("compress.untar: third arg must be opts table with 'member'")),
+        _ => {
+            return Err(mlua::Error::runtime(
+                "compress.untar: third arg must be opts table with 'member'",
+            ));
+        }
     };
-    let member: String = opts.get::<String>("member").map_err(|_| {
-        mlua::Error::runtime("compress.untar: opts.member is required")
-    })?;
+    let member: String = opts
+        .get::<String>("member")
+        .map_err(|_| mlua::Error::runtime("compress.untar: opts.member is required"))?;
     let compression: String = opts
         .get::<Option<String>>("compression")?
         .map(|s| s.to_lowercase())
         .unwrap_or_else(|| detect_compression(&archive_path));
 
-    let file = std::fs::File::open(&archive_path).map_err(|e| {
-        mlua::Error::runtime(format!("compress.untar: open {archive_path:?}: {e}"))
-    })?;
+    let file = std::fs::File::open(&archive_path)
+        .map_err(|e| mlua::Error::runtime(format!("compress.untar: open {archive_path:?}: {e}")))?;
 
     // Build a Read trait object based on compression
     let reader: Box<dyn Read> = match compression.as_str() {
         "gz" | "gzip" => Box::new(flate2::read::GzDecoder::new(file)),
         "xz" => Box::new(xz2::read::XzDecoder::new(file)),
-        "zstd" | "zst" => Box::new(zstd::stream::read::Decoder::new(file).map_err(|e| {
-            mlua::Error::runtime(format!("compress.untar: zstd decoder: {e}"))
-        })?),
+        "zstd" | "zst" => Box::new(
+            zstd::stream::read::Decoder::new(file)
+                .map_err(|e| mlua::Error::runtime(format!("compress.untar: zstd decoder: {e}")))?,
+        ),
         "none" | "tar" => Box::new(file),
-        other => return Err(mlua::Error::runtime(format!(
-            "compress.untar: unsupported compression {other:?} (gz, xz, zstd, none)"
-        ))),
+        other => {
+            return Err(mlua::Error::runtime(format!(
+                "compress.untar: unsupported compression {other:?} (gz, xz, zstd, none)"
+            )));
+        }
     };
 
     let mut archive = tar::Archive::new(reader);
-    for entry in archive.entries().map_err(|e| {
-        mlua::Error::runtime(format!("compress.untar: read entries: {e}"))
-    })? {
-        let mut entry = entry.map_err(|e| {
-            mlua::Error::runtime(format!("compress.untar: entry: {e}"))
-        })?;
-        let path_in_tar = entry.path().map_err(|e| {
-            mlua::Error::runtime(format!("compress.untar: entry path: {e}"))
-        })?;
+    for entry in archive
+        .entries()
+        .map_err(|e| mlua::Error::runtime(format!("compress.untar: read entries: {e}")))?
+    {
+        let mut entry =
+            entry.map_err(|e| mlua::Error::runtime(format!("compress.untar: entry: {e}")))?;
+        let path_in_tar = entry
+            .path()
+            .map_err(|e| mlua::Error::runtime(format!("compress.untar: entry path: {e}")))?;
         // Safety: dest_path is supplied by the caller; the in-tar path
         // is used only for member-name matching and is never written to
         // disk. If this is ever extended to extract a tree, sanitize
         // entry paths to prevent path-traversal (CVE-2007-4559).
         if path_in_tar.to_string_lossy() == member {
             // Ensure dest parent exists
-            if let Some(parent) = std::path::Path::new(&dest_path).parent() {
-                if !parent.as_os_str().is_empty() {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        mlua::Error::runtime(format!("compress.untar: mkdir parent: {e}"))
-                    })?;
-                }
+            if let Some(parent) = std::path::Path::new(&dest_path).parent()
+                && !parent.as_os_str().is_empty()
+            {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    mlua::Error::runtime(format!("compress.untar: mkdir parent: {e}"))
+                })?;
             }
             // Stream member to dest via temp file for atomicity
             let tmp = format!("{dest_path}.tmp.{}", std::process::id());

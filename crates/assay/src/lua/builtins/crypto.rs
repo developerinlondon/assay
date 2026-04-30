@@ -2,7 +2,9 @@ use super::json::{json_value_to_lua, lua_value_to_json};
 use data_encoding::BASE64URL_NOPAD;
 use digest::Digest;
 use jsonwebtoken::jwk::{JwkSet, KeyAlgorithm};
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, decode_header};
+use jsonwebtoken::{
+    Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, decode_header,
+};
 use mlua::{Lua, Value};
 use rand::RngExt;
 use zeroize::Zeroizing;

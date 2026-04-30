@@ -41,7 +41,7 @@ pub fn register_systemd(lua: &Lua) -> mlua::Result<()> {
             "machine_poweroff",
             "machine_reboot",
             "machine_terminate",
-            "machine_exec",   // NEW
+            "machine_exec", // NEW
             "journal",
             "journal_follow",
         ] {
@@ -49,9 +49,7 @@ pub fn register_systemd(lua: &Lua) -> mlua::Result<()> {
             let f = lua.create_async_function(move |_, _args: mlua::MultiValue| {
                 let n = n.clone();
                 async move {
-                    Err::<mlua::Value, _>(mlua::Error::runtime(format!(
-                        "systemd.{n}: Linux only"
-                    )))
+                    Err::<mlua::Value, _>(mlua::Error::runtime(format!("systemd.{n}: Linux only")))
                 }
             })?;
             t.set(*name, f)?;
@@ -127,10 +125,7 @@ mod impl_linux {
             .await
     }
 
-    async fn machine_proxy<'c>(
-        conn: &'c Connection,
-        path: &str,
-    ) -> zbus::Result<zbus::Proxy<'c>> {
+    async fn machine_proxy<'c>(conn: &'c Connection, path: &str) -> zbus::Result<zbus::Proxy<'c>> {
         zbus::proxy::Builder::new(conn)
             .destination("org.freedesktop.machine1")?
             .path(path.to_string())?
@@ -180,54 +175,50 @@ mod impl_linux {
         register_units(lua, t)?;
         register_machines(lua, t)?;
         register_journal(lua, t)?;
-        register_machine_exec(lua, t)?;   // NEW
+        register_machine_exec(lua, t)?; // NEW
         Ok(())
     }
 
     // ── units ─────────────────────────────────────────────────────────────────
 
     fn register_units(lua: &Lua, t: &Table) -> mlua::Result<()> {
-        let list_units =
-            lua.create_async_function(|lua, filter: Option<String>| async move {
-                let conn = system_bus()
-                    .await
-                    .map_err(|e| mlua::Error::runtime(format!("systemd.list_units: {e}")))?;
-                let mgr = manager_proxy(&conn)
-                    .await
-                    .map_err(|e| mlua::Error::runtime(format!("systemd.list_units: {e}")))?;
+        let list_units = lua.create_async_function(|lua, filter: Option<String>| async move {
+            let conn = system_bus()
+                .await
+                .map_err(|e| mlua::Error::runtime(format!("systemd.list_units: {e}")))?;
+            let mgr = manager_proxy(&conn)
+                .await
+                .map_err(|e| mlua::Error::runtime(format!("systemd.list_units: {e}")))?;
 
-                let reply = mgr
-                    .call_method("ListUnits", &())
-                    .await
-                    .map_err(|e| mlua::Error::runtime(format!("systemd.list_units: {e}")))?;
-                let rows: Vec<UnitRow> = reply
-                    .body()
-                    .deserialize()
-                    .map_err(|e| {
-                        mlua::Error::runtime(format!("systemd.list_units: deserialize: {e}"))
-                    })?;
-
-                let out = lua.create_table()?;
-                let mut idx = 1usize;
-                for row in &rows {
-                    if let Some(ref pat) = filter
-                        && !glob_matches(pat, &row.0)
-                    {
-                        continue;
-                    }
-                    let entry = lua.create_table()?;
-                    entry.set("name", row.0.clone())?;
-                    entry.set("description", row.1.clone())?;
-                    entry.set("load", row.2.clone())?;
-                    entry.set("active", row.3.clone())?;
-                    entry.set("sub", row.4.clone())?;
-                    entry.set("following", row.5.clone())?;
-                    entry.set("unit_object_path", row.6.as_str().to_string())?;
-                    out.set(idx, entry)?;
-                    idx += 1;
-                }
-                Ok(out)
+            let reply = mgr
+                .call_method("ListUnits", &())
+                .await
+                .map_err(|e| mlua::Error::runtime(format!("systemd.list_units: {e}")))?;
+            let rows: Vec<UnitRow> = reply.body().deserialize().map_err(|e| {
+                mlua::Error::runtime(format!("systemd.list_units: deserialize: {e}"))
             })?;
+
+            let out = lua.create_table()?;
+            let mut idx = 1usize;
+            for row in &rows {
+                if let Some(ref pat) = filter
+                    && !glob_matches(pat, &row.0)
+                {
+                    continue;
+                }
+                let entry = lua.create_table()?;
+                entry.set("name", row.0.clone())?;
+                entry.set("description", row.1.clone())?;
+                entry.set("load", row.2.clone())?;
+                entry.set("active", row.3.clone())?;
+                entry.set("sub", row.4.clone())?;
+                entry.set("following", row.5.clone())?;
+                entry.set("unit_object_path", row.6.as_str().to_string())?;
+                out.set(idx, entry)?;
+                idx += 1;
+            }
+            Ok(out)
+        })?;
         t.set("list_units", list_units)?;
 
         let unit_status = lua.create_async_function(|lua, name: String| async move {
@@ -241,18 +232,15 @@ mod impl_linux {
             let reply = mgr
                 .call_method("LoadUnit", &name.as_str())
                 .await
-                .map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.unit_status: LoadUnit: {e}"))
-                })?;
-            let obj_path: OwnedObjectPath = reply.body().deserialize().map_err(|e| {
-                mlua::Error::runtime(format!("systemd.unit_status: path: {e}"))
-            })?;
+                .map_err(|e| mlua::Error::runtime(format!("systemd.unit_status: LoadUnit: {e}")))?;
+            let obj_path: OwnedObjectPath = reply
+                .body()
+                .deserialize()
+                .map_err(|e| mlua::Error::runtime(format!("systemd.unit_status: path: {e}")))?;
 
             let uproxy = unit_proxy(&conn, obj_path.as_str())
                 .await
-                .map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.unit_status: proxy: {e}"))
-                })?;
+                .map_err(|e| mlua::Error::runtime(format!("systemd.unit_status: proxy: {e}")))?;
 
             let entry = lua.create_table()?;
             entry.set("name", name.clone())?;
@@ -326,23 +314,19 @@ mod impl_linux {
             let reply = mgr
                 .call_method("LoadUnit", &name.as_str())
                 .await
-                .map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.is_active: LoadUnit: {e}"))
-                })?;
-            let obj_path: OwnedObjectPath = reply.body().deserialize().map_err(|e| {
-                mlua::Error::runtime(format!("systemd.is_active: path: {e}"))
-            })?;
+                .map_err(|e| mlua::Error::runtime(format!("systemd.is_active: LoadUnit: {e}")))?;
+            let obj_path: OwnedObjectPath = reply
+                .body()
+                .deserialize()
+                .map_err(|e| mlua::Error::runtime(format!("systemd.is_active: path: {e}")))?;
 
             let uproxy = unit_proxy(&conn, obj_path.as_str())
                 .await
                 .map_err(|e| mlua::Error::runtime(format!("systemd.is_active: proxy: {e}")))?;
 
-            let active: String = uproxy
-                .get_property("ActiveState")
-                .await
-                .map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.is_active: ActiveState: {e}"))
-                })?;
+            let active: String = uproxy.get_property("ActiveState").await.map_err(|e| {
+                mlua::Error::runtime(format!("systemd.is_active: ActiveState: {e}"))
+            })?;
 
             lua.pack(active == "active")
         })?;
@@ -360,12 +344,9 @@ mod impl_linux {
                 .call_method("ListUnits", &())
                 .await
                 .map_err(|e| mlua::Error::runtime(format!("systemd.list_timers: {e}")))?;
-            let rows: Vec<UnitRow> = reply
-                .body()
-                .deserialize()
-                .map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.list_timers: deserialize: {e}"))
-                })?;
+            let rows: Vec<UnitRow> = reply.body().deserialize().map_err(|e| {
+                mlua::Error::runtime(format!("systemd.list_timers: deserialize: {e}"))
+            })?;
 
             let out = lua.create_table()?;
             let mut idx = 1usize;
@@ -381,10 +362,8 @@ mod impl_linux {
                     .get_property("NextElapseUSecRealtime")
                     .await
                     .unwrap_or(0);
-                let last_trigger: u64 =
-                    tproxy.get_property("LastTriggerUSec").await.unwrap_or(0);
-                let activates: String =
-                    tproxy.get_property("Unit").await.unwrap_or_default();
+                let last_trigger: u64 = tproxy.get_property("LastTriggerUSec").await.unwrap_or(0);
+                let activates: String = tproxy.get_property("Unit").await.unwrap_or_default();
 
                 let now_usec = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -425,22 +404,16 @@ mod impl_linux {
                         mlua::Error::runtime(format!("systemd.{lua_name_str}: {e}"))
                     })?;
                     let reply = mgr
-                        .call_method(
-                            dbus_method.as_str(),
-                            &(name.as_str(), "replace"),
-                        )
+                        .call_method(dbus_method.as_str(), &(name.as_str(), "replace"))
                         .await
                         .map_err(|e| {
                             mlua::Error::runtime(format!(
                                 "systemd.{lua_name_str}: {dbus_method}: {e}"
                             ))
                         })?;
-                    let job_path: OwnedObjectPath =
-                        reply.body().deserialize().map_err(|e| {
-                            mlua::Error::runtime(format!(
-                                "systemd.{lua_name_str}: job path: {e}"
-                            ))
-                        })?;
+                    let job_path: OwnedObjectPath = reply.body().deserialize().map_err(|e| {
+                        mlua::Error::runtime(format!("systemd.{lua_name_str}: job path: {e}"))
+                    })?;
                     Ok(job_path.as_str().to_string())
                 }
             })?;
@@ -465,26 +438,21 @@ mod impl_linux {
                 .call_method("ListMachines", &())
                 .await
                 .map_err(|e| mlua::Error::runtime(format!("systemd.list_machines: {e}")))?;
-            let rows: Vec<MachineRow> = reply
-                .body()
-                .deserialize()
-                .map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.list_machines: deserialize: {e}"))
-                })?;
+            let rows: Vec<MachineRow> = reply.body().deserialize().map_err(|e| {
+                mlua::Error::runtime(format!("systemd.list_machines: deserialize: {e}"))
+            })?;
 
             let out = lua.create_table()?;
             for (idx, row) in rows.iter().enumerate() {
-                let mproxy = machine_proxy(&conn, row.3.as_str())
-                    .await
-                    .map_err(|e| {
-                        mlua::Error::runtime(format!(
-                            "systemd.list_machines: machine proxy: {e}"
-                        ))
-                    })?;
+                let mproxy = machine_proxy(&conn, row.3.as_str()).await.map_err(|e| {
+                    mlua::Error::runtime(format!("systemd.list_machines: machine proxy: {e}"))
+                })?;
 
                 let leader: u32 = mproxy.get_property("Leader").await.unwrap_or(0);
-                let root_dir: String =
-                    mproxy.get_property("RootDirectory").await.unwrap_or_default();
+                let root_dir: String = mproxy
+                    .get_property("RootDirectory")
+                    .await
+                    .unwrap_or_default();
 
                 let entry = lua.create_table()?;
                 entry.set("name", row.0.clone())?;
@@ -513,34 +481,27 @@ mod impl_linux {
                 .map_err(|e| {
                     mlua::Error::runtime(format!("systemd.machine_status: GetMachine: {e}"))
                 })?;
-            let obj_path: OwnedObjectPath = reply.body().deserialize().map_err(|e| {
-                mlua::Error::runtime(format!("systemd.machine_status: path: {e}"))
-            })?;
+            let obj_path: OwnedObjectPath = reply
+                .body()
+                .deserialize()
+                .map_err(|e| mlua::Error::runtime(format!("systemd.machine_status: path: {e}")))?;
 
             let mproxy = machine_proxy(&conn, obj_path.as_str())
                 .await
-                .map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.machine_status: proxy: {e}"))
-                })?;
+                .map_err(|e| mlua::Error::runtime(format!("systemd.machine_status: proxy: {e}")))?;
 
             let entry = lua.create_table()?;
             entry.set(
                 "name",
-                mproxy
-                    .get_property::<String>("Name")
-                    .await
-                    .map_err(|e| {
-                        mlua::Error::runtime(format!("systemd.machine_status: Name: {e}"))
-                    })?,
+                mproxy.get_property::<String>("Name").await.map_err(|e| {
+                    mlua::Error::runtime(format!("systemd.machine_status: Name: {e}"))
+                })?,
             )?;
             entry.set(
                 "class",
-                mproxy
-                    .get_property::<String>("Class")
-                    .await
-                    .map_err(|e| {
-                        mlua::Error::runtime(format!("systemd.machine_status: Class: {e}"))
-                    })?,
+                mproxy.get_property::<String>("Class").await.map_err(|e| {
+                    mlua::Error::runtime(format!("systemd.machine_status: Class: {e}"))
+                })?,
             )?;
             entry.set(
                 "service",
@@ -583,10 +544,9 @@ mod impl_linux {
                 .map_err(|e| {
                     mlua::Error::runtime(format!("systemd.machine_start: StartUnit: {e}"))
                 })?;
-            let job_path: OwnedObjectPath =
-                reply.body().deserialize().map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.machine_start: job path: {e}"))
-                })?;
+            let job_path: OwnedObjectPath = reply.body().deserialize().map_err(|e| {
+                mlua::Error::runtime(format!("systemd.machine_start: job path: {e}"))
+            })?;
             Ok(job_path.as_str().to_string())
         })?;
         t.set("machine_start", machine_start)?;
@@ -633,104 +593,100 @@ mod impl_linux {
         // Returns [{ts, hostname, unit, message, priority, transport}, ...]
         //
         // Uses `journalctl --output=json` subprocess.
-        let journal =
-            lua.create_async_function(|lua, opts: Option<mlua::Table>| async move {
-                let (unit, machine, since, until, lines, priority) =
-                    if let Some(ref o) = opts {
-                        (
-                            o.get::<Option<String>>("unit")?,
-                            o.get::<Option<String>>("machine")?,
-                            o.get::<Option<String>>("since")?,
-                            o.get::<Option<String>>("until")?,
-                            o.get::<Option<u32>>("lines")?.unwrap_or(200),
-                            o.get::<Option<u8>>("priority")?.unwrap_or(7),
-                        )
-                    } else {
-                        (None, None, None, None, 200u32, 7u8)
-                    };
+        let journal = lua.create_async_function(|lua, opts: Option<mlua::Table>| async move {
+            let (unit, machine, since, until, lines, priority) = if let Some(ref o) = opts {
+                (
+                    o.get::<Option<String>>("unit")?,
+                    o.get::<Option<String>>("machine")?,
+                    o.get::<Option<String>>("since")?,
+                    o.get::<Option<String>>("until")?,
+                    o.get::<Option<u32>>("lines")?.unwrap_or(200),
+                    o.get::<Option<u8>>("priority")?.unwrap_or(7),
+                )
+            } else {
+                (None, None, None, None, 200u32, 7u8)
+            };
 
-                let mut cmd = tokio::process::Command::new("journalctl");
-                cmd.arg("--output=json")
-                    .arg("--no-pager")
-                    .arg(format!("-n{lines}"))
-                    .arg(format!("--priority={priority}"));
+            let mut cmd = tokio::process::Command::new("journalctl");
+            cmd.arg("--output=json")
+                .arg("--no-pager")
+                .arg(format!("-n{lines}"))
+                .arg(format!("--priority={priority}"));
 
-                if let Some(ref u) = unit {
-                    cmd.arg(format!("--unit={u}"));
-                }
-                if let Some(ref m) = machine {
-                    cmd.arg(format!("--machine={m}"));
-                }
-                if let Some(ref s) = since {
-                    cmd.arg(format!("--since={s}"));
-                }
-                if let Some(ref u) = until {
-                    cmd.arg(format!("--until={u}"));
-                }
+            if let Some(ref u) = unit {
+                cmd.arg(format!("--unit={u}"));
+            }
+            if let Some(ref m) = machine {
+                cmd.arg(format!("--machine={m}"));
+            }
+            if let Some(ref s) = since {
+                cmd.arg(format!("--since={s}"));
+            }
+            if let Some(ref u) = until {
+                cmd.arg(format!("--until={u}"));
+            }
 
-                let output = cmd.output().await.map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.journal: journalctl: {e}"))
+            let output = cmd
+                .output()
+                .await
+                .map_err(|e| mlua::Error::runtime(format!("systemd.journal: journalctl: {e}")))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(mlua::Error::runtime(format!(
+                    "systemd.journal: journalctl exited non-zero: {stderr}"
+                )));
+            }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let out = lua.create_table()?;
+            let mut idx = 1usize;
+
+            for line in stdout.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let v: serde_json::Value = serde_json::from_str(line).map_err(|e| {
+                    mlua::Error::runtime(format!("systemd.journal: JSON parse: {e}"))
                 })?;
+                let obj = match v.as_object() {
+                    Some(o) => o,
+                    None => continue,
+                };
 
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(mlua::Error::runtime(format!(
-                        "systemd.journal: journalctl exited non-zero: {stderr}"
-                    )));
-                }
-
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let out = lua.create_table()?;
-                let mut idx = 1usize;
-
-                for line in stdout.lines() {
-                    let line = line.trim();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let v: serde_json::Value =
-                        serde_json::from_str(line).map_err(|e| {
-                            mlua::Error::runtime(format!(
-                                "systemd.journal: JSON parse: {e}"
-                            ))
-                        })?;
-                    let obj = match v.as_object() {
-                        Some(o) => o,
-                        None => continue,
-                    };
-
-                    let get_str = |key: &str| -> String {
-                        obj.get(key)
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string()
-                    };
-
-                    let ts: u64 = obj
-                        .get("__REALTIME_TIMESTAMP")
+                let get_str = |key: &str| -> String {
+                    obj.get(key)
                         .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0);
+                        .unwrap_or("")
+                        .to_string()
+                };
 
-                    let pri: u8 = obj
-                        .get("PRIORITY")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(7);
+                let ts: u64 = obj
+                    .get("__REALTIME_TIMESTAMP")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
 
-                    let entry = lua.create_table()?;
-                    entry.set("ts", ts)?;
-                    entry.set("hostname", get_str("_HOSTNAME"))?;
-                    entry.set("unit", get_str("_SYSTEMD_UNIT"))?;
-                    entry.set("message", get_str("MESSAGE"))?;
-                    entry.set("priority", pri)?;
-                    entry.set("transport", get_str("_TRANSPORT"))?;
-                    out.set(idx, entry)?;
-                    idx += 1;
-                }
+                let pri: u8 = obj
+                    .get("PRIORITY")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(7);
 
-                Ok(out)
-            })?;
+                let entry = lua.create_table()?;
+                entry.set("ts", ts)?;
+                entry.set("hostname", get_str("_HOSTNAME"))?;
+                entry.set("unit", get_str("_SYSTEMD_UNIT"))?;
+                entry.set("message", get_str("MESSAGE"))?;
+                entry.set("priority", pri)?;
+                entry.set("transport", get_str("_TRANSPORT"))?;
+                out.set(idx, entry)?;
+                idx += 1;
+            }
+
+            Ok(out)
+        })?;
         t.set("journal", journal)?;
 
         // systemd.journal_follow(opts, callback) -> handle
@@ -741,27 +697,36 @@ mod impl_linux {
         // opts = { unit?, machine?, since?, priority? }
         // callback receives the same {ts, hostname, unit, message, priority, transport} table.
         // Returns a handle UserData with :close() / :is_closed().
-        let journal_follow =
-            lua.create_async_function(|_lua, (opts, cb): (Option<mlua::Table>, mlua::Function)| async move {
+        let journal_follow = lua.create_async_function(
+            |_lua, (opts, cb): (Option<mlua::Table>, mlua::Function)| async move {
                 use std::sync::{Arc, atomic::AtomicBool};
                 use tokio::sync::mpsc;
 
-                let unit     = opts.as_ref().and_then(|o| o.get::<Option<String>>("unit").ok().flatten());
-                let machine  = opts.as_ref().and_then(|o| o.get::<Option<String>>("machine").ok().flatten());
-                let since    = opts.as_ref().and_then(|o| o.get::<Option<u64>>("since").ok().flatten());
-                let priority = opts.as_ref().and_then(|o| o.get::<Option<u8>>("priority").ok().flatten()).unwrap_or(7);
+                let unit = opts
+                    .as_ref()
+                    .and_then(|o| o.get::<Option<String>>("unit").ok().flatten());
+                let machine = opts
+                    .as_ref()
+                    .and_then(|o| o.get::<Option<String>>("machine").ok().flatten());
+                let since = opts
+                    .as_ref()
+                    .and_then(|o| o.get::<Option<u64>>("since").ok().flatten());
+                let priority = opts
+                    .as_ref()
+                    .and_then(|o| o.get::<Option<u8>>("priority").ok().flatten())
+                    .unwrap_or(7);
 
                 let cancel = Arc::new(AtomicBool::new(false));
                 let (tx, mut rx) = mpsc::channel::<journal_follow_impl::JournalEntry>(64);
 
                 let cancel_bg = Arc::clone(&cancel);
                 tokio::task::spawn_blocking(move || {
-                    journal_follow_impl::follow_loop(
-                        unit, machine, since, priority, cancel_bg, tx,
-                    );
+                    journal_follow_impl::follow_loop(unit, machine, since, priority, cancel_bg, tx);
                 });
 
-                let handle = journal_follow_impl::FollowHandle { cancel: Arc::clone(&cancel) };
+                let handle = journal_follow_impl::FollowHandle {
+                    cancel: Arc::clone(&cancel),
+                };
 
                 // Drive the callback from the async context so mlua can schedule it.
                 tokio::select! {
@@ -781,7 +746,8 @@ mod impl_linux {
                 };
 
                 Ok(handle)
-            })?;
+            },
+        )?;
         t.set("journal_follow", journal_follow)?;
 
         Ok(())
@@ -800,24 +766,27 @@ mod impl_linux {
             let mut args_iter = args.into_iter();
             let machine: String = match args_iter.next() {
                 Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
-                _ => return Err(mlua::Error::runtime(
-                    "systemd.machine_exec: first arg must be machine name string",
-                )),
+                _ => {
+                    return Err(mlua::Error::runtime(
+                        "systemd.machine_exec: first arg must be machine name string",
+                    ));
+                }
             };
             let command: String = match args_iter.next() {
                 Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
-                _ => return Err(mlua::Error::runtime(
-                    "systemd.machine_exec: second arg must be command string",
-                )),
+                _ => {
+                    return Err(mlua::Error::runtime(
+                        "systemd.machine_exec: second arg must be command string",
+                    ));
+                }
             };
             // Optional opts: { timeout = secs, env = {...} }
             let opts: Option<mlua::Table> = match args_iter.next() {
                 Some(mlua::Value::Table(t)) => Some(t),
                 _ => None,
             };
-            let timeout_secs: Option<f64> = opts
-                .as_ref()
-                .and_then(|t| t.get::<f64>("timeout").ok());
+            let timeout_secs: Option<f64> =
+                opts.as_ref().and_then(|t| t.get::<f64>("timeout").ok());
             if let Some(secs) = timeout_secs
                 && (!secs.is_finite() || secs < 0.0)
             {
@@ -858,9 +827,9 @@ mod impl_linux {
             let exec = tokio_cmd.output();
             let output = if let Some(secs) = timeout_secs.filter(|s| *s > 0.0) {
                 match tokio::time::timeout(std::time::Duration::from_secs_f64(secs), exec).await {
-                    Ok(spawn_result) => spawn_result.map_err(|e| mlua::Error::runtime(format!(
-                        "systemd.machine_exec: spawn: {e}"
-                    )))?,
+                    Ok(spawn_result) => spawn_result.map_err(|e| {
+                        mlua::Error::runtime(format!("systemd.machine_exec: spawn: {e}"))
+                    })?,
                     Err(_elapsed) => {
                         // Timeout fired. Return a shell.exec-shaped result with timed_out=true.
                         let result = lua.create_table()?;
@@ -872,15 +841,21 @@ mod impl_linux {
                     }
                 }
             } else {
-                exec.await.map_err(|e| mlua::Error::runtime(format!(
-                    "systemd.machine_exec: spawn: {e}"
-                )))?
+                exec.await.map_err(|e| {
+                    mlua::Error::runtime(format!("systemd.machine_exec: spawn: {e}"))
+                })?
             };
 
             let result = lua.create_table()?;
             result.set("status", output.status.code().unwrap_or(-1) as i64)?;
-            result.set("stdout", String::from_utf8_lossy(&output.stdout).to_string())?;
-            result.set("stderr", String::from_utf8_lossy(&output.stderr).to_string())?;
+            result.set(
+                "stdout",
+                String::from_utf8_lossy(&output.stdout).to_string(),
+            )?;
+            result.set(
+                "stderr",
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            )?;
             result.set("timed_out", false)?;
             Ok(result)
         })?;
@@ -894,7 +869,10 @@ mod impl_linux {
         use libloading::{Library, Symbol};
         use std::{
             ffi::{CString, c_char, c_int, c_void},
-            sync::{Arc, OnceLock, atomic::{AtomicBool, Ordering}},
+            sync::{
+                Arc, OnceLock,
+                atomic::{AtomicBool, Ordering},
+            },
         };
         use tokio::sync::mpsc;
         use tracing::warn;
@@ -905,15 +883,21 @@ mod impl_linux {
 
         #[allow(non_snake_case)]
         struct Syms {
-            sd_journal_open:             unsafe extern "C" fn(*mut *mut SdJournal, c_int) -> c_int,
-            sd_journal_close:            unsafe extern "C" fn(*mut SdJournal),
-            sd_journal_seek_tail:        unsafe extern "C" fn(*mut SdJournal) -> c_int,
+            sd_journal_open: unsafe extern "C" fn(*mut *mut SdJournal, c_int) -> c_int,
+            sd_journal_close: unsafe extern "C" fn(*mut SdJournal),
+            sd_journal_seek_tail: unsafe extern "C" fn(*mut SdJournal) -> c_int,
             sd_journal_seek_realtime_usec: unsafe extern "C" fn(*mut SdJournal, u64) -> c_int,
-            sd_journal_add_match:        unsafe extern "C" fn(*mut SdJournal, *const c_void, usize) -> c_int,
-            sd_journal_next:             unsafe extern "C" fn(*mut SdJournal) -> c_int,
-            sd_journal_previous:         unsafe extern "C" fn(*mut SdJournal) -> c_int,
-            sd_journal_wait:             unsafe extern "C" fn(*mut SdJournal, u64) -> c_int,
-            sd_journal_get_data:         unsafe extern "C" fn(*mut SdJournal, *const c_char, *mut *const c_void, *mut usize) -> c_int,
+            sd_journal_add_match:
+                unsafe extern "C" fn(*mut SdJournal, *const c_void, usize) -> c_int,
+            sd_journal_next: unsafe extern "C" fn(*mut SdJournal) -> c_int,
+            sd_journal_previous: unsafe extern "C" fn(*mut SdJournal) -> c_int,
+            sd_journal_wait: unsafe extern "C" fn(*mut SdJournal, u64) -> c_int,
+            sd_journal_get_data: unsafe extern "C" fn(
+                *mut SdJournal,
+                *const c_char,
+                *mut *const c_void,
+                *mut usize,
+            ) -> c_int,
             sd_journal_get_realtime_usec: unsafe extern "C" fn(*mut SdJournal, *mut u64) -> c_int,
         }
 
@@ -925,28 +909,29 @@ mod impl_linux {
 
         fn load_syms() -> Result<&'static Syms, String> {
             SYMS.get_or_init(|| unsafe {
-                let lib = Library::new("libsystemd.so.0")
-                    .map_err(|e| format!("systemd.journal_follow: libsystemd.so.0 not found on this host: {e}"))?;
+                let lib = Library::new("libsystemd.so.0").map_err(|e| {
+                    format!("systemd.journal_follow: libsystemd.so.0 not found on this host: {e}")
+                })?;
 
                 macro_rules! sym {
                     ($name:ident) => {{
-                        let s: Symbol<_> = lib
-                            .get(stringify!($name).as_bytes())
-                            .map_err(|e| format!("systemd.journal_follow: symbol {}: {e}", stringify!($name)))?;
+                        let s: Symbol<_> = lib.get(stringify!($name).as_bytes()).map_err(|e| {
+                            format!("systemd.journal_follow: symbol {}: {e}", stringify!($name))
+                        })?;
                         *s
                     }};
                 }
 
                 let syms = Syms {
-                    sd_journal_open:              sym!(sd_journal_open),
-                    sd_journal_close:             sym!(sd_journal_close),
-                    sd_journal_seek_tail:         sym!(sd_journal_seek_tail),
+                    sd_journal_open: sym!(sd_journal_open),
+                    sd_journal_close: sym!(sd_journal_close),
+                    sd_journal_seek_tail: sym!(sd_journal_seek_tail),
                     sd_journal_seek_realtime_usec: sym!(sd_journal_seek_realtime_usec),
-                    sd_journal_add_match:         sym!(sd_journal_add_match),
-                    sd_journal_next:              sym!(sd_journal_next),
-                    sd_journal_previous:          sym!(sd_journal_previous),
-                    sd_journal_wait:              sym!(sd_journal_wait),
-                    sd_journal_get_data:          sym!(sd_journal_get_data),
+                    sd_journal_add_match: sym!(sd_journal_add_match),
+                    sd_journal_next: sym!(sd_journal_next),
+                    sd_journal_previous: sym!(sd_journal_previous),
+                    sd_journal_wait: sym!(sd_journal_wait),
+                    sd_journal_get_data: sym!(sd_journal_get_data),
                     sd_journal_get_realtime_usec: sym!(sd_journal_get_realtime_usec),
                 };
 
@@ -976,7 +961,9 @@ mod impl_linux {
                 let mut ptr: *mut SdJournal = std::ptr::null_mut();
                 let rc = unsafe { (syms.sd_journal_open)(&mut ptr, 1) };
                 if rc < 0 {
-                    return Err(format!("systemd.journal_follow: sd_journal_open failed: {rc}"));
+                    return Err(format!(
+                        "systemd.journal_follow: sd_journal_open failed: {rc}"
+                    ));
                 }
                 Ok(Journal { ptr, syms })
             }
@@ -1049,23 +1036,23 @@ mod impl_linux {
 
         #[derive(Debug)]
         pub struct JournalEntry {
-            pub ts:        u64,
-            pub hostname:  String,
-            pub unit:      String,
-            pub message:   String,
-            pub priority:  u8,
+            pub ts: u64,
+            pub hostname: String,
+            pub unit: String,
+            pub message: String,
+            pub priority: u8,
             pub transport: String,
         }
 
         // ── blocking follow loop ──────────────────────────────────────────────
 
         pub fn follow_loop(
-            unit:     Option<String>,
-            machine:  Option<String>,
-            since:    Option<u64>,
+            unit: Option<String>,
+            machine: Option<String>,
+            since: Option<u64>,
             priority: u8,
-            cancel:   Arc<AtomicBool>,
-            tx:       mpsc::Sender<JournalEntry>,
+            cancel: Arc<AtomicBool>,
+            tx: mpsc::Sender<JournalEntry>,
         ) {
             let journal = match Journal::open() {
                 Ok(j) => j,
@@ -1126,11 +1113,12 @@ mod impl_linux {
                         break;
                     }
                     let entry = JournalEntry {
-                        ts:        journal.realtime_usec(),
-                        hostname:  journal.read_field("_HOSTNAME").unwrap_or_default(),
-                        unit:      journal.read_field("_SYSTEMD_UNIT").unwrap_or_default(),
-                        message:   journal.read_field("MESSAGE").unwrap_or_default(),
-                        priority:  journal.read_field("PRIORITY")
+                        ts: journal.realtime_usec(),
+                        hostname: journal.read_field("_HOSTNAME").unwrap_or_default(),
+                        unit: journal.read_field("_SYSTEMD_UNIT").unwrap_or_default(),
+                        message: journal.read_field("MESSAGE").unwrap_or_default(),
+                        priority: journal
+                            .read_field("PRIORITY")
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(7),
                         transport: journal.read_field("_TRANSPORT").unwrap_or_default(),
@@ -1195,8 +1183,7 @@ mod impl_linux {
         use mlua::{Lua, LuaOptions, StdLib};
 
         fn make_lua() -> Lua {
-            Lua::new_with(StdLib::ALL_SAFE, LuaOptions::default())
-                .expect("Lua init failed")
+            Lua::new_with(StdLib::ALL_SAFE, LuaOptions::default()).expect("Lua init failed")
         }
 
         fn setup(lua: &Lua) {
@@ -1287,10 +1274,7 @@ mod impl_linux {
             for i in 1..=result.raw_len() {
                 let entry: mlua::Table = result.get(i).unwrap();
                 let pri: u8 = entry.get("priority").unwrap_or(255);
-                assert!(
-                    pri <= 3,
-                    "expected priority <= 3, got {pri} in entry {i}"
-                );
+                assert!(pri <= 3, "expected priority <= 3, got {pri} in entry {i}");
             }
         }
 
@@ -1306,7 +1290,10 @@ mod impl_linux {
         #[ignore = "requires journal write access (logger)"]
         async fn journal_follow_smoke() {
             use super::journal_follow_impl;
-            use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+            use std::sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+            };
             use tokio::sync::mpsc;
             use tokio::time::{Duration, timeout};
 
@@ -1357,7 +1344,10 @@ mod impl_linux {
         #[ignore = "requires journal write access (logger)"]
         async fn journal_follow_priority_filter() {
             use super::journal_follow_impl;
-            use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+            use std::sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+            };
             use tokio::sync::mpsc;
             use tokio::time::{Duration, timeout};
 
@@ -1411,7 +1401,10 @@ mod impl_linux {
             assert!(found_err, "err-marker-XYZ not seen within 5 s");
 
             let info_leaked = entries.iter().any(|(m, _)| m.contains("info-marker-XYZ"));
-            assert!(!info_leaked, "info-marker-XYZ should have been filtered by priority=3");
+            assert!(
+                !info_leaked,
+                "info-marker-XYZ should have been filtered by priority=3"
+            );
 
             for (msg, pri) in &entries {
                 assert!(*pri <= 3, "got priority {pri} > 3 for message: {msg}");
@@ -1422,10 +1415,15 @@ mod impl_linux {
         #[ignore = "requires journal write access (logger)"]
         async fn journal_follow_close_idempotent() {
             use super::journal_follow_impl::FollowHandle;
-            use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+            use std::sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+            };
 
             let cancel = Arc::new(AtomicBool::new(false));
-            let handle = FollowHandle { cancel: Arc::clone(&cancel) };
+            let handle = FollowHandle {
+                cancel: Arc::clone(&cancel),
+            };
 
             // first close
             handle.cancel.store(true, Ordering::Relaxed);
