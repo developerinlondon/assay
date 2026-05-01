@@ -23,9 +23,10 @@ pub fn resolve_json(raw: &str, what: &str) -> Result<Value, String> {
             .map_err(|e| format!("{what}: reading stdin: {e}"))?;
         serde_json::from_str(&s).map_err(|e| format!("{what}: invalid JSON on stdin: {e}"))
     } else if let Some(path) = raw.strip_prefix('@') {
-        let content =
-            std::fs::read_to_string(path).map_err(|e| format!("{what}: reading {path}: {e}"))?;
-        serde_json::from_str(&content).map_err(|e| format!("{what}: invalid JSON in {path}: {e}"))
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("{what}: reading {path}: {e}"))?;
+        serde_json::from_str(&content)
+            .map_err(|e| format!("{what}: invalid JSON in {path}: {e}"))
     } else {
         serde_json::from_str(raw).map_err(|e| format!("{what}: invalid JSON: {e}"))
     }

@@ -95,9 +95,7 @@ async fn test_gitlab_projects_get_404_returns_nil() {
 async fn test_gitlab_files_raw() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path(
-            "/api/v4/projects/42/repository/files/src%2Fmain.lua/raw",
-        ))
+        .and(path("/api/v4/projects/42/repository/files/src%2Fmain.lua/raw"))
         .and(query_param("ref", "dev"))
         .respond_with(ResponseTemplate::new(200).set_body_string("print(\"hello\")"))
         .mount(&server)

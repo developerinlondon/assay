@@ -215,15 +215,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
     (
         "compress",
         "Decompression: gunzip, unxz, unzstd. Pure binary in/out.",
-        &[
-            "compress",
-            "decompress",
-            "gunzip",
-            "gzip",
-            "xz",
-            "lzma",
-            "zstd",
-        ],
+        &["compress", "decompress", "gunzip", "gzip", "xz", "lzma", "zstd"],
     ),
 ];
 
@@ -376,7 +368,10 @@ fn discover_embedded_stdlib(modules: &mut Vec<DiscoveredModule>) {
             };
             // Build dotted path from "stdlib"-relative components,
             // dropping the trailing `.lua`.
-            let segments: Vec<&str> = path.iter().filter_map(|c| c.to_str()).collect();
+            let segments: Vec<&str> = path
+                .iter()
+                .filter_map(|c| c.to_str())
+                .collect();
             if segments.is_empty() {
                 continue;
             }

@@ -15,11 +15,11 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::cli::GlobalOpts;
 use crate::cli::client::EngineClient;
 use crate::cli::input::resolve_json;
 use crate::cli::output::{print_list, print_record};
 use crate::cli::table::value_as_str;
+use crate::cli::GlobalOpts;
 
 fn eprint_err(e: anyhow::Error) -> ExitCode {
     eprintln!("error: {e:#}");
@@ -173,13 +173,18 @@ pub async fn workflow_events(opts: &GlobalOpts, id: &str, follow: bool) -> ExitC
         }
         Err(e) => return eprint_err(e),
     };
-    print_list(opts.output, &events, &["SEQ", "TYPE", "TIMESTAMP"], |e| {
-        vec![
-            value_as_str(e, "seq"),
-            value_as_str(e, "event_type"),
-            value_as_str(e, "timestamp"),
-        ]
-    });
+    print_list(
+        opts.output,
+        &events,
+        &["SEQ", "TYPE", "TIMESTAMP"],
+        |e| {
+            vec![
+                value_as_str(e, "seq"),
+                value_as_str(e, "event_type"),
+                value_as_str(e, "timestamp"),
+            ]
+        },
+    );
     ExitCode::SUCCESS
 }
 
@@ -188,7 +193,11 @@ pub async fn workflow_events(opts: &GlobalOpts, id: &str, follow: bool) -> ExitC
 /// works against any engine that implements `GET /workflows/{id}/events`
 /// — no extra server code, no reconnection dance. Stops when a terminal
 /// workflow event is seen.
-async fn workflow_events_follow(opts: &GlobalOpts, client: &EngineClient, id: &str) -> ExitCode {
+async fn workflow_events_follow(
+    opts: &GlobalOpts,
+    client: &EngineClient,
+    id: &str,
+) -> ExitCode {
     let mut last_seq: i64 = -1;
     loop {
         let events = match client.workflow_events(id).await {
@@ -241,13 +250,18 @@ pub async fn workflow_children(opts: &GlobalOpts, id: &str) -> ExitCode {
         }
         Err(e) => return eprint_err(e),
     };
-    print_list(opts.output, &children, &["ID", "TYPE", "STATUS"], |c| {
-        vec![
-            value_as_str(c, "id"),
-            value_as_str(c, "workflow_type"),
-            value_as_str(c, "status"),
-        ]
-    });
+    print_list(
+        opts.output,
+        &children,
+        &["ID", "TYPE", "STATUS"],
+        |c| {
+            vec![
+                value_as_str(c, "id"),
+                value_as_str(c, "workflow_type"),
+                value_as_str(c, "status"),
+            ]
+        },
+    );
     ExitCode::SUCCESS
 }
 
@@ -285,7 +299,11 @@ pub async fn workflow_cancel(opts: &GlobalOpts, id: &str) -> ExitCode {
     }
 }
 
-pub async fn workflow_terminate(opts: &GlobalOpts, id: &str, reason: Option<String>) -> ExitCode {
+pub async fn workflow_terminate(
+    opts: &GlobalOpts,
+    id: &str,
+    reason: Option<String>,
+) -> ExitCode {
     let client = EngineClient::new(opts);
     match client.workflow_terminate(id, reason.as_deref()).await {
         Ok(()) => {

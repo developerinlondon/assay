@@ -72,12 +72,10 @@ mod imp {
 
             match timeout_ms {
                 None | Some(0) => read_once.await,
-                Some(ms) => {
-                    match tokio::time::timeout(Duration::from_millis(ms), read_once).await {
-                        Ok(r) => r,
-                        Err(_) => Ok(None),
-                    }
-                }
+                Some(ms) => match tokio::time::timeout(Duration::from_millis(ms), read_once).await {
+                    Ok(r) => r,
+                    Err(_) => Ok(None),
+                },
             }
         }
 
@@ -182,10 +180,7 @@ mod imp {
             });
 
             methods.add_method("resize", |_, this, (cols, rows): (u32, u32)| {
-                this.resize(
-                    cols.try_into().unwrap_or(u16::MAX),
-                    rows.try_into().unwrap_or(u16::MAX),
-                )
+                this.resize(cols.try_into().unwrap_or(u16::MAX), rows.try_into().unwrap_or(u16::MAX))
             });
 
             methods.add_async_method("close", |_, this, ()| async move { this.close().await });
@@ -277,25 +272,11 @@ mod imp {
             .unwrap_or(24)
             .try_into()
             .unwrap_or(u16::MAX);
-        Ok(SpawnOpts {
-            cmd,
-            args,
-            cwd,
-            env,
-            cols,
-            rows,
-        })
+        Ok(SpawnOpts { cmd, args, cwd, env, cols, rows })
     }
 
     pub(super) fn spawn_pty_impl(opts: &Table) -> mlua::Result<PtyHandle> {
-        let SpawnOpts {
-            cmd,
-            args,
-            cwd,
-            env,
-            cols,
-            rows,
-        } = parse_opts(opts)?;
+        let SpawnOpts { cmd, args, cwd, env, cols, rows } = parse_opts(opts)?;
 
         let winsize = nix::libc::winsize {
             ws_row: rows,
@@ -393,10 +374,11 @@ pub fn register_process_pty(lua: &mlua::Lua) -> mlua::Result<()> {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        let spawn_pty_fn = lua.create_async_function(|lua, opts: mlua::Table| async move {
-            let handle = imp::spawn_pty_impl(&opts)?;
-            lua.create_userdata(handle)
-        })?;
+        let spawn_pty_fn =
+            lua.create_async_function(|lua, opts: mlua::Table| async move {
+                let handle = imp::spawn_pty_impl(&opts)?;
+                lua.create_userdata(handle)
+            })?;
         process_table.set("spawn_pty", spawn_pty_fn)?;
     }
 

@@ -184,12 +184,8 @@ async fn test_jwt_verify_rs256_roundtrip() {
     let exp = now + 3600;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("pub_pem", vm.create_string(&pub_pem).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
     vm.globals().set("test_iat", now as i64).unwrap();
     vm.globals().set("test_exp", exp as i64).unwrap();
 
@@ -228,12 +224,8 @@ async fn test_jwt_verify_rejects_wrong_audience() {
         .as_secs() as i64;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("pub_pem", vm.create_string(&pub_pem).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
     vm.globals().set("test_iat", now).unwrap();
     vm.globals().set("test_exp", now + 3600).unwrap();
 
@@ -270,12 +262,8 @@ async fn test_jwt_verify_rejects_wrong_issuer() {
         .as_secs() as i64;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("pub_pem", vm.create_string(&pub_pem).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
     vm.globals().set("test_iat", now).unwrap();
     vm.globals().set("test_exp", now + 3600).unwrap();
 
@@ -315,12 +303,8 @@ async fn test_jwt_verify_rejects_expired_token() {
         .as_secs() as i64;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("pub_pem", vm.create_string(&pub_pem).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
     vm.globals().set("test_iat", now - 7200).unwrap();
     vm.globals().set("test_exp", now - 3600).unwrap();
 
@@ -357,12 +341,8 @@ async fn test_jwt_verify_rejects_tampered_signature() {
         .as_secs() as i64;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("pub_pem", vm.create_string(&pub_pem).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
     vm.globals().set("test_iat", now).unwrap();
     vm.globals().set("test_exp", now + 3600).unwrap();
 
@@ -413,12 +393,8 @@ async fn test_jwt_verify_jwks_dispatch_by_kid() {
         .as_secs() as i64;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("jwks_json", vm.create_string(&jwks_json).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("jwks_json", vm.create_string(&jwks_json).unwrap()).unwrap();
     vm.globals().set("test_iat", now).unwrap();
     vm.globals().set("test_exp", now + 3600).unwrap();
 
@@ -452,12 +428,8 @@ async fn test_jwt_verify_jwks_rejects_unknown_kid() {
         .as_secs() as i64;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("jwks_json", vm.create_string(&jwks_json).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("jwks_json", vm.create_string(&jwks_json).unwrap()).unwrap();
     vm.globals().set("test_iat", now).unwrap();
     vm.globals().set("test_exp", now + 3600).unwrap();
 
@@ -495,12 +467,8 @@ async fn test_jwt_verify_jwks_requires_kid_in_token() {
         .as_secs() as i64;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("jwks_json", vm.create_string(&jwks_json).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("jwks_json", vm.create_string(&jwks_json).unwrap()).unwrap();
     vm.globals().set("test_iat", now).unwrap();
     vm.globals().set("test_exp", now + 3600).unwrap();
 
@@ -538,12 +506,8 @@ async fn test_jwt_verify_audience_array() {
         .as_secs() as i64;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("pub_pem", vm.create_string(&pub_pem).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
     vm.globals().set("test_iat", now).unwrap();
     vm.globals().set("test_exp", now + 3600).unwrap();
 
@@ -577,12 +541,8 @@ async fn test_jwt_verify_skip_exp_validation() {
         .as_secs() as i64;
 
     let vm = create_vm();
-    vm.globals()
-        .set("priv_pem", vm.create_string(&priv_pem).unwrap())
-        .unwrap();
-    vm.globals()
-        .set("pub_pem", vm.create_string(&pub_pem).unwrap())
-        .unwrap();
+    vm.globals().set("priv_pem", vm.create_string(&priv_pem).unwrap()).unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
     vm.globals().set("test_iat", now - 7200).unwrap();
     vm.globals().set("test_exp", now - 3600).unwrap();
 
@@ -613,9 +573,7 @@ async fn test_jwt_verify_skip_exp_validation() {
 async fn test_jwt_verify_rejects_malformed_token() {
     let pub_pem = std::fs::read_to_string("tests/fixtures/test_rsa_pub.pem").unwrap();
     let vm = create_vm();
-    vm.globals()
-        .set("pub_pem", vm.create_string(&pub_pem).unwrap())
-        .unwrap();
+    vm.globals().set("pub_pem", vm.create_string(&pub_pem).unwrap()).unwrap();
 
     let result = vm
         .load(r#"return crypto.jwt_verify("only.two", pub_pem)"#)
@@ -658,10 +616,7 @@ async fn test_jwt_decode_rejects_malformed_token() {
     let result = run_lua(r#"crypto.jwt_decode("eyJhbGciOiJSUzI1NiJ9.bm90LWpzb24.sig")"#).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("invalid JSON") || err.contains("payload"),
-        "got: {err}"
-    );
+    assert!(err.contains("invalid JSON") || err.contains("payload"), "got: {err}");
 }
 
 #[tokio::test]

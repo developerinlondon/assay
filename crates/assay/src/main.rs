@@ -5,6 +5,7 @@ mod lua;
 mod output;
 mod runner;
 
+
 use clap::{Parser, Subcommand};
 use mlua::LuaSerdeExt;
 use serde::{Deserialize, Serialize};
@@ -489,12 +490,7 @@ async fn main() -> ExitCode {
                     search_attrs,
                 } => {
                     cli::commands::workflow_start(
-                        &opts,
-                        &workflow_type,
-                        id,
-                        input,
-                        queue,
-                        search_attrs,
+                        &opts, &workflow_type, id, input, queue, search_attrs,
                     )
                     .await
                 }

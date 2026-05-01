@@ -187,9 +187,9 @@ pub fn register_process(lua: &Lua) -> mlua::Result<()> {
     // terminate. NOT auto-reaped — every spawn() must be paired with a
     // wait() to avoid zombies.
     let spawn_fn = lua.create_function(|lua, opts: mlua::Table| {
-        let cmd: String = opts
-            .get("cmd")
-            .map_err(|_| mlua::Error::runtime("process.spawn: opts.cmd (string) is required"))?;
+        let cmd: String = opts.get("cmd").map_err(|_| {
+            mlua::Error::runtime("process.spawn: opts.cmd (string) is required")
+        })?;
 
         let args: Option<Vec<String>> = opts.get::<Option<mlua::Table>>("args")?.map(|t| {
             t.sequence_values::<String>()
@@ -307,7 +307,11 @@ pub fn register_process(lua: &Lua) -> mlua::Result<()> {
         let deadline = timeout_secs.map(|s| Instant::now() + Duration::from_secs_f64(s));
         let mut raw_status: i32 = 0;
         loop {
-            let flags = if deadline.is_some() { libc::WNOHANG } else { 0 };
+            let flags = if deadline.is_some() {
+                libc::WNOHANG
+            } else {
+                0
+            };
             let ret = unsafe { libc::waitpid(pid, &mut raw_status, flags) };
             if ret == pid {
                 break;

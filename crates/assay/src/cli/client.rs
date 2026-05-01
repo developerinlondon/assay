@@ -4,7 +4,7 @@
 //! with the HTTP status and response body folded into the error on
 //! non-2xx responses, so CLI callers can surface a useful message.
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 
 use crate::cli::GlobalOpts;
@@ -149,7 +149,9 @@ impl EngineClient {
 
     pub async fn workflow_cancel(&self, id: &str) -> Result<()> {
         let url = format!("{}/workflows/{id}/cancel", self.base);
-        let _ = self.send(self.http.post(&url), "workflow cancel").await?;
+        let _ = self
+            .send(self.http.post(&url), "workflow cancel")
+            .await?;
         Ok(())
     }
 
@@ -162,11 +164,18 @@ impl EngineClient {
         Ok(())
     }
 
-    pub async fn workflow_continue_as_new(&self, id: &str, input: Option<&Value>) -> Result<Value> {
+    pub async fn workflow_continue_as_new(
+        &self,
+        id: &str,
+        input: Option<&Value>,
+    ) -> Result<Value> {
         let url = format!("{}/workflows/{id}/continue-as-new", self.base);
         let body = serde_json::json!({ "input": input });
-        self.send(self.http.post(&url).json(&body), "workflow continue-as-new")
-            .await
+        self.send(
+            self.http.post(&url).json(&body),
+            "workflow continue-as-new",
+        )
+        .await
     }
 
     // ── Schedules ──────────────────────────────────────────
@@ -272,7 +281,9 @@ impl EngineClient {
             "{}/schedules/{name}?namespace={}",
             self.base, self.namespace
         );
-        let _ = self.send(self.http.delete(&url), "schedule delete").await?;
+        let _ = self
+            .send(self.http.delete(&url), "schedule delete")
+            .await?;
         Ok(())
     }
 

@@ -250,9 +250,11 @@ fn shell_bridge_to_cat_pty() {
         let (mut ws, _resp) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
         // Resize control frame — should be consumed by the bridge, not echoed.
-        ws.send(Message::Text(r#"{"resize":{"cols":120,"rows":40}}"#.into()))
-            .await
-            .unwrap();
+        ws.send(Message::Text(
+            r#"{"resize":{"cols":120,"rows":40}}"#.into(),
+        ))
+        .await
+        .unwrap();
 
         // Send actual bytes — cat should echo them back as binary frames
         // (the bridge always uses opts.binary=true on PTY -> ws).

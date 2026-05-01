@@ -149,22 +149,8 @@ mod linux_impl {
         }
     }
 
-    fn cpu_percent(
-        lua: &Lua,
-        (prev, curr): (mlua::Table, mlua::Table),
-    ) -> mlua::Result<mlua::Table> {
-        let fields = [
-            "user",
-            "nice",
-            "system",
-            "idle",
-            "iowait",
-            "irq",
-            "softirq",
-            "steal",
-            "guest",
-            "guest_nice",
-        ];
+    fn cpu_percent(lua: &Lua, (prev, curr): (mlua::Table, mlua::Table)) -> mlua::Result<mlua::Table> {
+        let fields = ["user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal", "guest", "guest_nice"];
 
         let mut delta_total: u64 = 0;
         let mut delta_busy: u64 = 0;

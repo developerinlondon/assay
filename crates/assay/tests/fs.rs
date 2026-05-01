@@ -501,11 +501,9 @@ async fn test_fs_lines_no_trailing_newline() {
 
 #[tokio::test]
 async fn test_fs_lines_nonexistent() {
-    let result = run_lua(
-        r#"
+    let result = run_lua(r#"
         for _ in fs.lines("/nonexistent/file.txt") do end
-    "#,
-    )
+    "#)
     .await;
     assert!(result.is_err());
 }
