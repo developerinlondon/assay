@@ -11,7 +11,7 @@
 //! validated against the systemd-machined character set.
 //!
 //! These operations require root in v1; the caller is expected to have
-//! arranged that (running knowhere as root, or sudo NOPASSWD wrapping).
+//! arranged that (running as root, or sudo NOPASSWD wrapping).
 
 use mlua::{Lua, Table};
 

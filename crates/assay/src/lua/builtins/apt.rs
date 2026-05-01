@@ -6,7 +6,7 @@
 //!
 //! Operations that mutate system state (install, remove, update, add_source
 //! against /etc paths) require root and are tested manually against a
-//! throwaway nspawn machine in knowhere plan 13's smoke.
+//! throwaway nspawn machine in a downstream consumer's smoke tests.
 
 use mlua::{Lua, Table};
 use rand::RngExt;

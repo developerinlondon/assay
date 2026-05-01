@@ -20,7 +20,7 @@ pub fn register_template(lua: &Lua) -> mlua::Result<()> {
         // and {% extends %} can resolve sibling templates. Without this,
         // includes raise "template not found" — minijinja can't infer the
         // template root from a string-only render_string call. Using cwd
-        // (matches how the rest of knowhere reads templates: fs.read of
+        // (matches how template.render loads templates: fs.read of
         // "templates/<name>.html").
         env.set_loader(minijinja::path_loader("templates"));
         let tmpl = env

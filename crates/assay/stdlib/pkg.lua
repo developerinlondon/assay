@@ -10,7 +10,7 @@ local M = {}
 -- consumer registered for fs.read). pkg.lua reads cache markers, downloaded
 -- binaries, and apt-source idempotency files from absolute paths under
 -- /var/cache, /usr/share, /etc — none of which a sandboxed FileSource
--- (e.g. knowhere's LayeredFs over the embedded VFS) is going to resolve.
+-- (e.g. a consumer's LayeredFs over the embedded VFS) is going to resolve.
 -- io.open hits the real disk regardless.
 --
 -- Returns the file content as a string, or nil if the file doesn't exist

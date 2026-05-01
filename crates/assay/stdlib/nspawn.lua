@@ -307,8 +307,8 @@ function M.provision(spec)
 
   -- Optional progress callback. Called as on_stage(stage, status, msg?)
   -- where stage ∈ {"rootfs","unit","boot"} and status ∈ {"in_progress",
-  -- "done","failed"}. The orchestrator (knowhere's services/nspawn/jobs.lua)
-  -- uses these to drive the in-flight provisioning card on /machines.
+  -- "done","failed"}. The orchestrator uses these to drive the in-flight
+  -- provisioning card on /machines.
   local on_stage = spec.on_stage or function(_,_,_) end
 
   -- 1) Bootstrap rootfs
