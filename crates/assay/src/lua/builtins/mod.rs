@@ -10,6 +10,7 @@ mod disk;
 pub mod http;
 mod json;
 mod linux;
+mod machinectl;
 mod markdown;
 mod os_info;
 mod process;
@@ -54,5 +55,6 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     linux::register_linux(lua)?;
     cgroup::register_cgroup(lua)?;
     systemd::register_systemd(lua)?;
+    machinectl::register_machinectl(lua)?;
     Ok(())
 }

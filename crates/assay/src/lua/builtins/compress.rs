@@ -6,6 +6,12 @@
 
 use std::io::Read;
 
+use rand::RngExt;
+
+fn tmp_suffix() -> String {
+    format!("{:016x}", rand::rng().random::<u64>())
+}
+
 pub fn register_compress(lua: &mlua::Lua) -> mlua::Result<()> {
     let t = lua.create_table()?;
     t.set("gunzip", lua.create_function(gunzip)?)?;
@@ -131,7 +137,7 @@ fn untar(_: &mlua::Lua, args: mlua::MultiValue) -> mlua::Result<i64> {
                 })?;
             }
             // Stream member to dest via temp file for atomicity
-            let tmp = format!("{dest_path}.tmp.{}", std::process::id());
+            let tmp = format!("{dest_path}.tmp.{}", tmp_suffix());
             let mut out = std::fs::File::create(&tmp).map_err(|e| {
                 mlua::Error::runtime(format!("compress.untar: create temp {tmp:?}: {e}"))
             })?;

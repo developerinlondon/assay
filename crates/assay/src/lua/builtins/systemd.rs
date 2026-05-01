@@ -176,6 +176,7 @@ mod impl_linux {
         register_machines(lua, t)?;
         register_journal(lua, t)?;
         register_machine_exec(lua, t)?; // NEW
+        register_unit_action(lua, t)?;  // NEW
         Ok(())
     }
 
@@ -795,9 +796,19 @@ mod impl_linux {
                 ));
             }
 
+            // Optional binary stdin payload, e.g. for streaming tarballs into a
+            // container during package install. Stored as owned bytes because
+            // the mlua::String borrow ends with the args parsing scope.
+            let stdin_bytes: Option<Vec<u8>> = match opts.as_ref() {
+                Some(t) => match t.get::<Option<mlua::String>>("stdin")? {
+                    Some(s) => Some(s.as_bytes().to_vec()),
+                    None => None,
+                },
+                None => None,
+            };
+
             // Build: systemd-run --machine=<name> --pipe --quiet --wait --collect /bin/sh -c '<cmd>'
-            // --pipe captures stdout/stderr to caller; --wait blocks until completion;
-            // --collect cleans up the transient unit on exit.
+            // --pipe wires stdin/stdout/stderr through to caller.
             let mut tokio_cmd = tokio::process::Command::new("systemd-run");
             tokio_cmd
                 .arg(format!("--machine={machine}"))
@@ -806,8 +817,6 @@ mod impl_linux {
                 .arg("--wait")
                 .arg("--collect");
 
-            // Ensure timeout teardown SIGKILLs systemd-run so the transient unit
-            // doesn't linger after the future is dropped.
             tokio_cmd.kill_on_drop(true);
 
             if let Some(ref t) = opts
@@ -820,18 +829,80 @@ mod impl_linux {
             }
 
             tokio_cmd.arg("/bin/sh").arg("-c").arg(&command);
-            tokio_cmd.stdin(std::process::Stdio::null());
+            tokio_cmd.stdin(if stdin_bytes.is_some() {
+                std::process::Stdio::piped()
+            } else {
+                std::process::Stdio::null()
+            });
             tokio_cmd.stdout(std::process::Stdio::piped());
             tokio_cmd.stderr(std::process::Stdio::piped());
 
-            let exec = tokio_cmd.output();
-            let output = if let Some(secs) = timeout_secs.filter(|s| *s > 0.0) {
-                match tokio::time::timeout(std::time::Duration::from_secs_f64(secs), exec).await {
-                    Ok(spawn_result) => spawn_result.map_err(|e| {
-                        mlua::Error::runtime(format!("systemd.machine_exec: spawn: {e}"))
-                    })?,
+            // Spawn manually and keep `child` accessible for explicit kill+wait
+            // on timeout. Using wait_with_output() would move child into the
+            // future and we'd lose access on timeout — leaving cleanup to
+            // kill_on_drop, which only schedules an async reap. Explicit
+            // start_kill + wait reaps before we return.
+            let mut child = tokio_cmd
+                .spawn()
+                .map_err(|e| mlua::Error::runtime(format!("systemd.machine_exec: spawn: {e}")))?;
+
+            // Push stdin first (single await; child is still owned).
+            if let Some(bytes) = stdin_bytes.as_deref() {
+                if let Some(mut child_stdin) = child.stdin.take() {
+                    use tokio::io::AsyncWriteExt;
+                    if let Err(e) = child_stdin.write_all(bytes).await {
+                        let _ = child.start_kill();
+                        let _ = child.wait().await;
+                        return Err(mlua::Error::runtime(format!(
+                            "systemd.machine_exec: stdin write: {e}"
+                        )));
+                    }
+                    let _ = child_stdin.shutdown().await;
+                }
+            }
+
+            // Drain stdout/stderr concurrently in background tasks so a
+            // full pipe buffer never blocks the child's exit.
+            let stdout_handle = child.stdout.take();
+            let stderr_handle = child.stderr.take();
+            let stdout_task = tokio::spawn(async move {
+                let mut buf = Vec::new();
+                if let Some(mut s) = stdout_handle {
+                    use tokio::io::AsyncReadExt;
+                    let _ = s.read_to_end(&mut buf).await;
+                }
+                buf
+            });
+            let stderr_task = tokio::spawn(async move {
+                let mut buf = Vec::new();
+                if let Some(mut s) = stderr_handle {
+                    use tokio::io::AsyncReadExt;
+                    let _ = s.read_to_end(&mut buf).await;
+                }
+                buf
+            });
+
+            let status = if let Some(secs) = timeout_secs.filter(|s| *s > 0.0) {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs_f64(secs),
+                    child.wait(),
+                )
+                .await
+                {
+                    Ok(Ok(s)) => s,
+                    Ok(Err(e)) => {
+                        return Err(mlua::Error::runtime(format!(
+                            "systemd.machine_exec: wait: {e}"
+                        )));
+                    }
                     Err(_elapsed) => {
-                        // Timeout fired. Return a shell.exec-shaped result with timed_out=true.
+                        // Explicit kill + reap so the child doesn't linger as
+                        // a zombie. start_kill is non-blocking (sends SIGKILL);
+                        // wait().await reaps the exit status.
+                        let _ = child.start_kill();
+                        let _ = child.wait().await;
+                        stdout_task.abort();
+                        stderr_task.abort();
                         let result = lua.create_table()?;
                         result.set("status", -1i64)?;
                         result.set("stdout", "")?;
@@ -841,9 +912,19 @@ mod impl_linux {
                     }
                 }
             } else {
-                exec.await.map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.machine_exec: spawn: {e}"))
+                child.wait().await.map_err(|e| {
+                    mlua::Error::runtime(format!("systemd.machine_exec: wait: {e}"))
                 })?
+            };
+
+            let stdout_bytes = stdout_task.await.unwrap_or_default();
+            let stderr_bytes = stderr_task.await.unwrap_or_default();
+            // Construct an Output-shaped tuple to feed the existing result
+            // builder below.
+            let output = std::process::Output {
+                status,
+                stdout: stdout_bytes,
+                stderr: stderr_bytes,
             };
 
             let result = lua.create_table()?;
@@ -860,6 +941,179 @@ mod impl_linux {
             Ok(result)
         })?;
         t.set("machine_exec", machine_exec)?;
+        Ok(())
+    }
+
+    // ── unit_action ───────────────────────────────────────────────────────────
+
+    /// systemd.unit_action(unit, action, opts?) -> {status, stdout, stderr}
+    ///
+    /// Wraps `systemctl <action> <unit>` for the small set of actions a
+    /// package/provisioning workflow needs. Argv-based: unit names that
+    /// begin with `-` or contain shell metacharacters are rejected before
+    /// spawn so they can never inject flags or commands.
+    ///
+    /// Allowed actions: start, stop, restart, reload, enable, disable,
+    /// daemon-reload, is-active, is-enabled.
+    fn register_unit_action(lua: &Lua, t: &Table) -> mlua::Result<()> {
+        const ALLOWED: &[&str] = &[
+            "start", "stop", "restart", "reload",
+            "enable", "disable",
+            "daemon-reload",
+            "is-active", "is-enabled",
+        ];
+        const DEFAULT_TIMEOUT_SECS: f64 = 60.0;
+
+        fn validate_unit(unit: &str) -> mlua::Result<()> {
+            if unit.is_empty() {
+                return Err(mlua::Error::runtime(
+                    "systemd.unit_action: unit name must be non-empty",
+                ));
+            }
+            if unit.starts_with('-') {
+                return Err(mlua::Error::runtime(format!(
+                    "systemd.unit_action: unit {unit:?} must not start with '-'"
+                )));
+            }
+            // systemd unit names: alphanumerics, plus . _ - : @ \
+            // (escape encoding). Reject anything else.
+            if !unit.chars().all(|c| {
+                c.is_ascii_alphanumeric()
+                    || c == '.' || c == '_' || c == '-'
+                    || c == ':' || c == '@' || c == '\\'
+            }) {
+                return Err(mlua::Error::runtime(format!(
+                    "systemd.unit_action: unit {unit:?} contains disallowed characters"
+                )));
+            }
+            Ok(())
+        }
+
+        let unit_action = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
+            let mut iter = args.into_iter();
+            // For daemon-reload, "unit" arg may be omitted; accept either
+            // (action) or (unit, action).
+            let arg1: String = iter
+                .next()
+                .ok_or_else(|| mlua::Error::runtime("systemd.unit_action: action required"))
+                .and_then(|v| lua.unpack(v))?;
+            let arg2: Option<String> = match iter.next() {
+                Some(mlua::Value::String(s)) => Some(s.to_str()?.to_string()),
+                Some(mlua::Value::Nil) | None => None,
+                Some(_) => {
+                    return Err(mlua::Error::runtime(
+                        "systemd.unit_action: second arg must be string or nil",
+                    ));
+                }
+            };
+            let opts: Option<Table> = match iter.next() {
+                Some(mlua::Value::Table(t)) => Some(t),
+                _ => None,
+            };
+
+            // Resolve (unit, action) from positional args:
+            //   unit_action("daemon-reload")           — action only
+            //   unit_action("foo.service", "start")    — unit + action
+            let (unit, action) = match arg2 {
+                Some(action) => (Some(arg1), action),
+                None => (None, arg1),
+            };
+
+            if !ALLOWED.iter().any(|a| *a == action) {
+                return Err(mlua::Error::runtime(format!(
+                    "systemd.unit_action: action {action:?} not in allowlist {ALLOWED:?}"
+                )));
+            }
+
+            let timeout_secs = opts
+                .as_ref()
+                .and_then(|t| t.get::<Option<f64>>("timeout").ok().flatten())
+                .unwrap_or(DEFAULT_TIMEOUT_SECS);
+            if !timeout_secs.is_finite() || timeout_secs <= 0.0 {
+                return Err(mlua::Error::runtime(
+                    "systemd.unit_action: timeout must be positive finite",
+                ));
+            }
+            let timeout = std::time::Duration::from_secs_f64(timeout_secs);
+
+            let mut argv: Vec<String> = vec![action.clone()];
+            if let Some(u) = unit {
+                validate_unit(&u)?;
+                argv.push("--".to_string());
+                argv.push(u);
+            }
+            let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+
+            // Prepend `sudo -n` when running unprivileged. systemctl returns
+            // polkit "Interactive authentication required" otherwise; the
+            // operator's NOPASSWD sudoers entry handles elevation.
+            let is_root = unsafe { libc::getuid() } == 0;
+            let mut cmd = if is_root {
+                let mut c = tokio::process::Command::new("systemctl");
+                c.args(&argv_refs);
+                c
+            } else {
+                let mut c = tokio::process::Command::new("sudo");
+                c.arg("-n").arg("systemctl");
+                c.args(&argv_refs);
+                c
+            };
+            cmd.stdin(std::process::Stdio::null());
+            cmd.stdout(std::process::Stdio::piped());
+            cmd.stderr(std::process::Stdio::piped());
+            cmd.kill_on_drop(true);
+
+            let mut child = cmd.spawn().map_err(|e| {
+                mlua::Error::runtime(format!("systemd.unit_action: spawn: {e}"))
+            })?;
+
+            let stdout_h = child.stdout.take();
+            let stderr_h = child.stderr.take();
+            let stdout_task = tokio::spawn(async move {
+                let mut buf = Vec::new();
+                if let Some(mut s) = stdout_h {
+                    use tokio::io::AsyncReadExt;
+                    let _ = s.read_to_end(&mut buf).await;
+                }
+                buf
+            });
+            let stderr_task = tokio::spawn(async move {
+                let mut buf = Vec::new();
+                if let Some(mut s) = stderr_h {
+                    use tokio::io::AsyncReadExt;
+                    let _ = s.read_to_end(&mut buf).await;
+                }
+                buf
+            });
+
+            let result = lua.create_table()?;
+            match tokio::time::timeout(timeout, child.wait()).await {
+                Ok(Ok(status)) => {
+                    let stdout = stdout_task.await.unwrap_or_default();
+                    let stderr = stderr_task.await.unwrap_or_default();
+                    result.set("status", status.code().unwrap_or(-1) as i64)?;
+                    result.set("stdout", String::from_utf8_lossy(&stdout).to_string())?;
+                    result.set("stderr", String::from_utf8_lossy(&stderr).to_string())?;
+                }
+                Ok(Err(e)) => {
+                    return Err(mlua::Error::runtime(format!(
+                        "systemd.unit_action: wait: {e}"
+                    )));
+                }
+                Err(_elapsed) => {
+                    let _ = child.start_kill();
+                    let _ = child.wait().await;
+                    stdout_task.abort();
+                    stderr_task.abort();
+                    return Err(mlua::Error::runtime(format!(
+                        "systemd.unit_action: timed out after {}s",
+                        timeout.as_secs()
+                    )));
+                }
+            }
+            Ok(result)
+        })?;
+        t.set("unit_action", unit_action)?;
         Ok(())
     }
 

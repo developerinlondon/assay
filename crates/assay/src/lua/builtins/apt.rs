@@ -9,6 +9,14 @@
 //! throwaway nspawn machine in knowhere plan 13's smoke.
 
 use mlua::{Lua, Table};
+use rand::RngExt;
+
+/// Build a process-and-time-unique temp suffix. PID alone is predictable
+/// (a co-located unprivileged process can pre-create symlinks at the
+/// expected path); 64 random bits make pre-creation impractical.
+fn tmp_suffix() -> String {
+    format!("{:016x}", rand::rng().random::<u64>())
+}
 
 pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
     let t = lua.create_table()?;
@@ -75,8 +83,15 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
     t.set(
         "list_upgradable",
         lua.create_async_function(|lua, ()| async move {
-            let (_status, stdout, _stderr) =
+            // Match list_installed's error semantics: surface non-zero apt
+            // exits to the caller instead of silently returning [].
+            let (status, stdout, stderr) =
                 run_command("apt", &["list", "--upgradable", "-a"]).await?;
+            if status != 0 {
+                return Err(mlua::Error::runtime(format!(
+                    "apt.list_upgradable: apt list exit {status}: {stderr}"
+                )));
+            }
             parse_upgradable_lines(&lua, stdout)
         })?,
     )?;
@@ -95,7 +110,8 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
             r.set("status", status as i64)?;
             r.set("stdout", stdout)?;
             r.set("stderr", stderr)?;
-            r.set("timed_out", false)?;
+            // Timeouts bubble up as mlua errors from run_command, not as a
+            // table field — so the timed_out flag isn't part of this shape.
             Ok(r)
         })?,
     )?;
@@ -120,6 +136,10 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
             if only_upgrade {
                 args.push("--only-upgrade".into());
             }
+            // `--` ends option parsing — anything after is treated as a package
+            // name even if it starts with `-`. Defends against caller-supplied
+            // names like "--allow-unauthenticated" injecting apt-get flags.
+            args.push("--".into());
             for n in &names {
                 args.push(n.clone());
             }
@@ -129,7 +149,8 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
             r.set("status", status as i64)?;
             r.set("stdout", stdout)?;
             r.set("stderr", stderr)?;
-            r.set("timed_out", false)?;
+            // Timeouts bubble up as mlua errors from run_command, not as a
+            // table field — so the timed_out flag isn't part of this shape.
             Ok(r)
         })?,
     )?;
@@ -146,6 +167,7 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
                 return Err(mlua::Error::runtime("apt.remove: names array is empty"));
             }
             let mut args: Vec<String> = vec!["remove".into(), "-y".into()];
+            args.push("--".into());
             for n in &names {
                 args.push(n.clone());
             }
@@ -155,7 +177,8 @@ pub fn register_apt(lua: &Lua) -> mlua::Result<()> {
             r.set("status", status as i64)?;
             r.set("stdout", stdout)?;
             r.set("stderr", stderr)?;
-            r.set("timed_out", false)?;
+            // Timeouts bubble up as mlua errors from run_command, not as a
+            // table field — so the timed_out flag isn't part of this shape.
             Ok(r)
         })?,
     )?;
@@ -245,6 +268,11 @@ fn parse_upgradable_lines(lua: &Lua, input: String) -> mlua::Result<Table> {
 
 // ── Shell helper ─────────────────────────────────────────────────────────────
 
+/// Hard cap on apt-get / dpkg-query / apt-cache invocations. Long enough
+/// for a fresh install over a slow link, short enough that a hung apt-get
+/// update doesn't keep the Tokio task alive forever.
+const APT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
+
 async fn run_command(program: &str, args: &[&str]) -> mlua::Result<(i32, String, String)> {
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args);
@@ -256,15 +284,56 @@ async fn run_command(program: &str, args: &[&str]) -> mlua::Result<(i32, String,
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
-    let output = cmd
-        .output()
-        .await
+    cmd.kill_on_drop(true);
+
+    // Spawn manually so we keep mutable access to `child` after timeout for
+    // explicit kill + reap (kill_on_drop's reap is async-scheduled and not
+    // guaranteed before the runtime tears down).
+    let mut child = cmd
+        .spawn()
         .map_err(|e| mlua::Error::runtime(format!("apt: spawn {program}: {e}")))?;
-    Ok((
-        output.status.code().unwrap_or(-1),
-        String::from_utf8_lossy(&output.stdout).to_string(),
-        String::from_utf8_lossy(&output.stderr).to_string(),
-    ))
+
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    let stdout_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(mut s) = stdout_handle {
+            use tokio::io::AsyncReadExt;
+            let _ = s.read_to_end(&mut buf).await;
+        }
+        buf
+    });
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(mut s) = stderr_handle {
+            use tokio::io::AsyncReadExt;
+            let _ = s.read_to_end(&mut buf).await;
+        }
+        buf
+    });
+
+    match tokio::time::timeout(APT_TIMEOUT, child.wait()).await {
+        Ok(Ok(status)) => {
+            let stdout = stdout_task.await.unwrap_or_default();
+            let stderr = stderr_task.await.unwrap_or_default();
+            Ok((
+                status.code().unwrap_or(-1),
+                String::from_utf8_lossy(&stdout).to_string(),
+                String::from_utf8_lossy(&stderr).to_string(),
+            ))
+        }
+        Ok(Err(e)) => Err(mlua::Error::runtime(format!("apt: wait {program}: {e}"))),
+        Err(_elapsed) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            stdout_task.abort();
+            stderr_task.abort();
+            Err(mlua::Error::runtime(format!(
+                "apt: {program} timed out after {}s",
+                APT_TIMEOUT.as_secs()
+            )))
+        }
+    }
 }
 
 // ── source management ────────────────────────────────────────────────────────
@@ -321,7 +390,7 @@ fn add_source(lua: &Lua, opts: Table) -> mlua::Result<Table> {
         .map_err(|e| mlua::Error::runtime(format!("apt.add_source: read key {key_path:?}: {e}")))?;
     let cur_key = std::fs::read(&key_dst).ok();
     if cur_key.as_deref() != Some(&want_key) {
-        let tmp = format!("{key_dst}.tmp.{}", std::process::id());
+        let tmp = format!("{key_dst}.tmp.{}", tmp_suffix());
         std::fs::write(&tmp, &want_key)
             .map_err(|e| mlua::Error::runtime(format!("apt.add_source: write key {tmp:?}: {e}")))?;
         std::fs::rename(&tmp, &key_dst)
@@ -333,7 +402,7 @@ fn add_source(lua: &Lua, opts: Table) -> mlua::Result<Table> {
     let want_list = format!("{}\n", source_list.trim_end());
     let cur_list = std::fs::read_to_string(&list_dst).ok();
     if cur_list.as_deref() != Some(&want_list) {
-        let tmp = format!("{list_dst}.tmp.{}", std::process::id());
+        let tmp = format!("{list_dst}.tmp.{}", tmp_suffix());
         std::fs::write(&tmp, &want_list)
             .map_err(|e| mlua::Error::runtime(format!("apt.add_source: write {tmp:?}: {e}")))?;
         std::fs::rename(&tmp, &list_dst)

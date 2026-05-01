@@ -12,6 +12,7 @@ use hyper::service::service_fn;
 #[cfg(feature = "server")]
 use hyper::{Request, Response, StatusCode};
 use mlua::{Lua, Table, UserData, Value};
+use rand::RngExt;
 #[cfg(feature = "server")]
 use std::cell::RefCell;
 #[cfg(feature = "server")]
@@ -412,6 +413,14 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
                 }
             }
 
+            // Optional max_size cap. Defaults to 1 GiB so a malicious URL
+            // can't fill the disk. Caller can pass max_size = 0 to disable.
+            const DEFAULT_MAX_SIZE: i64 = 1024 * 1024 * 1024;
+            let max_size: i64 = opts
+                .as_ref()
+                .and_then(|t| t.get::<i64>("max_size").ok())
+                .unwrap_or(DEFAULT_MAX_SIZE);
+
             // Ensure parent dir
             if let Some(parent) = std::path::Path::new(&path).parent()
                 && !parent.as_os_str().is_empty()
@@ -421,8 +430,10 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
                 })?;
             }
 
-            // Open temp file at <path>.tmp.<pid>
-            let tmp = format!("{path}.tmp.{}", std::process::id());
+            // Open temp file at <path>.tmp.<random>. Random suffix instead of
+            // PID — a co-located unprivileged process can pre-create symlinks
+            // at predictable PID-based paths.
+            let tmp = format!("{path}.tmp.{:016x}", rand::rng().random::<u64>());
             let mut file = tokio::fs::File::create(&tmp).await.map_err(|e| {
                 mlua::Error::runtime(format!("http.download: create temp {tmp:?}: {e}"))
             })?;
@@ -445,6 +456,11 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
                     let bytes = chunk
                         .map_err(|e| mlua::Error::runtime(format!("http.download: stream: {e}")))?;
                     total += bytes.len() as i64;
+                    if max_size > 0 && total > max_size {
+                        return Err(mlua::Error::runtime(format!(
+                            "http.download: response exceeds max_size ({total} > {max_size} bytes) for {url}"
+                        )));
+                    }
                     file.write_all(&bytes)
                         .await
                         .map_err(|e| mlua::Error::runtime(format!("http.download: write: {e}")))?;
