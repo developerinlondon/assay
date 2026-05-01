@@ -6,6 +6,23 @@ local M = {}
 
 -- ── Helpers ──────────────────────────────────────────────────────────────────
 
+-- Read an absolute filesystem path directly (bypasses any FileSource the
+-- consumer registered for fs.read). pkg.lua reads cache markers, downloaded
+-- binaries, and apt-source idempotency files from absolute paths under
+-- /var/cache, /usr/share, /etc — none of which a sandboxed FileSource
+-- (e.g. knowhere's LayeredFs over the embedded VFS) is going to resolve.
+-- io.open hits the real disk regardless.
+--
+-- Returns the file content as a string, or nil if the file doesn't exist
+-- or can't be opened. Caller decides whether nil is fatal.
+local function read_disk(path, mode)
+  local f = io.open(path, mode or "r")
+  if not f then return nil end
+  local body = f:read("*a")
+  f:close()
+  return body
+end
+
 local ID_PATTERN = "^[a-z0-9%-]+$"
 
 local function is_array(t)
@@ -1022,20 +1039,22 @@ function M.method.binary.install(target, entry, ctx)
   -- Step 2: short-circuit if already at target version (using marker).
   -- For host: marker matches AND install_path exists locally → no-op.
   -- For machine: marker matches AND install_path exists *inside the container* → no-op.
-  if fs.exists(installed_meta_path) then
-    local raw = fs.read(installed_meta_path)
-    local ok, m = pcall(json.parse, raw or "")
-    if ok and m and m.version == ver then
-      local present
-      if target.kind == "host" then
-        present = fs.exists(b.install_path)
-      else
-        local r = target:exec(("test -x %q"):format(b.install_path), {})
-        present = r and r.status == 0
-      end
-      if present then
-        log("  no-op: already at " .. ver)
-        return { skipped = true, reason = "already at " .. ver, noop = true }
+  do
+    local raw = read_disk(installed_meta_path)
+    if raw then
+      local ok, m = pcall(json.parse, raw)
+      if ok and m and m.version == ver then
+        local present
+        if target.kind == "host" then
+          present = fs.exists(b.install_path)
+        else
+          local r = target:exec(("test -x %q"):format(b.install_path), {})
+          present = r and r.status == 0
+        end
+        if present then
+          log("  no-op: already at " .. ver)
+          return { skipped = true, reason = "already at " .. ver, noop = true }
+        end
       end
     end
   end
@@ -1089,7 +1108,11 @@ function M.method.binary.install(target, entry, ctx)
     end
   else
     -- Read the verified binary from host cache and stream it into the container.
-    local bytes = fs.read_bytes(source_path)
+    -- read_disk uses io.open so it's not subject to consumer FileSource layering.
+    local bytes = read_disk(source_path, "rb")
+    if not bytes then
+      error(("read binary from cache failed: %s"):format(source_path))
+    end
     local cmd = ("install -D -m %s /dev/stdin %s"):format(b.mode, shell_quote(b.install_path))
     local r = target:exec(cmd, { stdin = bytes, timeout = 300 })
     if not r or r.status ~= 0 then
@@ -1145,9 +1168,9 @@ function M.method.binary.remove(target, entry, ctx)
   -- — refuse to delete blind. Missing marker means we never claimed this
   -- specific install; per the adoption policy, we still own catalog
   -- packages, so just remove. The next operation re-establishes ownership.
-  if fs.exists(installed_meta_path) then
-    local raw = fs.read(installed_meta_path)
-    local ok, m = pcall(json.parse, raw)
+  local marker_raw = read_disk(installed_meta_path)
+  if marker_raw then
+    local ok, m = pcall(json.parse, marker_raw)
     if not ok then
       error("refusing to remove: marker file " .. installed_meta_path ..
             " is corrupt (json parse failed: " .. tostring(m) .. ")")
