@@ -800,10 +800,9 @@ mod impl_linux {
             // container during package install. Stored as owned bytes because
             // the mlua::String borrow ends with the args parsing scope.
             let stdin_bytes: Option<Vec<u8>> = match opts.as_ref() {
-                Some(t) => match t.get::<Option<mlua::String>>("stdin")? {
-                    Some(s) => Some(s.as_bytes().to_vec()),
-                    None => None,
-                },
+                Some(t) => t
+                    .get::<Option<mlua::String>>("stdin")?
+                    .map(|s| s.as_bytes().to_vec()),
                 None => None,
             };
 
@@ -847,18 +846,18 @@ mod impl_linux {
                 .map_err(|e| mlua::Error::runtime(format!("systemd.machine_exec: spawn: {e}")))?;
 
             // Push stdin first (single await; child is still owned).
-            if let Some(bytes) = stdin_bytes.as_deref() {
-                if let Some(mut child_stdin) = child.stdin.take() {
-                    use tokio::io::AsyncWriteExt;
-                    if let Err(e) = child_stdin.write_all(bytes).await {
-                        let _ = child.start_kill();
-                        let _ = child.wait().await;
-                        return Err(mlua::Error::runtime(format!(
-                            "systemd.machine_exec: stdin write: {e}"
-                        )));
-                    }
-                    let _ = child_stdin.shutdown().await;
+            if let Some(bytes) = stdin_bytes.as_deref()
+                && let Some(mut child_stdin) = child.stdin.take()
+            {
+                use tokio::io::AsyncWriteExt;
+                if let Err(e) = child_stdin.write_all(bytes).await {
+                    let _ = child.start_kill();
+                    let _ = child.wait().await;
+                    return Err(mlua::Error::runtime(format!(
+                        "systemd.machine_exec: stdin write: {e}"
+                    )));
                 }
+                let _ = child_stdin.shutdown().await;
             }
 
             // Drain stdout/stderr concurrently in background tasks so a

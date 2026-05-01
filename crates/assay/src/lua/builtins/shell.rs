@@ -76,18 +76,18 @@ pub fn register_shell(lua: &Lua) -> mlua::Result<()> {
 
         // Push stdin first so we don't deadlock waiting on a child that
         // expects input. Take stdin → write → drop (closes the pipe).
-        if let Some(bytes) = stdin_bytes.as_deref() {
-            if let Some(mut child_stdin) = child.stdin.take() {
-                use tokio::io::AsyncWriteExt;
-                if let Err(e) = child_stdin.write_all(bytes).await {
-                    let _ = child.start_kill();
-                    let _ = child.wait().await;
-                    return Err(mlua::Error::runtime(format!(
-                        "shell.exec: failed to write stdin: {e}"
-                    )));
-                }
-                let _ = child_stdin.shutdown().await;
+        if let Some(bytes) = stdin_bytes.as_deref()
+            && let Some(mut child_stdin) = child.stdin.take()
+        {
+            use tokio::io::AsyncWriteExt;
+            if let Err(e) = child_stdin.write_all(bytes).await {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                return Err(mlua::Error::runtime(format!(
+                    "shell.exec: failed to write stdin: {e}"
+                )));
             }
+            let _ = child_stdin.shutdown().await;
         }
 
         // Drain stdout/stderr in background tasks so a full pipe buffer
