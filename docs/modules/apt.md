@@ -5,11 +5,10 @@ category: Builtins
 ## apt
 
 apt-get / dpkg-query wrapper builtin. No `require()` needed — `apt` is a global table. Linux
-(Debian/Ubuntu) only. Introduced in v0.16.0.
+(Debian/Ubuntu) only. Introduced in v0.15.5.
 
-> **Namespace note:** This documents the `apt.*` builtin global (apt-get/dpkg-query wrapper).
-> For the `assay.apt` Lua stdlib (apt-repo `Packages`-index reader), see
-> [`apt_index.md`](apt_index.md).
+> **Namespace note:** This documents the `apt.*` builtin global (apt-get/dpkg-query wrapper). For
+> the `assay.apt` Lua stdlib (apt-repo `Packages`-index reader), see [`apt_index.md`](apt_index.md).
 
 Mutating operations (`install`, `remove`, `update`, `add_source`) require root. All functions are
 async at the Rust level; mlua drives them as Lua coroutines so callers write straight-line code.
@@ -17,20 +16,20 @@ async at the Rust level; mlua drives them as Lua coroutines so callers write str
 ### Query / inspect
 
 - `apt.query(name)` → `{installed=bool, version=string|nil}` — Check whether a single package is
-  installed. Shells out to `dpkg-query`; returns `{installed=false, version=nil}` if the package
-  is unknown.
+  installed. Shells out to `dpkg-query`; returns `{installed=false, version=nil}` if the package is
+  unknown.
 
-- `apt.list_installed()` → `{[name] = {installed=bool, version=string}}` — Full dpkg-query
-  snapshot of all known packages, keyed by package name.
+- `apt.list_installed()` → `{[name] = {installed=bool, version=string}}` — Full dpkg-query snapshot
+  of all known packages, keyed by package name.
 
 - `apt.list_upgradable()` → `[{name, current, candidate, suite}]` — Array of packages with a
   candidate upgrade available (parsed from `apt list --upgradable -a`).
 
 ### Source management
 
-- `apt.add_source(opts)` → `{changed=bool, list_path=string, key_path=string}` — Idempotently
-  write an apt source `.list` file and its GPG keyring. Safe to call on every reconcile; only
-  writes if content differs.
+- `apt.add_source(opts)` → `{changed=bool, list_path=string, key_path=string}` — Idempotently write
+  an apt source `.list` file and its GPG keyring. Safe to call on every reconcile; only writes if
+  content differs.
   - `opts.id` (string, required): identifier matching `[a-z0-9-]+`; used as the file stem
   - `opts.source_list` (string, required): single-line `.list` content
   - `opts.key_path` (string, required): local path to the GPG `.gpg` keyring to install
@@ -40,8 +39,8 @@ async at the Rust level; mlua drives them as Lua coroutines so callers write str
 ### Mutating apt-get operations
 
 All three functions return `{status=integer, stdout=string, stderr=string, timed_out=boolean}`,
-matching the `shell.exec` result shape. `timed_out` is always `false` (timeout not yet
-implemented for apt — apt-get's own behaviour applies).
+matching the `shell.exec` result shape. `timed_out` is always `false` (timeout not yet implemented
+for apt — apt-get's own behaviour applies).
 
 - `apt.update()` — Run `apt-get update`.
 - `apt.install(opts)` — Run `apt-get install -y --no-install-recommends`.
@@ -54,7 +53,8 @@ implemented for apt — apt-get's own behaviour applies).
 
 These are exported for unit tests and not intended for production use:
 
-- `apt._parse_dpkg_lines(text)` → `{[name] = {installed, version}}` — Parse raw `dpkg-query
+- `apt._parse_dpkg_lines(text)` → `{[name] = {installed, version}}` — Parse raw
+  `dpkg-query
   -W -f='${Package}\t${Version}\t${Status}\n'` output.
 - `apt._parse_upgradable_lines(text)` → `[{name, current, candidate, suite}]` — Parse raw
   `apt list --upgradable -a` output.

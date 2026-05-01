@@ -1,12 +1,12 @@
 ---
 category: Infrastructure
-tagline: Package manager framework — catalog, templates, targets, plan/reconcile (v0.16.0+)
+tagline: Package manager framework — catalog, templates, targets, plan/reconcile (v0.15.5+)
 ---
 
 ## assay.pkg
 
 Package manager framework — catalog loading, target abstractions, plan generation, and version
-comparison. Introduced in v0.16.0.
+comparison. Introduced in v0.15.5.
 
 ```lua
 local pkg = require("assay.pkg")
@@ -17,10 +17,10 @@ local pkg = require("assay.pkg")
 `catalog.load` and `templates.load` both accept an ordered array of directory paths. Entries from
 later layers **overwrite** entries with the same `id` (full-entry override, no field-merge):
 
-| Layer index | `_origin` value |
-|-------------|-----------------|
-| 1           | `"built-in"` |
-| 2           | `"plugin:<dirname>"` |
+| Layer index | `_origin` value         |
+| ----------- | ----------------------- |
+| 1           | `"built-in"`            |
+| 2           | `"plugin:<dirname>"`    |
 | 3+          | `"operator:<filename>"` |
 
 **Strict-override:** if a later-layer entry fails validation, any earlier valid entry with the same
@@ -46,20 +46,20 @@ responses, plan writers) must strip it before output.
 
 ```toml
 [package]
-id           = "curl"
+id = "curl"
 display_name = "cURL"
-methods      = ["apt"]        # ordered; first method is preferred at plan time
+methods = ["apt"] # ordered; first method is preferred at plan time
 
 [package.apt]
-source_list  = "deb https://pkgs.example.com/debian stable main"
+source_list = "deb https://pkgs.example.com/debian stable main"
 package_name = "curl"
 
-[package.binary]              # optional; enables binary install fallback
-release_api     = "https://api.github.com/repos/example/curl/releases/latest"
-asset_pattern   = "curl-{ver}-linux-{arch}.tar.gz"
-sha256_source   = "checksums"  # one of: "asset" (sibling .sha256), "checksums" (sha256sums.txt)
-install_path    = "/usr/local/bin/curl"
-mode            = "0755"
+[package.binary] # optional; enables binary install fallback
+release_api = "https://api.github.com/repos/example/curl/releases/latest"
+asset_pattern = "curl-{ver}-linux-{arch}.tar.gz"
+sha256_source = "checksums" # one of: "asset" (sibling .sha256), "checksums" (sha256sums.txt)
+install_path = "/usr/local/bin/curl"
+mode = "0755"
 ```
 
 ---
@@ -80,9 +80,9 @@ Templates group catalog ids into named sets.
 
 ```toml
 [template]
-id           = "base"
+id = "base"
 display_name = "Base tooling"
-packages     = ["curl", "jq", "git"]
+packages = ["curl", "jq", "git"]
 ```
 
 ---
@@ -100,10 +100,10 @@ Run a command on the target. Returns `{status, stdout, stderr, timed_out}` (same
 
 The safe cross-target `opts` subset is:
 
-| Key       | Type            | Description |
-|-----------|-----------------|-------------|
-| `timeout` | number          | Seconds; `0` means no timeout |
-| `env`     | table           | `{[name] = value}` extra environment variables |
+| Key       | Type            | Description                                                                |
+| --------- | --------------- | -------------------------------------------------------------------------- |
+| `timeout` | number          | Seconds; `0` means no timeout                                              |
+| `env`     | table           | `{[name] = value}` extra environment variables                             |
 | `stdin`   | string \| bytes | Bytes piped to the inner process via systemd-run --pipe / shell.exec stdin |
 
 `shell.exec`-only opts (`cwd`) are silently dropped on machine targets — there's no
@@ -126,8 +126,8 @@ if r2.timed_out then error("exec timed out") end
 Simple SemVer-style comparator (integers only; non-numeric trailing components silently dropped).
 Strips a leading `"v"` before parsing.
 
-- `pkg.version.parse(s)` → `[integer]` — Parse a version string into an integer array. Returns
-  `{0}` for unparseable input rather than `nil`.
+- `pkg.version.parse(s)` → `[integer]` — Parse a version string into an integer array. Returns `{0}`
+  for unparseable input rather than `nil`.
 
 - `pkg.version.cmp(a, b)` → `-1 | 0 | 1` — Compare two version strings. Shorter arrays are
   zero-padded to match the longer.
@@ -145,8 +145,8 @@ pkg.version.cmp("v2.0", "2.0.0")    -- 0  (leading "v" stripped; zero-padded)
 local ops = pkg.plan(target_id, desired_set, actual, catalog_entries)
 ```
 
-Pure function — no I/O, no side effects. Builds a deterministic operation array to converge
-`actual` toward `desired_set`.
+Pure function — no I/O, no side effects. Builds a deterministic operation array to converge `actual`
+toward `desired_set`.
 
 - `target_id` (string): informational only; included for logging (`"host"` or machine name)
 - `desired_set` (string[]): catalog ids to ensure are installed; order ignored, sorted internally
@@ -156,11 +156,11 @@ Pure function — no I/O, no side effects. Builds a deterministic operation arra
 
 **Returns** an array of operation tables. Each operation has at minimum `{op, id, method}`:
 
-| `op`        | Additional fields | Meaning |
-|-------------|-------------------|---------|
-| `"install"` | `target_version`  | Package not installed |
+| `op`        | Additional fields | Meaning                             |
+| ----------- | ----------------- | ----------------------------------- |
+| `"install"` | `target_version`  | Package not installed               |
 | `"upgrade"` | `from`, `to`      | Installed but `version < available` |
-| `"skip"`    | `reason`          | No catalog entry found for id |
+| `"skip"`    | `reason`          | No catalog entry found for id       |
 
 `pkg.plan` **never removes** — packages in `actual` but not in `desired_set` are ignored.
 
@@ -180,8 +180,7 @@ local ops = pkg.plan("host", { "curl", "jq" }, {
 
 ### Caller responsibilities
 
-These pieces stay outside the framework because they're product-specific:
-audit-event emission, distributed locking, per-run log rotation, and the
-desired-state file. Callers compose the building blocks (`pkg.catalog`,
-`pkg.templates`, `pkg.target`, `pkg.version`, `pkg.method.*`, `pkg.release`,
+These pieces stay outside the framework because they're product-specific: audit-event emission,
+distributed locking, per-run log rotation, and the desired-state file. Callers compose the building
+blocks (`pkg.catalog`, `pkg.templates`, `pkg.target`, `pkg.version`, `pkg.method.*`, `pkg.release`,
 `pkg.plan`, `pkg.query_all`, `pkg.apply`) into their own reconcile loop.

@@ -5,9 +5,9 @@ tagline: Debian/Ubuntu apt Packages-index reader (require("assay.apt"))
 
 ## assay.apt (Lua stdlib — apt-repo index reader)
 
-> **Note:** This documents `require("assay.apt")` — the Lua stdlib for reading apt-style
-> `Packages` indices over HTTP. For the `apt.*` builtin global (apt-get/dpkg-query wrapper
-> introduced in v0.16.0), see [`apt.md`](apt.md).
+> **Note:** This documents `require("assay.apt")` — the Lua stdlib for reading apt-style `Packages`
+> indices over HTTP. For the `apt.*` builtin global (apt-get/dpkg-query wrapper introduced in
+> v0.15.5), see [`apt.md`](apt.md).
 
 Debian/Ubuntu apt package index reader. Fetches a `Packages` index from any apt-style HTTP
 repository, transparently decompressing `.gz` / `.xz` / `.zst` variants, parses the RFC 822-style

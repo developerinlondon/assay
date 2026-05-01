@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.16.0"
+version = "0.15.5"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -114,8 +114,8 @@ axum = "0.8.8"
 http-body-util = { version = "0.1", optional = true }
 hyper = { version = "1", features = ["http1", "server"], optional = true }
 hyper-util = { version = "0.1", features = ["tokio"], optional = true }
-tower-http = { version = "0.6.8", features = ["cors", "trace"] }
 tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6.8", features = ["cors", "trace"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

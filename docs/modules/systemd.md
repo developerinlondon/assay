@@ -37,10 +37,10 @@ as Lua coroutines so callers write straight-line code.
 - `systemd.journal_follow(opts, fn)` — not yet implemented; returns an explicit runtime error.
   Tracked as a Phase 3 follow-up (sd_journal_wait + cancellation handle across the FFI boundary).
 
-### Machine exec (v0.16.0+)
+### Machine exec (v0.15.5+)
 
-- `systemd.machine_exec(name, cmd, opts?)` → `{status, stdout, stderr, timed_out}` — Run a
-  command inside a systemd-machined nspawn container. The command is passed to `/bin/sh -c`.
+- `systemd.machine_exec(name, cmd, opts?)` → `{status, stdout, stderr, timed_out}` — Run a command
+  inside a systemd-machined nspawn container. The command is passed to `/bin/sh -c`.
   - `name` (string): machine name as returned by `systemd.list_machines()`
   - `cmd` (string): shell command string
   - `opts` (table, optional):

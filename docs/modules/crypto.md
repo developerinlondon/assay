@@ -20,7 +20,8 @@ Cryptography utilities. No `require()` needed.
   - `key`: PEM-encoded RSA public key string, OR a JWKS table `{ keys = { ... } }`
     - PEM path uses `opts.algorithm` (default `"RS256"`)
     - JWKS path dispatches on the JWT header's `kid` and uses the matching JWK's `alg`
-  - `opts`: `{algorithm = "RS256"|"RS384"|"RS512", audience = "x" | {"x","y"}, issuer = "x" | {"x","y"}, leeway = 0, validate_exp = true, validate_nbf = false, required_claims = {"exp"}}`
+  - `opts`:
+    `{algorithm = "RS256"|"RS384"|"RS512", audience = "x" | {"x","y"}, issuer = "x" | {"x","y"}, leeway = 0, validate_exp = true, validate_nbf = false, required_claims = {"exp"}}`
   - Returns the same shape as `jwt_decode`; raises on signature mismatch, expired token, claim
     mismatch, malformed token, or missing JWK
   - Pair with `assay.ory.hydra` `c.discovery:jwks()` to fetch the issuer's JWKS table at boot
@@ -30,11 +31,12 @@ Cryptography utilities. No `require()` needed.
   - `alg`: `"sha256"` (default) | `"sha384"` | `"sha512"`
   - `raw`: `true` for binary output, `false` (default) for hex
 - `crypto.random(len)` → string — Secure random hex string of `len` bytes
-- `crypto.hash_file(path, algo?)` → string — Hash a file on disk, returning lowercase hex (v0.16.0+).
+- `crypto.hash_file(path, algo?)` → string — Hash a file on disk, returning lowercase hex
+  (v0.15.5+).
   - `path` (string): file to hash
   - `algo` (string, optional): algorithm — same set as `crypto.hash`: `"sha224"` | `"sha256"` |
-    `"sha384"` | `"sha512"` | `"sha3-224"` | `"sha3-256"` | `"sha3-384"` | `"sha3-512"`.
-    Defaults to `"sha256"`.
+    `"sha384"` | `"sha512"` | `"sha3-224"` | `"sha3-256"` | `"sha3-384"` | `"sha3-512"`. Defaults to
+    `"sha256"`.
   - Streams the file in chunks; memory usage does not scale with file size
   ```lua
   local digest = crypto.hash_file("/tmp/release.tar.gz")            -- sha256, default

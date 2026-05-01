@@ -60,8 +60,8 @@ Options table supports `{headers = {["X-Key"] = "value"}}`.
     `conn:write(data, opts?)` (`opts.binary=true` for binary frames), `conn:close(code?, reason?)`,
     `conn:is_closed()`. Field: `conn.peer_addr`. Ping/pong is handled automatically by the
     underlying tungstenite stack. For browser-shell bridging see [`assay.shell`](shell.md).
-- `http.download(url, path, opts?)` → `integer` — Stream a URL to disk (v0.16.0+). Writes via
-  temp file + atomic rename — partial downloads are removed on error.
+- `http.download(url, path, opts?)` → `integer` — Stream a URL to disk (v0.15.5+). Writes via temp
+  file + atomic rename — partial downloads are removed on error.
   - `url` (string): URL to GET
   - `path` (string): destination file path; parent dirs are created if needed
   - `opts` (table, optional): `headers = {[name] = value}`, `timeout` (seconds, > 0)

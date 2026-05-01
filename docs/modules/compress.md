@@ -17,8 +17,8 @@ HTTP and feeding them to a parser without shelling out.
 Each raises a runtime error tagged with the function name (e.g.
 `compress.gunzip: invalid gzip header`) when the input is not a valid stream.
 
-- `compress.untar(archive_path, dest_path, opts)` → `integer` — Extract a single member from a
-  tar archive to disk (v0.16.0+). Writes via temp file + atomic rename.
+- `compress.untar(archive_path, dest_path, opts)` → `integer` — Extract a single member from a tar
+  archive to disk (v0.15.5+). Writes via temp file + atomic rename.
   - `archive_path` (string): path to the tar archive
   - `dest_path` (string): destination file path; parent dirs are created if needed
   - `opts` (table, required):
