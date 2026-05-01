@@ -564,9 +564,11 @@ end
 --- Read cached release metadata. Returns nil when missing or unparseable.
 function M.release.read_meta(entry_id, ctx)
   local p = M.release.meta_path(entry_id, ctx)
-  if not fs.exists(p) then return nil end
-  local raw = fs.read(p)
-  local ok, parsed = pcall(json.parse, raw or "")
+  -- read_disk bypasses the consumer's FileSource (which may not resolve
+  -- absolute paths under /var/cache).
+  local raw = read_disk(p)
+  if not raw then return nil end
+  local ok, parsed = pcall(json.parse, raw)
   if ok and type(parsed) == "table" then return parsed end
   return nil
 end
@@ -780,10 +782,11 @@ local function apt_add_source_via_sudo(entry, log)
 
   local changed = false
 
-  -- Idempotent key install. fs.read_bytes is binary-safe; fs.read rejects
-  -- a GPG keyring (non-UTF-8) with "invalid utf-8 sequence" errors.
-  local want_key = fs.read_bytes(key_tmp)
-  local cur_key  = fs.exists(key_dst) and fs.read_bytes(key_dst) or nil
+  -- Idempotent key install. read_disk uses io.open in binary mode so it's
+  -- binary-safe AND bypasses the consumer's FileSource (fs.read/read_bytes
+  -- via LayeredFs can't reach /tmp or /usr/share/keyrings/).
+  local want_key = read_disk(key_tmp, "rb")
+  local cur_key  = read_disk(key_dst, "rb")
   if cur_key ~= want_key then
     local r = shell.exec(
       sudo .. ("install -D -m 0644 -o root -g root %q %q"):format(key_tmp, key_dst), {})
@@ -795,10 +798,10 @@ local function apt_add_source_via_sudo(entry, log)
   end
   fs.remove(key_tmp)
 
-  -- Idempotent list install. Use read_bytes for symmetry with the key path
-  -- and to keep the comparison byte-exact (no implicit normalization).
+  -- Idempotent list install. read_disk for symmetry with the key path
+  -- and FileSource bypass.
   local want_list = b.source_list .. "\n"
-  local cur_list  = fs.exists(list_dst) and fs.read_bytes(list_dst) or nil
+  local cur_list  = read_disk(list_dst, "rb")
   if cur_list ~= want_list then
     local list_tmp = "/tmp/assay-pkg-list-" .. id .. ".list"
     fs.write(list_tmp, want_list)
@@ -1107,17 +1110,45 @@ function M.method.binary.install(target, entry, ctx)
                                                     (r and r.stderr) or "unknown"))
     end
   else
-    -- Read the verified binary from host cache and stream it into the container.
-    -- read_disk uses io.open so it's not subject to consumer FileSource layering.
-    local bytes = read_disk(source_path, "rb")
-    if not bytes then
-      error(("read binary from cache failed: %s"):format(source_path))
+    -- Use `machinectl copy-to` to transfer the binary into the container.
+    --
+    -- Earlier versions streamed bytes via target:exec stdin → install -D
+    -- /dev/stdin. That worked for small payloads but broke with EPIPE on
+    -- larger binaries (rustic ~22 MB) when the multi-layer pipe path
+    --   shell.exec → /bin/sh → sudo → systemd-run --pipe → /bin/sh → install
+    -- closed early in the unprivileged-elevation branch. machinectl copy-to
+    -- avoids the pipe chain entirely; it's binary-safe regardless of size.
+    local sudo = is_root() and "" or "sudo -n "
+    local install_dir = b.install_path:match("^(.*)/[^/]+$") or "/"
+
+    -- Ensure parent dir exists in container (machinectl copy-to does NOT
+    -- auto-create intermediate directories).
+    local mkdir_r = target:exec(("mkdir -p %q"):format(install_dir), { timeout = 30 })
+    if not mkdir_r or mkdir_r.status ~= 0 then
+      error(("mkdir -p %s in %s failed: %s"):format(
+        install_dir, target.id, (mkdir_r and mkdir_r.stderr) or "unknown"))
     end
-    local cmd = ("install -D -m %s /dev/stdin %s"):format(b.mode, shell_quote(b.install_path))
-    local r = target:exec(cmd, { stdin = bytes, timeout = 300 })
+
+    local copy_cmd = ("%smachinectl copy-to %s %s %s"):format(
+      sudo, shell_quote(target.id), shell_quote(source_path), shell_quote(b.install_path))
+    local r = shell.exec(copy_cmd, { timeout = 300 })
     if not r or r.status ~= 0 then
-      error(("install -> %s in %s failed: %s"):format(b.install_path, target.id,
-                                                       (r and r.stderr) or "unknown"))
+      -- Treat "File exists" as success — machinectl copy-to refuses to
+      -- overwrite, but install_path may already hold our verified binary
+      -- from a prior partial run. Step 7 below will re-record the marker.
+      local stderr = (r and r.stderr) or "unknown"
+      if not stderr:lower():find("file exists", 1, true) then
+        error(("machinectl copy-to %s -> %s in %s failed: %s"):format(
+          source_path, b.install_path, target.id, stderr))
+      end
+    end
+
+    -- machinectl copy-to preserves source mode but ours is u+rw on the host
+    -- cache; explicitly chmod to the catalog-declared mode (typically 0755).
+    local chmod_r = target:exec(("chmod %s %q"):format(b.mode, b.install_path), { timeout = 30 })
+    if not chmod_r or chmod_r.status ~= 0 then
+      error(("chmod %s on %s in %s failed: %s"):format(
+        b.mode, b.install_path, target.id, (chmod_r and chmod_r.stderr) or "unknown"))
     end
   end
   log("  installed at " .. b.install_path .. " (mode " .. b.mode .. ")")
