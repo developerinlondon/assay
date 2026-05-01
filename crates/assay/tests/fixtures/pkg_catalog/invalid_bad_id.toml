@@ -1,0 +1,13 @@
+[package]
+id           = "Invalid_BadId"
+display_name = "Invalid: id has uppercase + underscore"
+description  = "Should be rejected by validator (id pattern [a-z0-9-]+)"
+homepage     = "https://example.com"
+methods      = ["binary"]
+
+[package.binary]
+release_api   = "https://api.example.com/releases/latest"
+asset_pattern = "x-{arch}"
+sha256_source = "asset"
+install_path  = "/usr/local/bin/x"
+mode          = "0755"

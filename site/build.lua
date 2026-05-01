@@ -486,7 +486,9 @@ local function render_stdlib_md_table()
     end
   end
   lines[#lines + 1] = ""
-  lines[#lines + 1] = "<!-- END STDLIB TABLE -->"
+  -- Note: the end-marker is NOT appended here. replace_block's post_pat
+  -- captures the end-marker into `post`, so prepending it again here
+  -- caused the marker to be doubled on every regen run.
   return table.concat(lines, "\n")
 end
 

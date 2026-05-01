@@ -2,52 +2,71 @@
 
 All notable changes to Assay are documented here.
 
+## 0.15.5 — UNRELEASED
+
+### Added
+
+- `apt` builtin: `apt.query`, `apt.list_installed`, `apt.list_upgradable`, `apt.add_source`,
+  `apt.update`, `apt.install`, `apt.remove`. Wraps `apt-get` and `dpkg-query` for use by the package
+  manager framework.
+- `http.download(url, path, opts)`: streams a URL to disk via temp-file + atomic rename, with
+  optional headers and timeout.
+- `crypto.hash_file(path, algo)`: file-streamed hashing (sha2/sha3 family), avoids loading multi-MB
+  binaries into Lua strings.
+- `compress.untar(archive_path, dest_path, opts)`: extracts a single named member from a tar archive
+  (auto-detects gz/xz/zst from extension).
+- `systemd.machine_exec(name, cmd, opts)`: runs a command inside an nspawn machine via
+  `systemd-run --machine=<name> --pipe --quiet --wait --collect`. Returns the same
+  `{status, stdout, stderr, timed_out}` shape as `shell.exec`.
+- `assay.pkg` Lua stdlib (`require("assay.pkg")`): catalog/template loaders with three-layer overlay
+  (built-in / plugin / operator), strict-override on invalid entries, version comparator
+  (semver/v-prefix/calver), host/machine target abstractions, deterministic plan generator.
+
 ## [assay-engine 0.4.1] - 2026-04-29
 
 - **Re-publish so `assay_engine::embedded` is reachable from crates.io.** PR #104 added
   `pub mod embedded` (the `embedded::build()` API used to compose assay-engine into a parent
-  binary's tokio runtime + axum router), but it landed *after* `assay-engine 0.4.0` was tagged
-  on commit `eae2296`. The published `0.4.0` therefore ships `lib.rs` with `config / engine_api /
-  init / server / state` and no `embedded`, so any consumer wanting a registry version pin
-  against the embedded API was forced onto a `git`/`rev` pin against `main`. Patch bump cuts
-  a release that actually contains the module. No source changes vs. main HEAD.
+  binary's tokio runtime + axum router), but it landed _after_ `assay-engine 0.4.0` was tagged on
+  commit `eae2296`. The published `0.4.0` therefore ships `lib.rs` with
+  `config / engine_api /
+  init / server / state` and no `embedded`, so any consumer wanting a
+  registry version pin against the embedded API was forced onto a `git`/`rev` pin against `main`.
+  Patch bump cuts a release that actually contains the module. No source changes vs. main HEAD.
 
 ## [assay-domain 0.2.1] - 2026-04-28
 
 - **Add `EngineEventBus::prune_with(PruneOpts)` for namespace-scoped pruning.** The existing
   `prune(before_ts)` issues `DELETE WHERE ts < ?` with no namespace filter, which deletes events
-  from every namespace in the shared table. That's correct for the global cluster-wide cleanup
-  loop in `assay-workflow::events_cleanup`, but it made tests (and tenant-scoped callers) racy:
-  one bus instance's `prune` would silently delete another instance's rows. The
-  non-`#[serial]` test `append_then_read_round_trip` started losing its row when
-  `prune_removes_older_than_cutoff` ran concurrently — `serial_test::serial` only synchronises
-  tagged tests, so a non-tagged test in the same suite races freely. New `prune_with` takes a
-  `PruneOpts` struct (`#[non_exhaustive]`, so future filter fields like `subsystem`, `kind`, or
-  `dry_run` add non-breakingly): `namespace = Some(ns)` scopes the delete; `namespace = None`
-  matches the global semantic. The trait method has a default impl that forwards to `prune` for
-  the `None` case and errors otherwise — non-breaking for external implementors of
-  `EngineEventBus`.
+  from every namespace in the shared table. That's correct for the global cluster-wide cleanup loop
+  in `assay-workflow::events_cleanup`, but it made tests (and tenant-scoped callers) racy: one bus
+  instance's `prune` would silently delete another instance's rows. The non-`#[serial]` test
+  `append_then_read_round_trip` started losing its row when `prune_removes_older_than_cutoff` ran
+  concurrently — `serial_test::serial` only synchronises tagged tests, so a non-tagged test in the
+  same suite races freely. New `prune_with` takes a `PruneOpts` struct (`#[non_exhaustive]`, so
+  future filter fields like `subsystem`, `kind`, or `dry_run` add non-breakingly):
+  `namespace = Some(ns)` scopes the delete; `namespace = None` matches the global semantic. The
+  trait method has a default impl that forwards to `prune` for the `None` case and errors otherwise
+  — non-breaking for external implementors of `EngineEventBus`.
 
 ## [assay 0.15.4] - 2026-04-28
 
 - **Rename `assay.hashicorp_vault` → `assay.hashicorp.vault`** (closes #92). Establishes a proper
-  `hashicorp` namespace mirroring `assay.ory.*`, leaving room for future submodules (consul,
-  nomad, boundary, terraform, packer, waypoint). New `assay.hashicorp` umbrella module re-exports
-  `vault`. The `assay.openbao` alias now loads through the renamed path. **Breaking** (no
-  back-compat shim): scripts requiring `assay.hashicorp_vault` must update to
-  `assay.hashicorp.vault`.
+  `hashicorp` namespace mirroring `assay.ory.*`, leaving room for future submodules (consul, nomad,
+  boundary, terraform, packer, waypoint). New `assay.hashicorp` umbrella module re-exports `vault`.
+  The `assay.openbao` alias now loads through the renamed path. **Breaking** (no back-compat shim):
+  scripts requiring `assay.hashicorp_vault` must update to `assay.hashicorp.vault`.
 - **Fix `M.ensure_credentials` and `M.assert_secret` mount handling.** Both helpers previously
   hardcoded the KV mount as `"secrets"`, making them unusable against any other mount. Signatures
   now take an explicit `mount` arg: `ensure_credentials(client, mount, path, check_key, generator)`
   and `assert_secret(client, mount, path, expected_keys)`. **Breaking** signature change for any
-  existing callers (in practice none, since the hardcoded-mount limitation made the helpers
-  unusable for non-`secrets` mounts).
+  existing callers (in practice none, since the hardcoded-mount limitation made the helpers unusable
+  for non-`secrets` mounts).
 
 ## [assay 0.15.2] - 2026-04-27
 
-- **`crypto.jwt_verify(token, key, opts?)`** — verify-side mirror of `jwt_sign`. PEM
-  (RS256/384/512) or JWKS table (dispatched by `kid`). Validates `aud`/`iss`/`exp`/`nbf`
-  with optional `leeway`. Lets pure-Lua services accept JWTs without an `assay-engine`.
+- **`crypto.jwt_verify(token, key, opts?)`** — verify-side mirror of `jwt_sign`. PEM (RS256/384/512)
+  or JWKS table (dispatched by `kid`). Validates `aud`/`iss`/`exp`/`nbf` with optional `leeway`.
+  Lets pure-Lua services accept JWTs without an `assay-engine`.
 
 ## [assay-engine 0.4.0 / assay-auth 0.3.0 / assay-vault 0.2.0] - 2026-04-27
 
@@ -60,12 +79,12 @@ All notable changes to Assay are documented here.
 
 **Breaking change (pre-1.0 minor bump).** Adding the `external_issuers` field to `AuthCtx` and
 `AuthConfig` changes their shapes; per pre-1.0 semver convention the minor version is the
-breaking-change bump. `assay-vault 0.2.0` rides along — its dep declaration on `assay-auth` had
-to update from `"0.2"` to `"0.3"` (the published `assay-vault 0.1.0` couldn't be reused because
-its baked-in manifest pinned the old assay-auth, and there's no way to mutate a published crate).
-While doing it, every public config struct in all three crates is now marked `#[non_exhaustive]`
-so future field additions are non-breaking — `AuthCtx`, `AuthConfig`, `EngineConfig`,
-`BackendConfig`, `ServerConfig`, `WorkflowConfig`, `AuthSessionConfig`, `AuthPasskeyConfig`,
+breaking-change bump. `assay-vault 0.2.0` rides along — its dep declaration on `assay-auth` had to
+update from `"0.2"` to `"0.3"` (the published `assay-vault 0.1.0` couldn't be reused because its
+baked-in manifest pinned the old assay-auth, and there's no way to mutate a published crate). While
+doing it, every public config struct in all three crates is now marked `#[non_exhaustive]` so future
+field additions are non-breaking — `AuthCtx`, `AuthConfig`, `EngineConfig`, `BackendConfig`,
+`ServerConfig`, `WorkflowConfig`, `AuthSessionConfig`, `AuthPasskeyConfig`,
 `AuthOidcProviderConfig`, `DashboardConfig`, `LoggingConfig`, `ExternalIssuerConfig`, plus all 51
 public structs/enums in `assay-vault` are now `#[non_exhaustive]` and all require
 `Default::default()` + field assignment for external construction. Pattern matches on
@@ -73,47 +92,45 @@ public structs/enums in `assay-vault` are now `#[non_exhaustive]` and all requir
 `ActiveKek`, `Parent`) from outside the crate must include a wildcard arm.
 
 **Headline:** **JWT pass-through validation.** The engine now accepts JWTs minted by an upstream
-OIDC provider (Hydra, Keycloak, Auth0, …) on incoming `Authorization: Bearer ...` requests
-without managing engine-side users. Each issuer's JWKS is discovered once, cached in memory,
-and refreshed in the background — handles upstream key rotation transparently. Restores the
-v0.12.1 `--auth-issuer` / `--auth-audience` behavior in TOML config form, with multi-issuer
-support added.
+OIDC provider (Hydra, Keycloak, Auth0, …) on incoming `Authorization: Bearer ...` requests without
+managing engine-side users. Each issuer's JWKS is discovered once, cached in memory, and refreshed
+in the background — handles upstream key rotation transparently. Restores the v0.12.1
+`--auth-issuer` / `--auth-audience` behavior in TOML config form, with multi-issuer support added.
 
 This is the integration shape every operator who already runs an IdP wanted: keep your existing
-identity stack, point assay-engine at it, accept JWTs forwarded by a trusted edge — no engine
-user table, no engine sessions, no schema migrations on the auth side, no double-auth in front
-of the engine. See `site/pages/auth-pass-through.html` for the architecture write-up.
+identity stack, point assay-engine at it, accept JWTs forwarded by a trusted edge — no engine user
+table, no engine sessions, no schema migrations on the auth side, no double-auth in front of the
+engine. See `site/pages/auth-pass-through.html` for the architecture write-up.
 
 ### Added
 
-- **`[[auth.external_issuers]]` config block** — list of trusted upstream OIDC issuers, each
-  with `issuer_url`, `audience`, and `jwks_refresh_secs`. The engine discovers each issuer at
-  boot via `<issuer_url>/.well-known/openid-configuration`, caches the JWKS, and verifies
-  incoming JWTs against the matching key set. Tokens are routed by `iss` claim — no
-  unnecessary cryptography on tokens for issuers we don't trust.
-- **`assay_auth::external_jwt::ExternalJwtIssuer`** — public verifier type with full doc
-  comments; usable directly by embedders who compose their own auth gate.
+- **`[[auth.external_issuers]]` config block** — list of trusted upstream OIDC issuers, each with
+  `issuer_url`, `audience`, and `jwks_refresh_secs`. The engine discovers each issuer at boot via
+  `<issuer_url>/.well-known/openid-configuration`, caches the JWKS, and verifies incoming JWTs
+  against the matching key set. Tokens are routed by `iss` claim — no unnecessary cryptography on
+  tokens for issuers we don't trust.
+- **`assay_auth::external_jwt::ExternalJwtIssuer`** — public verifier type with full doc comments;
+  usable directly by embedders who compose their own auth gate.
 - **Boot-time exemption** — when `external_issuers` is non-empty the engine no longer requires
   operator users / `admin_api_keys` to be configured. The upstream IdP is the source of truth.
-- **9 unit tests** covering happy path, wrong issuer, wrong audience, unknown kid, expired
-  token, audience opt-out, multi-issuer routing by `iss`, unknown-issuer fall-through, and
-  empty-list short-circuit.
+- **9 unit tests** covering happy path, wrong issuer, wrong audience, unknown kid, expired token,
+  audience opt-out, multi-issuer routing by `iss`, unknown-issuer fall-through, and empty-list
+  short-circuit.
 
 ### Changed
 
-- The "no operator users" boot-error message now mentions `[[auth.external_issuers]]` as a
-  third valid satisfying condition. Operators who configure pass-through don't need to also
-  set `admin_api_keys`.
+- The "no operator users" boot-error message now mentions `[[auth.external_issuers]]` as a third
+  valid satisfying condition. Operators who configure pass-through don't need to also set
+  `admin_api_keys`.
 
 ### Why this matters
 
-Every comparable auth stack — Ory Hydra, Keycloak, Auth0 SDKs — assumes you bring your own
-edge that validates JWTs and forwards. Few of them ship a single binary that *does* the
-validation natively, with JWKS caching + refresh, multi-issuer routing, and a sensible default
-config — without making you stand up the IdP itself. That's what this release adds. Combined
-with the engine's existing OIDC provider mode (assay-engine ALSO ships as an IdP), operators
-can mix and match: act as the IdP for some traffic, accept upstream JWTs for the rest, all
-behind one binary.
+Every comparable auth stack — Ory Hydra, Keycloak, Auth0 SDKs — assumes you bring your own edge that
+validates JWTs and forwards. Few of them ship a single binary that _does_ the validation natively,
+with JWKS caching + refresh, multi-issuer routing, and a sensible default config — without making
+you stand up the IdP itself. That's what this release adds. Combined with the engine's existing OIDC
+provider mode (assay-engine ALSO ships as an IdP), operators can mix and match: act as the IdP for
+some traffic, accept upstream JWTs for the rest, all behind one binary.
 
 ## [assay-engine 0.3.1] - 2026-04-27
 

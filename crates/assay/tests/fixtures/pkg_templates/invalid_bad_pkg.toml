@@ -1,0 +1,5 @@
+[template]
+id           = "bad"
+display_name = "Bad"
+description  = "References a catalog id that doesn't exist"
+packages     = ["test-apt-only", "does-not-exist"]

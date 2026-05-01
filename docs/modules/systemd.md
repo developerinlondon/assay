@@ -37,6 +37,23 @@ as Lua coroutines so callers write straight-line code.
 - `systemd.journal_follow(opts, fn)` — not yet implemented; returns an explicit runtime error.
   Tracked as a Phase 3 follow-up (sd_journal_wait + cancellation handle across the FFI boundary).
 
+### Machine exec (v0.15.5+)
+
+- `systemd.machine_exec(name, cmd, opts?)` → `{status, stdout, stderr, timed_out}` — Run a command
+  inside a systemd-machined nspawn container. The command is passed to `/bin/sh -c`.
+  - `name` (string): machine name as returned by `systemd.list_machines()`
+  - `cmd` (string): shell command string
+  - `opts` (table, optional):
+    - `timeout` (number): seconds; triggers a graceful kill of the container process on elapse
+    - `env` (table): `{ [name] = value }` — extra environment variables
+  - Returns `{status=integer, stdout=string, stderr=string, timed_out=boolean}` — same shape as
+    `shell.exec`. `timed_out` is `true` if the timeout elapsed before the process exited.
+  ```lua
+  local r = systemd.machine_exec("mycontainer", "dpkg-query -W curl", { timeout = 10 })
+  if r.timed_out then error("exec timed out") end
+  print(r.stdout)
+  ```
+
 ### Permissions
 
 Lifecycle methods (`start`, `stop`, machine lifecycle) require the calling process to have polkit

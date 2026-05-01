@@ -12,6 +12,7 @@ use hyper::service::service_fn;
 #[cfg(feature = "server")]
 use hyper::{Request, Response, StatusCode};
 use mlua::{Lua, Table, UserData, Value};
+use rand::RngExt;
 #[cfg(feature = "server")]
 use std::cell::RefCell;
 #[cfg(feature = "server")]
@@ -264,101 +265,233 @@ pub fn register_http(lua: &Lua, client: reqwest::Client) -> mlua::Result<()> {
     // The extra router is cloned per-connection (`axum::Router: Clone` is a
     // shallow `Arc` clone — cheap).
     #[cfg(feature = "server")]
-    let serve_with_extra_fn = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
-        let mut args_iter = args.into_iter();
+    let serve_with_extra_fn =
+        lua.create_async_function(|lua, args: mlua::MultiValue| async move {
+            let mut args_iter = args.into_iter();
 
-        let port: u16 = match args_iter.next() {
-            Some(Value::Integer(n)) => n as u16,
-            _ => {
-                return Err::<(), _>(mlua::Error::runtime(
-                    "http.serve_with_extra: first argument must be a port number",
-                ));
-            }
-        };
+            let port: u16 = match args_iter.next() {
+                Some(Value::Integer(n)) => n as u16,
+                _ => {
+                    return Err::<(), _>(mlua::Error::runtime(
+                        "http.serve_with_extra: first argument must be a port number",
+                    ));
+                }
+            };
 
-        let routes_table = match args_iter.next() {
-            Some(Value::Table(t)) => t,
-            _ => {
-                return Err::<(), _>(mlua::Error::runtime(
-                    "http.serve_with_extra: second argument must be a routes table",
-                ));
-            }
-        };
+            let routes_table = match args_iter.next() {
+                Some(Value::Table(t)) => t,
+                _ => {
+                    return Err::<(), _>(mlua::Error::runtime(
+                        "http.serve_with_extra: second argument must be a routes table",
+                    ));
+                }
+            };
 
-        let extra_router: axum::Router = match args_iter.next() {
-            Some(Value::UserData(ud)) => {
-                let r = ud.borrow::<LuaAxumRouter>().map_err(|_| {
+            let extra_router: axum::Router = match args_iter.next() {
+                Some(Value::UserData(ud)) => {
+                    let r = ud.borrow::<LuaAxumRouter>().map_err(|_| {
                     mlua::Error::runtime(
                         "http.serve_with_extra: third argument must be a LuaAxumRouter userdata",
                     )
                 })?;
-                r.0.clone()
-            }
-            _ => {
-                return Err::<(), _>(mlua::Error::runtime(
-                    "http.serve_with_extra: third argument must be a LuaAxumRouter userdata",
-                ));
-            }
-        };
+                    r.0.clone()
+                }
+                _ => {
+                    return Err::<(), _>(mlua::Error::runtime(
+                        "http.serve_with_extra: third argument must be a LuaAxumRouter userdata",
+                    ));
+                }
+            };
 
-        let routes = Rc::new(parse_routes(&routes_table)?);
+            let routes = Rc::new(parse_routes(&routes_table)?);
 
-        let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
-            .await
-            .map_err(|e| {
-                mlua::Error::runtime(format!("http.serve_with_extra: bind failed: {e}"))
-            })?;
+            let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+                .await
+                .map_err(|e| {
+                    mlua::Error::runtime(format!("http.serve_with_extra: bind failed: {e}"))
+                })?;
 
-        let actual_port = listener
-            .local_addr()
-            .map_err(|e| {
-                mlua::Error::runtime(format!(
-                    "http.serve_with_extra: failed to get local addr: {e}"
-                ))
-            })?
-            .port();
-        lua.globals().set("_SERVER_PORT", actual_port)?;
+            let actual_port = listener
+                .local_addr()
+                .map_err(|e| {
+                    mlua::Error::runtime(format!(
+                        "http.serve_with_extra: failed to get local addr: {e}"
+                    ))
+                })?
+                .port();
+            lua.globals().set("_SERVER_PORT", actual_port)?;
 
-        loop {
-            let (stream, addr) = listener.accept().await.map_err(|e| {
-                mlua::Error::runtime(format!("http.serve_with_extra: accept failed: {e}"))
-            })?;
-            let peer_addr = addr.to_string();
+            loop {
+                let (stream, addr) = listener.accept().await.map_err(|e| {
+                    mlua::Error::runtime(format!("http.serve_with_extra: accept failed: {e}"))
+                })?;
+                let peer_addr = addr.to_string();
 
-            let routes = routes.clone();
-            let lua_clone = lua.clone();
-            let extra_router = extra_router.clone();
-
-            tokio::task::spawn_local(async move {
-                let io = hyper_util::rt::TokioIo::new(stream);
                 let routes = routes.clone();
-                let lua = lua_clone.clone();
-                let peer_addr = peer_addr.clone();
+                let lua_clone = lua.clone();
                 let extra_router = extra_router.clone();
 
-                let service = service_fn(move |req: Request<Incoming>| {
+                tokio::task::spawn_local(async move {
+                    let io = hyper_util::rt::TokioIo::new(stream);
                     let routes = routes.clone();
-                    let lua = lua.clone();
+                    let lua = lua_clone.clone();
                     let peer_addr = peer_addr.clone();
                     let extra_router = extra_router.clone();
-                    async move {
-                        handle_request(&lua, &routes, Some(extra_router), peer_addr, req).await
+
+                    let service = service_fn(move |req: Request<Incoming>| {
+                        let routes = routes.clone();
+                        let lua = lua.clone();
+                        let peer_addr = peer_addr.clone();
+                        let extra_router = extra_router.clone();
+                        async move {
+                            handle_request(&lua, &routes, Some(extra_router), peer_addr, req).await
+                        }
+                    });
+
+                    if let Err(e) = http1::Builder::new()
+                        .serve_connection(io, service)
+                        .with_upgrades()
+                        .await
+                        && !e.to_string().contains("connection closed")
+                    {
+                        error!("http.serve_with_extra: connection error: {e}");
                     }
                 });
-
-                if let Err(e) = http1::Builder::new()
-                    .serve_connection(io, service)
-                    .with_upgrades()
-                    .await
-                    && !e.to_string().contains("connection closed")
-                {
-                    error!("http.serve_with_extra: connection error: {e}");
-                }
-            });
-        }
-    })?;
+            }
+        })?;
     #[cfg(feature = "server")]
     http_table.set("serve_with_extra", serve_with_extra_fn)?;
+
+    // http.download(url, path, opts?) -> bytes_written
+    // Streams the response body to disk via a temp file, then atomic-renames into place.
+    // Creates parent directories as needed. On any failure (4xx/5xx, IO error, network),
+    // the temp file is removed and the error propagates — no partial file at `path`.
+    let download_client = client.clone();
+    let download_fn = lua.create_async_function(move |_, args: mlua::MultiValue| {
+        let client = download_client.clone();
+        async move {
+            use futures_util::StreamExt;
+            use tokio::io::AsyncWriteExt;
+
+            let mut args_iter = args.into_iter();
+            let url: String = match args_iter.next() {
+                Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
+                _ => {
+                    return Err(mlua::Error::runtime(
+                        "http.download: first arg must be url string",
+                    ));
+                }
+            };
+            let path: String = match args_iter.next() {
+                Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
+                _ => {
+                    return Err(mlua::Error::runtime(
+                        "http.download: second arg must be dest path string",
+                    ));
+                }
+            };
+            // Optional opts table: { headers = {...}, timeout = secs }
+            let opts: Option<mlua::Table> = match args_iter.next() {
+                Some(mlua::Value::Table(t)) => Some(t),
+                _ => None,
+            };
+
+            // Build request
+            let mut req = client.get(&url);
+            if let Some(ref t) = opts {
+                if let Ok(h) = t.get::<mlua::Table>("headers") {
+                    for pair in h.pairs::<String, String>() {
+                        let (k, v) = pair?;
+                        req = req.header(&k, &v);
+                    }
+                }
+                if let Ok(secs) = t.get::<f64>("timeout")
+                    && secs.is_finite()
+                    && secs > 0.0
+                {
+                    req = req.timeout(std::time::Duration::from_secs_f64(secs));
+                }
+            }
+
+            // Optional max_size cap. Defaults to 1 GiB so a malicious URL
+            // can't fill the disk. Caller can pass max_size = 0 to disable.
+            const DEFAULT_MAX_SIZE: i64 = 1024 * 1024 * 1024;
+            let max_size: i64 = opts
+                .as_ref()
+                .and_then(|t| t.get::<i64>("max_size").ok())
+                .unwrap_or(DEFAULT_MAX_SIZE);
+
+            // Ensure parent dir
+            if let Some(parent) = std::path::Path::new(&path).parent()
+                && !parent.as_os_str().is_empty()
+            {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    mlua::Error::runtime(format!("http.download: mkdir parent: {e}"))
+                })?;
+            }
+
+            // Open temp file at <path>.tmp.<random>. Random suffix instead of
+            // PID — a co-located unprivileged process can pre-create symlinks
+            // at predictable PID-based paths.
+            let tmp = format!("{path}.tmp.{:016x}", rand::rng().random::<u64>());
+            let mut file = tokio::fs::File::create(&tmp).await.map_err(|e| {
+                mlua::Error::runtime(format!("http.download: create temp {tmp:?}: {e}"))
+            })?;
+
+            // Cleanup helper closure result
+            let do_download = async {
+                let resp = req
+                    .send()
+                    .await
+                    .map_err(|e| mlua::Error::runtime(format!("http.download: request: {e}")))?;
+                if !resp.status().is_success() {
+                    return Err(mlua::Error::runtime(format!(
+                        "http.download: HTTP {} for {url}",
+                        resp.status()
+                    )));
+                }
+                let mut total: i64 = 0;
+                let mut stream = resp.bytes_stream();
+                while let Some(chunk) = stream.next().await {
+                    let bytes = chunk
+                        .map_err(|e| mlua::Error::runtime(format!("http.download: stream: {e}")))?;
+                    total += bytes.len() as i64;
+                    if max_size > 0 && total > max_size {
+                        return Err(mlua::Error::runtime(format!(
+                            "http.download: response exceeds max_size ({total} > {max_size} bytes) for {url}"
+                        )));
+                    }
+                    file.write_all(&bytes)
+                        .await
+                        .map_err(|e| mlua::Error::runtime(format!("http.download: write: {e}")))?;
+                }
+                file.flush()
+                    .await
+                    .map_err(|e| mlua::Error::runtime(format!("http.download: flush: {e}")))?;
+                file.sync_all()
+                    .await
+                    .map_err(|e| mlua::Error::runtime(format!("http.download: fsync: {e}")))?;
+                drop(file); // close before rename on Windows; harmless on Linux
+                Ok(total)
+            };
+
+            match do_download.await {
+                Ok(total) => {
+                    tokio::fs::rename(&tmp, &path).await.map_err(|e| {
+                        mlua::Error::runtime(format!(
+                            "http.download: rename {tmp:?} -> {path:?}: {e}"
+                        ))
+                    })?;
+                    Ok(total)
+                }
+                Err(e) => {
+                    let _ = tokio::fs::remove_file(&tmp).await;
+                    Err(e)
+                }
+            }
+        }
+    })?;
+    http_table.set("download", download_fn)?;
 
     lua.globals().set("http", http_table)?;
     Ok(())
@@ -421,7 +554,6 @@ async fn execute_http_request(
         };
         (String::new(), false, opts)
     };
-
 
     // RFC 7231 permits a body on DELETE; some assay-* admin endpoints
     // (e.g. `DELETE /admin/auth/zanzibar/tuples`) require a JSON body
@@ -498,7 +630,6 @@ async fn execute_http_request(
         .and_then(|o| o.get::<mlua::Function>("on_event").ok());
 
     if let (true, Some(callback)) = (is_sse, on_event_callback) {
-
         let result = lua.create_table()?;
         result.set("status", status)?;
         let headers_out = lua.create_table()?;
@@ -700,9 +831,9 @@ fn lookup_route<'a>(
 
 #[cfg(feature = "server")]
 fn is_websocket_upgrade(headers: &[(String, String)]) -> bool {
-    headers
-        .iter()
-        .any(|(k, v)| k.eq_ignore_ascii_case("upgrade") && v.to_ascii_lowercase().contains("websocket"))
+    headers.iter().any(|(k, v)| {
+        k.eq_ignore_ascii_case("upgrade") && v.to_ascii_lowercase().contains("websocket")
+    })
 }
 
 #[cfg(feature = "server")]
@@ -809,22 +940,21 @@ async fn handle_request(
     };
 
     if is_ws {
-        let lua_resp = match build_lua_request_and_call(
-            lua, &handler, &method, &path, &query, &headers, "",
-        )
-        .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                return Ok(Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .header("content-type", "text/plain")
-                    .body(axum::body::Body::new(Full::new(Bytes::from(format!(
-                        "handler error: {e}"
-                    )))))
-                    .unwrap());
-            }
-        };
+        let lua_resp =
+            match build_lua_request_and_call(lua, &handler, &method, &path, &query, &headers, "")
+                .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    return Ok(Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .header("content-type", "text/plain")
+                        .body(axum::body::Body::new(Full::new(Bytes::from(format!(
+                            "handler error: {e}"
+                        )))))
+                        .unwrap());
+                }
+            };
 
         if let Ok(Some(ws_fn)) = lua_resp.get::<Option<mlua::Function>>("ws") {
             return build_ws_upgrade_response(lua, &headers, lua_resp, ws_fn, peer_addr, req);
@@ -1132,7 +1262,9 @@ fn lua_response_to_http(
         Bytes::new()
     };
 
-    Ok(builder.body(axum::body::Body::new(Full::new(body_bytes))).unwrap())
+    Ok(builder
+        .body(axum::body::Body::new(Full::new(body_bytes)))
+        .unwrap())
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
