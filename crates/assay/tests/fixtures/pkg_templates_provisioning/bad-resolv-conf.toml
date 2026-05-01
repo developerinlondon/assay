@@ -1,0 +1,13 @@
+# Unknown resolv_conf value — must be one of systemd-nspawn's --resolv-conf=
+# flags (off, copy-host, bind-host, replace-host, auto, etc.).
+[template]
+id           = "bad-resolv-conf"
+display_name = "Bogus resolv_conf"
+packages     = []
+
+[template.rootfs]
+source = "machinectl-pull-tar"
+url    = "https://example.com/image.tar.xz"
+
+[template.nspawn]
+resolv_conf = "magic-mode"

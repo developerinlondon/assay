@@ -15,7 +15,14 @@ pub fn register_template(lua: &Lua) -> mlua::Result<()> {
             }
         };
         let mini_vars = minijinja::value::Value::from_serialize(&json_vars);
-        let env = minijinja::Environment::new();
+        let mut env = minijinja::Environment::new();
+        // Install a filesystem loader rooted at ./templates so {% include %}
+        // and {% extends %} can resolve sibling templates. Without this,
+        // includes raise "template not found" — minijinja can't infer the
+        // template root from a string-only render_string call. Using cwd
+        // (matches how the rest of knowhere reads templates: fs.read of
+        // "templates/<name>.html").
+        env.set_loader(minijinja::path_loader("templates"));
         let tmpl = env
             .template_from_str(&template_str)
             .map_err(|e| mlua::Error::runtime(format!("template.render_string: {e}")))?;

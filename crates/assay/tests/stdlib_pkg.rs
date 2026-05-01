@@ -28,6 +28,11 @@ async fn pkg_templates_loader() {
 }
 
 #[tokio::test]
+async fn pkg_templates_provisioning_schema() {
+    run_pkg_lua("tests/pkg_lua/templates_provisioning.lua").await;
+}
+
+#[tokio::test]
 async fn pkg_version_compare() {
     run_pkg_lua("tests/pkg_lua/version_compare.lua").await;
 }

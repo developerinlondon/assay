@@ -21,7 +21,6 @@ All notable changes to Assay are documented here.
   with three-layer overlay (built-in / plugin / operator), strict-override
   on invalid entries, version comparator (semver/v-prefix/calver),
   host/machine target abstractions, deterministic plan generator.
-  Foundation for knowhere's package management UI (see knowhere plan 11).
 
 ## [assay-engine 0.4.1] - 2026-04-29
 

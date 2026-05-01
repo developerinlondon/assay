@@ -55,9 +55,9 @@ source_list  = "deb https://pkgs.example.com/debian stable main"
 package_name = "curl"
 
 [package.binary]              # optional; enables binary install fallback
-release_api     = "github"
+release_api     = "https://api.github.com/repos/example/curl/releases/latest"
 asset_pattern   = "curl-{ver}-linux-{arch}.tar.gz"
-sha256_source   = "https://example.com/checksums.txt"
+sha256_source   = "checksums"  # one of: "asset" (sibling .sha256), "checksums" (sha256sums.txt)
 install_path    = "/usr/local/bin/curl"
 mode            = "0755"
 ```
@@ -100,13 +100,14 @@ Run a command on the target. Returns `{status, stdout, stderr, timed_out}` (same
 
 The safe cross-target `opts` subset is:
 
-| Key       | Type    | Description |
-|-----------|---------|-------------|
-| `timeout` | number  | Seconds; `0` means no timeout |
-| `env`     | table   | `{[name] = value}` extra environment variables |
+| Key       | Type            | Description |
+|-----------|-----------------|-------------|
+| `timeout` | number          | Seconds; `0` means no timeout |
+| `env`     | table           | `{[name] = value}` extra environment variables |
+| `stdin`   | string \| bytes | Bytes piped to the inner process via systemd-run --pipe / shell.exec stdin |
 
-`shell.exec`-only opts (`cwd`, `stdin`) are silently dropped on machine targets to preserve
-cross-target semantics. Passing them is out-of-contract.
+`shell.exec`-only opts (`cwd`) are silently dropped on machine targets — there's no
+working-directory equivalent for a transient nspawn unit. Passing them is out-of-contract.
 
 ```lua
 local t = pkg.target.host()
@@ -164,7 +165,7 @@ Pure function — no I/O, no side effects. Builds a deterministic operation arra
 `pkg.plan` **never removes** — packages in `actual` but not in `desired_set` are ignored.
 
 ```lua
-local catalog = pkg.catalog.load({ "/opt/assay/catalog", "/etc/knowhere/catalog" })
+local catalog = pkg.catalog.load({ "/opt/myapp/catalog", "/etc/myapp/packages.d" })
 local ops = pkg.plan("host", { "curl", "jq" }, {
   curl = { installed = true,  version = "7.88.0", available = "8.0.0" },
   jq   = { installed = false },
@@ -177,13 +178,10 @@ local ops = pkg.plan("host", { "curl", "jq" }, {
 
 ---
 
-### Deferred surface
+### Caller responsibilities
 
-The following functions raise `"not implemented yet"` and are intentionally left for the caller
-to implement. Knowhere implements them because it needs audit logging, distributed locking, and
-rollback semantics that are out of scope for a generic library.
-
-- `pkg.query()` — Query installed state for a single target.
-- `pkg.query_all()` — Query installed state across all managed targets.
-- `pkg.apply()` — Execute a plan on a target.
-- `pkg.reconcile()` — Full reconcile loop: query → plan → apply.
+These pieces stay outside the framework because they're product-specific:
+audit-event emission, distributed locking, per-run log rotation, and the
+desired-state file. Callers compose the building blocks (`pkg.catalog`,
+`pkg.templates`, `pkg.target`, `pkg.version`, `pkg.method.*`, `pkg.release`,
+`pkg.plan`, `pkg.query_all`, `pkg.apply`) into their own reconcile loop.

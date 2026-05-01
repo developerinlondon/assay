@@ -1,0 +1,7 @@
+# No provisioning sections — this template seeds packages on an
+# already-existing target. Loader must accept it (sections are optional).
+[template]
+id           = "packages-only"
+display_name = "Seed packages only"
+description  = "No rootfs / nspawn config; for use against existing targets."
+packages     = ["test-apt-only"]

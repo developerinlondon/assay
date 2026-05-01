@@ -71,6 +71,6 @@ Options table supports `{headers = {["X-Key"] = "value"}}`.
   http.download(
     "https://example.com/release.tar.gz",
     "/tmp/release.tar.gz",
-    { timeout = 300, headers = { ["User-Agent"] = "knowhere/0.3" } }
+    { timeout = 300, headers = { ["User-Agent"] = "myapp/1.0" } }
   )
   ```
