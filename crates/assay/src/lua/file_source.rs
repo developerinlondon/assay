@@ -25,6 +25,7 @@ pub trait FileSource: Send + Sync {
 /// Default FileSource that reads directly from disk. Available for
 /// callers who want to register a source explicitly but keep
 /// disk-backed semantics.
+#[allow(dead_code)]
 pub struct DiskFileSource;
 
 impl FileSource for DiskFileSource {
@@ -40,6 +41,7 @@ pub(crate) type FileSourceHandle = Arc<dyn FileSource>;
 /// Register a `FileSource` with the given Lua state. Subsequent calls
 /// to `fs.read` / `fs.read_bytes` consult this source instead of
 /// reading from disk directly.
+#[allow(dead_code)]
 pub fn set_file_source(lua: &mlua::Lua, source: Arc<dyn FileSource>) {
     lua.set_app_data::<FileSourceHandle>(source);
 }

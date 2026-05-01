@@ -337,7 +337,7 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.15.4"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -370,6 +370,7 @@ dependencies = [
  "sha2 0.10.9",
  "sha3",
  "sqlx",
+ "tar",
  "tempfile",
  "tokio",
  "tokio-test",
@@ -5653,6 +5654,17 @@ dependencies = [
  "libc",
  "log",
  "time",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22692a6476a21fa75fdfc11d452fda482af402c008cdbaf3476414e122040973"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
 ]
 
 [[package]]

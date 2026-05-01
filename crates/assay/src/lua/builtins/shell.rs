@@ -3,7 +3,14 @@ use mlua::Lua;
 pub fn register_shell(lua: &Lua) -> mlua::Result<()> {
     let shell_table = lua.create_table()?;
 
-    let exec_fn = lua.create_function(|lua, args: mlua::MultiValue| {
+    // shell.exec(cmd, opts?) → { status, stdout, stderr, timed_out }
+    //
+    // tokio::process-based — yields to the runtime while the child runs so
+    // other Lua coroutines (and HTTP handlers) make progress concurrently.
+    // The previous std::process + thread::sleep polling implementation
+    // blocked the LocalSet for the entire duration of the child, freezing
+    // any other in-flight async work in the same Lua VM.
+    let exec_fn = lua.create_async_function(|lua, args: mlua::MultiValue| async move {
         let mut args_iter = args.into_iter();
 
         let cmd: String = args_iter
@@ -11,15 +18,18 @@ pub fn register_shell(lua: &Lua) -> mlua::Result<()> {
             .ok_or_else(|| mlua::Error::runtime("shell.exec: command string required"))
             .and_then(|v| lua.unpack(v))?;
 
-        // Parse optional options table
         let mut cwd: Option<String> = None;
         let mut env_vars: Option<Vec<(String, String)>> = None;
-        let mut stdin_data: Option<String> = None;
+        // Stored as raw bytes so binary stdin (e.g. tarballs streamed into
+        // an nspawn container) survives the mlua String boundary.
+        let mut stdin_bytes: Option<Vec<u8>> = None;
         let mut timeout_secs: Option<f64> = None;
 
         if let Some(mlua::Value::Table(opts)) = args_iter.next() {
             cwd = opts.get::<Option<String>>("cwd")?;
-            stdin_data = opts.get::<Option<String>>("stdin")?;
+            if let Some(s) = opts.get::<Option<mlua::String>>("stdin")? {
+                stdin_bytes = Some(s.as_bytes().to_vec());
+            }
             timeout_secs = opts.get::<Option<f64>>("timeout")?;
 
             if let Some(env_table) = opts.get::<Option<mlua::Table>>("env")? {
@@ -32,7 +42,6 @@ pub fn register_shell(lua: &Lua) -> mlua::Result<()> {
             }
         }
 
-        // Validate timeout before use — Duration::from_secs_f64 panics on NaN/negative
         if let Some(secs) = timeout_secs
             && (!secs.is_finite() || secs < 0.0)
         {
@@ -41,113 +50,112 @@ pub fn register_shell(lua: &Lua) -> mlua::Result<()> {
             ));
         }
 
-        // Build command — use /bin/sh explicitly for predictable behavior
-        let mut command = std::process::Command::new("/bin/sh");
+        // Build command — /bin/sh -c <cmd>, predictable across distros.
+        let mut command = tokio::process::Command::new("/bin/sh");
         command.arg("-c").arg(&cmd);
-
         if let Some(ref dir) = cwd {
             command.current_dir(dir);
         }
-
         if let Some(ref vars) = env_vars {
             for (k, v) in vars {
                 command.env(k, v);
             }
         }
-
-        command.stdin(if stdin_data.is_some() {
+        command.stdin(if stdin_bytes.is_some() {
             std::process::Stdio::piped()
         } else {
             std::process::Stdio::null()
         });
         command.stdout(std::process::Stdio::piped());
         command.stderr(std::process::Stdio::piped());
+        command.kill_on_drop(true);
 
         let mut child = command.spawn().map_err(|e| {
             mlua::Error::runtime(format!("shell.exec: failed to spawn command: {e}"))
         })?;
 
-        // Write stdin if provided
-        if let Some(ref data) = stdin_data {
-            use std::io::Write;
-            if let Some(mut child_stdin) = child.stdin.take() {
-                child_stdin.write_all(data.as_bytes()).map_err(|e| {
-                    mlua::Error::runtime(format!("shell.exec: failed to write stdin: {e}"))
-                })?;
+        // Push stdin first so we don't deadlock waiting on a child that
+        // expects input. Take stdin → write → drop (closes the pipe).
+        if let Some(bytes) = stdin_bytes.as_deref()
+            && let Some(mut child_stdin) = child.stdin.take()
+        {
+            use tokio::io::AsyncWriteExt;
+            if let Err(e) = child_stdin.write_all(bytes).await {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                return Err(mlua::Error::runtime(format!(
+                    "shell.exec: failed to write stdin: {e}"
+                )));
             }
+            let _ = child_stdin.shutdown().await;
         }
 
-        // Wait with optional timeout
-        let output = if let Some(secs) = timeout_secs {
-            let duration = std::time::Duration::from_secs_f64(secs);
-            let start = std::time::Instant::now();
+        // Drain stdout/stderr in background tasks so a full pipe buffer
+        // (~64KB) doesn't block the child's exit.
+        let stdout_h = child.stdout.take();
+        let stderr_h = child.stderr.take();
+        let stdout_task = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            if let Some(mut s) = stdout_h {
+                use tokio::io::AsyncReadExt;
+                let _ = s.read_to_end(&mut buf).await;
+            }
+            buf
+        });
+        let stderr_task = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            if let Some(mut s) = stderr_h {
+                use tokio::io::AsyncReadExt;
+                let _ = s.read_to_end(&mut buf).await;
+            }
+            buf
+        });
 
-            // Drain stdout/stderr in background threads to prevent pipe buffer deadlock.
-            // If the child fills the OS pipe buffer (~64KB), it blocks waiting for a reader.
-            // Without concurrent draining, try_wait() polls forever since the child never exits.
-            let mut stdout_handle = child.stdout.take().map(|mut s| {
-                std::thread::spawn(move || {
-                    let mut buf = String::new();
-                    let _ = std::io::Read::read_to_string(&mut s, &mut buf);
-                    buf
-                })
-            });
-            let mut stderr_handle = child.stderr.take().map(|mut s| {
-                std::thread::spawn(move || {
-                    let mut buf = String::new();
-                    let _ = std::io::Read::read_to_string(&mut s, &mut buf);
-                    buf
-                })
-            });
-
-            loop {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        let stdout = stdout_handle
-                            .take()
-                            .map_or_else(String::new, |h| h.join().unwrap_or_default());
-                        let stderr = stderr_handle
-                            .take()
-                            .map_or_else(String::new, |h| h.join().unwrap_or_default());
-                        break Ok((status.code().unwrap_or(-1), stdout, stderr, false));
+        // Optional timeout. On timeout we explicitly kill+wait the child to
+        // reap it; without that, kill_on_drop only schedules an async reap
+        // that the runtime may not service before tearing down.
+        let result = lua.create_table()?;
+        match timeout_secs {
+            Some(secs) if secs > 0.0 => {
+                let dur = std::time::Duration::from_secs_f64(secs);
+                match tokio::time::timeout(dur, child.wait()).await {
+                    Ok(Ok(status)) => {
+                        let stdout = stdout_task.await.unwrap_or_default();
+                        let stderr = stderr_task.await.unwrap_or_default();
+                        result.set("status", status.code().unwrap_or(-1) as i64)?;
+                        result.set("stdout", String::from_utf8_lossy(&stdout).into_owned())?;
+                        result.set("stderr", String::from_utf8_lossy(&stderr).into_owned())?;
+                        result.set("timed_out", false)?;
                     }
-                    Ok(None) => {
-                        if start.elapsed() >= duration {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                            // Join reader threads to avoid leaking them
-                            if let Some(handle) = stdout_handle.take() {
-                                let _ = handle.join();
-                            }
-                            if let Some(handle) = stderr_handle.take() {
-                                let _ = handle.join();
-                            }
-                            break Ok((-1, String::new(), String::new(), true));
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                    }
-                    Err(e) => {
-                        break Err(mlua::Error::runtime(format!(
+                    Ok(Err(e)) => {
+                        return Err(mlua::Error::runtime(format!(
                             "shell.exec: error waiting for process: {e}"
                         )));
                     }
+                    Err(_elapsed) => {
+                        let _ = child.start_kill();
+                        let _ = child.wait().await;
+                        stdout_task.abort();
+                        stderr_task.abort();
+                        result.set("status", -1i64)?;
+                        result.set("stdout", "")?;
+                        result.set("stderr", "")?;
+                        result.set("timed_out", true)?;
+                    }
                 }
-            }?
-        } else {
-            let output = child.wait_with_output().map_err(|e| {
-                mlua::Error::runtime(format!("shell.exec: failed to wait for command: {e}"))
-            })?;
-            let status = output.status.code().unwrap_or(-1);
-            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-            (status, stdout, stderr, false)
-        };
-
-        let result = lua.create_table()?;
-        result.set("status", output.0)?;
-        result.set("stdout", output.1)?;
-        result.set("stderr", output.2)?;
-        result.set("timed_out", output.3)?;
+            }
+            _ => {
+                let status = child.wait().await.map_err(|e| {
+                    mlua::Error::runtime(format!("shell.exec: failed to wait for command: {e}"))
+                })?;
+                let stdout = stdout_task.await.unwrap_or_default();
+                let stderr = stderr_task.await.unwrap_or_default();
+                result.set("status", status.code().unwrap_or(-1) as i64)?;
+                result.set("stdout", String::from_utf8_lossy(&stdout).into_owned())?;
+                result.set("stderr", String::from_utf8_lossy(&stderr).into_owned())?;
+                result.set("timed_out", false)?;
+            }
+        }
 
         Ok(result)
     })?;

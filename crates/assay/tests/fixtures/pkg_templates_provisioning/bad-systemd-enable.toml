@@ -1,0 +1,8 @@
+# systemd.enable must be an array of unit names.
+[template]
+id           = "bad-systemd-enable"
+display_name = "Wrong type on systemd.enable"
+packages     = []
+
+[template.systemd]
+enable = "ssh"   # must be ["ssh"]

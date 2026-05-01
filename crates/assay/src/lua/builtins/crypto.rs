@@ -2,7 +2,9 @@ use super::json::{json_value_to_lua, lua_value_to_json};
 use data_encoding::BASE64URL_NOPAD;
 use digest::Digest;
 use jsonwebtoken::jwk::{JwkSet, KeyAlgorithm};
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, decode_header};
+use jsonwebtoken::{
+    Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, decode_header,
+};
 use mlua::{Lua, Value};
 use rand::RngExt;
 use zeroize::Zeroizing;
@@ -322,6 +324,64 @@ pub fn register_crypto(lua: &Lua) -> mlua::Result<()> {
         Ok(hex)
     })?;
     crypto_table.set("hash", hash_fn)?;
+
+    let hash_file_fn = lua.create_function(|_, args: mlua::MultiValue| {
+        use sha2::Digest;
+        use std::io::Read;
+
+        let mut args_iter = args.into_iter();
+        let path: String = match args_iter.next() {
+            Some(mlua::Value::String(s)) => s.to_str()?.to_string(),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.hash_file: first argument must be a path string",
+                ));
+            }
+        };
+        let algorithm: String = match args_iter.next() {
+            Some(mlua::Value::String(s)) => s.to_str()?.to_lowercase(),
+            Some(mlua::Value::Nil) | None => "sha256".to_string(),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "crypto.hash_file: second argument must be an algorithm string or nil",
+                ));
+            }
+        };
+
+        let mut file = std::fs::File::open(&path).map_err(|e| {
+            mlua::Error::runtime(format!("crypto.hash_file: open {path:?}: {e}"))
+        })?;
+        let mut buf = [0u8; 64 * 1024];
+
+        macro_rules! hash_with {
+            ($hasher:ty) => {{
+                let mut h = <$hasher>::new();
+                loop {
+                    let n = file.read(&mut buf).map_err(|e| {
+                        mlua::Error::runtime(format!("crypto.hash_file: read {path:?}: {e}"))
+                    })?;
+                    if n == 0 { break; }
+                    h.update(&buf[..n]);
+                }
+                Ok(format!("{:x}", h.finalize()))
+            }};
+        }
+
+        match algorithm.as_str() {
+            "sha224" => hash_with!(sha2::Sha224),
+            "sha256" => hash_with!(sha2::Sha256),
+            "sha384" => hash_with!(sha2::Sha384),
+            "sha512" => hash_with!(sha2::Sha512),
+            "sha3-224" => hash_with!(sha3::Sha3_224),
+            "sha3-256" => hash_with!(sha3::Sha3_256),
+            "sha3-384" => hash_with!(sha3::Sha3_384),
+            "sha3-512" => hash_with!(sha3::Sha3_512),
+            other => Err(mlua::Error::runtime(format!(
+                "crypto.hash_file: unsupported algorithm: {other} (supported: sha224, sha256, sha384, sha512, sha3-224, sha3-256, sha3-384, sha3-512)"
+            ))),
+        }
+    })?;
+    crypto_table.set("hash_file", hash_file_fn)?;
 
     let random_fn = lua.create_function(|_, args: mlua::MultiValue| {
         let mut args_iter = args.into_iter();
