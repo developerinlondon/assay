@@ -590,12 +590,21 @@ mod impl_linux {
     fn register_journal(lua: &Lua, t: &Table) -> mlua::Result<()> {
         // systemd.journal(opts) — one-shot read of last N journal entries.
         //
-        // opts = { unit?, machine?, since?, until?, lines?=200, priority?=7 }
+        // opts = { unit?, machine?, since?, until?, lines?=200, priority?=7,
+        //          elevate?=false }
         // Returns [{ts, hostname, unit, message, priority, transport}, ...]
         //
         // Uses `journalctl --output=json` subprocess.
+        //
+        // `elevate = true` prefixes the command with `sudo -n`. journalctl's
+        // `--machine=` switch refuses for non-root callers ("Using the
+        // --machine= switch requires root privileges"); elevation lets a
+        // low-privilege caller (e.g. a host-ops dashboard with a NOPASSWD
+        // sudoers entry for journalctl) read container journals. Default
+        // false — root callers and host-only reads don't need it.
         let journal = lua.create_async_function(|lua, opts: Option<mlua::Table>| async move {
-            let (unit, machine, since, until, lines, priority) = if let Some(ref o) = opts {
+            let (unit, machine, since, until, lines, priority, elevate) = if let Some(ref o) = opts
+            {
                 (
                     o.get::<Option<String>>("unit")?,
                     o.get::<Option<String>>("machine")?,
@@ -603,12 +612,19 @@ mod impl_linux {
                     o.get::<Option<String>>("until")?,
                     o.get::<Option<u32>>("lines")?.unwrap_or(200),
                     o.get::<Option<u8>>("priority")?.unwrap_or(7),
+                    o.get::<Option<bool>>("elevate")?.unwrap_or(false),
                 )
             } else {
-                (None, None, None, None, 200u32, 7u8)
+                (None, None, None, None, 200u32, 7u8, false)
             };
 
-            let mut cmd = tokio::process::Command::new("journalctl");
+            let mut cmd = if elevate {
+                let mut c = tokio::process::Command::new("sudo");
+                c.arg("-n").arg("journalctl");
+                c
+            } else {
+                tokio::process::Command::new("journalctl")
+            };
             cmd.arg("--output=json")
                 .arg("--no-pager")
                 .arg(format!("-n{lines}"))
