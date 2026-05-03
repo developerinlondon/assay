@@ -1,0 +1,104 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/">Host</a> · cron &amp; timers</div>
+    <h1 class="page-title">Cron &amp; Timers</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">timers</span><span class="v">{{ counts.timers }}</span></span>
+    <span><span class="k">cron.d</span><span class="v">{{ counts.crond }}</span></span>
+    <span><span class="k">drop-ins</span><span class="v">{{ counts.dropins }}</span></span>
+    <span><span class="k">user crontabs</span><span class="v">{{ counts.usercron }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/">Overview</a>
+  <a class="tab" href="/services">Services</a>
+  <a class="tab active" href="/cron">Cron</a>
+  <a class="tab" href="/logs">Logs</a>
+  <a class="tab" href="/host/shell">Shell</a>
+  <a class="tab" href="/backups">Backups</a>
+</div>
+
+<div class="tabs">
+  <a class="tab {% if tab == 'timers' %}active{% endif %}" href="/cron?tab=timers">systemd timers <span class="n">{{ counts.timers }}</span></a>
+  <a class="tab {% if tab == 'crond' %}active{% endif %}"  href="/cron?tab=crond">/etc/cron.d <span class="n">{{ counts.crond }}</span></a>
+  <a class="tab {% if tab == 'dropins' %}active{% endif %}" href="/cron?tab=dropins">drop-ins <span class="n">{{ counts.dropins }}</span></a>
+  <a class="tab {% if tab == 'usercron' %}active{% endif %}" href="/cron?tab=usercron">user crontabs <span class="n">{{ counts.usercron }}</span></a>
+</div>
+
+{% if tab == "timers" %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr><th>Unit</th><th>Activates</th><th>Next fire</th><th>Last fire</th></tr>
+    </thead>
+    <tbody>
+      {% for t in timers %}
+      <tr>
+        <td class="name-cell">{{ t.unit }}</td>
+        <td class="muted">{{ t.activates }}</td>
+        <td>{{ t.next_fire_pretty }}</td>
+        <td class="muted">{{ t.last_fire_pretty }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% elif tab == "crond" %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr><th>File</th><th>Schedule</th><th>User</th><th class="wrap">Command</th></tr>
+    </thead>
+    <tbody>
+      {% for c in sys_cron %}
+      <tr>
+        <td class="muted">{{ c.source }}</td>
+        <td>{{ c.schedule }}</td>
+        <td>{{ c.user }}</td>
+        <td class="wrap">{{ c.command }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% elif tab == "dropins" %}
+{% for freq in ["hourly", "daily", "weekly", "monthly"] %}
+<div class="section-head" style="margin-top:16px"><h2>/etc/cron.{{ freq }}</h2></div>
+<div class="card">
+  <table class="table">
+    <thead><tr><th>Name</th><th class="wrap">Path</th></tr></thead>
+    <tbody>
+      {% for item in dropins[freq] %}
+      <tr>
+        <td class="name-cell">{{ item.name }}</td>
+        <td class="muted wrap">{{ item.path }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+
+{% elif tab == "usercron" %}
+{% for user, entries in user_crontabs %}
+<div class="section-head" style="margin-top:16px"><h2>{{ user }}</h2></div>
+<div class="card">
+  <table class="table">
+    <thead><tr><th>Schedule</th><th class="wrap">Command</th></tr></thead>
+    <tbody>
+      {% for e in entries %}
+      <tr>
+        <td>{{ e.schedule }}</td>
+        <td class="wrap">{{ e.command }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+
+{% endif %}

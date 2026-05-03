@@ -1,0 +1,152 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/machines">Containers</a> · provision</div>
+    <h1 class="page-title">Provision new machine</h1>
+  </div>
+</header>
+
+{% if flash %}
+<div class="card" style="margin-bottom:16px;border-left:3px solid {% if flash.kind == 'err' %}var(--err){% elif flash.kind == 'warn' %}var(--warn){% elif flash.kind == 'ok' %}var(--ok){% else %}var(--info){% endif %}">
+  <div class="card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span class="pill {{ flash.pill }}">{{ flash.label }}</span>
+    <span>{{ flash.msg }}</span>
+  </div>
+</div>
+<script>
+  if (window.history && window.history.replaceState) {
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+</script>
+{% endif %}
+
+{% if templates | length == 0 %}
+<div class="card">
+  <div class="card-body" style="text-align:center;padding:48px 32px">
+    <div style="font-weight:600;margin-bottom:8px">No provisioning templates available.</div>
+    <div class="muted">
+      A template needs both <code>[template.rootfs]</code> and <code>[template.nspawn]</code>
+      sections. Check <code>machine_templates/*.toml</code> or
+      <code>/etc/knowhere/machine_templates.d/*.toml</code>.
+    </div>
+  </div>
+</div>
+{% else %}
+<form method="POST" action="/api/machines" class="card">
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:start">
+
+      <label for="name" class="muted">name</label>
+      <div>
+        <input class="input" type="text" id="name" name="name"
+               required pattern="[A-Za-z0-9._\-]+" minlength="1" maxlength="64"
+               placeholder="myhost" autofocus>
+        <div class="muted" style="font-size:0.85em;margin-top:4px">
+          Letters, digits, <code>.</code> <code>_</code> <code>-</code>. No leading <code>-</code>.
+        </div>
+      </div>
+
+      <label for="template" class="muted">template</label>
+      <div>
+        <select class="input" id="template" name="template" required>
+          {% for t in templates %}
+          <option value="{{ t.id }}"
+                  data-cpu="{{ t.resources.cpu_cores | default('') }}"
+                  data-mem="{{ t.resources.memory_gb | default('') }}">
+            {{ t.display_name }} ({{ t.id }})
+          </option>
+          {% endfor %}
+        </select>
+        <div class="muted" style="font-size:0.85em;margin-top:4px">
+          Pulls the rootfs, writes the .nspawn unit, boots the container, then
+          installs the template's packages.
+        </div>
+      </div>
+
+      <label for="cpu_cores" class="muted">CPU cores</label>
+      <div>
+        <input class="input" type="number" id="cpu_cores" name="cpu_cores"
+               step="0.5" min="0" max="256" placeholder="(unlimited)"
+               style="max-width:160px">
+        <div class="muted" style="font-size:0.85em;margin-top:4px">
+          CPUQuota cap on the host-side unit. Whole or fractional cores
+          (0.5 = half a core). Empty = inherit template default; if the
+          template has none, the container is unlimited. Editable later
+          via <code>systemctl edit systemd-nspawn@&lt;name&gt;</code>.
+        </div>
+      </div>
+
+      <label for="memory_gb" class="muted">Memory (GB)</label>
+      <div>
+        <input class="input" type="number" id="memory_gb" name="memory_gb"
+               step="0.5" min="0" max="1024" placeholder="(unlimited)"
+               style="max-width:160px">
+        <div class="muted" style="font-size:0.85em;margin-top:4px">
+          MemoryMax cap, in binary gibibytes (1 GB = 1024 MB). Empty =
+          inherit template default; if the template has none, unlimited.
+        </div>
+      </div>
+
+      <label for="disk_gb" class="muted">Disk (GB)</label>
+      <div>
+        <input class="input" type="number" id="disk_gb" name="disk_gb"
+               disabled placeholder="(coming soon)" style="max-width:160px">
+        <div class="muted" style="font-size:0.85em;margin-top:4px">
+          nspawn has no native disk limit — adding it requires either
+          filesystem-level quotas or switching the rootfs to a fixed-size
+          .raw image. Tracked as a separate plan.
+        </div>
+      </div>
+
+    </div>
+
+    <div style="margin-top:16px">
+      <h3 class="muted" style="font-size:0.85em;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">
+        Templates and what they do
+      </h3>
+      <table class="table">
+        <thead>
+          <tr><th>Template</th><th>Description</th><th>Packages it seeds</th></tr>
+        </thead>
+        <tbody>
+        {% for t in templates %}
+          <tr>
+            <td><code>{{ t.id }}</code></td>
+            <td class="muted">{{ t.description | default("—") }}</td>
+            <td class="muted" style="font-size:0.9em">
+              {% if t.packages | length == 0 %}—
+              {% else %}{{ t.packages | join(", ") }}{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card-body" style="border-top:1px solid var(--bg-3);display:flex;gap:8px;justify-content:flex-end">
+    <a class="btn-sm" href="/machines">Cancel</a>
+    <button class="btn">Provision</button>
+  </div>
+</form>
+
+<script>
+  // Surface the selected template's default CPU + memory in the input
+  // placeholders so operators see what they'd inherit if they leave the
+  // fields blank. Updates on template-select change.
+  (function () {
+    var sel = document.getElementById('template');
+    var cpu = document.getElementById('cpu_cores');
+    var mem = document.getElementById('memory_gb');
+    if (!sel || !cpu || !mem) return;
+    function sync() {
+      var opt = sel.options[sel.selectedIndex];
+      var c = (opt && opt.dataset.cpu) || '';
+      var m = (opt && opt.dataset.mem) || '';
+      cpu.placeholder = c ? '(template: ' + c + ')' : '(unlimited)';
+      mem.placeholder = m ? '(template: ' + m + ')' : '(unlimited)';
+    }
+    sel.addEventListener('change', sync);
+    sync();
+  })();
+</script>
+{% endif %}

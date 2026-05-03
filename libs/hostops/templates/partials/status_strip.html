@@ -1,0 +1,27 @@
+<div class="item">
+  <div class="lbl">
+    <span class="dot {% if services.failed > 0 %}dot-warn{% else %}dot-ok{% endif %}"></span>Services
+  </div>
+  <div class="row">
+    <span class="pri">{{ services.running }} running</span>
+    {% if services.failed > 0 %}<span class="muted" style="margin-left:8px">{{ services.failed }} failed</span>{% endif %}
+  </div>
+</div>
+<div class="item">
+  <div class="lbl">
+    <span class="dot {% if cron.total > 0 %}dot-ok{% else %}dot-muted{% endif %}"></span>Cron
+  </div>
+  <div class="row">
+    <span class="pri">{{ cron.total }} scheduled</span>
+    {% if cron.timers > 0 or cron.crontab_jobs > 0 %}<span class="muted" style="margin-left:8px">{{ cron.timers }} timer{% if cron.timers != 1 %}s{% endif %} · {{ cron.crontab_jobs }} cron</span>{% endif %}
+  </div>
+</div>
+<div class="item">
+  <div class="lbl">
+    <span class="dot {% if cloudflared.state == 'active' %}dot-ok{% elif cloudflared.state == 'failed' %}dot-warn{% else %}dot-muted{% endif %}"></span>Cloudflare Tunnel
+  </div>
+  <div class="row">
+    <span class="pri">{{ cloudflared.state }}</span>
+    {% if cloudflared.connections %}<span class="muted" style="margin-left:8px">{{ cloudflared.connections }} conn</span>{% endif %}
+  </div>
+</div>

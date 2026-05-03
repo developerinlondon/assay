@@ -1,0 +1,85 @@
+{# Resources card — current CPU + memory limits with an inline edit form.
+   Rendered both as part of the Overview page and as the htmx swap target
+   after POST /api/machines/<name>/resources. The form posts back to the
+   same URL; on success we re-render this partial with refreshed values. #}
+<div id="machine-resources-card" class="card" style="margin-top:14px">
+  <div class="card-body">
+    <h3 style="margin:0 0 10px 0;font-size:0.95em">Resources</h3>
+
+    {% if error %}
+    <div class="banner err" style="margin-bottom:12px">
+      <strong>Error:</strong> <code>{{ error }}</code>
+    </div>
+    {% endif %}
+
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px">
+      <div>
+        <div class="muted" style="font-size:0.8em;text-transform:uppercase;letter-spacing:0.08em">CPU</div>
+        <div style="font-size:1.1em">
+          {% if resources.cpu_cores %}{{ resources.cpu_cores }} cores
+          {% else %}<span class="muted">unlimited</span>{% endif %}
+        </div>
+      </div>
+      <div>
+        <div class="muted" style="font-size:0.8em;text-transform:uppercase;letter-spacing:0.08em">Memory</div>
+        <div style="font-size:1.1em">
+          {% if resources.memory_gb %}{{ resources.memory_gb }} GB
+          {% else %}<span class="muted">unlimited</span>{% endif %}
+        </div>
+      </div>
+      <div>
+        <div class="muted" style="font-size:0.8em;text-transform:uppercase;letter-spacing:0.08em">Drop-in</div>
+        <div style="font-size:0.9em">
+          {% if resources.present %}<code>knowhere-resources.conf</code>
+          {% else %}<span class="muted">none</span>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <form hx-post="/api/machines/{{ machine_name }}/resources"
+          hx-target="#machine-resources-card"
+          hx-swap="outerHTML"
+          style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+
+      <div>
+        <label for="r-cpu" class="muted" style="font-size:0.8em;display:block;margin-bottom:4px">
+          CPU cores (blank = unlimited)
+        </label>
+        <input class="input" type="number" id="r-cpu" name="cpu_cores"
+               step="0.5" min="0" max="256"
+               value="{{ resources.cpu_cores | default('') }}"
+               placeholder="unlimited"
+               style="width:130px">
+      </div>
+
+      <div>
+        <label for="r-mem" class="muted" style="font-size:0.8em;display:block;margin-bottom:4px">
+          Memory GB (blank = unlimited)
+        </label>
+        <input class="input" type="number" id="r-mem" name="memory_gb"
+               step="0.5" min="0" max="1024"
+               value="{{ resources.memory_gb | default('') }}"
+               placeholder="unlimited"
+               style="width:130px">
+      </div>
+
+      <button class="btn btn-sm btn-primary" type="submit">Apply</button>
+
+      <button class="btn btn-sm" type="submit"
+              hx-post="/api/machines/{{ machine_name }}/resources"
+              hx-target="#machine-resources-card"
+              hx-swap="outerHTML"
+              hx-vals='{"cpu_cores":"","memory_gb":""}'
+              hx-confirm="Clear CPU + memory limits for {{ machine_name }}? Container becomes unlimited."
+              title="Remove the drop-in and live-reset to no limit"
+              style="margin-left:auto">
+        Clear (unlimited)
+      </button>
+    </form>
+
+    <div class="muted" style="font-size:0.8em;margin-top:8px">
+      Applies live via <code>systemctl set-property --runtime</code> (no
+      container restart). The persistent drop-in survives reboots.
+    </div>
+  </div>
+</div>

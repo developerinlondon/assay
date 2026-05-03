@@ -1,0 +1,77 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow">Host · {{ host.name }} · {{ host.ip }}</div>
+    <h1 class="page-title">Overview</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">kernel</span><span class="v">{{ host.kernel }}</span></span>
+    <span><span class="k">cgroup</span><span class="v">v2</span></span>
+    <span class="live">{{ host.uptime_secs | default("0") | round | int }}s up</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab active" href="/">Overview</a>
+  <a class="tab" href="/services">Services</a>
+  <a class="tab" href="/cron">Cron</a>
+  <a class="tab" href="/logs">Logs</a>
+  <a class="tab" href="/host/shell">Shell</a>
+  <a class="tab" href="/backups">Backups</a>
+</div>
+
+<!-- HOST UTILIZATION -->
+<div class="section-head">
+  <h2>Host Utilization</h2>
+</div>
+
+<div id="host-strip"
+     class="metric-strip"
+     hx-get="/api/overview/host-strip"
+     hx-trigger="dashboard-refresh from:body"
+     hx-swap="innerHTML">
+  {{ host_strip | safe }}
+</div>
+
+<!-- NSPAWN MACHINES -->
+<div class="section-head" style="margin-top:32px">
+  <h2>nspawn containers</h2>
+  <span class="count">{{ machines | length }} running</span>
+  <div class="actions">
+    <button class="btn btn-sm">Refresh</button>
+    <a href="/machines/new" class="btn btn-sm btn-primary">+ Provision new</a>
+  </div>
+</div>
+
+<div id="machines-grid"
+     class="machines-grid"
+     hx-get="/api/overview/machines-grid"
+     hx-trigger="dashboard-refresh from:body"
+     hx-swap="innerHTML">
+  {{ machines_grid | safe }}
+</div>
+
+<!-- STATUS STRIP -->
+<div class="section-head" style="margin-top:32px">
+  <h2>Status Strip</h2>
+</div>
+
+<div id="status-strip"
+     class="act-strip"
+     hx-get="/api/overview/status-strip"
+     hx-trigger="dashboard-refresh from:body"
+     hx-swap="innerHTML">
+  {{ status_strip | safe }}
+</div>
+
+<!-- RECENT ACTIVITY -->
+<div class="section-head" style="margin-top:32px">
+  <h2>Recent Activity</h2>
+</div>
+
+<div id="recent-activity"
+     class="journal"
+     hx-get="/api/overview/recent-activity"
+     hx-trigger="dashboard-refresh from:body"
+     hx-swap="innerHTML">
+  {{ recent_activity | safe }}
+</div>

@@ -220,6 +220,66 @@ jobs:
         env:
           MOON_LOG: "info"
 
+  # Browser-side UI tests for libs/hostops/ — orchestrated by moon
+  # (project: hostops-e2e, task: test). The task definition handles
+  # the assay-lua build + npm install + playwright install + run.sh
+  # boot/teardown.
+  hostops-e2e:
+    name: hostops-e2e
+    runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Moon needs main to compute affected projects.
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v2
+        with:
+          version: 2026.4.17
+          install: true
+          cache: true
+
+      - name: moon run hostops-e2e:test
+        run: moon run hostops-e2e:test --color
+        env:
+          MOON_LOG: "info"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: hostops-e2e-report
+          path: |
+            libs/hostops/tests-e2e/playwright-report
+            libs/hostops/tests-e2e/test-results
+            /tmp/hostops-e2e.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Route-level smoke against libs/hostops/ — moon project `hostops`,
+  # task `smoke`. Boots the lib in-process with stub services and
+  # asserts representative routes return 2xx with the expected content.
+  hostops-smoke:
+    name: hostops-smoke
+    runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Moon needs main to compute affected projects.
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v2
+        with:
+          version: 2026.4.17
+          install: true
+          cache: true
+
+      - name: moon run hostops:smoke
+        run: moon run hostops:smoke --color
+        env:
+          MOON_LOG: "info"
+
   # Catches public-API drift in workspace crates so the release-time
   # `cargo publish --verify` step doesn't fail on a method that was
   # added to a workspace dep without bumping that dep's Cargo.toml.

@@ -1,0 +1,48 @@
+# Playwright UI tests for libs/hostops.
+#
+# Boots the lib via tests-e2e/run.sh (mounts hostops with stub
+# services, binds http.serve on $E2E_PORT, runs Playwright against it),
+# then tears down. Mirrors the engine-e2e moon project's shape so the
+# install-browsers step can serialise against it (apt-get lock).
+
+language: "typescript"
+layer: "automation"
+stack: "frontend"
+
+tasks:
+  install:
+    command: "npm install --no-audit --no-fund"
+    inputs:
+      - "package.json"
+      - "package-lock.json"
+    outputs:
+      - "node_modules"
+    options:
+      cache: true
+      runInCI: true
+
+  install-browsers:
+    command: "npx playwright install --with-deps chromium"
+    deps:
+      - "install"
+      # Serialize against engine-e2e + dashboard-e2e — all three run
+      # `playwright install --with-deps`, which shells out to apt-get
+      # and races for /var/lib/apt/lists/lock on the same runner.
+      - "engine-e2e:install-browsers"
+    options:
+      cache: false
+      runInCI: true
+
+  test:
+    command: "bash run.sh"
+    deps:
+      - "assay-lua:build"
+      - "install-browsers"
+    inputs:
+      - "**/*.{ts,sh,json}"
+      - "/libs/hostops/**/*.{lua,html,css,js}"
+      - "/libs/hostops/VERSION"
+    options:
+      cache: true
+      runInCI: true
+      retryCount: 1

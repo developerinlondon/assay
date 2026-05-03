@@ -1,0 +1,26 @@
+<table class="table proc-table">
+  <thead>
+    <tr>
+      <th>PID</th>
+      <th>Process</th>
+      <th class="num">CPU%</th>
+      <th class="num">RSS</th>
+      <th>State</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if processes and processes | length > 0 %}
+      {% for p in processes %}
+    <tr>
+      <td class="pid">{{ p.pid }}</td>
+      <td class="cmd">{{ p.cmdline }}</td>
+      <td class="num">{{ p.cpu_pct }}</td>
+      <td class="num">{{ p.rss_fmt }}</td>
+      <td><span class="pill {% if p.state == 'R' %}pill-ok{% elif p.state == 'S' %}pill-info{% elif p.state == 'D' %}pill-warn{% else %}pill-muted{% endif %}">{{ p.state }}</span></td>
+    </tr>
+      {% endfor %}
+    {% else %}
+    <tr><td colspan="5" style="color:var(--fg-3);text-align:center;padding:18px">no process data (first sample — refresh to populate)</td></tr>
+    {% endif %}
+  </tbody>
+</table>

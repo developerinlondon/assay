@@ -1,0 +1,71 @@
+/* Design tokens
+ * --------------
+ * All visual tokens (palette, radii, sidebar width) live here so a
+ * brand override file (`brand.css`) can re-declare any of them without
+ * touching the structural styles in `styles.css`.
+ *
+ * Load order in templates/layout.html:
+ *     tokens.css   (this file — defaults)
+ *     styles.css   (component styles, depend on the tokens above)
+ *     brand.css    (whitelabel overrides; loaded last so it always wins)
+ *
+ * Defaults: steel-blue palette (deep navy chrome + #3a86ff accent).
+ * Operators wanting a different palette drop a brand.css overlay at
+ * <config_dir>/brand/brand.css — see plan 04.
+ */
+
+:root {
+  /* Steel-blue chrome ramp (cool navy). Anchored on a deep navy
+   * background so the --info accent sits naturally against it. */
+  --bg-0: #0a1426;
+  --bg-1: #101e36;
+  --bg-2: #182a48;
+  --bg-3: #20365a;
+  --line: #28406a;
+  --line-soft: #1c2e50;
+
+  --fg-0: #f0f3f8;
+  --fg-1: #cbd1dc;
+  --fg-2: #8a93a6;
+  --fg-3: #5b6378;
+
+  --ok:   #7ee787;
+  --warn: #f6a93b;
+  --err:  #ff7b72;
+  /* Steel-blue accent — sidebar active, focus rings, links, btn-primary. */
+  --info: #3a86ff;
+  --hot:  #ffa657;
+  --violet: #c084fc;
+
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --sidebar-w: 232px;
+}
+
+:root[data-theme="light"] {
+  --bg-0: #f4f5f7;
+  --bg-1: #ffffff;
+  --bg-2: #eef0f4;
+  --bg-3: #e2e6ec;
+  --line: #d0d4dc;
+  --line-soft: #e6e9ee;
+
+  --fg-0: #0a0d12;
+  --fg-1: #1c2230;
+  --fg-2: #5b6378;
+  --fg-3: #8a93a6;
+
+  --ok:   #1a7f3a;
+  --warn: #a35400;
+  --err:  #c8302a;
+  /* Light-mode steel-blue accent — deeper royal blue for contrast on white. */
+  --info: #1d4ed8;
+  --hot:  #a85408;
+  --violet: #6b3bd9;
+}
+:root[data-theme="light"] body {
+  background-image: linear-gradient(rgba(0,0,0,0.018) 1px, transparent 1px);
+}
+:root[data-theme="light"] .table tr:hover td { background: rgba(0,0,0,0.025); }
+:root[data-theme="light"] .journal .ln:hover { background: rgba(0,0,0,0.025); }

@@ -1,0 +1,11 @@
+{% if journal and journal | length > 0 %}
+  {% for e in journal %}
+<div class="ln {{ e.line_class }}">
+  <span class="ts">{{ e.ts }}</span>
+  <span class="src">{{ e.src }}</span>
+  <span class="msg">{{ e.msg }}</span>
+</div>
+  {% endfor %}
+{% else %}
+<div class="ln"><span class="ts"></span><span class="src"></span><span class="msg" style="color:var(--fg-3)">no journal entries available</span></div>
+{% endif %}

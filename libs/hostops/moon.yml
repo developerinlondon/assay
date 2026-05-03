@@ -1,0 +1,33 @@
+# libs/hostops — host-visibility dashboard library.
+#
+# Tasks:
+#   smoke   — boots the lib in-process with stub services and asserts
+#             representative routes render. See tests-lua/smoke.test.lua.
+#
+# The Playwright UI tests live in tests-e2e/ as a separate project
+# (`hostops-e2e`) so its npm-side dependencies don't pollute this
+# pure-Lua project.
+
+language: "lua"
+layer: "automation"
+
+tasks:
+  smoke:
+    # Run the smoke test from the workspace root so relative paths
+    # (libs/..., target/release/assay) resolve cleanly. The release
+    # binary is produced by the assay-lua:build dep below.
+    command: "bash -c 'cd $workspaceRoot && ./target/release/assay libs/hostops/tests-lua/smoke.test.lua'"
+    env:
+      LUA_PATH: "libs/?.lua;libs/?/init.lua;libs/hostops/?.lua;libs/hostops/tests-lua/?.lua;;"
+    deps:
+      - "assay-lua:build"
+    inputs:
+      - "**/*.lua"
+      - "**/*.html"
+      - "**/*.css"
+      - "**/*.js"
+      - "VERSION"
+      - "/crates/assay/stdlib/**/*.lua"
+    options:
+      cache: true
+      runInCI: true

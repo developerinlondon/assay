@@ -1,0 +1,70 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/">Host</a> · <a href="/backups">backups</a> · sources</div>
+    <h1 class="page-title">Edit sources</h1>
+  </div>
+</header>
+
+<div class="card">
+  <div class="card-body">
+    <p class="muted" style="margin-bottom:16px">
+      Pick which paths get backed up on every run. Defaults cover host config
+      and all nspawn containers. The FS snapshot backend (when available)
+      makes captures crash-consistent across all sources at once.
+    </p>
+
+    <p style="margin-bottom:16px">
+      <strong>FS snapshot backend:</strong>
+      {% if fs_backend.backend == "btrfs" or fs_backend.backend == "zfs" %}
+        <span class="pill pill-ok">{{ fs_backend.backend }}</span> ●available
+      {% else %}
+        <span class="pill pill-warn">none</span>
+        ⚠ Live read; captures may be torn for active databases.
+        Migrate <code>/var/lib/machines</code> to btrfs/ZFS for crash-consistent backups.
+      {% endif %}
+    </p>
+
+    <form method="POST" action="/api/backups/sources">
+      <fieldset style="border:1px solid var(--border-1); padding:12px; margin-bottom:12px">
+        <legend>Sources</legend>
+        {% for s in sources %}
+        <label style="display:block; margin-bottom:4px">
+          <input type="checkbox" name="sources[]" value="{{ s }}" checked>
+          <code>{{ s }}</code>
+        </label>
+        {% endfor %}
+
+        {# Add common sources not already in the list as additional options #}
+        {% set common = ["/etc", "/root", "/etc/systemd/nspawn", "/var/lib/machines", "/opt", "/home"] %}
+        {% for c in common %}
+        {% if c not in sources %}
+        <label style="display:block; margin-bottom:4px">
+          <input type="checkbox" name="sources[]" value="{{ c }}">
+          <code>{{ c }}</code>
+        </label>
+        {% endif %}
+        {% endfor %}
+
+        <div style="margin-top:12px">
+          <input type="text" name="custom_path" placeholder="/path/to/custom"
+                 style="width:60%">
+          <span class="muted" style="font-size:0.85em">+ add custom path</span>
+        </div>
+      </fieldset>
+
+      {% if nspawn_machines and nspawn_machines|length > 0 %}
+      <p class="muted" style="font-size:0.85em">
+        Detected nspawn containers (swept by <code>/var/lib/machines</code>):
+        {% for m in nspawn_machines %}
+          <span class="pill pill-info">{{ m.name | default(m) }}</span>
+        {% endfor %}
+      </p>
+      {% endif %}
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
+        <a href="/backups" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">Save sources</button>
+      </div>
+    </form>
+  </div>
+</div>

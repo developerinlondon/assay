@@ -1,0 +1,45 @@
+{% for m in machines %}
+<a href="/machines/{{ m.name }}" class="machine-card">
+  <button type="button" class="card-shell-btn"
+          onclick="event.preventDefault();event.stopPropagation();window.location='/machines/{{ m.name }}/shell'"
+          title="Open shell" aria-label="Open shell">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="4 17 10 11 4 5"/>
+      <line x1="12" y1="19" x2="20" y2="19"/>
+    </svg>
+  </button>
+  <div class="head">
+    <span class="name">{{ m.name }}</span>
+    <span class="pill {{ m.pill_class }}">{{ m.state }}</span>
+    {% if m.ip %}<span class="ip">{{ m.ip }}</span>{% endif %}
+  </div>
+  <div class="stats">
+    <div class="stat">
+      <div class="lbl">CPU</div>
+      <div class="val">{{ m.cpu_pct | default(0) | round(1) }}<span class="unit">%</span></div>
+      {% set cpu_w = [m.cpu_pct | default(0) | round(0) | int, 100] | min %}
+      <div class="bar {% if cpu_w > 80 %}hot{% elif cpu_w > 60 %}warn{% endif %}"><i style="width:{{ cpu_w }}%"></i></div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Mem</div>
+      {% set mem_mb = (m.mem_used | default(0)) / 1048576 %}
+      {% if m.mem_max %}
+        {% set mem_max_gb = m.mem_max / 1073741824 %}
+        <div class="val">{{ (m.mem_used / 1073741824) | round(1) }}<span class="unit">/ {{ mem_max_gb | round(0) | int }} GB</span></div>
+        {% set mem_pct = ((m.mem_used / m.mem_max) * 100) | round(0) | int %}
+        <div class="bar {% if mem_pct > 80 %}hot{% elif mem_pct > 60 %}warn{% endif %}"><i style="width:{{ [mem_pct, 100] | min }}%"></i></div>
+      {% else %}
+        <div class="val">{{ (m.mem_used / 1073741824) | round(1) }}<span class="unit">GB</span></div>
+        <div class="bar"><i style="width:0%"></i></div>
+      {% endif %}
+    </div>
+    <div class="stat">
+      <div class="lbl">Procs</div>
+      <div class="val">{{ m.procs | default(0) }}</div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>pid {{ m.leader_pid }}</span>
+  </div>
+</a>
+{% endfor %}
