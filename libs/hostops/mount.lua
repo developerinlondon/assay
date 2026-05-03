@@ -107,6 +107,16 @@ local GET_ROUTES = {
   ["/audit"]                         = "audit",
   ["/api/audit/export"]              = "audit_export",
 
+  -- Backups (read-only views + editor pages).
+  ["/backups"]                       = "backups",
+  ["/backups/sources"]               = "backups_sources_editor",
+  ["/backups/schedule"]              = "backups_schedule_editor",
+
+  -- Backup snapshot detail + job status (wildcard paths).
+  ["/backups/snapshot/*"]            = "backups_snapshot_detail",
+  ["/backups/job/*"]                 = "backups_job_detail",
+  ["/api/backups/jobs/*"]            = "backups_job_status",
+
   -- nspawn containers list.
   ["/machines"]                      = "machines_index",
 }
@@ -118,6 +128,15 @@ local POST_ROUTES = {
   -- Lifecycle actions: /api/machines/<name>/<action>.
   -- Note: this also catches POST /api/machines/<name>/destroy etc.
   ["/api/machines/*"]                = "machine_action",
+
+  -- Backups setup + run actions.
+  ["/api/backups/setup/test"]        = "backups_setup_test",
+  ["/api/backups/setup/init"]        = "backups_setup_init",
+  ["/api/backups/reconfigure"]       = "backups_reconfigure",
+  ["/api/backups/sources"]           = "backups_sources_update",
+  ["/api/backups/schedule"]          = "backups_schedule_update",
+  ["/api/backups/run"]               = "backups_run_now",
+  ["/api/backups/restore"]           = "backups_restore_action",
 }
 
 ----------------------------------------------------------------------
