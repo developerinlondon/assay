@@ -17,8 +17,6 @@ local STUBS = {
     coming = { "tailscale status: tailnet name, DERP latency, MagicDNS", "Device list with IPs, OS, tags, key expiry", "Subnet advertisement and exit-node status", "ACL preview from tailscale acl get" } },
   inventory    = { title = "Inventory",               eyebrow = '<a href="/inventory">Admin</a> &middot; hosts.yml',         phase = "Phase 9",  nav = "inventory",
     coming = { "hosts.yml parsed view with live-state comparison", "Drift detection: declared vs running", "Inline editor with git diff preview", "Ansible plan / apply trigger" } },
-  backups      = { title = "Backups",                 eyebrow = '<a href="/inventory">Admin</a> &middot; rustic',             phase = "Phase 8",  nav = "backups",
-    coming = { "rustic snapshot list from iDrive e2 repo", "Last run status, duration and size", "Retention policy summary with next prune time", "Run backup now / verify / restore actions" } },
   audit        = { title = "Audit log",               eyebrow = '<a href="/inventory">Admin</a> &middot; mutations',          phase = "Phase 8",  nav = "audit",
     coming = { "In-memory ring buffer of all write actions (24h)", "Attribution from Cloudflare Access JWT", "Filter by user / action type / time range", "Export as ndjson" } },
   settings     = { title = "Settings",                eyebrow = '<a href="/inventory">Admin</a> &middot; preferences',        phase = "Phase 11", nav = "settings",

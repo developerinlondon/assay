@@ -23,14 +23,6 @@ local tail_pg    = require("pages.tailscale")
 local shell_pg   = require("pages.shell")
 local shell_api  = require("api.shell")
 
-local backups_pg          = require("pages.backups.index")
-local backups_setup_pg    = require("pages.backups.setup")
-local backups_sources_pg  = require("pages.backups.sources")
-local backups_schedule_pg = require("pages.backups.schedule")
-local backups_run_pg      = require("pages.backups.run")
-local backups_restore_pg  = require("pages.backups.restore")
-local backups_job_pg      = require("pages.backups.job")
-
 local machines_index_pg = require("pages.machines.index")
 local machines_new_pg   = require("pages.machines.new")
 local m_services_pg     = require("pages.machines.services")
@@ -79,21 +71,6 @@ return {
   tunnels     = tunnels_pg.page,
   interfaces  = iface_pg.page,
   tailscale   = tail_pg.page,
-
-  -- Backups (read-only views + setup actions).
-  backups                 = backups_pg.page,
-  backups_setup_test      = backups_setup_pg.test,
-  backups_setup_init      = backups_setup_pg.init,
-  backups_reconfigure     = backups_setup_pg.reconfigure,
-  backups_sources_editor  = backups_sources_pg.editor,
-  backups_sources_update  = backups_sources_pg.update,
-  backups_schedule_editor = backups_schedule_pg.editor,
-  backups_schedule_update = backups_schedule_pg.update,
-  backups_run_now         = backups_run_pg.run,
-  backups_snapshot_detail = backups_restore_pg.detail,
-  backups_restore_action  = backups_restore_pg.restore,
-  backups_job_detail      = backups_job_pg.detail,
-  backups_job_status      = backups_job_pg.status,
 
   -- Audit log viewer + export.
   audit        = audit_pg.audit,
