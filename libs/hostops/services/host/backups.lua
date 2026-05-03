@@ -116,9 +116,22 @@ local function parse_toml(body)
   local out = { repository = {}, backup = { sources = {}, tags = {} } }
   local section
   for line in body:gmatch("[^\r\n]+") do
-    local s = line:match("^%[([%w_%.]+)%]")
-    if s then
-      section = s
+    local hdr = line:match("^%[([%w_%.]+)%]")
+    if hdr then
+      section = hdr
+    elseif line:match("^sources%s*=%s*%[%s*$") then
+      -- Multi-line array start: switch to a synthetic section but DO
+      -- NOT also fall through to the scalar-assignment branch below
+      -- (which would clobber `out.backup.sources` with the literal
+      -- string "[").
+      section = "backup.sources"
+    elseif line:match("^%]") and section == "backup.sources" then
+      -- End of multi-line array.
+      section = "backup"
+    elseif section == "backup.sources" then
+      -- Each line in the array is a quoted entry.
+      local entry = line:match('^%s*"([^"]+)",?')
+      if entry then table.insert(out.backup.sources, entry) end
     else
       local k, v = line:match("^([%w_]+)%s*=%s*(.+)$")
       if k and v and section then
@@ -129,17 +142,6 @@ local function parse_toml(body)
         local target = out[section] or {}
         target[k] = v
         out[section] = target
-      end
-      -- Multi-line array start: sources = [
-      if line:match("^sources%s*=%s*%[%s*$") then
-        section = "backup.sources"
-      end
-      if line:match("^%]") and section == "backup.sources" then
-        section = "backup"
-      end
-      if section == "backup.sources" then
-        local s2 = line:match('^%s*"([^"]+)",?')
-        if s2 then table.insert(out.backup.sources, s2) end
       end
     end
   end
