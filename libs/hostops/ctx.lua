@@ -44,4 +44,5 @@ return {
   template_paths      = nil,
   desired_state_path  = nil,
   backup_profile_dir  = nil,
+  engine_base_url     = nil,
 }

@@ -89,6 +89,10 @@ function M.layout_defaults(ctx, req, fallback_nav_active)
   end
   ctx.actor = ctx.actor or M.actor_from(req)
   ctx.active_modules = ctx.active_modules or {}
+  -- Engine sidecar URL (set via mount opts.engine_base_url). Layout
+  -- conditionally renders /auth/console, /vault/console, /engine/console,
+  -- /workflow/ sidebar links when present.
+  ctx.engine_base_url = ctx.engine_base_url or hctx.engine_base_url
   return ctx
 end
 
@@ -113,9 +117,19 @@ end
 function M.render(template_name, ctx, req)
   ctx = M.layout_defaults(ctx, req, template_name)
   local root = hctx.lib_root or "."
-  local ok_c, content_tpl = pcall(fs.read, root .. "/templates/" .. template_name .. ".html")
-  if not ok_c or not content_tpl then content_tpl = "" end
-  local content = template.render_string(content_tpl, ctx)
+  local template_dir = root .. "/templates"
+  -- Use render_with_loader so `{% include "partials/..." %}` directives
+  -- resolve relative to the templates dir. render_string can't handle
+  -- includes (no loader configured), which silently breaks any page
+  -- whose template has an include — hit on machine detail / shell /
+  -- per-machine services|cron|logs.
+  local ok_c, content = pcall(template.render_with_loader,
+                              template_dir,
+                              template_name .. ".html",
+                              ctx)
+  if not ok_c then
+    content = "<pre>render error: " .. tostring(content) .. "</pre>"
+  end
   return M.wrap_layout(content, ctx, req)
 end
 

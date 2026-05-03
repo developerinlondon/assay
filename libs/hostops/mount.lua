@@ -230,6 +230,12 @@ function M.mount(routes, opts)
   -- Backup profile directory (default /etc/rustic). Tests override.
   ctx.backup_profile_dir = opts.backup_profile_dir
 
+  -- Base URL of the consumer's engine sidecar (e.g.
+  -- "https://knowhere2-engine.agenteda.com"). When set, the sidebar
+  -- exposes links to the engine's whitelabeled SPA at /auth/console,
+  -- /vault/console, /engine/console, /workflow/. Nil = links hidden.
+  ctx.engine_base_url = opts.engine_base_url
+
   ctx.lib_root = opts.lib_root or "."
   local lib_root = ctx.lib_root
 

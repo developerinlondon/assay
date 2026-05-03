@@ -98,6 +98,13 @@ pub struct WhitelabelConfig {
     /// assay single-tenant (all workflows in one non-`main` namespace)
     /// shouldn't force every user to change the dropdown on first load.
     pub default_namespace: String,
+    /// Default theme for the SPA: `"dark"`, `"light"`, or `"auto"` (the
+    /// default — track the system's `prefers-color-scheme`). Pinning a
+    /// theme lets a brand-pack consumer match its parent app's chrome
+    /// without overriding cascade in CSS. Read by the pre-paint script
+    /// in each `index.html` and applied via `data-theme` on `<html>`
+    /// when localStorage doesn't already record a user preference.
+    pub default_theme: String,
 }
 
 impl WhitelabelConfig {
@@ -170,6 +177,13 @@ impl WhitelabelConfig {
             .ok()
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "main".to_string());
+        // Validate against the SPA's supported set so a typo can't end
+        // up as a literal "drak" attribute on `<html>` — fall back to
+        // "auto" rather than raise.
+        let default_theme = match std::env::var("ASSAY_WHITELABEL_DEFAULT_THEME") {
+            Ok(s) if s == "dark" || s == "light" || s == "auto" => s,
+            _ => "auto".to_string(),
+        };
         Self {
             name,
             mark,
@@ -182,6 +196,7 @@ impl WhitelabelConfig {
             css_url,
             favicon_url,
             default_namespace,
+            default_theme,
         }
     }
 }
@@ -298,6 +313,30 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         None => String::new(),
     };
 
+    // Parent URL/name as raw values too — cross-nav.js reads these via
+    // `data-parent-url` / `data-parent-name` attributes on
+    // `<nav id="cross-nav-pills">` so the back-to-parent link renders
+    // uniformly across every console (workflow / auth / vault / engine)
+    // without per-template HTML.
+    let parent_url_attr = wl
+        .parent_url
+        .as_ref()
+        .map(|u| html_escape(u))
+        .unwrap_or_default();
+    let parent_name_attr = if wl.parent_url.is_some() {
+        html_escape(&wl.parent_name)
+    } else {
+        String::new()
+    };
+
+    // Default theme: pinned by `ASSAY_WHITELABEL_DEFAULT_THEME` so
+    // operators can declare "this deployment is dark-only" (or
+    // light-only) instead of fighting per-system prefers-color-scheme
+    // via brand-pack CSS overrides. The pre-paint script in each
+    // index.html consumes this when localStorage doesn't already
+    // record a user choice.
+    let default_theme = html_escape(&wl.default_theme);
+
     template
         .replace("__ASSETV__", asset_version)
         .replace("__PAGE_TITLE__", &html_escape(&wl.page_title))
@@ -311,6 +350,9 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         .replace("__EXTRA_CSS_LINK__", &extra_css)
         .replace("__FAVICON_LINK__", &favicon_link)
         .replace("__DEFAULT_NAMESPACE_ATTR__", &default_namespace_attr)
+        .replace("__BRAND_PARENT_URL__", &parent_url_attr)
+        .replace("__BRAND_PARENT_NAME__", &parent_name_attr)
+        .replace("__BRAND_DEFAULT_THEME__", &default_theme)
 }
 
 #[cfg(test)]
@@ -342,6 +384,7 @@ v=__ASSETV__
             css_url: None,
             favicon_url: None,
             default_namespace: "main".into(),
+            default_theme: "auto".into(),
         }
     }
 

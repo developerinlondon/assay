@@ -7,7 +7,7 @@
 {% else %}
 <header class="page-header">
   <div>
-    <div class="page-eyebrow"><a href="/">Host</a> · shell · {{ target }}</div>
+    <div class="page-eyebrow"><a href="/">{{ host.name }}</a> · shell · {{ target }}</div>
     <h1 class="page-title">{{ target }} <span class="pill pill-info" id="shell-status">connecting…</span></h1>
   </div>
   <a href="{{ back_url }}" class="btn btn-sm">← back</a>
@@ -29,6 +29,6 @@
 <script src="/static/vendor/xterm/xterm.js"></script>
 <script src="/static/vendor/xterm/addon-fit.js"></script>
 <script>
-  window.SHELL_WS_URL = "{{ ws_url }}";
+  window.SHELL_WS_URL = "{{ ws_url | safe }}";
 </script>
 <script src="/static/shell.js"></script>

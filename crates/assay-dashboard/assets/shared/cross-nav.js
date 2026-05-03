@@ -1,20 +1,25 @@
 /* Cross-console navigation strip controller.
  *
- * Reads `/api/v1/engine/core/active-modules` (no auth) so disabled modules' pills don't
- * render. The Engine pill always shows because engine-core is always
- * running. Active console is set by the host (`AssayCrossNav.render({
- * active: 'workflow' | 'auth' | 'engine' })`).
+ * Reads `/api/v1/engine/core/active-modules` (no auth) so disabled modules'
+ * pills don't render. The Engine pill always shows because engine-core is
+ * always running. Active console is set by the host
+ * (`AssayCrossNav.render({ active: 'workflow' | 'auth' | 'vault' | 'engine' })`).
+ *
+ * Back-to-parent link is rendered alongside the pills when the host's
+ * `<nav id="cross-nav-pills">` carries `data-parent-url` and (optionally)
+ * `data-parent-name` attributes. The whitelabel renderer substitutes those
+ * from `ASSAY_WHITELABEL_PARENT_URL` / `_PARENT_NAME` so every console
+ * gets the same back-link without per-template HTML.
  */
 
 (function () {
   'use strict';
 
-  // The console registry is intentionally tiny — three known consoles.
-  // Each entry knows whether its module must be enabled to render
-  // (engine-core is always on; workflow + auth gate on /modules).
-  // Icons are inline SVGs so they pick up currentColor and don't need a
-  // font dependency. Render output goes into #cross-nav-pills (now
-  // sitting at the top of the per-console sidebar, not the top strip).
+  // The console registry — every assay-engine sub-console that has its own
+  // SPA. `requires` names the engine module that must be enabled for the
+  // pill to render (the modules list comes from /active-modules); engine-
+  // core is always on so its `requires` is null. Icons are inline SVGs so
+  // they pick up currentColor and don't need a font dependency.
   const CONSOLES = [
     {
       id: 'workflow', label: 'Workflow', href: '/workflow/', requires: 'workflow',
@@ -27,11 +32,21 @@
       svg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
     },
     {
+      id: 'vault', label: 'Vault', href: '/vault/console', requires: 'vault',
+      // key (vault/secrets)
+      svg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>',
+    },
+    {
       id: 'engine', label: 'Engine', href: '/engine/console', requires: null,
       // bolt (engine/runtime)
       svg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
     },
   ];
+
+  // Inline-svg arrow used for the back-to-parent link.
+  const BACK_ARROW_SVG =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>';
 
   function escapeHtml(s) {
     if (s === null || s === undefined) return '';
@@ -53,11 +68,36 @@
     }
   }
 
+  // Render the back-to-parent link into the host page if the
+  // cross-nav-pills container carries data-parent-url. Idempotent: a
+  // second call updates the link rather than appending a duplicate.
+  function renderBackLink(container) {
+    const url = container.getAttribute('data-parent-url');
+    if (!url) return;
+    const name = container.getAttribute('data-parent-name') || 'Back';
+    const target = document.getElementById('cross-nav-back') || (function () {
+      const a = document.createElement('a');
+      a.id = 'cross-nav-back';
+      a.className = 'cross-nav-back';
+      // Sit inside the same sidebar-header as cross-nav-pills, before
+      // the pills themselves, so tabbing through reaches it first.
+      container.parentNode.insertBefore(a, container);
+      return a;
+    })();
+    target.href = url;
+    target.title = name;
+    target.setAttribute('aria-label', 'Back to ' + name);
+    target.innerHTML = BACK_ARROW_SVG +
+      '<span class="cross-nav-back-label">' + escapeHtml(name) + '</span>';
+  }
+
   async function render(opts) {
     opts = opts || {};
     const active = opts.active || '';
     const container = document.getElementById('cross-nav-pills');
     if (!container) return;
+
+    renderBackLink(container);
 
     const modules = await loadModules();
     const html = CONSOLES

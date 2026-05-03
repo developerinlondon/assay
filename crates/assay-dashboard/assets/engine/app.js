@@ -207,8 +207,17 @@
   }
 
   function initTheme() {
+    // Resolution order:
+    //   1. Saved user choice (assay-theme localStorage)
+    //   2. ASSAY_WHITELABEL_DEFAULT_THEME from the operator (read off
+    //      <html data-default-theme=...>) - lets a brand-pack consumer
+    //      pin the SPA to dark or light without per-system overrides.
+    //   3. prefers-color-scheme, when default-theme is unset or 'auto'.
     const saved = localStorage.getItem('assay-theme');
+    const def = (document.documentElement.dataset.defaultTheme || 'auto');
+    const fromBrand = (def === 'dark' || def === 'light') ? def : null;
     const theme = saved
+      || fromBrand
       || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', theme);
   }

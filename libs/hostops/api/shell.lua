@@ -15,7 +15,18 @@ local function is_ws_upgrade(req)
   return up:find("websocket", 1, true) ~= nil
 end
 
+-- Default env for PTY-spawned shells. Without TERM the spawned bash
+-- thinks it's on a dumb terminal and skips colored prompt / `ls
+-- --color=auto` etc., which makes the in-browser shell look unstyled
+-- compared to a real ssh session.
+local PTY_ENV = {
+  TERM     = "xterm-256color",
+  COLORTERM = "truecolor",
+  LANG     = "C.UTF-8",
+}
+
 local function bridge(conn, opts, action, target, actor)
+  opts.env = opts.env or PTY_ENV
   pcall(ctx.audit.append, { actor = actor, action = action .. ".opened", target = target, result = "ok" })
   shell.bridge(conn, opts)
   pcall(ctx.audit.append, { actor = actor, action = action .. ".closed", target = target, result = "ok" })

@@ -14,8 +14,12 @@ test.describe('hostops dashboard', () => {
     await page.goto('/');
     const nav = page.locator('aside .nav.nav-flat a');
     const labels = await nav.allTextContents();
+    // Container list is reachable via the dashboard cards (and direct
+    // URL); the sidebar entry was redundant once the dashboard surfaced
+    // it. Engine link only shows when engine_base_url mount opt is set
+    // — the e2e fixtures don't set it, so it's absent here.
     expect(labels).toEqual(
-      expect.arrayContaining(['Host', 'nspawn containers', 'Networks', 'Admin'])
+      expect.arrayContaining(['Host', 'Networks', 'Admin'])
     );
   });
 
