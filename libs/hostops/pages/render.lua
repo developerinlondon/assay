@@ -1,11 +1,15 @@
 local hctx = require("hostops.ctx")
 local M = {}
 
--- Sidebar version. The VERSION file is the canonical source of truth
--- (release tag matches it byte-for-byte) so we surface it directly —
--- no SHA suffix, no "+dirty". If you need the build's exact commit,
--- /health returns the git SHA separately.
-local VERSION = (fs.read("VERSION") or "0.0.0"):gsub("%s+$", "")
+-- Sidebar version. The lib's VERSION file is the canonical source of
+-- truth (release tag matches it byte-for-byte). Resolved lazily so the
+-- read happens after mount() has populated ctx.lib_root, and falls back
+-- to "0.0.0" when the file isn't readable (test fixtures, etc.).
+local function read_version()
+  local root = hctx.lib_root or "."
+  local ok, raw = pcall(fs.read, root .. "/VERSION")
+  return (ok and raw or "0.0.0"):gsub("%s+$", "")
+end
 
 -- Pull the actor (display name shown in the sidebar footer) from a
 -- request. Mirrors the per-page `actor_from` helper that older pages
@@ -20,7 +24,10 @@ end
 
 function M.fragment(template_name, ctx)
   ctx = ctx or {}
-  local tpl = fs.read("templates/partials/" .. template_name .. ".html") or ""
+  local root = hctx.lib_root or "."
+  local tpl_path = root .. "/templates/partials/" .. template_name .. ".html"
+  local ok_t, tpl = pcall(fs.read, tpl_path)
+  if not ok_t or not tpl then tpl = "" end
   local body = template.render_string(tpl, ctx)
   return {
     status  = 200,
@@ -69,7 +76,7 @@ function M.layout_defaults(ctx, req, fallback_nav_active)
   ctx.brand = ctx.brand or b
   ctx.title = ctx.title or b.title
   ctx.nav_active = ctx.nav_active or fallback_nav_active
-  ctx.version = VERSION
+  ctx.version = read_version()
   -- Pull host + machines from the cached state snapshot so every page
   -- (not just the dashboard) renders the same brand-bar host name and
   -- sidebar machines list. Errors fall through to safe defaults so a
@@ -91,7 +98,9 @@ end
 -- outside knowhere's bundled templates/ dir).
 function M.wrap_layout(content_html, ctx, req)
   ctx = M.layout_defaults(ctx, req)
-  local layout = fs.read("templates/layout.html") or ""
+  local root = hctx.lib_root or "."
+  local ok_l, layout = pcall(fs.read, root .. "/templates/layout.html")
+  if not ok_l or not layout then layout = "" end
   ctx.content = content_html
   local body = template.render_string(layout, ctx)
   return {
@@ -103,7 +112,9 @@ end
 
 function M.render(template_name, ctx, req)
   ctx = M.layout_defaults(ctx, req, template_name)
-  local content_tpl = fs.read("templates/" .. template_name .. ".html") or ""
+  local root = hctx.lib_root or "."
+  local ok_c, content_tpl = pcall(fs.read, root .. "/templates/" .. template_name .. ".html")
+  if not ok_c or not content_tpl then content_tpl = "" end
   local content = template.render_string(content_tpl, ctx)
   return M.wrap_layout(content, ctx, req)
 end

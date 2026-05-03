@@ -227,8 +227,11 @@ function M.mount(routes, opts)
   ctx.catalog_paths      = opts.catalog_paths
   ctx.template_paths     = opts.template_paths
   ctx.desired_state_path = opts.desired_state_path
+  -- Backup profile directory (default /etc/rustic). Tests override.
+  ctx.backup_profile_dir = opts.backup_profile_dir
 
-  local lib_root = opts.lib_root or "."
+  ctx.lib_root = opts.lib_root or "."
+  local lib_root = ctx.lib_root
 
   routes.GET  = routes.GET  or {}
   routes.POST = routes.POST or {}

@@ -33,13 +33,15 @@
 return {
   prefix             = "/",
   url                = function(p) return p end,
+  lib_root           = ".",
   state              = nil,
   audit              = nil,
   jobs               = nil,
   secret             = nil,
   brand              = nil,
   engine             = nil,
-  catalog_paths      = nil,
-  template_paths     = nil,
-  desired_state_path = nil,
+  catalog_paths       = nil,
+  template_paths      = nil,
+  desired_state_path  = nil,
+  backup_profile_dir  = nil,
 }

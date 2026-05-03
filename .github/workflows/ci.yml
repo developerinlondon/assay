@@ -220,6 +220,31 @@ jobs:
         env:
           MOON_LOG: "info"
 
+  # Boots libs/hostops/ in-process with stub services and asserts that
+  # representative routes (dashboard, machines, services, …, backups)
+  # render without 5xx. Covers the lib-as-a-whole at the route level.
+  hostops-smoke:
+    name: hostops-smoke
+    runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: jdx/mise-action@v2
+        with:
+          version: 2026.4.17
+          install: true
+          cache: true
+
+      - name: cargo build --release -p assay-lua
+        run: cargo build --release -p assay-lua
+
+      - name: hostops smoke test
+        env:
+          LUA_PATH: "libs/?.lua;libs/?/init.lua;libs/hostops/?.lua;libs/hostops/tests-lua/?.lua;;"
+        run: |
+          ./target/release/assay libs/hostops/tests-lua/smoke.test.lua
+
   # Catches public-API drift in workspace crates so the release-time
   # `cargo publish --verify` step doesn't fail on a method that was
   # added to a workspace dep without bumping that dep's Cargo.toml.

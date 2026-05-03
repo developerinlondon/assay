@@ -13,15 +13,26 @@ local fs_snapshot  = require("assay.fs_snapshot")
 local schedule     = require("services.host.backup_schedule")
 local marker       = require("services.host.backup_marker")
 local ctx = require("hostops.ctx")
-local secret_store = ctx.secret
+-- secret_store is read lazily (ctx.secret is populated by mount(), not
+-- at module load time). Use a closure so existing call sites — e.g.
+-- `secret_store.read(...)`, `secret_store.available()` — keep working.
+local secret_store = setmetatable({}, {
+  __index = function(_, key) return ctx.secret[key] end,
+})
 local M = {}
 
-local PROFILE_DIR  = "/etc/rustic"
+local DEFAULT_PROFILE_DIR = "/etc/rustic"
 local PROFILE_NAME = "host"  -- v1: single profile
+
+-- Profile directory is operator-configurable via ctx.backup_profile_dir
+-- so smoke tests can isolate to a temp dir.
+local function profile_dir()
+  return ctx.backup_profile_dir or DEFAULT_PROFILE_DIR
+end
 
 local function profile_path(name)
   name = name or PROFILE_NAME
-  return PROFILE_DIR .. "/" .. name .. ".toml"
+  return profile_dir() .. "/" .. name .. ".toml"
 end
 
 ----------------------------------------------------------------------
@@ -43,7 +54,7 @@ local function write_file_root_0600(path, body)
     "install -d -m 0700 -o root -g root %s && " ..
     "umask 077 && cat > %s << '%s'\n%s%s\n" ..
     "chmod 0600 %s && chown root:root %s && mv %s %s",
-    PROFILE_DIR, tmp, sentinel, body, sentinel, tmp, tmp, tmp, path)
+    profile_dir(), tmp, sentinel, body, sentinel, tmp, tmp, tmp, path)
   local r = shell.exec("sudo -n bash -c " .. string.format("%q", script))
   if not r or r.status ~= 0 then
     return nil, "profile write failed: " .. ((r and r.stderr) or "?")

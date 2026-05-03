@@ -22,13 +22,15 @@ function M.start(args)
   })
 end
 
--- Re-export the generic operations for backwards-compat.
-M.get          = ctx.jobs.get
+-- Re-export the generic operations. Wrapped as closures so the lookup
+-- happens at call time (after mount() populates ctx.jobs), not at
+-- module-load time.
+M.get          = function(...) return ctx.jobs.get(...) end
 M.list         = function() return ctx.jobs.list({ kind = "machine_provision" }) end
 M.active       = function() return ctx.jobs.active({ kind = "machine_provision" }) end
-M.update_stage = ctx.jobs.update_stage
-M.append_log   = ctx.jobs.append_log
-M.complete     = ctx.jobs.complete
-M.fail         = ctx.jobs.fail
+M.update_stage = function(...) return ctx.jobs.update_stage(...) end
+M.append_log   = function(...) return ctx.jobs.append_log(...) end
+M.complete     = function(...) return ctx.jobs.complete(...) end
+M.fail         = function(...) return ctx.jobs.fail(...) end
 
 return M
