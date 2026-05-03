@@ -66,6 +66,16 @@
     <a href="/audit" class="{% if nav_active in ['audit'] %}active{% endif %}">Admin</a>
   </nav>
 
+  {# Consumer-app links (mount opts.extra_sidebar_links). Plain
+     pass-through — the consumer's main.lua decides what shows up here. #}
+  {% if extra_sidebar_links %}
+  {% for link in extra_sidebar_links %}
+  <nav class="nav nav-flat">
+    <a href="{{ link.href }}" class="{% if link.nav_active and nav_active == link.nav_active %}active{% endif %}">{{ link.label }}</a>
+  </nav>
+  {% endfor %}
+  {% endif %}
+
   <div class="nav-meta">
     <div class="actor">{{ actor }}</div>
     <div class="meta-row"><span>{{ brand.name }}</span><span>{{ version }}</span></div>

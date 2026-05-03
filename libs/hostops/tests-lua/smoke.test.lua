@@ -17,7 +17,11 @@ print("[hostops.smoke]")
 -- Pick a high port that's unlikely to be claimed by anything else on the
 -- host. 18786 collides with the predecessor knowhere daemon.
 local PORT = 47917
-local opts = stubs.opts()
+local opts = stubs.opts({
+  extra_sidebar_links = {
+    { href = "/skip-trace", label = "Skip trace", nav_active = "skip_trace" },
+  },
+})
 
 -- Build the routes table; mount() registers every host-ops route on it.
 local routes = { GET = {}, POST = {} }
@@ -108,12 +112,29 @@ for _, p in ipairs({ "/cron", "/logs", "/tunnels", "/tailscale", "/interfaces" }
   ok(p .. " renders")
 end
 
--- ── /audit: viewer renders, brand visible ─────────────────────────────
+-- ── /audit: viewer renders, brand visible, no dead admin tabs ─────────
 do
   local r = get("/audit")
   if r.status ~= 200 then fail("GET /audit → " .. r.status) end
   assert_contains(r.body, "Test Brand", "audit brand")
-  ok("/audit renders")
+  -- Tabs to /inventory, /packages, /settings were removed in 0.1.2 —
+  -- those routes don't exist. Catch any future regression that puts
+  -- them back without registering handlers.
+  if r.body:find('href="/inventory"', 1, true)
+     or r.body:find('href="/packages"', 1, true)
+     or r.body:find('href="/settings"', 1, true) then
+    fail("audit page contains dead /inventory|/packages|/settings link")
+  end
+  ok("/audit renders, no dead admin tabs")
+end
+
+-- ── extra_sidebar_links: layout renders consumer-app links ────────────
+do
+  local r = get("/")
+  if r.status ~= 200 then fail("GET / for extra-sidebar-links → " .. r.status) end
+  assert_contains(r.body, 'href="/skip-trace"', "extra sidebar link href")
+  assert_contains(r.body, "Skip trace",         "extra sidebar link label")
+  ok("/ renders extra_sidebar_links")
 end
 
 -- ── /backups: page renders even with no profile (state = "B") ─────────

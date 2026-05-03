@@ -2,6 +2,25 @@
 
 All notable changes to Assay are documented here.
 
+## hostops 0.1.2 — 2026-05-03
+
+### Added
+
+- `hostops.mount` accepts `extra_sidebar_links = { {href, label, nav_active}, ... }`. Each entry
+  renders as a flat sidebar link below the lib's own nav. Plain pass-through — no plugin loader, no
+  dispatch shim, no `plugin.toml`. Consumer apps register routes for the `href` themselves and pass
+  `nav_active` to highlight the active link.
+
+### Changed
+
+- `templates/audit.html` no longer renders a tab strip pointing at `/inventory`, `/packages`,
+  `/settings` — those routes never existed. Eyebrow link to `/inventory` swapped to plain text.
+
+### Removed
+
+- `pages/stubs.lua` and `templates/stub.html`. They rendered "coming soon" placeholders for features
+  that aren't built. UI affordances now appear only when the underlying feature exists.
+
 ## 0.15.7 — 2026-05-03
 
 ### Added
