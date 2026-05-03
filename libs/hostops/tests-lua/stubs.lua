@@ -21,7 +21,8 @@ function M.opts(overrides)
     -- Isolate the smoke test from any /etc/rustic profile already on
     -- the dev host. The dir doesn't need to exist; backups.lua's state
     -- handles a missing profile cleanly.
-    backup_profile_dir = overrides.backup_profile_dir or "/tmp/hostops-smoke-no-profile",
+    backup_profile_dir   = overrides.backup_profile_dir or "/tmp/hostops-smoke-no-profile",
+    extra_sidebar_links  = overrides.extra_sidebar_links,
   }
 end
 

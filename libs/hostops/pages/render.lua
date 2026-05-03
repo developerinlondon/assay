@@ -93,6 +93,8 @@ function M.layout_defaults(ctx, req, fallback_nav_active)
   -- conditionally renders /auth/console, /vault/console, /engine/console,
   -- /workflow/ sidebar links when present.
   ctx.engine_base_url = ctx.engine_base_url or hctx.engine_base_url
+  -- Consumer-app sidebar links (set via mount opts.extra_sidebar_links).
+  ctx.extra_sidebar_links = ctx.extra_sidebar_links or hctx.extra_sidebar_links
   return ctx
 end
 

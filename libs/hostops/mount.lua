@@ -18,6 +18,11 @@
 --!     catalog_paths      = { "/etc/myapp/catalogs" },
 --!     template_paths     = { "/etc/myapp/templates" },
 --!     desired_state_path = "/var/lib/myapp/pkg/desired_state.json",
+--!     -- Optional sidebar links the consumer app provides on top of the
+--!     -- lib's own nav. Plain pass-through, rendered as-is in layout.html:
+--!     extra_sidebar_links = {
+--!       { href = "/skip-trace", label = "Skip trace", nav_active = "skip_trace" },
+--!     },
 --!   })
 --!   http.serve(8080, routes)
 --!
@@ -235,6 +240,13 @@ function M.mount(routes, opts)
   -- exposes links to the engine's whitelabeled SPA at /auth/console,
   -- /vault/console, /engine/console, /workflow/. Nil = links hidden.
   ctx.engine_base_url = opts.engine_base_url
+
+  -- Consumer-app sidebar links rendered after the lib's own nav blocks.
+  -- Each entry: { href = "/skip-trace", label = "Skip trace",
+  --               nav_active = "skip_trace" }. `nav_active` is matched
+  -- against the page's own ctx.nav_active to highlight the active link.
+  -- Plain pass-through — no plugin loader, no dispatch shim.
+  ctx.extra_sidebar_links = opts.extra_sidebar_links
 
   ctx.lib_root = opts.lib_root or "."
   local lib_root = ctx.lib_root
