@@ -16,7 +16,7 @@
 -- shell out directly.
 
 local nspawn         = require("assay.nspawn")
-local pkgs           = require("services.host.packages")
+local pkgs           = require("services.pkg_view")
 local network_bridge = require("services.host.network_bridge")
 local resources      = require("services.nspawn.resources")
 

@@ -23,14 +23,23 @@
 --!   secret  table                  -- secret-store reader
 --!   brand   table                  -- brand pack (logo/colors/strings)
 --!   engine  table                  -- HTTP wrapper to engine sidecar
+--!
+--! Optional package-management config (set by mount() from opts when
+--! provided; nil-safe defaults are honoured by `services/pkg_view.lua`):
+--!   catalog_paths       list of catalog directories
+--!   template_paths      list of template directories
+--!   desired_state_path  file path for the persisted desired-state JSON
 
 return {
-  prefix = "/",
-  url    = function(p) return p end,
-  state  = nil,
-  audit  = nil,
-  jobs   = nil,
-  secret = nil,
-  brand  = nil,
-  engine = nil,
+  prefix             = "/",
+  url                = function(p) return p end,
+  state              = nil,
+  audit              = nil,
+  jobs               = nil,
+  secret             = nil,
+  brand              = nil,
+  engine             = nil,
+  catalog_paths      = nil,
+  template_paths     = nil,
+  desired_state_path = nil,
 }

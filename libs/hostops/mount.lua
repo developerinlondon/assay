@@ -13,6 +13,11 @@
 --!     brand  = require("app.brand"),
 --!     engine = engine_http_client,            -- HTTP wrapper to engine
 --!     lib_root = "/opt/assay/libs/hostops",   -- optional, default "."
+--!     -- Optional package-management config (used by /machines/new and
+--!     -- container-provisioning flow; defaults below):
+--!     catalog_paths      = { "/etc/myapp/catalogs" },
+--!     template_paths     = { "/etc/myapp/templates" },
+--!     desired_state_path = "/var/lib/myapp/pkg/desired_state.json",
 --!   })
 --!   http.serve(8080, routes)
 --!
@@ -197,6 +202,12 @@ function M.mount(routes, opts)
   ctx.secret = require_table(opts, "secret")
   ctx.brand  = require_table(opts, "brand")
   ctx.engine = require_table(opts, "engine")
+
+  -- Optional pkg-management paths. nil-safe — `services/pkg_view.lua`
+  -- treats absent paths as empty catalogs / no persistence.
+  ctx.catalog_paths      = opts.catalog_paths
+  ctx.template_paths     = opts.template_paths
+  ctx.desired_state_path = opts.desired_state_path
 
   local lib_root = opts.lib_root or "."
 

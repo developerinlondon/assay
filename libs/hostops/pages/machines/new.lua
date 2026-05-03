@@ -7,7 +7,7 @@
 --                                              on success.
 
 local render = require("pages.render")
-local pkgs   = require("services.host.packages")
+local pkgs   = require("services.pkg_view")
 
 local M = {}
 
