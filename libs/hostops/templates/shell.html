@@ -1,0 +1,34 @@
+{% if machine %}
+{% include "partials/machine_tabs.html" %}
+
+<div style="margin:6px 0 14px">
+  <span class="pill pill-info" id="shell-status">connecting…</span>
+</div>
+{% else %}
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/">Host</a> · shell · {{ target }}</div>
+    <h1 class="page-title">{{ target }} <span class="pill pill-info" id="shell-status">connecting…</span></h1>
+  </div>
+  <a href="{{ back_url }}" class="btn btn-sm">← back</a>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/">Overview</a>
+  <a class="tab" href="/services">Services</a>
+  <a class="tab" href="/cron">Cron</a>
+  <a class="tab" href="/logs">Logs</a>
+  <a class="tab active" href="/host/shell">Shell</a>
+  <a class="tab" href="/backups">Backups</a>
+</div>
+{% endif %}
+
+<div id="terminal" class="shell-terminal"></div>
+
+<link rel="stylesheet" href="/static/vendor/xterm/xterm.css">
+<script src="/static/vendor/xterm/xterm.js"></script>
+<script src="/static/vendor/xterm/addon-fit.js"></script>
+<script>
+  window.SHELL_WS_URL = "{{ ws_url }}";
+</script>
+<script src="/static/shell.js"></script>

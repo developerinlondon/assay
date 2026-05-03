@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  {% if brand.favicon_url %}<link rel="icon" href="{{ brand.favicon_url }}">{% endif %}
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/css/brand.css" />
+  {% if brand.accent_hex %}<style>:root, :root[data-theme="light"] { --info: {{ brand.accent_hex }}; }</style>{% endif %}
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    })();
+  </script>
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">{{ brand.name }}</span>
+    {% if brand.subtitle %}<span class="brand-subtitle">{{ brand.subtitle }}</span>{% endif %}
+    <span class="brand-host">{{ host.name }}</span>
+    <button type="button" class="theme-toggle" aria-label="Toggle theme"
+            onclick="(function(){var d=document.documentElement;var n=d.dataset.theme==='light'?'dark':'light';d.dataset.theme=n;try{localStorage.setItem('theme',n);}catch(e){}})()">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+      <span class="track"><span class="thumb"></span></span>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+      </svg>
+    </button>
+  </div>
+
+  {# Every section below is a flat link to its landing page. The
+     landing page renders an in-page tab strip for sub-navigation,
+     so the sidebar stays a fixed-height column of section labels. #}
+  <nav class="nav nav-flat">
+    <a href="/" class="{% if nav_active in ['dashboard','services','cron','logs','host_shell','backups'] %}active{% endif %}">Host</a>
+  </nav>
+
+  <nav class="nav nav-flat">
+    <a href="/machines" class="{% if nav_active == 'machines' or 'machine:' in (nav_active or '') %}active{% endif %}">nspawn containers</a>
+  </nav>
+
+  <nav class="nav nav-flat">
+    <a href="/tunnels" class="{% if nav_active in ['tunnels','interfaces','tailscale'] %}active{% endif %}">Networks</a>
+  </nav>
+
+  <nav class="nav nav-flat">
+    <a href="/audit" class="{% if nav_active in ['audit'] %}active{% endif %}">Admin</a>
+  </nav>
+
+  <div class="nav-meta">
+    <div class="actor">{{ actor }}</div>
+    <div class="meta-row"><span>{{ brand.name }}</span><span>{{ version }}</span></div>
+  </div>
+</aside>
+
+<main>
+  {{ content | safe }}
+</main>
+
+</body>
+</html>

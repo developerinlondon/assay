@@ -1,0 +1,35 @@
+{% include "partials/machine_tabs.html" %}
+
+<div class="section-head" style="margin-top:14px">
+  <h2>Timers</h2>
+  <span class="count">{{ counts.timers }} inside {{ machine.name }}</span>
+</div>
+
+{% if fetch_error and counts.timers == 0 %}
+<div class="card" style="padding:14px;color:var(--fg-3)">
+  <strong>(unavailable)</strong> systemctl --machine returned: <code>{{ fetch_error }}</code>
+</div>
+{% else %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr><th>Unit</th><th>Activates</th><th>Next fire</th><th>Last fire</th></tr>
+    </thead>
+    <tbody>
+      {% for t in timers %}
+      <tr>
+        <td class="name-cell">{{ t.unit }}</td>
+        <td class="muted">{{ t.activates }}</td>
+        <td>{{ t.next_fire_pretty }}</td>
+        <td class="muted">{{ t.last_fire_pretty }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<p class="muted" style="margin-top:18px;font-size:12px">
+  /etc/cron.d, drop-ins, and user crontabs inside containers are not yet
+  surfaced. Use the Shell tab to inspect them directly.
+</p>

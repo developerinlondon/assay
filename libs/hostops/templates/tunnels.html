@@ -1,0 +1,115 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/tunnels">Networks</a> · tunnels</div>
+    <h1 class="page-title">Tunnels</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">routes</span><span class="v">{{ route_count }}</span></span>
+    {% if cfd.active == "active" %}
+    <span><span class="k">tunnel</span><span class="v" style="color:var(--ok)">connected</span></span>
+    {% else %}
+    <span><span class="k">tunnel</span><span class="v" style="color:var(--err)">{{ cfd.active }}</span></span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab active" href="/tunnels">Tunnels</a>
+  <a class="tab" href="/interfaces">Interfaces</a>
+  <a class="tab" href="/tailscale">Tailscale</a>
+</div>
+
+{% if cfd.active != "active" %}
+<div class="banner banner-err">
+  <span class="b-mark"></span>
+  <span><strong>cloudflared.service is {{ cfd.active }}</strong> — tunnel connectivity may be interrupted.</span>
+</div>
+{% endif %}
+
+<div class="section-head"><h2>cloudflared.service</h2></div>
+
+<div class="card" style="margin-bottom:24px">
+  <div class="card-body">
+    <div class="kvgrid">
+      <span class="k">state</span>
+      <span class="v">
+        {% if cfd.active == "active" %}
+          <span class="pill pill-ok">active</span>
+        {% else %}
+          <span class="pill pill-err">{{ cfd.active }}</span>
+        {% endif %}
+      </span>
+      {% if cfd.sub %}
+      <span class="k">sub-state</span><span class="v">{{ cfd.sub }}</span>
+      {% endif %}
+      {% if cfd.load %}
+      <span class="k">load</span><span class="v">{{ cfd.load }}</span>
+      {% endif %}
+      {% if tunnel_id %}
+      <span class="k">tunnel id</span><span class="v num">{{ tunnel_id }}</span>
+      {% endif %}
+      {% if cfd.since %}
+      <span class="k">active since</span><span class="v num">{{ cfd.since }}</span>
+      {% endif %}
+      {% if cfd.main_pid %}
+      <span class="k">main pid</span><span class="v num">{{ cfd.main_pid }}</span>
+      {% endif %}
+      {% if cfd.description %}
+      <span class="k">description</span><span class="v muted">{{ cfd.description }}</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="section-head"><h2>Ingress Routes</h2></div>
+
+{% if config_present %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Hostname</th>
+        <th>Backend service</th>
+        <th>Probe status</th>
+        <th class="num">Latency</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in probes %}
+      <tr>
+        <td>{{ p.hostname }}</td>
+        <td class="muted num" style="font-size:0.82em">{{ p.service }}</td>
+        <td>
+          {% if p.probe_ok and p.status and p.status < 400 %}
+            <span class="pill pill-ok">{{ p.status }}</span>
+          {% elif p.probe_ok and p.status %}
+            <span class="pill pill-info">{{ p.status }}</span>
+          {% else %}
+            <span class="pill pill-err">unreachable</span>
+          {% endif %}
+        </td>
+        <td class="num">
+          {% if p.latency %}{{ p.latency }}ms{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if probes | length == 0 %}
+      <tr><td colspan="4" style="color:var(--fg-3);text-align:center;padding:18px">no http routes with hostname found</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="banner" style="margin-top:18px">
+  <span class="b-mark"></span>
+  <span>Routes shown here come from <code>/etc/cloudflared/config.yml</code> — the production source-of-truth is the <strong>Cloudflare Zero Trust dashboard</strong>. These may diverge.</span>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body" style="color:var(--fg-3);text-align:center;padding:32px">
+    <div style="font-size:1.5rem;margin-bottom:8px">—</div>
+    <div><code>/etc/cloudflared/config.yml</code> not found on this host.</div>
+    <div style="margin-top:4px">Tunnel is managed entirely via the Cloudflare Zero Trust dashboard.</div>
+  </div>
+</div>
+{% endif %}

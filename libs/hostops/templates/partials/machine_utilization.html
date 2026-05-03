@@ -1,0 +1,37 @@
+<div class="metric cpu">
+  <div class="label">CPU</div>
+  <div class="value">{{ machine.cpu_pct | default(0) | round(1) }}<span class="unit">%</span></div>
+  <div class="sub">cgroup sample</div>
+  <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none">
+    <path class="fill" fill="var(--info)" d="M0,32 L10,28 L20,26 L30,24 L40,28 L50,22 L60,20 L70,24 L80,18 L90,22 L100,20 L110,24 L120,22 L120,32 Z" />
+    <path class="line" stroke="var(--info)" d="M0,28 L10,26 L20,24 L30,22 L40,26 L50,20 L60,18 L70,22 L80,16 L90,20 L100,18 L110,22 L120,20" />
+  </svg>
+</div>
+
+<div class="metric mem">
+  <div class="label">Memory</div>
+  {% if machine.mem_max and machine.mem_max > 0 %}
+    {% set mem_gb_used = (machine.mem_used | default(0)) / 1073741824 %}
+    {% set mem_gb_max  = machine.mem_max / 1073741824 %}
+    <div class="value">{{ mem_gb_used | round(1) }}<span class="unit">/ {{ mem_gb_max | round(0) | int }} GB</span></div>
+    <div class="sub">limit {{ mem_gb_max | round(0) | int }} GB</div>
+  {% else %}
+    {% set mem_gb_used = (machine.mem_used | default(0)) / 1073741824 %}
+    <div class="value">{{ mem_gb_used | round(1) }}<span class="unit">GB</span></div>
+    <div class="sub">no limit set</div>
+  {% endif %}
+  <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none">
+    <path class="fill" fill="var(--violet)" d="M0,32 L10,30 L20,28 L30,26 L40,24 L50,22 L60,20 L70,18 L80,18 L90,18 L100,18 L110,18 L120,18 L120,32 Z" />
+    <path class="line" stroke="var(--violet)" d="M0,30 L10,28 L20,26 L30,24 L40,22 L50,20 L60,18 L70,16 L80,16 L90,16 L100,16 L110,16 L120,16" />
+  </svg>
+</div>
+
+<div class="metric load">
+  <div class="label">Processes</div>
+  <div class="value">{{ machine.procs | default(0) }}</div>
+  <div class="sub">inside container</div>
+  <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none">
+    <path class="fill" fill="var(--ok)" d="M0,32 L10,24 L20,28 L30,20 L40,28 L50,16 L60,20 L70,24 L80,16 L90,20 L100,24 L110,20 L120,24 L120,32 Z" />
+    <path class="line" stroke="var(--ok)" d="M0,22 L10,24 L20,26 L30,18 L40,26 L50,14 L60,18 L70,22 L80,14 L90,18 L100,22 L110,18 L120,22" />
+  </svg>
+</div>

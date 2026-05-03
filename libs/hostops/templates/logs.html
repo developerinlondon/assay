@@ -1,0 +1,52 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/">Host</a> · logs</div>
+    <h1 class="page-title">Logs</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">stream</span><span class="v" id="stream-status">connecting</span></span>
+    <span><span class="k">rate</span><span class="v" id="line-rate">0 ln/s</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/">Overview</a>
+  <a class="tab" href="/services">Services</a>
+  <a class="tab" href="/cron">Cron</a>
+  <a class="tab active" href="/logs">Logs</a>
+  <a class="tab" href="/host/shell">Shell</a>
+  <a class="tab" href="/backups">Backups</a>
+</div>
+
+<div class="filter-bar">
+  <input id="log-search" class="input" type="text" placeholder="Search messages…" style="min-width:300px" />
+
+  <select id="log-machine" class="input" style="min-width:0;width:auto">
+    <option value="">all containers</option>
+    {% for m in machines %}<option value="{{ m.name }}">{{ m.name }}</option>{% endfor %}
+  </select>
+
+  <input id="log-unit" class="input" type="text" placeholder="unit (e.g. ssh.service)" style="min-width:180px" />
+
+  <span class="chip active" data-priority="">all</span>
+  <span class="chip" data-priority="0">emerg</span>
+  <span class="chip" data-priority="3">err</span>
+  <span class="chip" data-priority="4">warn</span>
+  <span class="chip" data-priority="6">info</span>
+
+  <button id="log-pause" class="btn btn-sm btn-primary" style="margin-left:auto">Pause</button>
+  <button id="log-clear" class="btn btn-sm">Clear</button>
+</div>
+
+<div id="log-viewport" class="journal" style="max-height:none;height:calc(100vh - 240px);overflow-y:auto">
+  {% for e in initial %}
+  <div class="ln{% if e.priority is defined and e.priority != null and e.priority < 4 %} err{% elif e.priority is defined and e.priority != null and e.priority == 4 %} warn{% endif %}">
+    <span class="ts">{{ e.ts_pretty }}</span>
+    <span class="src">{{ e.unit | default(e.hostname | default("")) }}</span>
+    <span class="msg">{{ e.message | default("") }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<script src="/static/logs.js"></script>
+<script>knowhereLogsInit();</script>

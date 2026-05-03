@@ -1,0 +1,43 @@
+<div class="metric cpu">
+  <div class="label">CPU</div>
+  <div class="value">{{ host.cpu_pct | default(0) | round(1) }}<span class="unit">%</span></div>
+  <div class="sub">load {{ host.load_one | default(0) | round(2) }} / {{ host.load_five | default(0) | round(2) }} / {{ host.load_fifteen | default(0) | round(2) }}</div>
+  <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none">
+    <path class="fill" fill="var(--info)" d="M0,32 L10,28 L20,26 L30,24 L40,28 L50,22 L60,20 L70,24 L80,18 L90,22 L100,20 L110,24 L120,22 L120,32 Z" />
+    <path class="line" stroke="var(--info)" d="M0,28 L10,26 L20,24 L30,22 L40,26 L50,20 L60,18 L70,22 L80,16 L90,20 L100,18 L110,22 L120,20" />
+  </svg>
+</div>
+
+<div class="metric mem">
+  <div class="label">Memory</div>
+  {% set mem_gb_used = (host.mem_used | default(0)) / 1073741824 %}
+  {% set mem_gb_total = (host.mem_total | default(1)) / 1073741824 %}
+  <div class="value">{{ mem_gb_used | round(1) }}<span class="unit">/ {{ mem_gb_total | round(0) | int }} GB</span></div>
+  <div class="sub">avail {{ ((host.mem_avail | default(0)) / 1073741824) | round(1) }} GB</div>
+  <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none">
+    <path class="fill" fill="var(--violet)" d="M0,32 L10,30 L20,28 L30,26 L40,24 L50,22 L60,20 L70,18 L80,18 L90,18 L100,18 L110,18 L120,18 L120,32 Z" />
+    <path class="line" stroke="var(--violet)" d="M0,30 L10,28 L20,26 L30,24 L40,22 L50,20 L60,18 L70,16 L80,16 L90,16 L100,16 L110,16 L120,16" />
+  </svg>
+</div>
+
+<div class="metric disk">
+  <div class="label">Disk /</div>
+  {% set disk_gb_used = (host.disk_used | default(0)) / 1073741824 %}
+  {% set disk_gb_total = (host.disk_total | default(1)) / 1073741824 %}
+  <div class="value">{{ host.disk_pct | default(0) | round(1) }}<span class="unit">%</span></div>
+  <div class="sub">{{ disk_gb_used | round(1) }} / {{ disk_gb_total | round(0) | int }} GB · free {{ ((host.disk_free | default(0)) / 1073741824) | round(0) | int }} GB</div>
+  <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none">
+    <path class="fill" fill="var(--warn)" d="M0,32 L10,20 L20,20 L30,20 L40,20 L50,20 L60,20 L70,20 L80,20 L90,20 L100,20 L110,20 L120,20 L120,32 Z" />
+    <path class="line" stroke="var(--warn)" d="M0,18 L10,18 L20,18 L30,18 L40,18 L50,18 L60,18 L70,18 L80,18 L90,18 L100,18 L110,18 L120,18" />
+  </svg>
+</div>
+
+<div class="metric load">
+  <div class="label">Load &amp; Procs</div>
+  <div class="value">{{ host.load_one | default(0) | round(2) }}<span class="unit">1m</span></div>
+  <div class="sub">{{ host.num_procs | default(0) }} procs · {{ host.load_fifteen | default(0) | round(2) }} 15m</div>
+  <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none">
+    <path class="fill" fill="var(--ok)" d="M0,32 L10,24 L20,28 L30,20 L40,28 L50,16 L60,20 L70,24 L80,16 L90,20 L100,24 L110,20 L120,24 L120,32 Z" />
+    <path class="line" stroke="var(--ok)" d="M0,22 L10,24 L20,26 L30,18 L40,26 L50,14 L60,18 L70,22 L80,14 L90,18 L100,22 L110,18 L120,22" />
+  </svg>
+</div>

@@ -1,0 +1,101 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/">Host</a> &middot; <a href="/machines">nspawn containers</a> &middot; {{ machine.name }}</div>
+    <h1 class="page-title">
+      {{ machine.name }}
+      <span class="pill {{ machine.pill_class }}" style="margin-left:10px;vertical-align:middle;font-size:13px">{{ machine.state }}</span>
+    </h1>
+  </div>
+  <div class="page-meta">
+    {% if machine.ip %}<span><span class="k">ip</span><span class="v">{{ machine.ip }}</span></span>{% endif %}
+    {% if machine.leader_pid %}<span><span class="k">leader</span><span class="v">{{ machine.leader_pid }}</span></span>{% endif %}
+  </div>
+</header>
+
+<div class="tabs" style="display:flex;align-items:center;gap:8px">
+  <a class="tab {% if machine_tab == 'overview' %}active{% endif %}" href="/machines/{{ machine.name }}">Overview</a>
+  <a class="tab {% if machine_tab == 'services' %}active{% endif %}" href="/machines/{{ machine.name }}/services">Services</a>
+  <a class="tab {% if machine_tab == 'cron' %}active{% endif %}"     href="/machines/{{ machine.name }}/cron">Cron</a>
+  <a class="tab {% if machine_tab == 'logs' %}active{% endif %}"     href="/machines/{{ machine.name }}/logs">Logs</a>
+  <a class="tab {% if machine_tab == 'shell' %}active{% endif %}"    href="/machines/{{ machine.name }}/shell">Shell</a>
+
+  <details class="machine-actions" style="position:relative;margin-left:auto">
+    <summary class="btn btn-sm" style="list-style:none;cursor:pointer;user-select:none">Actions ▾</summary>
+    <div style="position:absolute;right:0;top:calc(100% + 6px);min-width:260px;
+                background:var(--bg-1);border:1px solid var(--line);border-radius:var(--r-md);
+                padding:6px;z-index:10;box-shadow:0 4px 18px rgba(0,0,0,0.5)">
+
+      <form hx-post="/api/machines/{{ machine.name }}/restart"
+            hx-target="#lifecycle-result" style="margin:0">
+        <button class="btn btn-sm" type="submit"
+                style="width:100%;text-align:left;background:transparent;border:0;padding:8px 10px"
+                title="Bounce the systemd-nspawn unit on the host.">
+          Restart
+        </button>
+      </form>
+
+      <form hx-post="/api/machines/{{ machine.name }}/stop"
+            hx-confirm="Stop {{ machine.name }}? (graceful unit stop)"
+            hx-target="#lifecycle-result" style="margin:0">
+        <button class="btn btn-sm" type="submit"
+                style="width:100%;text-align:left;background:transparent;border:0;padding:8px 10px"
+                title="Stop the systemd-nspawn unit on the host cleanly.">
+          Stop
+        </button>
+      </form>
+
+      <form hx-post="/api/machines/{{ machine.name }}/terminate"
+            hx-confirm="Force kill {{ machine.name }}? SIGKILL on PID 1, no shutdown sequence."
+            hx-target="#lifecycle-result" style="margin:0">
+        <button class="btn btn-sm" type="submit"
+                style="width:100%;text-align:left;background:transparent;border:0;padding:8px 10px;color:var(--err)"
+                title="SIGKILL on the container's PID 1. Use only when Stop hangs.">
+          ⚠ Force kill
+        </button>
+      </form>
+
+      <hr style="border:0;border-top:1px solid var(--line-soft);margin:4px 0">
+
+      <form hx-post="/api/machines/{{ machine.name }}/reboot"
+            hx-target="#lifecycle-result" style="margin:0">
+        <button class="btn btn-sm" type="submit"
+                style="width:100%;text-align:left;background:transparent;border:0;padding:8px 10px"
+                title="Signal init INSIDE the container to reboot.">
+          Reboot (in-container)
+        </button>
+      </form>
+
+      <form hx-post="/api/machines/{{ machine.name }}/poweroff"
+            hx-confirm="Poweroff {{ machine.name }}? (graceful in-container shutdown)"
+            hx-target="#lifecycle-result" style="margin:0">
+        <button class="btn btn-sm" type="submit"
+                style="width:100%;text-align:left;background:transparent;border:0;padding:8px 10px"
+                title="Signal init INSIDE the container to poweroff.">
+          Poweroff (in-container)
+        </button>
+      </form>
+
+      <hr style="border:0;border-top:1px solid var(--line-soft);margin:4px 0">
+
+      <button class="btn btn-sm" disabled
+              style="width:100%;text-align:left;background:transparent;border:0;padding:8px 10px;opacity:0.5"
+              title="Coming soon">
+        Snapshot now (soon)
+      </button>
+
+      <hr style="border:0;border-top:1px solid var(--line-soft);margin:4px 0">
+
+      <form hx-post="/api/machines/{{ machine.name }}/destroy"
+            hx-confirm="DELETE {{ machine.name }}? This permanently removes the container, its rootfs at /var/lib/machines/{{ machine.name }}/, and any package-manager state for it. This cannot be undone."
+            hx-target="#lifecycle-result" style="margin:0">
+        <button class="btn btn-sm" type="submit"
+                style="width:100%;text-align:left;background:transparent;border:0;padding:8px 10px;color:var(--err);font-weight:600"
+                title="Stop the container, remove its rootfs from /var/lib/machines/, and drop its package-manager desired state. Irreversible.">
+          ⚠ Delete container
+        </button>
+      </form>
+    </div>
+  </details>
+</div>
+
+<span id="lifecycle-result"></span>
