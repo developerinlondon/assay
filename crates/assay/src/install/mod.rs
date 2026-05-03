@@ -3,6 +3,7 @@
 //!
 //! See `.claude/plans/21-libs-folder-and-install.md`.
 
+pub mod fetch;
 pub mod manifest;
 
 use std::path::PathBuf;
