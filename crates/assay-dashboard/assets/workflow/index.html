@@ -1,6 +1,21 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-default-theme="__BRAND_DEFAULT_THEME__">
 <head>
+  <script>
+    /* Pre-paint theme resolver. Runs before any CSS is parsed so the
+       SPA paints the right background on first frame. Resolution:
+         saved → ASSAY_WHITELABEL_DEFAULT_THEME → prefers-color-scheme. */
+    (function () {
+      try {
+        var saved = localStorage.getItem('assay-theme');
+        var def = (document.documentElement.dataset.defaultTheme || 'auto');
+        var theme = saved
+          || ((def === 'dark' || def === 'light') ? def : null)
+          || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {}
+    })();
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>__PAGE_TITLE__</title>
@@ -33,7 +48,7 @@
              top cross-nav already shows `Assay Engine vX.Y.Z`, so the
              sidebar header just identifies the active console via the
              highlighted tab. Hover any tab → tooltip with its label. -->
-        <nav class="cross-nav-pills" id="cross-nav-pills" aria-label="Console switcher"></nav>
+        <nav class="cross-nav-pills" id="cross-nav-pills" aria-label="Console switcher" data-parent-url="__BRAND_PARENT_URL__" data-parent-name="__BRAND_PARENT_NAME__"></nav>
         <button type="button" class="header-icon-btn" id="sidebar-collapse" title="Collapse sidebar" aria-label="Toggle sidebar">
           <!--
             Chevron icons replace the ASCII `<` / `>` that used to live
@@ -71,7 +86,6 @@
         </a>
       </nav>
       <div class="sidebar-footer">
-        __PARENT_BACK_LINK__
         __API_DOCS_LINK__
         <button type="button" class="nav-link nav-link-button nav-link-icon" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
           <span class="nav-icon icon-sun">&#9788;</span>

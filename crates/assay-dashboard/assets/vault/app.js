@@ -585,6 +585,24 @@
     });
   });
 
+  // Bootstrap cross-console pills + back-to-parent link (shared with
+  // workflow / auth / engine consoles via /shared/cross-nav.js).
+  if (window.AssayCrossNav) {
+    window.AssayCrossNav.render({ active: 'vault' });
+  }
+
+  // Theme toggle wiring — pre-paint script in <head> already set
+  // data-theme; this just bridges the toggle button to localStorage.
+  const themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', function () {
+      const html = document.documentElement;
+      const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('assay-theme', next);
+    });
+  }
+
   // Bootstrap from URL hash if present.
   const hash = window.location.hash.replace('#', '');
   if (hash && PANES[hash]) currentView = hash;
