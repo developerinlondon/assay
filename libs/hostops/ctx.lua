@@ -45,4 +45,5 @@ return {
   desired_state_path  = nil,
   backup_profile_dir  = nil,
   engine_base_url     = nil,
+  extra_sidebar_links = nil,
 }
