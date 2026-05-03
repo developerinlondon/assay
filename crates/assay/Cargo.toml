@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.15.5"
+version = "0.15.6"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -48,6 +48,7 @@ clap_complete = { version = "4.5", optional = true }
 
 # Error handling
 anyhow = "1"
+thiserror = "2"
 
 # Logging
 tracing = "0.1"
