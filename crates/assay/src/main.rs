@@ -1,10 +1,11 @@
 mod checks;
 mod cli;
 mod config;
-mod install;
 mod lua;
 mod output;
 mod runner;
+
+use assay::install;
 
 
 use clap::{Parser, Subcommand};

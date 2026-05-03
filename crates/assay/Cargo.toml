@@ -48,6 +48,7 @@ clap_complete = { version = "4.5", optional = true }
 
 # Error handling
 anyhow = "1"
+thiserror = "2"
 
 # Logging
 tracing = "0.1"

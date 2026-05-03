@@ -1,9 +1,9 @@
 //! `assay install` — fetch + verify + extract the binaries and Lua libraries
 //! declared in a `Manifest.lua`.
 //!
-//! Phase 1 (this file): scaffolding only. CLI surface is wired so the
-//! subcommand parses cleanly; the actual resolve/fetch/extract logic lands in
-//! phase 2. See `.claude/plans/21-libs-folder-and-install.md`.
+//! See `.claude/plans/21-libs-folder-and-install.md`.
+
+pub mod manifest;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
