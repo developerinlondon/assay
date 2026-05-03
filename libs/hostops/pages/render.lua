@@ -1,4 +1,4 @@
-local ctx = require("hostops.ctx")
+local hctx = require("hostops.ctx")
 local M = {}
 
 -- Sidebar version. The VERSION file is the canonical source of truth
@@ -65,46 +65,23 @@ end
 -- both paths produce identical layout context. Mutates and returns ctx.
 function M.layout_defaults(ctx, req, fallback_nav_active)
   ctx = ctx or {}
-  local b = ctx.brand.snapshot()
+  local b = hctx.brand.snapshot()
   ctx.brand = ctx.brand or b
   ctx.title = ctx.title or b.title
   ctx.nav_active = ctx.nav_active or fallback_nav_active
   ctx.version = VERSION
-  -- Pull host + machines from the cached state.snapshot() so every
-  -- page (not just the dashboard) renders the same brand-bar host
-  -- name and sidebar machines list. The defaults below are only used
-  -- when state.snapshot fails (boot-race, etc.).
+  -- Pull host + machines from the cached state snapshot so every page
+  -- (not just the dashboard) renders the same brand-bar host name and
+  -- sidebar machines list. Errors fall through to safe defaults so a
+  -- boot-race in state can't 500 the whole layout.
   do
-    local ok, state = pcall(require, "services.state")
-    local snap
-    if ok and state and state.snapshot then
-      local ok2, s = pcall(state.snapshot)
-      if ok2 then snap = s end
-    end
+    local ok, snap = pcall(hctx.state.snapshot)
+    if not ok then snap = nil end
     ctx.host     = ctx.host     or (snap and snap.host)     or { name = "host", ip = "" }
     ctx.machines = ctx.machines or (snap and snap.machines) or {}
   end
   ctx.actor = ctx.actor or M.actor_from(req)
-  if ctx.plugins_sidebar == nil then
-    local ok, plugins = pcall(require, "services.plugins")
-    local list = {}
-    if ok and plugins and plugins.sidebar then
-      local ok2, l = pcall(plugins.sidebar)
-      if ok2 then list = l end
-    end
-    -- Stamp each sidebar entry with `is_active = true` if its href's
-    -- path matches the current request path. The layout template uses
-    -- this to highlight the matching sub-entry rather than just the
-    -- parent "Plugins" link, so operators see WHICH plugin page they're
-    -- on at a glance.
-    local current_path = (req and req.path) or ""
-    for _, e in ipairs(list) do
-      local entry_path = (e.href or ""):match("^([^?]+)") or e.href or ""
-      e.is_active = (entry_path ~= "" and entry_path == current_path)
-    end
-    ctx.plugins_sidebar = list
-  end
-  ctx.active_modules = ctx.active_modules or _G.KNOWHERE_ACTIVE_MODULES or {}
+  ctx.active_modules = ctx.active_modules or {}
   return ctx
 end
 

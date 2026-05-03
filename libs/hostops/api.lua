@@ -1,11 +1,10 @@
-local p = require("api.packages")
-local M = {}
-M.packages_catalog       = p.catalog
-M.packages_templates     = p.templates
-M.packages_state         = function(req)
-  if req.method == "POST" then return p.mutate_state(req) else return p.get_state(req) end
-end
-M.packages_reconcile     = p.reconcile
-M.packages_check_updates = p.check_updates
-M.packages_update_all    = p.update_all
-return M
+--! Hostops api-handler registry.
+--!
+--! The predecessor monolith collected packages-related API handlers
+--! here; those moved to plan 20's `pkg` stdlib. The hostops api/* tree
+--! now contains only the host-ops surfaces, accessed directly via
+--! `pages.lua` (events, machines, logs, audit, shell). This file is
+--! retained as an intentional stub in case future hostops api-only
+--! handlers (no page wrapper) need a registration point.
+
+return {}

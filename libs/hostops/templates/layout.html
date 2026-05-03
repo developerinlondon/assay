@@ -56,57 +56,13 @@
     <a href="/tunnels" class="{% if nav_active in ['tunnels','interfaces','tailscale'] %}active{% endif %}">Networks</a>
   </nav>
 
-  {% if 'workflow' in (active_modules | default([])) %}
   <nav class="nav nav-flat">
-    <a href="/workflows" class="{% if 'workflow:' in (nav_active or '') %}active{% endif %}">Workflows</a>
-  </nav>
-  {% endif %}
-
-  <nav class="nav nav-flat">
-    <a href="/inventory" class="{% if nav_active in ['inventory','audit','packages','settings'] %}active{% endif %}">Admin</a>
-  </nav>
-
-  {% if 'auth' in (active_modules | default([])) %}
-  <nav class="nav nav-flat">
-    <a href="/auth/users" class="{% if ('auth:' in (nav_active or '')) or ('zanzibar:' in (nav_active or '')) %}active{% endif %}">Auth</a>
-  </nav>
-  {% endif %}
-
-  {% if 'vault' in (active_modules | default([])) %}
-  {# Vault section is a flat link — every /vault/* page renders its
-     own in-page tab strip, so duplicating the tabs here would just
-     bloat the sidebar. Click VAULT → /vault → use page tabs. #}
-  <nav class="nav nav-flat">
-    <a href="/vault" class="{% if 'vault:' in (nav_active or '') %}active{% endif %}">Vault</a>
-  </nav>
-  {% endif %}
-
-  {% if (active_modules | default([])) | length > 0 %}
-  {# Engine section is a flat link — every /engine/* page renders its
-     own in-page tab strip, so duplicating the tabs here would just
-     bloat the sidebar. Click ENGINE → /engine → use page tabs. #}
-  <nav class="nav nav-flat">
-    <a href="/engine" class="{% if 'engine:' in (nav_active or '') %}active{% endif %}">Engine</a>
-  </nav>
-  {% endif %}
-
-  <nav class="nav nav-flat">
-    <a href="/plugins" class="{% if nav_active == 'plugin' %}active{% endif %}">Plugins</a>
-    {# Plugin-added sidebar entries from `knowhere.dashboard.add_sidebar`.
-       Each plugin's `init.lua` can register entries; they render here as
-       nested links below the main Plugins link. Filtered to section
-       "PLUGINS" so plugins that target other sections (WORKFLOWS, ADMIN…)
-       don't double up here. #}
-    {% for entry in (plugins_sidebar | default([])) %}
-      {% if entry.section == "PLUGINS" %}
-      <a href="{{ entry.href }}" class="nav-sub{% if entry.is_active %} active{% endif %}" style="padding-left:24px;font-size:12px">{% if entry.icon %}{{ entry.icon }} {% endif %}{{ entry.label }}</a>
-      {% endif %}
-    {% endfor %}
+    <a href="/audit" class="{% if nav_active in ['audit'] %}active{% endif %}">Admin</a>
   </nav>
 
   <div class="nav-meta">
     <div class="actor">{{ actor }}</div>
-    <div class="meta-row"><span>knowhere</span><span>{{ version }}</span></div>
+    <div class="meta-row"><span>{{ brand.name }}</span><span>{{ version }}</span></div>
   </div>
 </aside>
 
