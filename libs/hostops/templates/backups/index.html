@@ -1,6 +1,6 @@
 <header class="page-header">
   <div>
-    <div class="page-eyebrow"><a href="/">Host</a> · backups</div>
+    <div class="page-eyebrow"><a href="/">{{ host.name }}</a> · backups</div>
     <h1 class="page-title">Backups</h1>
   </div>
   <div class="page-meta">
@@ -35,7 +35,7 @@
   <div class="card-body">
     <strong>⚠ Vault is sealed.</strong>
     Unseal it before initializing the backup repository, so secrets can be written.
-    <a href="/vault" class="btn btn-sm">Open /vault →</a>
+    <a href="{{ engine_base_url }}/vault/console" class="btn btn-sm">Open vault →</a>
   </div>
 </div>
 {% endif %}
@@ -163,7 +163,7 @@
   <div class="card-body">
     <strong>⚠ Vault is sealed</strong> — backups can't read the encryption password.
     Run-now and restore are blocked. Scheduled runs will fail until unsealed.
-    <a href="/vault" class="btn btn-sm">Open /vault →</a>
+    <a href="{{ engine_base_url }}/vault/console" class="btn btn-sm">Open vault →</a>
   </div>
 </div>
 {% endif %}
