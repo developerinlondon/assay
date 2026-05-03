@@ -1,6 +1,7 @@
 mod checks;
 mod cli;
 mod config;
+mod install;
 mod lua;
 mod output;
 mod runner;
@@ -128,6 +129,13 @@ enum Commands {
         #[command(subcommand)]
         command: QueueCommands,
     },
+    /// Install binaries + libs declared in a `Manifest.lua`.
+    ///
+    /// Reads `./Manifest.lua` (or `-f <path>`), fetches each declared
+    /// extension binary + lib tarball over HTTPS, verifies sha256, and
+    /// installs into the configured bin/lib paths. See
+    /// `.claude/plans/21-libs-folder-and-install.md`.
+    Install(install::InstallArgs),
     /// Generate shell completion scripts.
     ///
     /// Pipe the output into the appropriate shell-completion location:
@@ -621,6 +629,7 @@ async fn main() -> ExitCode {
                 QueueCommands::Stats => cli::commands::queue_stats(&opts).await,
             }
         }
+        Some(Commands::Install(args)) => install::run(args).await,
         Some(Commands::Completion { shell }) => {
             use clap::CommandFactory;
             let mut cmd = Cli::command();
