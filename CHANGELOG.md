@@ -2,6 +2,27 @@
 
 All notable changes to Assay are documented here.
 
+## 0.15.7 — 2026-05-03
+
+### Added
+
+- `assay.rustic` stdlib (`require("assay.rustic")`): rustic backup CLI wrapper — `snapshots`,
+  `snapshot_detail`, `init`, `check`, `backup`, `restore`, `forget`. Repository URL + credentials
+  travel as environment variables (`RUSTIC_REPOSITORY`, `RUSTIC_PASSWORD`, `AWS_*`) so secrets stay
+  off `/proc/<pid>/cmdline`. The binary stays external — no `rustic_core` crate is linked. See
+  [`docs/modules/rustic.md`](docs/modules/rustic.md).
+- `assay.fs_snapshot` stdlib (`require("assay.fs_snapshot")`): btrfs / zfs subvolume snapshot
+  wrapper for crash-consistent backup capture. `detect`, `take`, `release`, `with_snapshot`.
+  Auto-selects the backend (`btrfs` / `zfs` / `none`) by inspecting `findmnt` output. See
+  [`docs/modules/fs_snapshot.md`](docs/modules/fs_snapshot.md).
+- `libs/hostops` library — host-visibility dashboard for nspawn containers, systemd services, cron
+  timers, journal logs, networks, audit, host shell, and backups. Mounts on a consumer app's
+  `routes` table via `require("hostops.mount")`; ships as a tarball published alongside the assay
+  binary (`assay-lib-hostops-<version>.tar.gz`).
+- `assay install` subcommand: reads a `Manifest.lua`, fetches declared extension binaries + libs
+  over HTTPS, verifies sha256, installs into the configured bin/lib paths, and writes a
+  `Manifest.lock` for reproducibility. Plan 21.
+
 ## 0.15.5 — UNRELEASED
 
 ### Added

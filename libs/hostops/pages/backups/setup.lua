@@ -58,7 +58,7 @@ function M.test(req)
   })
   return {
     status = 200,
-    body = json.stringify(res),
+    body = json.encode(res),
     headers = { ["Content-Type"] = "application/json" },
   }
 end

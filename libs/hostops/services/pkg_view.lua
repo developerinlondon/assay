@@ -50,7 +50,7 @@ function M.read_desired_state()
   if not path then return { targets = {} } end
   local body = fs.read(path)
   if not body or body == "" then return { targets = {} } end
-  local ok, parsed = pcall(json.decode, body)
+  local ok, parsed = pcall(json.parse, body)
   if not ok or type(parsed) ~= "table" then return { targets = {} } end
   parsed.targets = parsed.targets or {}
   return parsed

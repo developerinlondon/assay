@@ -52,7 +52,7 @@ end
 
 local function decode_json_or_err(r, name)
   if not r or r.status ~= 0 then return nil, err_from_result(name, r) end
-  local ok, parsed = pcall(json.decode, r.stdout or "")
+  local ok, parsed = pcall(json.parse, r.stdout or "")
   if not ok then
     return nil, ("rustic %s: parse error: %s"):format(name, tostring(parsed))
   end
@@ -108,7 +108,7 @@ function M.backup(opts, args)
 
   local out = { ok = true, stdout = r.stdout, stderr = r.stderr }
   if args.json then
-    local ok, summary = pcall(json.decode, r.stdout or "")
+    local ok, summary = pcall(json.parse, r.stdout or "")
     if ok then out.summary = summary end
   end
   return out
@@ -153,7 +153,7 @@ function M.forget(opts, args)
 
   local out = { ok = true, stdout = r.stdout }
   if args.json then
-    local ok, parsed = pcall(json.decode, r.stdout or "")
+    local ok, parsed = pcall(json.parse, r.stdout or "")
     if ok then out.removed = parsed end
   end
   return out

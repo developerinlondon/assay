@@ -32,13 +32,13 @@ function M.status(req)
   if not job then
     return {
       status = 404,
-      body = json.stringify({ error = "no job " .. tostring(id) }),
+      body = json.encode({ error = "no job " .. tostring(id) }),
       headers = { ["Content-Type"] = "application/json" },
     }
   end
   return {
     status = 200,
-    body = json.stringify(job),
+    body = json.encode(job),
     headers = { ["Content-Type"] = "application/json" },
   }
 end
