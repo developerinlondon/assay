@@ -5,10 +5,10 @@
 
 local render   = require("pages.render")
 local form     = require("pages.form")
-local state    = require("services.state")
 local backups  = require("services.host.backups")
 local schedule = require("services.host.backup_schedule")
 
+local ctx = require("hostops.ctx")
 local M = {}
 
 local function actor_from(req)
@@ -19,7 +19,7 @@ local function actor_from(req)
 end
 
 function M.editor(req)
-  local snap = state.snapshot()
+  local snap = ctx.state.snapshot()
   if not backups.read_profile() then
     return { status = 303, headers = { ["Location"] = "/backups" } }
   end

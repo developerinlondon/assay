@@ -11,9 +11,7 @@ local secret_store = require("services.secret_store")
 local fs_snapshot  = require("services.host.fs_snapshot")
 local schedule     = require("services.host.backup_schedule")
 local marker       = require("services.host.backup_marker")
-local audit        = require("services.audit")
-local jobs         = require("services.jobs")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 local PROFILE_DIR  = "/etc/rustic"
@@ -258,7 +256,7 @@ function M.init_repo(args)
   }
   local ok, ret = pcall(knowhere.rustic.init, conn)
   if not ok then
-    audit.append({ actor = actor, action = "backups.setup_init_failed",
+    ctx.audit.append({ actor = actor, action = "backups.setup_init_failed",
                    target = PROFILE_NAME, meta = { error = tostring(ret) } })
     return { ok = false, error = tostring(ret) }
   end
@@ -297,13 +295,13 @@ function M.init_repo(args)
     jitter_s = args.schedule_jitter or 1800,
   })
   if not sok2 then
-    audit.append({ actor = actor, action = "backups.setup_init_warn",
+    ctx.audit.append({ actor = actor, action = "backups.setup_init_warn",
                    target = PROFILE_NAME, meta = { error = serr2, stage = "timer" } })
   else
     schedule.enable()
   end
 
-  audit.append({
+  ctx.audit.append({
     actor = actor, action = "backups.setup_init", target = PROFILE_NAME,
     meta = { url = args.url, storage = (secret_store.available() and "vault" or "file") },
   })
@@ -313,7 +311,7 @@ end
 function M.reconfigure(args)
   args = args or {}
   local actor = args.actor or "system"
-  audit.append({ actor = actor, action = "backups.reconfigure", target = PROFILE_NAME })
+  ctx.audit.append({ actor = actor, action = "backups.reconfigure", target = PROFILE_NAME })
   -- Tear down then re-init.
   schedule.disable()
   M.delete_profile(PROFILE_NAME)
@@ -347,7 +345,7 @@ function M.update_sources(args)
   })
   if not ok then return { ok = false, error = err } end
 
-  audit.append({
+  ctx.audit.append({
     actor = actor, action = "backups.sources_update", target = PROFILE_NAME,
     meta = { count = #sources },
   })
@@ -359,7 +357,7 @@ function M.update_schedule(args)
   local actor = args.actor or "system"
   if args.enabled == false then
     schedule.disable()
-    audit.append({ actor = actor, action = "backups.schedule_update",
+    ctx.audit.append({ actor = actor, action = "backups.schedule_update",
                    target = PROFILE_NAME, meta = { enabled = false } })
     return { ok = true, enabled = false }
   end
@@ -370,7 +368,7 @@ function M.update_schedule(args)
   })
   if not ok then return { ok = false, error = err } end
   schedule.enable()
-  audit.append({ actor = actor, action = "backups.schedule_update",
+  ctx.audit.append({ actor = actor, action = "backups.schedule_update",
                  target = PROFILE_NAME, meta = { hour = hour, jitter_s = jitter_s, enabled = true } })
   return { ok = true, enabled = true, hour = hour, jitter_s = jitter_s }
 end
@@ -430,7 +428,7 @@ function M.run_now(args)
   local tags    = (profile.backup and profile.backup.tags) or default_tags()
   local snap_root = profile.backup and profile.backup.fs_snapshot_root or "/var/lib/machines"
 
-  local job = jobs.start({
+  local job = ctx.jobs.start({
     kind = "backups.run_now",
     target = PROFILE_NAME,
     name = "Run backup now",
@@ -442,18 +440,18 @@ function M.run_now(args)
     },
   })
 
-  audit.append({ actor = actor, action = "backups.run_start",
+  ctx.audit.append({ actor = actor, action = "backups.run_start",
                  target = PROFILE_NAME, meta = { job_id = job.id, manual = true } })
 
   -- Spawn the actual work. async.spawn is provided by the assay
   -- runtime; if missing (early boot), fall back to inline run (rare).
   local function worker()
-    jobs.update_stage(job.id, "preflight", "in_progress")
+    ctx.jobs.update_stage(job.id, "preflight", "in_progress")
     -- (preflight checks already done above implicitly)
-    jobs.update_stage(job.id, "preflight", "done")
+    ctx.jobs.update_stage(job.id, "preflight", "done")
 
     -- FS snapshot
-    jobs.update_stage(job.id, "fs-snapshot", "in_progress")
+    ctx.jobs.update_stage(job.id, "fs-snapshot", "in_progress")
     local handle = nil
     local fs_consistency = "live"
     local sources_resolved = {}
@@ -470,18 +468,18 @@ function M.run_now(args)
             table.insert(sources_resolved, src)
           end
         end
-        jobs.append_log(job.id, "fs_snapshot taken (" .. fs_consistency .. ")")
+        ctx.jobs.append_log(job.id, "fs_snapshot taken (" .. fs_consistency .. ")")
       else
-        jobs.append_log(job.id, "fs_snapshot fallback to live read: " .. tostring(h))
+        ctx.jobs.append_log(job.id, "fs_snapshot fallback to live read: " .. tostring(h))
         sources_resolved = sources
       end
     else
       sources_resolved = sources
     end
-    jobs.update_stage(job.id, "fs-snapshot", "done")
+    ctx.jobs.update_stage(job.id, "fs-snapshot", "done")
 
     -- Backup
-    jobs.update_stage(job.id, "rustic-backup", "in_progress")
+    ctx.jobs.update_stage(job.id, "rustic-backup", "in_progress")
     conn.sources = sources_resolved
     conn.tags = (function()
       local out = {}
@@ -493,22 +491,22 @@ function M.run_now(args)
 
     -- Release (always, even on failure)
     if handle then
-      jobs.update_stage(job.id, "fs-release", "in_progress")
+      ctx.jobs.update_stage(job.id, "fs-release", "in_progress")
       pcall(fs_snapshot.release, handle)
-      jobs.update_stage(job.id, "fs-release", "done")
+      ctx.jobs.update_stage(job.id, "fs-release", "done")
     else
-      jobs.update_stage(job.id, "fs-release", "done", "no snapshot to release")
+      ctx.jobs.update_stage(job.id, "fs-release", "done", "no snapshot to release")
     end
 
     if not ok then
-      jobs.update_stage(job.id, "rustic-backup", "failed", tostring(ret))
-      jobs.fail(job.id, tostring(ret))
-      audit.append({ actor = actor, action = "backups.run_failed",
+      ctx.jobs.update_stage(job.id, "rustic-backup", "failed", tostring(ret))
+      ctx.jobs.fail(job.id, tostring(ret))
+      ctx.audit.append({ actor = actor, action = "backups.run_failed",
                      target = PROFILE_NAME, meta = { error = tostring(ret) } })
       return
     end
 
-    jobs.update_stage(job.id, "rustic-backup", "done",
+    ctx.jobs.update_stage(job.id, "rustic-backup", "done",
       string.format("snapshot %s · %s files · %s bytes",
         ret.id or "?",
         ret.total_files_processed or "?",
@@ -524,8 +522,8 @@ function M.run_now(args)
       fs_consistency = fs_consistency,
     })
 
-    jobs.complete(job.id, ret)
-    audit.append({
+    ctx.jobs.complete(job.id, ret)
+    ctx.audit.append({
       actor = actor, action = "backups.run_complete",
       target = PROFILE_NAME,
       meta = { snap_id = ret.id, fs_consistency = fs_consistency },
@@ -557,7 +555,7 @@ function M.start_restore(args)
   local conn, err = load_conn_args()
   if not conn then return { ok = false, error = err } end
 
-  local job = jobs.start({
+  local job = ctx.jobs.start({
     kind = "backups.restore",
     target = PROFILE_NAME,
     name = "Restore from " .. snap_id:sub(1, 8),
@@ -568,31 +566,31 @@ function M.start_restore(args)
     },
   })
 
-  audit.append({
+  ctx.audit.append({
     actor = actor, action = "backups.restore_start", target = PROFILE_NAME,
     meta = { snapshot_id = snap_id, dest = dest, job_id = job.id },
   })
 
   local function worker()
-    jobs.update_stage(job.id, "preflight", "done")
-    jobs.update_stage(job.id, "rustic-restore", "in_progress")
+    ctx.jobs.update_stage(job.id, "preflight", "done")
+    ctx.jobs.update_stage(job.id, "rustic-restore", "in_progress")
 
     conn.snapshot_id = snap_id
     conn.dest = dest
     conn.create_dest = true
     local ok, ret = pcall(knowhere.rustic.restore, conn)
     if not ok then
-      jobs.update_stage(job.id, "rustic-restore", "failed", tostring(ret))
-      jobs.fail(job.id, tostring(ret))
-      audit.append({ actor = actor, action = "backups.restore_failed",
+      ctx.jobs.update_stage(job.id, "rustic-restore", "failed", tostring(ret))
+      ctx.jobs.fail(job.id, tostring(ret))
+      ctx.audit.append({ actor = actor, action = "backups.restore_failed",
                      target = PROFILE_NAME, meta = { error = tostring(ret) } })
       return
     end
-    jobs.update_stage(job.id, "rustic-restore", "done")
+    ctx.jobs.update_stage(job.id, "rustic-restore", "done")
 
-    jobs.update_stage(job.id, "verify", "done")
-    jobs.complete(job.id, ret)
-    audit.append({
+    ctx.jobs.update_stage(job.id, "verify", "done")
+    ctx.jobs.complete(job.id, ret)
+    ctx.audit.append({
       actor = actor, action = "backups.restore_complete", target = PROFILE_NAME,
       meta = { snapshot_id = snap_id, dest = dest },
     })

@@ -5,9 +5,9 @@
 
 local render  = require("pages.render")
 local form    = require("pages.form")
-local state   = require("services.state")
 local backups = require("services.host.backups")
 
+local ctx = require("hostops.ctx")
 local M = {}
 
 local function actor_from(req)
@@ -23,7 +23,7 @@ local function path_id(req)
 end
 
 function M.detail(req)
-  local snap = state.snapshot()
+  local snap = ctx.state.snapshot()
   local id = path_id(req)
   if not id then return { status = 400, body = "missing snapshot id" } end
 

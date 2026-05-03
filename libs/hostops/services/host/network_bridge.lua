@@ -1,3 +1,4 @@
+local ctx = require("hostops.ctx")
 -- services/host/network_bridge.lua
 --
 -- Idempotent ensurer for the nspawn-container bridge `nsbr0`. Containers
@@ -10,9 +11,6 @@
 -- already configured the way we want. Only diffs trigger writes; only
 -- writes trigger `networkctl reload`. Iptables rules are gated by
 -- `iptables -C` checks before `-I`. Safe to call from boot and per-provision.
-
-local audit = require("services.audit")
-
 local M = {}
 
 local NETWORK_DIR = "/etc/systemd/network"
@@ -210,7 +208,7 @@ function M.ensure(opts)
   end
 
   if #actions > 0 then
-    audit.append({
+    ctx.audit.append({
       actor  = "system",
       action = "host.network_bridge.ensure",
       target = opts.name,

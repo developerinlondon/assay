@@ -4,19 +4,16 @@
 -- or repair UI based on what's actually configured on disk + vault state.
 
 local render  = require("pages.render")
-local state   = require("services.state")
 local backups = require("services.host.backups")
 local schedule = require("services.host.backup_schedule")
 local marker   = require("services.host.backup_marker")
 local fs_snap  = require("services.host.fs_snapshot")
-local jobs     = require("services.jobs")
-local audit    = require("services.audit")
-
+local hostops_ctx = require("hostops.ctx")
 local M = {}
 
 local function recent_audit_for(prefix)
   local out = {}
-  local recent = audit.recent and audit.recent(50) or {}
+  local recent = hostops_ctx.audit.recent and hostops_ctx.audit.recent(50) or {}
   for _, e in ipairs(recent) do
     if type(e.action) == "string" and e.action:sub(1, #prefix) == prefix then
       table.insert(out, e)
@@ -41,7 +38,7 @@ local function detect_for_sources(sources)
 end
 
 function M.page(req)
-  local snap = state.snapshot()
+  local snap = hostops_ctx.state.snapshot()
   local s = backups.state()
 
   local ctx = {
@@ -117,8 +114,8 @@ function M.page(req)
   end
 
   -- Active jobs (run-now or restore in flight)
-  local active = jobs.active({ kind = "backups.run_now" })
-  for _, j in ipairs(jobs.active({ kind = "backups.restore" })) do
+  local active = hostops_ctx.jobs.active({ kind = "backups.run_now" })
+  for _, j in ipairs(hostops_ctx.jobs.active({ kind = "backups.restore" })) do
     table.insert(active, j)
   end
   ctx.active_jobs = active

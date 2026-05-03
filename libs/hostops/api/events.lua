@@ -1,4 +1,4 @@
-local state = require("services.state")
+local ctx = require("hostops.ctx")
 local M = {}
 
 function M.events(_req)
@@ -6,7 +6,7 @@ function M.events(_req)
     sse = function(send)
       local last = -1
       while true do
-        local cur = state.revision()
+        local cur = ctx.state.revision()
         if cur ~= last then
           send({ event = "refresh", data = tostring(cur) })
           last = cur

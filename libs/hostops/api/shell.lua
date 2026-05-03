@@ -1,6 +1,5 @@
 local shell = require("assay.shell")
-local audit = require("services.audit")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 local function actor_from(req)
@@ -17,9 +16,9 @@ local function is_ws_upgrade(req)
 end
 
 local function bridge(conn, opts, action, target, actor)
-  pcall(audit.append, { actor = actor, action = action .. ".opened", target = target, result = "ok" })
+  pcall(ctx.audit.append, { actor = actor, action = action .. ".opened", target = target, result = "ok" })
   shell.bridge(conn, opts)
-  pcall(audit.append, { actor = actor, action = action .. ".closed", target = target, result = "ok" })
+  pcall(ctx.audit.append, { actor = actor, action = action .. ".closed", target = target, result = "ok" })
 end
 
 function M.handle_machine(req)

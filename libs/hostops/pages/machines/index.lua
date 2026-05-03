@@ -4,11 +4,11 @@
 -- that drives the sidebar's CONTAINERS section.
 
 local render = require("pages.render")
-local state  = require("services.state")
 local jobs   = require("services.nspawn.jobs")
 
+local ctx = require("hostops.ctx")
 return function(req)
-  local ok, snap = pcall(state.snapshot)
+  local ok, snap = pcall(ctx.state.snapshot)
   local machines = (ok and snap and snap.machines) or {}
   local active_jobs = jobs.active()
 

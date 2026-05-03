@@ -1,6 +1,5 @@
 local render = require("pages.render")
-local state  = require("services.state")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 local SKIP_PREFIXES = { "docker", "cni", "veth", "flannel", "kube-", "nodelocal" }
@@ -93,7 +92,7 @@ local function parse_links()
 end
 
 function M.page(req)
-  local snap = state.snapshot()
+  local snap = ctx.state.snapshot()
 
   local ok, host_ifaces, machine_ifaces = pcall(parse_links)
   if not ok then host_ifaces, machine_ifaces = {}, {} end

@@ -1,6 +1,5 @@
 local render = require("pages.render")
-local state  = require("services.state")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 local function sh_json(cmd)
@@ -67,7 +66,7 @@ local function parse_ts(raw)
 end
 
 function M.page(req)
-  local snap = state.snapshot()
+  local snap = ctx.state.snapshot()
 
   local raw = sh_json("tailscale status --json")
   local ts  = parse_ts(raw)

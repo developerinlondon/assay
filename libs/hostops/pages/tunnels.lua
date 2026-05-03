@@ -1,6 +1,5 @@
 local render = require("pages.render")
-local state  = require("services.state")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 local function pcall_or_nil(fn, ...)
@@ -66,7 +65,7 @@ local function fmt_since(us)
 end
 
 function M.page(req)
-  local snap = state.snapshot()
+  local snap = ctx.state.snapshot()
 
   local cfd_raw = pcall_or_nil(systemd.unit_status, "cloudflared.service") or {}
   local cfd = {

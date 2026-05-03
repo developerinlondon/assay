@@ -4,9 +4,7 @@
 -- GET /api/backups/jobs/:id     — JSON status (poll endpoint)
 
 local render = require("pages.render")
-local state  = require("services.state")
-local jobs   = require("services.jobs")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 local function path_id(req)
@@ -16,9 +14,9 @@ local function path_id(req)
 end
 
 function M.detail(req)
-  local snap = state.snapshot()
+  local snap = ctx.state.snapshot()
   local id = path_id(req)
-  local job = id and jobs.get(id) or nil
+  local job = id and ctx.jobs.get(id) or nil
   return render.render("backups/job", {
     nav_active = "backups",
     host = snap.host, machines = snap.machines,
@@ -30,7 +28,7 @@ end
 
 function M.status(req)
   local id = path_id(req)
-  local job = id and jobs.get(id) or nil
+  local job = id and ctx.jobs.get(id) or nil
   if not job then
     return {
       status = 404,

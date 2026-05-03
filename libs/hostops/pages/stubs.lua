@@ -1,6 +1,5 @@
 local render = require("pages.render")
-local state  = require("services.state")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 local STUBS = {
@@ -31,7 +30,7 @@ local STUBS = {
 local function make_handler(key)
   local def = STUBS[key]
   return function(req)
-    local snap = state.snapshot()
+    local snap = ctx.state.snapshot()
     return render.render("stub", {
       nav_active   = def.nav,
       page_title   = def.title,

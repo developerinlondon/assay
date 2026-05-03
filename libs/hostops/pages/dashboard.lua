@@ -1,10 +1,10 @@
 local render          = require("pages.render")
-local state           = require("services.state")
 local cron_status     = require("services.cron_status")
 local services_status = require("services.services_status")
 local cf_status       = require("services.cloudflared_status")
 local journal         = require("services.journal")
 
+local hostops_ctx = require("hostops.ctx")
 local M = {}
 
 -- Build the ctx the status_strip partial needs. Each probe is
@@ -18,7 +18,7 @@ local function status_ctx()
 end
 
 function M.dashboard(req)
-  local snap = state.snapshot()
+  local snap = hostops_ctx.state.snapshot()
   local ctx = {
     nav_active = "dashboard",
     host       = snap.host,
@@ -33,12 +33,12 @@ function M.dashboard(req)
 end
 
 function M.host_strip(req)
-  local snap = state.snapshot()
+  local snap = hostops_ctx.state.snapshot()
   return render.fragment("host_strip", { host = snap.host })
 end
 
 function M.machines_grid(req)
-  local snap = state.snapshot()
+  local snap = hostops_ctx.state.snapshot()
   return render.fragment("machines_grid", { machines = snap.machines })
 end
 

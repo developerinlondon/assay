@@ -1,7 +1,5 @@
 local render = require("pages.render")
-local state  = require("services.state")
-local audit  = require("services.audit")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 local function ts_pretty(ts)
@@ -27,12 +25,12 @@ local function action_prefix(action)
 end
 
 function M.audit(req)
-  local snap   = state.snapshot()
+  local snap   = ctx.state.snapshot()
   local q      = (req and req.params) or {}
   local search  = ((q.search or ""):lower())
   local action_filter = q.action or "all"
 
-  local raw    = audit.recent(200)
+  local raw    = ctx.audit.recent(200)
   local entries = {}
   for _, e in ipairs(raw) do
     local action  = e.action or "?"

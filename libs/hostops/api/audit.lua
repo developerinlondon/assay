@@ -1,9 +1,8 @@
-local audit = require("services.audit")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 function M.export(req)
-  local entries = audit.recent(200)
+  local entries = ctx.audit.recent(200)
   local lines = {}
   for _, e in ipairs(entries) do
     local ok, encoded = pcall(json.encode, e)

@@ -1,6 +1,5 @@
 local render = require("pages.render")
-local state  = require("services.state")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 local function pcall_or_empty(fn, ...)
@@ -16,7 +15,7 @@ local function fmt_ts(us)
 end
 
 function M.page(req)
-  local snap    = state.snapshot()
+  local snap    = ctx.state.snapshot()
   local initial = pcall_or_empty(systemd.journal, { lines = 50 })
 
   -- Annotate each entry with a human-readable ts_pretty

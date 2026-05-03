@@ -17,10 +17,10 @@
 
 local nspawn         = require("assay.nspawn")
 local pkgs           = require("services.host.packages")
-local audit          = require("services.audit")
 local network_bridge = require("services.host.network_bridge")
 local resources      = require("services.nspawn.resources")
 
+local ctx = require("hostops.ctx")
 local M = {}
 
 -- Load both built-in and operator-overlay machine_templates into a single
@@ -92,7 +92,7 @@ function M.provision(args)
     }
   end
 
-  audit.append({
+  ctx.audit.append({
     actor  = actor,
     action = "machine.provision.start",
     target = name,
@@ -106,7 +106,7 @@ function M.provision(args)
   if tpl.nspawn and type(tpl.nspawn.bridge) == "string" and tpl.nspawn.bridge ~= "" then
     local ok_b, ret_b = pcall(network_bridge.ensure, { name = tpl.nspawn.bridge })
     if not ok_b then
-      audit.append({
+      ctx.audit.append({
         actor = actor, action = "machine.provision.failed",
         target = name,
         meta = { template = tmpl_id, stage = "bridge", error = tostring(ret_b) },
@@ -129,7 +129,7 @@ function M.provision(args)
     on_stage = args.on_stage,         -- forwarded for async-job progress reporting
   })
   if not ok then
-    audit.append({
+    ctx.audit.append({
       actor = actor, action = "machine.provision.failed",
       target = name, meta = { template = tmpl_id, error = tostring(ret) },
     })
@@ -146,7 +146,7 @@ function M.provision(args)
     if args.on_stage then args.on_stage("network", "in_progress") end
     local ip, ip_err = network_bridge.write_container_static_config(name)
     if not ip then
-      audit.append({
+      ctx.audit.append({
         actor = actor, action = "machine.provision.network_warn",
         target = name, meta = { error = ip_err },
       })
@@ -157,7 +157,7 @@ function M.provision(args)
       local cmd = ("sudo -n systemd-run --machine=%s --pipe --quiet --wait /bin/sh -c 'systemctl restart systemd-networkd'"):format(name)
       local r = shell.exec(cmd, { timeout = 30 })
       if not r or r.status ~= 0 then
-        audit.append({
+        ctx.audit.append({
           actor = actor, action = "machine.provision.network_warn",
           target = name,
           meta = { ip = ip, error = "networkd restart: " .. ((r and r.stderr) or "unknown") },
@@ -165,7 +165,7 @@ function M.provision(args)
         if args.on_stage then args.on_stage("network", "failed",
           "static config written but networkd restart failed; container may have stale DHCP fallback") end
       else
-        audit.append({
+        ctx.audit.append({
           actor = actor, action = "machine.provision.network",
           target = name, meta = { ip = ip },
         })
@@ -185,7 +185,7 @@ function M.provision(args)
     if args.on_stage then args.on_stage("resources", "in_progress") end
     local rr = resources.apply(name, cpu_cores, memory_gb)
     if rr.ok then
-      audit.append({
+      ctx.audit.append({
         actor = actor, action = "machine.provision.resources",
         target = name,
         meta = { cpu_cores = cpu_cores, memory_gb = memory_gb, live = rr.live },
@@ -197,7 +197,7 @@ function M.provision(args)
         args.on_stage("resources", "done", "Applied " .. table.concat(desc, " + "))
       end
     else
-      audit.append({
+      ctx.audit.append({
         actor = actor, action = "machine.provision.resources_warn",
         target = name,
         meta = { error = rr.error,
@@ -224,7 +224,7 @@ function M.provision(args)
       packages = tpl.packages,
     }
     pkgs.write_desired_state(desired)
-    audit.append({
+    ctx.audit.append({
       actor = actor, action = "machine.provision.seeded",
       target = name,
       meta   = { template = tmpl_id, packages = tpl.packages },
@@ -244,7 +244,7 @@ function M.provision(args)
     args.on_stage("packages", "done", "no packages declared")
   end
 
-  audit.append({
+  ctx.audit.append({
     actor = actor, action = "machine.provision.end",
     target = name, meta = { template = tmpl_id },
   })
@@ -283,20 +283,20 @@ function M.destroy(args)
     end
   end
   if not exists then
-    audit.append({
+    ctx.audit.append({
       actor = actor, action = "machine.destroy.failed",
       target = name, meta = { error = "no such machine" },
     })
     return { ok = false, error = "no such machine: " .. name }
   end
 
-  audit.append({
+  ctx.audit.append({
     actor = actor, action = "machine.destroy.start", target = name,
   })
 
   local ok, ret = pcall(nspawn.destroy, name)
   if not ok then
-    audit.append({
+    ctx.audit.append({
       actor = actor, action = "machine.destroy.failed",
       target = name, meta = { error = tostring(ret) },
     })
@@ -323,13 +323,13 @@ function M.destroy(args)
     end
   end)
   if not cleanup_ok then
-    audit.append({
+    ctx.audit.append({
       actor = actor, action = "machine.destroy.cleanup_warn",
       target = name, meta = { error = tostring(cleanup_err) },
     })
   end
 
-  audit.append({ actor = actor, action = "machine.destroy.end", target = name })
+  ctx.audit.append({ actor = actor, action = "machine.destroy.end", target = name })
   return { ok = true, name = name }
 end
 

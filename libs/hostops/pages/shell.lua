@@ -1,13 +1,12 @@
 local render = require("pages.render")
-local state  = require("services.state")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 function M.machine_page(req)
   local name = (req.path or ""):match("^/machines/([^/]+)/shell$")
   if not name then return { status = 404, body = "not found" } end
 
-  local snap = state.snapshot()
+  local snap = ctx.state.snapshot()
   local machine
   for _, m in ipairs(snap.machines) do
     if m.name == name then machine = m; break end
@@ -29,7 +28,7 @@ function M.machine_page(req)
 end
 
 function M.host_page(req)
-  local snap = state.snapshot()
+  local snap = ctx.state.snapshot()
   return render.render("shell", {
     nav_active = "host_shell",
     host       = snap.host,

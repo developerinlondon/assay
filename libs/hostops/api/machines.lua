@@ -1,6 +1,3 @@
-local state = require("services.state")
-local audit = require("services.audit")
-
 local M = {}
 
 local function actor(req)
@@ -76,9 +73,9 @@ function M.handle(req)
   end
 
   local ok, err = pcall(ACTIONS[action], name)
-  state.bump()
+  ctx.state.bump()
 
-  audit.append({
+  ctx.audit.append({
     actor  = actor(req),
     ip     = ip_of(req),
     action = "machine." .. action,
@@ -296,6 +293,7 @@ end
 local resources_svc = require("services.nspawn.resources")
 local render_mod    = require("pages.render")
 
+local ctx = require("hostops.ctx")
 local function resources_card_response(req, name, current, err)
   current = current or resources_svc.read(name)
   local frag = render_mod.fragment("machine_resources_card", {
@@ -331,7 +329,7 @@ function M.resources(req)
 
   local result = resources_svc.apply(name, cpu_cores, memory_gb)
 
-  audit.append({
+  ctx.audit.append({
     actor  = actor(req),
     ip     = ip_of(req),
     action = "machine.resources." .. (result.ok and "set" or "set_failed"),

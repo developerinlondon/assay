@@ -1,7 +1,7 @@
 local render    = require("pages.render")
-local state     = require("services.state")
 local resources = require("services.nspawn.resources")
 
+local hostops_ctx = require("hostops.ctx")
 local M = {}
 
 local function fmt_rss(bytes)
@@ -85,14 +85,14 @@ function M.detail(req)
     return { status = 404, body = "not found" }
   end
 
-  local snap    = state.snapshot()
+  local snap    = hostops_ctx.state.snapshot()
   local machine = find_machine(snap, name)
 
   if not machine then
     return { status = 404, body = "machine not found: " .. name }
   end
 
-  local deep    = state.machine_deep(name)
+  local deep    = hostops_ctx.state.machine_deep(name)
   local journal = enrich_journal(slice(deep.journal, 10))
 
   local ctx = {
@@ -119,7 +119,7 @@ end
 function M.utilization(req)
   local name = (req.path or ""):match("^/api/machines/([^/]+)/utilization$")
   if not name then return { status = 404, body = "not found" } end
-  local snap    = state.snapshot()
+  local snap    = hostops_ctx.state.snapshot()
   local machine = find_machine(snap, name)
   if not machine then return { status = 404, body = "machine not found" } end
   return render.fragment("machine_utilization", { machine = machine })
@@ -128,14 +128,14 @@ end
 function M.processes(req)
   local name = (req.path or ""):match("^/api/machines/([^/]+)/processes$")
   if not name then return { status = 404, body = "not found" } end
-  local deep = state.machine_deep(name)
+  local deep = hostops_ctx.state.machine_deep(name)
   return render.fragment("machine_processes", { processes = enrich_processes(deep.processes) })
 end
 
 function M.journal(req)
   local name = (req.path or ""):match("^/api/machines/([^/]+)/journal$")
   if not name then return { status = 404, body = "not found" } end
-  local deep = state.machine_deep(name)
+  local deep = hostops_ctx.state.machine_deep(name)
   return render.fragment("machine_journal", { journal = enrich_journal(deep.journal) })
 end
 

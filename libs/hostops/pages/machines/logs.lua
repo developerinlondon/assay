@@ -9,9 +9,9 @@
 -- window.KNOWHERE_LOG_MACHINE.
 
 local render = require("pages.render")
-local state  = require("services.state")
 local priv   = require("services.host.privilege")
 
+local ctx = require("hostops.ctx")
 local M = {}
 
 local function find_machine(snap, name)
@@ -43,7 +43,7 @@ function M.page(req)
   local name = (req.path or ""):match("^/machines/([^/]+)/logs$")
   if not name then return { status = 404, body = "not found" } end
 
-  local snap = state.snapshot()
+  local snap = ctx.state.snapshot()
   local machine = find_machine(snap, name)
   if not machine then return { status = 404, body = "machine not found: " .. name } end
 

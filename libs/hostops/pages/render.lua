@@ -1,5 +1,4 @@
-local brand = require("services.brand")
-
+local ctx = require("hostops.ctx")
 local M = {}
 
 -- Sidebar version. The VERSION file is the canonical source of truth
@@ -66,7 +65,7 @@ end
 -- both paths produce identical layout context. Mutates and returns ctx.
 function M.layout_defaults(ctx, req, fallback_nav_active)
   ctx = ctx or {}
-  local b = brand.snapshot()
+  local b = ctx.brand.snapshot()
   ctx.brand = ctx.brand or b
   ctx.title = ctx.title or b.title
   ctx.nav_active = ctx.nav_active or fallback_nav_active
