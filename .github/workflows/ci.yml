@@ -230,6 +230,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Moon needs main to compute affected projects.
+          fetch-depth: 0
 
       - uses: jdx/mise-action@v2
         with:
@@ -262,6 +265,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Moon needs main to compute affected projects.
+          fetch-depth: 0
 
       - uses: jdx/mise-action@v2
         with:
