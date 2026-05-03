@@ -1,3 +1,4 @@
+pub mod install;
 pub mod lua;
 pub mod metadata;
 pub mod search;
