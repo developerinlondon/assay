@@ -1,0 +1,86 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/tunnels">Networks</a> · interfaces</div>
+    <h1 class="page-title">Interfaces</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">host</span><span class="v">{{ host_ifaces | length }}</span></span>
+    <span><span class="k">nspawn</span><span class="v">{{ machine_ifaces | length }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/tunnels">Tunnels</a>
+  <a class="tab active" href="/interfaces">Interfaces</a>
+  <a class="tab" href="/tailscale">Tailscale</a>
+</div>
+
+<div class="section-head"><h2>Host interfaces</h2></div>
+<div class="card" style="margin-bottom:24px">
+  {% if host_ifaces | length == 0 %}
+  <div class="card-body" style="color:var(--fg-3);text-align:center;padding:32px">
+    No host interfaces detected.
+  </div>
+  {% else %}
+  <table class="table">
+    <thead>
+      <tr><th>Interface</th><th>State</th><th>IPv4</th><th>IPv6</th><th>MAC</th><th>MTU</th></tr>
+    </thead>
+    <tbody>
+      {% for i in host_ifaces %}
+      <tr>
+        <td class="name-cell">{{ i.name }}</td>
+        <td>
+          {% if i.state == "UP" %}
+            <span class="pill pill-ok">UP</span>
+          {% elif i.state == "DOWN" %}
+            <span class="pill pill-muted">DOWN</span>
+          {% else %}
+            <span class="pill pill-info">{{ i.state | default("?") }}</span>
+          {% endif %}
+        </td>
+        <td class="num">{{ i.ipv4 | default("—") }}</td>
+        <td class="num muted" style="font-size:0.8em">{{ i.ipv6 | default("—") }}</td>
+        <td class="num muted">{{ i.mac | default("—") }}</td>
+        <td class="num">{{ i.mtu | default("—") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<div class="section-head"><h2>nspawn containers</h2></div>
+<div class="card">
+  {% if machine_ifaces | length == 0 %}
+  <div class="card-body" style="color:var(--fg-3);text-align:center;padding:32px">
+    No nspawn machine veths detected (<code>ve-*</code> interfaces).
+  </div>
+  {% else %}
+  <table class="table">
+    <thead>
+      <tr><th>Machine</th><th>Host iface</th><th>State</th><th>Host IPv4</th><th>Container IPv4</th><th>MTU</th></tr>
+    </thead>
+    <tbody>
+      {% for i in machine_ifaces %}
+      <tr>
+        <td class="name-cell">{{ i.machine | default("—") }}</td>
+        <td class="num muted">{{ i.name }}</td>
+        <td>
+          {% if i.state == "UP" %}
+            <span class="pill pill-ok">UP</span>
+          {% elif i.state == "DOWN" %}
+            <span class="pill pill-muted">DOWN</span>
+          {% else %}
+            <span class="pill pill-info">{{ i.state | default("?") }}</span>
+          {% endif %}
+        </td>
+        <td class="num">{{ i.ipv4 | default("—") }}</td>
+        <td class="num">{{ i.container_ip | default("—") }}</td>
+        <td class="num">{{ i.mtu | default("—") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>

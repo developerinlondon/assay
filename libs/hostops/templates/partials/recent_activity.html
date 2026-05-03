@@ -1,0 +1,13 @@
+{% if entries | length == 0 %}
+<div style="padding:20px 14px;color:var(--fg-3);font-size:12px">No recent journal entries.</div>
+{% else %}
+<div class="journal-list">
+  {% for e in entries %}
+  <div class="journal-row" style="display:grid;grid-template-columns:120px 200px 1fr;gap:12px;padding:6px 14px;border-top:1px solid var(--line-soft);font-family:'JetBrains Mono',monospace;font-size:12px">
+    <span style="color:var(--fg-3)">{{ e.timestamp }}</span>
+    <span style="color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ e.unit }}">{{ e.unit }}</span>
+    <span style="color:var(--fg-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ e.message }}">{{ e.message }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

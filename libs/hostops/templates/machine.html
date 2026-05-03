@@ -1,0 +1,136 @@
+{% include "partials/machine_tabs.html" %}
+
+<!-- CONTAINER UTILIZATION -->
+<div class="section-head">
+  <h2>Container Utilization</h2>
+  <span class="count">cgroup v2</span>
+</div>
+
+<div id="machine-utilization"
+     class="metric-strip"
+     style="grid-template-columns: repeat(3, 1fr)"
+     hx-get="/api/machines/{{ machine.name }}/utilization"
+     hx-trigger="dashboard-refresh from:body"
+     hx-swap="innerHTML">
+  {{ machine_utilization | safe }}
+</div>
+
+{{ machine_resources | safe }}
+
+<!-- NETWORK + NSPAWN CONFIG -->
+<div class="grid-2-eq" style="margin-top:14px">
+
+  <div class="card">
+    <div class="card-head">
+      <h3>Network</h3>
+    </div>
+    <div class="card-body">
+      <div class="kvgrid">
+        <span class="k">machine</span><span class="v">{{ machine.name }}</span>
+        {% if machine.ip %}
+        <span class="k">ipv4</span><span class="v">{{ machine.ip }}</span>
+        {% endif %}
+        {% if machine.leader_pid %}
+        <span class="k">leader pid</span><span class="v">{{ machine.leader_pid }}</span>
+        {% endif %}
+        {% if machine.addresses and machine.addresses | length > 0 %}
+          {% for addr in machine.addresses %}
+        <span class="k">addr {{ loop.index }}</span><span class="v">{{ addr }}</span>
+          {% endfor %}
+        {% endif %}
+        <span class="k">state</span>
+        <span class="v"><span class="pill {{ machine.pill_class }}">{{ machine.state }}</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>nspawn Config</h3>
+      {% if nspawn_config %}
+      <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fg-3)">/etc/systemd/nspawn/{{ machine.name }}.nspawn</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if nspawn_config %}
+      <div class="kvgrid">
+        {% if nspawn_config.exec.boot %}
+        <span class="k">Boot</span><span class="v">{{ nspawn_config.exec.boot }}</span>
+        {% endif %}
+        {% if nspawn_config.exec.private_users %}
+        <span class="k">PrivateUsers</span><span class="v">{{ nspawn_config.exec.private_users }}</span>
+        {% endif %}
+        {% if nspawn_config.exec.capability %}
+        <span class="k">Capability</span><span class="v">{{ nspawn_config.exec.capability }}</span>
+        {% endif %}
+        {% if nspawn_config.network.bridge %}
+        <span class="k">Bridge</span><span class="v">{{ nspawn_config.network.bridge }}</span>
+        {% endif %}
+        {% if nspawn_config.network.virtual_ethernet %}
+        <span class="k">VirtualEthernet</span><span class="v">{{ nspawn_config.network.virtual_ethernet }}</span>
+        {% endif %}
+        {% if nspawn_config.resources.memory_max %}
+        <span class="k">MemoryMax</span><span class="v">{{ nspawn_config.resources.memory_max }}</span>
+        {% endif %}
+        {% if nspawn_config.resources.cpu_quota %}
+        <span class="k">CPUQuota</span><span class="v">{{ nspawn_config.resources.cpu_quota }}</span>
+        {% endif %}
+        {% if nspawn_config.resources.tasks_max %}
+        <span class="k">TasksMax</span><span class="v">{{ nspawn_config.resources.tasks_max }}</span>
+        {% endif %}
+      </div>
+      <div style="margin-top:14px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:var(--fg-3);margin-bottom:6px">Bind mounts</div>
+        {% if nspawn_config.files.bind and nspawn_config.files.bind | length > 0 %}
+        <div class="kvgrid">
+          {% for b in nspawn_config.files.bind %}
+          <span class="k" style="font-size:11px">{{ b.host }}</span>
+          <span class="v" style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--fg-3)">→ {{ b.guest }}</span>
+            {% if b.ro %}<span class="pill pill-muted" style="font-size:9px;padding:1px 5px">RO</span>{% else %}<span class="pill pill-info" style="font-size:9px;padding:1px 5px">RW</span>{% endif %}
+          </span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <span style="color:var(--fg-3);font-family:'JetBrains Mono',monospace;font-size:11px">(none)</span>
+        {% endif %}
+      </div>
+      {% else %}
+      <div style="color:var(--fg-3);font-family:'JetBrains Mono',monospace;font-size:11px">config unavailable</div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- STORAGE -->
+<div class="section-head" style="margin-top:14px">
+  <h2>Storage</h2>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="card-body">
+    <div class="kvgrid">
+      <span class="k">rootfs</span><span class="v">/var/lib/machines/{{ machine.name }}</span>
+      {% if nspawn_config and nspawn_config.files.bind and nspawn_config.files.bind | length > 0 %}
+        {% for b in nspawn_config.files.bind %}
+      <span class="k">bind{{ loop.index }}</span><span class="v">{{ b.host }} → {{ b.guest }}{% if b.ro %} (RO){% endif %}</span>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- JOURNAL -->
+<div class="section-head">
+  <h2>Journal</h2>
+  <span class="count">last 10 · {{ machine.name }} · <a href="/machines/{{ machine.name }}/logs">view all →</a></span>
+</div>
+
+<div id="machine-journal"
+     class="journal"
+     hx-get="/api/machines/{{ machine.name }}/journal"
+     hx-trigger="dashboard-refresh from:body"
+     hx-swap="innerHTML">
+  {{ machine_journal | safe }}
+</div>

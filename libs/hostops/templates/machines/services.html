@@ -1,0 +1,91 @@
+{% include "partials/machine_tabs.html" %}
+
+<div class="filter-bar">
+  <input class="input" id="svc-search" name="search" type="text"
+         value="{{ search }}" placeholder="search by name / description…"
+         onchange="svcFilter()" oninput="svcFilter()" />
+
+  <a class="chip {% if state_filter == 'all' %}active{% endif %}"
+     href="/machines/{{ machine.name }}/services?state=all&type={{ type_filter }}&search={{ search }}">All <span class="n">{{ counts.total }}</span></a>
+  <a class="chip {% if state_filter == 'active' %}active{% endif %}"
+     href="/machines/{{ machine.name }}/services?state=active&type={{ type_filter }}&search={{ search }}">Active <span class="n">{{ counts.active }}</span></a>
+  <a class="chip {% if state_filter == 'failed' %}active{% endif %}"
+     href="/machines/{{ machine.name }}/services?state=failed&type={{ type_filter }}&search={{ search }}">Failed <span class="n">{{ counts.failed }}</span></a>
+  <a class="chip {% if state_filter == 'inactive' %}active{% endif %}"
+     href="/machines/{{ machine.name }}/services?state=inactive&type={{ type_filter }}&search={{ search }}">Inactive <span class="n">{{ counts.inactive }}</span></a>
+
+  <span style="width:12px"></span>
+
+  <a class="chip {% if type_filter == 'service' %}active{% endif %}"
+     href="/machines/{{ machine.name }}/services?state={{ state_filter }}&type=service&search={{ search }}">Service <span class="n">{{ counts.service }}</span></a>
+  <a class="chip {% if type_filter == 'timer' %}active{% endif %}"
+     href="/machines/{{ machine.name }}/services?state={{ state_filter }}&type=timer&search={{ search }}">Timer <span class="n">{{ counts.timer }}</span></a>
+  <a class="chip {% if type_filter == 'socket' %}active{% endif %}"
+     href="/machines/{{ machine.name }}/services?state={{ state_filter }}&type=socket&search={{ search }}">Socket <span class="n">{{ counts.socket }}</span></a>
+  <a class="chip {% if type_filter == 'all' %}active{% endif %}"
+     href="/machines/{{ machine.name }}/services?state={{ state_filter }}&type=all&search={{ search }}">All types</a>
+</div>
+
+{% if fetch_error and counts.total == 0 %}
+<div class="card" style="padding:14px;color:var(--fg-3)">
+  <strong>(unavailable)</strong> systemctl --machine returned: <code>{{ fetch_error }}</code>
+</div>
+{% else %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr><th>Unit</th><th>Load</th><th>Active</th><th>Sub</th><th class="wrap">Description</th></tr>
+    </thead>
+    <tbody>
+      {% for u in units %}
+      <tr>
+        <td class="name-cell">{{ u.name }}</td>
+        <td>{{ u.load }}</td>
+        <td>
+          {% if u.active == "active" %}<span class="pill pill-ok">Active</span>
+          {% elif u.active == "failed" %}<span class="pill pill-err">Failed</span>
+          {% elif u.active == "inactive" %}<span class="pill pill-muted">Inactive</span>
+          {% else %}<span class="pill pill-info">{{ u.active }}</span>{% endif %}
+        </td>
+        <td>{{ u.sub }}</td>
+        <td class="wrap muted">{{ u.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="section-head" style="margin-top:24px">
+  <h2>Top Processes</h2>
+  <span class="count">cgroup-scoped · top 10 by CPU</span>
+</div>
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr><th>PID</th><th class="wrap">CMD</th><th>CPU%</th><th>RSS</th><th>THR</th><th>State</th></tr>
+    </thead>
+    <tbody>
+      {% for p in processes %}
+      <tr>
+        <td>{{ p.pid }}</td>
+        <td class="wrap">{{ p.cmdline }}</td>
+        <td>{{ p.cpu_pct }}</td>
+        <td>{{ p.rss_fmt }}</td>
+        <td>{{ p.threads }}</td>
+        <td class="muted">{{ p.state }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+function svcFilter() {
+  var q = document.getElementById("svc-search").value;
+  var url = new URL(window.location.href);
+  url.searchParams.set("search", q);
+  window.location.href = url.toString();
+}
+</script>

@@ -1,0 +1,79 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/inventory">Admin</a> · audit log</div>
+    <h1 class="page-title">Audit log</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">entries</span><span class="v">{{ entries | length }}</span></span>
+    <a href="/api/audit/export" class="chip" style="margin-left:8px">Export ndjson</a>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/inventory">Inventory</a>
+  <a class="tab active" href="/audit">Audit log</a>
+  <a class="tab" href="/packages">Packages</a>
+  <a class="tab" href="/settings">Settings</a>
+</div>
+
+<div class="filter-bar">
+  <input class="input" id="audit-search" type="text"
+         value="{{ search }}" placeholder="search actor / action / target…"
+         oninput="auditFilter()" onchange="auditFilter()" />
+
+  <a class="chip {% if action_filter == 'all' %}active{% endif %}"
+     href="/audit?search={{ search }}&action=all">All</a>
+  <a class="chip {% if action_filter == 'machine' %}active{% endif %}"
+     href="/audit?search={{ search }}&action=machine">machine.*</a>
+  <a class="chip {% if action_filter == 'inventory' %}active{% endif %}"
+     href="/audit?search={{ search }}&action=inventory">inventory.*</a>
+  <a class="chip {% if action_filter == 'backup' %}active{% endif %}"
+     href="/audit?search={{ search }}&action=backup">backup.*</a>
+  <a class="chip {% if action_filter == 'pkg' %}active{% endif %}"
+     href="/audit?search={{ search }}&action=pkg">pkg.*</a>
+</div>
+
+<table class="table">
+  <thead>
+    <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Result</th><th>IP</th></tr>
+  </thead>
+  <tbody>
+    {% for e in entries %}
+    <tr>
+      <td class="num">{{ e.ts_pretty }}</td>
+      <td>{{ e.actor }}</td>
+      <td>
+        {% if e.action_prefix == "machine" %}
+          <span style="color:var(--info)">{{ e.action }}</span>
+        {% elif e.action_prefix == "inventory" %}
+          <span style="color:var(--warn)">{{ e.action }}</span>
+        {% elif e.action_prefix == "backup" %}
+          <span style="color:var(--ok)">{{ e.action }}</span>
+        {% elif e.action_prefix == "pkg" %}
+          <span style="color:var(--info)">{{ e.action }}</span>
+        {% else %}
+          {{ e.action }}
+        {% endif %}
+      </td>
+      <td>{{ e.target }}</td>
+      <td>
+        {% if e.result == "ok" %}<span class="pill pill-ok">OK</span>
+        {% else %}<span class="pill pill-err">FAIL</span>{% endif %}
+      </td>
+      <td class="muted">{{ e.ip }}</td>
+    </tr>
+    {% endfor %}
+    {% if entries | length == 0 %}
+    <tr><td colspan="6" style="color:var(--fg-3);text-align:center;padding:18px">no audit entries match your filter</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+<script>
+function auditFilter() {
+  var q = document.getElementById("audit-search").value;
+  var url = new URL(window.location.href);
+  url.searchParams.set("search", q);
+  window.location.href = url.toString();
+}
+</script>

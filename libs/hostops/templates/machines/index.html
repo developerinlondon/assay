@@ -1,0 +1,169 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow">nspawn containers</div>
+    <h1 class="page-title">nspawn containers</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">total</span><span class="v">{{ total }}</span></span>
+    <span><a class="btn" href="/machines/new">+ Provision new</a></span>
+  </div>
+</header>
+
+{% if flash %}
+<div class="card" style="margin-bottom:16px;border-left:3px solid {% if flash.kind == 'err' %}var(--err){% elif flash.kind == 'warn' %}var(--warn){% elif flash.kind == 'ok' %}var(--ok){% else %}var(--info){% endif %}">
+  <div class="card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span class="pill {{ flash.pill }}">{{ flash.label }}</span>
+    <span>{{ flash.msg }}</span>
+  </div>
+</div>
+<script>
+  if (window.history && window.history.replaceState) {
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+</script>
+{% endif %}
+
+{# In-flight provisioning cards. Each card hydrates from the job-status
+   API and re-renders its stage list / progress bar as state changes. #}
+{% for j in active_jobs %}
+<div class="card prov-card" data-job-id="{{ j.id }}"
+     style="margin-bottom:14px;border-left:3px solid var(--warn)">
+  <div class="card-body">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <span class="pill pill-warn prov-status-pill">◐ provisioning</span>
+      <strong style="font-size:15px">{{ j.name }}</strong>
+      <span class="muted" style="font-size:0.85em">template: <code>{{ j.template }}</code></span>
+      <span class="muted prov-elapsed" style="font-size:0.85em;margin-left:auto">just started</span>
+    </div>
+    <div class="prov-stages" style="display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center;font-size:0.9em">
+      {% for s in j.stages %}
+      <span class="prov-stage-icon" data-stage="{{ s.id }}">◯</span>
+      <span class="prov-stage-label" data-stage="{{ s.id }}">{{ s.label }}</span>
+      <span class="prov-stage-msg muted" data-stage="{{ s.id }}" style="font-size:0.85em"></span>
+      {% endfor %}
+    </div>
+    <div class="prov-error muted" style="display:none;margin-top:10px;color:var(--err);font-size:0.9em"></div>
+  </div>
+</div>
+{% endfor %}
+
+{% if total == 0 and active_jobs | length == 0 %}
+<div class="card"><div class="card-body" style="text-align:center;padding:48px 32px">
+  <div style="font-size:1.5rem;margin-bottom:12px;color:var(--fg-3)">—</div>
+  <div style="font-weight:600;margin-bottom:8px">No containers running.</div>
+  <div class="muted">Provision a new nspawn machine via <a href="/machines/new">+ provision new</a>.</div>
+</div></div>
+{% elif total == 0 %}
+<div class="muted" style="margin-top:8px;font-size:0.9em">No completed containers yet.</div>
+{% else %}
+
+<div class="card-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:8px">
+  {% for m in machines %}
+  <a class="card" href="/machines/{{ m.name }}"
+     style="display:block;padding:16px 18px;text-decoration:none;color:inherit">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span class="dot dot-{{ m.state_class | default('muted') }}" style="flex-shrink:0"></span>
+      <div style="font-size:15px;font-weight:600;flex:1;min-width:0">{{ m.name }}</div>
+    </div>
+    <div class="muted" style="font-size:12px;display:flex;flex-wrap:wrap;gap:10px">
+      {% if m.os %}<span>{{ m.os }}</span>{% endif %}
+      {% if m.ip %}<span class="num">{{ m.ip }}</span>{% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+<div style="margin-top:18px">
+  <a class="chip" href="/machines/new">+ provision new</a>
+</div>
+{% endif %}
+
+{# Poll loop for in-flight provisioning cards. Polls /api/machines/jobs/<id>
+   every 1.5s, mutates the card's DOM as stages transition, and on
+   terminal status reloads /machines so the new container shows up
+   alongside the existing list (or shows the error inline). #}
+{% if active_jobs | length > 0 %}
+<script>
+(function() {
+  const POLL_MS = 1500;
+  const ICONS = { pending: '◯', in_progress: '◐', done: '●', failed: '✗' };
+  const STAGE_COLORS = { pending: 'var(--fg-3)', in_progress: 'var(--warn)',
+                          done: 'var(--ok)', failed: 'var(--err)' };
+
+  function fmtElapsed(secs) {
+    if (secs < 60) return secs + 's';
+    const m = Math.floor(secs / 60);
+    return m + 'm ' + (secs - m*60) + 's';
+  }
+
+  function applyState(card, job) {
+    const startedAt = job.started_at;
+    const elapsed = Math.max(0, Math.floor(Date.now()/1000) - startedAt);
+    const elap = card.querySelector('.prov-elapsed');
+    if (elap) elap.textContent = fmtElapsed(elapsed) + ' elapsed';
+
+    const pill = card.querySelector('.prov-status-pill');
+    if (job.status === 'done') {
+      pill.className = 'pill pill-ok prov-status-pill';
+      pill.textContent = '● provisioned';
+      card.style.borderLeftColor = 'var(--ok)';
+    } else if (job.status === 'failed') {
+      pill.className = 'pill pill-err prov-status-pill';
+      pill.textContent = '✗ failed';
+      card.style.borderLeftColor = 'var(--err)';
+    }
+
+    job.stages.forEach(s => {
+      const icon = card.querySelector(`.prov-stage-icon[data-stage="${s.id}"]`);
+      const label = card.querySelector(`.prov-stage-label[data-stage="${s.id}"]`);
+      const msg = card.querySelector(`.prov-stage-msg[data-stage="${s.id}"]`);
+      if (icon) {
+        icon.textContent = ICONS[s.status] || '?';
+        icon.style.color = STAGE_COLORS[s.status] || 'var(--fg-3)';
+      }
+      if (label) {
+        label.style.color = (s.status === 'done' || s.status === 'in_progress')
+          ? 'var(--fg-1)' : 'var(--fg-3)';
+        label.style.fontWeight = (s.status === 'in_progress') ? '600' : '400';
+      }
+      if (msg) {
+        msg.textContent = s.msg || '';
+      }
+    });
+
+    if (job.err) {
+      const errEl = card.querySelector('.prov-error');
+      if (errEl) {
+        errEl.style.display = 'block';
+        errEl.textContent = job.err;
+      }
+    }
+  }
+
+  function poll(card) {
+    const id = card.dataset.jobId;
+    fetch('/api/machines/jobs/' + encodeURIComponent(id), { credentials: 'same-origin' })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(job => {
+        applyState(card, job);
+        if (job.status === 'running') {
+          setTimeout(() => poll(card), POLL_MS);
+        } else if (job.status === 'done') {
+          // Reload so the new container card appears in the grid below.
+          setTimeout(() => window.location.replace(
+            '/machines?kind=ok&msg=' + encodeURIComponent('Provisioned ' + job.name + '.')
+          ), 800);
+        }
+        // failed: leave the card visible with its error pane; no reload.
+      })
+      .catch(err => {
+        // Transient network blip — try again. Real "no such job" (404)
+        // also lands here; since the card is here we keep trying briefly.
+        setTimeout(() => poll(card), POLL_MS * 2);
+      });
+  }
+
+  document.querySelectorAll('.prov-card').forEach(poll);
+})();
+</script>
+{% endif %}

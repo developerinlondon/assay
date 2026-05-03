@@ -1,0 +1,22 @@
+/* Brand overrides
+ * ---------------
+ * Loaded last in templates/layout.html, so anything in here wins over
+ * tokens.css and styles.css. Edit this file to whitelabel the dashboard
+ * without touching core styles.
+ *
+ * Examples:
+ *
+ *   :root {
+ *     --info:   #ff5722;        // accent (sidebar mark, focus rings, links)
+ *     --bg-0:   #fafafa;        // page background
+ *     --fg-0:   #111;           // strongest text
+ *     --r-md:   12px;           // softer corners
+ *   }
+ *
+ *   :root[data-theme="light"] {
+ *     --info: #d84315;          // separate accent for light mode
+ *   }
+ *
+ *   .brand-name { font-family: "Your Display Font", system-ui; }
+ *   .brand-mark { background: url("/static/img/your-logo.svg") no-repeat center / contain; transform: none; }
+ */

@@ -1,0 +1,117 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/tunnels">Networks</a> · tailscale</div>
+    <h1 class="page-title">Tailscale</h1>
+  </div>
+  <div class="page-meta">
+    {% if ts %}
+    <span><span class="k">peers</span><span class="v">{{ ts.peers | length }}</span></span>
+    <span><span class="k">tailnet</span><span class="v">{{ ts.magic_dns | default("—") }}</span></span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/tunnels">Tunnels</a>
+  <a class="tab" href="/interfaces">Interfaces</a>
+  <a class="tab active" href="/tailscale">Tailscale</a>
+</div>
+
+{% if not ts %}
+<div class="card">
+  <div class="card-body" style="color:var(--fg-3);text-align:center;padding:48px 32px">
+    <div style="font-size:1.5rem;margin-bottom:12px">—</div>
+    <div style="font-weight:600;margin-bottom:6px">Tailscale daemon not running on this host.</div>
+    <div>Or <code>tailscale</code> is not in PATH.</div>
+    <div style="margin-top:12px;font-size:0.85rem">Install with <code>apt install tailscale</code> or see <a href="https://tailscale.com/download/linux" target="_blank">tailscale.com/download</a>.</div>
+  </div>
+</div>
+{% else %}
+
+<div class="section-head"><h2>This node</h2></div>
+
+<div class="card" style="margin-bottom:24px">
+  <div class="card-body">
+    <div class="kvgrid">
+      <span class="k">hostname</span><span class="v">{{ ts.self.hostname | default("—") }}</span>
+      {% if ts.self.dns_name %}
+      <span class="k">MagicDNS</span><span class="v num">{{ ts.self.dns_name }}</span>
+      {% endif %}
+      <span class="k">tailnet</span><span class="v num">{{ ts.magic_dns | default("—") }}</span>
+      <span class="k">OS</span><span class="v">{{ ts.self.os | default("—") }}</span>
+      {% if ts.self.tailnet_ips | length > 0 %}
+      <span class="k">IPs</span>
+      <span class="v">
+        {% for ip in ts.self.tailnet_ips %}
+        <span class="num" style="display:block">{{ ip }}</span>
+        {% endfor %}
+      </span>
+      {% endif %}
+      {% if ts.self.relay %}
+      <span class="k">DERP relay</span><span class="v">{{ ts.self.relay }}</span>
+      {% endif %}
+      <span class="k">state</span>
+      <span class="v">
+        {% if ts.backend_state == "Running" %}
+          <span class="pill pill-ok">{{ ts.backend_state }}</span>
+        {% else %}
+          <span class="pill pill-info">{{ ts.backend_state | default("?") }}</span>
+        {% endif %}
+      </span>
+      {% if ts.version %}
+      <span class="k">version</span><span class="v num muted">{{ ts.version }}</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="section-head"><h2>Peers <span class="n" style="font-weight:400;font-size:0.85rem">{{ ts.peers | length }}</span></h2></div>
+
+<div class="card" style="margin-bottom:24px">
+  <table class="table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Hostname</th>
+        <th>OS</th>
+        <th>Tailscale IPs</th>
+        <th>DERP relay</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in ts.peers %}
+      <tr>
+        <td style="width:24px;text-align:center">
+          {% if p.online %}
+            <span class="dot dot-ok" title="online"></span>
+          {% else %}
+            <span class="dot dot-muted" title="offline"></span>
+          {% endif %}
+        </td>
+        <td>{{ p.hostname | default("—") }}</td>
+        <td class="muted">{{ p.os | default("—") }}</td>
+        <td class="num" style="font-size:0.82em">
+          {% for ip in p.tailnet_ips %}{{ ip }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+        </td>
+        <td class="muted">{{ p.relay | default("—") }}</td>
+      </tr>
+      {% endfor %}
+      {% if ts.peers | length == 0 %}
+      <tr><td colspan="5" style="color:var(--fg-3);text-align:center;padding:18px">no peers</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% if ts.tags | length > 0 %}
+<div class="section-head"><h2>Tags</h2></div>
+<div class="card" style="margin-bottom:24px">
+  <div class="card-body">
+    {% for tag in ts.tags %}
+    <span class="pill pill-info" style="margin-right:6px;margin-bottom:4px">{{ tag }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
