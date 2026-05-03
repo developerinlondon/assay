@@ -126,12 +126,9 @@ pub async fn execute(args: InstallArgs) -> Result<(), InstallError> {
     let m = manifest::parse(&source, &args.manifest)?;
 
     // 2. Resolve dirs.
-    let cache_dir = args
-        .cache_dir
-        .clone()
-        .unwrap_or_else(|| default_cache_dir());
-    let bin_dir = args.bin_dir.clone().unwrap_or_else(|| default_bin_dir());
-    let lib_dir = args.lib_dir.clone().unwrap_or_else(|| default_lib_dir());
+    let cache_dir = args.cache_dir.clone().unwrap_or_else(default_cache_dir);
+    let bin_dir = args.bin_dir.clone().unwrap_or_else(default_bin_dir);
+    let lib_dir = args.lib_dir.clone().unwrap_or_else(default_lib_dir);
     let arch = std::env::consts::ARCH.to_string();
 
     // 3. Build plans.
