@@ -126,7 +126,9 @@ body {
  * Rendered as <details data-section><summary>label</summary>children</details>.
  * The existing app.js disclosure script persists open/closed in localStorage.
  * Children are plain <a> inside the <details>, so .nav a rules cover their
- * typography, hover, and active styling at the same indent as flat entries. */
+ * typography, hover, and active styling at the same indent as flat entries.
+ * The summary lights up with the same active treatment whenever any child
+ * route is active (via :has()). */
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
 .nav-group details { display: flex; flex-direction: column; gap: 2px; }
 .nav-group summary {
@@ -142,12 +144,13 @@ body {
   border-radius: var(--r-md);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  transition: background 80ms;
+  transition: background 80ms, color 80ms;
 }
 .nav-group summary::-webkit-details-marker { display: none; }
 .nav-group summary:hover { background: var(--bg-2); }
-.nav-group summary::before {
+.nav-group summary::after {
   content: "";
   width: 0; height: 0;
   border-left: 4px solid var(--fg-3);
@@ -156,7 +159,12 @@ body {
   transform: rotate(0deg);
   transition: transform 120ms;
 }
-.nav-group details[open] summary::before { transform: rotate(90deg); }
+.nav-group details[open] summary::after { transform: rotate(90deg); }
+.nav-group details:has(a.active) > summary {
+  background: var(--bg-3);
+  color: var(--fg-0);
+  box-shadow: inset 2px 0 0 var(--info);
+}
 
 .nav-meta {
   margin-top: auto;
