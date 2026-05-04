@@ -135,8 +135,7 @@ body {
   list-style: none;
   padding: 7px 10px;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--fg-1);
+  color: var(--fg-2);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   cursor: pointer;
