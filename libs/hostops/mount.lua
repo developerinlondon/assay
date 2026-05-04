@@ -27,10 +27,9 @@
 --!     extra_sidebar_links = {
 --!       { href = "/admin", label = "Admin", nav_active = "admin" },
 --!       {
---!         label = "FCAR workflows",
+--!         label = "Workflows",
 --!         children = {
 --!           { href = "/skip-trace", label = "Skip trace", nav_active = "skip_trace" },
---!           { href = "/axiom",      label = "Axiom",      nav_active = "axiom" },
 --!         },
 --!       },
 --!     },

@@ -21,9 +21,9 @@ local opts = stubs.opts({
   extra_sidebar_links = {
     { href = "/skip-trace", label = "Skip trace", nav_active = "skip_trace" },
     {
-      label = "FCAR workflows",
+      label = "Workflows",
       children = {
-        { href = "/axiom", label = "Axiom", nav_active = "axiom" },
+        { href = "/example-flow", label = "Example flow", nav_active = "example_flow" },
       },
     },
   },
@@ -147,11 +147,11 @@ end
 do
   local r = get("/")
   if r.status ~= 200 then fail("GET / for grouped sidebar → " .. r.status) end
-  assert_contains(r.body, "nav-group",        "grouped sidebar nav class")
-  assert_contains(r.body, "FCAR workflows",   "grouped sidebar header label")
-  assert_contains(r.body, "nav-group-item",   "grouped sidebar child class")
-  assert_contains(r.body, 'href="/axiom"',    "grouped sidebar child href")
-  assert_contains(r.body, ">Axiom<",          "grouped sidebar child label")
+  assert_contains(r.body, "nav-group",            "grouped sidebar nav class")
+  assert_contains(r.body, "Workflows",            "grouped sidebar header label")
+  assert_contains(r.body, "nav-group-item",       "grouped sidebar child class")
+  assert_contains(r.body, 'href="/example-flow"', "grouped sidebar child href")
+  assert_contains(r.body, ">Example flow<",       "grouped sidebar child label")
   ok("/ renders grouped extra_sidebar_links")
 end
 
