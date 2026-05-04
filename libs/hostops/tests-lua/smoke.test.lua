@@ -20,6 +20,12 @@ local PORT = 47917
 local opts = stubs.opts({
   extra_sidebar_links = {
     { href = "/skip-trace", label = "Skip trace", nav_active = "skip_trace" },
+    {
+      label = "FCAR workflows",
+      children = {
+        { href = "/axiom", label = "Axiom", nav_active = "axiom" },
+      },
+    },
   },
 })
 
@@ -135,6 +141,18 @@ do
   assert_contains(r.body, 'href="/skip-trace"', "extra sidebar link href")
   assert_contains(r.body, "Skip trace",         "extra sidebar link label")
   ok("/ renders extra_sidebar_links")
+end
+
+-- ── grouped extra_sidebar_links: header label + indented children ─────
+do
+  local r = get("/")
+  if r.status ~= 200 then fail("GET / for grouped sidebar → " .. r.status) end
+  assert_contains(r.body, "nav-group",        "grouped sidebar nav class")
+  assert_contains(r.body, "FCAR workflows",   "grouped sidebar header label")
+  assert_contains(r.body, "nav-group-item",   "grouped sidebar child class")
+  assert_contains(r.body, 'href="/axiom"',    "grouped sidebar child href")
+  assert_contains(r.body, ">Axiom<",          "grouped sidebar child label")
+  ok("/ renders grouped extra_sidebar_links")
 end
 
 -- ── /backups: page renders even with no profile (state = "B") ─────────

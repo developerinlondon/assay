@@ -120,6 +120,33 @@ body {
   flex-shrink: 0; opacity: 0.7;
 }
 
+/* Sidebar groups (extra_sidebar_links entries with `children`).
+ * Header reuses .nav-section's typographic style; children indent
+ * past the header so the hierarchy reads at a glance. */
+.nav-group { padding: 4px 0; display: flex; flex-direction: column; gap: 2px; }
+.nav-group-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--fg-3);
+  padding: 6px 10px 4px;
+}
+.nav-group-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px 6px 22px;
+  border-radius: var(--r-md);
+  color: var(--fg-2);
+  text-decoration: none;
+  font-size: 13px;
+  transition: background 80ms, color 80ms;
+}
+.nav-group-item:hover { background: var(--bg-2); color: var(--fg-1); }
+.nav-group-item.active {
+  background: var(--bg-3); color: var(--fg-0);
+  box-shadow: inset 2px 0 0 var(--info);
+}
+
 .nav-meta {
   margin-top: auto;
   padding: 12px 10px 0;
