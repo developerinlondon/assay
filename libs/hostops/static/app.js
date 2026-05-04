@@ -16,3 +16,28 @@ evt.onerror = () => console.warn("knowhere SSE: stream error, browser will auto-
     });
   });
 })();
+
+// Sidebar mutex highlight — one entry highlighted at a time. Clicking a
+// group summary (which doesn't navigate) moves the highlight onto the
+// summary; clicking any other sidebar link clears it so the post-nav
+// render of .active wins. Reload always re-syncs to the URL.
+(function () {
+  document.querySelectorAll('details[data-section] > summary').forEach(function (s) {
+    s.addEventListener('click', function () {
+      document.querySelectorAll('aside.sidebar a.active').forEach(function (a) {
+        a.classList.remove('active');
+      });
+      document.querySelectorAll('summary.summary-selected').forEach(function (other) {
+        if (other !== s) other.classList.remove('summary-selected');
+      });
+      s.classList.add('summary-selected');
+    });
+  });
+  document.querySelectorAll('aside.sidebar a').forEach(function (a) {
+    a.addEventListener('click', function () {
+      document.querySelectorAll('summary.summary-selected').forEach(function (s) {
+        s.classList.remove('summary-selected');
+      });
+    });
+  });
+})();

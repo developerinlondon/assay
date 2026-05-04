@@ -19,9 +19,19 @@
 --!     template_paths     = { "/etc/myapp/templates" },
 --!     desired_state_path = "/var/lib/myapp/pkg/desired_state.json",
 --!     -- Optional sidebar links the consumer app provides on top of the
---!     -- lib's own nav. Plain pass-through, rendered as-is in layout.html:
+--!     -- lib's own nav. Two shapes are supported:
+--!     --   • flat   { href, label, nav_active }
+--!     --   • group  { label, children = { {href,label,nav_active}, … } }
+--!     -- A group renders its `label` as a section header above its
+--!     -- indented children. Detect via presence of `children`.
 --!     extra_sidebar_links = {
---!       { href = "/skip-trace", label = "Skip trace", nav_active = "skip_trace" },
+--!       { href = "/admin", label = "Admin", nav_active = "admin" },
+--!       {
+--!         label = "Workflows",
+--!         children = {
+--!           { href = "/skip-trace", label = "Skip trace", nav_active = "skip_trace" },
+--!         },
+--!       },
 --!     },
 --!   })
 --!   http.serve(8080, routes)
