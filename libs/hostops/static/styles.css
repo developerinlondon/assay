@@ -846,6 +846,7 @@ main a:not([class]):hover { text-decoration: underline; }
   justify-content: space-between;
   list-style: none;
   user-select: none;
+  border-radius: var(--r-md);
 }
 .nav-group > summary::-webkit-details-marker, .nav-subgroup > summary::-webkit-details-marker {
   display: none;
@@ -907,6 +908,7 @@ main a:not([class]):hover { text-decoration: underline; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 8px 12px 8px 24px;
+  border-radius: var(--r-md);
   color: var(--fg-2);
   text-decoration: none;
 }
