@@ -850,6 +850,10 @@ main a:not([class]):hover { text-decoration: underline; }
 .nav-group > summary::-webkit-details-marker, .nav-subgroup > summary::-webkit-details-marker {
   display: none;
 }
+.nav-group > summary::marker, .nav-subgroup > summary::marker {
+  content: "";
+  display: none;
+}
 .nav-group > summary::after, .nav-subgroup > summary::after {
   content: "›";
   margin-left: auto;
@@ -905,7 +909,11 @@ main a:not([class]):hover { text-decoration: underline; }
   text-decoration: none;
 }
 .nav-group > a:hover { color: var(--fg-1); background: var(--bg-1); }
-.nav-group > a.active { color: var(--fg-1); background: var(--bg-1); }
+.nav-group > a.active {
+  color: var(--fg-1);
+  background: var(--bg-1);
+  box-shadow: inset 2px 0 0 var(--info);
+}
 
 /* Mutex highlight: clicking the summary (non-navigating) moves the
  * "selected" appearance onto it via JS, which also clears .active from
@@ -914,6 +922,7 @@ main a:not([class]):hover { text-decoration: underline; }
 .nav-subgroup > summary.summary-selected {
   color: var(--fg-1);
   background: var(--bg-1);
+  box-shadow: inset 2px 0 0 var(--info);
 }
 .nav-group > summary.summary-selected::after,
 .nav-subgroup > summary.summary-selected::after {
