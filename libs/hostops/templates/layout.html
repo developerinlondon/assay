@@ -66,13 +66,24 @@
     <a href="/audit" class="{% if nav_active in ['audit'] %}active{% endif %}">Admin</a>
   </nav>
 
-  {# Consumer-app links (mount opts.extra_sidebar_links). Plain
-     pass-through — the consumer's main.lua decides what shows up here. #}
+  {# Consumer-app links (mount opts.extra_sidebar_links). Each entry is
+     either a flat {href,label,nav_active} or a group
+     {label, children=[{href,label,nav_active}, …]}. Groups render a
+     section label above indented children. #}
   {% if extra_sidebar_links %}
   {% for link in extra_sidebar_links %}
+  {% if link.children %}
+  <details class="nav-group" data-section="{{ link.label }}" open>
+    <summary>{{ link.label }}</summary>
+    {% for child in link.children %}
+    <a href="{{ child.href }}" class="{% if child.nav_active and nav_active == child.nav_active %}active{% endif %}">{{ child.label }}</a>
+    {% endfor %}
+  </details>
+  {% else %}
   <nav class="nav nav-flat">
     <a href="{{ link.href }}" class="{% if link.nav_active and nav_active == link.nav_active %}active{% endif %}">{{ link.label }}</a>
   </nav>
+  {% endif %}
   {% endfor %}
   {% endif %}
 

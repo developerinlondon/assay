@@ -98,6 +98,8 @@ body {
   padding: 7px 10px; border-radius: var(--r-md);
   color: var(--fg-2); text-decoration: none;
   font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   transition: background 80ms, color 80ms;
 }
 .nav a:hover { background: var(--bg-2); color: var(--fg-1); }
@@ -119,6 +121,7 @@ body {
   width: 14px; height: 14px;
   flex-shrink: 0; opacity: 0.7;
 }
+
 
 .nav-meta {
   margin-top: auto;
@@ -843,8 +846,13 @@ main a:not([class]):hover { text-decoration: underline; }
   justify-content: space-between;
   list-style: none;
   user-select: none;
+  border-radius: var(--r-md);
 }
 .nav-group > summary::-webkit-details-marker, .nav-subgroup > summary::-webkit-details-marker {
+  display: none;
+}
+.nav-group > summary::marker, .nav-subgroup > summary::marker {
+  content: "";
   display: none;
 }
 .nav-group > summary::after, .nav-subgroup > summary::after {
@@ -887,6 +895,42 @@ main a:not([class]):hover { text-decoration: underline; }
 .sidebar > .nav-flat > a.active {
   color: var(--fg-1);
   background: var(--bg-1);
+}
+
+/* Children rendered inside <details class="nav-group"> via
+ * extra_sidebar_links groups. Match flat top-level styling so the
+ * active box-shadow bar lines up with the sidebar's left edge for
+ * every highlighted entry; extra left padding adds the visual indent
+ * to the child's label only. */
+.nav-group > a {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 12px 8px 24px;
+  border-radius: var(--r-md);
+  color: var(--fg-2);
+  text-decoration: none;
+}
+.nav-group > a:hover { color: var(--fg-1); background: var(--bg-1); }
+.nav-group > a.active {
+  color: var(--fg-1);
+  background: var(--bg-1);
+  box-shadow: inset 2px 0 0 var(--info);
+}
+
+/* Mutex highlight: clicking the summary (non-navigating) moves the
+ * "selected" appearance onto it via JS, which also clears .active from
+ * any sibling link. Same color treatment as .nav-flat > a.active. */
+.nav-group > summary.summary-selected,
+.nav-subgroup > summary.summary-selected {
+  color: var(--fg-1);
+  background: var(--bg-1);
+  box-shadow: inset 2px 0 0 var(--info);
+}
+.nav-group > summary.summary-selected::after,
+.nav-subgroup > summary.summary-selected::after {
+  color: var(--fg-1);
 }
 
 /* Clickable breadcrumb links inside .page-eyebrow — inherit the
