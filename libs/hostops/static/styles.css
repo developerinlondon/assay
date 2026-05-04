@@ -122,62 +122,6 @@ body {
   flex-shrink: 0; opacity: 0.7;
 }
 
-/* Sidebar groups (extra_sidebar_links entries with `children`).
- * Rendered as <details data-section><summary>label</summary>children</details>.
- * The existing app.js disclosure script persists open/closed in localStorage.
- * Children are plain <a> inside the <details>, so .nav a rules cover their
- * typography, hover, and active styling at the same indent as flat entries.
- * The summary lights up with the same active treatment whenever any child
- * route is active (via :has()). */
-.nav-group { display: flex; flex-direction: column; gap: 2px; }
-.nav-group details { display: flex; flex-direction: column; gap: 2px; }
-.nav-group summary {
-  list-style: none;
-  padding: 7px 10px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.45;
-  color: var(--fg-2);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  user-select: none;
-  border-radius: var(--r-md);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  transition: background 80ms, color 80ms;
-}
-.nav-group summary::-webkit-details-marker { display: none; }
-.nav-group summary:hover { background: var(--bg-2); }
-.nav-group summary::after {
-  content: "";
-  width: 0; height: 0;
-  border-left: 4px solid var(--fg-3);
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  transform: rotate(0deg);
-  transition: transform 120ms;
-}
-.nav-group details[open] summary::after { transform: rotate(90deg); }
-
-/* Children sit one level indented from the parent summary so the
- * hierarchy reads at a glance without losing the sidebar's left rhythm. */
-.nav-group details > a { padding-left: 22px; }
-
-/* Mutex highlight: only one sidebar entry is highlighted at a time. By
- * default that's the active route (.nav a.active). Clicking the summary
- * (which doesn't navigate) moves the highlight to it via JS, which adds
- * .summary-selected and clears .active from the sibling link. The next
- * page navigation re-establishes route-driven .active and JS clears
- * .summary-selected — so reload always re-syncs to the URL. */
-.nav-group summary.summary-selected {
-  background: var(--bg-3);
-  color: var(--fg-0);
-  box-shadow: inset 2px 0 0 var(--info);
-}
 
 .nav-meta {
   margin-top: auto;
@@ -946,6 +890,34 @@ main a:not([class]):hover { text-decoration: underline; }
 .sidebar > .nav-flat > a.active {
   color: var(--fg-1);
   background: var(--bg-1);
+}
+
+/* Children rendered inside <details class="nav-group"> via
+ * extra_sidebar_links groups. Match flat top-level styling so
+ * sizes line up; small left padding adds the visual indent. */
+.nav-group > a {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 12px 8px 24px;
+  color: var(--fg-2);
+  text-decoration: none;
+}
+.nav-group > a:hover { color: var(--fg-1); background: var(--bg-1); }
+.nav-group > a.active { color: var(--fg-1); background: var(--bg-1); }
+
+/* Mutex highlight: clicking the summary (non-navigating) moves the
+ * "selected" appearance onto it via JS, which also clears .active from
+ * any sibling link. Same color treatment as .nav-flat > a.active. */
+.nav-group > summary.summary-selected,
+.nav-subgroup > summary.summary-selected {
+  color: var(--fg-1);
+  background: var(--bg-1);
+}
+.nav-group > summary.summary-selected::after,
+.nav-subgroup > summary.summary-selected::after {
+  color: var(--fg-1);
 }
 
 /* Clickable breadcrumb links inside .page-eyebrow — inherit the
