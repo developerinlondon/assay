@@ -897,17 +897,16 @@ main a:not([class]):hover { text-decoration: underline; }
 }
 
 /* Children rendered inside <details class="nav-group"> via
- * extra_sidebar_links groups. Match flat top-level styling exactly
- * (same padding) and use margin-left for the visual indent — so the
- * box-shadow active bar shifts right with the text instead of being
- * pinned to the sidebar's left edge. */
+ * extra_sidebar_links groups. Match flat top-level styling so the
+ * active box-shadow bar lines up with the sidebar's left edge for
+ * every highlighted entry; extra left padding adds the visual indent
+ * to the child's label only. */
 .nav-group > a {
   display: block;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 8px 12px;
-  margin-left: 12px;
+  padding: 8px 12px 8px 24px;
   color: var(--fg-2);
   text-decoration: none;
 }
