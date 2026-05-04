@@ -2,6 +2,35 @@
 
 All notable changes to Assay are documented here.
 
+## hostops 0.1.3 — 2026-05-04
+
+### Added
+
+- `hostops.mount` `extra_sidebar_links` accepts a grouped entry shape in addition to the flat one. A
+  grouped entry (`{label, children = { {href, label, nav_active}, ... }}`) renders as a
+  `<details data-section><summary>label</summary>children</details>` block in the sidebar. The
+  existing `app.js` disclosure script persists open state in localStorage; children sit one level
+  indented and pick up the base `.nav a` typography.
+- Mutex sidebar highlight: clicking a group summary moves the active treatment (background + accent
+  left bar) onto the summary while clearing `.active` from any other sidebar link, so only one entry
+  highlights at a time. Reload re-syncs to whatever the URL is.
+- Smoke-test fixture in `tests-lua/smoke.test.lua` covers both shapes — flat link plus grouped entry
+  render assertions.
+
+### Changed
+
+- `templates/audit.html` page-eyebrow now reads `<a href="/audit">Admin</a> · audit log` so the
+  parent segment is a real link, matching how `Networks` is linked from `/tunnels` and the rest of
+  hostops's eyebrow chrome.
+
+## 0.15.9 — 2026-05-04
+
+### Changed
+
+- Bundles `hostops 0.1.3` (grouped sidebar entries + audit breadcrumb fix). No assay-lua source
+  changes vs `0.15.8` — this release packages the merged hostops library updates as
+  `assay-lib-hostops-0.1.3.tar.gz` alongside the runtime binary.
+
 ## hostops 0.1.2 — 2026-05-03
 
 ### Added
