@@ -24,7 +24,7 @@ evt.onerror = () => console.warn("knowhere SSE: stream error, browser will auto-
 (function () {
   document.querySelectorAll('details[data-section] > summary').forEach(function (s) {
     s.addEventListener('click', function () {
-      s.parentElement.querySelectorAll('a.active').forEach(function (a) {
+      document.querySelectorAll('aside.sidebar a.active').forEach(function (a) {
         a.classList.remove('active');
       });
       document.querySelectorAll('summary.summary-selected').forEach(function (other) {
