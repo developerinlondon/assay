@@ -160,7 +160,18 @@ body {
   transition: transform 120ms;
 }
 .nav-group details[open] summary::after { transform: rotate(90deg); }
-.nav-group details:has(a.active) > summary {
+
+/* Children sit one level indented from the parent summary so the
+ * hierarchy reads at a glance without losing the sidebar's left rhythm. */
+.nav-group details > a { padding-left: 22px; }
+
+/* Mutex highlight: only one sidebar entry is highlighted at a time. By
+ * default that's the active route (.nav a.active). Clicking the summary
+ * (which doesn't navigate) moves the highlight to it via JS, which adds
+ * .summary-selected and clears .active from the sibling link. The next
+ * page navigation re-establishes route-driven .active and JS clears
+ * .summary-selected — so reload always re-syncs to the URL. */
+.nav-group summary.summary-selected {
   background: var(--bg-3);
   color: var(--fg-0);
   box-shadow: inset 2px 0 0 var(--info);
