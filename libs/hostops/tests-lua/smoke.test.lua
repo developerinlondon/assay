@@ -147,11 +147,11 @@ end
 do
   local r = get("/")
   if r.status ~= 200 then fail("GET / for grouped sidebar → " .. r.status) end
-  assert_contains(r.body, "nav-group",            "grouped sidebar nav class")
-  assert_contains(r.body, "Workflows",            "grouped sidebar header label")
-  assert_contains(r.body, "nav-group-item",       "grouped sidebar child class")
-  assert_contains(r.body, 'href="/example-flow"', "grouped sidebar child href")
-  assert_contains(r.body, ">Example flow<",       "grouped sidebar child label")
+  assert_contains(r.body, "nav-group",                "grouped sidebar nav class")
+  assert_contains(r.body, 'data-section="Workflows"', "grouped sidebar details data-section")
+  assert_contains(r.body, "<summary>Workflows",       "grouped sidebar summary label")
+  assert_contains(r.body, 'href="/example-flow"',     "grouped sidebar child href")
+  assert_contains(r.body, ">Example flow<",           "grouped sidebar child label")
   ok("/ renders grouped extra_sidebar_links")
 end
 

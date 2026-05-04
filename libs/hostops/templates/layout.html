@@ -74,10 +74,12 @@
   {% for link in extra_sidebar_links %}
   {% if link.children %}
   <nav class="nav nav-group">
-    <div class="nav-group-label">{{ link.label }}</div>
-    {% for child in link.children %}
-    <a href="{{ child.href }}" class="nav-group-item {% if child.nav_active and nav_active == child.nav_active %}active{% endif %}">{{ child.label }}</a>
-    {% endfor %}
+    <details data-section="{{ link.label }}" open>
+      <summary>{{ link.label }}</summary>
+      {% for child in link.children %}
+      <a href="{{ child.href }}" class="{% if child.nav_active and nav_active == child.nav_active %}active{% endif %}">{{ child.label }}</a>
+      {% endfor %}
+    </details>
   </nav>
   {% else %}
   <nav class="nav nav-flat">

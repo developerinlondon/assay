@@ -123,20 +123,40 @@ body {
 }
 
 /* Sidebar groups (extra_sidebar_links entries with `children`).
- * Group label matches .nav a typography so it reads as a peer of the
- * top-level entries; children indent under it. Hover / active states
- * for children are handled by the existing .nav a rules. */
+ * Rendered as <details data-section><summary>label</summary>children</details>.
+ * The existing app.js disclosure script persists open/closed in localStorage.
+ * Children are plain <a> inside the <details>, so .nav a rules cover their
+ * typography, hover, and active styling at the same indent as flat entries. */
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
-.nav-group-label {
+.nav-group details { display: flex; flex-direction: column; gap: 2px; }
+.nav-group summary {
+  list-style: none;
   padding: 7px 10px;
   font-size: 13px;
   font-weight: 600;
   color: var(--fg-1);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  cursor: default;
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--r-md);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 80ms;
 }
-.nav-group-item { padding-left: 22px; }
+.nav-group summary::-webkit-details-marker { display: none; }
+.nav-group summary:hover { background: var(--bg-2); }
+.nav-group summary::before {
+  content: "";
+  width: 0; height: 0;
+  border-left: 4px solid var(--fg-3);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transform: rotate(0deg);
+  transition: transform 120ms;
+}
+.nav-group details[open] summary::before { transform: rotate(90deg); }
 
 .nav-meta {
   margin-top: auto;
