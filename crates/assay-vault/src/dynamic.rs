@@ -90,11 +90,7 @@ pub trait DynamicCredsProvider: Send + Sync + 'static {
     /// Issue a fresh credential for `role` with TTL `ttl_secs`.
     /// Returns the credential payload + the lease id (which the
     /// dispatcher persists into `vault.leases`).
-    async fn issue(
-        &self,
-        role: &str,
-        ttl_secs: u64,
-    ) -> Result<IssuedCredentials>;
+    async fn issue(&self, role: &str, ttl_secs: u64) -> Result<IssuedCredentials>;
 
     /// Revoke a previously-issued credential. Identified by the
     /// lease id; provider-specific metadata recorded at issue time
@@ -223,12 +219,7 @@ impl DynamicCredsService {
     }
 
     /// Issue a credential and persist the lease row.
-    pub async fn issue(
-        &self,
-        provider_name: &str,
-        role: &str,
-        ttl_secs: u64,
-    ) -> Result<Lease> {
+    pub async fn issue(&self, provider_name: &str, role: &str, ttl_secs: u64) -> Result<Lease> {
         let provider = self
             .registry
             .get(provider_name)
@@ -241,13 +232,7 @@ impl DynamicCredsService {
             .as_secs_f64();
         let expires_at = now + ttl_secs.max(60) as f64;
         self.leases
-            .create_lease(
-                &id,
-                provider_name,
-                role,
-                expires_at,
-                &issued.metadata,
-            )
+            .create_lease(&id, provider_name, role, expires_at, &issued.metadata)
             .await?;
         Ok(Lease {
             id,
@@ -326,7 +311,7 @@ pub mod aws_provider {
     //! call is overkill.
 
     use super::*;
-    use crate::cloud::sigv4::{now_amz_date, sign, SigV4Input};
+    use crate::cloud::sigv4::{SigV4Input, now_amz_date, sign};
     use crate::sealing::kms_aws::AwsCredentials;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -413,7 +398,6 @@ pub mod aws_provider {
         pub fn into_arc(self) -> Arc<Self> {
             Arc::new(self)
         }
-
     }
 
     /// Pull a `<TagName>value</TagName>` payload out of XML by tag name.
@@ -443,7 +427,10 @@ pub mod aws_provider {
                 RoleKind::AssumeRole {
                     role_arn,
                     session_name_prefix,
-                } => self.issue_assume_role(&role_arn, session_name_prefix.as_deref(), ttl_secs).await,
+                } => {
+                    self.issue_assume_role(&role_arn, session_name_prefix.as_deref(), ttl_secs)
+                        .await
+                }
                 RoleKind::CreateAccessKey { iam_user } => {
                     self.issue_create_access_key(&iam_user).await
                 }
@@ -458,7 +445,11 @@ pub mod aws_provider {
             // iam:CreateAccessKey creds we MUST DeleteAccessKey, since
             // those are long-lived; the lease metadata carries the
             // access_key_id + iam_user that the call needs.
-            let kind = lease.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            let kind = lease
+                .metadata
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if kind != "create_access_key" {
                 return Ok(());
             }
@@ -482,10 +473,7 @@ pub mod aws_provider {
                 })?;
             self.iam_call(
                 "DeleteAccessKey",
-                &[
-                    ("AccessKeyId", access_key_id),
-                    ("UserName", user),
-                ],
+                &[("AccessKeyId", access_key_id), ("UserName", user)],
             )
             .await
             .map(|_| ())
@@ -540,10 +528,7 @@ pub mod aws_provider {
             })
         }
 
-        async fn issue_create_access_key(
-            &self,
-            iam_user: &str,
-        ) -> Result<IssuedCredentials> {
+        async fn issue_create_access_key(&self, iam_user: &str) -> Result<IssuedCredentials> {
             let xml = self
                 .iam_call("CreateAccessKey", &[("UserName", iam_user)])
                 .await?;
@@ -586,7 +571,11 @@ pub mod aws_provider {
             };
             let amz_date = now_amz_date();
             // IAM is a global service; sigv4 region is "us-east-1" by spec.
-            let sig_region = if service == "iam" { "us-east-1" } else { &self.region };
+            let sig_region = if service == "iam" {
+                "us-east-1"
+            } else {
+                &self.region
+            };
             let signed = sign(SigV4Input {
                 access_key_id: &self.creds.access_key_id,
                 secret_access_key: &self.creds.secret_access_key,
@@ -674,7 +663,7 @@ pub mod gcp_provider {
     //! via `iamcredentials.googleapis.com:generateAccessToken`. Plan §S3c.
 
     use super::*;
-    use crate::cloud::gcp_jwt::{fetch_access_token, ServiceAccount};
+    use crate::cloud::gcp_jwt::{ServiceAccount, fetch_access_token};
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -727,9 +716,7 @@ pub mod gcp_provider {
                 .endpoint_override
                 .as_deref()
                 .unwrap_or("https://iamcredentials.googleapis.com");
-            format!(
-                "{base}/v1/projects/-/serviceAccounts/{target_sa}:generateAccessToken"
-            )
+            format!("{base}/v1/projects/-/serviceAccounts/{target_sa}:generateAccessToken")
         }
     }
 
@@ -848,10 +835,7 @@ pub mod k8s_provider {
     }
 
     impl K8sDynamicProvider {
-        pub fn new(
-            api_server: impl Into<String>,
-            caller_token: impl Into<String>,
-        ) -> Self {
+        pub fn new(api_server: impl Into<String>, caller_token: impl Into<String>) -> Self {
             Self {
                 api_server: api_server.into(),
                 caller_token: caller_token.into(),
@@ -1117,9 +1101,7 @@ pub mod postgres_provider {
                 .execute(&self.admin_pool)
                 .await
                 .map_err(|e| {
-                    crate::error::VaultError::Backend(anyhow::anyhow!(
-                        "drop dynamic pg role: {e}"
-                    ))
+                    crate::error::VaultError::Backend(anyhow::anyhow!("drop dynamic pg role: {e}"))
                 })?;
             Ok(())
         }

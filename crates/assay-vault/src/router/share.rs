@@ -108,10 +108,7 @@ where
     }
 }
 
-async fn redeem_share<S>(
-    State(vault): State<VaultCtx>,
-    Path(token): Path<String>,
-) -> Response
+async fn redeem_share<S>(State(vault): State<VaultCtx>, Path(token): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,

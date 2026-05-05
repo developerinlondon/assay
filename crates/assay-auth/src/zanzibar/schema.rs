@@ -69,19 +69,19 @@ pub struct ParseError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
     Ident(String),
-    LBrace,    // `{`
-    RBrace,    // `}`
-    Colon,     // `:`
-    Hash,      // `#`
-    Pipe,      // `|`
-    Plus,      // `+`
-    Amp,       // `&`
-    Minus,     // `-`
-    Eq,        // `=`
-    Star,      // `*`
-    LParen,    // `(`
-    RParen,    // `)`
-    Arrow,     // `->`
+    LBrace, // `{`
+    RBrace, // `}`
+    Colon,  // `:`
+    Hash,   // `#`
+    Pipe,   // `|`
+    Plus,   // `+`
+    Amp,    // `&`
+    Minus,  // `-`
+    Eq,     // `=`
+    Star,   // `*`
+    LParen, // `(`
+    RParen, // `)`
+    Arrow,  // `->`
 }
 
 /// Token + its source location, kept paired so error messages can
@@ -288,11 +288,7 @@ impl<'a> Parser<'a> {
             .get(self.pos)
             .map(|lt| (lt.line, lt.col))
             .unwrap_or((0, 0));
-        ParseError {
-            line,
-            col,
-            message,
-        }
+        ParseError { line, col, message }
     }
 
     /// Variant of [`Self::err_here`] that points at the *previous* token —
@@ -306,11 +302,7 @@ impl<'a> Parser<'a> {
             .get(idx)
             .map(|lt| (lt.line, lt.col))
             .unwrap_or((0, 0));
-        ParseError {
-            line,
-            col,
-            message,
-        }
+        ParseError { line, col, message }
     }
 }
 
@@ -375,11 +367,7 @@ fn lex(src: &str) -> Vec<LocTok> {
             _ => None,
         };
         if let Some(t) = single {
-            out.push(LocTok {
-                tok: t,
-                line,
-                col,
-            });
+            out.push(LocTok { tok: t, line, col });
             i += 1;
             col += 1;
             continue;
@@ -388,9 +376,7 @@ fn lex(src: &str) -> Vec<LocTok> {
         if c.is_ascii_alphabetic() || c == b'_' {
             let start = i;
             let start_col = col;
-            while i < bytes.len()
-                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_')
-            {
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                 i += 1;
                 col += 1;
             }
@@ -415,8 +401,8 @@ fn lex(src: &str) -> Vec<LocTok> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::RelationKind;
+    use super::*;
 
     /// Snapshot test for the canonical example from plan 12c lines
     /// 1097–1110. Verifies every relation/permission lands in the

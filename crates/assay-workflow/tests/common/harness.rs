@@ -29,7 +29,8 @@ pub enum Harness {
         // service and this is `None`; the per-test database that the harness
         // creates leaks harmlessly inside the shared container for the
         // remainder of the job.
-        _container: Option<testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>>,
+        _container:
+            Option<testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>>,
         store: assay_workflow::PostgresStore,
     },
     #[cfg(feature = "backend-sqlite")]
@@ -207,7 +208,10 @@ impl Harness {
         dispatch!(self, s => s.heartbeat_activity(id, details).await)
     }
 
-    pub async fn get_timed_out_activities(&self, now: f64) -> anyhow::Result<Vec<WorkflowActivity>> {
+    pub async fn get_timed_out_activities(
+        &self,
+        now: f64,
+    ) -> anyhow::Result<Vec<WorkflowActivity>> {
         dispatch!(self, s => s.get_timed_out_activities(now).await)
     }
 
@@ -340,7 +344,10 @@ impl Harness {
 
     // ── Child Workflows ───────────────────────────────────────────────────────
 
-    pub async fn list_child_workflows(&self, parent_id: &str) -> anyhow::Result<Vec<WorkflowRecord>> {
+    pub async fn list_child_workflows(
+        &self,
+        parent_id: &str,
+    ) -> anyhow::Result<Vec<WorkflowRecord>> {
         dispatch!(self, s => s.list_child_workflows(parent_id).await)
     }
 
@@ -355,7 +362,6 @@ impl Harness {
     pub async fn try_acquire_scheduler_lock(&self) -> anyhow::Result<bool> {
         dispatch!(self, s => s.try_acquire_scheduler_lock().await)
     }
-
 }
 
 // ── Backend selector ──────────────────────────────────────────────────────────
@@ -473,8 +479,8 @@ pub async fn shared_local_pg_url() -> anyhow::Result<String> {
     use tokio::sync::OnceCell;
     static URL: OnceCell<String> = OnceCell::const_new();
     URL.get_or_try_init(|| async {
-        use testcontainers::runners::AsyncRunner;
         use testcontainers::ImageExt;
+        use testcontainers::runners::AsyncRunner;
         use testcontainers_modules::postgres::Postgres as PgImage;
 
         let container = PgImage::default().with_tag("18-alpine").start().await?;
@@ -518,4 +524,3 @@ async fn sqlite_harness() -> anyhow::Result<Harness> {
         store,
     })
 }
-

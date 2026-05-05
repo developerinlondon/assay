@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::ctx::{timestamp_now, WorkflowCtx};
+use crate::ctx::{WorkflowCtx, timestamp_now};
 use crate::events::WorkflowBusEvent;
 use crate::store::WorkflowStore;
 use crate::types::*;

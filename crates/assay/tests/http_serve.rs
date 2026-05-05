@@ -449,10 +449,13 @@ async fn test_http_serve_multi_value_header() {
                 .await
                 .unwrap();
             let mut buf = String::new();
-            tokio::time::timeout(std::time::Duration::from_secs(5), stream.read_to_string(&mut buf))
-                .await
-                .expect("timeout reading raw response")
-                .unwrap();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                stream.read_to_string(&mut buf),
+            )
+            .await
+            .expect("timeout reading raw response")
+            .unwrap();
             buf
         })
         .await;

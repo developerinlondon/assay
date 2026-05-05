@@ -17,7 +17,7 @@ use std::sync::Arc;
 use anyhow::Result;
 
 #[cfg(feature = "s3-archival")]
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 
 #[cfg(feature = "s3-archival")]
 use tracing::{debug, error, info, warn};

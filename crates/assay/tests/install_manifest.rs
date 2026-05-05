@@ -14,7 +14,7 @@ return {
       sha256 = { x86_64 = "aaaa", aarch64 = "bbbb" } },
   },
   libs = {
-    { name = "hostops", version = "0.1.0", sha256 = "cccc" },
+    { name = "sysops", version = "0.1.0", sha256 = "cccc" },
   },
 }
 "#;
@@ -34,7 +34,7 @@ fn parses_full_happy_path_manifest() {
 
     assert_eq!(m.libs.len(), 1);
     let l = &m.libs[0];
-    assert_eq!(l.name, "hostops");
+    assert_eq!(l.name, "sysops");
     assert_eq!(l.version, "0.1.0");
     assert_eq!(l.sha256, "cccc");
     assert!(l.source.is_none());

@@ -55,10 +55,8 @@ pub const AUTH_APP_JS: &str = include_str!("../assets/auth/app.js");
 pub const AUTH_API_JS: &str = include_str!("../assets/auth/components/api.js");
 pub const AUTH_USERS_JS: &str = include_str!("../assets/auth/components/users.js");
 pub const AUTH_SESSIONS_JS: &str = include_str!("../assets/auth/components/sessions.js");
-pub const AUTH_OIDC_CLIENTS_JS: &str =
-    include_str!("../assets/auth/components/oidc_clients.js");
-pub const AUTH_OIDC_UPSTREAM_JS: &str =
-    include_str!("../assets/auth/components/oidc_upstream.js");
+pub const AUTH_OIDC_CLIENTS_JS: &str = include_str!("../assets/auth/components/oidc_clients.js");
+pub const AUTH_OIDC_UPSTREAM_JS: &str = include_str!("../assets/auth/components/oidc_upstream.js");
 pub const AUTH_ZANZIBAR_JS: &str = include_str!("../assets/auth/components/zanzibar.js");
 pub const AUTH_KEYS_JS: &str = include_str!("../assets/auth/components/keys.js");
 pub const AUTH_AUDIT_JS: &str = include_str!("../assets/auth/components/audit.js");

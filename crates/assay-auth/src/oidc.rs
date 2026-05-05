@@ -122,10 +122,7 @@ impl OidcClient {
     /// callback handler uses `state` to look the in-progress login up.
     /// Pass [`CsrfToken::new_random`] via `CsrfToken::new(...)` if you
     /// don't have one already.
-    pub fn start_login(
-        &self,
-        state: CsrfToken,
-    ) -> StartedLogin {
+    pub fn start_login(&self, state: CsrfToken) -> StartedLogin {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         let mut request = self.inner.authorize_url(
             CoreAuthenticationFlow::AuthorizationCode,
@@ -200,12 +197,12 @@ impl OidcClient {
         // upstream doesn't publish a userinfo endpoint or the call fails,
         // we keep what the id_token gave us — login still works, the
         // missing fields just show up as None.
-        let mut raw_claims = serde_json::to_value(claims)
-            .unwrap_or_else(|_| serde_json::json!({"sub": subject}));
-        if let Ok(req) = self
-            .inner
-            .user_info(token_response.access_token().clone(), Some(SubjectIdentifier::new(subject.clone())))
-            && let Ok(userinfo) = req.request_async(&http).await
+        let mut raw_claims =
+            serde_json::to_value(claims).unwrap_or_else(|_| serde_json::json!({"sub": subject}));
+        if let Ok(req) = self.inner.user_info(
+            token_response.access_token().clone(),
+            Some(SubjectIdentifier::new(subject.clone())),
+        ) && let Ok(userinfo) = req.request_async(&http).await
         {
             let user_claims: CoreUserInfoClaims = userinfo;
             if email.is_none() {

@@ -192,13 +192,21 @@ pub async fn execute(args: InstallArgs) -> Result<(), InstallError> {
     for (e, plan) in &ext_plans {
         extract::install_extension_binary(&plan.cache_path, &bin_dir, &e.name)?;
         if !args.no_progress {
-            eprintln!("  → installed {} → {}", e.name, bin_dir.join(&e.name).display());
+            eprintln!(
+                "  → installed {} → {}",
+                e.name,
+                bin_dir.join(&e.name).display()
+            );
         }
     }
     for (l, plan) in &lib_plans {
         extract::install_lib_tree(&plan.cache_path, &lib_dir, &l.name)?;
         if !args.no_progress {
-            eprintln!("  → installed {} → {}/", l.name, lib_dir.join(&l.name).display());
+            eprintln!(
+                "  → installed {} → {}/",
+                l.name,
+                lib_dir.join(&l.name).display()
+            );
         }
     }
 

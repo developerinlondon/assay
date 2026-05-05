@@ -86,7 +86,10 @@ fn default_true() -> bool {
     true
 }
 fn default_grant_types() -> Vec<String> {
-    vec!["authorization_code".to_string(), "refresh_token".to_string()]
+    vec![
+        "authorization_code".to_string(),
+        "refresh_token".to_string(),
+    ]
 }
 fn default_response_types() -> Vec<String> {
     vec!["code".to_string()]

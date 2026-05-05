@@ -212,7 +212,10 @@ mod tests {
         assert_eq!(c.client_id, "c1");
         assert!(c.pkce_required);
         assert!(c.require_consent);
-        assert_eq!(c.token_endpoint_auth_method, TokenAuthMethod::ClientSecretBasic);
+        assert_eq!(
+            c.token_endpoint_auth_method,
+            TokenAuthMethod::ClientSecretBasic
+        );
         assert!(c.allows_grant("authorization_code"));
         assert!(c.allows_grant("refresh_token"));
         assert!(!c.allows_grant("client_credentials"));

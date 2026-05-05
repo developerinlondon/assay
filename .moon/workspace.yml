@@ -27,8 +27,8 @@ projects:
   assay-workflow: "crates/assay-workflow"
   dashboard-e2e: "crates/assay-workflow/tests-e2e"
   engine-e2e: "crates/assay-engine/tests-e2e"
-  hostops: "libs/hostops"
-  hostops-e2e: "libs/hostops/tests-e2e"
+  sysops: "libs/sysops"
+  sysops-e2e: "libs/sysops/tests-e2e"
   site: "site"
   openclaw-extension: "openclaw-extension"
 

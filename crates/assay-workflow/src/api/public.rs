@@ -60,9 +60,7 @@ pub struct VersionInfo {
 pub async fn version<S: WorkflowStore>(
     State(state): State<Arc<WorkflowCtx<S>>>,
 ) -> Json<VersionInfo> {
-    let version = state
-        .binary_version
-        .unwrap_or(env!("CARGO_PKG_VERSION"));
+    let version = state.binary_version.unwrap_or(env!("CARGO_PKG_VERSION"));
     Json(VersionInfo {
         version,
         build_profile: if cfg!(debug_assertions) {

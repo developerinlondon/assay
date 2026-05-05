@@ -208,7 +208,10 @@ async fn subscribe_receives_cross_node_notify() {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        assert!(!remaining.is_zero(), "cross-node NOTIFY not received within 10s");
+        assert!(
+            !remaining.is_zero(),
+            "cross-node NOTIFY not received within 10s"
+        );
         let ev = tokio::time::timeout(remaining, rx_b.recv())
             .await
             .expect("recv timed out")

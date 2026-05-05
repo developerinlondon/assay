@@ -10,9 +10,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use assay_domain::events::{
-    EngineEventBus, NewEvent, PruneOpts, SqliteEngineEventBus, Subsystem,
-};
+use assay_domain::events::{EngineEventBus, NewEvent, PruneOpts, SqliteEngineEventBus, Subsystem};
 use assay_workflow::WorkflowCtx;
 use assay_workflow::events::WorkflowEventBus;
 use axum::Router;
@@ -30,10 +28,8 @@ async fn spawn_sse_server() -> (String, Arc<dyn EngineEventBus>) {
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     );
-    let engine_alias =
-        format!("file:assay_sse_engine_{suffix}?mode=memory&cache=shared");
-    let workflow_alias =
-        format!("file:assay_sse_workflow_{suffix}?mode=memory&cache=shared");
+    let engine_alias = format!("file:assay_sse_engine_{suffix}?mode=memory&cache=shared");
+    let workflow_alias = format!("file:assay_sse_workflow_{suffix}?mode=memory&cache=shared");
 
     let opts = SqliteConnectOptions::new()
         .filename(":memory:")
@@ -45,14 +41,10 @@ async fn spawn_sse_server() -> (String, Arc<dyn EngineEventBus>) {
             let workflow_alias = workflow_alias.clone();
             Box::pin(async move {
                 use sqlx::Executor;
-                conn.execute(
-                    format!("ATTACH DATABASE '{engine_alias}' AS engine").as_str(),
-                )
-                .await?;
-                conn.execute(
-                    format!("ATTACH DATABASE '{workflow_alias}' AS workflow").as_str(),
-                )
-                .await?;
+                conn.execute(format!("ATTACH DATABASE '{engine_alias}' AS engine").as_str())
+                    .await?;
+                conn.execute(format!("ATTACH DATABASE '{workflow_alias}' AS workflow").as_str())
+                    .await?;
                 Ok(())
             })
         })
@@ -74,8 +66,7 @@ async fn spawn_sse_server() -> (String, Arc<dyn EngineEventBus>) {
     let ctx = WorkflowCtx::start(store).with_event_bus(wf_bus);
     let state = Arc::new(ctx);
 
-    let app: Router = assay_workflow::api::events::router()
-        .with_state(state);
+    let app: Router = assay_workflow::api::events::router().with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -167,7 +158,10 @@ async fn sse_replay_from_last_event_id() {
     // Reconnect with cursor = id1 — expect id2, id3 from the replay.
     let ids = read_sse_ids(&url, Some(id1), 2, Duration::from_secs(3)).await;
     assert_eq!(ids.len(), 2, "expected 2 replay frames, got {ids:?}");
-    assert!(ids.iter().all(|&i| i > id1), "all ids must be > cursor: {ids:?}");
+    assert!(
+        ids.iter().all(|&i| i > id1),
+        "all ids must be > cursor: {ids:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

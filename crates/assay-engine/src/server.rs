@@ -43,7 +43,7 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // composed, wrap the workflow router with the gate middleware that
     // enforces `workflow:<namespace>#access` via `assay_auth::gate`.
     let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow));
-        let workflow_router = if state.auth.is_some() {
+    let workflow_router = if state.auth.is_some() {
         workflow_router.layer(axum::middleware::from_fn_with_state(
             state.clone(),
             workflow_gate_middleware::<S>,
@@ -61,9 +61,7 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // `/api/v1/engine/core/health` (see `engine_api.rs`).
     let healthz = Router::new().route(
         "/healthz",
-        get(|| async {
-            Redirect::permanent("/api/v1/engine/core/health")
-        }),
+        get(|| async { Redirect::permanent("/api/v1/engine/core/health") }),
     );
 
     // Engine-core admin API + console SPA. Always present (engine-core
@@ -94,7 +92,7 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // `EngineState<S>` implements both impls (see `state.rs`), so the
     // engine threads its full state in once and the auth handlers
     // pluck what they need.
-        if state.auth.is_some() {
+    if state.auth.is_some() {
         // OIDC spec endpoints — mounted at `/auth/...`. Discovery doc,
         // JWKS, authorize/token/userinfo/revoke/introspect/logout,
         // federation upstream callbacks. Stable surface that downstream
@@ -127,8 +125,7 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // BW-compat shim's per-user session auth.
     #[cfg(feature = "vault")]
     if state.vault.is_some() {
-        let vault = assay_vault::router::vault_router::<EngineState<S>>()
-            .with_state(state.clone());
+        let vault = assay_vault::router::vault_router::<EngineState<S>>().with_state(state.clone());
         app = app.nest("/api/v1/vault", vault);
     }
 
@@ -139,8 +136,8 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // features are on AND VaultCtx + AuthCtx are composed.
     #[cfg(all(feature = "vault", feature = "vault-bitwarden-compat"))]
     if state.vault.is_some() && state.auth.is_some() {
-        let bw = assay_vault::bitwarden_compat::router::<EngineState<S>>()
-            .with_state(state.clone());
+        let bw =
+            assay_vault::bitwarden_compat::router::<EngineState<S>>().with_state(state.clone());
         app = app.merge(bw);
     }
 
@@ -200,15 +197,9 @@ async fn workflow_gate_middleware<S: WorkflowStore + Clone + 'static>(
 
     let keys = crate::state::AdminApiKeys(Arc::clone(&state.admin_api_keys));
     let headers = request.headers().clone();
-    if let Err(r) = assay_auth::gate::require_role_for(
-        &headers,
-        auth,
-        &keys,
-        "workflow",
-        &namespace,
-        "access",
-    )
-    .await
+    if let Err(r) =
+        assay_auth::gate::require_role_for(&headers, auth, &keys, "workflow", &namespace, "access")
+            .await
     {
         return *r;
     }
@@ -238,10 +229,7 @@ pub async fn serve<S: WorkflowStore + Clone + 'static>(
 /// composed router) and by downstream embedders who want to add
 /// their own middleware / merge with their own router before
 /// serving.
-pub async fn bind_and_serve(
-    bind_addr: &str,
-    app: axum::Router,
-) -> anyhow::Result<()> {
+pub async fn bind_and_serve(bind_addr: &str, app: axum::Router) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(bind_addr)
         .await
         .map_err(|e| anyhow::anyhow!("bind {bind_addr}: {e}"))?;
@@ -272,4 +260,3 @@ pub fn build_workflow_ctx_with_bus<S: WorkflowStore + 'static>(
         .with_event_bus(WorkflowEventBus::new(bus));
     Arc::new(ctx)
 }
-

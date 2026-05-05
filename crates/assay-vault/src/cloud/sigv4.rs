@@ -70,8 +70,10 @@ fn format_amz_date(epoch_secs: u64) -> String {
 /// Sign a request and return the URL + final headers + body.
 pub fn sign(input: SigV4Input<'_>) -> SignedRequest {
     let date_only = &input.amz_date[..8]; // YYYYMMDD
-    let credential_scope =
-        format!("{date_only}/{}/{}/aws4_request", input.region, input.service);
+    let credential_scope = format!(
+        "{date_only}/{}/{}/aws4_request",
+        input.region, input.service
+    );
 
     let parsed = url::Url::parse(input.url).expect("sigv4 input.url must parse");
     let host = parsed
@@ -298,10 +300,12 @@ mod tests {
             body: b"{}",
             amz_date: "20240101T000000Z",
         });
-        assert!(signed
-            .headers
-            .iter()
-            .any(|(k, v)| k == "x-amz-security-token" && v == "session-token-value"));
+        assert!(
+            signed
+                .headers
+                .iter()
+                .any(|(k, v)| k == "x-amz-security-token" && v == "session-token-value")
+        );
         let auth = signed
             .headers
             .iter()
@@ -309,6 +313,8 @@ mod tests {
             .map(|(_, v)| v.as_str())
             .unwrap();
         // SignedHeaders must include x-amz-security-token alphabetically.
-        assert!(auth.contains("SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token"));
+        assert!(auth.contains(
+            "SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token"
+        ));
     }
 }

@@ -1,8 +1,8 @@
 # pull-tar source requires a url; this one omits it.
 [template]
-id           = "bad-rootfs-pulltar-no-url"
+id = "bad-rootfs-pulltar-no-url"
 display_name = "Pull-tar missing URL"
-packages     = []
+packages = []
 
 [template.rootfs]
 source = "machinectl-pull-tar"

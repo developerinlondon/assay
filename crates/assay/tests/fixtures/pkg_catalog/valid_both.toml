@@ -1,19 +1,19 @@
 [package]
-id           = "test-both"
+id = "test-both"
 display_name = "Test Apt+Binary Package"
-description  = "Both methods fixture (cloudflared-style)"
-homepage     = "https://example.com"
-methods      = ["apt", "binary"]
+description = "Both methods fixture (cloudflared-style)"
+homepage = "https://example.com"
+methods = ["apt", "binary"]
 
 [package.apt]
-source_list     = "deb [signed-by=/usr/share/keyrings/test-both.gpg] https://example.com/repo bookworm main"
-key_url         = "https://example.com/key.gpg"
+source_list = "deb [signed-by=/usr/share/keyrings/test-both.gpg] https://example.com/repo bookworm main"
+key_url = "https://example.com/key.gpg"
 key_fingerprint = "ABCDEF1234567890"
-package_name    = "test-both"
+package_name = "test-both"
 
 [package.binary]
-release_api   = "https://api.example.com/releases/latest"
+release_api = "https://api.example.com/releases/latest"
 asset_pattern = "test-both-linux-{arch}"
 sha256_source = "checksums"
-install_path  = "/usr/local/bin/test-both"
-mode          = "0755"
+install_path = "/usr/local/bin/test-both"
+mode = "0755"

@@ -41,7 +41,11 @@ pub struct LockLib {
 
 impl LockExtension {
     pub fn new(ext: &Extension, plan: &FetchPlan) -> Self {
-        let sha256 = ext.sha256.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let sha256 = ext
+            .sha256
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         LockExtension {
             name: ext.name.clone(),
             version: ext.version.clone(),

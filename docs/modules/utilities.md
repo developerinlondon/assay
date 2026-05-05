@@ -30,16 +30,16 @@ Timestamp utility. No `require()` needed.
 
 ## string
 
-Lua's built-in `string` library (see [the Lua 5.4 reference](https://www.lua.org/manual/5.4/manual.html#6.4))
-is available as always — `string.format`, `string.gsub`, `string.match`, `string.gmatch`, etc.
-Assay extends it with one awk-style helper:
+Lua's built-in `string` library (see
+[the Lua 5.4 reference](https://www.lua.org/manual/5.4/manual.html#6.4)) is available as always —
+`string.format`, `string.gsub`, `string.match`, `string.gmatch`, etc. Assay extends it with one
+awk-style helper:
 
-- `string.split(s, sep?)` → `{parts}` — Split a string into an array of parts.
-  When `sep` is `nil` (or empty), splits on any run of whitespace and skips
-  leading/trailing empty fields (matches awk's default FS and Python's
-  `str.split()` with no arg). When `sep` is provided, splits on the literal
-  string (NOT a Lua pattern — use `string.gmatch` if you need pattern
-  semantics). Pairs well with `fs.lines` for awk-style field processing:
+- `string.split(s, sep?)` → `{parts}` — Split a string into an array of parts. When `sep` is `nil`
+  (or empty), splits on any run of whitespace and skips leading/trailing empty fields (matches awk's
+  default FS and Python's `str.split()` with no arg). When `sep` is provided, splits on the literal
+  string (NOT a Lua pattern — use `string.gmatch` if you need pattern semantics). Pairs well with
+  `fs.lines` for awk-style field processing:
 
 ```lua
 -- awk '{ print $2 }' users.tsv

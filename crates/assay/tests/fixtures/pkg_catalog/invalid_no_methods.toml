@@ -1,6 +1,6 @@
 [package]
-id           = "invalid-no-methods"
+id = "invalid-no-methods"
 display_name = "Invalid: empty methods array"
-description  = "Should be rejected by validator"
-homepage     = "https://example.com"
-methods      = []
+description = "Should be rejected by validator"
+homepage = "https://example.com"
+methods = []

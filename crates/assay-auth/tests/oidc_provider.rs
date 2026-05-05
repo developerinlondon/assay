@@ -261,8 +261,14 @@ mod sqlite_tests {
         let loaded = store.get("c1").await.expect("get").expect("present");
         assert_eq!(loaded.client_id, "c1");
         assert_eq!(loaded.name, "Test App");
-        assert_eq!(loaded.redirect_uris, vec!["https://app.example.com/cb".to_string()]);
-        assert_eq!(loaded.default_scopes, vec!["openid".to_string(), "email".to_string()]);
+        assert_eq!(
+            loaded.redirect_uris,
+            vec!["https://app.example.com/cb".to_string()]
+        );
+        assert_eq!(
+            loaded.default_scopes,
+            vec!["openid".to_string(), "email".to_string()]
+        );
 
         let list = store.list().await.expect("list");
         assert_eq!(list.len(), 1);
@@ -326,7 +332,11 @@ mod sqlite_tests {
             consumed: false,
         };
         store.create(&code).await.expect("create");
-        let consumed = store.consume("oac_abc").await.expect("consume").expect("present");
+        let consumed = store
+            .consume("oac_abc")
+            .await
+            .expect("consume")
+            .expect("present");
         assert_eq!(consumed.code, "oac_abc");
         // Second consume returns None — single-use.
         assert!(store.consume("oac_abc").await.expect("consume2").is_none());
@@ -405,22 +415,17 @@ mod sqlite_tests {
             granted_at: 1.0,
         };
         store.upsert(&g).await.expect("upsert");
-        let loaded = store
-            .get("u1", "c1")
-            .await
-            .expect("get")
-            .expect("present");
-        assert_eq!(loaded.scopes, vec!["openid".to_string(), "email".to_string()]);
+        let loaded = store.get("u1", "c1").await.expect("get").expect("present");
+        assert_eq!(
+            loaded.scopes,
+            vec!["openid".to_string(), "email".to_string()]
+        );
         // Replay with wider scopes — replaces.
         let mut g2 = g.clone();
         g2.scopes.push("profile".to_string());
         g2.granted_at = 2.0;
         store.upsert(&g2).await.expect("upsert2");
-        let after = store
-            .get("u1", "c1")
-            .await
-            .expect("get")
-            .expect("present");
+        let after = store.get("u1", "c1").await.expect("get").expect("present");
         assert_eq!(after.scopes.len(), 3);
         assert!(store.delete("u1", "c1").await.expect("delete"));
     }
@@ -439,7 +444,11 @@ mod sqlite_tests {
             expires_at: 1000.0,
         };
         store.create(&s).await.expect("create");
-        let took = store.take("state_abc").await.expect("take").expect("present");
+        let took = store
+            .take("state_abc")
+            .await
+            .expect("take")
+            .expect("present");
         assert_eq!(took.provider_slug, "google");
         // Second take returns None — single-use.
         assert!(store.take("state_abc").await.expect("take2").is_none());
@@ -508,7 +517,10 @@ mod pg_tests {
         store.create(&client).await.expect("create");
         let loaded = store.get("c_pg").await.expect("get").expect("present");
         assert_eq!(loaded.client_id, "c_pg");
-        assert_eq!(loaded.token_endpoint_auth_method, TokenAuthMethod::ClientSecretBasic);
+        assert_eq!(
+            loaded.token_endpoint_auth_method,
+            TokenAuthMethod::ClientSecretBasic
+        );
         assert!(loaded.pkce_required);
         assert!(store.delete("c_pg").await.expect("delete"));
     }
@@ -535,7 +547,11 @@ mod pg_tests {
             consumed: false,
         };
         store.create(&code).await.expect("create");
-        let consumed = store.consume("oac_pg").await.expect("consume").expect("present");
+        let consumed = store
+            .consume("oac_pg")
+            .await
+            .expect("consume")
+            .expect("present");
         assert_eq!(consumed.code, "oac_pg");
         assert!(store.consume("oac_pg").await.expect("consume2").is_none());
     }
@@ -584,7 +600,11 @@ mod pg_tests {
             expires_at: 1000.0,
         };
         store.create(&s).await.expect("create");
-        let took = store.take("state_pg").await.expect("take").expect("present");
+        let took = store
+            .take("state_pg")
+            .await
+            .expect("take")
+            .expect("present");
         assert_eq!(took.provider_slug, "google");
         assert!(store.take("state_pg").await.expect("take2").is_none());
     }

@@ -52,13 +52,13 @@ pub fn install_extension_binary(
     let name = bin_name.to_string();
     fs::create_dir_all(bin_dir).map_err(io(&name))?;
 
-    let bytes = read_member(archive_path, bin_name).map_err(io(&name))?.ok_or_else(|| {
-        ExtractError::BinaryMemberNotFound {
+    let bytes = read_member(archive_path, bin_name)
+        .map_err(io(&name))?
+        .ok_or_else(|| ExtractError::BinaryMemberNotFound {
             name: name.clone(),
             archive: archive_path.to_path_buf(),
             member: bin_name.to_string(),
-        }
-    })?;
+        })?;
 
     let final_path = bin_dir.join(bin_name);
     let tmp_path = bin_dir.join(format!(".{bin_name}.tmp"));

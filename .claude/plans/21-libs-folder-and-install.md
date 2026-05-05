@@ -5,11 +5,11 @@
 ## Goal
 
 Add a `libs/` directory at the assay workspace root for non-embedded Lua libraries that ship with
-the platform but aren't baked into the runtime binary. Bring `hostops` in as the first lib. Add an
+the platform but aren't baked into the runtime binary. Bring `sysops` in as the first lib. Add an
 `assay install` subcommand that reads a `Manifest.lua`, fetches the declared binaries + libs,
 validates checksums, and populates standard filesystem paths.
 
-This supersedes the standalone `developerinlondon/assay-hostops` repo (archived as part of this
+This supersedes the standalone `developerinlondon/assay-sysops` repo (archived as part of this
 plan).
 
 ## Concept — three classes of platform code
@@ -33,17 +33,17 @@ assay/
 │   ├── assay-auth/  assay-domain/  assay-engine/
 │   ├── assay-vault/  assay-workflow/
 ├── libs/                                 NEW — non-embedded Lua libraries
-│   └── hostops/
+│   └── sysops/
 └── .claude/plans/                        this plan + future
 ```
 
 `crates/assay/Cargo.toml` adds one dep: `tar = "0.4"` (~150 KB compiled). All other deps required
 for install (`reqwest`, `flate2`, `sha2`, `tokio`, `clap`, `serde_json`) are already present.
 
-## `libs/hostops/` structure
+## `libs/sysops/` structure
 
 ```
-libs/hostops/
+libs/sysops/
 ├── mount.lua                             entry: M.mount(routes, opts)
 ├── pages/                                ported from knowhere0426
 │   ├── dashboard.lua
@@ -62,7 +62,7 @@ libs/hostops/
 ├── static/
 │   ├── css/  htmx.min.js  theme.js
 ├── tests-lua/
-│   ├── smoke.test.lua                    boots hostops with stub services + asserts
+│   ├── smoke.test.lua                    boots sysops with stub services + asserts
 │   ├── stubs/                            in-memory stubs for state/audit/jobs/secret/brand/engine
 │   │   ├── state.lua  audit.lua  jobs.lua
 │   │   ├── secret_store.lua  brand.lua  engine_client.lua
@@ -101,7 +101,7 @@ Three properties enforced:
 - **Engine over HTTP.** `engine` wraps `http.request` against `ENGINE_URL`, replacing the in-process
   `knowhere.engine.api_call` from the predecessor monolith.
 
-## Porting hostops content
+## Porting sysops content
 
 From `developerinlondon/knowhere0426`, bring in:
 
@@ -155,7 +155,7 @@ return {
     -- future: assay-ops, assay-mesh, …
   },
   libs = {                                -- Lua libraries
-    { name = "hostops", version = "0.1.0", sha256 = "..." },
+    { name = "sysops", version = "0.1.0", sha256 = "..." },
   },
 }
 ```
@@ -211,29 +211,29 @@ version refs (e.g. `^0.1.0`) resolve to the latest matching release at install t
 Match the assay convention from `crates/assay-engine/tests-lua/` and
 `crates/assay-workflow/tests-e2e/run.lua`. No shell.
 
-### Smoke test (`libs/hostops/tests-lua/smoke.test.lua`)
+### Smoke test (`libs/sysops/tests-lua/smoke.test.lua`)
 
 ```lua
---! hostops smoke test — boots the lib with stub services on a test port,
+--! sysops smoke test — boots the lib with stub services on a test port,
 --! curls a representative set of routes, asserts shape + content.
 --!
 --! No shell. Uses assay's http + sleep + async globals registered by the
 --! runtime; no `require` for those.
 
-local hostops = require("hostops.mount")
-local stubs   = require("hostops.tests.stubs")
+local sysops = require("sysops.mount")
+local stubs   = require("sysops.tests.stubs")
 
 local function fail(msg) error("test failure: " .. msg) end
 local function ok(label) print("  ✓ " .. label) end
 
-print("[hostops.smoke]")
+print("[sysops.smoke]")
 
 local PORT = 18786                                        -- pick a non-default to avoid clashes
 local opts = stubs.opts()                                 -- prebuilt stub services + fixtures
 
 async.spawn(function()
   local routes = { GET = {}, POST = {} }
-  hostops.mount(routes, opts)
+  sysops.mount(routes, opts)
   routes.GET["/healthz"] = function() return { status = 200, body = "ok" } end
   http.serve(PORT, routes)
 end)
@@ -281,19 +281,19 @@ end
 
 -- … (one assertion per page surface) …
 
-print("[hostops.smoke] all passed")
+print("[sysops.smoke] all passed")
 ```
 
 Run via:
 
 ```
-LUA_PATH='libs/?.lua;;libs/?/init.lua;;libs/hostops/tests-lua/?.lua;;' \
-  assay libs/hostops/tests-lua/smoke.test.lua
+LUA_PATH='libs/?.lua;;libs/?/init.lua;;libs/sysops/tests-lua/?.lua;;' \
+  assay libs/sysops/tests-lua/smoke.test.lua
 ```
 
-### Stubs (`libs/hostops/tests-lua/stubs/`)
+### Stubs (`libs/sysops/tests-lua/stubs/`)
 
-In-memory fakes for the six services hostops requires:
+In-memory fakes for the six services sysops requires:
 
 ```
 tests-lua/stubs/
@@ -311,7 +311,7 @@ Each stub returns a lua module with the same surface the real implementation has
 
 ### CI integration
 
-`ci.yml` runs the assay binary against `libs/hostops/tests-lua/smoke.test.lua` (and future libs'
+`ci.yml` runs the assay binary against `libs/sysops/tests-lua/smoke.test.lua` (and future libs'
 smoke tests) on every push. Failure blocks the PR. Tests must pass on both sqlite (default) and
 postgres (matching the existing engine test matrix).
 
@@ -323,8 +323,8 @@ stubs. Added incrementally as each page is ported.
 
 ### Full-integration test (deferred)
 
-A debian-container-based E2E: boots a containerized assay + assay-engine, installs hostops via
-`assay install`, runs a test consumer-app `main.lua` that mounts hostops with file-backed real
+A debian-container-based E2E: boots a containerized assay + assay-engine, installs sysops via
+`assay install`, runs a test consumer-app `main.lua` that mounts sysops with file-backed real
 services, drives the dashboard via assay-Lua HTTP assertions
 
 - existing systemd machinery inside the container. Lands once we have a host fixture to point at;
@@ -336,9 +336,9 @@ services, drives the dashboard via assay-Lua HTTP assertions
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | Workspace scaffolding: `libs/` directory, `crates/assay/Cargo.toml` adds `tar` dep, `crates/assay/src/install/` skeleton (no logic yet).                                                           |
 | 2     | `assay install` happy path: parse Manifest.lua, fetch one declared lib from a fixture URL, verify sha256, extract, write Manifest.lock. Tests cover offline-mode, cache-hit, sha-mismatch failure. |
-| 3     | Port hostops content from knowhere0426 into `libs/hostops/`: pages, services, templates, static. Strip the four categories listed above. Add `mount.lua` + prefix-safe templates.                  |
-| 4     | Smoke test passes: `libs/hostops/tests-lua/smoke.test.lua` boots hostops with stubs, curls representative routes, asserts. Wired into `ci.yml`.                                                    |
-| 5     | Release pipeline: `release.yml` builds + attaches `assay-lib-hostops-<libver>.tar.gz` and `assay-libs-<assayver>.tar.gz`. Per-lib semver enforced by the workflow.                                 |
+| 3     | Port sysops content from knowhere0426 into `libs/sysops/`: pages, services, templates, static. Strip the four categories listed above. Add `mount.lua` + prefix-safe templates.                    |
+| 4     | Smoke test passes: `libs/sysops/tests-lua/smoke.test.lua` boots sysops with stubs, curls representative routes, asserts. Wired into `ci.yml`.                                                      |
+| 5     | Release pipeline: `release.yml` builds + attaches `assay-lib-sysops-<libver>.tar.gz` and `assay-libs-<assayver>.tar.gz`. Per-lib semver enforced by the workflow.                                  |
 
 Each phase ships its own PR. `assay install` works against released artifacts after phase 5; for
 phases 1-4 it works against fixture URLs (e.g. `file://` or a local HTTP server in CI).
@@ -347,9 +347,9 @@ phases 1-4 it works against fixture URLs (e.g. `file://` or a local HTTP server 
 
 As part of this plan:
 
-- Archive `developerinlondon/assay-hostops` (its content moves into `libs/hostops/`).
+- Archive `developerinlondon/assay-sysops` (its content moves into `libs/sysops/`).
 - Update `developerinlondon/knowhere`'s and `developerinlondon/gondor`'s plans to reference the new
-  location: `https://github.com/developerinlondon/assay/tree/main/libs/hostops`.
+  location: `https://github.com/developerinlondon/assay/tree/main/libs/sysops`.
 
 Deferred to a follow-up cleanup task (not part of this plan):
 
@@ -385,7 +385,7 @@ Deferred to a follow-up cleanup task (not part of this plan):
 
 - Predecessor monolith: `developerinlondon/knowhere0426` (historical; archived-by-rename).
 - Lib design (current standalone repo, archived as part of this plan):
-  `developerinlondon/assay-hostops/.claude/plans/01-assay-hostops-architecture.md`.
+  `developerinlondon/assay-sysops/.claude/plans/01-assay-sysops-architecture.md`.
 - Future ops-layer work that uses install for fleet bootstrap:
   `developerinlondon/assay-infra/.claude/plans/{01-ops-layer-evaluation.md, 02-assay-ops-spec.md}`
   (to be absorbed into assay's plans when assay-ops work starts).

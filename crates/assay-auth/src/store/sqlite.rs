@@ -169,11 +169,7 @@ impl UserStore for SqliteUserStore {
         Ok(())
     }
 
-    async fn get_user_by_upstream(
-        &self,
-        provider: &str,
-        subject: &str,
-    ) -> Result<Option<User>> {
+    async fn get_user_by_upstream(&self, provider: &str, subject: &str) -> Result<Option<User>> {
         let row = sqlx::query(
             "SELECT u.id, u.email, u.email_verified, u.display_name, u.created_at
              FROM auth.users u
@@ -188,12 +184,7 @@ impl UserStore for SqliteUserStore {
         Ok(row.map(map_user_row_sqlite))
     }
 
-    async fn list_users(
-        &self,
-        limit: i64,
-        offset: i64,
-        search: Option<&str>,
-    ) -> Result<Vec<User>> {
+    async fn list_users(&self, limit: i64, offset: i64, search: Option<&str>) -> Result<Vec<User>> {
         let lim = limit.clamp(1, 500);
         let off = offset.max(0);
         let rows = if let Some(needle) = search {
@@ -271,7 +262,12 @@ impl UserStore for SqliteUserStore {
         .context("auth.user_upstream list")?;
         Ok(rows
             .into_iter()
-            .map(|r| (r.get::<String, _>("provider"), r.get::<String, _>("subject")))
+            .map(|r| {
+                (
+                    r.get::<String, _>("provider"),
+                    r.get::<String, _>("subject"),
+                )
+            })
             .collect())
     }
 }
