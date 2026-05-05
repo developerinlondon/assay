@@ -754,7 +754,9 @@ async fn test_harbor_repositories_list() {
 async fn test_harbor_artifacts_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts"))
+        .and(path(
+            "/api/v2.0/projects/library/repositories/nginx/artifacts",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
             {"id": 1, "digest": "sha256:abc", "type": "IMAGE"}
         ])))
@@ -778,7 +780,9 @@ async fn test_harbor_artifacts_list() {
 async fn test_harbor_artifacts_get() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/latest"))
+        .and(path(
+            "/api/v2.0/projects/library/repositories/nginx/artifacts/latest",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": 1,
             "digest": "sha256:abc",
@@ -803,7 +807,9 @@ async fn test_harbor_artifacts_get() {
 async fn test_harbor_artifacts_exists() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/1.25.0"))
+        .and(path(
+            "/api/v2.0/projects/library/repositories/nginx/artifacts/1.25.0",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": 1})))
         .mount(&server)
         .await;
@@ -823,7 +829,9 @@ async fn test_harbor_artifacts_exists() {
 async fn test_harbor_scan_trigger() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/latest/scan"))
+        .and(path(
+            "/api/v2.0/projects/library/repositories/nginx/artifacts/latest/scan",
+        ))
         .respond_with(ResponseTemplate::new(202))
         .mount(&server)
         .await;
@@ -868,7 +876,9 @@ async fn test_harbor_replication_policies_subobj() {
 async fn test_harbor_artifacts_tags() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v2.0/projects/library/repositories/nginx/artifacts/sha256:abc/tags"))
+        .and(path(
+            "/api/v2.0/projects/library/repositories/nginx/artifacts/sha256:abc/tags",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
             {"id": 1, "name": "latest"},
             {"id": 2, "name": "1.25.0"}

@@ -29,7 +29,7 @@
 //! kek_metadata row is inserted FIRST so the unwrap path can find it
 //! after restart.
 
-use crate::crypto::aead::{random_dek, KEY_LEN};
+use crate::crypto::aead::{KEY_LEN, random_dek};
 use crate::crypto::kek::{KekHandle, WrappedDek};
 use crate::crypto::seal_state::SealState;
 use crate::crypto::sealing::SealingMethod;
@@ -96,11 +96,7 @@ pub async fn rotate_postgres(
 }
 
 #[cfg(feature = "backend-postgres")]
-async fn rewrap_kv_postgres(
-    pool: &sqlx::PgPool,
-    old: &KekHandle,
-    new: &KekHandle,
-) -> Result<u64> {
+async fn rewrap_kv_postgres(pool: &sqlx::PgPool, old: &KekHandle, new: &KekHandle) -> Result<u64> {
     let mut count = 0u64;
     loop {
         let batch: Vec<(String, i64, Vec<u8>)> = sqlx::query_as(
@@ -369,27 +365,18 @@ mod tests {
 
     #[tokio::test]
     async fn rotate_re_wraps_kv_rows() {
-        use crate::store::sqlite::SqliteKvStore;
         use crate::KvService;
+        use crate::store::sqlite::SqliteKvStore;
 
         let pool = boot_pool().await;
         let kek = KekHandle::generate_ephemeral();
-        let seal_state = SealState::unsealed(
-            SealingMethod::Plaintext,
-            kek.kid().to_string(),
-            kek.clone(),
-        );
+        let seal_state =
+            SealState::unsealed(SealingMethod::Plaintext, kek.kid().to_string(), kek.clone());
         let svc = KvService::new(SqliteKvStore::new(pool.clone()), seal_state.clone());
         // Write a few rows.
-        svc.put("k1", b"v1", serde_json::json!({}))
-            .await
-            .unwrap();
-        svc.put("k2", b"v2", serde_json::json!({}))
-            .await
-            .unwrap();
-        svc.put("k3", b"v3", serde_json::json!({}))
-            .await
-            .unwrap();
+        svc.put("k1", b"v1", serde_json::json!({})).await.unwrap();
+        svc.put("k2", b"v2", serde_json::json!({})).await.unwrap();
+        svc.put("k3", b"v3", serde_json::json!({})).await.unwrap();
         // Rotate.
         let report = rotate_sqlite(&pool, &seal_state).await.unwrap();
         assert_eq!(report.kv_rewrapped, 3);

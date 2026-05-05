@@ -15,7 +15,11 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         self.store.list_schedules(namespace).await
     }
 
-    pub async fn get_schedule(&self, namespace: &str, name: &str) -> Result<Option<WorkflowSchedule>> {
+    pub async fn get_schedule(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Option<WorkflowSchedule>> {
         self.store.get_schedule(namespace, name).await
     }
 
@@ -38,6 +42,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         name: &str,
         paused: bool,
     ) -> Result<Option<WorkflowSchedule>> {
-        self.store.set_schedule_paused(namespace, name, paused).await
+        self.store
+            .set_schedule_paused(namespace, name, paused)
+            .await
     }
 }

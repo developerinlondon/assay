@@ -47,8 +47,8 @@ pub fn load(explicit: Option<&str>) -> Result<Option<ConfigFile>, String> {
     if let Some(path) = explicit {
         let text = std::fs::read_to_string(path)
             .map_err(|e| format!("reading config file {path}: {e}"))?;
-        let cfg: ConfigFile = serde_yml::from_str(&text)
-            .map_err(|e| format!("parsing {path}: {e}"))?;
+        let cfg: ConfigFile =
+            serde_yml::from_str(&text).map_err(|e| format!("parsing {path}: {e}"))?;
         return Ok(Some(cfg));
     }
     for path in discovery_paths() {

@@ -49,7 +49,7 @@ pub struct Manifest {
     #[serde(default)]
     pub extensions: Vec<Extension>,
 
-    /// Lua libraries shipped as tarballs (e.g. `hostops`).
+    /// Lua libraries shipped as tarballs (e.g. `sysops`).
     #[serde(default)]
     pub libs: Vec<Lib>,
 }

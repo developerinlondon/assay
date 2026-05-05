@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Pre-commit hook: regenerate README stdlib table when docs/modules/*.md or
-# stdlib/*.lua entries are added/removed/renamed and verify it's in sync.
+# Pre-commit hook:
+#   1. Regenerate README stdlib table when docs/modules/*.md or
+#      stdlib/*.lua entries are added/removed/renamed and verify it's in sync.
+#   2. Enforce that staged Rust files are cleanly formatted (cargo fmt).
+#   3. Enforce that staged dprint-owned files are cleanly formatted.
 #
 # Enable with:
 #   git config core.hooksPath .githooks
@@ -8,59 +11,76 @@
 # Bypass for a single commit (only when intentional, e.g. when the README
 # regen is explicitly being committed in a follow-up):
 #   git commit --no-verify
-#
-# Mirrors the CI step in `.github/workflows/*.yml` that runs
-# `assay site/build.lua` and then `git diff --exit-code -- README.md`.
 
 set -euo pipefail
 
-# Only act when something staged could change the generated table.
-if ! git diff --cached --name-only | grep -qE '^(docs/modules/|crates/assay/stdlib/)'; then
-    exit 0
-fi
+STAGED="$(git diff --cached --name-only --diff-filter=ACMR)"
 
-# Find an `assay` binary. Prefer release (matches CI). Fall back to debug
-# and finally PATH so the hook is useful before a release build.
-ASSAY=""
-for candidate in \
-    target/release/assay \
-    crates/assay/target/release/assay \
-    target/debug/assay \
-    crates/assay/target/debug/assay; do
-    if [[ -x "$candidate" ]]; then
-        ASSAY="$candidate"
-        break
+# ── 1. README stdlib table regen ───────────────────────────────────────
+if echo "$STAGED" | grep -qE '^(docs/modules/|crates/assay/stdlib/)'; then
+    # Find an `assay` binary. Prefer release (matches CI). Fall back to debug
+    # and finally PATH so the hook is useful before a release build.
+    ASSAY=""
+    for candidate in \
+        target/release/assay \
+        crates/assay/target/release/assay \
+        target/debug/assay \
+        crates/assay/target/debug/assay; do
+        if [[ -x "$candidate" ]]; then
+            ASSAY="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$ASSAY" ]] && command -v assay >/dev/null 2>&1; then
+        ASSAY="$(command -v assay)"
     fi
-done
-if [[ -z "$ASSAY" ]] && command -v assay >/dev/null 2>&1; then
-    ASSAY="$(command -v assay)"
+
+    if [[ -z "$ASSAY" ]]; then
+        echo "pre-commit: no \`assay\` binary found (target/release/assay, target/debug/assay, or \$PATH)." >&2
+        echo "pre-commit: build it once with \`cargo build -p assay-lua --bin assay\` so this hook can run." >&2
+        echo "pre-commit: bypass with \`git commit --no-verify\` if this is intentional." >&2
+        exit 1
+    fi
+
+    if ! "$ASSAY" site/build.lua >/dev/null 2>&1; then
+        echo "pre-commit: \`$ASSAY site/build.lua\` failed; aborting." >&2
+        exit 1
+    fi
+
+    if ! git diff --exit-code --quiet -- README.md; then
+        echo >&2
+        echo "pre-commit: README.md is out of sync with docs/modules/*.md." >&2
+        echo "pre-commit: site/build.lua regenerated the stdlib table — review the diff and stage the result:" >&2
+        echo >&2
+        git --no-pager diff -- README.md | head -60 >&2
+        echo >&2
+        echo "pre-commit: \`git add README.md && git commit\` to retry." >&2
+        exit 1
+    fi
 fi
 
-if [[ -z "$ASSAY" ]]; then
-    echo "pre-commit: no \`assay\` binary found (target/release/assay, target/debug/assay, or \$PATH)." >&2
-    echo "pre-commit: build it once with \`cargo build -p assay-lua --bin assay\` so this hook can run." >&2
-    echo "pre-commit: bypass with \`git commit --no-verify\` if this is intentional." >&2
-    exit 1
+# ── 2. cargo fmt enforcement ───────────────────────────────────────────
+if echo "$STAGED" | grep -qE '\.rs$'; then
+    if command -v cargo >/dev/null 2>&1 && [[ -f Cargo.toml ]]; then
+        if ! cargo fmt --all -- --check >/dev/null 2>&1; then
+            echo "pre-commit: cargo fmt check failed." >&2
+            echo "pre-commit: run \`cargo fmt --all\` and re-stage." >&2
+            echo "pre-commit: bypass with \`git commit --no-verify\` if intentional." >&2
+            exit 1
+        fi
+    fi
 fi
 
-# Snapshot README so we don't leave the worktree dirty if the regen fails.
-SNAPSHOT="$(git stash create -- README.md 2>/dev/null || true)"
-
-if ! "$ASSAY" site/build.lua >/dev/null 2>&1; then
-    echo "pre-commit: \`$ASSAY site/build.lua\` failed; aborting." >&2
-    exit 1
+# ── 3. dprint enforcement ──────────────────────────────────────────────
+if echo "$STAGED" | grep -qE '\.(md|ya?ml|json|toml|lua)$'; then
+    if command -v dprint >/dev/null 2>&1 && [[ -f dprint.json ]]; then
+        if ! dprint check >/dev/null 2>&1; then
+            echo "pre-commit: dprint check failed." >&2
+            echo "pre-commit: run \`dprint fmt\` and re-stage." >&2
+            echo "pre-commit: bypass with \`git commit --no-verify\` if intentional." >&2
+            exit 1
+        fi
+    fi
 fi
 
-if ! git diff --exit-code --quiet -- README.md; then
-    echo >&2
-    echo "pre-commit: README.md is out of sync with docs/modules/*.md." >&2
-    echo "pre-commit: site/build.lua regenerated the stdlib table — review the diff and stage the result:" >&2
-    echo >&2
-    git --no-pager diff -- README.md | head -60 >&2
-    echo >&2
-    echo "pre-commit: \`git add README.md && git commit\` to retry." >&2
-    exit 1
-fi
-
-# README in sync; hook is idempotent.
 exit 0

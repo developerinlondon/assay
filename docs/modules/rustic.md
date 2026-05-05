@@ -82,9 +82,9 @@ end)
 
 The `with_snapshot` wrapper releases the snapshot even if `backup` errors.
 
-### Integration with hostops
+### Integration with sysops
 
-`libs/hostops/services/host/backups.lua` drives this stdlib through the hostops `/backups` dashboard
+`libs/sysops/services/host/backups.lua` drives this stdlib through the sysops `/backups` dashboard
 (snapshot list, last-run marker, manual runs, restore). When `assay-ops` ships, fleet-level
 orchestration (scheduling across hosts, retention policy fan-out) will live there — this stdlib
 stays the single host-side primitive both layers call.

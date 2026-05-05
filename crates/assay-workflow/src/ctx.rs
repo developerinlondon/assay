@@ -48,9 +48,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         let _scheduler = tokio::spawn(scheduler::run_scheduler(Arc::clone(&store)));
         let _timer_poller = tokio::spawn(timers::run_timer_poller(Arc::clone(&store)));
         let _health_monitor = tokio::spawn(health::run_health_monitor(Arc::clone(&store)));
-        let _dispatch_recovery = tokio::spawn(dispatch_recovery::run_dispatch_recovery(
-            Arc::clone(&store),
-        ));
+        let _dispatch_recovery =
+            tokio::spawn(dispatch_recovery::run_dispatch_recovery(Arc::clone(&store)));
 
         #[cfg(feature = "s3-archival")]
         let _archival = crate::archival::ArchivalConfig::from_env()
@@ -207,8 +206,7 @@ mod engine_version_stamp_tests {
 
     #[test]
     fn caller_supplied_version_wins_on_conflict() {
-        let out =
-            inject_engine_version(Some(r#"{"assay_engine_version":"0.0.1-test"}"#)).unwrap();
+        let out = inject_engine_version(Some(r#"{"assay_engine_version":"0.0.1-test"}"#)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["assay_engine_version"], "0.0.1-test");
     }

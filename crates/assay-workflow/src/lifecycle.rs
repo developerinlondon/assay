@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use anyhow::Result;
 
-use crate::ctx::{inject_engine_version, timestamp_now, WorkflowCtx};
+use crate::ctx::{WorkflowCtx, inject_engine_version, timestamp_now};
 use crate::events::WorkflowBusEvent;
 use crate::store::WorkflowStore;
 use crate::types::*;
@@ -124,8 +124,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         match wf {
             None => Ok(false),
             Some(wf) => {
-                let status = WorkflowStatus::from_str(&wf.status)
-                    .map_err(|e| anyhow::anyhow!(e))?;
+                let status =
+                    WorkflowStatus::from_str(&wf.status).map_err(|e| anyhow::anyhow!(e))?;
                 if status.is_terminal() {
                     return Ok(false);
                 }
@@ -148,9 +148,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                 // payload so audit queries (and the dashboard's events
                 // tab) can show why a cancel happened. Symmetric with
                 // terminate, which has always taken a reason.
-                let payload = reason.map(|r| {
-                    serde_json::json!({ "reason": r }).to_string()
-                });
+                let payload = reason.map(|r| serde_json::json!({ "reason": r }).to_string());
 
                 let seq = self.store.get_event_count(id).await? as i32 + 1;
                 self.store
@@ -193,8 +191,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         match wf {
             None => Ok(false),
             Some(wf) => {
-                let status = WorkflowStatus::from_str(&wf.status)
-                    .map_err(|e| anyhow::anyhow!(e))?;
+                let status =
+                    WorkflowStatus::from_str(&wf.status).map_err(|e| anyhow::anyhow!(e))?;
                 if status.is_terminal() {
                     return Ok(false);
                 }

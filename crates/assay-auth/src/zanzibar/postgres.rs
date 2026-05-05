@@ -31,8 +31,8 @@ use sqlx::{PgPool, Row};
 use super::resolve::resolve;
 use super::store::ZanzibarStore;
 use super::types::{
-    CheckResult, Consistency, NamespaceSchema, ObjectRef, SubjectRef, Tuple, TreeOp,
-    UsersetTree, MAX_DEPTH,
+    CheckResult, Consistency, MAX_DEPTH, NamespaceSchema, ObjectRef, SubjectRef, TreeOp, Tuple,
+    UsersetTree,
 };
 
 /// Postgres-backed Zanzibar store. Cheap to clone (the underlying
@@ -56,8 +56,7 @@ impl PostgresZanzibarStore {
 #[async_trait::async_trait]
 impl ZanzibarStore for PostgresZanzibarStore {
     async fn define_namespace(&self, schema: &NamespaceSchema) -> Result<()> {
-        let json = serde_json::to_value(schema)
-            .context("zanzibar serialize NamespaceSchema")?;
+        let json = serde_json::to_value(schema).context("zanzibar serialize NamespaceSchema")?;
         sqlx::query(
             "INSERT INTO auth.zanzibar_namespaces (name, schema_json, updated_at)
              VALUES ($1, $2, EXTRACT(EPOCH FROM NOW()))
@@ -74,29 +73,26 @@ impl ZanzibarStore for PostgresZanzibarStore {
     }
 
     async fn get_namespace(&self, name: &str) -> Result<Option<NamespaceSchema>> {
-        let row: Option<(serde_json::Value,)> = sqlx::query_as(
-            "SELECT schema_json FROM auth.zanzibar_namespaces WHERE name = $1",
-        )
-        .bind(name)
-        .fetch_optional(&self.pool)
-        .await
-        .context("auth.zanzibar_namespaces get")?;
+        let row: Option<(serde_json::Value,)> =
+            sqlx::query_as("SELECT schema_json FROM auth.zanzibar_namespaces WHERE name = $1")
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await
+                .context("auth.zanzibar_namespaces get")?;
         Ok(match row {
-            Some((json,)) => Some(
-                serde_json::from_value(json)
-                    .context("zanzibar deserialize NamespaceSchema")?,
-            ),
+            Some((json,)) => {
+                Some(serde_json::from_value(json).context("zanzibar deserialize NamespaceSchema")?)
+            }
             None => None,
         })
     }
 
     async fn list_namespaces(&self) -> Result<Vec<NamespaceSchema>> {
-        let rows: Vec<(serde_json::Value,)> = sqlx::query_as(
-            "SELECT schema_json FROM auth.zanzibar_namespaces ORDER BY name",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("auth.zanzibar_namespaces list")?;
+        let rows: Vec<(serde_json::Value,)> =
+            sqlx::query_as("SELECT schema_json FROM auth.zanzibar_namespaces ORDER BY name")
+                .fetch_all(&self.pool)
+                .await
+                .context("auth.zanzibar_namespaces list")?;
         rows.into_iter()
             .map(|(json,)| {
                 serde_json::from_value(json).context("zanzibar deserialize NamespaceSchema")
@@ -393,14 +389,15 @@ fn expand_pg<'a>(
     relation: &'a str,
     depth: u32,
     seen: &'a mut Vec<String>,
-) -> std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<Vec<UsersetTree>>> + Send + 'a>,
-> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<UsersetTree>>> + Send + 'a>> {
     Box::pin(async move {
         if depth == 0 {
             return Ok(Vec::new());
         }
-        let key = format!("{}:{}#{}", resource.object_type, resource.object_id, relation);
+        let key = format!(
+            "{}:{}#{}",
+            resource.object_type, resource.object_id, relation
+        );
         if seen.contains(&key) {
             return Ok(Vec::new());
         }

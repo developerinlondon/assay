@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::ctx::{timestamp_now, WorkflowCtx};
+use crate::ctx::{WorkflowCtx, timestamp_now};
 use crate::events::WorkflowBusEvent;
 use crate::store::WorkflowStore;
 use crate::types::*;
@@ -91,15 +91,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                             .get("heartbeat_timeout_secs")
                             .and_then(|v| v.as_f64()),
                     };
-                    self.schedule_activity(
-                        workflow_id,
-                        seq,
-                        name,
-                        input.as_deref(),
-                        queue,
-                        opts,
-                    )
-                    .await?;
+                    self.schedule_activity(workflow_id, seq, name, input.as_deref(), queue, opts)
+                        .await?;
                 }
                 "CancelWorkflow" => {
                     // Worker acknowledged a cancellation — finalise.
@@ -116,8 +109,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                     // worker uses the timer_seq to pick the winner on replay
                     // (signal vs timeout). The engine stores the pairing on
                     // the event for observability only.
-                    let signal_name =
-                        cmd.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                    let signal_name = cmd.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                     let timer_seq = cmd.get("timer_seq").and_then(|v| v.as_i64());
                     let payload = match timer_seq {
                         Some(ts) => serde_json::json!({
@@ -126,8 +118,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                         }),
                         None => serde_json::json!({ "signal": signal_name }),
                     };
-                    let event_seq =
-                        self.store.get_event_count(workflow_id).await? as i32 + 1;
+                    let event_seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
                     self.store
                         .append_event(&WorkflowEvent {
                             id: None,
@@ -144,8 +135,10 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                         .get("workflow_type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    let child_id =
-                        cmd.get("workflow_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let child_id = cmd
+                        .get("workflow_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     let task_queue = cmd
                         .get("task_queue")
                         .and_then(|v| v.as_str())
@@ -181,10 +174,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                 "RecordSideEffect" => {
                     let seq = cmd.get("seq").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                     let name = cmd.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    let value =
-                        cmd.get("value").cloned().unwrap_or(serde_json::Value::Null);
-                    let event_seq =
-                        self.store.get_event_count(workflow_id).await? as i32 + 1;
+                    let value = cmd.get("value").cloned().unwrap_or(serde_json::Value::Null);
+                    let event_seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
                     self.store
                         .append_event(&WorkflowEvent {
                             id: None,
@@ -247,10 +238,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                     // every worker replay, which is fine — `create_snapshot`
                     // is an insert, so each replay adds a new row reflecting
                     // the state at that point in history.
-                    let state = cmd
-                        .get("state")
-                        .cloned()
-                        .unwrap_or(serde_json::Value::Null);
+                    let state = cmd.get("state").cloned().unwrap_or(serde_json::Value::Null);
                     let event_seq = self.store.get_event_count(workflow_id).await? as i32;
                     self.store
                         .create_snapshot(workflow_id, event_seq, &state.to_string())
@@ -258,7 +246,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                 }
                 "CompleteWorkflow" => {
                     let result = cmd.get("result").map(|v| v.to_string());
-                    self.complete_workflow(workflow_id, result.as_deref()).await?;
+                    self.complete_workflow(workflow_id, result.as_deref())
+                        .await?;
                 }
                 "FailWorkflow" => {
                     let error = cmd

@@ -275,8 +275,7 @@ async fn read_or_seed_modules_pg(
         if known.contains(module.name) {
             continue;
         }
-        let enabled = module.default_enabled
-            || auto_enable.iter().any(|n| n == module.name);
+        let enabled = module.default_enabled || auto_enable.iter().any(|n| n == module.name);
         schema
             .upsert_module(module.name, Some(module.version), enabled)
             .await
@@ -379,23 +378,15 @@ async fn sqlite_boot(data_dir: &str, auto_enable: &[String]) -> anyhow::Result<S
             let vault_attach = vault_attach.clone();
             Box::pin(async move {
                 use sqlx::Executor;
-                conn.execute(
-                    format!("ATTACH DATABASE '{engine_attach}' AS engine").as_str(),
-                )
-                .await?;
-                conn.execute(
-                    format!("ATTACH DATABASE '{workflow_attach}' AS workflow").as_str(),
-                )
-                .await?;
-                conn.execute(
-                    format!("ATTACH DATABASE '{auth_attach}' AS auth").as_str(),
-                )
-                .await?;
+                conn.execute(format!("ATTACH DATABASE '{engine_attach}' AS engine").as_str())
+                    .await?;
+                conn.execute(format!("ATTACH DATABASE '{workflow_attach}' AS workflow").as_str())
+                    .await?;
+                conn.execute(format!("ATTACH DATABASE '{auth_attach}' AS auth").as_str())
+                    .await?;
                 #[cfg(feature = "vault")]
-                conn.execute(
-                    format!("ATTACH DATABASE '{vault_attach}' AS vault").as_str(),
-                )
-                .await?;
+                conn.execute(format!("ATTACH DATABASE '{vault_attach}' AS vault").as_str())
+                    .await?;
                 Ok(())
             })
         })
@@ -501,8 +492,7 @@ async fn read_or_seed_modules_sqlite(
         if known.contains(module.name) {
             continue;
         }
-        let enabled = module.default_enabled
-            || auto_enable.iter().any(|n| n == module.name);
+        let enabled = module.default_enabled || auto_enable.iter().any(|n| n == module.name);
         schema
             .upsert_module(module.name, Some(module.version), enabled)
             .await
@@ -570,23 +560,21 @@ mod tests {
             boot.modules
         );
         // Auth migration recorded.
-        let auth_row: Option<(String,)> = sqlx::query_as(
-            "SELECT module FROM engine.migrations WHERE module = 'auth'",
-        )
-        .fetch_optional(&boot.pool)
-        .await
-        .expect("query engine.migrations");
+        let auth_row: Option<(String,)> =
+            sqlx::query_as("SELECT module FROM engine.migrations WHERE module = 'auth'")
+                .fetch_optional(&boot.pool)
+                .await
+                .expect("query engine.migrations");
         assert!(
             auth_row.is_some(),
             "engine.migrations should have an auth row after auto-enabled boot"
         );
         // auth.users table should exist (proves migrate_sqlite ran against
         // the ATTACHed auth db).
-        let user_count: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM auth.users")
-                .fetch_one(&boot.pool)
-                .await
-                .expect("count auth.users");
+        let user_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM auth.users")
+            .fetch_one(&boot.pool)
+            .await
+            .expect("count auth.users");
         assert_eq!(user_count.0, 0);
     }
 }

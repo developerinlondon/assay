@@ -24,8 +24,8 @@ use sqlx::{Row, SqlitePool};
 use super::resolve::resolve;
 use super::store::ZanzibarStore;
 use super::types::{
-    CheckResult, Consistency, NamespaceSchema, ObjectRef, SubjectRef, Tuple, TreeOp,
-    UsersetTree, MAX_DEPTH,
+    CheckResult, Consistency, MAX_DEPTH, NamespaceSchema, ObjectRef, SubjectRef, TreeOp, Tuple,
+    UsersetTree,
 };
 
 /// SQLite-backed Zanzibar store. Cheap to clone (the underlying pool
@@ -55,8 +55,7 @@ fn now_secs() -> f64 {
 #[async_trait::async_trait]
 impl ZanzibarStore for SqliteZanzibarStore {
     async fn define_namespace(&self, schema: &NamespaceSchema) -> Result<()> {
-        let json = serde_json::to_string(schema)
-            .context("zanzibar serialize NamespaceSchema")?;
+        let json = serde_json::to_string(schema).context("zanzibar serialize NamespaceSchema")?;
         let now = now_secs();
         sqlx::query(
             "INSERT INTO auth.zanzibar_namespaces (name, schema_json, updated_at)
@@ -75,29 +74,26 @@ impl ZanzibarStore for SqliteZanzibarStore {
     }
 
     async fn get_namespace(&self, name: &str) -> Result<Option<NamespaceSchema>> {
-        let row: Option<(String,)> = sqlx::query_as(
-            "SELECT schema_json FROM auth.zanzibar_namespaces WHERE name = ?",
-        )
-        .bind(name)
-        .fetch_optional(&self.pool)
-        .await
-        .context("auth.zanzibar_namespaces get")?;
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT schema_json FROM auth.zanzibar_namespaces WHERE name = ?")
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await
+                .context("auth.zanzibar_namespaces get")?;
         Ok(match row {
-            Some((json,)) => Some(
-                serde_json::from_str(&json)
-                    .context("zanzibar deserialize NamespaceSchema")?,
-            ),
+            Some((json,)) => {
+                Some(serde_json::from_str(&json).context("zanzibar deserialize NamespaceSchema")?)
+            }
             None => None,
         })
     }
 
     async fn list_namespaces(&self) -> Result<Vec<NamespaceSchema>> {
-        let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT schema_json FROM auth.zanzibar_namespaces ORDER BY name",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("auth.zanzibar_namespaces list")?;
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT schema_json FROM auth.zanzibar_namespaces ORDER BY name")
+                .fetch_all(&self.pool)
+                .await
+                .context("auth.zanzibar_namespaces list")?;
         rows.into_iter()
             .map(|(json,)| {
                 serde_json::from_str(&json).context("zanzibar deserialize NamespaceSchema")
@@ -198,8 +194,8 @@ impl ZanzibarStore for SqliteZanzibarStore {
         // array consumed via `json_each(?)`. Same shape as PG's
         // `text[]` parameter, just one extra serialisation step.
         let relation_list: Vec<String> = resolved.union_relations.into_iter().collect();
-        let relation_json = serde_json::to_string(&relation_list)
-            .context("encode relation list as JSON")?;
+        let relation_json =
+            serde_json::to_string(&relation_list).context("encode relation list as JSON")?;
 
         // Cycle-guard via a JSON-encoded path string. Each hop
         // appends `<type>:<id>` and the join refuses to add a node
@@ -271,8 +267,7 @@ impl ZanzibarStore for SqliteZanzibarStore {
         let depth = depth_limit.min(MAX_DEPTH);
         Ok(UsersetTree::Node {
             op: TreeOp::Direct,
-            children: expand_sqlite(self, resource, relation, depth, &mut Vec::new())
-                .await?,
+            children: expand_sqlite(self, resource, relation, depth, &mut Vec::new()).await?,
         })
     }
 
@@ -292,8 +287,8 @@ impl ZanzibarStore for SqliteZanzibarStore {
             return Ok(Vec::new());
         }
         let relation_list: Vec<String> = resolved.union_relations.into_iter().collect();
-        let relation_json = serde_json::to_string(&relation_list)
-            .context("encode relation list as JSON")?;
+        let relation_json =
+            serde_json::to_string(&relation_list).context("encode relation list as JSON")?;
         let rows = sqlx::query(
             "SELECT DISTINCT object_type, object_id
              FROM auth.zanzibar_tuples
@@ -337,8 +332,8 @@ impl ZanzibarStore for SqliteZanzibarStore {
             return Ok(Vec::new());
         }
         let relation_list: Vec<String> = resolved.union_relations.into_iter().collect();
-        let relation_json = serde_json::to_string(&relation_list)
-            .context("encode relation list as JSON")?;
+        let relation_json =
+            serde_json::to_string(&relation_list).context("encode relation list as JSON")?;
 
         let rows = sqlx::query(
             r#"
@@ -394,14 +389,15 @@ fn expand_sqlite<'a>(
     relation: &'a str,
     depth: u32,
     seen: &'a mut Vec<String>,
-) -> std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<Vec<UsersetTree>>> + Send + 'a>,
-> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<UsersetTree>>> + Send + 'a>> {
     Box::pin(async move {
         if depth == 0 {
             return Ok(Vec::new());
         }
-        let key = format!("{}:{}#{}", resource.object_type, resource.object_id, relation);
+        let key = format!(
+            "{}:{}#{}",
+            resource.object_type, resource.object_id, relation
+        );
         if seen.contains(&key) {
             return Ok(Vec::new());
         }

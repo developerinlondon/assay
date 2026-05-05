@@ -22,7 +22,10 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
         .route("/workflows/{id}/children", get(list_children))
         .route("/workflows/{id}/continue-as-new", post(continue_as_new))
         .route("/workflows/{id}/state", get(get_workflow_state))
-        .route("/workflows/{id}/state/{name}", get(get_workflow_state_by_name))
+        .route(
+            "/workflows/{id}/state/{name}",
+            get(get_workflow_state_by_name),
+        )
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -221,9 +224,7 @@ pub async fn send_signal<S: WorkflowStore>(
     Json(body): Json<Option<SignalBody>>,
 ) -> Result<axum::http::StatusCode, AppError> {
     let payload = body.and_then(|b| b.payload).map(|v| v.to_string());
-    state
-        .send_signal(&id, &name, payload.as_deref())
-        .await?;
+    state.send_signal(&id, &name, payload.as_deref()).await?;
     Ok(axum::http::StatusCode::OK)
 }
 
@@ -291,9 +292,7 @@ pub async fn terminate_workflow<S: WorkflowStore>(
     Json(body): Json<Option<TerminateBody>>,
 ) -> Result<axum::http::StatusCode, AppError> {
     let reason = body.and_then(|b| b.reason);
-    let terminated = state
-        .terminate_workflow(&id, reason.as_deref())
-        .await?;
+    let terminated = state.terminate_workflow(&id, reason.as_deref()).await?;
     if terminated {
         Ok(axum::http::StatusCode::OK)
     } else {
@@ -349,13 +348,8 @@ pub async fn continue_as_new<S: WorkflowStore>(
     Json(body): Json<ContinueAsNewBody>,
 ) -> Result<(axum::http::StatusCode, Json<WorkflowResponse>), AppError> {
     let input = body.input.map(|v| v.to_string());
-    let new_id = body
-        .workflow_id
-        .as_deref()
-        .filter(|s| !s.trim().is_empty());
-    let wf = state
-        .continue_as_new(&id, input.as_deref(), new_id)
-        .await?;
+    let new_id = body.workflow_id.as_deref().filter(|s| !s.trim().is_empty());
+    let wf = state.continue_as_new(&id, input.as_deref(), new_id).await?;
 
     Ok((
         axum::http::StatusCode::CREATED,

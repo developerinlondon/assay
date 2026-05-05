@@ -82,10 +82,7 @@ pub trait UserStore: Send + Sync + 'static {
 
     /// Admin: list every (provider, subject) link for a user. Used by
     /// the dashboard's user-detail pane to show federated identities.
-    async fn list_upstream_for_user(
-        &self,
-        user_id: &str,
-    ) -> anyhow::Result<Vec<(String, String)>>;
+    async fn list_upstream_for_user(&self, user_id: &str) -> anyhow::Result<Vec<(String, String)>>;
 }
 
 /// CRUD over `auth.sessions`. The session manager

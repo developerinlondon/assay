@@ -157,16 +157,19 @@ where
         )
         .route("/.well-known/jwks.json", get(jwks::jwks_handler))
         .route("/authorize", get(handlers::authorize_get))
-        .route("/authorize/consent", get(consent_preview).post(handlers::consent_post))
+        .route(
+            "/authorize/consent",
+            get(consent_preview).post(handlers::consent_post),
+        )
         .route("/token", post(handlers::token_post))
-        .route("/userinfo", get(handlers::userinfo_get).post(handlers::userinfo_get))
+        .route(
+            "/userinfo",
+            get(handlers::userinfo_get).post(handlers::userinfo_get),
+        )
         .route("/revoke", post(handlers::revoke_post))
         .route("/introspect", post(handlers::introspect_post))
         .route("/logout", get(handlers::logout_get))
-        .route(
-            "/oidc/upstream/{slug}/start",
-            get(handlers::upstream_start),
-        )
+        .route("/oidc/upstream/{slug}/start", get(handlers::upstream_start))
         .route(
             "/oidc/upstream/{slug}/callback",
             get(handlers::upstream_callback),

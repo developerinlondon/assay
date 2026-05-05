@@ -10,11 +10,7 @@ use assay_domain::events::EngineEventBus;
 /// Run the cleanup loop forever. Callers spawn this as a tokio task
 /// alongside the engine's other background housekeeping loops.
 /// First tick is skipped so we don't prune at startup.
-pub async fn run_events_cleanup(
-    bus: Arc<dyn EngineEventBus>,
-    cadence: Duration,
-    ttl_secs: u64,
-) {
+pub async fn run_events_cleanup(bus: Arc<dyn EngineEventBus>, cadence: Duration, ttl_secs: u64) {
     let mut tick = tokio::time::interval(cadence);
     tick.tick().await; // skip immediate first tick
     loop {

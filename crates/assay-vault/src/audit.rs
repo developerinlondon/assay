@@ -127,7 +127,11 @@ mod webhook {
     }
 
     impl WebhookSink {
-        pub fn new(name: impl Into<String>, url: impl Into<String>, filter: impl Into<String>) -> Self {
+        pub fn new(
+            name: impl Into<String>,
+            url: impl Into<String>,
+            filter: impl Into<String>,
+        ) -> Self {
             Self {
                 name: name.into(),
                 filter: filter.into(),
@@ -158,10 +162,9 @@ mod webhook {
             for (k, v) in &self.headers {
                 req = req.header(k, v);
             }
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| crate::error::VaultError::Backend(anyhow::anyhow!("webhook POST: {e}")))?;
+            let resp = req.send().await.map_err(|e| {
+                crate::error::VaultError::Backend(anyhow::anyhow!("webhook POST: {e}"))
+            })?;
             if !resp.status().is_success() {
                 return Err(crate::error::VaultError::Backend(anyhow::anyhow!(
                     "webhook POST returned {}",
@@ -221,12 +224,19 @@ mod syslog_sink {
                 pid: std::process::id(),
             };
             let logger = match transport {
-                SyslogTransport::Tcp(addr) => syslog::tcp(formatter, addr)
-                    .map_err(|e| crate::error::VaultError::Backend(anyhow::anyhow!("syslog tcp: {e}")))?,
-                SyslogTransport::Udp(addr) => syslog::udp(formatter, "0.0.0.0:0", addr)
-                    .map_err(|e| crate::error::VaultError::Backend(anyhow::anyhow!("syslog udp: {e}")))?,
-                SyslogTransport::Uds(path) => syslog::unix_custom(formatter, path)
-                    .map_err(|e| crate::error::VaultError::Backend(anyhow::anyhow!("syslog uds: {e}")))?,
+                SyslogTransport::Tcp(addr) => syslog::tcp(formatter, addr).map_err(|e| {
+                    crate::error::VaultError::Backend(anyhow::anyhow!("syslog tcp: {e}"))
+                })?,
+                SyslogTransport::Udp(addr) => {
+                    syslog::udp(formatter, "0.0.0.0:0", addr).map_err(|e| {
+                        crate::error::VaultError::Backend(anyhow::anyhow!("syslog udp: {e}"))
+                    })?
+                }
+                SyslogTransport::Uds(path) => {
+                    syslog::unix_custom(formatter, path).map_err(|e| {
+                        crate::error::VaultError::Backend(anyhow::anyhow!("syslog uds: {e}"))
+                    })?
+                }
             };
             Ok(Self {
                 name: name.into(),
@@ -283,7 +293,7 @@ mod s3_sink {
     //! body is the JSON-serialised AuditEvent.
 
     use super::*;
-    use crate::cloud::sigv4::{now_amz_date, sign, SigV4Input};
+    use crate::cloud::sigv4::{SigV4Input, now_amz_date, sign};
     use crate::sealing::kms_aws::AwsCredentials;
 
     pub struct S3Sink {
@@ -324,12 +334,9 @@ mod s3_sink {
         }
 
         fn url(&self, key: &str) -> String {
-            let host = self
-                .endpoint_override
-                .clone()
-                .unwrap_or_else(|| {
-                    format!("https://{}.s3.{}.amazonaws.com", self.bucket, self.region)
-                });
+            let host = self.endpoint_override.clone().unwrap_or_else(|| {
+                format!("https://{}.s3.{}.amazonaws.com", self.bucket, self.region)
+            });
             format!("{host}/{key}")
         }
 
@@ -369,9 +376,10 @@ mod s3_sink {
             for (k, v) in &signed.headers {
                 req = req.header(k, v);
             }
-            let resp = req.send().await.map_err(|e| {
-                crate::error::VaultError::Backend(anyhow::anyhow!("s3 PUT: {e}"))
-            })?;
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| crate::error::VaultError::Backend(anyhow::anyhow!("s3 PUT: {e}")))?;
             if !resp.status().is_success() {
                 let status = resp.status();
                 let txt = resp.text().await.unwrap_or_default();
@@ -452,8 +460,8 @@ impl SinkRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn glob_matches_exact_segment_count() {
@@ -510,8 +518,16 @@ mod tests {
         reg.dispatch(&AuditEvent::now("vault.kv.put")).await;
         reg.dispatch(&AuditEvent::now("auth.login")).await;
 
-        assert_eq!(sink_a.count.load(Ordering::SeqCst), 1, "vault-only sink should fire once");
-        assert_eq!(sink_b.count.load(Ordering::SeqCst), 2, "catch-all sink should fire twice");
+        assert_eq!(
+            sink_a.count.load(Ordering::SeqCst),
+            1,
+            "vault-only sink should fire once"
+        );
+        assert_eq!(
+            sink_b.count.load(Ordering::SeqCst),
+            2,
+            "catch-all sink should fire twice"
+        );
     }
 
     #[tokio::test]

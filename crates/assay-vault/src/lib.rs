@@ -101,9 +101,9 @@ pub use ctx::VaultCtx;
 pub use error::{Result, VaultError};
 #[cfg(feature = "vault-kv")]
 pub use kv::{KvMeta, KvRead, KvRow, KvService, KvStore};
+pub use schema::{MIGRATION_VERSION, MODULE_NAME};
 #[cfg(feature = "vault-transit")]
 pub use transit::{TransitKey, TransitService, TransitStore, TransitVersion};
-pub use schema::{MIGRATION_VERSION, MODULE_NAME};
 
 /// Stable module name registered in `engine.modules` and used as the
 /// schema/attach name on both backends. Engine boot inserts a row with

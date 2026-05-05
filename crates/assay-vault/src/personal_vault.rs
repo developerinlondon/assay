@@ -52,8 +52,7 @@ pub trait PersonalVaultStore: Send + Sync + 'static {
     /// Replace the user's public key. Used by an explicit pubkey-
     /// rotation flow (Phase 3 ships this as primitive; HTTP shipping
     /// in a later commit).
-    async fn rotate_public_key(&self, owner_user: &str, new_public_key: &[u8])
-        -> Result<bool>;
+    async fn rotate_public_key(&self, owner_user: &str, new_public_key: &[u8]) -> Result<bool>;
 }
 
 #[cfg(test)]

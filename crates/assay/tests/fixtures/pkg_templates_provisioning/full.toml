@@ -1,22 +1,22 @@
 # All sections present — the canonical "create + seed" template shape.
 [template]
-id           = "full"
+id = "full"
 display_name = "Full provisioning recipe"
-description  = "Pull bookworm rootfs, configure nspawn, seed packages."
-packages     = ["test-apt-only", "test-binary-only"]
+description = "Pull bookworm rootfs, configure nspawn, seed packages."
+packages = ["test-apt-only", "test-binary-only"]
 
 [template.rootfs]
 source = "machinectl-pull-tar"
-url    = "https://hub.nspawn.org/storage/debian/bookworm/raw/image.tar.xz"
+url = "https://hub.nspawn.org/storage/debian/bookworm/raw/image.tar.xz"
 
 [template.nspawn]
-boot             = true
-notify_ready     = true
+boot = true
+notify_ready = true
 virtual_ethernet = true
-resolv_conf      = "bind-host"   # hyphen form, normalises to bind_host
-binds            = ["/dev/kmsg"]
-binds_ro         = ["/sys/module"]
-capabilities     = ["all"]
+resolv_conf = "bind-host" # hyphen form, normalises to bind_host
+binds = ["/dev/kmsg"]
+binds_ro = ["/sys/module"]
+capabilities = ["all"]
 
 [template.systemd]
 enable = ["ssh"]

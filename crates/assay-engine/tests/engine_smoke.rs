@@ -85,7 +85,10 @@ format = "pretty"
     async fn wait_ready(&self, client: &reqwest::Client) {
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
-            if let Ok(r) = client.get(self.url("/api/v1/engine/workflow/health")).send().await
+            if let Ok(r) = client
+                .get(self.url("/api/v1/engine/workflow/health"))
+                .send()
+                .await
                 && r.status().is_success()
             {
                 return;
@@ -122,14 +125,22 @@ async fn engine_smoke_sqlite() {
     engine.wait_ready(&client).await;
 
     // ── /api/v1/engine/workflow/health ────────────────────────────────────────────────
-    let r = client.get(engine.url("/api/v1/engine/workflow/health")).send().await.unwrap();
+    let r = client
+        .get(engine.url("/api/v1/engine/workflow/health"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 200, "health should return 200");
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["service"], "assay-workflow");
     assert_eq!(body["status"], "ok");
 
     // ── /api/v1/engine/workflow/version ───────────────────────────────────────────────
-    let r = client.get(engine.url("/api/v1/engine/workflow/version")).send().await.unwrap();
+    let r = client
+        .get(engine.url("/api/v1/engine/workflow/version"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 200);
     let body: serde_json::Value = r.json().await.unwrap();
     assert!(
@@ -174,11 +185,7 @@ async fn engine_smoke_sqlite() {
     );
 
     // ── / (root → redirect to /workflow/) ─────────────────────────────
-    let r = client
-        .get(engine.url("/"))
-        .send()
-        .await
-        .unwrap();
+    let r = client.get(engine.url("/")).send().await.unwrap();
     assert!(
         r.status().is_success() || r.status().is_redirection(),
         "root should be 2xx or 3xx (redirect), got {}",
@@ -252,8 +259,8 @@ async fn engine_smoke_sqlite() {
     assert_eq!(r.status(), 201, "transit create should return 201");
 
     // Encrypt + decrypt round-trip.
-    use base64::engine::general_purpose::STANDARD as B64;
     use base64::Engine;
+    use base64::engine::general_purpose::STANDARD as B64;
     let plaintext = b"hello-from-engine-smoke";
     let r = client
         .post(engine.url("/api/v1/vault/transit/encrypt/logs"))
@@ -542,10 +549,18 @@ async fn engine_smoke_sqlite() {
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["service"], "assay-vault");
 
-    let r = client2.get(engine2.url("/api/version")).send().await.unwrap();
+    let r = client2
+        .get(engine2.url("/api/version"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 200);
 
-    let r = client2.get(engine2.url("/api/config")).send().await.unwrap();
+    let r = client2
+        .get(engine2.url("/api/config"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 200);
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["server"]["name"], "assay-vault");
@@ -606,7 +621,11 @@ async fn engine_smoke_sqlite() {
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 200, "BW token grant should succeed for seeded user");
+    assert_eq!(
+        r.status(),
+        200,
+        "BW token grant should succeed for seeded user"
+    );
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["Kdf"], 1, "issued JWT response carries Argon2id KDF");
     assert!(body["access_token"].as_str().unwrap_or("").len() > 20);
@@ -683,8 +702,10 @@ async fn engine_smoke_sqlite() {
     let body: serde_json::Value = r.json().await.unwrap();
     let ciphers = body["Ciphers"].as_array().unwrap();
     assert_eq!(ciphers.len(), 1);
-    assert_eq!(ciphers[0]["Login"]["Fido2Credentials"][0]["CredentialId"],
-               "encrypted-credential-id");
+    assert_eq!(
+        ciphers[0]["Login"]["Fido2Credentials"][0]["CredentialId"],
+        "encrypted-credential-id"
+    );
 
     // 9. Delete the cipher.
     let r = client2
@@ -740,7 +761,11 @@ async fn engine_smoke_sqlite() {
     let body = r.text().await.unwrap();
     assert!(body.contains("Assay Vault"));
     // Pane controllers reference the documented endpoints.
-    let r = client2.get(engine2.url("/vault/app.js")).send().await.unwrap();
+    let r = client2
+        .get(engine2.url("/vault/app.js"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 200);
     let body = r.text().await.unwrap();
     assert!(body.contains("/sys/seal-status"));

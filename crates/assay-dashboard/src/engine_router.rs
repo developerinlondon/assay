@@ -16,9 +16,9 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 
 use crate::assets::{
-    CROSS_NAV_CSS, CROSS_NAV_JS, ENGINE_API_JS, ENGINE_APP_JS, ENGINE_AUDIT_JS,
-    ENGINE_CONFIG_JS, ENGINE_INDEX_HTML, ENGINE_INFO_JS, ENGINE_INSTANCES_JS,
-    ENGINE_MODULES_JS, ENGINE_STYLE_CSS, FAVICON_SVG,
+    CROSS_NAV_CSS, CROSS_NAV_JS, ENGINE_API_JS, ENGINE_APP_JS, ENGINE_AUDIT_JS, ENGINE_CONFIG_JS,
+    ENGINE_INDEX_HTML, ENGINE_INFO_JS, ENGINE_INSTANCES_JS, ENGINE_MODULES_JS, ENGINE_STYLE_CSS,
+    FAVICON_SVG,
 };
 
 /// Build the engine-console asset router. Stateless `Router<()>` ready
@@ -80,14 +80,36 @@ async fn index() -> impl IntoResponse {
     )
 }
 
-async fn style_css() -> impl IntoResponse { asset("text/css", ENGINE_STYLE_CSS) }
-async fn app_js() -> impl IntoResponse { asset("application/javascript", ENGINE_APP_JS) }
-async fn api_js() -> impl IntoResponse { asset("application/javascript", ENGINE_API_JS) }
-async fn info_js() -> impl IntoResponse { asset("application/javascript", ENGINE_INFO_JS) }
-async fn modules_js() -> impl IntoResponse { asset("application/javascript", ENGINE_MODULES_JS) }
-async fn instances_js() -> impl IntoResponse { asset("application/javascript", ENGINE_INSTANCES_JS) }
-async fn audit_js() -> impl IntoResponse { asset("application/javascript", ENGINE_AUDIT_JS) }
-async fn config_js() -> impl IntoResponse { asset("application/javascript", ENGINE_CONFIG_JS) }
-async fn favicon() -> impl IntoResponse { asset("image/svg+xml", FAVICON_SVG) }
-async fn cross_nav_css() -> impl IntoResponse { asset("text/css", CROSS_NAV_CSS) }
-async fn cross_nav_js() -> impl IntoResponse { asset("application/javascript", CROSS_NAV_JS) }
+async fn style_css() -> impl IntoResponse {
+    asset("text/css", ENGINE_STYLE_CSS)
+}
+async fn app_js() -> impl IntoResponse {
+    asset("application/javascript", ENGINE_APP_JS)
+}
+async fn api_js() -> impl IntoResponse {
+    asset("application/javascript", ENGINE_API_JS)
+}
+async fn info_js() -> impl IntoResponse {
+    asset("application/javascript", ENGINE_INFO_JS)
+}
+async fn modules_js() -> impl IntoResponse {
+    asset("application/javascript", ENGINE_MODULES_JS)
+}
+async fn instances_js() -> impl IntoResponse {
+    asset("application/javascript", ENGINE_INSTANCES_JS)
+}
+async fn audit_js() -> impl IntoResponse {
+    asset("application/javascript", ENGINE_AUDIT_JS)
+}
+async fn config_js() -> impl IntoResponse {
+    asset("application/javascript", ENGINE_CONFIG_JS)
+}
+async fn favicon() -> impl IntoResponse {
+    asset("image/svg+xml", FAVICON_SVG)
+}
+async fn cross_nav_css() -> impl IntoResponse {
+    asset("text/css", CROSS_NAV_CSS)
+}
+async fn cross_nav_js() -> impl IntoResponse {
+    asset("application/javascript", CROSS_NAV_JS)
+}

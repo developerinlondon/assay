@@ -55,10 +55,7 @@ where
     AdminApiKeys: FromRef<S>,
 {
     Router::new()
-        .route(
-            "/admin/users",
-            get(list_users).post(create_user_handler),
-        )
+        .route("/admin/users", get(list_users).post(create_user_handler))
         .route(
             "/admin/users/{id}",
             get(get_user_detail)
@@ -256,7 +253,10 @@ async fn get_user_detail(
     let user = match ctx.users.get_user_by_id(&id).await {
         Ok(Some(u)) => u,
         Ok(None) => {
-            return (StatusCode::NOT_FOUND, Json(json!({"error": "unknown user_id"})))
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "unknown user_id"})),
+            )
                 .into_response();
         }
         Err(e) => return server_error(&format!("get user: {e}")),
@@ -316,7 +316,10 @@ async fn update_user_handler(
     let mut user = match ctx.users.get_user_by_id(&id).await {
         Ok(Some(u)) => u,
         Ok(None) => {
-            return (StatusCode::NOT_FOUND, Json(json!({"error": "unknown user_id"})))
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "unknown user_id"})),
+            )
                 .into_response();
         }
         Err(e) => return server_error(&format!("get user: {e}")),
@@ -374,7 +377,13 @@ async fn password_reset_handler(
     if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
     }
-    if ctx.users.get_user_by_id(&id).await.unwrap_or(None).is_none() {
+    if ctx
+        .users
+        .get_user_by_id(&id)
+        .await
+        .unwrap_or(None)
+        .is_none()
+    {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "unknown user_id"})),
@@ -804,7 +813,7 @@ async fn zanzibar_expand_handler(
     }
     #[cfg(feature = "auth-zanzibar")]
     {
-        use crate::zanzibar::{ObjectRef, MAX_DEPTH};
+        use crate::zanzibar::{MAX_DEPTH, ObjectRef};
         let Some(store) = ctx.zanzibar.as_ref() else {
             return svc_unavailable("zanzibar not enabled");
         };

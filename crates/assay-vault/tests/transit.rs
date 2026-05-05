@@ -58,8 +58,7 @@ async fn boot_pool() -> SqlitePool {
 
 fn service(pool: SqlitePool) -> TransitService<SqliteTransitStore> {
     let kek = KekHandle::generate_ephemeral();
-    let seal_state =
-        SealState::unsealed(SealingMethod::Plaintext, kek.kid().to_string(), kek);
+    let seal_state = SealState::unsealed(SealingMethod::Plaintext, kek.kid().to_string(), kek);
     TransitService::new(SqliteTransitStore::new(pool), seal_state)
 }
 
@@ -130,7 +129,13 @@ async fn list_keys_alphabetised() {
     svc.create_key("c-zone", None).await.unwrap();
     svc.create_key("a-zone", None).await.unwrap();
     svc.create_key("b-zone", None).await.unwrap();
-    let names: Vec<String> = svc.list_keys().await.unwrap().into_iter().map(|k| k.name).collect();
+    let names: Vec<String> = svc
+        .list_keys()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|k| k.name)
+        .collect();
     assert_eq!(names, vec!["a-zone", "b-zone", "c-zone"]);
 }
 

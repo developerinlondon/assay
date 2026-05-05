@@ -32,8 +32,8 @@
 use std::collections::BTreeSet;
 
 use assay_auth::zanzibar::{
-    parse_schema, CheckResult, Consistency, NamespaceSchema, ObjectRef, PermissionExpr,
-    RelationDef, RelationKind, SubjectRef, Tuple, TypeRef, ZanzibarStore,
+    CheckResult, Consistency, NamespaceSchema, ObjectRef, PermissionExpr, RelationDef,
+    RelationKind, SubjectRef, Tuple, TypeRef, ZanzibarStore, parse_schema,
 };
 
 // ---------- Sqlite-only test setup ----------
@@ -42,8 +42,8 @@ use assay_auth::zanzibar::{
 mod sqlite_tests {
     use super::*;
     use assay_auth::zanzibar::SqliteZanzibarStore;
-    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use sqlx::SqlitePool;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use std::str::FromStr;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -74,14 +74,10 @@ mod sqlite_tests {
                 let auth_uri = auth_uri.clone();
                 Box::pin(async move {
                     use sqlx::Executor;
-                    conn.execute(
-                        format!("ATTACH DATABASE '{engine_uri}' AS engine").as_str(),
-                    )
-                    .await?;
-                    conn.execute(
-                        format!("ATTACH DATABASE '{auth_uri}' AS auth").as_str(),
-                    )
-                    .await?;
+                    conn.execute(format!("ATTACH DATABASE '{engine_uri}' AS engine").as_str())
+                        .await?;
+                    conn.execute(format!("ATTACH DATABASE '{auth_uri}' AS auth").as_str())
+                        .await?;
                     Ok(())
                 })
             })
@@ -149,12 +145,10 @@ mod sqlite_tests {
             .await
             .expect("ns user");
         store
-            .define_namespace(
-                &NamespaceSchema::new("family").with_relation(
-                    "member",
-                    RelationDef::relation("member", vec![TypeRef::direct("user")]),
-                ),
-            )
+            .define_namespace(&NamespaceSchema::new("family").with_relation(
+                "member",
+                RelationDef::relation("member", vec![TypeRef::direct("user")]),
+            ))
             .await
             .expect("ns family");
         store
@@ -162,10 +156,7 @@ mod sqlite_tests {
                 &NamespaceSchema::new("circle")
                     .with_relation(
                         "viewer",
-                        RelationDef::relation(
-                            "viewer",
-                            vec![TypeRef::userset("family", "member")],
-                        ),
+                        RelationDef::relation("viewer", vec![TypeRef::userset("family", "member")]),
                     )
                     .with_relation(
                         "view",
@@ -236,10 +227,7 @@ mod sqlite_tests {
                         "member",
                         RelationDef::relation(
                             "member",
-                            vec![
-                                TypeRef::direct("user"),
-                                TypeRef::userset("chain", "member"),
-                            ],
+                            vec![TypeRef::direct("user"), TypeRef::userset("chain", "member")],
                         ),
                     )
                     .with_relation(
@@ -300,10 +288,7 @@ mod sqlite_tests {
                         "member",
                         RelationDef::relation(
                             "member",
-                            vec![
-                                TypeRef::direct("user"),
-                                TypeRef::userset("ring", "member"),
-                            ],
+                            vec![TypeRef::direct("user"), TypeRef::userset("ring", "member")],
                         ),
                     )
                     .with_relation(
@@ -356,12 +341,10 @@ mod sqlite_tests {
             .await
             .expect("ns user");
         store
-            .define_namespace(
-                &NamespaceSchema::new("group").with_relation(
-                    "member",
-                    RelationDef::relation("member", vec![TypeRef::direct("user")]),
-                ),
-            )
+            .define_namespace(&NamespaceSchema::new("group").with_relation(
+                "member",
+                RelationDef::relation("member", vec![TypeRef::direct("user")]),
+            ))
             .await
             .expect("ns group");
 
@@ -392,7 +375,10 @@ mod sqlite_tests {
             .expect("lookup");
         let ids: BTreeSet<String> = subjects.iter().map(|s| s.subject_id.clone()).collect();
         assert!(ids.contains("alice"), "expected alice; got {ids:?}");
-        assert!(ids.contains("bob"), "expected bob via group hop; got {ids:?}");
+        assert!(
+            ids.contains("bob"),
+            "expected bob via group hop; got {ids:?}"
+        );
     }
 
     #[tokio::test]
@@ -430,8 +416,7 @@ mod sqlite_tests {
             .lookup_resources("document", "view", &SubjectRef::direct("user", "alice"))
             .await
             .expect("lookup");
-        let ids: BTreeSet<String> =
-            alice_docs.iter().map(|o| o.object_id.clone()).collect();
+        let ids: BTreeSet<String> = alice_docs.iter().map(|o| o.object_id.clone()).collect();
         assert_eq!(ids, BTreeSet::from(["1".into(), "2".into()]), "got {ids:?}");
     }
 
@@ -479,10 +464,7 @@ mod sqlite_tests {
                 "viewer",
                 RelationDef::relation(
                     "viewer",
-                    vec![
-                        TypeRef::direct("user"),
-                        TypeRef::userset("group", "member"),
-                    ],
+                    vec![TypeRef::direct("user"), TypeRef::userset("group", "member")],
                 ),
             )
             .with_relation(

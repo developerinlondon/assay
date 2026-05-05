@@ -37,24 +37,22 @@ DATABASE_URL=postgres://... assay serve               # backend from env (keeps 
 
 Auth modes:
 
-| Flag                                        | Behaviour                                                                                                                                         |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--no-auth` (default)                       | Open access. Use only behind a trusted gateway.                                                                                                   |
-| `--auth-api-key`                            | Clients send `Authorization: Bearer <key>`. Manage keys with `--generate-api-key` / `--list-api-keys`. Keys are SHA256-hashed at rest.            |
-| `--auth-issuer <url> --auth-audience <aud>` | JWT/OIDC. Fetches and caches the issuer's JWKS to validate signatures. Works with Auth0, Okta, Dex, Keycloak, Cloudflare Access, any OIDC issuer. |
+| Flag                                        | Behaviour                                                                                                                                                               |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--no-auth` (default)                       | Open access. Use only behind a trusted gateway.                                                                                                                         |
+| `--auth-api-key`                            | Clients send `Authorization: Bearer <key>`. Manage keys with `--generate-api-key` / `--list-api-keys`. Keys are SHA256-hashed at rest.                                  |
+| `--auth-issuer <url> --auth-audience <aud>` | JWT/OIDC. Fetches and caches the issuer's JWKS to validate signatures. Works with Auth0, Okta, Dex, Keycloak, Cloudflare Access, any OIDC issuer.                       |
 | `--auth-api-key` + `--auth-issuer …`        | Combined. Tokens that parse as a JWS header take the JWT path; everything else takes the API-key path. Same server accepts both token types on `Authorization: Bearer`. |
 
 **Combined mode dispatch** (when both `--auth-issuer` and `--auth-api-key` are set):
 
-- `Authorization: Bearer <jwt>` — validated against JWKS. Rejected if expired / wrong
-  issuer / wrong audience / bad signature. A semantically-invalid JWT is **not** silently
-  retried as an API key.
+- `Authorization: Bearer <jwt>` — validated against JWKS. Rejected if expired / wrong issuer / wrong
+  audience / bad signature. A semantically-invalid JWT is **not** silently retried as an API key.
 - `Authorization: Bearer <api-key>` — hashed and looked up in the store.
 - `Authorization: Bearer <garbage>` — 401.
 
-Combined mode lets the same server serve short-lived OIDC user tokens (from a browser
-session) alongside long-lived machine API keys (from a CI job) without the caller picking
-a mode up front.
+Combined mode lets the same server serve short-lived OIDC user tokens (from a browser session)
+alongside long-lived machine API keys (from a CI job) without the caller picking a mode up front.
 
 **Multi-instance deployment.** SQLite is single-instance only (engine takes an `engine_lock` row at
 startup). For Kubernetes / Docker Swarm, use Postgres: the cron scheduler picks a leader via
@@ -79,35 +77,32 @@ resolve via the AWS SDK default chain (env / shared config / IRSA).
 
 ### Dashboard whitelabel (v0.11.10+)
 
-The embedded `/workflow` dashboard can be rebranded per-deployment via six
-optional env vars. Every knob defaults to assay's built-in identity so an
-unset env keeps the standalone experience unchanged. Intended for platform
-teams who front assay inside their own admin UI and want the dashboard to
-read as part of that product.
+The embedded `/workflow` dashboard can be rebranded per-deployment via six optional env vars. Every
+knob defaults to assay's built-in identity so an unset env keeps the standalone experience
+unchanged. Intended for platform teams who front assay inside their own admin UI and want the
+dashboard to read as part of that product.
 
-| Env var                         | Default                    | Meaning                                                         |
-| ------------------------------- | -------------------------- | --------------------------------------------------------------- |
-| `ASSAY_WHITELABEL_NAME`         | `Assay`                    | Sidebar header text                                             |
-| `ASSAY_WHITELABEL_LOGO_URL`     | (unset, no image)          | Image URL rendered before the brand text                        |
-| `ASSAY_WHITELABEL_PAGE_TITLE`   | `Assay Workflow Dashboard` | Browser tab title                                               |
-| `ASSAY_WHITELABEL_PARENT_URL`   | (unset, link hidden)       | If set, adds a back-link in the sidebar footer to the parent app |
-| `ASSAY_WHITELABEL_PARENT_NAME`  | `Back`                     | Label for the back-link                                         |
-| `ASSAY_WHITELABEL_API_DOCS_URL` | `/api/v1/engine/workflow/docs`             | Override or hide the API Docs sidebar link                      |
-| `ASSAY_WHITELABEL_CSS_URL`      | (unset, no extra sheet)    | Extra stylesheet loaded after assay's own CSS                   |
-| `ASSAY_WHITELABEL_SUBTITLE`     | (unset, no subtitle)       | Small muted line rendered under the brand name                  |
-| `ASSAY_WHITELABEL_MARK`         | First char of `NAME` (uppercased) | Glyph in the always-visible brand badge square           |
-| `ASSAY_WHITELABEL_FAVICON_URL`  | Built-in SVG               | Browser-tab icon URL (v0.11.12+)                                |
-| `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | `main`                | Namespace the dashboard opens on (v0.11.12+)                    |
+| Env var                              | Default                           | Meaning                                                          |
+| ------------------------------------ | --------------------------------- | ---------------------------------------------------------------- |
+| `ASSAY_WHITELABEL_NAME`              | `Assay`                           | Sidebar header text                                              |
+| `ASSAY_WHITELABEL_LOGO_URL`          | (unset, no image)                 | Image URL rendered before the brand text                         |
+| `ASSAY_WHITELABEL_PAGE_TITLE`        | `Assay Workflow Dashboard`        | Browser tab title                                                |
+| `ASSAY_WHITELABEL_PARENT_URL`        | (unset, link hidden)              | If set, adds a back-link in the sidebar footer to the parent app |
+| `ASSAY_WHITELABEL_PARENT_NAME`       | `Back`                            | Label for the back-link                                          |
+| `ASSAY_WHITELABEL_API_DOCS_URL`      | `/api/v1/engine/workflow/docs`    | Override or hide the API Docs sidebar link                       |
+| `ASSAY_WHITELABEL_CSS_URL`           | (unset, no extra sheet)           | Extra stylesheet loaded after assay's own CSS                    |
+| `ASSAY_WHITELABEL_SUBTITLE`          | (unset, no subtitle)              | Small muted line rendered under the brand name                   |
+| `ASSAY_WHITELABEL_MARK`              | First char of `NAME` (uppercased) | Glyph in the always-visible brand badge square                   |
+| `ASSAY_WHITELABEL_FAVICON_URL`       | Built-in SVG                      | Browser-tab icon URL (v0.11.12+)                                 |
+| `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | `main`                            | Namespace the dashboard opens on (v0.11.12+)                     |
 
-`ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link entirely.
-Any other value redirects the link to that URL. Setting the variable
-explicitly to empty is distinct from leaving it unset — unset keeps the
-default `/api/v1/engine/workflow/docs` link, empty hides it.
+`ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link entirely. Any other value redirects
+the link to that URL. Setting the variable explicitly to empty is distinct from leaving it unset —
+unset keeps the default `/api/v1/engine/workflow/docs` link, empty hides it.
 
-**Theming via CSS custom properties.** Every colour, radius, and shadow
-on the dashboard is a CSS variable on `:root`. An extra stylesheet
-loaded after assay's own CSS can re-declare any of them without
-forking. The full token list:
+**Theming via CSS custom properties.** Every colour, radius, and shadow on the dashboard is a CSS
+variable on `:root`. An extra stylesheet loaded after assay's own CSS can re-declare any of them
+without forking. The full token list:
 
 ```
 --bg          --surface      --surface-hover  --border
@@ -117,8 +112,7 @@ forking. The full token list:
 --shadow      --code-bg
 ```
 
-Minimal example — re-skin the dashboard to match your host app's
-primary colour:
+Minimal example — re-skin the dashboard to match your host app's primary colour:
 
 ```css
 /* served at /static/my-theme.css by your host app */
@@ -139,17 +133,15 @@ Then point assay at it:
   value: "/static/my-theme.css"
 ```
 
-Operators can also override any specific selector in the same file —
-source-order specificity ensures the extra sheet wins. The URL is
-loaded as a plain `<link rel="stylesheet">` at the end of `<head>`; an
-asset-version query-string is appended automatically so redeploys
-invalidate browser caches.
+Operators can also override any specific selector in the same file — source-order specificity
+ensures the extra sheet wins. The URL is loaded as a plain `<link rel="stylesheet">` at the end of
+`<head>`; an asset-version query-string is appended automatically so redeploys invalidate browser
+caches.
 
-**Hosting the logo.** If assay is mounted on the same origin as the
-embedding app (e.g. behind a reverse proxy at `/workflow/*`), a
-path-absolute URL like `/static/my-logo.svg` loads from the host app
-with no CORS plumbing. For cross-origin setups, use a full `https://…`
-URL — `<img>` loads don't require CORS headers.
+**Hosting the logo.** If assay is mounted on the same origin as the embedding app (e.g. behind a
+reverse proxy at `/workflow/*`), a path-absolute URL like `/static/my-logo.svg` loads from the host
+app with no CORS plumbing. For cross-origin setups, use a full `https://…` URL — `<img>` loads don't
+require CORS headers.
 
 **Example (Kubernetes Deployment):**
 
@@ -166,18 +158,18 @@ env:
   - name: ASSAY_WHITELABEL_PARENT_NAME
     value: "Acme Console"
   - name: ASSAY_WHITELABEL_API_DOCS_URL
-    value: ""   # hide; docs are provided by the parent console
+    value: "" # hide; docs are provided by the parent console
 ```
 
 The engine serves:
 
-| Path                        | Purpose                                     |
-| --------------------------- | ------------------------------------------- |
+| Path                                        | Purpose                                     |
+| ------------------------------------------- | ------------------------------------------- |
 | `GET /api/v1/engine/workflow/health`        | Liveness probe                              |
 | `GET /api/v1/engine/workflow/version`       | `{ version, build_profile }` — CLI + UI use |
 | `GET /api/v1/engine/workflow/openapi.json`  | Full OpenAPI 3 spec (all ~30 endpoints)     |
 | `GET /api/v1/engine/workflow/docs`          | Interactive API docs (Scalar)               |
-| `GET /workflow/`            | Built-in dashboard (see "Dashboard" below)  |
+| `GET /workflow/`                            | Built-in dashboard (see "Dashboard" below)  |
 | `GET /api/v1/engine/workflow/events/stream` | SSE event stream                            |
 
 Full endpoint list in the OpenAPI spec — workflow lifecycle, state queries, events, children,
@@ -278,8 +270,8 @@ Two roles in one module: **worker** (register handlers and block polling for tas
 - `workflow.listen(opts)` → blocks — poll workflow + activity tasks on a queue
   - `opts.queue` (default `"default"`), `opts.identity`, `opts.max_concurrent_workflows` (10),
     `opts.max_concurrent_activities` (20)
-  - **v0.11.10:** `opts.namespace` (default `"main"`) scopes the worker. A worker registered
-    in one namespace is never dispatched tasks from a sibling namespace even if queue names collide.
+  - **v0.11.10:** `opts.namespace` (default `"main"`) scopes the worker. A worker registered in one
+    namespace is never dispatched tasks from a sibling namespace even if queue names collide.
 
 #### Management role (new in v0.11.3 — parity with REST)
 
@@ -316,18 +308,18 @@ the existing `workflow.start / signal / describe / cancel` behaviour.
 
 Inside `workflow.define(name, function(ctx, input) ... end)`:
 
-| Method                                          | Behaviour                                                                                                                                                              |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ctx:execute_activity(name, input, opts?)`      | Schedule an activity, block until complete, return result. Raises on final failure. `opts`: retry + timeout knobs (see below).                                         |
-| `ctx:execute_parallel(activities)`              | **v0.11.3.** Schedule N activities concurrently, return results in input order. Raises if any fail. Handler resumes only when all have terminal events.                |
-| `ctx:sleep(seconds)`                            | Durable timer. Survives worker bouncing; another worker resumes when due.                                                                                              |
+| Method                                          | Behaviour                                                                                                                                                                                                                                                            |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ctx:execute_activity(name, input, opts?)`      | Schedule an activity, block until complete, return result. Raises on final failure. `opts`: retry + timeout knobs (see below).                                                                                                                                       |
+| `ctx:execute_parallel(activities)`              | **v0.11.3.** Schedule N activities concurrently, return results in input order. Raises if any fail. Handler resumes only when all have terminal events.                                                                                                              |
+| `ctx:sleep(seconds)`                            | Durable timer. Survives worker bouncing; another worker resumes when due.                                                                                                                                                                                            |
 | `ctx:wait_for_signal(name, opts?)` → payload    | Block until a matching signal arrives. Payload is the signal's JSON value (or nil if signaled with no payload). Multiple waits consume in order. **v0.11.9:** `opts.timeout = seconds` bounds the wait; returns `nil` if the timer fires before any matching signal. |
-| `ctx:start_child_workflow(workflow_type, opts)` | Start a child, block until it completes. `opts.workflow_id` is required and **must be deterministic** (same id every replay).                                          |
-| `ctx:side_effect(name, fn)`                     | Run a non-deterministic op exactly once. Value is cached in history; all replays return the cached value.                                                              |
-| `ctx:register_query(name, fn)`                  | **v0.11.3.** Expose live workflow state to external callers via `GET /workflows/{id}/state[/{name}]`. Handler runs on every replay; result is persisted as a snapshot. |
-| `ctx:upsert_search_attributes(patch)`           | **v0.11.3.** Merge a table into the workflow's `search_attributes` so callers can filter on it via `workflow.list({ search_attrs = ... })`.                            |
-| `ctx:continue_as_new(input)`                    | **v0.11.3.** Close this run and start a fresh one with empty history (same type / namespace / queue). Standard pattern for unbounded-loop workflows.                   |
-| `ctx:cancel(reason?)`                           | **v0.11.11.** Terminate this workflow with engine status `CANCELLED`. Use when the handler itself decides to stop early (human rejected, preconditions failed). Distinct from an externally-requested cancel; same terminal state. |
+| `ctx:start_child_workflow(workflow_type, opts)` | Start a child, block until it completes. `opts.workflow_id` is required and **must be deterministic** (same id every replay).                                                                                                                                        |
+| `ctx:side_effect(name, fn)`                     | Run a non-deterministic op exactly once. Value is cached in history; all replays return the cached value.                                                                                                                                                            |
+| `ctx:register_query(name, fn)`                  | **v0.11.3.** Expose live workflow state to external callers via `GET /workflows/{id}/state[/{name}]`. Handler runs on every replay; result is persisted as a snapshot.                                                                                               |
+| `ctx:upsert_search_attributes(patch)`           | **v0.11.3.** Merge a table into the workflow's `search_attributes` so callers can filter on it via `workflow.list({ search_attrs = ... })`.                                                                                                                          |
+| `ctx:continue_as_new(input)`                    | **v0.11.3.** Close this run and start a fresh one with empty history (same type / namespace / queue). Standard pattern for unbounded-loop workflows.                                                                                                                 |
+| `ctx:cancel(reason?)`                           | **v0.11.11.** Terminate this workflow with engine status `CANCELLED`. Use when the handler itself decides to stop early (human rejected, preconditions failed). Distinct from an externally-requested cancel; same terminal state.                                   |
 
 `opts` on `execute_activity` / `execute_parallel`:
 `{ task_queue?, max_attempts?, initial_interval_secs?, backoff_coefficient?, start_to_close_secs?,
@@ -424,20 +416,20 @@ AND-join; unchanged keys are preserved across upserts.
 | Queues    | Pending + running per queue                         | —                                                                                 |
 | Settings  | Engine version, build profile, namespaces, API docs | Namespace create / delete                                                         |
 
-Status-bar footer always shows the engine version (fetched from `/api/v1/engine/workflow/version`). Live list
-updates via SSE. Cache-busted asset URLs per startup.
+Status-bar footer always shows the engine version (fetched from `/api/v1/engine/workflow/version`).
+Live list updates via SSE. Cache-busted asset URLs per startup.
 
 ### Steps tab convention (v0.12.0+)
 
 Any workflow that exposes a `pipeline_state` query handler returning a `steps[]` array gets an
 automatic **Steps** tab in the dashboard's detail view. The tab is added at the front and
-default-selected when present, hidden otherwise. No new stdlib API — the convention is just a
-shape the dashboard recognises.
+default-selected when present, hidden otherwise. No new stdlib API — the convention is just a shape
+the dashboard recognises.
 
-The query name stays `pipeline_state` (for back-compat and because "pipeline state" reads
-naturally as "the current state of the run's sequence of operations") but the tab label and
-schema field both use "steps" — the neutral term that works for CI/CD, ETL, approval flows, and
-long-running background jobs alike.
+The query name stays `pipeline_state` (for back-compat and because "pipeline state" reads naturally
+as "the current state of the run's sequence of operations") but the tab label and schema field both
+use "steps" — the neutral term that works for CI/CD, ETL, approval flows, and long-running
+background jobs alike.
 
 ```lua
 ctx:register_query("pipeline_state", function()
@@ -460,34 +452,34 @@ ctx:register_query("pipeline_state", function()
 end)
 ```
 
-**Canonical step statuses.** The dashboard maps these to glyphs and colours; an unknown status
-falls back to `waiting` for the visual but the literal text is shown under the circle. Keep your
-workflows on this list so cross-app glanceability holds.
+**Canonical step statuses.** The dashboard maps these to glyphs and colours; an unknown status falls
+back to `waiting` for the visual but the literal text is shown under the circle. Keep your workflows
+on this list so cross-app glanceability holds.
 
-| Status      | Glyph | Meaning                                                        |
-| ----------- | ----- | -------------------------------------------------------------- |
-| `waiting`   | `○`   | Step has not started yet                                       |
-| `running`   | `⟳`   | Step is in progress                                            |
-| `done`      | `✓`   | Step completed successfully                                    |
-| `failed`    | `✕`   | Step terminated with an error                                  |
-| `cancelled` | `⊘`   | Step actively got cancelled (e.g. an approval was rejected)    |
-| `skipped`   | `·`   | Step never ran because the workflow ended before reaching it   |
+| Status      | Glyph | Meaning                                                      |
+| ----------- | ----- | ------------------------------------------------------------ |
+| `waiting`   | `○`   | Step has not started yet                                     |
+| `running`   | `⟳`   | Step is in progress                                          |
+| `done`      | `✓`   | Step completed successfully                                  |
+| `failed`    | `✕`   | Step terminated with an error                                |
+| `cancelled` | `⊘`   | Step actively got cancelled (e.g. an approval was rejected)  |
+| `skipped`   | `·`   | Step never ran because the workflow ended before reaching it |
 
-The distinction between `cancelled` and `skipped` matters: a workflow that gets rejected at an approval
-gate has *one* cancelled step (the approval itself) and N skipped steps after it. Rendering them
-identically would mis-suggest that the engine actively cancelled five things; in reality four of them
-never ran. Authors should use `skipped` for the never-ran case.
+The distinction between `cancelled` and `skipped` matters: a workflow that gets rejected at an
+approval gate has _one_ cancelled step (the approval itself) and N skipped steps after it. Rendering
+them identically would mis-suggest that the engine actively cancelled five things; in reality four
+of them never ran. Authors should use `skipped` for the never-ran case.
 
-> **Naming.** The schema field is `steps`, not `stages`. CI/CD operators will still call them
-> stages colloquially — and that's fine — but the field name stays neutral so non-CI/CD consumers
-> (ETL pipelines, approval flows, long-running background jobs) can adopt the convention without
-> the framing feeling forced.
+> **Naming.** The schema field is `steps`, not `stages`. CI/CD operators will still call them stages
+> colloquially — and that's fine — but the field name stays neutral so non-CI/CD consumers (ETL
+> pipelines, approval flows, long-running background jobs) can adopt the convention without the
+> framing feeling forced.
 
 **Live tail.** While the tab is open and the workflow is `RUNNING`, the dashboard polls
 `GET /workflows/{id}/state/pipeline_state` every 1s and diff-applies changes to the existing DOM:
-circles + connectors update in place, log entries append at the bottom. A scroll-lock toggle
-freezes auto-scroll for operators reading mid-log. Polling stops on tab switch, panel close, or
-when the run reaches a terminal status.
+circles + connectors update in place, log entries append at the bottom. A scroll-lock toggle freezes
+auto-scroll for operators reading mid-log. Polling stops on tab switch, panel close, or when the run
+reaches a terminal status.
 
 **Step actions.** Each step may include an `actions = { "approve", "reject", … }` array. The
 dashboard renders one button per action under the step's circle. A click POSTs a `step_action`
@@ -518,17 +510,17 @@ omitting it means the entry is always visible regardless of which step is select
 
 ### Architectural boundary — engine vs consumer
 
-The Steps tab convention is the first concrete test of a rule that holds across the assay
-codebase: the engine and its built-in dashboard stay **domain-agnostic**, and consumers
-(applications using the engine) own everything **domain-specific**.
+The Steps tab convention is the first concrete test of a rule that holds across the assay codebase:
+the engine and its built-in dashboard stay **domain-agnostic**, and consumers (applications using
+the engine) own everything **domain-specific**.
 
-| In **assay** (generic, every consumer benefits) | In the **consumer** (domain logic) |
-| ----------------------------------------------- | ---------------------------------- |
-| Steps tab + circles + connectors                | Workflow definitions that *write* the `pipeline_state` shape |
+| In **assay** (generic, every consumer benefits) | In the **consumer** (domain logic)                                           |
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| Steps tab + circles + connectors                | Workflow definitions that _write_ the `pipeline_state` shape                 |
 | Live snapshot polling + diff-apply              | Activities that perform the actual side effects (deploys, retags, approvals) |
-| `step_action` signal routing                    | Workflow handlers that interpret the actions |
-| Whitelabel / favicon / CSS-override             | UI brand details specific to the deployment |
-| Namespace / queue / worker views                | RBAC, audit, business rules around who may signal what |
+| `step_action` signal routing                    | Workflow handlers that interpret the actions                                 |
+| Whitelabel / favicon / CSS-override             | UI brand details specific to the deployment                                  |
+| Namespace / queue / worker views                | RBAC, audit, business rules around who may signal what                       |
 
 A new feature lands in assay if and only if every consumer would benefit from it. Anything that
 encodes domain meaning (what "approve" means, which environments exist, how a tag is computed)
@@ -602,7 +594,7 @@ assay workflow wait deploy-1234 --timeout 300   # exit 0 on COMPLETED, 1 on fail
 - The cron crate requires **6- or 7-field** expressions. The common 5-field form fails to parse.
 - The engine is also publishable as a standalone Rust crate (`assay-workflow`) for embedding in
   non-Lua Rust apps. The CLI injects its own `CARGO_PKG_VERSION` via
-  `assay_workflow::api::serve_with_version` so `/api/v1/engine/workflow/version` reflects the user-facing binary
-  version, not the internal crate version.
+  `assay_workflow::api::serve_with_version` so `/api/v1/engine/workflow/version` reflects the
+  user-facing binary version, not the internal crate version.
 - S3 archival is behind the `s3-archival` cargo feature (default off) and no-op at runtime unless
   `ASSAY_ARCHIVE_S3_BUCKET` is set.

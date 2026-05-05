@@ -35,9 +35,7 @@ pub async fn jwks_handler(State(ctx): State<AuthCtx>) -> Json<Value> {
 /// JSON in a row) are surfaced as a single error so the handler can
 /// degrade gracefully — an empty key list is preferable to a 500 in
 /// most operational scenarios.
-pub async fn load_public_jwks(
-    provider: &super::OidcProviderConfig,
-) -> anyhow::Result<Vec<Value>> {
+pub async fn load_public_jwks(provider: &super::OidcProviderConfig) -> anyhow::Result<Vec<Value>> {
     match &provider.jwks_source {
         #[cfg(feature = "backend-postgres")]
         super::JwksSource::Postgres(pool) => load_pg(pool).await,

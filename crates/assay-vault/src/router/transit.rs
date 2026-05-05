@@ -31,10 +31,7 @@ where
     AdminApiKeys: FromRef<S>,
 {
     Router::new()
-        .route(
-            "/transit/keys/{name}",
-            post(create_key::<S>),
-        )
+        .route("/transit/keys/{name}", post(create_key::<S>))
         .route("/transit/keys", get(list_keys::<S>))
         .route("/transit/keys/{name}/rotate", post(rotate::<S>))
         .route("/transit/encrypt/{name}", post(encrypt::<S>))

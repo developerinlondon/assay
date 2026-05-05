@@ -1,7 +1,7 @@
 //! Confirms that registering a FileSource on the Lua VM redirects
 //! fs.read / fs.read_bytes through it instead of hitting disk.
 
-use assay::lua::file_source::{set_file_source, FileSource};
+use assay::lua::file_source::{FileSource, set_file_source};
 use std::sync::Arc;
 
 struct Fixture(Vec<(String, Vec<u8>)>);
@@ -21,9 +21,10 @@ fn fs_read_consults_registered_source() {
     // pieces irrelevant to fs.read (require loader, sandbox, etc.).
     assay::lua::builtins::core::register_fs(&lua).unwrap();
 
-    let src: Arc<dyn FileSource> = Arc::new(Fixture(vec![
-        ("virtual/hello.txt".into(), b"hi from embed".to_vec()),
-    ]));
+    let src: Arc<dyn FileSource> = Arc::new(Fixture(vec![(
+        "virtual/hello.txt".into(),
+        b"hi from embed".to_vec(),
+    )]));
     set_file_source(&lua, src);
 
     let result: String = lua

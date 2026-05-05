@@ -96,7 +96,11 @@ fn is_root() -> bool {
 /// When running non-root, prepend `sudo -n` so the operator's NOPASSWD
 /// sudoers entry handles polkit elevation. machinectl pull-tar / importctl
 /// would otherwise return "Interactive authentication required".
-async fn run_machinectl(args: Vec<&str>, timeout: std::time::Duration, op_label: &str) -> mlua::Result<(i32, Vec<u8>, Vec<u8>)> {
+async fn run_machinectl(
+    args: Vec<&str>,
+    timeout: std::time::Duration,
+    op_label: &str,
+) -> mlua::Result<(i32, Vec<u8>, Vec<u8>)> {
     let mut cmd = if is_root() {
         let mut c = tokio::process::Command::new("machinectl");
         c.args(&args);
@@ -112,9 +116,9 @@ async fn run_machinectl(args: Vec<&str>, timeout: std::time::Duration, op_label:
     cmd.stderr(std::process::Stdio::piped());
     cmd.kill_on_drop(true);
 
-    let mut child = cmd.spawn().map_err(|e| {
-        mlua::Error::runtime(format!("machinectl.{op_label}: spawn: {e}"))
-    })?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| mlua::Error::runtime(format!("machinectl.{op_label}: spawn: {e}")))?;
 
     let stdout_h = child.stdout.take();
     let stderr_h = child.stderr.take();

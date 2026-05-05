@@ -145,12 +145,18 @@ impl SqliteEngineSchema {
         );
         // Tuple shape of one `engine.modules` row as fetched from SQLite
         // (booleans stored as INTEGER, JSONB-equivalent as TEXT).
-        type SqliteModuleRow = (String, i64, Option<f64>, Option<String>, Option<String>, String);
-        let rows: Vec<SqliteModuleRow> =
-            sqlx::query_as(&sql)
-                .fetch_all(&self.pool)
-                .await
-                .context("list engine.modules")?;
+        type SqliteModuleRow = (
+            String,
+            i64,
+            Option<f64>,
+            Option<String>,
+            Option<String>,
+            String,
+        );
+        let rows: Vec<SqliteModuleRow> = sqlx::query_as(&sql)
+            .fetch_all(&self.pool)
+            .await
+            .context("list engine.modules")?;
         Ok(rows
             .into_iter()
             .map(
@@ -365,13 +371,15 @@ impl SqliteEngineSchema {
             .context("list engine.instances")?;
         Ok(rows
             .into_iter()
-            .map(|(id, started_at, last_heartbeat, namespaces, version)| InstanceRecord {
-                id,
-                started_at,
-                last_heartbeat,
-                namespaces: serde_json::from_str(&namespaces).unwrap_or_default(),
-                version,
-            })
+            .map(
+                |(id, started_at, last_heartbeat, namespaces, version)| InstanceRecord {
+                    id,
+                    started_at,
+                    last_heartbeat,
+                    namespaces: serde_json::from_str(&namespaces).unwrap_or_default(),
+                    version,
+                },
+            )
             .collect())
     }
 
@@ -438,7 +446,10 @@ mod tests {
         schema.migrate().await.unwrap();
 
         // Modules round-trip
-        schema.upsert_module("workflow", Some("0.2.2"), true).await.unwrap();
+        schema
+            .upsert_module("workflow", Some("0.2.2"), true)
+            .await
+            .unwrap();
         let mods = schema.list_modules().await.unwrap();
         assert_eq!(mods.len(), 1);
         assert_eq!(mods[0].name, "workflow");
@@ -447,7 +458,11 @@ mod tests {
 
         // Audit
         schema
-            .audit(Some("op-1"), "module_enabled", &serde_json::json!({"name":"workflow"}))
+            .audit(
+                Some("op-1"),
+                "module_enabled",
+                &serde_json::json!({"name":"workflow"}),
+            )
             .await
             .unwrap();
 

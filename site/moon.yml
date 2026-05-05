@@ -4,9 +4,9 @@
 # main; this `build` task gives `moon ci` a way to validate the site
 # builds clean on every PR that touches its inputs.
 
-language: 'lua'
-layer: 'application'
-stack: 'frontend'
+language: "lua"
+layer: "application"
+stack: "frontend"
 
 tasks:
   build:
@@ -15,16 +15,16 @@ tasks:
     # the repo root — not from site/. Wrap in a shell to cd up first.
     command: 'bash -c "cd .. && ./target/release/assay site/build.lua"'
     deps:
-      - 'assay-lua:build'
+      - "assay-lua:build"
     inputs:
-      - '**/*'
-      - '/docs/**/*'
-      - '/stdlib/**/*'
-      - '/CHANGELOG.md'
-      - '/llms.txt'
-      - '/src/lua/builtins/mod.rs'
+      - "**/*"
+      - "/docs/**/*"
+      - "/stdlib/**/*"
+      - "/CHANGELOG.md"
+      - "/llms.txt"
+      - "/src/lua/builtins/mod.rs"
     outputs:
-      - '/build/site/**/*'
+      - "/build/site/**/*"
     options:
       cache: true
       runInCI: true

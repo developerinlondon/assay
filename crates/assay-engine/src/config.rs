@@ -395,8 +395,7 @@ mod tests {
 
     #[test]
     fn ignores_default_when_var_set() {
-        let out =
-            expand_env_vars("${FOO:-fallback}", lookup_from(&[("FOO", "actual")])).unwrap();
+        let out = expand_env_vars("${FOO:-fallback}", lookup_from(&[("FOO", "actual")])).unwrap();
         assert_eq!(out, "actual");
     }
 

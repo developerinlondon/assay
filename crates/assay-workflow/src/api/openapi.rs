@@ -1,7 +1,7 @@
-use axum::http::{header, StatusCode};
+use axum::Router;
+use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse};
 use axum::routing::get;
-use axum::Router;
 use std::sync::Arc;
 use utoipa::OpenApi;
 

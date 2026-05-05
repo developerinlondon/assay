@@ -22,7 +22,7 @@ pub mod kek_rotate;
 #[cfg(any(feature = "backend-postgres", feature = "backend-sqlite"))]
 pub mod kek_store;
 
-pub use aead::{decrypt, encrypt, random_dek, random_nonce, NONCE_LEN};
+pub use aead::{NONCE_LEN, decrypt, encrypt, random_dek, random_nonce};
 pub use kek::KekHandle;
 pub use seal_state::{SealState, SealStatus};
 pub use sealing::{KmsSeal, SealStore, SealingMethod};

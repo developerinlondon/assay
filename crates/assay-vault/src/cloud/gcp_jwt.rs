@@ -60,10 +60,7 @@ pub struct AccessToken {
 /// Acquire an OAuth2 access token for the given scope. The returned
 /// token is valid for `expires_at` seconds (typically 3600).
 #[cfg(feature = "vault-sealing-kms")]
-pub async fn fetch_access_token(
-    sa: &ServiceAccount,
-    scope: &str,
-) -> Result<AccessToken> {
+pub async fn fetch_access_token(sa: &ServiceAccount, scope: &str) -> Result<AccessToken> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

@@ -17,7 +17,7 @@
 
 use anyhow::Context;
 
-use crate::crypto::aead::{random_dek, KEY_LEN};
+use crate::crypto::aead::{KEY_LEN, random_dek};
 use crate::crypto::kek::KekHandle;
 
 /// Sealing method — the column value in `vault.kek_metadata`.
@@ -40,7 +40,7 @@ pub enum ActiveKek {
 }
 
 #[cfg(feature = "vault-sealing-shamir")]
-use crate::crypto::sealing::shamir::{split_kek, Share};
+use crate::crypto::sealing::shamir::{Share, split_kek};
 
 /// Load the active KEK or generate one on first boot.
 ///
@@ -186,12 +186,12 @@ pub async fn load_active_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<Optio
             }))
         }
         METHOD_SHAMIR => {
-            let threshold = threshold.ok_or_else(|| {
-                anyhow::anyhow!("shamir-sealed kid={kid} missing share_threshold")
-            })? as u8;
-            let shares_count = shares_count.ok_or_else(|| {
-                anyhow::anyhow!("shamir-sealed kid={kid} missing share_count")
-            })? as u8;
+            let threshold = threshold
+                .ok_or_else(|| anyhow::anyhow!("shamir-sealed kid={kid} missing share_threshold"))?
+                as u8;
+            let shares_count = shares_count
+                .ok_or_else(|| anyhow::anyhow!("shamir-sealed kid={kid} missing share_count"))?
+                as u8;
             Ok(Some(ActiveKek::Shamir {
                 kid,
                 threshold,
@@ -231,12 +231,12 @@ pub async fn load_active_postgres(pool: &sqlx::PgPool) -> anyhow::Result<Option<
             }))
         }
         METHOD_SHAMIR => {
-            let threshold = threshold.ok_or_else(|| {
-                anyhow::anyhow!("shamir-sealed kid={kid} missing share_threshold")
-            })? as u8;
-            let shares_count = shares_count.ok_or_else(|| {
-                anyhow::anyhow!("shamir-sealed kid={kid} missing share_count")
-            })? as u8;
+            let threshold = threshold
+                .ok_or_else(|| anyhow::anyhow!("shamir-sealed kid={kid} missing share_threshold"))?
+                as u8;
+            let shares_count = shares_count
+                .ok_or_else(|| anyhow::anyhow!("shamir-sealed kid={kid} missing share_count"))?
+                as u8;
             Ok(Some(ActiveKek::Shamir {
                 kid,
                 threshold,
@@ -276,8 +276,8 @@ pub async fn init_shamir_sqlite(
     }
     let key = random_dek();
     let kid = content_addressed_kid(&key);
-    let shares = split_kek(&key, threshold, shares_count)
-        .map_err(|e| anyhow::anyhow!("split_kek: {e}"))?;
+    let shares =
+        split_kek(&key, threshold, shares_count).map_err(|e| anyhow::anyhow!("split_kek: {e}"))?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -315,8 +315,8 @@ pub async fn init_shamir_postgres(
     }
     let key = random_dek();
     let kid = content_addressed_kid(&key);
-    let shares = split_kek(&key, threshold, shares_count)
-        .map_err(|e| anyhow::anyhow!("split_kek: {e}"))?;
+    let shares =
+        split_kek(&key, threshold, shares_count).map_err(|e| anyhow::anyhow!("split_kek: {e}"))?;
     sqlx::query(
         "INSERT INTO vault.kek_metadata
             (kid, sealing_method, sealed, sealed_blob, share_threshold, share_count, sealed_at, unsealed_at)
@@ -415,8 +415,8 @@ fn warn_first_boot_plaintext(kid: &str) {
 #[cfg(all(test, feature = "backend-sqlite"))]
 mod tests {
     use super::*;
-    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use sqlx::Executor;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use std::str::FromStr;
 
     async fn boot_pool() -> sqlx::SqlitePool {

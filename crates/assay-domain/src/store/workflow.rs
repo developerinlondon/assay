@@ -14,19 +14,11 @@ use crate::types::*;
 pub trait WorkflowStore: Send + Sync + 'static {
     // ── Namespaces ─────────────────────────────────────────
 
-    fn create_namespace(
-        &self,
-        name: &str,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    fn create_namespace(&self, name: &str) -> impl Future<Output = anyhow::Result<()>> + Send;
 
-    fn list_namespaces(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<Vec<NamespaceRecord>>> + Send;
+    fn list_namespaces(&self) -> impl Future<Output = anyhow::Result<Vec<NamespaceRecord>>> + Send;
 
-    fn delete_namespace(
-        &self,
-        name: &str,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+    fn delete_namespace(&self, name: &str) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
     fn get_namespace_stats(
         &self,
@@ -381,9 +373,7 @@ pub trait WorkflowStore: Send + Sync + 'static {
     ///
     /// - SQLite: always returns true (single-instance assumed)
     /// - Postgres: uses pg_try_advisory_lock (only one instance wins)
-    fn try_acquire_scheduler_lock(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+    fn try_acquire_scheduler_lock(&self) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
     // Push subscriptions are removed in v0.13.1 — the engine-events
     // outbox (`assay_domain::events::EngineEventBus`) is the

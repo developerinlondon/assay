@@ -215,11 +215,11 @@ fn random_token() -> String {
 
 // HTTP router — see `router()` below for the canonical route list.
 
+use axum::Router;
 use axum::extract::{FromRef, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{delete, get, post};
-use axum::Router;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -352,7 +352,12 @@ async fn passkey_register_start(
     };
     let uuid = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, body.user_id.as_bytes());
     match mgr
-        .start_registration(uuid, &body.user_name, &body.display_name, Some(&body.user_id))
+        .start_registration(
+            uuid,
+            &body.user_name,
+            &body.display_name,
+            Some(&body.user_id),
+        )
         .await
     {
         Ok((challenge, state)) => {
@@ -384,11 +389,10 @@ async fn passkey_register_finish(
     let Some(mgr) = ctx.passkeys.as_ref() else {
         return svc_unavailable("passkey manager not configured");
     };
-    let state: webauthn_rs::prelude::PasskeyRegistration =
-        match serde_json::from_str(&body.state) {
-            Ok(s) => s,
-            Err(e) => return bad_request(&format!("decode state: {e}")),
-        };
+    let state: webauthn_rs::prelude::PasskeyRegistration = match serde_json::from_str(&body.state) {
+        Ok(s) => s,
+        Err(e) => return bad_request(&format!("decode state: {e}")),
+    };
     let response: webauthn_rs::prelude::RegisterPublicKeyCredential =
         match serde_json::from_value(body.response) {
             Ok(r) => r,
@@ -463,11 +467,11 @@ async fn passkey_auth_finish(
     let Some(mgr) = ctx.passkeys.as_ref() else {
         return svc_unavailable("passkey manager not configured");
     };
-    let state: webauthn_rs::prelude::PasskeyAuthentication =
-        match serde_json::from_str(&body.state) {
-            Ok(s) => s,
-            Err(e) => return bad_request(&format!("decode state: {e}")),
-        };
+    let state: webauthn_rs::prelude::PasskeyAuthentication = match serde_json::from_str(&body.state)
+    {
+        Ok(s) => s,
+        Err(e) => return bad_request(&format!("decode state: {e}")),
+    };
     let response: webauthn_rs::prelude::PublicKeyCredential =
         match serde_json::from_value(body.response) {
             Ok(r) => r,
@@ -492,9 +496,10 @@ fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     for kv in raw.split(';') {
         let kv = kv.trim();
         if let Some((k, v)) = kv.split_once('=')
-            && k == name {
-                return Some(v.to_string());
-            }
+            && k == name
+        {
+            return Some(v.to_string());
+        }
     }
     None
 }
@@ -513,11 +518,7 @@ fn server_error(msg: &str) -> Response {
         .into_response()
 }
 fn svc_unavailable(msg: &str) -> Response {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({"error": msg})),
-    )
-        .into_response()
+    (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": msg}))).into_response()
 }
 
 #[cfg(test)]

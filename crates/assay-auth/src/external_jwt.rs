@@ -86,9 +86,7 @@ impl ExternalJwtIssuer {
         let jwks_uri = metadata
             .get("jwks_uri")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                Error::Oidc(format!("{discovery_url} missing `jwks_uri` field"))
-            })?
+            .ok_or_else(|| Error::Oidc(format!("{discovery_url} missing `jwks_uri` field")))?
             .to_string();
 
         let jwks = fetch_jwks(&client, &jwks_uri).await?;
@@ -118,8 +116,8 @@ impl ExternalJwtIssuer {
     /// Signature is verified against the cached JWKS, looked up by
     /// `kid` from the JWT header.
     pub fn verify<T: DeserializeOwned>(&self, token: &str) -> Result<jsonwebtoken::TokenData<T>> {
-        let header = decode_header(token)
-            .map_err(|e| Error::Oidc(format!("decode jwt header: {e}")))?;
+        let header =
+            decode_header(token).map_err(|e| Error::Oidc(format!("decode jwt header: {e}")))?;
         let kid = header
             .kid
             .as_ref()
@@ -197,8 +195,7 @@ async fn fetch_jwks(client: &reqwest::Client, uri: &str) -> Result<JwkSet> {
         .json()
         .await
         .map_err(|e| Error::Oidc(format!("parse jwks {uri}: {e}")))?;
-    serde_json::from_value(body)
-        .map_err(|e| Error::Oidc(format!("decode jwks {uri}: {e}")))
+    serde_json::from_value(body).map_err(|e| Error::Oidc(format!("decode jwks {uri}: {e}")))
 }
 
 /// Look up the verifier matching the token's `iss` claim and validate
@@ -322,7 +319,11 @@ mod tests {
         };
         let token = issue_test_token(secret, kid, &claims);
 
-        let v = verifier_for_tests(issuer, vec![aud.to_string()], hs256_jwks_with_kid(kid, secret));
+        let v = verifier_for_tests(
+            issuer,
+            vec![aud.to_string()],
+            hs256_jwks_with_kid(kid, secret),
+        );
         let out = v.verify::<TestClaims>(&token).unwrap();
         assert_eq!(out.claims, claims);
     }

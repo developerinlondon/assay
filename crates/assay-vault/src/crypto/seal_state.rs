@@ -119,11 +119,7 @@ impl SealState {
             method: g.method.clone(),
             sealed: g.handle.is_none(),
             kid: g.kid.clone(),
-            shares_progress: g
-                .accumulator
-                .as_ref()
-                .map(|a| a.len() as u8)
-                .unwrap_or(0),
+            shares_progress: g.accumulator.as_ref().map(|a| a.len() as u8).unwrap_or(0),
             share_threshold: g.share_threshold,
             share_count: g.share_count,
         }
@@ -141,7 +137,7 @@ impl SealState {
     /// Pass the raw share bytes the operator received from `init`.
     #[cfg(feature = "vault-sealing-shamir")]
     pub fn submit_shamir_share(&self, share_bytes: Vec<u8>) -> Result<SealStatus> {
-        use crate::crypto::sealing::shamir::{combine_shares, Share};
+        use crate::crypto::sealing::shamir::{Share, combine_shares};
 
         let mut g = self.inner.write();
         if g.handle.is_some() {
@@ -197,11 +193,7 @@ impl SealState {
             method: g.method.clone(),
             sealed: g.handle.is_none(),
             kid: g.kid.clone(),
-            shares_progress: g
-                .accumulator
-                .as_ref()
-                .map(|a| a.len() as u8)
-                .unwrap_or(0),
+            shares_progress: g.accumulator.as_ref().map(|a| a.len() as u8).unwrap_or(0),
             share_threshold: g.share_threshold,
             share_count: g.share_count,
         })
@@ -267,7 +259,7 @@ impl UnsealAccumulator {
 mod tests {
     use super::*;
     use crate::crypto::aead::random_dek;
-    use crate::crypto::sealing::shamir::{split_kek, Share};
+    use crate::crypto::sealing::shamir::{Share, split_kek};
 
     #[test]
     fn unsealed_round_trip() {
@@ -278,10 +270,7 @@ mod tests {
         let _h = s.require_unsealed().unwrap();
         s.seal().unwrap();
         assert!(s.status().sealed);
-        assert!(matches!(
-            s.require_unsealed(),
-            Err(VaultError::Sealed)
-        ));
+        assert!(matches!(s.require_unsealed(), Err(VaultError::Sealed)));
     }
 
     #[test]
@@ -300,7 +289,9 @@ mod tests {
         assert_eq!(s.status().shares_progress, 2);
 
         // Third share trips the threshold.
-        let st = s.submit_shamir_share(shares[2].as_bytes().to_vec()).unwrap();
+        let st = s
+            .submit_shamir_share(shares[2].as_bytes().to_vec())
+            .unwrap();
         assert!(!st.sealed, "threshold submission must unseal");
         // Reconstructed KEK matches the original — proven by wrapping
         // a known DEK on each side and comparing the unwrap result.
@@ -329,8 +320,10 @@ mod tests {
         let s = SealState::sealed_shamir(kid.clone(), 3, 5);
 
         // Two good shares.
-        s.submit_shamir_share(shares[0].as_bytes().to_vec()).unwrap();
-        s.submit_shamir_share(shares[1].as_bytes().to_vec()).unwrap();
+        s.submit_shamir_share(shares[0].as_bytes().to_vec())
+            .unwrap();
+        s.submit_shamir_share(shares[1].as_bytes().to_vec())
+            .unwrap();
         // Garbled third share — combine either fails outright or
         // reconstructs a bogus key whose kid doesn't match. Both paths
         // reset the accumulator and return an error.
@@ -347,8 +340,10 @@ mod tests {
         assert!(s.status().sealed);
         assert_eq!(s.status().shares_progress, 0);
         // A fresh ceremony with the real shares should succeed.
-        s.submit_shamir_share(shares[0].as_bytes().to_vec()).unwrap();
-        s.submit_shamir_share(shares[1].as_bytes().to_vec()).unwrap();
+        s.submit_shamir_share(shares[0].as_bytes().to_vec())
+            .unwrap();
+        s.submit_shamir_share(shares[1].as_bytes().to_vec())
+            .unwrap();
         let st = s
             .submit_shamir_share(shares[2].as_bytes().to_vec())
             .unwrap();

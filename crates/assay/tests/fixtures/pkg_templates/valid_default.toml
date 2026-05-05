@@ -1,5 +1,5 @@
 [template]
-id           = "default"
+id = "default"
 display_name = "Default"
-description  = "Standard managed-host packages (test fixture)"
-packages     = ["test-apt-only", "test-binary-only"]
+description = "Standard managed-host packages (test fixture)"
+packages = ["test-apt-only", "test-binary-only"]

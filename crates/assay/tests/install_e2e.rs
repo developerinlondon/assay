@@ -73,7 +73,7 @@ async fn full_install_flow_extracts_bin_and_lib_and_writes_lock() {
         ("VERSION", b"0.1.0\n"),
     ]);
     let lib_sha = sha(&lib_archive);
-    mount(&server, "/hostops.tar.gz", lib_archive).await;
+    mount(&server, "/sysops.tar.gz", lib_archive).await;
 
     let arch = std::env::consts::ARCH;
     let workspace = TempDir::new().unwrap();
@@ -90,8 +90,8 @@ async fn full_install_flow_extracts_bin_and_lib_and_writes_lock() {
                    source = "{server_uri}/engine.tar.gz" }},
             }},
             libs = {{
-                {{ name = "hostops", version = "0.1.0", sha256 = "{lib_sha}",
-                   source = "{server_uri}/hostops.tar.gz" }},
+                {{ name = "sysops", version = "0.1.0", sha256 = "{lib_sha}",
+                   source = "{server_uri}/sysops.tar.gz" }},
             }},
         }}"#,
         arch = arch,
@@ -118,12 +118,16 @@ async fn full_install_flow_extracts_bin_and_lib_and_writes_lock() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(&installed_bin).unwrap().permissions().mode() & 0o777;
+        let mode = std::fs::metadata(&installed_bin)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
         assert_eq!(mode, 0o755);
     }
 
     // Lib tree in place.
-    let lib_root = lib_dir.path().join("hostops");
+    let lib_root = lib_dir.path().join("sysops");
     assert!(lib_root.is_dir());
     assert_eq!(
         std::fs::read(lib_root.join("mount.lua")).unwrap(),
@@ -144,7 +148,7 @@ async fn full_install_flow_extracts_bin_and_lib_and_writes_lock() {
     assert!(
         cache_dir
             .path()
-            .join("assay-lib-hostops-0.1.0.tar.gz")
+            .join("assay-lib-sysops-0.1.0.tar.gz")
             .exists()
     );
 
@@ -157,11 +161,7 @@ async fn full_install_flow_extracts_bin_and_lib_and_writes_lock() {
     let exts: Table = lock.get("extensions").unwrap();
     let e1: Table = exts.get(1).unwrap();
     assert_eq!(e1.get::<String>("name").unwrap(), "assay-engine");
-    assert!(
-        e1.get::<String>("url")
-            .unwrap()
-            .ends_with("/engine.tar.gz")
-    );
+    assert!(e1.get::<String>("url").unwrap().ends_with("/engine.tar.gz"));
     let libs: Table = lock.get("libs").unwrap();
     let l1: Table = libs.get(1).unwrap();
     assert_eq!(l1.get::<String>("sha256").unwrap(), lib_sha);
@@ -201,7 +201,12 @@ async fn dry_run_does_not_write_anything() {
 
     // Nothing fetched, nothing extracted, no lock.
     assert!(server.received_requests().await.unwrap().is_empty());
-    assert!(std::fs::read_dir(cache_dir.path()).unwrap().next().is_none());
+    assert!(
+        std::fs::read_dir(cache_dir.path())
+            .unwrap()
+            .next()
+            .is_none()
+    );
     assert!(std::fs::read_dir(bin_dir.path()).unwrap().next().is_none());
     assert!(std::fs::read_dir(lib_dir.path()).unwrap().next().is_none());
     assert!(!workspace.path().join("Manifest.lock").exists());
@@ -261,7 +266,12 @@ async fn errors_propagate_when_one_dep_fails() {
     // The good dep's cache entry was preserved (so re-runs resume),
     // but no extraction happened (we abort on fetch failure before
     // extract).
-    assert!(cache.path().join("good-bin-1-".to_string() + arch + ".tar.gz").exists());
+    assert!(
+        cache
+            .path()
+            .join("good-bin-1-".to_string() + arch + ".tar.gz")
+            .exists()
+    );
     assert!(!bin.path().join("good-bin").exists());
     assert!(!workspace.path().join("Manifest.lock").exists());
 }

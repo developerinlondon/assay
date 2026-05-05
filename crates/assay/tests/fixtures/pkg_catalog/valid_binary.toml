@@ -1,14 +1,14 @@
 [package]
-id           = "test-binary-only"
+id = "test-binary-only"
 display_name = "Test Binary-Only Package"
-description  = "Binary method only fixture (rustic-style)"
-homepage     = "https://example.com"
-methods      = ["binary"]
+description = "Binary method only fixture (rustic-style)"
+homepage = "https://example.com"
+methods = ["binary"]
 
 [package.binary]
-release_api    = "https://api.example.com/releases/latest"
-asset_pattern  = "test-{tag}-{arch}.tar.gz"
-sha256_source  = "asset"
+release_api = "https://api.example.com/releases/latest"
+asset_pattern = "test-{tag}-{arch}.tar.gz"
+sha256_source = "asset"
 archive_member = "test-binary"
-install_path   = "/usr/local/bin/test-binary"
-mode           = "0755"
+install_path = "/usr/local/bin/test-binary"
+mode = "0755"

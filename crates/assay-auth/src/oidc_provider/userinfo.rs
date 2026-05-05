@@ -56,14 +56,16 @@ impl AccessTokenClaims {
 pub fn build_userinfo(user: &User, scopes: &[String]) -> Value {
     let mut out = json!({ "sub": user.id });
     if scopes.iter().any(|s| s == "email")
-        && let Some(email) = &user.email {
-            out["email"] = Value::String(email.clone());
-            out["email_verified"] = Value::Bool(user.email_verified);
-        }
+        && let Some(email) = &user.email
+    {
+        out["email"] = Value::String(email.clone());
+        out["email_verified"] = Value::Bool(user.email_verified);
+    }
     if scopes.iter().any(|s| s == "profile")
-        && let Some(name) = &user.display_name {
-            out["name"] = Value::String(name.clone());
-        }
+        && let Some(name) = &user.display_name
+    {
+        out["name"] = Value::String(name.clone());
+    }
     out
 }
 

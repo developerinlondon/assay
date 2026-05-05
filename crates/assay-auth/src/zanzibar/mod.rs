@@ -26,11 +26,11 @@ pub mod sqlite;
 pub mod store;
 pub mod types;
 
-pub use schema::{parse_schema, ParseError};
+pub use schema::{ParseError, parse_schema};
 pub use store::ZanzibarStore;
 pub use types::{
-    CheckResult, Consistency, NamespaceSchema, ObjectRef, PermissionExpr, RelationDef,
-    RelationKind, SubjectRef, TreeOp, Tuple, TypeRef, UsersetTree, MAX_DEPTH,
+    CheckResult, Consistency, MAX_DEPTH, NamespaceSchema, ObjectRef, PermissionExpr, RelationDef,
+    RelationKind, SubjectRef, TreeOp, Tuple, TypeRef, UsersetTree,
 };
 
 #[cfg(feature = "backend-postgres")]

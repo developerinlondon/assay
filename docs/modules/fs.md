@@ -33,17 +33,15 @@ Filesystem operations. No `require()` needed.
 ### Line Iteration & In-Place Editing
 
 - `fs.lines(path)` → iterator — Streaming line reader. Designed for
-  `for line in fs.lines(path) do … end`. Reads from a buffered reader
-  so multi-GB files never land in memory; each line is returned with
-  the trailing `\n` (or `\r\n`) stripped. Equivalent to `while read
+  `for line in fs.lines(path) do … end`. Reads from a buffered reader so multi-GB files never land
+  in memory; each line is returned with the trailing `\n` (or `\r\n`) stripped. Equivalent to
+  `while read
   line; do …; done < file` in bash.
-- `fs.sub_in_file(path, pattern, repl)` → count — In-place
-  search-and-replace; equivalent to `sed -i 's/pattern/repl/g' path`
-  but portable (no BSD-vs-GNU `sed -i` split). `pattern` uses Lua
-  patterns (same as `string.gsub`); `repl` can be a replacement
-  string with `%0`-`%9` backreferences OR a function per
-  `string.gsub`. Writes only when at least one match is found, so
-  repeated calls on an already-substituted file are no-ops on disk.
+- `fs.sub_in_file(path, pattern, repl)` → count — In-place search-and-replace; equivalent to
+  `sed -i 's/pattern/repl/g' path` but portable (no BSD-vs-GNU `sed -i` split). `pattern` uses Lua
+  patterns (same as `string.gsub`); `repl` can be a replacement string with `%0`-`%9` backreferences
+  OR a function per `string.gsub`. Writes only when at least one match is found, so repeated calls
+  on an already-substituted file are no-ops on disk.
 
 ```lua
 -- grep-equivalent: count lines matching a pattern

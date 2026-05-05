@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use axum::Router;
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Redirect};
 use axum::routing::get;
 
+use crate::assets::INDEX_HTML;
 use crate::assets::{
     ACTIONS_JS, APP_JS, DETAIL_JS, FAVICON_SVG, MODAL_JS, QUEUES_JS, SCHEDULES_JS, SELECT_JS,
     SETTINGS_JS, STYLE_CSS, THEME_CSS, WORKERS_JS, WORKFLOWS_JS,
 };
 use crate::ctx::DashboardCtx;
-use crate::whitelabel::{render_index, WHITELABEL};
-use crate::assets::INDEX_HTML;
+use crate::whitelabel::{WHITELABEL, render_index};
 
 /// Build the axum router that serves the workflow dashboard assets.
 ///
@@ -58,7 +58,9 @@ fn asset(content_type: &'static str, body: &'static str) -> impl IntoResponse {
     )
 }
 
-async fn index(axum::extract::State(ctx): axum::extract::State<Arc<DashboardCtx>>) -> impl IntoResponse {
+async fn index(
+    axum::extract::State(ctx): axum::extract::State<Arc<DashboardCtx>>,
+) -> impl IntoResponse {
     let body = render_index(INDEX_HTML, ctx.asset_version.as_str(), &WHITELABEL);
     (
         StatusCode::OK,
@@ -74,16 +76,42 @@ async fn redirect_to_dashboard() -> Redirect {
     Redirect::permanent("/workflow/")
 }
 
-async fn theme_css() -> impl IntoResponse { asset("text/css", THEME_CSS) }
-async fn style_css() -> impl IntoResponse { asset("text/css", STYLE_CSS) }
-async fn app_js() -> impl IntoResponse { asset("application/javascript", APP_JS) }
-async fn workflows_js() -> impl IntoResponse { asset("application/javascript", WORKFLOWS_JS) }
-async fn detail_js() -> impl IntoResponse { asset("application/javascript", DETAIL_JS) }
-async fn schedules_js() -> impl IntoResponse { asset("application/javascript", SCHEDULES_JS) }
-async fn workers_js() -> impl IntoResponse { asset("application/javascript", WORKERS_JS) }
-async fn queues_js() -> impl IntoResponse { asset("application/javascript", QUEUES_JS) }
-async fn settings_js() -> impl IntoResponse { asset("application/javascript", SETTINGS_JS) }
-async fn modal_js() -> impl IntoResponse { asset("application/javascript", MODAL_JS) }
-async fn actions_js() -> impl IntoResponse { asset("application/javascript", ACTIONS_JS) }
-async fn select_js() -> impl IntoResponse { asset("application/javascript", SELECT_JS) }
-async fn favicon() -> impl IntoResponse { asset("image/svg+xml", FAVICON_SVG) }
+async fn theme_css() -> impl IntoResponse {
+    asset("text/css", THEME_CSS)
+}
+async fn style_css() -> impl IntoResponse {
+    asset("text/css", STYLE_CSS)
+}
+async fn app_js() -> impl IntoResponse {
+    asset("application/javascript", APP_JS)
+}
+async fn workflows_js() -> impl IntoResponse {
+    asset("application/javascript", WORKFLOWS_JS)
+}
+async fn detail_js() -> impl IntoResponse {
+    asset("application/javascript", DETAIL_JS)
+}
+async fn schedules_js() -> impl IntoResponse {
+    asset("application/javascript", SCHEDULES_JS)
+}
+async fn workers_js() -> impl IntoResponse {
+    asset("application/javascript", WORKERS_JS)
+}
+async fn queues_js() -> impl IntoResponse {
+    asset("application/javascript", QUEUES_JS)
+}
+async fn settings_js() -> impl IntoResponse {
+    asset("application/javascript", SETTINGS_JS)
+}
+async fn modal_js() -> impl IntoResponse {
+    asset("application/javascript", MODAL_JS)
+}
+async fn actions_js() -> impl IntoResponse {
+    asset("application/javascript", ACTIONS_JS)
+}
+async fn select_js() -> impl IntoResponse {
+    asset("application/javascript", SELECT_JS)
+}
+async fn favicon() -> impl IntoResponse {
+    asset("image/svg+xml", FAVICON_SVG)
+}

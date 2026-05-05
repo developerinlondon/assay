@@ -39,10 +39,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             .await
     }
 
-    pub async fn get_latest_snapshot(
-        &self,
-        workflow_id: &str,
-    ) -> Result<Option<WorkflowSnapshot>> {
+    pub async fn get_latest_snapshot(&self, workflow_id: &str) -> Result<Option<WorkflowSnapshot>> {
         self.store.get_latest_snapshot(workflow_id).await
     }
 }

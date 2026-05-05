@@ -24,11 +24,23 @@ where
 {
     Router::new()
         // ── Personal vault ────────────────────────────────────
-        .route("/me/{user_id}", post(ensure_personal_vault::<S>).get(get_personal_vault::<S>))
-        .route("/me/{user_id}/items", post(create_personal_item::<S>).get(list_personal_items::<S>))
+        .route(
+            "/me/{user_id}",
+            post(ensure_personal_vault::<S>).get(get_personal_vault::<S>),
+        )
+        .route(
+            "/me/{user_id}/items",
+            post(create_personal_item::<S>).get(list_personal_items::<S>),
+        )
         // ── Collections ──────────────────────────────────────
-        .route("/collections", post(create_collection::<S>).get(list_collections::<S>))
-        .route("/collections/{id}", get(get_collection::<S>).delete(delete_collection::<S>))
+        .route(
+            "/collections",
+            post(create_collection::<S>).get(list_collections::<S>),
+        )
+        .route(
+            "/collections/{id}",
+            get(get_collection::<S>).delete(delete_collection::<S>),
+        )
         .route(
             "/collections/{id}/members",
             post(upsert_member::<S>).get(list_members::<S>),
@@ -42,14 +54,18 @@ where
             post(create_collection_item::<S>).get(list_collection_items::<S>),
         )
         // ── Items + folders (id-keyed) ───────────────────────
-        .route("/items/{id}", get(get_item::<S>).put(update_item::<S>).delete(delete_item::<S>))
         .route(
-            "/folders",
-            post(create_folder::<S>),
+            "/items/{id}",
+            get(get_item::<S>)
+                .put(update_item::<S>)
+                .delete(delete_item::<S>),
         )
+        .route("/folders", post(create_folder::<S>))
         .route(
             "/folders/{id}",
-            get(get_folder::<S>).put(rename_folder::<S>).delete(delete_folder::<S>),
+            get(get_folder::<S>)
+                .put(rename_folder::<S>)
+                .delete(delete_folder::<S>),
         )
 }
 
@@ -386,8 +402,14 @@ where
             ));
         }
     };
-    let role = body.role.as_deref().unwrap_or(crate::collections::roles::VIEWER);
-    match store.upsert_member(&id, &body.user_id, &wrapped, role).await {
+    let role = body
+        .role
+        .as_deref()
+        .unwrap_or(crate::collections::roles::VIEWER);
+    match store
+        .upsert_member(&id, &body.user_id, &wrapped, role)
+        .await
+    {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => vault_err_to_response(e),
     }

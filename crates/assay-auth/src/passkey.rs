@@ -17,8 +17,7 @@ use uuid::Uuid;
 use webauthn_rs::Webauthn;
 use webauthn_rs::prelude::{
     CreationChallengeResponse, Passkey, PasskeyAuthentication, PasskeyRegistration,
-    PublicKeyCredential, RegisterPublicKeyCredential, RequestChallengeResponse,
-    WebauthnBuilder,
+    PublicKeyCredential, RegisterPublicKeyCredential, RequestChallengeResponse, WebauthnBuilder,
 };
 
 use crate::error::{Error, Result};
@@ -303,13 +302,15 @@ mod tests {
             Ok(None)
         }
         async fn list_passkeys(&self, user_id: &str) -> anyhow::Result<Vec<PasskeyCred>> {
-            Ok(self.0.lock().unwrap().get(user_id).cloned().unwrap_or_default())
+            Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .get(user_id)
+                .cloned()
+                .unwrap_or_default())
         }
-        async fn add_passkey(
-            &self,
-            user_id: &str,
-            cred: &PasskeyCred,
-        ) -> anyhow::Result<()> {
+        async fn add_passkey(&self, user_id: &str, cred: &PasskeyCred) -> anyhow::Result<()> {
             self.0
                 .lock()
                 .unwrap()
@@ -400,8 +401,7 @@ mod tests {
             rp_name: "Assay Test".to_string(),
             origin: Url::parse("http://localhost:3000").unwrap(),
         };
-        let users: Arc<dyn UserStore> =
-            Arc::new(MemUserStore(Mutex::new(HashMap::new())));
+        let users: Arc<dyn UserStore> = Arc::new(MemUserStore(Mutex::new(HashMap::new())));
         PasskeyManager::new(cfg, users).unwrap()
     }
 

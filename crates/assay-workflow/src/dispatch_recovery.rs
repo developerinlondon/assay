@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 use tracing::{debug, error, info};
 
 use crate::store::WorkflowStore;
@@ -53,7 +53,10 @@ pub async fn run_dispatch_recovery<S: WorkflowStore>(store: Arc<S>) {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
-        match store.release_stale_dispatch_leases(now, timeout_secs()).await {
+        match store
+            .release_stale_dispatch_leases(now, timeout_secs())
+            .await
+        {
             Ok(0) => {}
             Ok(n) => debug!("Released {n} stale workflow dispatch lease(s)"),
             Err(e) => error!("Dispatch-recovery poller error: {e}"),

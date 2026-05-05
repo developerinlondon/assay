@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::ctx::{timestamp_now, WorkflowCtx};
+use crate::ctx::{WorkflowCtx, timestamp_now};
 use crate::events::WorkflowBusEvent;
 use crate::store::WorkflowStore;
 use crate::types::*;
@@ -147,7 +147,9 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         error: Option<&str>,
         failed: bool,
     ) -> Result<()> {
-        self.store.complete_activity(id, result, error, failed).await?;
+        self.store
+            .complete_activity(id, result, error, failed)
+            .await?;
 
         // Look up the activity so we can attribute the event correctly
         let act = match self.store.get_activity(id).await? {
@@ -201,8 +203,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
 
         if act.attempt < act.max_attempts {
             // Compute exponential backoff: interval * coefficient^(attempt-1)
-            let backoff = act.initial_interval_secs
-                * act.backoff_coefficient.powi(act.attempt - 1);
+            let backoff = act.initial_interval_secs * act.backoff_coefficient.powi(act.attempt - 1);
             let next_scheduled_at = timestamp_now() + backoff;
             self.store
                 .requeue_activity_for_retry(id, act.attempt + 1, next_scheduled_at)
@@ -245,11 +246,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         self.store.heartbeat_activity(id, details).await
     }
 
-    pub async fn record_side_effect(
-        &self,
-        workflow_id: &str,
-        value: &str,
-    ) -> Result<()> {
+    pub async fn record_side_effect(&self, workflow_id: &str, value: &str) -> Result<()> {
         let now = timestamp_now();
         let seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
         self.store

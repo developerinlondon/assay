@@ -1,9 +1,9 @@
 # rootfs.source is not one of the known values.
 [template]
-id           = "bad-rootfs-source"
+id = "bad-rootfs-source"
 display_name = "Bogus source"
-packages     = []
+packages = []
 
 [template.rootfs]
 source = "magic-pixie-dust"
-url    = "https://example.com/image.tar.xz"
+url = "https://example.com/image.tar.xz"

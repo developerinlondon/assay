@@ -25,15 +25,11 @@ use serde_json::json;
 
 use crate::ctx::AuthCtx;
 
-use super::authorize::{
-    self as authz, AuthorizeRequest, AuthorizeValidation,
-};
+use super::authorize::{self as authz, AuthorizeRequest, AuthorizeValidation};
 use super::consent::{ConsentPage, ConsentSubmission, scopes_already_granted};
 use super::introspect::{IntrospectRequest, IntrospectResponse};
 use super::revoke::RevokeRequest;
-use super::token::{
-    self as tok, TokenErrorBody, TokenRequest, TokenResponse, errors,
-};
+use super::token::{self as tok, TokenErrorBody, TokenRequest, TokenResponse, errors};
 use super::types::{ConsentGrant, OidcSession};
 use super::userinfo::{self, AccessTokenClaims};
 
@@ -75,9 +71,7 @@ pub async fn authorize_get(
         AuthorizeValidation::Ok { scopes } => {
             authorize_post_validate(ctx.clone(), &headers, req, client, scopes).await
         }
-        AuthorizeValidation::Fatal { reason } => {
-            error_html(StatusCode::BAD_REQUEST, &reason)
-        }
+        AuthorizeValidation::Fatal { reason } => error_html(StatusCode::BAD_REQUEST, &reason),
         AuthorizeValidation::Redirect { error, description } => {
             Redirect::to(&authz::redirect_with_error(
                 &req.redirect_uri,
@@ -127,7 +121,11 @@ async fn authorize_post_validate(
     } else {
         // Skip consent when the user has previously granted these (or
         // wider) scopes for this client.
-        match provider.consents.get(&session.user_id, &client.client_id).await {
+        match provider
+            .consents
+            .get(&session.user_id, &client.client_id)
+            .await
+        {
             Ok(Some(grant)) => !scopes_already_granted(&scopes, &grant.scopes),
             _ => true,
         }
@@ -151,9 +149,7 @@ async fn authorize_post_validate(
         )
         .parse()
         {
-            response
-                .headers_mut()
-                .append(header::SET_COOKIE, value);
+            response.headers_mut().append(header::SET_COOKIE, value);
         }
         return response;
     }
@@ -178,11 +174,7 @@ async fn issue_authorization_code(
     if let Err(e) = provider.codes.create(&code).await {
         return server_error_html(&format!("persist authorization code: {e}"));
     }
-    let redirect = authz::redirect_with_code(
-        &req.redirect_uri,
-        &code.code,
-        req.state.as_deref(),
-    );
+    let redirect = authz::redirect_with_code(&req.redirect_uri, &code.code, req.state.as_deref());
     Redirect::to(&redirect).into_response()
 }
 
@@ -194,7 +186,10 @@ fn rebuild_authorize_url(ctx: &AuthCtx, req: &AuthorizeRequest) -> String {
         .as_ref()
         .map(|p| p.issuer.as_str())
         .unwrap_or("");
-    let mut url = format!("{issuer}/authorize?response_type={}", url_encode(&req.response_type));
+    let mut url = format!(
+        "{issuer}/authorize?response_type={}",
+        url_encode(&req.response_type)
+    );
     url.push_str(&format!("&client_id={}", url_encode(&req.client_id)));
     url.push_str(&format!("&redirect_uri={}", url_encode(&req.redirect_uri)));
     url.push_str(&format!("&scope={}", url_encode(&req.scope)));
@@ -342,10 +337,12 @@ async fn authenticate_client(
     headers: &HeaderMap,
     req: &TokenRequest,
 ) -> Result<super::types::OidcClient, (StatusCode, TokenErrorBody)> {
-    let provider = ctx
-        .oidc_provider
-        .as_ref()
-        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, err_body(errors::SERVER_ERROR, None)))?;
+    let provider = ctx.oidc_provider.as_ref().ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            err_body(errors::SERVER_ERROR, None),
+        )
+    })?;
 
     // Basic header: "Basic base64(client_id:client_secret)".
     let basic = headers
@@ -451,7 +448,13 @@ async fn grant_authorization_code(
 ) -> Response {
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
-        None => return token_err(StatusCode::INTERNAL_SERVER_ERROR, errors::SERVER_ERROR, None),
+        None => {
+            return token_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                errors::SERVER_ERROR,
+                None,
+            );
+        }
     };
     let Some(code_str) = req.code.as_deref() else {
         return token_err(
@@ -492,13 +495,14 @@ async fn grant_authorization_code(
         );
     }
     if let Some(redirect) = &req.redirect_uri
-        && redirect != &consumed.redirect_uri {
-            return token_err(
-                StatusCode::BAD_REQUEST,
-                errors::INVALID_GRANT,
-                Some("redirect_uri mismatch".into()),
-            );
-        }
+        && redirect != &consumed.redirect_uri
+    {
+        return token_err(
+            StatusCode::BAD_REQUEST,
+            errors::INVALID_GRANT,
+            Some("redirect_uri mismatch".into()),
+        );
+    }
     // PKCE verify (S256 only — challenge_method always normalised).
     if !consumed.code_challenge.is_empty() {
         let verifier = req.code_verifier.as_deref().unwrap_or("");
@@ -531,7 +535,13 @@ async fn grant_refresh(
 ) -> Response {
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
-        None => return token_err(StatusCode::INTERNAL_SERVER_ERROR, errors::SERVER_ERROR, None),
+        None => {
+            return token_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                errors::SERVER_ERROR,
+                None,
+            );
+        }
     };
     let Some(presented) = req.refresh_token.as_deref() else {
         return token_err(
@@ -604,7 +614,13 @@ async fn issue_token_pair(
 ) -> Response {
     let provider = match ctx.oidc_provider.as_ref() {
         Some(p) => p,
-        None => return token_err(StatusCode::INTERNAL_SERVER_ERROR, errors::SERVER_ERROR, None),
+        None => {
+            return token_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                errors::SERVER_ERROR,
+                None,
+            );
+        }
     };
     let user = match ctx.users.get_user_by_id(user_id).await {
         Ok(Some(u)) => Some(u),
@@ -663,8 +679,8 @@ async fn issue_token_pair(
 
     // Refresh token issued when the client allows refresh_token grant
     // OR `offline_access` is in the requested scopes.
-    let issue_refresh = client.allows_grant("refresh_token")
-        || scopes.iter().any(|s| s == "offline_access");
+    let issue_refresh =
+        client.allows_grant("refresh_token") || scopes.iter().any(|s| s == "offline_access");
     let refresh_token = if issue_refresh {
         let plaintext = tok::mint_refresh_token();
         let row = tok::build_refresh_row(user_id, &client.client_id, scopes, &plaintext);
@@ -715,7 +731,10 @@ pub async fn userinfo_get(State(ctx): State<AuthCtx>, headers: HeaderMap) -> Res
         .and_then(|v| v.to_str().ok())
         .and_then(userinfo::parse_bearer);
     let Some(token) = bearer else {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"error": "invalid_token"})))
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "invalid_token"})),
+        )
             .into_response();
     };
     let jwt = match ctx.jwt.as_ref() {
@@ -731,14 +750,20 @@ pub async fn userinfo_get(State(ctx): State<AuthCtx>, headers: HeaderMap) -> Res
     let data = match jwt.verify::<AccessTokenClaims>(token) {
         Ok(d) => d,
         Err(_) => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"error": "invalid_token"})))
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "invalid_token"})),
+            )
                 .into_response();
         }
     };
     let user = match ctx.users.get_user_by_id(&data.claims.sub).await {
         Ok(Some(u)) => u,
         _ => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"error": "invalid_token"})))
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "invalid_token"})),
+            )
                 .into_response();
         }
     };
@@ -751,10 +776,7 @@ pub async fn userinfo_get(State(ctx): State<AuthCtx>, headers: HeaderMap) -> Res
 // =====================================================================
 
 /// `POST /revoke` — RFC 7009. Always returns 200 (per spec).
-pub async fn revoke_post(
-    State(ctx): State<AuthCtx>,
-    Form(req): Form<RevokeRequest>,
-) -> Response {
+pub async fn revoke_post(State(ctx): State<AuthCtx>, Form(req): Form<RevokeRequest>) -> Response {
     if let Some(provider) = ctx.oidc_provider.as_ref() {
         // Try as a refresh token (the one we can actually revoke).
         let hash = tok::hash_refresh_token(&req.token);
@@ -782,7 +804,10 @@ pub async fn introspect_post(
         ..Default::default()
     };
     if authenticate_client(&ctx, &headers, &synth).await.is_err() {
-        return (StatusCode::UNAUTHORIZED, Json(IntrospectResponse::inactive()))
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(IntrospectResponse::inactive()),
+        )
             .into_response();
     }
 
@@ -811,20 +836,22 @@ pub async fn introspect_post(
     if let Some(provider) = ctx.oidc_provider.as_ref() {
         let hash = tok::hash_refresh_token(&body.token);
         if let Ok(Some(row)) = provider.refresh.get(&hash).await
-            && !row.revoked && row.expires_at > now_secs() {
-                let resp = IntrospectResponse {
-                    active: true,
-                    client_id: Some(row.client_id.clone()),
-                    username: Some(row.user_id.clone()),
-                    scope: Some(row.scopes.join(" ")),
-                    exp: Some(row.expires_at as i64),
-                    sub: Some(row.user_id),
-                    aud: Some(row.client_id),
-                    iat: Some(row.issued_at as i64),
-                    token_type: Some("Bearer".into()),
-                };
-                return (StatusCode::OK, Json(resp)).into_response();
-            }
+            && !row.revoked
+            && row.expires_at > now_secs()
+        {
+            let resp = IntrospectResponse {
+                active: true,
+                client_id: Some(row.client_id.clone()),
+                username: Some(row.user_id.clone()),
+                scope: Some(row.scopes.join(" ")),
+                exp: Some(row.expires_at as i64),
+                sub: Some(row.user_id),
+                aud: Some(row.client_id),
+                iat: Some(row.issued_at as i64),
+                token_type: Some("Bearer".into()),
+            };
+            return (StatusCode::OK, Json(resp)).into_response();
+        }
     }
 
     (StatusCode::OK, Json(IntrospectResponse::inactive())).into_response()
@@ -875,7 +902,9 @@ pub async fn logout_get(
     }
     let _ = q.id_token_hint;
     let _ = q.state;
-    let target = q.post_logout_redirect_uri.unwrap_or_else(|| "/".to_string());
+    let target = q
+        .post_logout_redirect_uri
+        .unwrap_or_else(|| "/".to_string());
     let mut response = Redirect::to(&target).into_response();
     // Clear the session cookie.
     if let Ok(value) = format!(
@@ -1037,9 +1066,10 @@ pub(crate) fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     for kv in raw.split(';') {
         let kv = kv.trim();
         if let Some((k, v)) = kv.split_once('=')
-            && k == name {
-                return Some(v.to_string());
-            }
+            && k == name
+        {
+            return Some(v.to_string());
+        }
     }
     None
 }

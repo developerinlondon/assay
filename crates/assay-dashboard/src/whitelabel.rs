@@ -125,8 +125,7 @@ impl WhitelabelConfig {
     /// Read every knob from env, applying defaults and the
     /// "set-to-empty means hide" convention for `api_docs_url`.
     pub fn from_env() -> Self {
-        let name =
-            std::env::var("ASSAY_WHITELABEL_NAME").unwrap_or_else(|_| "Assay".to_string());
+        let name = std::env::var("ASSAY_WHITELABEL_NAME").unwrap_or_else(|_| "Assay".to_string());
         // MARK falls back to the first character of NAME (uppercased) so
         // operators who only set NAME get a sensible badge glyph
         // automatically. Explicit override handles cases where the name
@@ -280,11 +279,10 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
     // full <link> tag so the operator URL can be absolute, a path,
     // or a data: URI without the template having to know.
     let favicon_link = match &wl.favicon_url {
-        Some(url) => format!(
-            r#"<link rel="icon" href="{}">"#,
-            html_escape(url)
-        ),
-        None => r#"<link rel="icon" type="image/svg+xml" href="/workflow/favicon.svg">"#.to_string(),
+        Some(url) => format!(r#"<link rel="icon" href="{}">"#, html_escape(url)),
+        None => {
+            r#"<link rel="icon" type="image/svg+xml" href="/workflow/favicon.svg">"#.to_string()
+        }
     };
 
     // Default namespace — threaded into the template as a data-attribute
@@ -450,8 +448,14 @@ v=__ASSETV__
         cfg.mark = "A".into();
         let out = render_index(TEMPLATE, "v", &cfg);
         assert!(out.contains("Powered by"));
-        assert!(out.contains(r#">Assay Engine</a>"#), "short 'Assay Engine' attribution text — distinguishes the engine binary from the assay Lua runtime");
-        assert!(!out.contains("Workflow Engine</a>"), "should not say 'Assay Workflow Engine' in link");
+        assert!(
+            out.contains(r#">Assay Engine</a>"#),
+            "short 'Assay Engine' attribution text — distinguishes the engine binary from the assay Lua runtime"
+        );
+        assert!(
+            !out.contains("Workflow Engine</a>"),
+            "should not say 'Assay Workflow Engine' in link"
+        );
         assert!(out.contains(r#"href="https://assay.rs""#));
         assert!(out.contains(r#"target="_blank""#));
         assert!(out.contains(r#"rel="noopener noreferrer""#));
@@ -489,7 +493,10 @@ v=__ASSETV__
     #[test]
     fn customised_detection_requires_more_than_defaults() {
         let base = default_cfg();
-        assert!(!base.is_customised(), "stock defaults must not read as customised");
+        assert!(
+            !base.is_customised(),
+            "stock defaults must not read as customised"
+        );
 
         let mut with_name = default_cfg();
         with_name.name = "Acme".into();
@@ -590,6 +597,9 @@ v=__ASSETV__
         cfg.name = "Acme <Inc>".into();
         let out = render_index(TEMPLATE, "v", &cfg);
         assert!(out.contains("Acme &lt;Inc&gt;"));
-        assert!(!out.contains("<Inc>"), "raw angle brackets must not land in the HTML");
+        assert!(
+            !out.contains("<Inc>"),
+            "raw angle brackets must not land in the HTML"
+        );
     }
 }

@@ -1,13 +1,13 @@
 # Verifies the hyphen form of resolv_conf is accepted (matches systemd-nspawn's
 # --resolv-conf= flag spelling). Should normalize internally to bind_host.
 [template]
-id           = "resolv-conf-hyphen"
+id = "resolv-conf-hyphen"
 display_name = "Hyphen-form resolv-conf"
-packages     = ["test-apt-only"]
+packages = ["test-apt-only"]
 
 [template.rootfs]
 source = "machinectl-pull-tar"
-url    = "https://example.com/image.tar.xz"
+url = "https://example.com/image.tar.xz"
 
 [template.nspawn]
 resolv_conf = "bind-host"

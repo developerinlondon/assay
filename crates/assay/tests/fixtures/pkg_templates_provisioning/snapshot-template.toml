@@ -1,15 +1,15 @@
 # Snapshot from a host-side golden machine.
 [template]
-id           = "snapshot-template"
+id = "snapshot-template"
 display_name = "Clone from _golden"
-description  = "Near-instant provision via machinectl clone of a pre-built source."
-packages     = ["test-apt-only"]
+description = "Near-instant provision via machinectl clone of a pre-built source."
+packages = ["test-apt-only"]
 
 [template.rootfs]
 source = "machinectl-clone"
-from   = "_golden"
+from = "_golden"
 
 [template.nspawn]
-boot         = true
+boot = true
 notify_ready = true
-resolv_conf  = "bind-host"
+resolv_conf = "bind-host"

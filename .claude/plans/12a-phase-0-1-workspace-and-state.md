@@ -635,8 +635,8 @@ Zero regressions. All six crates present. Root is workspace-only.
 
 **What changes:** `Engine<S>` becomes `Engine` backed by `Arc<dyn WorkflowStore>`. `AppState<S>`
 becomes `WorkflowCtx`. The api router moves from `Router<Arc<AppState<S>>>` to
-`Router<WorkflowCtx>`. Types move to `assay-domain`. Dashboard assets move to `assay-dashboard` with a
-`DashboardCtx`.
+`Router<WorkflowCtx>`. Types move to `assay-domain`. Dashboard assets move to `assay-dashboard` with
+a `DashboardCtx`.
 
 **What doesn't change:** behaviour. Every existing integration test still passes without
 modification.

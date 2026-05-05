@@ -199,15 +199,13 @@ impl PgEngineSchema {
         action: &str,
         details: &serde_json::Value,
     ) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO engine.audit (actor, action, details) VALUES ($1, $2, $3)",
-        )
-        .bind(actor)
-        .bind(action)
-        .bind(details)
-        .execute(&self.pool)
-        .await
-        .context("insert engine.audit row")?;
+        sqlx::query("INSERT INTO engine.audit (actor, action, details) VALUES ($1, $2, $3)")
+            .bind(actor)
+            .bind(action)
+            .bind(details)
+            .execute(&self.pool)
+            .await
+            .context("insert engine.audit row")?;
         Ok(())
     }
 
@@ -358,13 +356,15 @@ impl PgEngineSchema {
         .context("list engine.instances")?;
         Ok(rows
             .into_iter()
-            .map(|(id, started_at, last_heartbeat, namespaces, version)| InstanceRecord {
-                id: id.to_string(),
-                started_at,
-                last_heartbeat,
-                namespaces,
-                version,
-            })
+            .map(
+                |(id, started_at, last_heartbeat, namespaces, version)| InstanceRecord {
+                    id: id.to_string(),
+                    started_at,
+                    last_heartbeat,
+                    namespaces,
+                    version,
+                },
+            )
             .collect())
     }
 

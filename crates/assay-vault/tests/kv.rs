@@ -62,15 +62,17 @@ async fn boot_pool() -> SqlitePool {
 
 fn service(pool: SqlitePool) -> KvService<SqliteKvStore> {
     let kek = KekHandle::generate_ephemeral();
-    let seal_state =
-        SealState::unsealed(SealingMethod::Plaintext, kek.kid().to_string(), kek);
+    let seal_state = SealState::unsealed(SealingMethod::Plaintext, kek.kid().to_string(), kek);
     KvService::new(SqliteKvStore::new(pool), seal_state)
 }
 
 #[tokio::test]
 async fn put_and_get_round_trip() {
     let svc = service(boot_pool().await);
-    let v = svc.put("api/stripe", b"sk_live_xxx", json!({})).await.unwrap();
+    let v = svc
+        .put("api/stripe", b"sk_live_xxx", json!({}))
+        .await
+        .unwrap();
     assert_eq!(v, 1);
     let r = svc.get("api/stripe", None).await.unwrap();
     assert_eq!(r.plaintext, b"sk_live_xxx");
@@ -128,11 +130,17 @@ async fn soft_delete_then_undelete() {
     // caller's job. Phase-1 test: confirm `deleted_at` round-trips on
     // the explicit version read.
     let v2 = svc.get("k", Some(2)).await.unwrap();
-    assert!(v2.deleted_at.is_some(), "deleted_at must be set after soft_delete");
+    assert!(
+        v2.deleted_at.is_some(),
+        "deleted_at must be set after soft_delete"
+    );
 
     svc.undelete("k", 2).await.unwrap();
     let v2_back = svc.get("k", Some(2)).await.unwrap();
-    assert!(v2_back.deleted_at.is_none(), "undelete must clear deleted_at");
+    assert!(
+        v2_back.deleted_at.is_none(),
+        "undelete must clear deleted_at"
+    );
 }
 
 #[tokio::test]
@@ -169,7 +177,9 @@ async fn destroy_is_irreversible() {
 async fn destroy_zeros_ciphertext_on_disk() {
     let pool = boot_pool().await;
     let svc = service(pool.clone());
-    svc.put("paranoid", b"deeply secret", json!({})).await.unwrap();
+    svc.put("paranoid", b"deeply secret", json!({}))
+        .await
+        .unwrap();
     svc.destroy("paranoid", 1).await.unwrap();
     // Reach into the raw row — even with the row preserved for audit,
     // ciphertext + wrapped_dek must be empty.

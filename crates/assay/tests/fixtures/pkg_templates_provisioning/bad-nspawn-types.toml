@@ -1,12 +1,12 @@
 # nspawn.boot must be a boolean.
 [template]
-id           = "bad-nspawn-types"
+id = "bad-nspawn-types"
 display_name = "Wrong type on boot"
-packages     = []
+packages = []
 
 [template.rootfs]
 source = "machinectl-pull-tar"
-url    = "https://example.com/image.tar.xz"
+url = "https://example.com/image.tar.xz"
 
 [template.nspawn]
-boot = "yes"   # should be a boolean true/false
+boot = "yes" # should be a boolean true/false

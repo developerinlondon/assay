@@ -13,9 +13,9 @@
 
 use std::sync::Arc;
 
+use crate::crypto::KekHandle;
 use crate::crypto::seal_state::SealState;
 use crate::crypto::sealing::SealingMethod;
-use crate::crypto::KekHandle;
 
 #[cfg(feature = "vault-kv")]
 use crate::kv::{KvService, KvStore};
@@ -80,11 +80,8 @@ pub struct VaultCtx {
 impl Default for VaultCtx {
     fn default() -> Self {
         let kek = KekHandle::generate_ephemeral();
-        let seal_state = SealState::unsealed(
-            SealingMethod::Plaintext,
-            kek.kid().to_string(),
-            kek.clone(),
-        );
+        let seal_state =
+            SealState::unsealed(SealingMethod::Plaintext, kek.kid().to_string(), kek.clone());
         Self {
             kek,
             seal_state,
@@ -127,11 +124,8 @@ impl VaultCtx {
     /// the seal state to `unsealed` with method = Plaintext (Phase-1
     /// shape). For shamir installs use [`Self::with_sealed_shamir`].
     pub fn with_kek(mut self, kek: KekHandle) -> Self {
-        let seal_state = SealState::unsealed(
-            SealingMethod::Plaintext,
-            kek.kid().to_string(),
-            kek.clone(),
-        );
+        let seal_state =
+            SealState::unsealed(SealingMethod::Plaintext, kek.kid().to_string(), kek.clone());
         self.kek = kek;
         self.seal_state = seal_state;
         self
@@ -267,7 +261,11 @@ impl KvStore for DynKvStore {
             .put_row(path, ciphertext, nonce, wrapped_dek, kek_kid, custom_md)
             .await
     }
-    async fn get_row(&self, path: &str, version: i64) -> crate::error::Result<Option<crate::kv::KvRow>> {
+    async fn get_row(
+        &self,
+        path: &str,
+        version: i64,
+    ) -> crate::error::Result<Option<crate::kv::KvRow>> {
         (**self).get_row(path, version).await
     }
     async fn get_latest_row(&self, path: &str) -> crate::error::Result<Option<crate::kv::KvRow>> {
@@ -279,7 +277,12 @@ impl KvStore for DynKvStore {
     async fn read_meta(&self, path: &str) -> crate::error::Result<Option<crate::kv::KvMeta>> {
         (**self).read_meta(path).await
     }
-    async fn soft_delete(&self, path: &str, version: i64, deleted_at: f64) -> crate::error::Result<bool> {
+    async fn soft_delete(
+        &self,
+        path: &str,
+        version: i64,
+        deleted_at: f64,
+    ) -> crate::error::Result<bool> {
         (**self).soft_delete(path, version, deleted_at).await
     }
     async fn destroy(&self, path: &str, version: i64) -> crate::error::Result<bool> {
@@ -300,9 +303,14 @@ impl TransitStore for DynTransitStore {
         version_wrapped: &[u8],
         kek_kid: &str,
     ) -> crate::error::Result<()> {
-        (**self).create_key(name, algo, version_wrapped, kek_kid).await
+        (**self)
+            .create_key(name, algo, version_wrapped, kek_kid)
+            .await
     }
-    async fn get_key(&self, name: &str) -> crate::error::Result<Option<crate::transit::TransitKey>> {
+    async fn get_key(
+        &self,
+        name: &str,
+    ) -> crate::error::Result<Option<crate::transit::TransitKey>> {
         (**self).get_key(name).await
     }
     async fn get_version(
@@ -318,7 +326,12 @@ impl TransitStore for DynTransitStore {
     ) -> crate::error::Result<Option<crate::transit::TransitVersion>> {
         (**self).get_latest_version(name).await
     }
-    async fn rotate(&self, name: &str, version_wrapped: &[u8], kek_kid: &str) -> crate::error::Result<i64> {
+    async fn rotate(
+        &self,
+        name: &str,
+        version_wrapped: &[u8],
+        kek_kid: &str,
+    ) -> crate::error::Result<i64> {
         (**self).rotate(name, version_wrapped, kek_kid).await
     }
     async fn list_keys(&self) -> crate::error::Result<Vec<crate::transit::TransitKey>> {

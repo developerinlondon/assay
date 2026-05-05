@@ -19,7 +19,7 @@
 
 use std::sync::Arc;
 
-use crate::crypto::aead::{decrypt, encrypt, random_nonce, KEY_LEN, NONCE_LEN};
+use crate::crypto::aead::{KEY_LEN, NONCE_LEN, decrypt, encrypt, random_nonce};
 use crate::error::{Result, VaultError};
 
 /// In-memory KEK material. Cheap to clone — the inner Arc shares the

@@ -4,7 +4,7 @@ Lua libraries that ship alongside the `assay` binary but are **not** baked into 
 `libs/<name>/` is an independently-versioned tree distributed as a tarball (see `release.yml`) and
 installed into `<lib-dir>/<name>/` by `assay install`.
 
-This directory is the workspace home for those libraries. The first inhabitant is `hostops` (ported
+This directory is the workspace home for those libraries. The first inhabitant is `sysops` (ported
 from `knowhere0426`); see plan `.claude/plans/21-libs-folder-and-install.md`.
 
 ## Layout

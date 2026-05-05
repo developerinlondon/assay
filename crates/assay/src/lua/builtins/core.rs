@@ -122,9 +122,8 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
                 mlua::Error::runtime(format!("fs.read: failed to read {path:?}: {e}"))
             })?,
         };
-        String::from_utf8(bytes).map_err(|e| {
-            mlua::Error::runtime(format!("fs.read: invalid UTF-8 in {path:?}: {e}"))
-        })
+        String::from_utf8(bytes)
+            .map_err(|e| mlua::Error::runtime(format!("fs.read: invalid UTF-8 in {path:?}: {e}")))
     })?;
     fs_table.set("read", read_fn)?;
 
@@ -137,9 +136,7 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
                 ))
             })?,
             None => std::fs::read(&path).map_err(|e| {
-                mlua::Error::runtime(format!(
-                    "fs.read_bytes: failed to read {path:?}: {e}"
-                ))
+                mlua::Error::runtime(format!("fs.read_bytes: failed to read {path:?}: {e}"))
             })?,
         };
         lua.create_string(&bytes)
@@ -170,8 +167,9 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
                 ))
             })?;
         }
-        std::fs::write(&path, data.as_bytes())
-            .map_err(|e| mlua::Error::runtime(format!("fs.write_bytes: failed to write {path:?}: {e}")))
+        std::fs::write(&path, data.as_bytes()).map_err(|e| {
+            mlua::Error::runtime(format!("fs.write_bytes: failed to write {path:?}: {e}"))
+        })
     })?;
     fs_table.set("write_bytes", write_bytes_fn)?;
 
@@ -395,12 +393,10 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     // Returns an iterator function; Lua's for-loop calls it until nil.
     let lines_fn = lua.create_function(|lua, path: String| {
         use std::io::BufRead;
-        let file = std::fs::File::open(&path).map_err(|e| {
-            mlua::Error::runtime(format!("fs.lines: failed to open {path:?}: {e}"))
-        })?;
-        let iter = std::sync::Arc::new(std::sync::Mutex::new(
-            std::io::BufReader::new(file).lines(),
-        ));
+        let file = std::fs::File::open(&path)
+            .map_err(|e| mlua::Error::runtime(format!("fs.lines: failed to open {path:?}: {e}")))?;
+        let iter =
+            std::sync::Arc::new(std::sync::Mutex::new(std::io::BufReader::new(file).lines()));
         lua.create_function(move |_, ()| {
             let mut it = iter
                 .lock()
@@ -421,25 +417,22 @@ pub fn register_fs(lua: &Lua) -> mlua::Result<()> {
     // only writes back if at least one match was made — so repeated
     // calls on an already-substituted file are a no-op on disk.
     // Returns the count of substitutions.
-    let sub_in_file_fn =
-        lua.create_function(|lua, (path, pattern, repl): (String, String, mlua::Value)| {
+    let sub_in_file_fn = lua.create_function(
+        |lua, (path, pattern, repl): (String, String, mlua::Value)| {
             let content = std::fs::read_to_string(&path).map_err(|e| {
-                mlua::Error::runtime(format!(
-                    "fs.sub_in_file: failed to read {path:?}: {e}"
-                ))
+                mlua::Error::runtime(format!("fs.sub_in_file: failed to read {path:?}: {e}"))
             })?;
             let string_table: mlua::Table = lua.globals().get("string")?;
             let gsub: mlua::Function = string_table.get("gsub")?;
             let (new_content, count): (String, u64) = gsub.call((content, pattern, repl))?;
             if count > 0 {
                 std::fs::write(&path, &new_content).map_err(|e| {
-                    mlua::Error::runtime(format!(
-                        "fs.sub_in_file: failed to write {path:?}: {e}"
-                    ))
+                    mlua::Error::runtime(format!("fs.sub_in_file: failed to write {path:?}: {e}"))
                 })?;
             }
             Ok(count)
-        })?;
+        },
+    )?;
     fs_table.set("sub_in_file", sub_in_file_fn)?;
 
     lua.globals().set("fs", fs_table)?;

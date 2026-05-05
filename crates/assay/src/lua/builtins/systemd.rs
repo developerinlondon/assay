@@ -176,7 +176,7 @@ mod impl_linux {
         register_machines(lua, t)?;
         register_journal(lua, t)?;
         register_machine_exec(lua, t)?; // NEW
-        register_unit_action(lua, t)?;  // NEW
+        register_unit_action(lua, t)?; // NEW
         Ok(())
     }
 
@@ -898,11 +898,8 @@ mod impl_linux {
             });
 
             let status = if let Some(secs) = timeout_secs.filter(|s| *s > 0.0) {
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs_f64(secs),
-                    child.wait(),
-                )
-                .await
+                match tokio::time::timeout(std::time::Duration::from_secs_f64(secs), child.wait())
+                    .await
                 {
                     Ok(Ok(s)) => s,
                     Ok(Err(e)) => {
@@ -927,9 +924,10 @@ mod impl_linux {
                     }
                 }
             } else {
-                child.wait().await.map_err(|e| {
-                    mlua::Error::runtime(format!("systemd.machine_exec: wait: {e}"))
-                })?
+                child
+                    .wait()
+                    .await
+                    .map_err(|e| mlua::Error::runtime(format!("systemd.machine_exec: wait: {e}")))?
             };
 
             let stdout_bytes = stdout_task.await.unwrap_or_default();
@@ -972,10 +970,15 @@ mod impl_linux {
     /// daemon-reload, is-active, is-enabled.
     fn register_unit_action(lua: &Lua, t: &Table) -> mlua::Result<()> {
         const ALLOWED: &[&str] = &[
-            "start", "stop", "restart", "reload",
-            "enable", "disable",
+            "start",
+            "stop",
+            "restart",
+            "reload",
+            "enable",
+            "disable",
             "daemon-reload",
-            "is-active", "is-enabled",
+            "is-active",
+            "is-enabled",
         ];
         const DEFAULT_TIMEOUT_SECS: f64 = 60.0;
 
@@ -994,8 +997,12 @@ mod impl_linux {
             // (escape encoding). Reject anything else.
             if !unit.chars().all(|c| {
                 c.is_ascii_alphanumeric()
-                    || c == '.' || c == '_' || c == '-'
-                    || c == ':' || c == '@' || c == '\\'
+                    || c == '.'
+                    || c == '_'
+                    || c == '-'
+                    || c == ':'
+                    || c == '@'
+                    || c == '\\'
             }) {
                 return Err(mlua::Error::runtime(format!(
                     "systemd.unit_action: unit {unit:?} contains disallowed characters"
@@ -1078,9 +1085,9 @@ mod impl_linux {
             cmd.stderr(std::process::Stdio::piped());
             cmd.kill_on_drop(true);
 
-            let mut child = cmd.spawn().map_err(|e| {
-                mlua::Error::runtime(format!("systemd.unit_action: spawn: {e}"))
-            })?;
+            let mut child = cmd
+                .spawn()
+                .map_err(|e| mlua::Error::runtime(format!("systemd.unit_action: spawn: {e}")))?;
 
             let stdout_h = child.stdout.take();
             let stderr_h = child.stderr.take();

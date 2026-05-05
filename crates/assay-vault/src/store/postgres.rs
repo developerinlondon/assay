@@ -155,13 +155,15 @@ mod kv {
             .map_err(map_err("kv list_meta"))?;
             Ok(rows
                 .into_iter()
-                .map(|(path, latest_version, custom_md, created_at, updated_at)| KvMeta {
-                    path,
-                    latest_version,
-                    custom_md,
-                    created_at,
-                    updated_at,
-                })
+                .map(
+                    |(path, latest_version, custom_md, created_at, updated_at)| KvMeta {
+                        path,
+                        latest_version,
+                        custom_md,
+                        created_at,
+                        updated_at,
+                    },
+                )
                 .collect())
         }
 
@@ -184,7 +186,12 @@ mod kv {
             }))
         }
 
-        async fn soft_delete(&self, path: &str, version: i64, deleted_at: f64) -> VaultResult<bool> {
+        async fn soft_delete(
+            &self,
+            path: &str,
+            version: i64,
+            deleted_at: f64,
+        ) -> VaultResult<bool> {
             let n = sqlx::query(
                 "UPDATE vault.kv
                     SET deleted_at = $3
@@ -274,7 +281,11 @@ mod transit {
             version_wrapped: &[u8],
             kek_kid: &str,
         ) -> VaultResult<()> {
-            let mut tx = self.pool.begin().await.map_err(map_err("transit create begin"))?;
+            let mut tx = self
+                .pool
+                .begin()
+                .await
+                .map_err(map_err("transit create begin"))?;
 
             // Strict create: 23505 (unique violation) → Conflict; everything
             // else surfaces as Backend.
@@ -306,7 +317,9 @@ mod transit {
             .await
             .map_err(map_err("transit create insert version"))?;
 
-            tx.commit().await.map_err(map_err("transit create commit"))?;
+            tx.commit()
+                .await
+                .map_err(map_err("transit create commit"))?;
             Ok(())
         }
 
@@ -326,7 +339,11 @@ mod transit {
             }))
         }
 
-        async fn get_version(&self, name: &str, version: i64) -> VaultResult<Option<TransitVersion>> {
+        async fn get_version(
+            &self,
+            name: &str,
+            version: i64,
+        ) -> VaultResult<Option<TransitVersion>> {
             let row: Option<(Vec<u8>, String, f64)> = sqlx::query_as(
                 "SELECT key_wrapped, kek_kid, created_at
                    FROM vault.transit_versions
@@ -350,21 +367,29 @@ mod transit {
             // Two-step (read latest_ver, fetch row) keeps the SELECT
             // simple and lets sqlx infer types cleanly. The transit_keys
             // row is the source of truth for "which version is latest".
-            let lv: Option<i64> = sqlx::query_scalar(
-                "SELECT latest_ver FROM vault.transit_keys WHERE name = $1",
-            )
-            .bind(name)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(map_err("transit get_latest version-ptr"))?;
+            let lv: Option<i64> =
+                sqlx::query_scalar("SELECT latest_ver FROM vault.transit_keys WHERE name = $1")
+                    .bind(name)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(map_err("transit get_latest version-ptr"))?;
             match lv {
                 None => Ok(None),
                 Some(v) => self.get_version(name, v).await,
             }
         }
 
-        async fn rotate(&self, name: &str, version_wrapped: &[u8], kek_kid: &str) -> VaultResult<i64> {
-            let mut tx = self.pool.begin().await.map_err(map_err("transit rotate begin"))?;
+        async fn rotate(
+            &self,
+            name: &str,
+            version_wrapped: &[u8],
+            kek_kid: &str,
+        ) -> VaultResult<i64> {
+            let mut tx = self
+                .pool
+                .begin()
+                .await
+                .map_err(map_err("transit rotate begin"))?;
             let new_ver: i64 = sqlx::query_scalar(
                 "UPDATE vault.transit_keys
                     SET latest_ver = latest_ver + 1
@@ -387,7 +412,9 @@ mod transit {
             .execute(&mut *tx)
             .await
             .map_err(map_err("transit rotate insert version"))?;
-            tx.commit().await.map_err(map_err("transit rotate commit"))?;
+            tx.commit()
+                .await
+                .map_err(map_err("transit rotate commit"))?;
             Ok(new_ver)
         }
 
@@ -442,13 +469,10 @@ mod sealing {
             threshold: u8,
             shares_count: u8,
         ) -> VaultResult<(String, Vec<Vec<u8>>)> {
-            let (kid, shares) = crate::crypto::kek_store::init_shamir_postgres(
-                &self.pool,
-                threshold,
-                shares_count,
-            )
-            .await
-            .map_err(|e| VaultError::Backend(anyhow::anyhow!("seal init_shamir: {e}")))?;
+            let (kid, shares) =
+                crate::crypto::kek_store::init_shamir_postgres(&self.pool, threshold, shares_count)
+                    .await
+                    .map_err(|e| VaultError::Backend(anyhow::anyhow!("seal init_shamir: {e}")))?;
             Ok((kid, shares.into_iter().map(|s| s.0).collect()))
         }
 
@@ -506,9 +530,9 @@ mod personal_vault {
             .await
             .map_err(map_err("ensure_vault insert"))?;
 
-            self.get_by_owner(owner_user)
-                .await?
-                .ok_or_else(|| VaultError::Backend(anyhow::anyhow!("vault row missing post-insert")))
+            self.get_by_owner(owner_user).await?.ok_or_else(|| {
+                VaultError::Backend(anyhow::anyhow!("vault row missing post-insert"))
+            })
         }
 
         async fn get_by_owner(&self, owner_user: &str) -> VaultResult<Option<PersonalVault>> {
@@ -548,15 +572,13 @@ mod personal_vault {
             owner_user: &str,
             new_public_key: &[u8],
         ) -> VaultResult<bool> {
-            let n = sqlx::query(
-                "UPDATE vault.vaults SET public_key = $2 WHERE owner_user = $1",
-            )
-            .bind(owner_user)
-            .bind(new_public_key)
-            .execute(&self.pool)
-            .await
-            .map_err(map_err("rotate_public_key"))?
-            .rows_affected();
+            let n = sqlx::query("UPDATE vault.vaults SET public_key = $2 WHERE owner_user = $1")
+                .bind(owner_user)
+                .bind(new_public_key)
+                .execute(&self.pool)
+                .await
+                .map_err(map_err("rotate_public_key"))?
+                .rows_affected();
             Ok(n > 0)
         }
     }
@@ -613,9 +635,9 @@ mod collections {
                 )));
             }
             res.map_err(map_err("create_collection"))?;
-            self.get_collection(id)
-                .await?
-                .ok_or_else(|| VaultError::Backend(anyhow::anyhow!("collection missing post-insert")))
+            self.get_collection(id).await?.ok_or_else(|| {
+                VaultError::Backend(anyhow::anyhow!("collection missing post-insert"))
+            })
         }
 
         async fn get_collection(&self, id: &str) -> VaultResult<Option<Collection>> {
@@ -636,27 +658,28 @@ mod collections {
             }))
         }
 
-        async fn list_collections(
-            &self,
-            org_id: Option<&str>,
-        ) -> VaultResult<Vec<Collection>> {
+        async fn list_collections(&self, org_id: Option<&str>) -> VaultResult<Vec<Collection>> {
             let rows: Vec<(String, Option<String>, String, String, f64)> = match org_id {
-                Some(o) => sqlx::query_as(
-                    "SELECT id, org_id, name, created_by, created_at
+                Some(o) => {
+                    sqlx::query_as(
+                        "SELECT id, org_id, name, created_by, created_at
                        FROM vault.collections
                       WHERE org_id = $1
                       ORDER BY name",
-                )
-                .bind(o)
-                .fetch_all(&self.pool)
-                .await,
-                None => sqlx::query_as(
-                    "SELECT id, org_id, name, created_by, created_at
+                    )
+                    .bind(o)
+                    .fetch_all(&self.pool)
+                    .await
+                }
+                None => {
+                    sqlx::query_as(
+                        "SELECT id, org_id, name, created_by, created_at
                        FROM vault.collections
                       ORDER BY name",
-                )
-                .fetch_all(&self.pool)
-                .await,
+                    )
+                    .fetch_all(&self.pool)
+                    .await
+                }
             }
             .map_err(map_err("list_collections"))?;
             Ok(rows
@@ -706,10 +729,7 @@ mod collections {
             Ok(())
         }
 
-        async fn list_members(
-            &self,
-            collection_id: &str,
-        ) -> VaultResult<Vec<CollectionMember>> {
+        async fn list_members(&self, collection_id: &str) -> VaultResult<Vec<CollectionMember>> {
             let rows: Vec<(String, Vec<u8>, String, f64)> = sqlx::query_as(
                 "SELECT user_id, wrapped_key, role, added_at
                    FROM vault.collection_members
@@ -732,11 +752,7 @@ mod collections {
                 .collect())
         }
 
-        async fn remove_member(
-            &self,
-            collection_id: &str,
-            user_id: &str,
-        ) -> VaultResult<bool> {
+        async fn remove_member(&self, collection_id: &str, user_id: &str) -> VaultResult<bool> {
             let n = sqlx::query(
                 "DELETE FROM vault.collection_members
                   WHERE collection_id = $1 AND user_id = $2",
@@ -750,11 +766,7 @@ mod collections {
             Ok(n > 0)
         }
 
-        async fn is_member(
-            &self,
-            collection_id: &str,
-            user_id: &str,
-        ) -> VaultResult<bool> {
+        async fn is_member(&self, collection_id: &str, user_id: &str) -> VaultResult<bool> {
             let row: Option<(i64,)> = sqlx::query_as(
                 "SELECT 1 FROM vault.collection_members
                   WHERE collection_id = $1 AND user_id = $2",
@@ -1006,25 +1018,35 @@ mod items {
 
         async fn list_folders(&self, parent: Parent<'_>) -> VaultResult<Vec<Folder>> {
             let (vid, cid) = parent_pair(parent);
-            let rows: Vec<(String, Option<String>, Option<String>, Option<String>, String, f64)> =
-                match (vid, cid) {
-                    (Some(v), None) => sqlx::query_as(
+            let rows: Vec<(
+                String,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                String,
+                f64,
+            )> = match (vid, cid) {
+                (Some(v), None) => {
+                    sqlx::query_as(
                         "SELECT id, vault_id, collection_id, parent_id, name, created_at
                            FROM vault.folders WHERE vault_id = $1 ORDER BY name",
                     )
                     .bind(v)
                     .fetch_all(&self.pool)
-                    .await,
-                    (None, Some(c)) => sqlx::query_as(
+                    .await
+                }
+                (None, Some(c)) => {
+                    sqlx::query_as(
                         "SELECT id, vault_id, collection_id, parent_id, name, created_at
                            FROM vault.folders WHERE collection_id = $1 ORDER BY name",
                     )
                     .bind(c)
                     .fetch_all(&self.pool)
-                    .await,
-                    _ => unreachable!("Parent guarantees exactly one Some"),
+                    .await
                 }
-                .map_err(map_err("list_folders"))?;
+                _ => unreachable!("Parent guarantees exactly one Some"),
+            }
+            .map_err(map_err("list_folders"))?;
             Ok(rows
                 .into_iter()
                 .map(|(id, v, c, p, n, ca)| Folder {
@@ -1103,13 +1125,12 @@ mod share {
             if key_ids.is_empty() {
                 return Ok(false);
             }
-            let row: Option<(i64,)> = sqlx::query_as(
-                "SELECT 1 FROM vault.share_revoked WHERE key_id = ANY($1) LIMIT 1",
-            )
-            .bind(key_ids)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(map_err("share_revoked any_revoked"))?;
+            let row: Option<(i64,)> =
+                sqlx::query_as("SELECT 1 FROM vault.share_revoked WHERE key_id = ANY($1) LIMIT 1")
+                    .bind(key_ids)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(map_err("share_revoked any_revoked"))?;
             Ok(row.is_some())
         }
 
@@ -1185,7 +1206,7 @@ mod share {
 }
 
 #[cfg(feature = "vault-share")]
-pub use share::{load_or_init_biscuit_root_postgres, PgRevocationStore};
+pub use share::{PgRevocationStore, load_or_init_biscuit_root_postgres};
 
 #[cfg(any(
     feature = "vault-dynamic-postgres",
@@ -1276,19 +1297,26 @@ mod dynamic {
             now: f64,
             limit: i64,
         ) -> VaultResult<Vec<LeaseRecord>> {
-            let rows: Vec<(String, String, String, f64, f64, Option<f64>, serde_json::Value)> =
-                sqlx::query_as(
-                    "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
+            let rows: Vec<(
+                String,
+                String,
+                String,
+                f64,
+                f64,
+                Option<f64>,
+                serde_json::Value,
+            )> = sqlx::query_as(
+                "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
                        FROM vault.leases
                       WHERE expires_at < $1 AND revoked_at IS NULL
                       ORDER BY expires_at
                       LIMIT $2",
-                )
-                .bind(now)
-                .bind(limit)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(map_err("list_expired_unrevoked"))?;
+            )
+            .bind(now)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_err("list_expired_unrevoked"))?;
             Ok(rows
                 .into_iter()
                 .map(|(id, p, r, ia, ea, ra, m)| LeaseRecord {
@@ -1303,27 +1331,35 @@ mod dynamic {
                 .collect())
         }
 
-        async fn list_leases(
-            &self,
-            provider: Option<&str>,
-        ) -> VaultResult<Vec<LeaseRecord>> {
-            let rows: Vec<(String, String, String, f64, f64, Option<f64>, serde_json::Value)> =
-                match provider {
-                    Some(p) => sqlx::query_as(
+        async fn list_leases(&self, provider: Option<&str>) -> VaultResult<Vec<LeaseRecord>> {
+            let rows: Vec<(
+                String,
+                String,
+                String,
+                f64,
+                f64,
+                Option<f64>,
+                serde_json::Value,
+            )> = match provider {
+                Some(p) => {
+                    sqlx::query_as(
                         "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
                            FROM vault.leases WHERE provider = $1 ORDER BY issued_at DESC",
                     )
                     .bind(p)
                     .fetch_all(&self.pool)
-                    .await,
-                    None => sqlx::query_as(
+                    .await
+                }
+                None => {
+                    sqlx::query_as(
                         "SELECT id, provider, role, issued_at, expires_at, revoked_at, metadata
                            FROM vault.leases ORDER BY issued_at DESC",
                     )
                     .fetch_all(&self.pool)
-                    .await,
+                    .await
                 }
-                .map_err(map_err("list_leases"))?;
+            }
+            .map_err(map_err("list_leases"))?;
             Ok(rows
                 .into_iter()
                 .map(|(id, p, r, ia, ea, ra, m)| LeaseRecord {

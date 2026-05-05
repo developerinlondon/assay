@@ -45,8 +45,14 @@ mod tests {
 
     #[test]
     fn hinted_kind_parsing() {
-        assert_eq!(HintedKind::from_hint(Some("refresh_token")), HintedKind::Refresh);
-        assert_eq!(HintedKind::from_hint(Some("access_token")), HintedKind::Access);
+        assert_eq!(
+            HintedKind::from_hint(Some("refresh_token")),
+            HintedKind::Refresh
+        );
+        assert_eq!(
+            HintedKind::from_hint(Some("access_token")),
+            HintedKind::Access
+        );
         assert_eq!(HintedKind::from_hint(Some("garbage")), HintedKind::Unknown);
         assert_eq!(HintedKind::from_hint(None), HintedKind::Unknown);
     }

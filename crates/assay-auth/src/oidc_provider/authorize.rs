@@ -19,8 +19,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
-use super::types::AuthorizationCode;
 use super::OidcProviderConfig;
+use super::types::AuthorizationCode;
 
 /// Default lifetime of an authorization code — 60 seconds. The OIDC
 /// Core recommendation is "as short as practical"; one minute matches
@@ -131,11 +131,7 @@ pub fn validate(req: &AuthorizeRequest, client: &super::types::OidcClient) -> Au
 /// 32-byte base64url code, stamps `issued_at` + `expires_at`. Caller
 /// supplies the user_id (from the resolved session) and the resolved
 /// scopes (from [`validate`]).
-pub fn build_code(
-    user_id: &str,
-    req: &AuthorizeRequest,
-    scopes: Vec<String>,
-) -> AuthorizationCode {
+pub fn build_code(user_id: &str, req: &AuthorizeRequest, scopes: Vec<String>) -> AuthorizationCode {
     let code = format!("oac_{}", random_token());
     let now = now_secs();
     AuthorizationCode {
@@ -342,21 +338,13 @@ mod tests {
 
     #[test]
     fn redirect_with_code_appends_code_and_state() {
-        let url = redirect_with_code(
-            "https://app.example.com/cb",
-            "oac_abc",
-            Some("st_xyz"),
-        );
+        let url = redirect_with_code("https://app.example.com/cb", "oac_abc", Some("st_xyz"));
         assert_eq!(url, "https://app.example.com/cb?code=oac_abc&state=st_xyz");
     }
 
     #[test]
     fn redirect_with_existing_query_uses_amp() {
-        let url = redirect_with_code(
-            "https://app.example.com/cb?prefilled=1",
-            "oac_a",
-            None,
-        );
+        let url = redirect_with_code("https://app.example.com/cb?prefilled=1", "oac_a", None);
         assert_eq!(url, "https://app.example.com/cb?prefilled=1&code=oac_a");
     }
 

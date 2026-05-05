@@ -11,8 +11,8 @@
 /// `TEST_DATABASE_URL` is not set (e.g. macOS CI).
 mod common;
 
-use assay_workflow::store::postgres::PostgresStore;
 use assay_workflow::store::WorkflowStore;
+use assay_workflow::store::postgres::PostgresStore;
 use assay_workflow::types::*;
 
 fn docker_available() -> bool {
@@ -178,7 +178,12 @@ async fn pg_workflow_claim_and_status() {
 
     // Complete
     store
-        .update_workflow_status("pg-wf-1", WorkflowStatus::Completed, Some(r#"{"ok":true}"#), None)
+        .update_workflow_status(
+            "pg-wf-1",
+            WorkflowStatus::Completed,
+            Some(r#"{"ok":true}"#),
+            None,
+        )
         .await
         .unwrap();
     let wf = store.get_workflow("pg-wf-1").await.unwrap().unwrap();

@@ -105,13 +105,11 @@ where
         None => return service_unavailable("kv"),
     };
     match kv.put(&path, body.data.as_bytes(), body.custom_md).await {
-        Ok(version) => {
-            (
-                StatusCode::CREATED,
-                axum::Json(PutResponse { path, version }),
-            )
-                .into_response()
-        }
+        Ok(version) => (
+            StatusCode::CREATED,
+            axum::Json(PutResponse { path, version }),
+        )
+            .into_response(),
         Err(e) => vault_err_to_response(e),
     }
 }

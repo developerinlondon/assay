@@ -6,13 +6,12 @@
 ## Goal
 
 Brand pack is a first-class assay concept — any lib, extension, or crate can consume it the same
-way. Today knowhere2's `brand/` is a private convention only hostops + the engine sidecar know
-about.
+way. Today knowhere2's `brand/` is a private convention only sysops + the engine sidecar know about.
 
 ```mermaid
 flowchart LR
   bp[consumer brand pack<br/>brand/<br/>brand.json + *.css + assets]
-  bp --> ho[hostops lib]
+  bp --> ho[sysops lib]
   bp --> en[assay-engine SPA]
   bp --> wf[future workflow lib]
   bp --> ot[any future lib]
@@ -27,7 +26,7 @@ flowchart LR
 brand/
 ├── brand.json              tokens (name, subtitle, accent_hex, favicon_url, ...)
 ├── tokens.css              CSS variable overrides (consumed by every surface)
-├── <surface>.css           per-surface overrides (optional: hostops.css, engine.css, ...)
+├── <surface>.css           per-surface overrides (optional: sysops.css, engine.css, ...)
 ├── favicon.svg             single favicon
 └── logo.svg                optional brand mark
 ```
@@ -68,7 +67,7 @@ impl BrandConfig {
 `assay_brand::BrandConfig` under the old name. No behavior change.
 
 Lua side: a stdlib module `assay.brand` that serves brand pack files at `/brand/*` for consumer
-apps. Hostops's `services/brand.lua` collapses into a thin wrapper.
+apps. Sysops's `services/brand.lua` collapses into a thin wrapper.
 
 ## Consumer-app convention
 
@@ -77,7 +76,7 @@ apps. Hostops's `services/brand.lua` collapses into a thin wrapper.
 local brand = require("assay.brand").from_dir("./brand")
 brand.serve_routes(routes)  -- registers /brand/{tokens.css,favicon.svg,...}
 
-hostops.mount(routes, { brand = brand, ... })
+sysops.mount(routes, { brand = brand, ... })
 ```
 
 Engine systemd unit reads `ASSAY_BRAND_*` envs from `brand/brand.json` (small generator script in
@@ -90,9 +89,9 @@ the assay-brand crate emits a systemd `EnvironmentFile=` snippet).
    `crates/assay-brand/`. Dashboard re-exports.
 3. **Shim `ASSAY_WHITELABEL_*` → `ASSAY_BRAND_*`** for backward-compat.
 4. **Lua `assay.brand` stdlib** + `brand/brand.json` schema.
-5. **Hostops + knowhere2 cutover** — services/brand.lua becomes a wrapper.
+5. **Sysops + knowhere2 cutover** — services/brand.lua becomes a wrapper.
 
-Each phase ships independently. Phase 5 lands as part of hostops 0.2.
+Each phase ships independently. Phase 5 lands as part of sysops 0.2.
 
 ## Open
 

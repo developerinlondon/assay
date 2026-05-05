@@ -249,7 +249,9 @@ async fn test_unleash_enable_environment() {
 async fn test_unleash_disable_environment() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
-        .and(path("/api/admin/projects/demo-project/environments/staging"))
+        .and(path(
+            "/api/admin/projects/demo-project/environments/staging",
+        ))
         .respond_with(ResponseTemplate::new(200))
         .mount(&server)
         .await;
@@ -331,7 +333,9 @@ async fn test_unleash_feature() {
 async fn test_unleash_feature_not_found() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/admin/projects/demo-project/features/nonexistent"))
+        .and(path(
+            "/api/admin/projects/demo-project/features/nonexistent",
+        ))
         .respond_with(ResponseTemplate::new(404))
         .mount(&server)
         .await;

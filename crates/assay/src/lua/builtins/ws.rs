@@ -33,15 +33,11 @@ impl UserData for WsConn {}
 // distinct from the client `MaybeTlsStream<TcpStream>`. Methods are exposed
 // directly on the userdata (`conn:read()`, etc.) rather than through a `ws`
 // table, since handlers receive the connection by callback.
-pub type ServerWsStream = tokio_tungstenite::WebSocketStream<
-    hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>,
->;
-pub type ServerWsSink = Rc<
-    tokio::sync::Mutex<futures_util::stream::SplitSink<ServerWsStream, Message>>,
->;
-pub type ServerWsRead = Rc<
-    tokio::sync::Mutex<futures_util::stream::SplitStream<ServerWsStream>>,
->;
+pub type ServerWsStream =
+    tokio_tungstenite::WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>;
+pub type ServerWsSink =
+    Rc<tokio::sync::Mutex<futures_util::stream::SplitSink<ServerWsStream, Message>>>;
+pub type ServerWsRead = Rc<tokio::sync::Mutex<futures_util::stream::SplitStream<ServerWsStream>>>;
 
 pub struct WsServerConn {
     sink: ServerWsSink,

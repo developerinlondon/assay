@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use cron::Schedule;
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 use tracing::{debug, error, info, warn};
 
 use crate::store::WorkflowStore;
@@ -51,7 +51,11 @@ async fn evaluate_schedules<S: WorkflowStore>(store: &S) -> Result<()> {
     Ok(())
 }
 
-async fn evaluate_namespace_schedules<S: WorkflowStore>(store: &S, namespace: &str, now: f64) -> Result<()> {
+async fn evaluate_namespace_schedules<S: WorkflowStore>(
+    store: &S,
+    namespace: &str,
+    now: f64,
+) -> Result<()> {
     let schedules = store.list_schedules(namespace).await?;
 
     for sched in schedules {
