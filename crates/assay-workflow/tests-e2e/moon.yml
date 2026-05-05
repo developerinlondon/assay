@@ -22,7 +22,7 @@ tasks:
       runInCI: true
 
   install-browsers:
-    command: "npx playwright install --with-deps chromium"
+    command: "bash $workspaceRoot/scripts/playwright-install-with-retry.sh chromium"
     deps:
       - "install"
     options:
