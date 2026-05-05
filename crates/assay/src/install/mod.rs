@@ -290,6 +290,9 @@ fn default_bin_dir() -> PathBuf {
 }
 
 fn default_lib_dir() -> PathBuf {
+    if let Some(explicit) = std::env::var_os("ASSAY_LIB_DIR") {
+        return PathBuf::from(explicit);
+    }
     if is_root() {
         PathBuf::from("/opt/assay/libs")
     } else if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {

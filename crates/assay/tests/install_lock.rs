@@ -48,7 +48,7 @@ fn renders_full_lockfile_round_trippable_in_lua() {
         libs: vec![LockLib {
             name: "sysops".into(),
             version: "0.1.0".into(),
-            url: "https://example.com/assay-lib-sysops-0.1.0.tar.gz".into(),
+            url: "https://example.com/sysops-0.1.0.tar.gz".into(),
             sha256: "cccc".into(),
         }],
     };

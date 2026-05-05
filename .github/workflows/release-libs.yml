@@ -1,0 +1,101 @@
+name: Release libs
+
+# Per-lib releases. Triggers on libs/<name>/VERSION bumps; tag-existence
+# check makes re-runs idempotent.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "libs/*/VERSION"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build per-lib tarballs and create releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -d libs ]; then
+            echo "no libs/ directory at workspace root; nothing to do"
+            exit 0
+          fi
+
+          released_any=0
+          for libdir in libs/*/; do
+            [ -d "$libdir" ] || continue
+            libname="$(basename "$libdir")"
+            if [ ! -f "$libdir/VERSION" ]; then
+              echo "skip $libname: no VERSION file"
+              continue
+            fi
+
+            libver="$(tr -d '[:space:]' < "$libdir/VERSION")"
+            tag="assay-lib-${libname}-v${libver}"
+
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "$tag already released — skipping"
+              continue
+            fi
+
+            echo "Releasing $libname $libver as $tag"
+
+            tmpdir="$(mktemp -d)"
+            artifact_name="assay-lib-${libname}-${libver}.tar.gz"
+            artifact="${tmpdir}/${artifact_name}"
+
+            # Flat tarball — assay install extracts into <lib_dir>/<libname>/.
+            tar -czf "$artifact" \
+              -C "libs/$libname" \
+              --exclude='tests-lua' \
+              --exclude='tests-e2e' \
+              .
+
+            checksum_name="${artifact_name}.sha256"
+            checksum="${tmpdir}/${checksum_name}"
+            (cd "$tmpdir" && sha256sum "$artifact_name" > "$checksum_name")
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            if ! git rev-parse "$tag" >/dev/null 2>&1; then
+              git tag -a "$tag" -m "$libname $libver"
+              git push origin "$tag"
+            fi
+
+            notes_file="${tmpdir}/notes.md"
+            if .github/release/extract-changelog.sh "$libname $libver" > "$notes_file" 2>/dev/null; then
+              echo "notes from CHANGELOG section $libname $libver"
+            else
+              {
+                echo "$libname library release $libver."
+                echo ""
+                echo "Asset: $artifact_name"
+                echo "Checksum: $checksum_name"
+                echo "Source: https://github.com/${GITHUB_REPOSITORY}/releases/download/$tag/$artifact_name"
+              } > "$notes_file"
+            fi
+
+            gh release create "$tag" \
+              --title "$libname $libver" \
+              --notes-file "$notes_file" \
+              "$artifact" \
+              "$checksum"
+
+            released_any=1
+            echo "Released $tag"
+          done
+
+          if [ "$released_any" -eq 0 ]; then
+            echo "no lib VERSION files were bumped; nothing released"
+          fi

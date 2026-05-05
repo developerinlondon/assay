@@ -14,7 +14,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Detect what changed so docs/markdown-only PRs don't pay 25 minutes
+  # of cross-platform Rust + browser-test cycles. Any workflow change
+  # forces all jobs (we have to verify the workflows themselves).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      extension: ${{ steps.filter.outputs.extension }}
+      sysops: ${{ steps.filter.outputs.sysops }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.mise.toml'
+              - 'rust-toolchain.toml'
+            extension:
+              - 'openclaw-extension/**'
+            sysops:
+              - 'libs/**'
+            workflows:
+              - '.github/workflows/**'
+
   check:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true' || needs.changes.outputs.sysops == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -202,6 +233,8 @@ jobs:
   # Dedicated extension gate so an extension-only break fails this job
   # specifically rather than hiding behind a generic "moon ci failed".
   extension-tests:
+    needs: changes
+    if: needs.changes.outputs.extension == 'true' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
@@ -226,6 +259,8 @@ jobs:
   # boot/teardown.
   sysops-e2e:
     name: sysops-e2e
+    needs: changes
+    if: needs.changes.outputs.sysops == 'true' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
@@ -261,6 +296,8 @@ jobs:
   # asserts representative routes return 2xx with the expected content.
   sysops-smoke:
     name: sysops-smoke
+    needs: changes
+    if: needs.changes.outputs.sysops == 'true' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
@@ -285,6 +322,8 @@ jobs:
   # added to a workspace dep without bumping that dep's Cargo.toml.
   semver-checks:
     name: cargo-semver-checks
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

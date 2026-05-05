@@ -134,9 +134,7 @@ fn default_extension_url(name: &str, version: &str, arch: &str) -> String {
 }
 
 fn default_lib_url(name: &str, version: &str) -> String {
-    // Convention: `<RELEASE_BASE>/v<version>/assay-lib-<name>-<version>.tar.gz`.
-    // Where `v<version>` is the lib's own tag; finalised in phase 5.
-    format!("{RELEASE_BASE}/v{version}/assay-lib-{name}-{version}.tar.gz")
+    format!("{RELEASE_BASE}/assay-lib-{name}-v{version}/assay-lib-{name}-{version}.tar.gz")
 }
 
 /// Ensure `plan.cache_path` exists and matches `plan.expected_sha256`.
