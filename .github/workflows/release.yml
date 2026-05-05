@@ -535,55 +535,7 @@ jobs:
           cd ..
           cat lua-checksums.txt
 
-      # Per-lib + combined library tarballs (plan 21 phase 5). For every
-      # libs/<name>/ that has a VERSION file, build
-      # `assay-lib-<name>-<libver>.tar.gz` (excluding tests-lua/, which
-      # is dev-only). Also build `assay-libs-<assay-lua-ver>.tar.gz`,
-      # the convenience bundle of every lib at the versions pinned to
-      # this assay-lua release. SHA256 for each artifact appended to
-      # the same checksums file.
-      - name: Build library tarballs
-        env:
-          LIBS_BUNDLE_VERSION: ${{ needs.detect.outputs.assay_lua_version }}
-        run: |
-          set -euo pipefail
-          cd artifacts
-
-          if [ ! -d ../libs ]; then
-            echo "no libs/ directory at workspace root — skipping lib tarballs"
-            exit 0
-          fi
-
-          built_any=0
-          for libdir in ../libs/*/; do
-            [ -d "$libdir" ] || continue
-            libname="$(basename "$libdir")"
-            if [ ! -f "$libdir/VERSION" ]; then
-              echo "skip $libname: no VERSION file"
-              continue
-            fi
-            libver="$(tr -d '[:space:]' < "$libdir/VERSION")"
-            artifact="assay-lib-${libname}-${libver}.tar.gz"
-            tar -czf "$artifact" \
-              -C "../libs" \
-              --exclude='tests-lua' \
-              "$libname"
-            sha256sum "$artifact" >> ../lua-checksums.txt
-            built_any=1
-            echo "built $artifact"
-          done
-
-          if [ $built_any -eq 1 ]; then
-            bundle="assay-libs-${LIBS_BUNDLE_VERSION}.tar.gz"
-            tar -czf "$bundle" \
-              -C ".." \
-              --exclude='tests-lua' \
-              libs
-            sha256sum "$bundle" >> ../lua-checksums.txt
-            echo "built $bundle"
-          fi
-
-          ls -la
+      # Libs ship via `.github/workflows/release-libs.yml`, not bundled here.
 
       - name: Tag assay-lua-v${{ needs.detect.outputs.assay_lua_version }}
         env:
@@ -621,17 +573,11 @@ jobs:
             exit 0
           fi
           cd artifacts
-          # Collect every library tarball built earlier (zero or more,
-          # zero is fine — the bash glob with nullglob behaves).
-          shopt -s nullglob
-          lib_assets=( assay-lib-*.tar.gz assay-libs-*.tar.gz )
-          shopt -u nullglob
           gh release create "assay-lua-v${VERSION}" \
             --title "assay-lua ${VERSION}" \
             --notes-file "../notes.md" \
             assay-linux-x86_64 \
             assay-darwin-aarch64 \
-            "${lib_assets[@]}" \
             ../lua-checksums.txt
 
       - uses: docker/login-action@v4

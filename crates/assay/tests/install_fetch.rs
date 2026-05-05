@@ -120,7 +120,7 @@ fn lib_plan_builds_url_and_cache_path() {
     assert_eq!(plan.expected_sha256, "cccc");
     assert_eq!(
         plan.url,
-        "https://github.com/developerinlondon/assay/releases/download/v0.1.0/assay-lib-sysops-0.1.0.tar.gz"
+        "https://github.com/developerinlondon/assay/releases/download/assay-lib-sysops-v0.1.0/assay-lib-sysops-0.1.0.tar.gz"
     );
     assert_eq!(
         plan.cache_path,
