@@ -196,28 +196,27 @@ for plan-then-apply review.
 
 Libs and binaries release on independent cadences via two workflows.
 
-```mermaid
-flowchart LR
-  subgraph push["push to main"]
-    p1["crates/assay/Cargo.toml<br/>version bump"]
-    p2["libs/&lt;name&gt;/VERSION<br/>bump"]
-  end
+```text
+   push to main                          workflows                          GitHub releases
+══════════════════════           ══════════════════════           ═══════════════════════════════
 
-  subgraph yml["workflows"]
-    rl["release.yml<br/>(assay binary)"]
-    rb["release-libs.yml<br/>(per-lib tarball)"]
-  end
-
-  subgraph rel["GitHub releases"]
-    r1["assay-lua-v&lt;X.Y.Z&gt;<br/>· assay-linux-x86_64<br/>· assay-darwin-aarch64<br/>· lua-checksums.txt"]
-    r2["&lt;name&gt;-v&lt;libver&gt;<br/>· &lt;name&gt;-&lt;libver&gt;.tar.gz<br/>· &lt;name&gt;-&lt;libver&gt;.tar.gz.sha256"]
-  end
-
-  p1 --> rl --> r1
-  p2 --> rb --> r2
-
-  cli["assay install<br/>(client)"] -.->|GET| r1
-  cli -.->|GET per-lib URL| r2
+crates/assay/Cargo.toml ──bump──►   release.yml             ──►   assay-lua-v<X.Y.Z>
+                                    (assay binary)                 ├── assay-linux-x86_64
+                                                                   ├── assay-darwin-aarch64
+                                                                   └── lua-checksums.txt
+                                                                              ▲
+                                                                              │ GET binary
+                                                                              │
+libs/<name>/VERSION     ──bump──►   release-libs.yml        ──►   <name>-v<libver>
+                                    (per-lib tarball)              ├── <name>-<libver>.tar.gz
+                                                                   └── <name>-<libver>.tar.gz.sha256
+                                                                              ▲
+                                                                              │ GET per-lib URL
+                                                                              │
+                                                                   ┌──────────┴──────────┐
+                                                                   │ assay install       │
+                                                                   │   (client)          │
+                                                                   └─────────────────────┘
 ```
 
 ### `release.yml` — assay binary
