@@ -42,7 +42,7 @@ jobs:
             fi
 
             libver="$(tr -d '[:space:]' < "$libdir/VERSION")"
-            tag="${libname}-v${libver}"
+            tag="assay-lib-${libname}-v${libver}"
 
             if gh release view "$tag" >/dev/null 2>&1; then
               echo "$tag already released — skipping"
@@ -52,7 +52,7 @@ jobs:
             echo "Releasing $libname $libver as $tag"
 
             tmpdir="$(mktemp -d)"
-            artifact_name="${libname}-${libver}.tar.gz"
+            artifact_name="assay-lib-${libname}-${libver}.tar.gz"
             artifact="${tmpdir}/${artifact_name}"
 
             # Flat tarball — assay install extracts into <lib_dir>/<libname>/.

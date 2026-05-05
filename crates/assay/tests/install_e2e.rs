@@ -145,7 +145,12 @@ async fn full_install_flow_extracts_bin_and_lib_and_writes_lock() {
             .join(format!("assay-engine-0.4.1-{arch}.tar.gz"))
             .exists()
     );
-    assert!(cache_dir.path().join("sysops-0.1.0.tar.gz").exists());
+    assert!(
+        cache_dir
+            .path()
+            .join("assay-lib-sysops-0.1.0.tar.gz")
+            .exists()
+    );
 
     // Lockfile written next to the manifest, valid Lua, expected shape.
     let lock_path = workspace.path().join("Manifest.lock");

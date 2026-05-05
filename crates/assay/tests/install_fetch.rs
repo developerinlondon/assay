@@ -120,9 +120,12 @@ fn lib_plan_builds_url_and_cache_path() {
     assert_eq!(plan.expected_sha256, "cccc");
     assert_eq!(
         plan.url,
-        "https://github.com/developerinlondon/assay/releases/download/sysops-v0.1.0/sysops-0.1.0.tar.gz"
+        "https://github.com/developerinlondon/assay/releases/download/assay-lib-sysops-v0.1.0/assay-lib-sysops-0.1.0.tar.gz"
     );
-    assert_eq!(plan.cache_path, cache.path().join("sysops-0.1.0.tar.gz"));
+    assert_eq!(
+        plan.cache_path,
+        cache.path().join("assay-lib-sysops-0.1.0.tar.gz")
+    );
 }
 
 #[test]
@@ -168,7 +171,7 @@ async fn cache_hit_skips_http() {
     let server = MockServer::start().await;
 
     let cache = TempDir::new().unwrap();
-    pre_populate(cache.path(), "sysops-0.1.0.tar.gz", body);
+    pre_populate(cache.path(), "assay-lib-sysops-0.1.0.tar.gz", body);
 
     let l = lib(
         "sysops",
@@ -192,7 +195,7 @@ async fn bad_cache_is_replaced_when_online() {
     let server = mock_serving(good_body, "/lib.tar.gz").await;
 
     let cache = TempDir::new().unwrap();
-    pre_populate(cache.path(), "sysops-0.1.0.tar.gz", bad_body);
+    pre_populate(cache.path(), "assay-lib-sysops-0.1.0.tar.gz", bad_body);
 
     let l = lib(
         "sysops",
@@ -230,7 +233,7 @@ async fn server_body_with_wrong_sha256_aborts_and_leaves_cache_empty() {
     // cache file not written
     assert!(!plan.cache_path.exists());
     // tmp file cleaned up too
-    let tmp = cache.path().join("sysops-0.1.0.tar.gz.tmp");
+    let tmp = cache.path().join("assay-lib-sysops-0.1.0.tar.gz.tmp");
     assert!(!tmp.exists());
 }
 
@@ -270,7 +273,7 @@ async fn offline_with_cache_hit_succeeds_without_http() {
     let server = MockServer::start().await; // no mocks mounted
 
     let cache = TempDir::new().unwrap();
-    pre_populate(cache.path(), "sysops-0.1.0.tar.gz", body);
+    pre_populate(cache.path(), "assay-lib-sysops-0.1.0.tar.gz", body);
 
     let l = lib(
         "sysops",
@@ -307,7 +310,11 @@ async fn offline_with_cache_miss_errors_with_offline_missing() {
 #[tokio::test]
 async fn offline_with_bad_cache_drops_it_and_errors() {
     let cache = TempDir::new().unwrap();
-    let cache_file = pre_populate(cache.path(), "sysops-0.1.0.tar.gz", b"stale wrong content");
+    let cache_file = pre_populate(
+        cache.path(),
+        "assay-lib-sysops-0.1.0.tar.gz",
+        b"stale wrong content",
+    );
 
     let l = lib(
         "sysops",
