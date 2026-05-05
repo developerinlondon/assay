@@ -240,7 +240,14 @@ jobs:
             target: aarch64-apple-darwin
             suffix: darwin-aarch64
             deps: ""
-    runs-on: ${{ matrix.os }}
+    # macOS row opt-in routes to the maintainer's local mac runner when
+    # `vars.MAC_LOCAL_RUNNER == 'true'`. See ci.yml `check` job for the
+    # full rationale and toggle commands.
+    runs-on: >-
+      ${{
+        (matrix.os == 'macos-14' && vars.MAC_LOCAL_RUNNER == 'true' && fromJSON('["self-hosted","macos","assay"]'))
+        || matrix.os
+      }}
     steps:
       - uses: actions/checkout@v6
 
