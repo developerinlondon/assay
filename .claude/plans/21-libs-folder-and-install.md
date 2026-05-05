@@ -166,9 +166,10 @@ evaluation is purely declarative.
 
 ### Fetch flow (per dep)
 
-1. Resolve URL: `https://github.com/developerinlondon/assay/releases/download/v<version>/<artifact>`
-   for assay-published binaries / libs. Manifest may override `source` per dep for vendor mirrors /
-   private registries.
+1. Resolve URL:
+   - **Extension binary**: `…/releases/download/v<version>/<name>-<version>-<arch>.tar.gz`
+   - **Lib**: `…/releases/download/<name>-v<version>/<name>-<version>.tar.gz` Manifest may override
+     `source` per dep for vendor mirrors / private registries.
 2. Cache check: `<cache-dir>/<name>-<version>.<ext>`. If present + sha256 matches, skip download.
 3. Otherwise: HTTPS GET, sha256 verify, write cache.
 4. Install:
@@ -191,20 +192,57 @@ install. Same install logic; just no network.
 Resolve all deps, verify cache (or report what would be fetched), but don't write anything. Useful
 for plan-then-apply review.
 
-## Release pipeline updates
+## Release pipeline
 
-`release.yml` already builds the `assay` and `assay-engine` binaries. Add:
+Libs and binaries release on independent cadences via two workflows.
 
-- For each `libs/<name>/` directory with a `VERSION` file, build `assay-lib-<name>-<libver>.tar.gz`
-  (tar.gz of just that lib's tree, no `tests-lua/`).
-- Build a combined `assay-libs-<assayver>.tar.gz` containing all libs at their pinned versions
-  (convenience for "give me everything at this assay version").
-- Compute sha256 for each artifact; attach `SHA256SUMS.txt` to the release.
-- Per-lib semver: each lib's `VERSION` file ticks independently (matches the existing per-sub-crate
-  semver policy in `AGENTS.md`).
+```mermaid
+flowchart LR
+  subgraph push["push to main"]
+    p1["crates/assay/Cargo.toml<br/>version bump"]
+    p2["libs/&lt;name&gt;/VERSION<br/>bump"]
+  end
 
-Operators referencing libs by sha256 in their `Manifest.lua` always know what they're getting; loose
-version refs (e.g. `^0.1.0`) resolve to the latest matching release at install time.
+  subgraph yml["workflows"]
+    rl["release.yml<br/>(assay binary)"]
+    rb["release-libs.yml<br/>(per-lib tarball)"]
+  end
+
+  subgraph rel["GitHub releases"]
+    r1["assay-lua-v&lt;X.Y.Z&gt;<br/>· assay-linux-x86_64<br/>· assay-darwin-aarch64<br/>· lua-checksums.txt"]
+    r2["&lt;name&gt;-v&lt;libver&gt;<br/>· &lt;name&gt;-&lt;libver&gt;.tar.gz<br/>· &lt;name&gt;-&lt;libver&gt;.tar.gz.sha256"]
+  end
+
+  p1 --> rl --> r1
+  p2 --> rb --> r2
+
+  cli["assay install<br/>(client)"] -.->|GET| r1
+  cli -.->|GET per-lib URL| r2
+```
+
+### `release.yml` — assay binary
+
+Triggered on push to main; cuts a new release only when `crates/assay/Cargo.toml` version differs
+from the existing `assay-lua-v<X.Y.Z>` tag. Builds Linux + macOS binaries, uploads to a single
+GitHub release. Does not bundle libs.
+
+### `release-libs.yml` — per-lib
+
+Triggered on push to main when a `libs/<name>/VERSION` file changes (or via `workflow_dispatch`).
+For each lib whose `VERSION` differs from any existing `<name>-v<libver>` tag:
+
+- Build a flat `<name>-<libver>.tar.gz` (contents at top level — extracts straight into
+  `<lib-dir>/<name>/`)
+- Tag the commit `<name>-v<libver>` and push
+- Create a GitHub release with the tarball + sha256 sidecar
+
+Idempotent: already-released versions are skipped. No assay-lua coupling — bumping a lib doesn't
+require an assay-lua bump and vice versa.
+
+### Per-lib semver
+
+Each lib's `VERSION` file ticks independently. Operators pin by sha256 in `Manifest.lua` for
+reproducibility; loose version refs resolve to the latest matching release at install time.
 
 ## Test strategy — pure assay-Lua
 

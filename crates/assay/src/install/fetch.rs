@@ -112,7 +112,7 @@ impl FetchPlan {
     /// Build a plan for a Lua library tarball (arch-neutral).
     pub fn for_lib(lib: &Lib, cache_dir: &Path) -> Self {
         let display_name = format!("{} {}", lib.name, lib.version);
-        let filename = format!("assay-lib-{}-{}.tar.gz", lib.name, lib.version);
+        let filename = format!("{}-{}.tar.gz", lib.name, lib.version);
         let url = lib
             .source
             .clone()
@@ -134,9 +134,7 @@ fn default_extension_url(name: &str, version: &str, arch: &str) -> String {
 }
 
 fn default_lib_url(name: &str, version: &str) -> String {
-    // Convention: `<RELEASE_BASE>/v<version>/assay-lib-<name>-<version>.tar.gz`.
-    // Where `v<version>` is the lib's own tag; finalised in phase 5.
-    format!("{RELEASE_BASE}/v{version}/assay-lib-{name}-{version}.tar.gz")
+    format!("{RELEASE_BASE}/{name}-v{version}/{name}-{version}.tar.gz")
 }
 
 /// Ensure `plan.cache_path` exists and matches `plan.expected_sha256`.

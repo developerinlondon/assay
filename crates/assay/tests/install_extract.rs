@@ -143,7 +143,7 @@ fn lib_extracts_tarball_tree_into_named_subdir() {
 
     let archive = write_archive(
         cache.path(),
-        "assay-lib-sysops-0.1.0.tar.gz",
+        "sysops-0.1.0.tar.gz",
         &[
             ("mount.lua", b"return {}"),
             ("pages/dashboard.lua", b"-- dash"),
@@ -180,7 +180,7 @@ fn lib_replaces_existing_tree() {
 
     let archive = write_archive(
         cache.path(),
-        "assay-lib-sysops-0.1.1.tar.gz",
+        "sysops-0.1.1.tar.gz",
         &[("mount.lua", b"-- new"), ("VERSION", b"0.1.1\n")],
     );
 
@@ -205,7 +205,7 @@ fn lib_recovers_from_leftover_staging_dir() {
 
     let archive = write_archive(
         cache.path(),
-        "assay-lib-sysops-0.1.0.tar.gz",
+        "sysops-0.1.0.tar.gz",
         &[("mount.lua", b"return {}")],
     );
 
@@ -224,7 +224,7 @@ fn lib_creates_lib_dir_when_missing() {
 
     let archive = write_archive(
         cache.path(),
-        "assay-lib-sysops-0.1.0.tar.gz",
+        "sysops-0.1.0.tar.gz",
         &[("mount.lua", b"return {}")],
     );
 
