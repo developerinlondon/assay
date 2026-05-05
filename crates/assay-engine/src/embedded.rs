@@ -38,7 +38,7 @@ use std::sync::Arc;
 
 use assay_dashboard::{DashboardCtx, WhitelabelConfig};
 use assay_domain::events::EngineEventBus;
-use assay_workflow::{WorkflowStore, WorkflowCtx};
+use assay_workflow::{WorkflowCtx, WorkflowStore};
 
 use crate::config::EngineConfig;
 use crate::init::EngineBoot;
@@ -121,10 +121,7 @@ pub async fn build(cfg: EngineConfig) -> anyhow::Result<EmbeddedEngine> {
 }
 
 #[cfg(feature = "backend-postgres")]
-async fn build_pg(
-    cfg: EngineConfig,
-    b: crate::init::PgBoot,
-) -> anyhow::Result<EmbeddedEngine> {
+async fn build_pg(cfg: EngineConfig, b: crate::init::PgBoot) -> anyhow::Result<EmbeddedEngine> {
     let store = assay_workflow::PostgresStore::from_pool(b.pool.clone())
         .await
         .map_err(|e| anyhow::anyhow!("workflow store (pg): {e}"))?;

@@ -17,7 +17,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::cloud::sigv4::{now_amz_date, sign, SigV4Input};
+use crate::cloud::sigv4::{SigV4Input, now_amz_date, sign};
 use crate::crypto::sealing::KmsSeal;
 use crate::error::{Result, VaultError};
 
@@ -72,7 +72,11 @@ struct DecryptResp {
 }
 
 impl AwsKmsSeal {
-    pub fn new(region: impl Into<String>, key_id: impl Into<String>, creds: AwsCredentials) -> Self {
+    pub fn new(
+        region: impl Into<String>,
+        key_id: impl Into<String>,
+        creds: AwsCredentials,
+    ) -> Self {
         Self {
             region: region.into(),
             key_id: key_id.into(),

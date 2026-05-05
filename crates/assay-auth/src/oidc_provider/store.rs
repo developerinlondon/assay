@@ -176,13 +176,11 @@ mod pg {
         }
 
         async fn get(&self, client_id: &str) -> Result<Option<OidcClient>> {
-            let row = sqlx::query(
-                "SELECT * FROM auth.oidc_clients WHERE client_id = $1",
-            )
-            .bind(client_id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("auth.oidc_clients select")?;
+            let row = sqlx::query("SELECT * FROM auth.oidc_clients WHERE client_id = $1")
+                .bind(client_id)
+                .fetch_optional(&self.pool)
+                .await
+                .context("auth.oidc_clients select")?;
             Ok(row.map(map_client_row))
         }
 
@@ -455,13 +453,11 @@ mod pg {
         }
 
         async fn get(&self, token_hash: &str) -> Result<Option<RefreshToken>> {
-            let row = sqlx::query(
-                "SELECT * FROM auth.oidc_refresh_tokens WHERE token_hash = $1",
-            )
-            .bind(token_hash)
-            .fetch_optional(&self.pool)
-            .await
-            .context("auth.oidc_refresh_tokens select")?;
+            let row = sqlx::query("SELECT * FROM auth.oidc_refresh_tokens WHERE token_hash = $1")
+                .bind(token_hash)
+                .fetch_optional(&self.pool)
+                .await
+                .context("auth.oidc_refresh_tokens select")?;
             Ok(row.map(map_refresh_row))
         }
 
@@ -542,13 +538,11 @@ mod pg {
         }
 
         async fn list_by_assay_session(&self, assay_session_id: &str) -> Result<Vec<OidcSession>> {
-            let rows = sqlx::query(
-                "SELECT * FROM auth.oidc_sessions WHERE assay_session_id = $1",
-            )
-            .bind(assay_session_id)
-            .fetch_all(&self.pool)
-            .await
-            .context("auth.oidc_sessions list_by_assay_session")?;
+            let rows = sqlx::query("SELECT * FROM auth.oidc_sessions WHERE assay_session_id = $1")
+                .bind(assay_session_id)
+                .fetch_all(&self.pool)
+                .await
+                .context("auth.oidc_sessions list_by_assay_session")?;
             Ok(rows.into_iter().map(map_session_row).collect())
         }
 
@@ -562,13 +556,11 @@ mod pg {
         }
 
         async fn delete_by_assay_session(&self, assay_session_id: &str) -> Result<u64> {
-            let r = sqlx::query(
-                "DELETE FROM auth.oidc_sessions WHERE assay_session_id = $1",
-            )
-            .bind(assay_session_id)
-            .execute(&self.pool)
-            .await
-            .context("auth.oidc_sessions delete_by_assay_session")?;
+            let r = sqlx::query("DELETE FROM auth.oidc_sessions WHERE assay_session_id = $1")
+                .bind(assay_session_id)
+                .execute(&self.pool)
+                .await
+                .context("auth.oidc_sessions delete_by_assay_session")?;
             Ok(r.rows_affected())
         }
     }
@@ -628,14 +620,13 @@ mod pg {
         }
 
         async fn delete(&self, user_id: &str, client_id: &str) -> Result<bool> {
-            let r = sqlx::query(
-                "DELETE FROM auth.oidc_consents WHERE user_id = $1 AND client_id = $2",
-            )
-            .bind(user_id)
-            .bind(client_id)
-            .execute(&self.pool)
-            .await
-            .context("auth.oidc_consents delete")?;
+            let r =
+                sqlx::query("DELETE FROM auth.oidc_consents WHERE user_id = $1 AND client_id = $2")
+                    .bind(user_id)
+                    .bind(client_id)
+                    .execute(&self.pool)
+                    .await
+                    .context("auth.oidc_consents delete")?;
             Ok(r.rows_affected() > 0)
         }
     }
@@ -689,13 +680,12 @@ mod pg {
 
         async fn take(&self, state: &str) -> Result<Option<UpstreamLoginState>> {
             // Atomic delete-and-return — single-use semantic.
-            let row = sqlx::query(
-                "DELETE FROM auth.oidc_upstream_states WHERE state = $1 RETURNING *",
-            )
-            .bind(state)
-            .fetch_optional(&self.pool)
-            .await
-            .context("auth.oidc_upstream_states take")?;
+            let row =
+                sqlx::query("DELETE FROM auth.oidc_upstream_states WHERE state = $1 RETURNING *")
+                    .bind(state)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .context("auth.oidc_upstream_states take")?;
             Ok(row.map(map_upstream_state_row))
         }
     }
@@ -1086,35 +1076,31 @@ mod sqlite_impl {
         }
 
         async fn get(&self, token_hash: &str) -> Result<Option<RefreshToken>> {
-            let row = sqlx::query(
-                "SELECT * FROM auth.oidc_refresh_tokens WHERE token_hash = ?",
-            )
-            .bind(token_hash)
-            .fetch_optional(&self.pool)
-            .await
-            .context("auth.oidc_refresh_tokens get")?;
+            let row = sqlx::query("SELECT * FROM auth.oidc_refresh_tokens WHERE token_hash = ?")
+                .bind(token_hash)
+                .fetch_optional(&self.pool)
+                .await
+                .context("auth.oidc_refresh_tokens get")?;
             Ok(row.map(map_refresh_row))
         }
 
         async fn revoke(&self, token_hash: &str) -> Result<bool> {
-            let r = sqlx::query(
-                "UPDATE auth.oidc_refresh_tokens SET revoked = 1 WHERE token_hash = ?",
-            )
-            .bind(token_hash)
-            .execute(&self.pool)
-            .await
-            .context("auth.oidc_refresh_tokens revoke")?;
+            let r =
+                sqlx::query("UPDATE auth.oidc_refresh_tokens SET revoked = 1 WHERE token_hash = ?")
+                    .bind(token_hash)
+                    .execute(&self.pool)
+                    .await
+                    .context("auth.oidc_refresh_tokens revoke")?;
             Ok(r.rows_affected() > 0)
         }
 
         async fn revoke_for_user(&self, user_id: &str) -> Result<u64> {
-            let r = sqlx::query(
-                "UPDATE auth.oidc_refresh_tokens SET revoked = 1 WHERE user_id = ?",
-            )
-            .bind(user_id)
-            .execute(&self.pool)
-            .await
-            .context("auth.oidc_refresh_tokens revoke_for_user")?;
+            let r =
+                sqlx::query("UPDATE auth.oidc_refresh_tokens SET revoked = 1 WHERE user_id = ?")
+                    .bind(user_id)
+                    .execute(&self.pool)
+                    .await
+                    .context("auth.oidc_refresh_tokens revoke_for_user")?;
             Ok(r.rows_affected())
         }
     }
@@ -1173,13 +1159,11 @@ mod sqlite_impl {
         }
 
         async fn list_by_assay_session(&self, assay_session_id: &str) -> Result<Vec<OidcSession>> {
-            let rows = sqlx::query(
-                "SELECT * FROM auth.oidc_sessions WHERE assay_session_id = ?",
-            )
-            .bind(assay_session_id)
-            .fetch_all(&self.pool)
-            .await
-            .context("auth.oidc_sessions list_by_assay_session")?;
+            let rows = sqlx::query("SELECT * FROM auth.oidc_sessions WHERE assay_session_id = ?")
+                .bind(assay_session_id)
+                .fetch_all(&self.pool)
+                .await
+                .context("auth.oidc_sessions list_by_assay_session")?;
             Ok(rows.into_iter().map(map_session_row).collect())
         }
 
@@ -1193,13 +1177,11 @@ mod sqlite_impl {
         }
 
         async fn delete_by_assay_session(&self, assay_session_id: &str) -> Result<u64> {
-            let r = sqlx::query(
-                "DELETE FROM auth.oidc_sessions WHERE assay_session_id = ?",
-            )
-            .bind(assay_session_id)
-            .execute(&self.pool)
-            .await
-            .context("auth.oidc_sessions delete_by_assay_session")?;
+            let r = sqlx::query("DELETE FROM auth.oidc_sessions WHERE assay_session_id = ?")
+                .bind(assay_session_id)
+                .execute(&self.pool)
+                .await
+                .context("auth.oidc_sessions delete_by_assay_session")?;
             Ok(r.rows_affected())
         }
     }
@@ -1247,26 +1229,24 @@ mod sqlite_impl {
         }
 
         async fn get(&self, user_id: &str, client_id: &str) -> Result<Option<ConsentGrant>> {
-            let row = sqlx::query(
-                "SELECT * FROM auth.oidc_consents WHERE user_id = ? AND client_id = ?",
-            )
-            .bind(user_id)
-            .bind(client_id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("auth.oidc_consents get")?;
+            let row =
+                sqlx::query("SELECT * FROM auth.oidc_consents WHERE user_id = ? AND client_id = ?")
+                    .bind(user_id)
+                    .bind(client_id)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .context("auth.oidc_consents get")?;
             Ok(row.map(map_consent_row))
         }
 
         async fn delete(&self, user_id: &str, client_id: &str) -> Result<bool> {
-            let r = sqlx::query(
-                "DELETE FROM auth.oidc_consents WHERE user_id = ? AND client_id = ?",
-            )
-            .bind(user_id)
-            .bind(client_id)
-            .execute(&self.pool)
-            .await
-            .context("auth.oidc_consents delete")?;
+            let r =
+                sqlx::query("DELETE FROM auth.oidc_consents WHERE user_id = ? AND client_id = ?")
+                    .bind(user_id)
+                    .bind(client_id)
+                    .execute(&self.pool)
+                    .await
+                    .context("auth.oidc_consents delete")?;
             Ok(r.rows_affected() > 0)
         }
     }
@@ -1322,13 +1302,11 @@ mod sqlite_impl {
             // SQLite likewise lacks RETURNING in some sqlx mappings; do a
             // load + delete in a tx for parity with the PG behaviour.
             let mut tx = self.pool.begin().await.context("begin take tx")?;
-            let row = sqlx::query(
-                "SELECT * FROM auth.oidc_upstream_states WHERE state = ?",
-            )
-            .bind(state)
-            .fetch_optional(&mut *tx)
-            .await
-            .context("auth.oidc_upstream_states take select")?;
+            let row = sqlx::query("SELECT * FROM auth.oidc_upstream_states WHERE state = ?")
+                .bind(state)
+                .fetch_optional(&mut *tx)
+                .await
+                .context("auth.oidc_upstream_states take select")?;
             let Some(row) = row else {
                 tx.rollback().await.ok();
                 return Ok(None);

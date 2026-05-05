@@ -37,10 +37,22 @@ fn _new_event_compiles() {
 }
 
 fn _subsystem_round_trip() {
-    assert_eq!(Subsystem::from_str(Subsystem::Workflow.as_str()), Subsystem::Workflow);
-    assert_eq!(Subsystem::from_str(Subsystem::Auth.as_str()), Subsystem::Auth);
-    assert_eq!(Subsystem::from_str(Subsystem::Secrets.as_str()), Subsystem::Secrets);
-    assert_eq!(Subsystem::from_str(Subsystem::System.as_str()), Subsystem::System);
+    assert_eq!(
+        Subsystem::from_str(Subsystem::Workflow.as_str()),
+        Subsystem::Workflow
+    );
+    assert_eq!(
+        Subsystem::from_str(Subsystem::Auth.as_str()),
+        Subsystem::Auth
+    );
+    assert_eq!(
+        Subsystem::from_str(Subsystem::Secrets.as_str()),
+        Subsystem::Secrets
+    );
+    assert_eq!(
+        Subsystem::from_str(Subsystem::System.as_str()),
+        Subsystem::System
+    );
     assert_eq!(Subsystem::from_str("unknown_subsystem"), Subsystem::System);
 }
 

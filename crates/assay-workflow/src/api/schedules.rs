@@ -82,9 +82,7 @@ pub async fn create_schedule<S: WorkflowStore>(
 
     // Validate the timezone early so a bad value produces a clean 400
     // instead of a mysterious silent no-op from the scheduler later.
-    if !req.timezone.eq_ignore_ascii_case("UTC")
-        && req.timezone.parse::<chrono_tz::Tz>().is_err()
-    {
+    if !req.timezone.eq_ignore_ascii_case("UTC") && req.timezone.parse::<chrono_tz::Tz>().is_err() {
         return Err(AppError::Internal(anyhow::anyhow!(
             "invalid timezone: {}",
             req.timezone

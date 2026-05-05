@@ -88,7 +88,9 @@ async fn start_and_list_workflows() {
 
     // Get events
     let resp = c
-        .get(format!("{url}/api/v1/engine/workflow/workflows/wf-test-1/events"))
+        .get(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-test-1/events"
+        ))
         .send()
         .await
         .unwrap();
@@ -116,7 +118,9 @@ async fn signal_and_cancel_workflow() {
 
     // Send signal
     let resp = c
-        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-sig-1/signal/approve"))
+        .post(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-sig-1/signal/approve"
+        ))
         .json(&serde_json::json!({ "payload": {"approved": true} }))
         .send()
         .await
@@ -125,7 +129,9 @@ async fn signal_and_cancel_workflow() {
 
     // Cancel
     let resp = c
-        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-sig-1/cancel"))
+        .post(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-sig-1/cancel"
+        ))
         .send()
         .await
         .unwrap();
@@ -133,7 +139,9 @@ async fn signal_and_cancel_workflow() {
 
     // Cancel again — should 404 (already terminal)
     let resp = c
-        .post(format!("{url}/api/v1/engine/workflow/workflows/wf-sig-1/cancel"))
+        .post(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-sig-1/cancel"
+        ))
         .send()
         .await
         .unwrap();
@@ -167,12 +175,8 @@ async fn cancel_accepts_any_body_shape() {
         let req = c.post(&cancel_url);
         let req = match *body_kind {
             "none" => req,
-            "empty_object" => req
-                .header("content-type", "application/json")
-                .body("{}"),
-            "empty_array" => req
-                .header("content-type", "application/json")
-                .body("[]"),
+            "empty_object" => req.header("content-type", "application/json").body("{}"),
+            "empty_array" => req.header("content-type", "application/json").body("[]"),
             "with_reason" => req
                 .header("content-type", "application/json")
                 .body(r#"{"reason":"explicit"}"#),
@@ -265,7 +269,9 @@ async fn schedule_crud() {
 
     // Get schedule
     let resp = c
-        .get(format!("{url}/api/v1/engine/workflow/schedules/hourly-ingest"))
+        .get(format!(
+            "{url}/api/v1/engine/workflow/schedules/hourly-ingest"
+        ))
         .send()
         .await
         .unwrap();
@@ -273,7 +279,9 @@ async fn schedule_crud() {
 
     // Delete schedule
     let resp = c
-        .delete(format!("{url}/api/v1/engine/workflow/schedules/hourly-ingest"))
+        .delete(format!(
+            "{url}/api/v1/engine/workflow/schedules/hourly-ingest"
+        ))
         .send()
         .await
         .unwrap();
@@ -281,7 +289,9 @@ async fn schedule_crud() {
 
     // Verify deleted
     let resp = c
-        .get(format!("{url}/api/v1/engine/workflow/schedules/hourly-ingest"))
+        .get(format!(
+            "{url}/api/v1/engine/workflow/schedules/hourly-ingest"
+        ))
         .send()
         .await
         .unwrap();
@@ -294,7 +304,9 @@ async fn workflow_not_found() {
     let c = client();
 
     let resp = c
-        .get(format!("{url}/api/v1/engine/workflow/workflows/nonexistent"))
+        .get(format!(
+            "{url}/api/v1/engine/workflow/workflows/nonexistent"
+        ))
         .send()
         .await
         .unwrap();
@@ -349,8 +361,14 @@ async fn schedule_patch_updates_fields() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["task_queue"], "reports");
-    assert_eq!(body["cron_expr"], "0 0 3 * * *", "cron kept from prior patch");
-    assert_eq!(body["timezone"], "Europe/Berlin", "timezone kept from prior patch");
+    assert_eq!(
+        body["cron_expr"], "0 0 3 * * *",
+        "cron kept from prior patch"
+    );
+    assert_eq!(
+        body["timezone"], "Europe/Berlin",
+        "timezone kept from prior patch"
+    );
 }
 
 #[tokio::test]
@@ -370,7 +388,9 @@ async fn schedule_pause_and_resume() {
 
     // Pause
     let resp = c
-        .post(format!("{url}/api/v1/engine/workflow/schedules/hourly/pause"))
+        .post(format!(
+            "{url}/api/v1/engine/workflow/schedules/hourly/pause"
+        ))
         .send()
         .await
         .unwrap();
@@ -380,7 +400,9 @@ async fn schedule_pause_and_resume() {
 
     // Resume
     let resp = c
-        .post(format!("{url}/api/v1/engine/workflow/schedules/hourly/resume"))
+        .post(format!(
+            "{url}/api/v1/engine/workflow/schedules/hourly/resume"
+        ))
         .send()
         .await
         .unwrap();
@@ -428,11 +450,17 @@ async fn schedule_patch_rejects_invalid_timezone() {
 async fn version_endpoint_returns_shape() {
     let (url, _h) = start_test_server().await;
     let c = client();
-    let resp = c.get(format!("{url}/api/v1/engine/workflow/version")).send().await.unwrap();
+    let resp = c
+        .get(format!("{url}/api/v1/engine/workflow/version"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(body["version"].is_string(), "version is a string");
-    let profile = body["build_profile"].as_str().expect("build_profile string");
+    let profile = body["build_profile"]
+        .as_str()
+        .expect("build_profile string");
     assert!(
         profile == "debug" || profile == "release",
         "build_profile one of debug|release, got {profile}"

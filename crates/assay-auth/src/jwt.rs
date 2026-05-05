@@ -256,13 +256,11 @@ impl JwtConfig {
             .begin()
             .await
             .map_err(|e| Error::Backend(anyhow::anyhow!("begin tx (pg rotate): {e}")))?;
-        sqlx::query(
-            "UPDATE auth.jwks_keys SET rotated_at = $1 WHERE rotated_at IS NULL",
-        )
-        .bind(now)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| Error::Backend(anyhow::anyhow!("mark old key rotated (pg): {e}")))?;
+        sqlx::query("UPDATE auth.jwks_keys SET rotated_at = $1 WHERE rotated_at IS NULL")
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::Backend(anyhow::anyhow!("mark old key rotated (pg): {e}")))?;
         sqlx::query(
             "INSERT INTO auth.jwks_keys
                  (kid, alg, public_jwk, private_pem_encrypted, created_at, rotated_at, expires_at)
@@ -313,13 +311,11 @@ impl JwtConfig {
             .begin()
             .await
             .map_err(|e| Error::Backend(anyhow::anyhow!("begin tx (sqlite rotate): {e}")))?;
-        sqlx::query(
-            "UPDATE auth.jwks_keys SET rotated_at = ? WHERE rotated_at IS NULL",
-        )
-        .bind(now)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| Error::Backend(anyhow::anyhow!("mark old key rotated (sqlite): {e}")))?;
+        sqlx::query("UPDATE auth.jwks_keys SET rotated_at = ? WHERE rotated_at IS NULL")
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::Backend(anyhow::anyhow!("mark old key rotated (sqlite): {e}")))?;
         sqlx::query(
             "INSERT INTO auth.jwks_keys
                  (kid, alg, public_jwk, private_pem_encrypted, created_at, rotated_at, expires_at)
@@ -355,10 +351,7 @@ impl JwtConfig {
     }
 }
 
-fn lookup_decoding_key<'a>(
-    inner: &'a Inner,
-    kid: &str,
-) -> Option<(Algorithm, &'a DecodingKey)> {
+fn lookup_decoding_key<'a>(inner: &'a Inner, kid: &str) -> Option<(Algorithm, &'a DecodingKey)> {
     if let Some(active) = &inner.active
         && active.kid == kid
     {

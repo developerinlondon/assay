@@ -17,7 +17,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::cloud::gcp_jwt::{fetch_access_token, AccessToken, ServiceAccount};
+use crate::cloud::gcp_jwt::{AccessToken, ServiceAccount, fetch_access_token};
 use crate::crypto::sealing::KmsSeal;
 use crate::error::{Result, VaultError};
 

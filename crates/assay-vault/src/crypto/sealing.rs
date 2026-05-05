@@ -96,11 +96,7 @@ pub mod shamir {
     /// Split a 32-byte KEK into `shares_count` Shamir shares; any
     /// `threshold` shares reconstruct it. Validates the threshold ≤
     /// shares_count and both ≥ 1 — passing 0 to `sharks` panics.
-    pub fn split_kek(
-        kek: &[u8; KEY_LEN],
-        threshold: u8,
-        shares_count: u8,
-    ) -> Result<Vec<Share>> {
+    pub fn split_kek(kek: &[u8; KEY_LEN], threshold: u8, shares_count: u8) -> Result<Vec<Share>> {
         if threshold == 0 || shares_count == 0 {
             return Err(VaultError::Invalid(
                 "shamir threshold and shares_count must be ≥ 1".into(),
@@ -233,11 +229,7 @@ pub trait SealStore: Send + Sync + 'static {
     /// bytes (one `Vec<u8>` per share). The shares are returned ONCE —
     /// the engine does not retain a copy. Operators MUST distribute
     /// and store them securely.
-    async fn init_shamir(
-        &self,
-        threshold: u8,
-        shares_count: u8,
-    ) -> Result<(String, Vec<Vec<u8>>)>;
+    async fn init_shamir(&self, threshold: u8, shares_count: u8) -> Result<(String, Vec<Vec<u8>>)>;
 
     /// Update the at-rest sealed flag for a kid. The runtime
     /// [`crate::crypto::seal_state::SealState`] is the source of truth

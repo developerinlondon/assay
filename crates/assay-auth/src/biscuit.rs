@@ -133,7 +133,9 @@ impl BiscuitConfig {
     /// ```
     pub fn issue<F>(&self, build: F) -> Result<String>
     where
-        F: FnOnce(BiscuitBuilder) -> std::result::Result<BiscuitBuilder, biscuit_auth::error::Token>,
+        F: FnOnce(
+            BiscuitBuilder,
+        ) -> std::result::Result<BiscuitBuilder, biscuit_auth::error::Token>,
     {
         let builder = build(Biscuit::builder())
             .map_err(|e| Error::Backend(anyhow::anyhow!("biscuit build: {e}")))?;
@@ -157,7 +159,9 @@ impl BiscuitConfig {
     /// triggering any deny / failed check.
     pub fn verify<F>(&self, token: &str, build: F) -> Result<()>
     where
-        F: FnOnce(AuthorizerBuilder) -> std::result::Result<AuthorizerBuilder, biscuit_auth::error::Token>,
+        F: FnOnce(
+            AuthorizerBuilder,
+        ) -> std::result::Result<AuthorizerBuilder, biscuit_auth::error::Token>,
     {
         let guard = self.inner.read();
         // Try the active key first; on signature mismatch, fall through
@@ -181,7 +185,7 @@ impl BiscuitConfig {
                     None => {
                         return Err(Error::Backend(anyhow::anyhow!(
                             "biscuit signature verify: {last}"
-                        )))
+                        )));
                     }
                 }
             }
@@ -333,7 +337,11 @@ pub async fn load_or_init_sqlite(pool: &sqlx::SqlitePool) -> Result<BiscuitConfi
         .bind(now)
         .execute(pool)
         .await
-        .map_err(|e| Error::Backend(anyhow::anyhow!("insert auth.biscuit_root_keys (sqlite): {e}")))?;
+        .map_err(|e| {
+            Error::Backend(anyhow::anyhow!(
+                "insert auth.biscuit_root_keys (sqlite): {e}"
+            ))
+        })?;
         Ok(BiscuitConfig::from_active(
             ActiveRootKey { kid, keypair },
             Vec::new(),
@@ -347,7 +355,11 @@ pub async fn load_or_init_sqlite(pool: &sqlx::SqlitePool) -> Result<BiscuitConfi
 /// input bytes yield the same kid.
 fn mint_kid(public_key: &PublicKey) -> String {
     let bytes = public_key.to_bytes();
-    let prefix = if bytes.len() >= 16 { &bytes[..16] } else { &bytes };
+    let prefix = if bytes.len() >= 16 {
+        &bytes[..16]
+    } else {
+        &bytes
+    };
     format!("kid_{}", data_encoding::BASE64URL_NOPAD.encode(prefix))
 }
 
@@ -382,9 +394,7 @@ mod tests {
     #[test]
     fn verify_rejects_tampered_token() {
         let cfg = cfg();
-        let token = cfg
-            .issue(|b| b.fact("user(\"alice\")"))
-            .expect("issue");
+        let token = cfg.issue(|b| b.fact("user(\"alice\")")).expect("issue");
         // Flip a single byte mid-token; the signature verify should fail.
         let mut bytes = token.into_bytes();
         let half = bytes.len() / 2;
@@ -399,9 +409,7 @@ mod tests {
         // Issue with cfg_a, verify with cfg_b — different root keypair.
         let cfg_a = cfg();
         let cfg_b = cfg();
-        let token = cfg_a
-            .issue(|b| b.fact("user(\"alice\")"))
-            .expect("issue");
+        let token = cfg_a.issue(|b| b.fact("user(\"alice\")")).expect("issue");
         let result = cfg_b.verify(&token, |a| a.policy("allow if user(\"alice\")"));
         assert!(matches!(result, Err(Error::Backend(_))));
     }
@@ -409,16 +417,12 @@ mod tests {
     #[test]
     fn attenuate_produces_valid_child_token() {
         let cfg = cfg();
-        let token = cfg
-            .issue(|b| b.fact("user(\"alice\")"))
-            .expect("issue");
+        let token = cfg.issue(|b| b.fact("user(\"alice\")")).expect("issue");
         let pubkey = cfg.active_public_key();
         // Attenuate with an extra fact + a check: reading must be
         // explicitly allowed.
-        let attenuated = attenuate(&token, pubkey, |b| {
-            b.check("check if operation(\"read\")")
-        })
-        .expect("attenuate");
+        let attenuated = attenuate(&token, pubkey, |b| b.check("check if operation(\"read\")"))
+            .expect("attenuate");
         // With operation("read") → allowed.
         cfg.verify(&attenuated, |a| {
             a.fact("operation(\"read\")")
@@ -435,9 +439,7 @@ mod tests {
     fn time_based_check_rejects_after_expiry() {
         let cfg = cfg();
         // Issue an unrestricted token; the attenuation pins a time check.
-        let token = cfg
-            .issue(|b| b.fact("user(\"alice\")"))
-            .expect("issue");
+        let token = cfg.issue(|b| b.fact("user(\"alice\")")).expect("issue");
         let pubkey = cfg.active_public_key();
         let attenuated = attenuate(&token, pubkey, |b| {
             // Note: time/2026 in past is rejected; pin to year 2000 so
@@ -445,9 +447,7 @@ mod tests {
             b.check("check if time($now), $now < 2000-01-01T00:00:00Z")
         })
         .expect("attenuate");
-        let result = cfg.verify(&attenuated, |a| {
-            a.time().policy("allow if user(\"alice\")")
-        });
+        let result = cfg.verify(&attenuated, |a| a.time().policy("allow if user(\"alice\")"));
         assert!(matches!(result, Err(Error::Backend(_))));
     }
 

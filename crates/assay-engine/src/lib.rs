@@ -47,8 +47,8 @@ pub mod server;
 pub mod state;
 
 pub use assay_auth as auth;
-pub use assay_domain as core;
 pub use assay_dashboard as dashboard;
+pub use assay_domain as core;
 pub use assay_workflow as workflow;
 
 pub use config::{
@@ -90,7 +90,9 @@ async fn build_vault_ctx_pg(
     let mut ctx = assay_vault::VaultCtx::new()
         .with_kek(kek)
         .with_kv(assay_vault::store::postgres::PgKvStore::new(pool.clone()))
-        .with_transit(assay_vault::store::postgres::PgTransitStore::new(pool.clone()));
+        .with_transit(assay_vault::store::postgres::PgTransitStore::new(
+            pool.clone(),
+        ));
     #[cfg(feature = "vault-sealing-shamir")]
     {
         ctx = ctx.with_seal_store(assay_vault::store::postgres::PgSealStore::new(pool.clone()));
@@ -105,7 +107,9 @@ async fn build_vault_ctx_pg(
                 pool.clone(),
             ))
             .with_items(assay_vault::store::postgres::PgItemStore::new(pool.clone()))
-            .with_folders(assay_vault::store::postgres::PgFolderStore::new(pool.clone()));
+            .with_folders(assay_vault::store::postgres::PgFolderStore::new(
+                pool.clone(),
+            ));
         // Plan §S4 — seed default Zanzibar namespaces (vault,
         // collection, kv_path, team, family, org). Idempotent.
         // Builds the same backing PG store assay-auth uses; the
@@ -124,17 +128,17 @@ async fn build_vault_ctx_pg(
         let kp = assay_vault::store::postgres::load_or_init_biscuit_root_postgres(pool)
             .await
             .map_err(|e| anyhow::anyhow!("vault biscuit root bootstrap (pg): {e}"))?;
-        let revs = std::sync::Arc::new(
-            assay_vault::store::postgres::PgRevocationStore::new(pool.clone()),
-        );
+        let revs = std::sync::Arc::new(assay_vault::store::postgres::PgRevocationStore::new(
+            pool.clone(),
+        ));
         let svc = assay_vault::share::ShareService::new(kp, revs);
         ctx = ctx.with_share(svc);
     }
     #[cfg(feature = "vault-dynamic-postgres")]
     {
-        let leases = std::sync::Arc::new(
-            assay_vault::store::postgres::PgLeaseStore::new(pool.clone()),
-        );
+        let leases = std::sync::Arc::new(assay_vault::store::postgres::PgLeaseStore::new(
+            pool.clone(),
+        ));
         let registry = assay_vault::dynamic::DynamicCredsRegistry::new();
         // Phase 5 default-config: registry is empty until an operator
         // configures providers via /dynamic/* admin routes (or in
@@ -161,10 +165,14 @@ async fn build_vault_ctx_sqlite(
     let mut ctx = assay_vault::VaultCtx::new()
         .with_kek(kek)
         .with_kv(assay_vault::store::sqlite::SqliteKvStore::new(pool.clone()))
-        .with_transit(assay_vault::store::sqlite::SqliteTransitStore::new(pool.clone()));
+        .with_transit(assay_vault::store::sqlite::SqliteTransitStore::new(
+            pool.clone(),
+        ));
     #[cfg(feature = "vault-sealing-shamir")]
     {
-        ctx = ctx.with_seal_store(assay_vault::store::sqlite::SqliteSealStore::new(pool.clone()));
+        ctx = ctx.with_seal_store(assay_vault::store::sqlite::SqliteSealStore::new(
+            pool.clone(),
+        ));
     }
     #[cfg(feature = "vault-collections")]
     {
@@ -175,8 +183,12 @@ async fn build_vault_ctx_sqlite(
             .with_collections(assay_vault::store::sqlite::SqliteCollectionStore::new(
                 pool.clone(),
             ))
-            .with_items(assay_vault::store::sqlite::SqliteItemStore::new(pool.clone()))
-            .with_folders(assay_vault::store::sqlite::SqliteFolderStore::new(pool.clone()));
+            .with_items(assay_vault::store::sqlite::SqliteItemStore::new(
+                pool.clone(),
+            ))
+            .with_folders(assay_vault::store::sqlite::SqliteFolderStore::new(
+                pool.clone(),
+            ));
         #[cfg(feature = "auth-zanzibar")]
         {
             let z = assay_auth::zanzibar::SqliteZanzibarStore::new(pool.clone());
@@ -190,17 +202,17 @@ async fn build_vault_ctx_sqlite(
         let kp = assay_vault::store::sqlite::load_or_init_biscuit_root_sqlite(pool)
             .await
             .map_err(|e| anyhow::anyhow!("vault biscuit root bootstrap (sqlite): {e}"))?;
-        let revs = std::sync::Arc::new(
-            assay_vault::store::sqlite::SqliteRevocationStore::new(pool.clone()),
-        );
+        let revs = std::sync::Arc::new(assay_vault::store::sqlite::SqliteRevocationStore::new(
+            pool.clone(),
+        ));
         let svc = assay_vault::share::ShareService::new(kp, revs);
         ctx = ctx.with_share(svc);
     }
     #[cfg(feature = "vault-dynamic-postgres")]
     {
-        let leases = std::sync::Arc::new(
-            assay_vault::store::sqlite::SqliteLeaseStore::new(pool.clone()),
-        );
+        let leases = std::sync::Arc::new(assay_vault::store::sqlite::SqliteLeaseStore::new(
+            pool.clone(),
+        ));
         let registry = assay_vault::dynamic::DynamicCredsRegistry::new();
         let svc = assay_vault::dynamic::DynamicCredsService::new(registry, leases);
         ctx = ctx.with_dynamic(svc);
@@ -260,8 +272,9 @@ async fn build_auth_ctx_pg(
 
     #[cfg(feature = "auth-zanzibar")]
     {
-        let zanzibar: Arc<dyn assay_auth::zanzibar::ZanzibarStore> =
-            Arc::new(assay_auth::zanzibar::PostgresZanzibarStore::new(pool.clone()));
+        let zanzibar: Arc<dyn assay_auth::zanzibar::ZanzibarStore> = Arc::new(
+            assay_auth::zanzibar::PostgresZanzibarStore::new(pool.clone()),
+        );
         ctx = ctx.with_zanzibar(zanzibar);
     }
 
@@ -278,10 +291,11 @@ async fn build_auth_ctx_pg(
             assay_auth::oidc_provider::PostgresOidcRefreshStore::new(pool.clone()).into_dyn(),
             assay_auth::oidc_provider::PostgresOidcSessionStore::new(pool.clone()).into_dyn(),
             assay_auth::oidc_provider::PostgresOidcConsentStore::new(pool.clone()).into_dyn(),
-            assay_auth::oidc_provider::PostgresOidcUpstreamStateStore::new(pool.clone())
-                .into_dyn(),
+            assay_auth::oidc_provider::PostgresOidcUpstreamStateStore::new(pool.clone()).into_dyn(),
         )
-        .with_jwks_source(assay_auth::oidc_provider::JwksSource::Postgres(pool.clone()));
+        .with_jwks_source(assay_auth::oidc_provider::JwksSource::Postgres(
+            pool.clone(),
+        ));
         ctx = ctx.with_oidc_provider(provider);
     }
 
@@ -358,8 +372,7 @@ async fn build_auth_ctx_sqlite(
             assay_auth::oidc_provider::SqliteOidcRefreshStore::new(pool.clone()).into_dyn(),
             assay_auth::oidc_provider::SqliteOidcSessionStore::new(pool.clone()).into_dyn(),
             assay_auth::oidc_provider::SqliteOidcConsentStore::new(pool.clone()).into_dyn(),
-            assay_auth::oidc_provider::SqliteOidcUpstreamStateStore::new(pool.clone())
-                .into_dyn(),
+            assay_auth::oidc_provider::SqliteOidcUpstreamStateStore::new(pool.clone()).into_dyn(),
         )
         .with_jwks_source(assay_auth::oidc_provider::JwksSource::Sqlite(pool.clone()));
         ctx = ctx.with_oidc_provider(provider);

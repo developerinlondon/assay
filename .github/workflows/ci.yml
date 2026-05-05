@@ -220,12 +220,12 @@ jobs:
         env:
           MOON_LOG: "info"
 
-  # Browser-side UI tests for libs/hostops/ — orchestrated by moon
-  # (project: hostops-e2e, task: test). The task definition handles
+  # Browser-side UI tests for libs/sysops/ — orchestrated by moon
+  # (project: sysops-e2e, task: test). The task definition handles
   # the assay-lua build + npm install + playwright install + run.sh
   # boot/teardown.
-  hostops-e2e:
-    name: hostops-e2e
+  sysops-e2e:
+    name: sysops-e2e
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
@@ -240,27 +240,27 @@ jobs:
           install: true
           cache: true
 
-      - name: moon run hostops-e2e:test
-        run: moon run hostops-e2e:test --color
+      - name: moon run sysops-e2e:test
+        run: moon run sysops-e2e:test --color
         env:
           MOON_LOG: "info"
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: hostops-e2e-report
+          name: sysops-e2e-report
           path: |
-            libs/hostops/tests-e2e/playwright-report
-            libs/hostops/tests-e2e/test-results
-            /tmp/hostops-e2e.log
+            libs/sysops/tests-e2e/playwright-report
+            libs/sysops/tests-e2e/test-results
+            /tmp/sysops-e2e.log
           if-no-files-found: ignore
           retention-days: 7
 
-  # Route-level smoke against libs/hostops/ — moon project `hostops`,
+  # Route-level smoke against libs/sysops/ — moon project `sysops`,
   # task `smoke`. Boots the lib in-process with stub services and
   # asserts representative routes return 2xx with the expected content.
-  hostops-smoke:
-    name: hostops-smoke
+  sysops-smoke:
+    name: sysops-smoke
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
@@ -275,8 +275,8 @@ jobs:
           install: true
           cache: true
 
-      - name: moon run hostops:smoke
-        run: moon run hostops:smoke --color
+      - name: moon run sysops:smoke
+        run: moon run sysops:smoke --color
         env:
           MOON_LOG: "info"
 

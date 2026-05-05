@@ -134,9 +134,7 @@ fn walk_expr(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::zanzibar::types::{
-        NamespaceSchema, PermissionExpr, RelationDef, TypeRef,
-    };
+    use crate::zanzibar::types::{NamespaceSchema, PermissionExpr, RelationDef, TypeRef};
 
     fn doc_schema() -> NamespaceSchema {
         NamespaceSchema::new("document")
@@ -221,10 +219,7 @@ mod tests {
             "p".into(),
             RelationDef::permission(
                 "p",
-                PermissionExpr::intersect(
-                    PermissionExpr::direct("a"),
-                    PermissionExpr::direct("b"),
-                ),
+                PermissionExpr::intersect(PermissionExpr::direct("a"), PermissionExpr::direct("b")),
             ),
         );
         let r = resolve(&s, "p").expect("resolve");

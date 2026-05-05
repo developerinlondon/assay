@@ -23,10 +23,7 @@ where
     AdminApiKeys: FromRef<S>,
 {
     Router::new()
-        .route(
-            "/dynamic/{provider}/{role}/lease",
-            post(issue_lease::<S>),
-        )
+        .route("/dynamic/{provider}/{role}/lease", post(issue_lease::<S>))
         .route("/dynamic/leases", get(list_leases::<S>))
         .route("/dynamic/leases/{id}", delete(revoke_lease::<S>))
 }

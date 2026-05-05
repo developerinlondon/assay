@@ -140,18 +140,16 @@ impl<S: KvStore> KvService<S> {
 
     /// Active KEK kid (when unsealed). Returns `None` while sealed.
     pub fn kek_kid(&self) -> Option<String> {
-        self.seal_state.require_unsealed().ok().map(|h| h.kid().to_string())
+        self.seal_state
+            .require_unsealed()
+            .ok()
+            .map(|h| h.kid().to_string())
     }
 
     /// Encrypt and store a new version of `path`. Returns the allocated
     /// version. `custom_md` is merged into the path-level metadata; pass
     /// `Value::Null` or `serde_json::json!({})` to leave it untouched.
-    pub async fn put(
-        &self,
-        path: &str,
-        plaintext: &[u8],
-        custom_md: Value,
-    ) -> Result<i64> {
+    pub async fn put(&self, path: &str, plaintext: &[u8], custom_md: Value) -> Result<i64> {
         validate_path(path)?;
         let kek = self.seal_state.require_unsealed()?;
         let dek = random_dek();

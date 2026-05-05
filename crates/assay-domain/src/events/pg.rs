@@ -90,7 +90,11 @@ impl PgEngineEventBus {
                                     let id: i64 = match n.payload().parse() {
                                         Ok(v) => v,
                                         Err(e) => {
-                                            tracing::warn!(?e, payload = n.payload(), "bad NOTIFY payload");
+                                            tracing::warn!(
+                                                ?e,
+                                                payload = n.payload(),
+                                                "bad NOTIFY payload"
+                                            );
                                             continue;
                                         }
                                     };
@@ -109,7 +113,11 @@ impl PgEngineEventBus {
                                             tracing::debug!(id, "NOTIFY id not in table (pruned?)");
                                         }
                                         Err(e) => {
-                                            tracing::warn!(?e, id, "engine_events SELECT after NOTIFY failed");
+                                            tracing::warn!(
+                                                ?e,
+                                                id,
+                                                "engine_events SELECT after NOTIFY failed"
+                                            );
                                         }
                                     }
                                 }
@@ -255,15 +263,13 @@ impl EngineEventBus for PgEngineEventBus {
 
     async fn prune_with(&self, opts: PruneOpts) -> Result<u64> {
         let n = match &opts.namespace {
-            Some(ns) => sqlx::query(
-                "DELETE FROM engine.events WHERE namespace = $1 AND ts < $2",
-            )
-            .bind(ns)
-            .bind(opts.before_ts)
-            .execute(&self.pool)
-            .await
-            .context("engine_events prune_with (scoped)")?
-            .rows_affected(),
+            Some(ns) => sqlx::query("DELETE FROM engine.events WHERE namespace = $1 AND ts < $2")
+                .bind(ns)
+                .bind(opts.before_ts)
+                .execute(&self.pool)
+                .await
+                .context("engine_events prune_with (scoped)")?
+                .rows_affected(),
             None => sqlx::query("DELETE FROM engine.events WHERE ts < $1")
                 .bind(opts.before_ts)
                 .execute(&self.pool)

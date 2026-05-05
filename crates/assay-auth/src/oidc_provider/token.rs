@@ -171,14 +171,16 @@ pub fn build_id_token_claims(
         claims["nonce"] = serde_json::Value::String(n.to_string());
     }
     if scopes.iter().any(|s| s == "email")
-        && let Some(e) = email {
-            claims["email"] = serde_json::Value::String(e.to_string());
-            claims["email_verified"] = serde_json::Value::Bool(email_verified);
-        }
+        && let Some(e) = email
+    {
+        claims["email"] = serde_json::Value::String(e.to_string());
+        claims["email_verified"] = serde_json::Value::Bool(email_verified);
+    }
     if scopes.iter().any(|s| s == "profile")
-        && let Some(n) = name {
-            claims["name"] = serde_json::Value::String(n.to_string());
-        }
+        && let Some(n) = name
+    {
+        claims["name"] = serde_json::Value::String(n.to_string());
+    }
     claims
 }
 
@@ -339,13 +341,7 @@ mod tests {
     #[test]
     fn access_token_claims_include_scope_string() {
         let scopes = vec!["openid".to_string(), "email".to_string()];
-        let v = build_access_token_claims(
-            "https://idp",
-            "u",
-            "c",
-            "sid",
-            &scopes,
-        );
+        let v = build_access_token_claims("https://idp", "u", "c", "sid", &scopes);
         assert_eq!(v["scope"], "openid email");
         assert_eq!(v["client_id"], "c");
         assert_eq!(v["token_use"], "access");

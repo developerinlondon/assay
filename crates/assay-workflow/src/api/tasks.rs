@@ -125,9 +125,7 @@ pub async fn poll_task<S: WorkflowStore>(
     State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<PollRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let activity = state
-        .claim_activity(&req.queue, &req.worker_id)
-        .await?;
+    let activity = state.claim_activity(&req.queue, &req.worker_id).await?;
 
     match activity {
         Some(act) => Ok(Json(serde_json::to_value(act)?)),

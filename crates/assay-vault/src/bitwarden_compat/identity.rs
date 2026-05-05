@@ -134,7 +134,10 @@ where
         aud: jwt.audience(),
         iat: now,
         exp: now + 3600,
-        scope: body.scope.clone().unwrap_or_else(|| "api offline_access".into()),
+        scope: body
+            .scope
+            .clone()
+            .unwrap_or_else(|| "api offline_access".into()),
     };
     let token = match jwt.issue(&claims) {
         Ok(t) => t,
@@ -153,7 +156,7 @@ where
         token_type: "Bearer".into(),
         refresh_token: None,
         private_key: None,
-        kdf: 1, // Argon2id
+        kdf: 1,            // Argon2id
         kdf_iterations: 3, // t_cost
         kdf_memory: 64,    // MiB
         kdf_parallelism: 4,

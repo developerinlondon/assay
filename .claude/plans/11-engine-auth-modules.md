@@ -443,9 +443,9 @@ Backends are additive (both in default) — runtime selects one via `EngineConfi
 ## Prerequisite: plan 10 · executed via plan 12
 
 Plan 10 (assay-engine architecture) lands first. It establishes the `assay-auth` crate scaffold,
-shared `assay-domain` traits, and the engine binary that wires auth modules in. Plan 10 also documents
-the **`FromRef` state composition pattern** (see § "State composition") — `assay-auth` exports
-`pub struct AuthCtx` and `pub fn router() -> Router<AuthCtx>`; the engine composes both into
+shared `assay-domain` traits, and the engine binary that wires auth modules in. Plan 10 also
+documents the **`FromRef` state composition pattern** (see § "State composition") — `assay-auth`
+exports `pub struct AuthCtx` and `pub fn router() -> Router<AuthCtx>`; the engine composes both into
 `EngineState` via `FromRef`. Every module in this plan follows that shape.
 
 Plan 12 (v0.13.0 execution) is the authoritative task list that sequences plans 10 + 11 into one

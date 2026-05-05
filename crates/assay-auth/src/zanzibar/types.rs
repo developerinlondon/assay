@@ -132,7 +132,10 @@ impl SubjectRef {
         if self.subject_rel.is_empty() {
             format!("{}:{}", self.subject_type, self.subject_id)
         } else {
-            format!("{}:{}#{}", self.subject_type, self.subject_id, self.subject_rel)
+            format!(
+                "{}:{}#{}",
+                self.subject_type, self.subject_id, self.subject_rel
+            )
         }
     }
 }
@@ -202,15 +205,13 @@ impl Tuple {
 /// uses a monotonic counter. The current check implementation is
 /// `Consistency::Minimum` only (the other modes pass through to the
 /// same code path); full snapshot enforcement is future work.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum Consistency {
     #[default]
     Minimum,
     AtLeastAsFresh(String),
     Exact(String),
 }
-
 
 /// Result of a `check` call. `Allowed` carries the (best-effort) tuple
 /// path that resolved the permission so callers can show "why?" in a
@@ -499,7 +500,12 @@ mod tests {
 
     #[test]
     fn check_result_is_allowed() {
-        assert!(CheckResult::Allowed { resolved_via: vec![] }.is_allowed());
+        assert!(
+            CheckResult::Allowed {
+                resolved_via: vec![]
+            }
+            .is_allowed()
+        );
         assert!(!CheckResult::Denied.is_allowed());
         assert!(!CheckResult::DepthExceeded.is_allowed());
         assert!(!CheckResult::CycleDetected.is_allowed());

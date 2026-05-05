@@ -1,11 +1,11 @@
 [package]
-id           = "test-apt-only"
+id = "test-apt-only"
 display_name = "Test Apt-Only Package"
-description  = "Apt method only fixture"
-homepage     = "https://example.com"
-methods      = ["apt"]
+description = "Apt method only fixture"
+homepage = "https://example.com"
+methods = ["apt"]
 
 [package.apt]
-source_list  = "deb https://example.com/repo bookworm main"
-key_url      = "https://example.com/key.gpg"
+source_list = "deb https://example.com/repo bookworm main"
+key_url = "https://example.com/key.gpg"
 package_name = "test-apt-only"

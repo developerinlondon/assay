@@ -131,15 +131,13 @@ impl EngineEventBus for SqliteEngineEventBus {
 
     async fn prune_with(&self, opts: PruneOpts) -> Result<u64> {
         let n = match &opts.namespace {
-            Some(ns) => sqlx::query(
-                "DELETE FROM engine.events WHERE namespace = ?1 AND ts < ?2",
-            )
-            .bind(ns)
-            .bind(opts.before_ts)
-            .execute(&self.pool)
-            .await
-            .context("sqlite prune_with (scoped)")?
-            .rows_affected(),
+            Some(ns) => sqlx::query("DELETE FROM engine.events WHERE namespace = ?1 AND ts < ?2")
+                .bind(ns)
+                .bind(opts.before_ts)
+                .execute(&self.pool)
+                .await
+                .context("sqlite prune_with (scoped)")?
+                .rows_affected(),
             None => sqlx::query("DELETE FROM engine.events WHERE ts < ?1")
                 .bind(opts.before_ts)
                 .execute(&self.pool)

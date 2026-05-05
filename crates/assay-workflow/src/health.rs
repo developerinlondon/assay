@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 use tracing::{error, info, warn};
 
 use crate::store::WorkflowStore;
@@ -43,12 +43,7 @@ async fn check_health<S: WorkflowStore>(store: &S) -> Result<()> {
         if act.attempt < act.max_attempts {
             // Retry: mark as failed so the engine can reschedule
             store
-                .complete_activity(
-                    act_id,
-                    None,
-                    Some("heartbeat timeout"),
-                    true,
-                )
+                .complete_activity(act_id, None, Some("heartbeat timeout"), true)
                 .await?;
             warn!(
                 "Activity {} timed out (attempt {}/{}), marked for retry",

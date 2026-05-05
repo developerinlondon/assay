@@ -35,18 +35,13 @@ pub fn default_namespaces() -> Vec<NamespaceSchema> {
     let family_member = || TypeRef::userset("family", "member");
     let org_member = || TypeRef::userset("org", "member");
 
-    let direct_or_groups = || {
-        vec![user(), team_member(), family_member(), org_member()]
-    };
+    let direct_or_groups = || vec![user(), team_member(), family_member(), org_member()];
 
     vec![
         NamespaceSchema::new("vault")
             .with_relation("owner", RelationDef::relation("owner", vec![user()])),
         NamespaceSchema::new("collection")
-            .with_relation(
-                "admin",
-                RelationDef::relation("admin", direct_or_groups()),
-            )
+            .with_relation("admin", RelationDef::relation("admin", direct_or_groups()))
             .with_relation(
                 "editor",
                 RelationDef::relation("editor", direct_or_groups()),
@@ -56,10 +51,7 @@ pub fn default_namespaces() -> Vec<NamespaceSchema> {
                 RelationDef::relation("viewer", direct_or_groups()),
             ),
         NamespaceSchema::new("kv_path")
-            .with_relation(
-                "admin",
-                RelationDef::relation("admin", direct_or_groups()),
-            )
+            .with_relation("admin", RelationDef::relation("admin", direct_or_groups()))
             .with_relation(
                 "writer",
                 RelationDef::relation("writer", direct_or_groups()),
@@ -68,43 +60,27 @@ pub fn default_namespaces() -> Vec<NamespaceSchema> {
                 "reader",
                 RelationDef::relation("reader", direct_or_groups()),
             ),
-        NamespaceSchema::new("team")
-            .with_relation(
-                "member",
-                RelationDef::relation(
-                    "member",
-                    vec![user(), TypeRef::userset("team", "member")],
-                ),
-            ),
-        NamespaceSchema::new("family")
-            .with_relation(
-                "member",
-                RelationDef::relation(
-                    "member",
-                    vec![user(), TypeRef::userset("family", "member")],
-                ),
-            ),
+        NamespaceSchema::new("team").with_relation(
+            "member",
+            RelationDef::relation("member", vec![user(), TypeRef::userset("team", "member")]),
+        ),
+        NamespaceSchema::new("family").with_relation(
+            "member",
+            RelationDef::relation("member", vec![user(), TypeRef::userset("family", "member")]),
+        ),
         NamespaceSchema::new("org")
             .with_relation(
                 "member",
-                RelationDef::relation(
-                    "member",
-                    vec![user(), TypeRef::userset("org", "member")],
-                ),
+                RelationDef::relation("member", vec![user(), TypeRef::userset("org", "member")]),
             )
-            .with_relation(
-                "admin",
-                RelationDef::relation("admin", vec![user()]),
-            ),
+            .with_relation("admin", RelationDef::relation("admin", vec![user()])),
     ]
 }
 
 /// Idempotently seed every default namespace into the supplied
 /// ZanzibarStore. Engine boot calls this after the auth schema
 /// migration runs.
-pub async fn seed_default_namespaces(
-    store: &dyn ZanzibarStore,
-) -> anyhow::Result<()> {
+pub async fn seed_default_namespaces(store: &dyn ZanzibarStore) -> anyhow::Result<()> {
     for schema in default_namespaces() {
         store
             .define_namespace(&schema)

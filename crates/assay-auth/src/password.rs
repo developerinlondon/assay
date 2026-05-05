@@ -13,7 +13,9 @@
 //! login.
 
 use argon2::{Algorithm, Argon2, Params, Version};
-use password_hash::{Salt, PasswordHash, PasswordHasher as PhcHasher, PasswordVerifier, SaltString};
+use password_hash::{
+    PasswordHash, PasswordHasher as PhcHasher, PasswordVerifier, Salt, SaltString,
+};
 use rand::RngCore;
 
 use crate::error::{Error, Result};

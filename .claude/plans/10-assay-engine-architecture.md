@@ -6,8 +6,8 @@
 
 Split assay into two publications: a lean scripting runtime (`assay`) and a stateful engine
 (`assay-engine`) shipped as both a crate and a binary. Introduce pluggable backend traits so
-workflow state, users, sessions, and Zanzibar tuples can live on PostgreSQL 18 or SQLite,
-selected at runtime via `EngineConfig.backend`.
+workflow state, users, sessions, and Zanzibar tuples can live on PostgreSQL 18 or SQLite, selected
+at runtime via `EngineConfig.backend`.
 
 ## Motivation
 
@@ -166,9 +166,9 @@ depend only on `assay-domain`. The engine and dashboard layer on top.
                     └─────────────────────────┘
 ```
 
-**Why `assay-domain`?** Matches the `sqlx-core` / `axum-core` convention: the crate everything depends
-on, nothing depends _through_. Required because `assay-workflow` and `assay-auth` both need shared
-types (user IDs, timestamps, errors) and neither should depend on the other. Keeping it
+**Why `assay-domain`?** Matches the `sqlx-core` / `axum-core` convention: the crate everything
+depends on, nothing depends _through_. Required because `assay-workflow` and `assay-auth` both need
+shared types (user IDs, timestamps, errors) and neither should depend on the other. Keeping it
 dependency-free at the bottom also means fast compile and no backend code leaks into downstream
 crates that don't want it.
 
@@ -360,8 +360,8 @@ Key properties:
   - Postgres → `LISTEN assay_task_<queue>` via INSERT trigger
   - SQLite → empty stream; single-process workers use an in-memory channel
 - **Leader election for the scheduler.** `try_acquire_scheduler_lock` — Postgres uses
-  `pg_try_advisory_lock` (one instance wins); SQLite always returns true (single-instance).
-  Workers don't need leader election — they compete on `claim_workflow_task` instead.
+  `pg_try_advisory_lock` (one instance wins); SQLite always returns true (single-instance). Workers
+  don't need leader election — they compete on `claim_workflow_task` instead.
 
 Queue stats (`get_queue_stats`) surface in the engine dashboard: pending depth per queue,
 claimed-but-not-completed count, oldest task age, worker count. Required for diagnosing
@@ -523,11 +523,11 @@ notification wakes it. Idle cost ≈ zero regardless of backend.
 
 Estimates. Measure before publishing final numbers.
 
-| Artifact / features                                              | Binary (stripped) | Cold build             |
-| ---------------------------------------------------------------- | ----------------- | ---------------------- |
-| `assay-lua` runtime (pg + sqlite, workflow, dashboard)           | ≤ 15 MB           | same as today + <30 s  |
-| `assay-engine` binary, **default** (both backends: PG18 + SQLite) | ≤ 20 MB          | +2–3 min from pristine |
-| `assay-engine` crate embedded in jeebon-api (default)            | +14–16 MB         | +2–3 min               |
+| Artifact / features                                               | Binary (stripped) | Cold build             |
+| ----------------------------------------------------------------- | ----------------- | ---------------------- |
+| `assay-lua` runtime (pg + sqlite, workflow, dashboard)            | ≤ 15 MB           | same as today + <30 s  |
+| `assay-engine` binary, **default** (both backends: PG18 + SQLite) | ≤ 20 MB           | +2–3 min from pristine |
+| `assay-engine` crate embedded in jeebon-api (default)             | +14–16 MB         | +2–3 min               |
 
 Against a typical production stack `assay-engine` replaces:
 
@@ -547,8 +547,8 @@ Monorepo workspace, **independent crate versions** (tokio / serde / hyper preced
 - Each crate has its own version field in its own `Cargo.toml`.
 - `cargo-workspaces` (or `cargo-release`) drives per-crate publishing.
 - Breaking change in one crate doesn't force bumps in unrelated crates.
-- Shared traits in `assay-domain` stabilise first (`0.x` during early development); downstream crates
-  re-export and rely on pinned ranges.
+- Shared traits in `assay-domain` stabilise first (`0.x` during early development); downstream
+  crates re-export and rely on pinned ranges.
 
 Consumer pinning works independently:
 
@@ -579,8 +579,8 @@ here.
 
 > **Superseded by plan 12.** The phase breakdown below is the original high-level sketch for the
 > workflow-only scope. Plan 12 (and its sub-plans 12a–12e) is the authoritative execution plan
-> covering workflow + auth + engine binary + CI for the v0.13.0 release. Consult plan 12
-> for current task ordering; the phases below remain useful as a conceptual overview.
+> covering workflow + auth + engine binary + CI for the v0.13.0 release. Consult plan 12 for current
+> task ordering; the phases below remain useful as a conceptual overview.
 
 ### Phase 0 — scaffold crates (no behaviour change)
 
@@ -600,7 +600,7 @@ here.
 ### Phase 2 — engine binary
 
 8. `bin/assay-engine.rs` with config file, backend selection, HTTP bind address.
-11. Dashboard `full` feature; wire auth views stubs (filled by plan 11).
+9. Dashboard `full` feature; wire auth views stubs (filled by plan 11).
 
 ### Phase 3 — plan 11 auth lands on top
 
@@ -629,8 +629,8 @@ he
 3. **Independent crate versions.** Confirmed. Monorepo workspace, separate lifecycles.
 
 4. **Hybrid dispatch wake-up from day one.** Scheduler owns a local timer heap; each backend
-   supplies a push stream (`LISTEN/NOTIFY` for Postgres, empty for SQLite). No polling loop;
-   no V2 migration.
+   supplies a push stream (`LISTEN/NOTIFY` for Postgres, empty for SQLite). No polling loop; no V2
+   migration.
 
 5. **PostgreSQL 18 is the minimum supported PostgreSQL version.** PG18 features leveraged include
    `uuidv7()` for time-ordered PKs, skip-scan composite indexes, and io_uring AIO. Earlier PG

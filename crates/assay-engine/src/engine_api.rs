@@ -229,13 +229,10 @@ async fn toggle_module<S: WorkflowStore + Clone + 'static>(
         .and_then(|Json(b)| b.enabled)
         .unwrap_or(!current.enabled);
     let actor = bearer_token(&headers).map(short_actor);
-    if let Err(e) =
-        set_module_enabled(&s.engine_config, &name, target, actor.as_deref()).await
-    {
+    if let Err(e) = set_module_enabled(&s.engine_config, &name, target, actor.as_deref()).await {
         return server_error(&format!("set enabled: {e}"));
     }
-    if let Err(e) = audit_module_toggle(&s.engine_config, &name, target, actor.as_deref()).await
-    {
+    if let Err(e) = audit_module_toggle(&s.engine_config, &name, target, actor.as_deref()).await {
         // Failure to audit doesn't undo the flip; surface as a warning.
         tracing::warn!(?e, "engine.audit insert failed for module toggle");
     }

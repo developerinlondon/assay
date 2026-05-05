@@ -128,11 +128,7 @@ fn extension_creates_bin_dir_when_missing() {
     let bin_dir = bin_root.path().join("nested/dir");
     assert!(!bin_dir.exists());
 
-    let archive = write_archive(
-        cache.path(),
-        "engine.tar.gz",
-        &[("assay-engine", b"bin")],
-    );
+    let archive = write_archive(cache.path(), "engine.tar.gz", &[("assay-engine", b"bin")]);
 
     install_extension_binary(&archive, &bin_dir, "assay-engine").unwrap();
     assert!(bin_dir.join("assay-engine").exists());
@@ -147,7 +143,7 @@ fn lib_extracts_tarball_tree_into_named_subdir() {
 
     let archive = write_archive(
         cache.path(),
-        "assay-lib-hostops-0.1.0.tar.gz",
+        "assay-lib-sysops-0.1.0.tar.gz",
         &[
             ("mount.lua", b"return {}"),
             ("pages/dashboard.lua", b"-- dash"),
@@ -155,8 +151,8 @@ fn lib_extracts_tarball_tree_into_named_subdir() {
         ],
     );
 
-    let installed = install_lib_tree(&archive, lib_dir.path(), "hostops").unwrap();
-    assert_eq!(installed, lib_dir.path().join("hostops"));
+    let installed = install_lib_tree(&archive, lib_dir.path(), "sysops").unwrap();
+    assert_eq!(installed, lib_dir.path().join("sysops"));
     assert_eq!(
         std::fs::read(installed.join("mount.lua")).unwrap(),
         b"return {}"
@@ -165,14 +161,17 @@ fn lib_extracts_tarball_tree_into_named_subdir() {
         std::fs::read(installed.join("pages/dashboard.lua")).unwrap(),
         b"-- dash"
     );
-    assert_eq!(std::fs::read(installed.join("VERSION")).unwrap(), b"0.1.0\n");
+    assert_eq!(
+        std::fs::read(installed.join("VERSION")).unwrap(),
+        b"0.1.0\n"
+    );
 }
 
 #[test]
 fn lib_replaces_existing_tree() {
     let cache = TempDir::new().unwrap();
     let lib_dir = TempDir::new().unwrap();
-    let target = lib_dir.path().join("hostops");
+    let target = lib_dir.path().join("sysops");
 
     // Pre-existing lib tree with a stale file the new tarball doesn't include.
     std::fs::create_dir_all(target.join("pages")).unwrap();
@@ -181,17 +180,17 @@ fn lib_replaces_existing_tree() {
 
     let archive = write_archive(
         cache.path(),
-        "assay-lib-hostops-0.1.1.tar.gz",
+        "assay-lib-sysops-0.1.1.tar.gz",
         &[("mount.lua", b"-- new"), ("VERSION", b"0.1.1\n")],
     );
 
-    install_lib_tree(&archive, lib_dir.path(), "hostops").unwrap();
+    install_lib_tree(&archive, lib_dir.path(), "sysops").unwrap();
 
     assert_eq!(std::fs::read(target.join("mount.lua")).unwrap(), b"-- new");
     // stale file from prior install must be gone — we replace the whole tree.
     assert!(!target.join("STALE_FILE").exists());
     // staging dir cleaned up
-    assert!(!lib_dir.path().join(".hostops.new").exists());
+    assert!(!lib_dir.path().join(".sysops.new").exists());
 }
 
 #[test]
@@ -200,17 +199,17 @@ fn lib_recovers_from_leftover_staging_dir() {
     let lib_dir = TempDir::new().unwrap();
 
     // Simulate a previously-crashed install: stale staging dir present.
-    let stale_staging = lib_dir.path().join(".hostops.new");
+    let stale_staging = lib_dir.path().join(".sysops.new");
     std::fs::create_dir_all(&stale_staging).unwrap();
     std::fs::write(stale_staging.join("garbage.lua"), b"crashed").unwrap();
 
     let archive = write_archive(
         cache.path(),
-        "assay-lib-hostops-0.1.0.tar.gz",
+        "assay-lib-sysops-0.1.0.tar.gz",
         &[("mount.lua", b"return {}")],
     );
 
-    let installed = install_lib_tree(&archive, lib_dir.path(), "hostops").unwrap();
+    let installed = install_lib_tree(&archive, lib_dir.path(), "sysops").unwrap();
     assert!(installed.join("mount.lua").exists());
     // and the staging dir is gone after a successful install
     assert!(!stale_staging.exists());
@@ -225,10 +224,10 @@ fn lib_creates_lib_dir_when_missing() {
 
     let archive = write_archive(
         cache.path(),
-        "assay-lib-hostops-0.1.0.tar.gz",
+        "assay-lib-sysops-0.1.0.tar.gz",
         &[("mount.lua", b"return {}")],
     );
 
-    install_lib_tree(&archive, &lib_dir, "hostops").unwrap();
-    assert!(lib_dir.join("hostops/mount.lua").exists());
+    install_lib_tree(&archive, &lib_dir, "sysops").unwrap();
+    assert!(lib_dir.join("sysops/mount.lua").exists());
 }

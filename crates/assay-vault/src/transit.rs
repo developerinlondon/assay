@@ -23,7 +23,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::crypto::aead::{decrypt, encrypt, random_dek, random_nonce, NONCE_LEN};
+use crate::crypto::aead::{NONCE_LEN, decrypt, encrypt, random_dek, random_nonce};
 use crate::crypto::kek::WrappedDek;
 use crate::error::{Result, VaultError};
 
@@ -154,9 +154,7 @@ impl<S: TransitStore> TransitService<S> {
         let kek = self.seal_state.require_unsealed()?;
         let dek = random_dek();
         let wrapped = kek.wrap_dek(&dek)?;
-        self.store
-            .rotate(name, wrapped.as_bytes(), kek.kid())
-            .await
+        self.store.rotate(name, wrapped.as_bytes(), kek.kid()).await
     }
 
     pub async fn list_keys(&self) -> Result<Vec<TransitKey>> {
@@ -164,10 +162,7 @@ impl<S: TransitStore> TransitService<S> {
     }
 }
 
-fn unwrap_version(
-    kek: &crate::crypto::kek::KekHandle,
-    v: &TransitVersion,
-) -> Result<[u8; 32]> {
+fn unwrap_version(kek: &crate::crypto::kek::KekHandle, v: &TransitVersion) -> Result<[u8; 32]> {
     if v.kek_kid != kek.kid() {
         return Err(VaultError::Crypto(format!(
             "transit version {name}/v{ver} encrypted with KEK {kid} but service active KEK is {active}",

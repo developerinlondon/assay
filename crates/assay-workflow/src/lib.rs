@@ -24,6 +24,6 @@ pub use assay_domain::types;
 
 pub use ctx::WorkflowCtx;
 pub use events::{WorkflowBusEvent, WorkflowEventBus};
+pub use store::WorkflowStore;
 pub use store::postgres::PostgresStore;
 pub use store::sqlite::SqliteStore;
-pub use store::WorkflowStore;

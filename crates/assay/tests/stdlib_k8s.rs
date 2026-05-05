@@ -820,10 +820,7 @@ async fn test_k8s_pods_logs() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/namespaces/infra/pods/api-7b9d4/log"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string("2026-02-10 INFO started\n"),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_string("2026-02-10 INFO started\n"))
         .mount(&server)
         .await;
 

@@ -13,7 +13,6 @@ fn render(lf: &Lockfile) -> String {
     lf.to_lua()
 }
 
-
 #[test]
 fn renders_minimal_empty_lockfile() {
     let lf = Lockfile {
@@ -47,9 +46,9 @@ fn renders_full_lockfile_round_trippable_in_lua() {
             sha256: sha,
         }],
         libs: vec![LockLib {
-            name: "hostops".into(),
+            name: "sysops".into(),
             version: "0.1.0".into(),
-            url: "https://example.com/assay-lib-hostops-0.1.0.tar.gz".into(),
+            url: "https://example.com/assay-lib-sysops-0.1.0.tar.gz".into(),
             sha256: "cccc".into(),
         }],
     };
@@ -74,7 +73,7 @@ fn renders_full_lockfile_round_trippable_in_lua() {
 
     let libs: Table = t.get("libs").unwrap();
     let l1: Table = libs.get(1).unwrap();
-    assert_eq!(l1.get::<String>("name").unwrap(), "hostops");
+    assert_eq!(l1.get::<String>("name").unwrap(), "sysops");
     assert_eq!(l1.get::<String>("sha256").unwrap(), "cccc");
 }
 

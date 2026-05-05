@@ -147,16 +147,9 @@ mod biscuit_impl {
 
         /// Mint a share token. The biscuit's authority block carries
         /// the target + the caveats; verifiers run the same logic.
-        pub fn mint(
-            &self,
-            target: ShareTarget,
-            caveats: ShareCaveats,
-        ) -> Result<MintedShare> {
+        pub fn mint(&self, target: ShareTarget, caveats: ShareCaveats) -> Result<MintedShare> {
             let now = SystemTime::now();
-            let now_secs = now
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+            let now_secs = now.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
             let exp_secs = now_secs + caveats.ttl_secs.max(1);
             // biscuit-auth's `time()` predicate carries Date values
             // (its `Term::Date` type round-trips with `SystemTime`).
@@ -241,14 +234,13 @@ mod biscuit_impl {
             let mut authorizer = authorizer
                 .build(&biscuit)
                 .map_err(|e| VaultError::Crypto(format!("biscuit authorizer: {e:?}")))?;
-            authorizer
-                .authorize()
-                .map_err(|_| VaultError::Forbidden)?;
+            authorizer.authorize().map_err(|_| VaultError::Forbidden)?;
 
             // Pull the target back out of the authority facts.
-            let facts: Vec<(String, String)> = authorizer
-                .query("data($k, $i) <- target($k, $i)")
-                .map_err(|e| VaultError::Crypto(format!("biscuit query: {e:?}")))?;
+            let facts: Vec<(String, String)> =
+                authorizer
+                    .query("data($k, $i) <- target($k, $i)")
+                    .map_err(|e| VaultError::Crypto(format!("biscuit query: {e:?}")))?;
             let (kind, id) = facts
                 .into_iter()
                 .next()
@@ -258,20 +250,14 @@ mod biscuit_impl {
                 "vault" => ShareTarget::Vault(id),
                 "collection" => ShareTarget::Collection(id),
                 other => {
-                    return Err(VaultError::Crypto(format!(
-                        "unknown target kind '{other}'"
-                    )));
+                    return Err(VaultError::Crypto(format!("unknown target kind '{other}'")));
                 }
             };
             Ok(ShareGrant { target })
         }
 
         /// Revoke a token by recording one of its block revocation IDs.
-        pub async fn revoke(
-            &self,
-            revocation_id: &str,
-            reason: &str,
-        ) -> Result<()> {
+        pub async fn revoke(&self, revocation_id: &str, reason: &str) -> Result<()> {
             self.revocations.add(revocation_id, reason).await
         }
 
@@ -326,10 +312,9 @@ mod biscuit_impl {
                     },
                 )
                 .unwrap();
-            let grant = svc
-                .verify(&m.token, None)
-                .await
-                .unwrap_or_else(|e| panic!("verify of just-minted ttl=60 token must succeed: {e:?}"));
+            let grant = svc.verify(&m.token, None).await.unwrap_or_else(|e| {
+                panic!("verify of just-minted ttl=60 token must succeed: {e:?}")
+            });
             assert_eq!(grant.target, ShareTarget::Item("item-1".into()));
         }
 
@@ -372,7 +357,9 @@ mod biscuit_impl {
                 .await
                 .unwrap_or_else(|e| panic!("first verify before revoke must succeed: {e:?}"));
             // Revoke and re-verify.
-            svc.revoke(&m.revocation_ids[0], "compromised").await.unwrap();
+            svc.revoke(&m.revocation_ids[0], "compromised")
+                .await
+                .unwrap();
             let res = svc.verify(&m.token, None).await;
             assert!(matches!(res, Err(VaultError::Forbidden)));
         }

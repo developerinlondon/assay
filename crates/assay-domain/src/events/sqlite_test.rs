@@ -28,9 +28,7 @@ async fn fresh_pool() -> SqlitePool {
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     );
-    let attach_sql = format!(
-        "ATTACH DATABASE 'file:{alias}?mode=memory&cache=shared' AS engine"
-    );
+    let attach_sql = format!("ATTACH DATABASE 'file:{alias}?mode=memory&cache=shared' AS engine");
     sqlx::query(&attach_sql).execute(&pool).await.unwrap();
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS engine.events (

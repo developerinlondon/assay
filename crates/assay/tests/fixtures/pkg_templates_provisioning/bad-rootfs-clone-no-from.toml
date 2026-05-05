@@ -1,8 +1,8 @@
 # machinectl-clone requires `from`; this one omits it.
 [template]
-id           = "bad-rootfs-clone-no-from"
+id = "bad-rootfs-clone-no-from"
 display_name = "Clone missing from"
-packages     = []
+packages = []
 
 [template.rootfs]
 source = "machinectl-clone"

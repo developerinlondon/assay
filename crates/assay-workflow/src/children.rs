@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use anyhow::Result;
 
-use crate::ctx::{strip_continued_suffix, timestamp_now, WorkflowCtx};
+use crate::ctx::{WorkflowCtx, strip_continued_suffix, timestamp_now};
 use crate::store::WorkflowStore;
 use crate::types::*;
 
@@ -76,10 +76,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         Ok(wf)
     }
 
-    pub async fn list_child_workflows(
-        &self,
-        parent_id: &str,
-    ) -> Result<Vec<WorkflowRecord>> {
+    pub async fn list_child_workflows(&self, parent_id: &str) -> Result<Vec<WorkflowRecord>> {
         self.store.list_child_workflows(parent_id).await
     }
 
@@ -95,8 +92,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             .await?
             .ok_or_else(|| anyhow::anyhow!("workflow not found: {workflow_id}"))?;
 
-        let old_status = WorkflowStatus::from_str(&old_wf.status)
-            .map_err(|e| anyhow::anyhow!(e))?;
+        let old_status =
+            WorkflowStatus::from_str(&old_wf.status).map_err(|e| anyhow::anyhow!(e))?;
 
         // Only close the old run when it's still in-flight. A workflow
         // that's already CANCELLED / FAILED / COMPLETED / TERMINATED

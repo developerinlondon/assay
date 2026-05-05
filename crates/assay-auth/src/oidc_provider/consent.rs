@@ -139,15 +139,16 @@ mod tests {
 
     #[test]
     fn scope_subset_check_handles_subset_and_super() {
-        let granted = vec!["openid".to_string(), "email".to_string(), "profile".to_string()];
+        let granted = vec![
+            "openid".to_string(),
+            "email".to_string(),
+            "profile".to_string(),
+        ];
         assert!(scopes_already_granted(
             &["openid".to_string(), "email".to_string()],
             &granted
         ));
-        assert!(scopes_already_granted(
-            &["openid".to_string()],
-            &granted
-        ));
+        assert!(scopes_already_granted(&["openid".to_string()], &granted));
         // Requested wider than granted → not already granted.
         assert!(!scopes_already_granted(
             &["openid".to_string(), "groups".to_string()],

@@ -46,19 +46,21 @@ pub fn register_os(lua: &Lua) -> mlua::Result<()> {
         let epoch: i64 = match args_iter.next() {
             Some(Value::Integer(n)) => n,
             Some(Value::Number(n)) => n as i64,
-            Some(Value::Nil) | None => {
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64
-            }
+            Some(Value::Nil) | None => std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
             _ => return Err(mlua::Error::runtime("os.date: time must be a number")),
         };
         let tz_offset_hours: f64 = match args_iter.next() {
             Some(Value::Number(n)) => n,
             Some(Value::Integer(n)) => n as f64,
             Some(Value::Nil) | None => 0.0,
-            _ => return Err(mlua::Error::runtime("os.date: tz_offset must be a number (hours from UTC)")),
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "os.date: tz_offset must be a number (hours from UTC)",
+                ));
+            }
         };
 
         // "!" prefix forces UTC (offset 0)
@@ -78,13 +80,32 @@ pub fn register_os(lua: &Lua) -> mlua::Result<()> {
 
         let mut year: i32 = 1970;
         loop {
-            let yd = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 366 } else { 365 };
-            if days < yd { break; }
+            let yd = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
+                366
+            } else {
+                365
+            };
+            if days < yd {
+                break;
+            }
             days -= yd;
             year += 1;
         }
         let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-        let mdays: [i32; 12] = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        let mdays: [i32; 12] = [
+            31,
+            if leap { 29 } else { 28 },
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ];
         let mut month: i32 = 0;
         while month < 12 && days >= mdays[month as usize] {
             days -= mdays[month as usize];
@@ -113,7 +134,10 @@ pub fn register_os(lua: &Lua) -> mlua::Result<()> {
             .replace("%H", &format!("{hour:02}"))
             .replace("%M", &format!("{min:02}"))
             .replace("%S", &format!("{sec:02}"))
-            .replace("%c", &format!("{year:04}-{month:02}-{day:02} {hour:02}:{min:02}:{sec:02}"));
+            .replace(
+                "%c",
+                &format!("{year:04}-{month:02}-{day:02} {hour:02}:{min:02}:{sec:02}"),
+            );
 
         Ok(Value::String(lua.create_string(&result)?))
     })?;

@@ -366,10 +366,9 @@ impl PostgresStore {
     /// Try to acquire pg_advisory_lock for leader election.
     /// Returns true if this instance is the leader (scheduler should run).
     pub async fn try_acquire_leader_lock(&self) -> Result<bool> {
-        let row: (bool,) =
-            sqlx::query_as("SELECT pg_try_advisory_lock(1)")
-                .fetch_one(&self.pool)
-                .await?;
+        let row: (bool,) = sqlx::query_as("SELECT pg_try_advisory_lock(1)")
+            .fetch_one(&self.pool)
+            .await?;
         Ok(row.0)
     }
 }
@@ -406,10 +405,11 @@ impl WorkflowStore for PostgresStore {
     }
 
     async fn get_namespace_stats(&self, namespace: &str) -> Result<crate::store::NamespaceStats> {
-        let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM workflow.workflows WHERE namespace = $1")
-            .bind(namespace)
-            .fetch_one(&self.pool)
-            .await?;
+        let total: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM workflow.workflows WHERE namespace = $1")
+                .bind(namespace)
+                .fetch_one(&self.pool)
+                .await?;
         let running: (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM workflow.workflows WHERE namespace = $1 AND status = 'RUNNING'",
         )
@@ -530,7 +530,11 @@ impl WorkflowStore for PostgresStore {
             ));
             idx += 2;
         }
-        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ${} OFFSET ${}", idx, idx + 1));
+        sql.push_str(&format!(
+            " ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
+            idx,
+            idx + 1
+        ));
 
         let mut q = sqlx::query_as::<_, PgWorkflowRow>(&sql)
             .bind(namespace)
@@ -557,7 +561,11 @@ impl WorkflowStore for PostgresStore {
         error: Option<&str>,
     ) -> Result<()> {
         let now = timestamp_now();
-        let completed_at = if status.is_terminal() { Some(now) } else { None };
+        let completed_at = if status.is_terminal() {
+            Some(now)
+        } else {
+            None
+        };
         sqlx::query(
             "UPDATE workflow.workflows SET status = $1, result = COALESCE($2, result), error = COALESCE($3, error), updated_at = $4, completed_at = COALESCE($5, completed_at) WHERE id = $6",
         )
@@ -636,11 +644,7 @@ impl WorkflowStore for PostgresStore {
         Ok(())
     }
 
-    async fn release_stale_dispatch_leases(
-        &self,
-        now: f64,
-        timeout_secs: f64,
-    ) -> Result<u64> {
+    async fn release_stale_dispatch_leases(&self, now: f64, timeout_secs: f64) -> Result<u64> {
         let res = sqlx::query(
             "UPDATE workflow.workflows
              SET dispatch_claimed_by = NULL,
@@ -859,13 +863,12 @@ impl WorkflowStore for PostgresStore {
         }
 
         // Row already existed — return its id.
-        let (id,): (i64,) = sqlx::query_as(
-            "SELECT id FROM workflow.timers WHERE workflow_id = $1 AND seq = $2",
-        )
-        .bind(&timer.workflow_id)
-        .bind(timer.seq)
-        .fetch_one(&self.pool)
-        .await?;
+        let (id,): (i64,) =
+            sqlx::query_as("SELECT id FROM workflow.timers WHERE workflow_id = $1 AND seq = $2")
+                .bind(&timer.workflow_id)
+                .bind(timer.seq)
+                .fetch_one(&self.pool)
+                .await?;
         Ok(id)
     }
 
@@ -935,11 +938,7 @@ impl WorkflowStore for PostgresStore {
         Ok(row.0)
     }
 
-    async fn consume_signals(
-        &self,
-        workflow_id: &str,
-        name: &str,
-    ) -> Result<Vec<WorkflowSignal>> {
+    async fn consume_signals(&self, workflow_id: &str, name: &str) -> Result<Vec<WorkflowSignal>> {
         let rows = sqlx::query_as::<_, PgSignalRow>(
             "UPDATE workflow.signals SET consumed = TRUE
              WHERE workflow_id = $1 AND name = $2 AND consumed = FALSE
@@ -1089,11 +1088,7 @@ impl WorkflowStore for PostgresStore {
         Ok(())
     }
 
-    async fn upsert_search_attributes(
-        &self,
-        workflow_id: &str,
-        patch_json: &str,
-    ) -> Result<()> {
+    async fn upsert_search_attributes(&self, workflow_id: &str, patch_json: &str) -> Result<()> {
         let current: Option<(Option<String>,)> =
             sqlx::query_as("SELECT search_attributes FROM workflow.workflows WHERE id = $1")
                 .bind(workflow_id)
@@ -1164,11 +1159,7 @@ impl WorkflowStore for PostgresStore {
         if let Some(ref v) = patch.overlap_policy {
             q = q.bind(v);
         }
-        let res = q
-            .bind(namespace)
-            .bind(name)
-            .execute(&self.pool)
-            .await?;
+        let res = q.bind(namespace).bind(name).execute(&self.pool).await?;
         if res.rows_affected() == 0 {
             return Ok(None);
         }
@@ -1289,10 +1280,7 @@ impl WorkflowStore for PostgresStore {
         Ok(())
     }
 
-    async fn get_latest_snapshot(
-        &self,
-        workflow_id: &str,
-    ) -> Result<Option<WorkflowSnapshot>> {
+    async fn get_latest_snapshot(&self, workflow_id: &str) -> Result<Option<WorkflowSnapshot>> {
         let row = sqlx::query_as::<_, (String, i32, String, f64)>(
             "SELECT workflow_id, event_seq, state_json, created_at
              FROM workflow.snapshots WHERE workflow_id = $1
@@ -1302,12 +1290,14 @@ impl WorkflowStore for PostgresStore {
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map(|(workflow_id, event_seq, state_json, created_at)| WorkflowSnapshot {
-            workflow_id,
-            event_seq,
-            state_json,
-            created_at,
-        }))
+        Ok(row.map(
+            |(workflow_id, event_seq, state_json, created_at)| WorkflowSnapshot {
+                workflow_id,
+                event_seq,
+                state_json,
+                created_at,
+            },
+        ))
     }
 
     // ── Queue Stats ─────────────────────────────────────────
@@ -1329,12 +1319,14 @@ impl WorkflowStore for PostgresStore {
 
         Ok(rows
             .into_iter()
-            .map(|(queue, pending, running, workers)| crate::store::QueueStats {
-                queue,
-                pending_activities: pending,
-                running_activities: running,
-                workers,
-            })
+            .map(
+                |(queue, pending, running, workers)| crate::store::QueueStats {
+                    queue,
+                    pending_activities: pending,
+                    running_activities: running,
+                    workers,
+                },
+            )
             .collect())
     }
 
@@ -1344,13 +1336,11 @@ impl WorkflowStore for PostgresStore {
         // pg_try_advisory_lock is session-scoped — only one connection
         // in the pool will hold the lock. In a multi-replica Kubernetes
         // deployment, only one pod's connection wins.
-        let row: (bool,) =
-            sqlx::query_as("SELECT pg_try_advisory_lock(42)")
-                .fetch_one(&self.pool)
-                .await?;
+        let row: (bool,) = sqlx::query_as("SELECT pg_try_advisory_lock(42)")
+            .fetch_one(&self.pool)
+            .await?;
         Ok(row.0)
     }
-
 }
 
 fn timestamp_now() -> f64 {

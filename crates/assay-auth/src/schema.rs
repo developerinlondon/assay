@@ -617,14 +617,12 @@ pub async fn migrate_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
                 .with_context(|| format!("auth sqlite migrate: {label}"))?;
         }
     }
-    sqlx::query(
-        "INSERT OR IGNORE INTO engine.migrations (module, version) VALUES (?, ?)",
-    )
-    .bind(MODULE_NAME)
-    .bind(MIGRATION_VERSION)
-    .execute(pool)
-    .await
-    .context("record auth migration in engine.migrations")?;
+    sqlx::query("INSERT OR IGNORE INTO engine.migrations (module, version) VALUES (?, ?)")
+        .bind(MODULE_NAME)
+        .bind(MIGRATION_VERSION)
+        .execute(pool)
+        .await
+        .context("record auth migration in engine.migrations")?;
     Ok(())
 }
 

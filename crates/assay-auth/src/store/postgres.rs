@@ -167,11 +167,7 @@ impl UserStore for PostgresUserStore {
         Ok(())
     }
 
-    async fn get_user_by_upstream(
-        &self,
-        provider: &str,
-        subject: &str,
-    ) -> Result<Option<User>> {
+    async fn get_user_by_upstream(&self, provider: &str, subject: &str) -> Result<Option<User>> {
         let row = sqlx::query(
             "SELECT u.id, u.email, u.email_verified, u.display_name, u.created_at
              FROM auth.users u
@@ -186,12 +182,7 @@ impl UserStore for PostgresUserStore {
         Ok(row.map(map_user_row_pg))
     }
 
-    async fn list_users(
-        &self,
-        limit: i64,
-        offset: i64,
-        search: Option<&str>,
-    ) -> Result<Vec<User>> {
+    async fn list_users(&self, limit: i64, offset: i64, search: Option<&str>) -> Result<Vec<User>> {
         // Cap limit at 500 — the admin dashboard pages 50 at a time so
         // anything bigger is either a misconfigured client or a probe.
         let lim = limit.clamp(1, 500);
@@ -269,7 +260,12 @@ impl UserStore for PostgresUserStore {
         .context("auth.user_upstream list")?;
         Ok(rows
             .into_iter()
-            .map(|r| (r.get::<String, _>("provider"), r.get::<String, _>("subject")))
+            .map(|r| {
+                (
+                    r.get::<String, _>("provider"),
+                    r.get::<String, _>("subject"),
+                )
+            })
             .collect())
     }
 }

@@ -69,10 +69,19 @@ mod tests {
             assert!(doc.get(field).is_some(), "missing {field}: {doc}");
         }
         assert_eq!(doc["issuer"], "https://idp.example.com");
-        assert_eq!(doc["authorization_endpoint"], "https://idp.example.com/authorize");
-        assert_eq!(doc["jwks_uri"], "https://idp.example.com/.well-known/jwks.json");
+        assert_eq!(
+            doc["authorization_endpoint"],
+            "https://idp.example.com/authorize"
+        );
+        assert_eq!(
+            doc["jwks_uri"],
+            "https://idp.example.com/.well-known/jwks.json"
+        );
         assert_eq!(doc["subject_types_supported"], json!(["public"]));
-        assert_eq!(doc["id_token_signing_alg_values_supported"], json!(["EdDSA"]));
+        assert_eq!(
+            doc["id_token_signing_alg_values_supported"],
+            json!(["EdDSA"])
+        );
         assert_eq!(doc["code_challenge_methods_supported"], json!(["S256"]));
     }
 
@@ -80,7 +89,13 @@ mod tests {
     fn discovery_lists_extension_endpoints() {
         let doc = build_discovery("https://idp.example.com");
         assert_eq!(doc["revocation_endpoint"], "https://idp.example.com/revoke");
-        assert_eq!(doc["introspection_endpoint"], "https://idp.example.com/introspect");
-        assert_eq!(doc["end_session_endpoint"], "https://idp.example.com/logout");
+        assert_eq!(
+            doc["introspection_endpoint"],
+            "https://idp.example.com/introspect"
+        );
+        assert_eq!(
+            doc["end_session_endpoint"],
+            "https://idp.example.com/logout"
+        );
     }
 }
