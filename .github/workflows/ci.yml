@@ -54,11 +54,26 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: macos-14
             target: aarch64-apple-darwin
-    # On the linux row, route to the self-hosted runner when the actor
-    # is the maintainer; any other actor (Dependabot, future outside
-    # contributors) falls back to ubuntu-latest. The macOS row always
-    # uses GitHub-hosted — there is no local mac.
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || matrix.os }}
+    # Self-hosted runner routing.
+    #
+    # Linux row: routes to the maintainer's self-hosted runner whenever
+    # the actor is the maintainer; any other actor (Dependabot, outside
+    # contributors) falls back to `ubuntu-latest`.
+    #
+    # macOS row: opt-in via the repo variable `MAC_LOCAL_RUNNER` (set to
+    # `"true"` when a local mac runner is online; unset / any other value
+    # routes to GitHub-hosted `macos-14`). Still gated on actor so PRs
+    # from non-maintainers never depend on the local box being up. Toggle
+    # with `gh variable set MAC_LOCAL_RUNNER --body true` when starting
+    # the runner; unset (`gh variable delete MAC_LOCAL_RUNNER`) when
+    # stopping it. GitHub Actions has no native "fallback if offline"
+    # so the variable is the kill-switch.
+    runs-on: >-
+      ${{
+        (matrix.os == 'ubuntu-latest' && github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]'))
+        || (matrix.os == 'macos-14' && github.actor == 'developerinlondon' && vars.MAC_LOCAL_RUNNER == 'true' && fromJSON('["self-hosted","macos","assay"]'))
+        || matrix.os
+      }}
     timeout-minutes: 25
 
     steps:
@@ -260,7 +275,11 @@ jobs:
   sysops-e2e:
     name: sysops-e2e
     needs: changes
-    if: needs.changes.outputs.sysops == 'true' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+    # Heavy browser-test job. Triggered only when libs/ or workflow YAML
+    # change — rust-only PRs (e.g. crates/** edits) don't pay the
+    # ~10–15 min Playwright cycle. A rust regression that breaks sysops
+    # gets caught at the next libs/** PR or the release-libs build.
+    if: needs.changes.outputs.sysops == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
@@ -297,7 +316,8 @@ jobs:
   sysops-smoke:
     name: sysops-smoke
     needs: changes
-    if: needs.changes.outputs.sysops == 'true' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+    # Same trigger narrowing as sysops-e2e: skip on rust-only PRs.
+    if: needs.changes.outputs.sysops == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
