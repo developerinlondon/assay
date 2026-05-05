@@ -2,6 +2,13 @@
 
 All notable changes to Assay are documented here.
 
+## 0.15.10 — 2026-05-05
+
+- Fix: `json.encode({})` now returns `"{}"` (was `"[]"`). Same fix applies to every empty
+  Lua table passed as a JSON body via the http builtin. Closes #129.
+- Add: `json.array(t?)` / `json.object(t?)` to pin a table's encoded shape.
+- Migration: callers that need `"[]"` for an empty table must use `json.array(t)`.
+
 ## hostops 0.1.3 — 2026-05-04
 
 ### Added
