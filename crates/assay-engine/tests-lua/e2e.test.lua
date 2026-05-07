@@ -1,13 +1,12 @@
 --! End-to-end test: client kicks a workflow that runs a real activity.
 --!
---! Two-process design: a separate worker process (spawned by run.sh)
+--! Two-process design: a separate worker process (spawned by run.lua)
 --! registers `demo.greet` + a `say_hello` activity and listens on the
 --! `default` queue. This test starts the workflow, polls `describe`
 --! until it reaches `COMPLETED`, then asserts the result.
 
 local engine = require("assay.engine")
 
-local function fail(msg) error("test failure: " .. msg) end
 local function ok(label) print("  ✓ " .. label) end
 
 print("[engine.e2e]")
@@ -40,14 +39,13 @@ while os.time() < deadline do
   sleep(0.5)
 end
 
-if last_status ~= "COMPLETED" then
-  fail(string.format("workflow did not COMPLETE within 30s (status=%s)",
-    tostring(last_status)))
-end
+assert.eq(last_status, "COMPLETED", string.format(
+  "workflow did not COMPLETE within 30s (status=%s)",
+  tostring(last_status)))
 ok("workflow → COMPLETED")
 
 local final = e.workflow:describe(wf_id)
-if final.result == nil then fail("describe.result nil") end
+assert.not_nil(final.result, "describe.result nil")
 ok(string.format("describe.result → %s", tostring(final.result)))
 
 print("OK — engine.e2e")

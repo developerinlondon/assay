@@ -2,11 +2,6 @@
 -- Run via tests/stdlib_pkg.rs harness.
 local pkg = require("assay.pkg")
 
--- Local helper because assay registers `assert` as a global table.
-local function check(cond, msg)
-  if not cond then error(msg, 2) end
-end
-
 -- Build temp dirs to simulate "built-in" / "plugin" / "operator" layers.
 -- os.getenv is not exposed in assay's sandbox; use /tmp directly.
 math.randomseed(os.time())
@@ -102,36 +97,36 @@ local out = pkg.catalog.load({ builtin_dir, empty_plugin, operator_dir })
 
 -- 1. test-foo: operator wins, full-entry override, install_path from operator.
 local foo = out.entries["test-foo"]
-check(foo, "test-foo should exist")
-check(foo.display_name == "Operator foo",
-      "operator override expected, got: " .. tostring(foo.display_name))
-check(foo.binary.install_path == "/usr/local/bin/x-operator",
-      "operator install_path expected, got: " .. tostring(foo.binary.install_path))
-check(foo._origin:match("^operator:"),
-      "_origin should be operator:..., got: " .. tostring(foo._origin))
+assert.not_nil(foo, "test-foo should exist")
+assert.eq(foo.display_name, "Operator foo",
+  "operator override expected, got: " .. tostring(foo.display_name))
+assert.eq(foo.binary.install_path, "/usr/local/bin/x-operator",
+  "operator install_path expected, got: " .. tostring(foo.binary.install_path))
+assert.not_nil(foo._origin:match("^operator:"),
+  "_origin should be operator:..., got: " .. tostring(foo._origin))
 
 -- 2. test-bar: only in operator layer.
 local bar = out.entries["test-bar"]
-check(bar, "test-bar should exist")
-check(bar._origin:match("^operator:"),
-      "_origin should be operator:..., got: " .. tostring(bar._origin))
+assert.not_nil(bar, "test-bar should exist")
+assert.not_nil(bar._origin:match("^operator:"),
+  "_origin should be operator:..., got: " .. tostring(bar._origin))
 
 -- 3. test-baz: STRICT-OVERRIDE — invalid override clears the valid built-in entry.
-check(out.entries["test-baz"] == nil,
-      "test-baz should be cleared (invalid override masks built-in)")
+assert.eq(out.entries["test-baz"], nil,
+  "test-baz should be cleared (invalid override masks built-in)")
 -- And the error must be recorded.
 local found_baz_error = false
 for _, e in ipairs(out.errors) do
   if e.package_id == "test-baz" then found_baz_error = true end
 end
-check(found_baz_error, "expected error recorded for test-baz invalid override")
+assert.eq(found_baz_error, true, "expected error recorded for test-baz invalid override")
 
 -- 4. Re-load idempotency (rule 3 from spec, in the equivalent-content sense):
 -- same source files → same set of entries with same display_name/origin.
 local out2 = pkg.catalog.load({ builtin_dir, empty_plugin, operator_dir })
 local foo2 = out2.entries["test-foo"]
-check(foo2.display_name == foo.display_name, "re-load drift on display_name")
-check(foo2._origin == foo._origin, "re-load drift on _origin")
-check(out2.entries["test-baz"] == nil, "re-load: test-baz still cleared")
+assert.eq(foo2.display_name, foo.display_name, "re-load drift on display_name")
+assert.eq(foo2._origin, foo._origin, "re-load drift on _origin")
+assert.eq(out2.entries["test-baz"], nil, "re-load: test-baz still cleared")
 
 print("catalog_layering.lua OK")

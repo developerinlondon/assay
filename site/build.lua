@@ -458,11 +458,12 @@ llms[#llms + 1] = [[## Optional
 fs.write(out .. "/llms-full.txt", table.concat(llms))
 
 -- =====================================================================
--- README.md / SKILL.md auto-rewrite
+-- README.md / optional SKILL.md auto-rewrite
 -- =====================================================================
 -- Modules + categories live in `docs/modules/<slug>.md` frontmatter
--- (`category:` field). The stdlib table in README and SKILL is generated
--- from that, replacing whatever sits between the BEGIN/END markers. Run
+-- (`category:` field). The stdlib table in README is generated from
+-- that, replacing whatever sits between the BEGIN/END markers. SKILL.md
+-- can opt into the same rewrite by adding those markers. Run
 -- `assay site/build.lua` after adding/changing a module; CI should fail
 -- if `git diff README.md SKILL.md` is non-empty afterwards.
 
@@ -492,10 +493,15 @@ local function render_stdlib_md_table()
   return table.concat(lines, "\n")
 end
 
-local function replace_block(path, begin_marker, end_marker, replacement)
+local function replace_block(path, begin_marker, end_marker, replacement, opts)
+  opts = opts or {}
   local ok, src = pcall(fs.read, path)
   if not ok then
-    log.warn(path .. ": not found, skipping")
+    if opts.optional then
+      log.info(path .. ": optional file not found, skipping")
+    else
+      log.warn(path .. ": not found, skipping")
+    end
     return false
   end
   local pre_pat  = "^(.-)(" .. begin_marker:gsub("%-", "%%-") .. ")"
@@ -503,8 +509,13 @@ local function replace_block(path, begin_marker, end_marker, replacement)
   local pre  = src:match(pre_pat)
   local post = src:match(post_pat)
   if not pre or not post then
-    log.warn(path .. ": markers not found, skipping (add `"
-             .. begin_marker .. "` ... `" .. end_marker .. "`)")
+    local msg = path .. ": markers not found, skipping (add `"
+                .. begin_marker .. "` ... `" .. end_marker .. "`)"
+    if opts.optional then
+      log.info(msg)
+    else
+      log.warn(msg)
+    end
     return false
   end
   local new = pre .. replacement .. post
@@ -521,6 +532,6 @@ local table_md = render_stdlib_md_table()
 replace_block("README.md", "<!-- BEGIN STDLIB TABLE -->", "<!-- END STDLIB TABLE -->", table_md)
 -- SKILL.md does not currently host a stdlib table; if you want one,
 -- add the BEGIN/END markers anywhere in the file and rerun this script.
-replace_block("SKILL.md",  "<!-- BEGIN STDLIB TABLE -->", "<!-- END STDLIB TABLE -->", table_md)
+replace_block("SKILL.md",  "<!-- BEGIN STDLIB TABLE -->", "<!-- END STDLIB TABLE -->", table_md, { optional = true })
 
 log.info("Done. Output at " .. out .. "/")

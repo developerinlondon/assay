@@ -1,0 +1,32 @@
+# Lua client smoke tests for assay-engine.
+#
+# The runner is an Assay Lua script, not bash: it boots a temporary
+# assay-engine, seeds auth/zanzibar state, starts the worker fixture, and
+# executes each *.test.lua through the Assay runtime.
+
+language: "lua"
+layer: "automation"
+stack: "systems"
+
+dependsOn:
+  - "assay-lua"
+  - "assay-engine"
+
+tasks:
+  test:
+    command: "../../../target/release/assay run run.lua"
+    deps:
+      - "assay-lua:build"
+    env:
+      ASSAY_REPO_ROOT: "$workspaceRoot"
+    inputs:
+      - "**/*.lua"
+      - "/crates/assay-engine/examples/init/init.lua"
+      - "/crates/assay-engine/src/**/*"
+      - "/crates/assay-auth/src/**/*"
+      - "/crates/assay-workflow/src/**/*"
+      - "/crates/assay/stdlib/engine.lua"
+      - "/crates/assay/stdlib/engine/**/*.lua"
+    options:
+      cache: true
+      runInCI: true

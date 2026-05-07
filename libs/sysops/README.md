@@ -11,6 +11,7 @@ This library replaces the standalone `knowhere0426` host monolith. See plan 21 i
 
 ```lua
 local sysops = require("sysops.mount")
+local vault  = require("sysops.vault")
 
 local routes = { GET = {}, POST = {} }
 sysops.mount(routes, {
@@ -18,7 +19,10 @@ sysops.mount(routes, {
   state  = require("app.services.state"),   -- machine + disk + proc snapshots
   audit  = require("app.services.audit"),   -- audit-log writer
   jobs   = require("app.services.jobs"),    -- job/task tracker
-  secret = require("app.services.secret"),  -- secret-store reader
+  secret = vault.secret_store({
+    app = "my-host-manager",
+    admin_key_envs = { "MY_APP_ADMIN_API_KEYS" },
+  }),
   brand  = require("app.brand"),            -- brand pack (logo/colors/strings)
   engine = engine_http_client,              -- HTTP wrapper to engine sidecar
   lib_root = "/opt/assay/libs/sysops",     -- where the lib is installed
@@ -38,13 +42,41 @@ The library is a pure mounting layer. It owns no global state; every service it 
 | `state`    | table  | `state.snapshot()`, `state.machine_deep(name)`, …    |
 | `audit`    | table  | `audit.append({...})`, `audit.recent(n)`             |
 | `jobs`     | table  | `jobs.active({kind=...})`, `jobs.append_log(id, …)`  |
-| `secret`   | table  | `secret.read(scope, key)`                            |
+| `secret`   | table  | `secret.read/write/delete/available(...)`            |
 | `brand`    | table  | `brand.snapshot()` returns logo / accent / strings   |
 | `engine`   | table  | HTTP wrapper to the engine sidecar (workflow/auth/…) |
 | `lib_root` | string | path to this lib's install dir (for `static/` reads) |
 
 Every page reads from these via the shared `sysops.ctx` module rather than top-level requires, so
 consumer apps can swap implementations without re-loading the library.
+
+## Vault-backed host secrets
+
+`sysops.vault` provides the shared Assay Engine Vault integration for host-manager apps. Use
+`vault.secret_store(opts)` as the `secret` service passed to `mount()`.
+
+```lua
+local vault = require("sysops.vault")
+
+local secret = vault.secret_store({
+  app = "knowhere",
+  admin_key_envs = { "KNOWHERE_ADMIN_API_KEYS" },
+  kv_prefix = "knowhere",
+})
+```
+
+The returned table implements:
+
+| Method      | Purpose                                                        |
+| ----------- | -------------------------------------------------------------- |
+| `read`      | Read `scope/key` from engine KV, then legacy local fallbacks.   |
+| `write`     | Store `scope/key` in assay-engine KV v2.                       |
+| `delete`    | Soft-delete the latest KV version for `scope/key`.              |
+| `available` | Report engine vault seal/status information when configured.    |
+
+This store is for host/app operational secrets, such as backup repository credentials. User-owned
+secrets should live in Assay Engine Vault's authenticated personal vault and Bitwarden-compatible
+surface, not in the sysops host secret store.
 
 ## What's in / what's not
 

@@ -3,10 +3,6 @@
 -- without exercising any privileged operation.
 local pkg = require("assay.pkg")
 
-local function check(cond, msg)
-  if not cond then error(msg, 2) end
-end
-
 local catalog_dir = "tests/fixtures/pkg_catalog"
 local fixtures    = "tests/fixtures/pkg_templates_provisioning"
 
@@ -26,69 +22,71 @@ end
 
 -- ── full valid template with all sections ─────────────────────────────────
 local full = tpl.entries["full"]
-check(full, "full provisioning template should load")
-check(full.rootfs and full.rootfs.source == "machinectl-pull-tar",
-      "rootfs section preserved with source")
-check(full.rootfs.url:find("hub.nspawn.org", 1, true), "rootfs url preserved")
-check(full.nspawn and full.nspawn.resolv_conf == "bind-host",
-      "nspawn.resolv_conf preserved (hyphen form accepted)")
-check(full.nspawn.boot == true, "nspawn.boot preserved")
-check(type(full.nspawn.binds) == "table" and full.nspawn.binds[1] == "/dev/kmsg",
-      "nspawn.binds preserved")
-check(full.systemd and type(full.systemd.enable) == "table",
-      "systemd.enable preserved")
+assert.not_nil(full, "full provisioning template should load")
+assert.not_nil(full.rootfs, "rootfs section preserved")
+assert.eq(full.rootfs.source, "machinectl-pull-tar", "rootfs section preserved with source")
+assert.contains(full.rootfs.url, "hub.nspawn.org", "rootfs url preserved")
+assert.not_nil(full.nspawn, "nspawn section preserved")
+assert.eq(full.nspawn.resolv_conf, "bind-host",
+  "nspawn.resolv_conf preserved (hyphen form accepted)")
+assert.eq(full.nspawn.boot, true, "nspawn.boot preserved")
+assert.eq(type(full.nspawn.binds), "table", "nspawn.binds preserved")
+assert.eq(full.nspawn.binds[1], "/dev/kmsg", "nspawn.binds preserved")
+assert.not_nil(full.systemd, "systemd section preserved")
+assert.eq(type(full.systemd.enable), "table", "systemd.enable preserved")
 
 -- ── packages-only template (no provisioning sections) ─────────────────────
 local pkgsonly = tpl.entries["packages-only"]
-check(pkgsonly, "packages-only template should still load (provisioning sections optional)")
-check(pkgsonly.rootfs == nil and pkgsonly.nspawn == nil,
-      "packages-only carries no provisioning sections")
+assert.not_nil(pkgsonly, "packages-only template should still load (provisioning sections optional)")
+assert.eq(pkgsonly.rootfs, nil, "packages-only carries no rootfs section")
+assert.eq(pkgsonly.nspawn, nil, "packages-only carries no nspawn section")
 
 -- ── snapshot-source template ──────────────────────────────────────────────
 local snap = tpl.entries["snapshot-template"]
-check(snap, "snapshot-template should load")
-check(snap.rootfs.source == "machinectl-clone" and snap.rootfs.from == "_golden",
-      "machinectl-clone source carries `from`")
+assert.not_nil(snap, "snapshot-template should load")
+assert.eq(snap.rootfs.source, "machinectl-clone", "machinectl-clone source preserved")
+assert.eq(snap.rootfs.from, "_golden", "machinectl-clone source carries `from`")
 
 -- ── invalid: unknown rootfs source ────────────────────────────────────────
-check(tpl.entries["bad-rootfs-source"] == nil,
-      "template with unknown rootfs.source should be rejected")
-check(err_for("bad-rootfs-source", "rootfs.source"),
-      "expected error pointing at rootfs.source")
+assert.eq(tpl.entries["bad-rootfs-source"], nil,
+  "template with unknown rootfs.source should be rejected")
+assert.not_nil(err_for("bad-rootfs-source", "rootfs.source"),
+  "expected error pointing at rootfs.source")
 
 -- ── invalid: pull-tar missing url ─────────────────────────────────────────
-check(tpl.entries["bad-rootfs-pulltar-no-url"] == nil,
-      "pull-tar without url should be rejected")
-check(err_for("bad-rootfs-pulltar-no-url", "rootfs.url"),
-      "expected error pointing at rootfs.url")
+assert.eq(tpl.entries["bad-rootfs-pulltar-no-url"], nil,
+  "pull-tar without url should be rejected")
+assert.not_nil(err_for("bad-rootfs-pulltar-no-url", "rootfs.url"),
+  "expected error pointing at rootfs.url")
 
 -- ── invalid: clone missing from ───────────────────────────────────────────
-check(tpl.entries["bad-rootfs-clone-no-from"] == nil,
-      "clone without from should be rejected")
-check(err_for("bad-rootfs-clone-no-from", "rootfs.from"),
-      "expected error pointing at rootfs.from")
+assert.eq(tpl.entries["bad-rootfs-clone-no-from"], nil,
+  "clone without from should be rejected")
+assert.not_nil(err_for("bad-rootfs-clone-no-from", "rootfs.from"),
+  "expected error pointing at rootfs.from")
 
 -- ── invalid: bogus resolv_conf value ──────────────────────────────────────
-check(tpl.entries["bad-resolv-conf"] == nil,
-      "template with bogus nspawn.resolv_conf should be rejected")
-check(err_for("bad-resolv-conf", "resolv_conf"),
-      "expected error pointing at nspawn.resolv_conf")
+assert.eq(tpl.entries["bad-resolv-conf"], nil,
+  "template with bogus nspawn.resolv_conf should be rejected")
+assert.not_nil(err_for("bad-resolv-conf", "resolv_conf"),
+  "expected error pointing at nspawn.resolv_conf")
 
 -- ── invalid: nspawn.boot is a string instead of boolean ───────────────────
-check(tpl.entries["bad-nspawn-types"] == nil,
-      "template with non-boolean nspawn.boot should be rejected")
-check(err_for("bad-nspawn-types", "nspawn.boot"),
-      "expected error pointing at nspawn.boot type")
+assert.eq(tpl.entries["bad-nspawn-types"], nil,
+  "template with non-boolean nspawn.boot should be rejected")
+assert.not_nil(err_for("bad-nspawn-types", "nspawn.boot"),
+  "expected error pointing at nspawn.boot type")
 
 -- ── invalid: systemd.enable is a string instead of array ──────────────────
-check(tpl.entries["bad-systemd-enable"] == nil,
-      "template with non-array systemd.enable should be rejected")
-check(err_for("bad-systemd-enable", "systemd.enable"),
-      "expected error pointing at systemd.enable type")
+assert.eq(tpl.entries["bad-systemd-enable"], nil,
+  "template with non-array systemd.enable should be rejected")
+assert.not_nil(err_for("bad-systemd-enable", "systemd.enable"),
+  "expected error pointing at systemd.enable type")
 
 -- ── valid: hyphen form of resolv_conf normalizes ──────────────────────────
 local hy = tpl.entries["resolv-conf-hyphen"]
-check(hy and hy.nspawn.resolv_conf == "bind-host",
-      "hyphen form of resolv_conf accepted (matches systemd-nspawn flag spelling)")
+assert.not_nil(hy, "hyphen form of resolv_conf accepted")
+assert.eq(hy.nspawn.resolv_conf, "bind-host",
+  "hyphen form of resolv_conf accepted (matches systemd-nspawn flag spelling)")
 
 print("templates_provisioning.lua OK")

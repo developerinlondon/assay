@@ -1,6 +1,6 @@
 --! Worker for the e2e test — registers `demo.greet` + the `say_hello`
---! activity and listens on the `default` queue. Spawned by run.sh as a
---! background process; killed when the script exits.
+--! activity and listens on the `default` queue. Spawned by run.lua as a
+--! background process; killed when the runner exits.
 
 local engine = require("assay.engine")
 

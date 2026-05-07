@@ -4,10 +4,6 @@
 
 local fs_snapshot = require("assay.fs_snapshot")
 
-local function check(cond, msg)
-  if not cond then error(msg, 2) end
-end
-
 -- Mock shell.exec — returns scripted answers based on the command.
 -- `script` is a table of { match=substring_pattern, status=N, stdout=S }
 -- entries; the first matching entry is used per call.
@@ -40,9 +36,9 @@ do
     { match = "id -u",   status = 0, stdout = "1000\n" },
     { match = "findmnt", status = 0, stdout = "/dev/sda3 btrfs\n" },
   }, function() return fs_snapshot.detect("/var/lib/machines") end)
-  check(r.backend == "btrfs", "expected btrfs, got " .. tostring(r.backend))
-  check(r.source  == "/dev/sda3", "btrfs source")
-  check(r.fstype  == "btrfs", "btrfs fstype")
+  assert.eq(r.backend, "btrfs", "expected btrfs, got " .. tostring(r.backend))
+  assert.eq(r.source, "/dev/sda3", "btrfs source")
+  assert.eq(r.fstype, "btrfs", "btrfs fstype")
 end
 
 do
@@ -50,8 +46,8 @@ do
     { match = "id -u",   status = 0, stdout = "1000\n" },
     { match = "findmnt", status = 0, stdout = "tank/data zfs\n" },
   }, function() return fs_snapshot.detect("/srv/data") end)
-  check(r.backend == "zfs", "expected zfs, got " .. tostring(r.backend))
-  check(r.source  == "tank/data", "zfs source")
+  assert.eq(r.backend, "zfs", "expected zfs, got " .. tostring(r.backend))
+  assert.eq(r.source, "tank/data", "zfs source")
 end
 
 do
@@ -59,7 +55,7 @@ do
     { match = "id -u",   status = 0, stdout = "1000\n" },
     { match = "findmnt", status = 0, stdout = "/dev/sda1 ext4\n" },
   }, function() return fs_snapshot.detect("/etc") end)
-  check(r.backend == "none", "expected none for ext4")
+  assert.eq(r.backend, "none", "expected none for ext4")
 end
 
 -- ── take: btrfs branch issues `btrfs subvolume snapshot -r` ─────────
@@ -73,13 +69,13 @@ do
   local found = false
   for _, c in ipairs(cap) do
     if string.find(c.cmd, "btrfs subvolume snapshot -r", 1, true) then
-      check(string.find(c.cmd, "sudo -n", 1, true), "expected sudo prefix as non-root")
-      check(string.find(c.cmd, "/var/lib/machines", 1, true), "source path in cmd")
-      check(string.find(c.cmd, ".assay-snap-manual-", 1, true), "snap path naming")
+      assert.contains(c.cmd, "sudo -n", "expected sudo prefix as non-root")
+      assert.contains(c.cmd, "/var/lib/machines", "source path in cmd")
+      assert.contains(c.cmd, ".assay-snap-manual-", "snap path naming")
       found = true
     end
   end
-  check(found, "expected btrfs snapshot command in captured calls")
+  assert.eq(found, true, "expected btrfs snapshot command in captured calls")
 end
 
 -- ── take: zfs branch issues `zfs snapshot tank/data@<id>` ───────────
@@ -92,12 +88,12 @@ do
   local found = false
   for _, c in ipairs(cap) do
     if string.find(c.cmd, "zfs snapshot", 1, true) then
-      check(not string.find(c.cmd, "sudo -n", 1, true), "no sudo prefix as root")
-      check(string.find(c.cmd, "tank/data@daily-", 1, true), "snap ref shape: " .. c.cmd)
+      assert.eq(string.find(c.cmd, "sudo -n", 1, true), nil, "no sudo prefix as root")
+      assert.contains(c.cmd, "tank/data@daily-", "snap ref shape: " .. c.cmd)
       found = true
     end
   end
-  check(found, "expected zfs snapshot command")
+  assert.eq(found, true, "expected zfs snapshot command")
 end
 
 -- ── take: none backend returns no-op handle pointing at the path ────
@@ -106,8 +102,8 @@ do
     { match = "id -u",   status = 0, stdout = "0\n" },
     { match = "findmnt", status = 0, stdout = "/dev/sda1 ext4\n" },
   }, function() return fs_snapshot.take("x", "/etc") end)
-  check(r.backend == "none", "none backend")
-  check(r.path == "/etc", "no-op path is original")
+  assert.eq(r.backend, "none", "none backend")
+  assert.eq(r.path, "/etc", "no-op path is original")
 end
 
 -- ── release: btrfs branch issues `btrfs subvolume delete` ───────────
@@ -122,13 +118,13 @@ do
   for _, c in ipairs(cap) do
     if string.find(c.cmd, "btrfs subvolume delete", 1, true) then found = true end
   end
-  check(found, "expected btrfs delete cmd")
+  assert.eq(found, true, "expected btrfs delete cmd")
 end
 
 -- ── release: none backend is a no-op ────────────────────────────────
 do
   local r = fs_snapshot.release({ backend = "none", path = "/x" })
-  check(r.ok == true, "none release is ok")
+  assert.eq(r.ok, true, "none release is ok")
 end
 
 -- ── with_snapshot brackets correctly + releases on error ────────────
@@ -142,10 +138,10 @@ do
     { match = "findmnt", status = 0, stdout = "/dev/sda1 ext4\n" },
   }, function()
     local ok = pcall(fs_snapshot.with_snapshot, "x", "/x", function(_h) error("boom") end)
-    check(not ok, "wrapped fn error should propagate")
+    assert.eq(ok, false, "wrapped fn error should propagate")
   end)
   fs_snapshot.release = orig_release
-  check(released, "release should still run on error")
+  assert.eq(released, true, "release should still run on error")
 end
 
 print("fs_snapshot backend_dispatch.lua: 8 cases passed")
