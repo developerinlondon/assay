@@ -6,18 +6,6 @@
 
 local vault = require("sysops.vault")
 
-local function fail(msg) error("vault test fail: " .. tostring(msg), 2) end
-
-local function assert_eq(actual, expected, label)
-  if actual ~= expected then
-    fail(("%s: expected %q, got %q"):format(label, tostring(expected), tostring(actual)))
-  end
-end
-
-local function assert_truthy(value, label)
-  if not value then fail(label .. ": expected truthy value") end
-end
-
 local function reset_runtime(vars, handler, file_map)
   local files = file_map or {}
 
@@ -85,10 +73,10 @@ do
     admin_key_envs = { "APP_ADMIN_API_KEYS" },
   })
 
-  assert_eq(store.read("host", "password"), "from-vault", "read returns engine KV data")
-  assert_eq(seen.method, "GET", "read method")
-  assert_eq(seen.url, "http://engine.local/api/v1/vault/kv/hostops/host/password", "read URL")
-  assert_eq(seen.headers.Authorization, "Bearer app-token", "read auth header")
+  assert.eq(store.read("host", "password"), "from-vault", "read returns engine KV data")
+  assert.eq(seen.method, "GET", "read method")
+  assert.eq(seen.url, "http://engine.local/api/v1/vault/kv/hostops/host/password", "read URL")
+  assert.eq(seen.headers.Authorization, "Bearer app-token", "read auth header")
   print("  ok read uses engine KV endpoint")
 end
 
@@ -113,16 +101,16 @@ do
   })
   local ok, err = store.write("host", "password", "stored-secret")
 
-  assert_eq(ok, true, "write ok")
-  assert_eq(err, nil, "write err")
-  assert_eq(seen.method, "PUT", "write method")
-  assert_eq(seen.url, "http://engine.local/api/v1/vault/kv/shared/host/password", "write URL")
-  assert_eq(seen.headers.Authorization, "Bearer engine-token", "write auth header")
+  assert.eq(ok, true, "write ok")
+  assert.eq(err, nil, "write err")
+  assert.eq(seen.method, "PUT", "write method")
+  assert.eq(seen.url, "http://engine.local/api/v1/vault/kv/shared/host/password", "write URL")
+  assert.eq(seen.headers.Authorization, "Bearer engine-token", "write auth header")
   local body = json.parse(seen.body)
-  assert_eq(body.data, "stored-secret", "write payload data")
-  assert_eq(body.custom_md.app, "hostops", "write metadata app")
-  assert_eq(body.custom_md.scope, "host", "write metadata scope")
-  assert_eq(body.custom_md.key, "password", "write metadata key")
+  assert.eq(body.data, "stored-secret", "write payload data")
+  assert.eq(body.custom_md.app, "hostops", "write metadata app")
+  assert.eq(body.custom_md.scope, "host", "write metadata scope")
+  assert.eq(body.custom_md.key, "password", "write metadata key")
   print("  ok write persists through engine KV")
 end
 
@@ -146,31 +134,31 @@ do
   local store = vault.secret_store({ app = "hostops" })
   local ok, err = store.delete("host", "password")
 
-  assert_eq(ok, true, "delete ok")
-  assert_eq(err, nil, "delete err")
-  assert_eq(calls[1].method, "GET", "delete reads current version first")
-  assert_eq(calls[2].method, "DELETE", "delete method")
-  assert_eq(
+  assert.eq(ok, true, "delete ok")
+  assert.eq(err, nil, "delete err")
+  assert.eq(calls[1].method, "GET", "delete reads current version first")
+  assert.eq(calls[2].method, "DELETE", "delete method")
+  assert.eq(
     calls[2].url,
     "http://engine.local/api/v1/vault/kv/hostops/host/password?version=3",
     "delete URL"
   )
-  assert_eq(calls[2].headers.Authorization, "Bearer assay-token", "delete auth header")
+  assert.eq(calls[2].headers.Authorization, "Bearer assay-token", "delete auth header")
   print("  ok delete soft-deletes latest engine KV version")
 end
 
 do
   reset_runtime({}, function()
-    fail("engine should not be called without ENGINE_URL")
+    error("engine should not be called without ENGINE_URL", 2)
   end, {
     ["/etc/rustic/host.password"] = "fallback-password\n",
   })
 
   local store = vault.secret_store({ app = "hostops" })
-  assert_eq(store.read("host", "password"), "fallback-password", "rustic file fallback")
+  assert.eq(store.read("host", "password"), "fallback-password", "rustic file fallback")
   local available, status = store.available()
-  assert_eq(available, false, "available without engine")
-  assert_truthy(status.error, "available error")
+  assert.eq(available, false, "available without engine")
+  assert.not_nil(status.error, "available error")
   print("  ok rustic fallback remains read-only")
 end
 
@@ -189,8 +177,8 @@ do
   end)
 
   local store = vault.secret_store({ app = "hostops" })
-  assert_eq(store.read("scope name", "key/name"), "encoded", "encoded path read")
-  assert_eq(
+  assert.eq(store.read("scope name", "key/name"), "encoded", "encoded path read")
+  assert.eq(
     seen.url,
     "http://engine.local/api/v1/vault/kv/env-prefix/scope%20name/key%2Fname",
     "encoded URL"
