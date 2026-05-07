@@ -182,7 +182,7 @@ jobs:
       # already warm locally) so we have to add it ourselves.
       - name: Add ~/.cargo/bin to PATH (self-hosted)
         if: steps.targets.outputs.run_checks == 'true' && runner.environment == 'self-hosted'
-        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       # mise's rust plugin defaults to the `minimal` profile (no clippy).
       - name: Install clippy component
@@ -251,7 +251,7 @@ jobs:
 
       - name: Set TEST_DATABASE_URL (Linux)
         if: steps.targets.outputs.run_checks == 'true' && needs.changes.outputs.assay_rust == 'true' && runner.os == 'Linux'
-        run: echo "TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres" >> $GITHUB_ENV
+        run: echo "TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres" >> "$GITHUB_ENV"
 
       - name: moon run selected checks
         if: steps.targets.outputs.run_checks == 'true'
