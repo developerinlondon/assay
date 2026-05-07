@@ -14,13 +14,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Detect what changed so docs/markdown-only PRs don't pay 25 minutes
-  # of cross-platform Rust + browser-test cycles. Any workflow change
-  # forces all jobs (we have to verify the workflows themselves).
+  # Detect what changed so independent surfaces only pay for their own gates.
+  # Workflow changes force all jobs so the CI/CD edits validate themselves.
   changes:
     runs-on: ubuntu-latest
     outputs:
-      rust: ${{ steps.filter.outputs.rust }}
+      assay: ${{ steps.filter.outputs.assay }}
       extension: ${{ steps.filter.outputs.extension }}
       sysops: ${{ steps.filter.outputs.sysops }}
       workflows: ${{ steps.filter.outputs.workflows }}
@@ -30,22 +29,28 @@ jobs:
         id: filter
         with:
           filters: |
-            rust:
+            assay:
               - 'crates/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
-              - '.mise.toml'
-              - 'rust-toolchain.toml'
             extension:
               - 'openclaw-extension/**'
             sysops:
-              - 'libs/**'
+              - 'libs/sysops/**'
             workflows:
               - '.github/workflows/**'
+              - '.github/release/**'
+              - '.mise.toml'
+              - '.moon/**'
+              - 'moon.yml'
+              - 'rust-toolchain.toml'
+              - 'scripts/**'
 
   check:
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true' || needs.changes.outputs.sysops == 'true'
+    # Full Assay/runtime matrix. Sysops and extension changes have separate
+    # gates, so they do not queue Linux/macOS workspace checks by themselves.
+    if: needs.changes.outputs.assay == 'true' || needs.changes.outputs.workflows == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -249,7 +254,7 @@ jobs:
   # specifically rather than hiding behind a generic "moon ci failed".
   extension-tests:
     needs: changes
-    if: needs.changes.outputs.extension == 'true' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+    if: needs.changes.outputs.extension == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
@@ -275,10 +280,8 @@ jobs:
   sysops-e2e:
     name: sysops-e2e
     needs: changes
-    # Heavy browser-test job. Triggered only when libs/ or workflow YAML
-    # change — rust-only PRs (e.g. crates/** edits) don't pay the
-    # ~10–15 min Playwright cycle. A rust regression that breaks sysops
-    # gets caught at the next libs/** PR or the release-libs build.
+    # Heavy browser-test job. Triggered only when libs/sysops/ or workflow
+    # YAML changes; Assay/runtime and extension PRs do not pay this cycle.
     if: needs.changes.outputs.sysops == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 20
@@ -316,7 +319,7 @@ jobs:
   sysops-smoke:
     name: sysops-smoke
     needs: changes
-    # Same trigger narrowing as sysops-e2e: skip on rust-only PRs.
+    # Same trigger narrowing as sysops-e2e.
     if: needs.changes.outputs.sysops == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ${{ github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
@@ -343,7 +346,7 @@ jobs:
   semver-checks:
     name: cargo-semver-checks
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+    if: needs.changes.outputs.assay == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -38,14 +38,29 @@ tasks:
       runInCI: true
 
   build:
+    deps:
+      - "build-runtime"
     # `cargo build --release` at workspace level builds libs but SKIPS
     # any bin with `required-features` that aren't in the top-level
     # feature set. `assay-engine` has `required-features = ["server"]`
     # so the engine binary wasn't being built by the default command —
     # downstream dashboard-e2e then failed with "target/release/
-    # assay-engine: No such file or directory". Build both bins
-    # explicitly.
-    command: 'bash -c "cargo build --release -p assay-lua --bin assay && cargo build --release -p assay-engine --bin assay-engine"'
+    # assay-engine: No such file or directory". This task composes the
+    # CLI build with the engine binary build for full-stack e2e jobs.
+    command: "cargo build --release -p assay-engine --bin assay-engine"
+    inputs:
+      - "@group(rust-sources)"
+    options:
+      # Moon's task cache can't capture workspace-release outputs (target/
+      # lives outside this project, and `outputs:` forbids `..`). Cargo's
+      # incremental + Swatinem/rust-cache handle rebuild avoidance.
+      cache: false
+      runInCI: true
+
+  build-runtime:
+    # Sysops and site tasks only execute the Assay CLI; they should not
+    # build assay-engine just to run Lua-level checks.
+    command: "cargo build --release -p assay-lua --bin assay"
     inputs:
       - "@group(rust-sources)"
     options:

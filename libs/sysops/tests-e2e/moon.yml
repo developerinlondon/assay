@@ -36,7 +36,7 @@ tasks:
   test:
     command: "bash run.sh"
     deps:
-      - "assay-lua:build"
+      - "assay-lua:build-runtime"
       - "install-browsers"
     inputs:
       - "**/*.{ts,sh,json}"

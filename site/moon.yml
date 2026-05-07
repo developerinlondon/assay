@@ -15,7 +15,7 @@ tasks:
     # the repo root — not from site/. Wrap in a shell to cd up first.
     command: 'bash -c "cd .. && ./target/release/assay site/build.lua"'
     deps:
-      - "assay-lua:build"
+      - "assay-lua:build-runtime"
     inputs:
       - "**/*"
       - "/docs/**/*"
