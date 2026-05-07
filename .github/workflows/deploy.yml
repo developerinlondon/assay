@@ -26,6 +26,11 @@ concurrency:
   group: cloudflare-pages-deploy
   cancel-in-progress: false
 
+env:
+  # cloudflare/wrangler-action@v3 still declares node20 upstream. Opt in now
+  # so deploy breaks during our control window rather than at GitHub's cutoff.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   deploy:
     name: Deploy site to Cloudflare Pages
