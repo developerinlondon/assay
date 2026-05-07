@@ -1,10 +1,11 @@
 # https://moonrepo.dev/docs/config/workspace
 #
-# Project graph for the assay repo. Six projects, all driven by
+# Project graph for the assay repo. All projects are driven by
 # `moon ci` in GitHub Actions:
 #
 #   assay-lua          — root binary (Rust)
 #   assay-workflow     — workflow engine crate (Rust + JS dashboard)
+#   engine-lua         — Lua client smoke tests against assay-engine
 #   dashboard-e2e      — Playwright tests against the workflow dashboard
 #   engine-e2e         — Playwright tests against the engine + auth consoles
 #   site               — assay.rs static site (built via the assay binary)
@@ -25,6 +26,7 @@ projects:
   assay-dashboard: "crates/assay-dashboard"
   assay-engine: "crates/assay-engine"
   assay-workflow: "crates/assay-workflow"
+  engine-lua: "crates/assay-engine/tests-lua"
   dashboard-e2e: "crates/assay-workflow/tests-e2e"
   engine-e2e: "crates/assay-engine/tests-e2e"
   sysops: "libs/sysops"

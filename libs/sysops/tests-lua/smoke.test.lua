@@ -54,11 +54,6 @@ local function get(path)
   return http.get("http://127.0.0.1:" .. PORT .. path)
 end
 
-local function assert_contains(body, needle, label)
-  assert.not_nil(body, label .. " body")
-  assert.contains(body, needle, label)
-end
-
 -- ── harness sanity probe ──────────────────────────────────────────────
 do
   local r = get("/__smoke_alive")
@@ -71,9 +66,10 @@ end
 do
   local r = get("/")
   assert.eq(r.status, 200, "GET /")
-  assert_contains(r.body, "<aside",                     "dashboard sidebar")
-  assert_contains(r.body, "Test Brand",                 "dashboard brand name")
-  assert_contains(r.body, "test-host",                  "dashboard host name")
+  assert.not_nil(r.body, "dashboard body")
+  assert.contains(r.body, "<aside", "dashboard sidebar")
+  assert.contains(r.body, "Test Brand", "dashboard brand name")
+  assert.contains(r.body, "test-host", "dashboard host name")
   ok("/ renders dashboard with sidebar + brand")
 end
 
@@ -90,8 +86,9 @@ end
 do
   local r = get("/machines")
   assert.eq(r.status, 200, "GET /machines")
-  assert_contains(r.body, "agentx",     "machines list (agentx)")
-  assert_contains(r.body, "k3s-server", "machines list (k3s-server)")
+  assert.not_nil(r.body, "machines body")
+  assert.contains(r.body, "agentx", "machines list (agentx)")
+  assert.contains(r.body, "k3s-server", "machines list (k3s-server)")
   ok("/machines lists stub machines")
 end
 
@@ -99,7 +96,8 @@ end
 do
   local r = get("/services")
   assert.eq(r.status, 200, "GET /services")
-  assert_contains(r.body, "<aside", "services sidebar")
+  assert.not_nil(r.body, "services body")
+  assert.contains(r.body, "<aside", "services sidebar")
   ok("/services renders")
 end
 
@@ -107,7 +105,8 @@ end
 for _, p in ipairs({ "/cron", "/logs", "/tunnels", "/tailscale", "/interfaces" }) do
   local r = get(p)
   assert.eq(r.status, 200, "GET " .. p)
-  assert_contains(r.body, "<aside", p .. " sidebar")
+  assert.not_nil(r.body, p .. " body")
+  assert.contains(r.body, "<aside", p .. " sidebar")
   ok(p .. " renders")
 end
 
@@ -115,7 +114,8 @@ end
 do
   local r = get("/audit")
   assert.eq(r.status, 200, "GET /audit")
-  assert_contains(r.body, "Test Brand", "audit brand")
+  assert.not_nil(r.body, "audit body")
+  assert.contains(r.body, "Test Brand", "audit brand")
   -- Tabs to /inventory, /packages, /settings were removed in 0.1.2 —
   -- those routes don't exist. Catch any future regression that puts
   -- them back without registering handlers.
@@ -129,8 +129,9 @@ end
 do
   local r = get("/")
   assert.eq(r.status, 200, "GET / for extra-sidebar-links")
-  assert_contains(r.body, 'href="/skip-trace"', "extra sidebar link href")
-  assert_contains(r.body, "Skip trace",         "extra sidebar link label")
+  assert.not_nil(r.body, "extra-sidebar body")
+  assert.contains(r.body, 'href="/skip-trace"', "extra sidebar link href")
+  assert.contains(r.body, "Skip trace", "extra sidebar link label")
   ok("/ renders extra_sidebar_links")
 end
 
@@ -138,11 +139,12 @@ end
 do
   local r = get("/")
   assert.eq(r.status, 200, "GET / for grouped sidebar")
-  assert_contains(r.body, "nav-group",                "grouped sidebar nav class")
-  assert_contains(r.body, 'data-section="Workflows"', "grouped sidebar details data-section")
-  assert_contains(r.body, "<summary>Workflows",       "grouped sidebar summary label")
-  assert_contains(r.body, 'href="/example-flow"',     "grouped sidebar child href")
-  assert_contains(r.body, ">Example flow<",           "grouped sidebar child label")
+  assert.not_nil(r.body, "grouped-sidebar body")
+  assert.contains(r.body, "nav-group", "grouped sidebar nav class")
+  assert.contains(r.body, 'data-section="Workflows"', "grouped sidebar details data-section")
+  assert.contains(r.body, "<summary>Workflows", "grouped sidebar summary label")
+  assert.contains(r.body, 'href="/example-flow"', "grouped sidebar child href")
+  assert.contains(r.body, ">Example flow<", "grouped sidebar child label")
   ok("/ renders grouped extra_sidebar_links")
 end
 
@@ -150,7 +152,8 @@ end
 do
   local r = get("/backups")
   assert.eq(r.status, 200, "GET /backups")
-  assert_contains(r.body, "<aside", "backups sidebar")
+  assert.not_nil(r.body, "backups body")
+  assert.contains(r.body, "<aside", "backups sidebar")
   ok("/backups renders (no-profile state)")
 end
 
