@@ -38,7 +38,7 @@ jobs:
             sysops:
               - 'libs/sysops/**'
             workflows:
-              - '.github/dependabot.yml'
+              - 'renovate.json'
               - '.github/workflows/**'
               - '.github/release/**'
               - '.mise.toml'
