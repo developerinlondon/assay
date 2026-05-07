@@ -2,8 +2,8 @@
 #
 # Boots the lib via tests-e2e/run.sh (mounts sysops with stub
 # services, binds http.serve on $E2E_PORT, runs Playwright against it),
-# then tears down. Mirrors the engine-e2e moon project's shape so the
-# install-browsers step can serialise against it (apt-get lock).
+# then tears down. CI runs this as its own path-gated job so sysops
+# browser coverage does not pull in unrelated engine/dashboard e2e setup.
 
 language: "typescript"
 layer: "automation"
@@ -25,10 +25,6 @@ tasks:
     command: "bash $workspaceRoot/scripts/playwright-install-with-retry.sh chromium"
     deps:
       - "install"
-      # Serialize against engine-e2e + dashboard-e2e — all three run
-      # `playwright install --with-deps`, which shells out to apt-get
-      # and races for /var/lib/apt/lists/lock on the same runner.
-      - "engine-e2e:install-browsers"
     options:
       cache: false
       runInCI: true

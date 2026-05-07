@@ -16,8 +16,8 @@ on:
     paths:
       - "site/**"
       - "docs/modules/**"
-      - "src/lua/builtins/mod.rs"
-      - "stdlib/**"
+      - "crates/assay/src/lua/builtins/mod.rs"
+      - "crates/assay/stdlib/**"
       - "CHANGELOG.md"
       - "wrangler.toml"
       - ".github/workflows/deploy.yml"

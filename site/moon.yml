@@ -10,19 +10,19 @@ stack: "frontend"
 
 tasks:
   build:
-    # build.lua reads other paths (src/lua/builtins/mod.rs, stdlib/**,
-    # docs/**, CHANGELOG.md) relative to cwd, so it needs to run from
-    # the repo root — not from site/. Wrap in a shell to cd up first.
+    # build.lua reads other paths (crates/assay/src/lua/builtins/mod.rs,
+    # crates/assay/stdlib/**, docs/**, CHANGELOG.md) relative to cwd, so
+    # it needs to run from the repo root — not from site/. Wrap in a shell.
     command: 'bash -c "cd .. && ./target/release/assay site/build.lua"'
     deps:
       - "assay-lua:build-runtime"
     inputs:
       - "**/*"
       - "/docs/**/*"
-      - "/stdlib/**/*"
+      - "/crates/assay/stdlib/**/*"
       - "/CHANGELOG.md"
       - "/llms.txt"
-      - "/src/lua/builtins/mod.rs"
+      - "/crates/assay/src/lua/builtins/mod.rs"
     outputs:
       - "/build/site/**/*"
     options:
