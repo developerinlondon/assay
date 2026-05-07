@@ -38,14 +38,29 @@ tasks:
       runInCI: true
 
   build:
+    deps:
+      - "build-runtime"
     # `cargo build --release` at workspace level builds libs but SKIPS
     # any bin with `required-features` that aren't in the top-level
     # feature set. `assay-engine` has `required-features = ["server"]`
     # so the engine binary wasn't being built by the default command —
     # downstream dashboard-e2e then failed with "target/release/
-    # assay-engine: No such file or directory". Build both bins
-    # explicitly.
-    command: 'bash -c "cargo build --release -p assay-lua --bin assay && cargo build --release -p assay-engine --bin assay-engine"'
+    # assay-engine: No such file or directory". This task composes the
+    # CLI build with the engine binary build for full-stack e2e jobs.
+    command: "cargo build --release -p assay-engine --bin assay-engine"
+    inputs:
+      - "@group(rust-sources)"
+    options:
+      # Moon's task cache can't capture workspace-release outputs (target/
+      # lives outside this project, and `outputs:` forbids `..`). Cargo's
+      # incremental + Swatinem/rust-cache handle rebuild avoidance.
+      cache: false
+      runInCI: true
+
+  build-runtime:
+    # Sysops and site tasks only execute the Assay CLI; they should not
+    # build assay-engine just to run Lua-level checks.
+    command: "cargo build --release -p assay-lua --bin assay"
     inputs:
       - "@group(rust-sources)"
     options:
@@ -63,5 +78,22 @@ tasks:
     options:
       # Cross-crate test changes are picked up via `dependsOn` on the
       # project itself — moon walks project deps for affected detection.
+      cache: true
+      runInCI: true
+
+  test-lua-stdlib:
+    # Fast gate for changes that only touch the Assay Lua stdlib tests.
+    # The full workspace test task remains the Rust/API gate; this keeps
+    # assertion-helper churn in tests/pkg_lua, tests/nspawn_lua, etc. from
+    # dispatching unrelated engine/dashboard checks.
+    command: "cargo test -p assay-lua --test stdlib_pkg --test stdlib_nspawn --test stdlib_rustic --test stdlib_fs_snapshot"
+    inputs:
+      - "stdlib/**/*"
+      - "tests/**/*_lua/**/*.lua"
+      - "tests/stdlib_pkg.rs"
+      - "tests/stdlib_nspawn.rs"
+      - "tests/stdlib_rustic.rs"
+      - "tests/stdlib_fs_snapshot.rs"
+    options:
       cache: true
       runInCI: true

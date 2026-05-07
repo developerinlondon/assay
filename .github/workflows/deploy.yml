@@ -16,8 +16,8 @@ on:
     paths:
       - "site/**"
       - "docs/modules/**"
-      - "src/lua/builtins/mod.rs"
-      - "stdlib/**"
+      - "crates/assay/src/lua/builtins/mod.rs"
+      - "crates/assay/stdlib/**"
       - "CHANGELOG.md"
       - "wrangler.toml"
       - ".github/workflows/deploy.yml"
@@ -25,6 +25,11 @@ on:
 concurrency:
   group: cloudflare-pages-deploy
   cancel-in-progress: false
+
+env:
+  # cloudflare/wrangler-action@v3.15.0 still declares node20 upstream. Opt in
+  # now so deploy breaks during our control window rather than at GitHub's cutoff.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   deploy:
@@ -73,7 +78,7 @@ jobs:
         run: npx --yes pagefind --site build/site
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v3.15.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -24,6 +24,7 @@
 - [template](https://assay.rs/modules/template.html): Jinja2-compatible template rendering
 - [async](https://assay.rs/modules/async.html): Async task spawn and await
 - [assert](https://assay.rs/modules/assert.html): Assertions — assert.eq/ne/gt/lt/contains/not_nil/matches
+- Lua tests run under Assay; use `assert.*` directly instead of local assertion helpers.
 - [log, env, sleep, time](https://assay.rs/modules/utilities.html): Logging, environment variables, sleep, timestamps
 
 ## Monitoring & Observability

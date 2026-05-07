@@ -2,10 +2,24 @@
 
 All notable changes to Assay are documented here.
 
+## sysops 0.1.4 — 2026-05-07
+
+### Added
+
+- `sysops.vault` shared Assay Engine Vault integration for host-manager apps. The
+  `vault.secret_store(opts)` factory returns the `read/write/delete/available` service shape that
+  sysops backup flows consume, stores host/app operational secrets in engine KV v2, and preserves
+  read-only fallback from existing rustic/local secret files.
+
+### Changed
+
+- `libs/sysops:smoke` now runs the vault adapter contract test alongside the host dashboard smoke
+  test.
+
 ## 0.15.10 — 2026-05-05
 
-- Fix: `json.encode({})` now returns `"{}"` (was `"[]"`). Same fix applies to every empty
-  Lua table passed as a JSON body via the http builtin. Closes #129.
+- Fix: `json.encode({})` now returns `"{}"` (was `"[]"`). Same fix applies to every empty Lua table
+  passed as a JSON body via the http builtin. Closes #129.
 - Add: `json.array(t?)` / `json.object(t?)` to pin a table's encoded shape.
 - Migration: callers that need `"[]"` for an empty table must use `json.array(t)`.
 

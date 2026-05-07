@@ -224,6 +224,14 @@ URLs: `postgres://user:pass@host:5432/db`, `mysql://...`, `sqlite:///path/to/fil
 | `assert.not_nil(val, msg?)`       | Assert not nil           |
 | `assert.matches(str, pat, msg?)`  | Assert regex match       |
 
+Use these builtins in Assay Lua tests as well. Do not create local `assert_eq`, `assert_truthy`,
+`fail`, or generic `check` wrappers in `*.test.lua` scripts; use `assert.*` directly. Small
+progress-print helpers such as `ok(label)` are fine.
+
+Run Lua suites through moon/mise tasks. For assay-engine client smoke tests use
+`mise run engine-lua` or `moon run engine-lua:test`; the lifecycle runner is
+`crates/assay-engine/tests-lua/run.lua` and should stay in Assay Lua instead of bash.
+
 ### Logging and Utilities
 
 | Function         | Description              |

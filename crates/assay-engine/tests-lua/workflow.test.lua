@@ -5,7 +5,6 @@
 
 local engine = require("assay.engine")
 
-local function fail(msg) error("test failure: " .. msg) end
 local function ok(label) print("  ✓ " .. label) end
 
 print("[engine.workflow]")
@@ -27,14 +26,12 @@ for _, n in ipairs(list) do
   local nm = n.name or n
   if nm == ns_name then found = true; break end
 end
-if not found then fail("namespaces.list didn't include " .. ns_name) end
+assert.eq(found, true, "namespaces.list didn't include " .. ns_name)
 ok("namespaces.list → finds new namespace")
 
 local stats = e.workflow.namespaces:stats(ns_name)
-if not stats.namespace or stats.namespace ~= ns_name then
-  fail("namespaces.stats namespace mismatch")
-end
-if stats.total_workflows == nil then fail("stats missing total_workflows") end
+assert.eq(stats.namespace, ns_name, "namespaces.stats namespace mismatch")
+assert.not_nil(stats.total_workflows, "stats missing total_workflows")
 ok(string.format("namespaces.stats → total_workflows=%d", stats.total_workflows))
 
 -- ── Workflow lifecycle ─────────────────────────────────────────────────
@@ -49,17 +46,15 @@ local started = e.workflow:start({
   task_queue = "default",
   input = json.encode({ name = "lua" }),
 })
-if not started.workflow_id or started.workflow_id ~= wf_id then
-  fail("workflow.start returned wrong workflow_id")
-end
+assert.eq(started.workflow_id, wf_id, "workflow.start returned wrong workflow_id")
 ok(string.format("workflow.start → %s", started.workflow_id))
 
 local desc = e.workflow:describe(wf_id)
-if not desc.id or desc.id ~= wf_id then fail("workflow.describe id mismatch") end
+assert.eq(desc.id, wf_id, "workflow.describe id mismatch")
 ok(string.format("workflow.describe → status=%s", desc.status))
 
 local events = e.workflow:get_events(wf_id)
-if not events then fail("workflow.get_events nil") end
+assert.not_nil(events, "workflow.get_events nil")
 ok(string.format("workflow.get_events → %d event(s)", #events))
 
 local listing = e.workflow:list({ namespace = ns_name, limit = 50 })
@@ -67,7 +62,7 @@ local seen = false
 for _, w in ipairs(listing) do
   if w.id == wf_id then seen = true; break end
 end
-if not seen then fail("workflow.list didn't include test workflow") end
+assert.eq(seen, true, "workflow.list didn't include test workflow")
 ok("workflow.list → finds test workflow")
 
 -- Cancel the test workflow.
@@ -77,11 +72,11 @@ ok("workflow.cancel → ok")
 -- ── Workers + queues (read-only — no worker registered) ───────────────
 
 local workers = e.workflow.workers:list({ namespace = ns_name })
-if workers == nil then fail("workers.list returned nil") end
+assert.not_nil(workers, "workers.list returned nil")
 ok(string.format("workers.list → %d row(s)", #workers))
 
 local queues = e.workflow.queues:stats({ namespace = ns_name })
-if queues == nil then fail("queues.stats returned nil") end
+assert.not_nil(queues, "queues.stats returned nil")
 ok(string.format("queues.stats → %d row(s)", #queues))
 
 -- ── Schedules ──────────────────────────────────────────────────────────
@@ -98,7 +93,8 @@ e.workflow.schedules:create({
 ok(string.format("schedules.create → %s", sched_name))
 
 local s = e.workflow.schedules:describe(sched_name, { namespace = ns_name })
-if not s or s.name ~= sched_name then fail("schedules.describe mismatch") end
+assert.not_nil(s, "schedules.describe returned nil")
+assert.eq(s.name, sched_name, "schedules.describe mismatch")
 ok("schedules.describe → round-trips")
 
 e.workflow.schedules:pause(sched_name, { namespace = ns_name })

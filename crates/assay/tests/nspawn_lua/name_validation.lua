@@ -4,13 +4,9 @@
 -- path to confirm.
 local nspawn = require("assay.nspawn")
 
-local function check(cond, msg)
-  if not cond then error(msg, 2) end
-end
-
 local function expect_error(fn, ...)
   local ok, _ = pcall(fn, ...)
-  check(not ok, "expected error from " .. tostring(fn))
+  assert.eq(ok, false, "expected error from " .. tostring(fn))
 end
 
 -- ── valid names: alphanumerics + . _ - ────────────────────────────────────

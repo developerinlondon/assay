@@ -23,6 +23,10 @@ run = 'moon ci'
 description = 'Run the dashboard end-to-end Playwright suite (boots engine + worker locally)'
 run = 'moon run dashboard-e2e:test'
 
+[tasks.engine-lua]
+description = 'Run assay-engine Lua client smoke tests'
+run = 'moon run engine-lua:test'
+
 [tasks.build]
 description = 'Build the assay release binary'
 run = 'moon run assay-lua:build'
