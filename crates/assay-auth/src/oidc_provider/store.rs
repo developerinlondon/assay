@@ -19,6 +19,7 @@
 //! its native error verbatim. Handlers translate to [`crate::Error`] at
 //! the boundary.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -249,6 +250,8 @@ mod pg {
     }
 
     fn map_upstream_row(row: sqlx::postgres::PgRow) -> UpstreamProvider {
+        let scopes_str: String = row.try_get("scopes").unwrap_or_default();
+        let auth_params_str: String = row.try_get("auth_params").unwrap_or_default();
         UpstreamProvider {
             slug: row.get("slug"),
             issuer: row.get("issuer"),
@@ -257,7 +260,20 @@ mod pg {
             display_name: row.get("display_name"),
             icon_url: row.get("icon_url"),
             enabled: row.get("enabled"),
+            scopes: parse_json_array(&scopes_str),
+            auth_params: parse_auth_params(&auth_params_str),
         }
+    }
+
+    fn parse_auth_params(s: &str) -> BTreeMap<String, String> {
+        if s.is_empty() {
+            return BTreeMap::new();
+        }
+        serde_json::from_str(s).unwrap_or_default()
+    }
+
+    fn encode_auth_params(map: &BTreeMap<String, String>) -> String {
+        serde_json::to_string(map).unwrap_or_else(|_| "{}".to_string())
     }
 
     #[derive(Clone)]
@@ -279,15 +295,18 @@ mod pg {
         async fn upsert(&self, p: &UpstreamProvider) -> Result<()> {
             sqlx::query(
                 "INSERT INTO auth.upstream_providers
-                    (slug, issuer, client_id, client_secret, display_name, icon_url, enabled)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    (slug, issuer, client_id, client_secret, display_name, icon_url,
+                     enabled, scopes, auth_params)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                  ON CONFLICT (slug) DO UPDATE SET
                     issuer = EXCLUDED.issuer,
                     client_id = EXCLUDED.client_id,
                     client_secret = EXCLUDED.client_secret,
                     display_name = EXCLUDED.display_name,
                     icon_url = EXCLUDED.icon_url,
-                    enabled = EXCLUDED.enabled",
+                    enabled = EXCLUDED.enabled,
+                    scopes = EXCLUDED.scopes,
+                    auth_params = EXCLUDED.auth_params",
             )
             .bind(&p.slug)
             .bind(&p.issuer)
@@ -296,6 +315,8 @@ mod pg {
             .bind(&p.display_name)
             .bind(&p.icon_url)
             .bind(p.enabled)
+            .bind(encode_json_array(&p.scopes))
+            .bind(encode_auth_params(&p.auth_params))
             .execute(&self.pool)
             .await
             .context("auth.upstream_providers upsert")?;
@@ -640,6 +661,7 @@ mod pg {
             return_to: row.get("return_to"),
             created_at: row.get("created_at"),
             expires_at: row.get("expires_at"),
+            binding_hash: row.try_get("binding_hash").unwrap_or_default(),
         }
     }
 
@@ -662,8 +684,8 @@ mod pg {
             sqlx::query(
                 "INSERT INTO auth.oidc_upstream_states
                     (state, provider_slug, nonce, pkce_verifier, return_to,
-                     created_at, expires_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                     created_at, expires_at, binding_hash)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
             )
             .bind(&s.state)
             .bind(&s.provider_slug)
@@ -672,6 +694,7 @@ mod pg {
             .bind(&s.return_to)
             .bind(s.created_at)
             .bind(s.expires_at)
+            .bind(&s.binding_hash)
             .execute(&self.pool)
             .await
             .context("auth.oidc_upstream_states insert")?;
@@ -857,6 +880,8 @@ mod sqlite_impl {
     }
 
     fn map_upstream_row(row: sqlx::sqlite::SqliteRow) -> UpstreamProvider {
+        let scopes_str: String = row.try_get("scopes").unwrap_or_default();
+        let auth_params_str: String = row.try_get("auth_params").unwrap_or_default();
         UpstreamProvider {
             slug: row.get("slug"),
             issuer: row.get("issuer"),
@@ -865,7 +890,20 @@ mod sqlite_impl {
             display_name: row.get("display_name"),
             icon_url: row.get("icon_url"),
             enabled: ub(row.get("enabled")),
+            scopes: parse_json_array(&scopes_str),
+            auth_params: parse_auth_params(&auth_params_str),
         }
+    }
+
+    fn parse_auth_params(s: &str) -> BTreeMap<String, String> {
+        if s.is_empty() {
+            return BTreeMap::new();
+        }
+        serde_json::from_str(s).unwrap_or_default()
+    }
+
+    fn encode_auth_params(map: &BTreeMap<String, String>) -> String {
+        serde_json::to_string(map).unwrap_or_else(|_| "{}".to_string())
     }
 
     #[derive(Clone)]
@@ -886,15 +924,18 @@ mod sqlite_impl {
         async fn upsert(&self, p: &UpstreamProvider) -> Result<()> {
             sqlx::query(
                 "INSERT INTO auth.upstream_providers
-                    (slug, issuer, client_id, client_secret, display_name, icon_url, enabled)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (slug, issuer, client_id, client_secret, display_name, icon_url,
+                     enabled, scopes, auth_params)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT (slug) DO UPDATE SET
                     issuer = excluded.issuer,
                     client_id = excluded.client_id,
                     client_secret = excluded.client_secret,
                     display_name = excluded.display_name,
                     icon_url = excluded.icon_url,
-                    enabled = excluded.enabled",
+                    enabled = excluded.enabled,
+                    scopes = excluded.scopes,
+                    auth_params = excluded.auth_params",
             )
             .bind(&p.slug)
             .bind(&p.issuer)
@@ -903,6 +944,8 @@ mod sqlite_impl {
             .bind(&p.display_name)
             .bind(&p.icon_url)
             .bind(b(p.enabled))
+            .bind(encode_json_array(&p.scopes))
+            .bind(encode_auth_params(&p.auth_params))
             .execute(&self.pool)
             .await
             .context("auth.upstream_providers upsert")?;
@@ -1260,6 +1303,7 @@ mod sqlite_impl {
             return_to: row.get("return_to"),
             created_at: row.get("created_at"),
             expires_at: row.get("expires_at"),
+            binding_hash: row.try_get("binding_hash").unwrap_or_default(),
         }
     }
 
@@ -1282,8 +1326,8 @@ mod sqlite_impl {
             sqlx::query(
                 "INSERT INTO auth.oidc_upstream_states
                     (state, provider_slug, nonce, pkce_verifier, return_to,
-                     created_at, expires_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     created_at, expires_at, binding_hash)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(&s.state)
             .bind(&s.provider_slug)
@@ -1292,6 +1336,7 @@ mod sqlite_impl {
             .bind(&s.return_to)
             .bind(s.created_at)
             .bind(s.expires_at)
+            .bind(&s.binding_hash)
             .execute(&self.pool)
             .await
             .context("auth.oidc_upstream_states insert")?;

@@ -24,6 +24,8 @@
 //! supports it (the `AdminApiKeys` extractor would just become
 //! `AdminAuth { keys, session }`).
 
+use std::collections::BTreeMap;
+
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
@@ -33,6 +35,8 @@ use serde_json::json;
 use crate::ctx::AuthCtx;
 use crate::state::AdminApiKeys;
 
+use super::auth_params;
+use super::issuer_validation;
 use super::types::{OidcClient, TokenAuthMethod, UpstreamProvider};
 
 /// Auth + Zanzibar gate shared by every OIDC admin handler. Resolves a
@@ -387,6 +391,10 @@ pub struct UpstreamBody {
     pub icon_url: Option<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default)]
+    pub scopes: Option<Vec<String>>,
+    #[serde(default)]
+    pub auth_params: Option<BTreeMap<String, String>>,
 }
 
 pub async fn upsert_upstream(
@@ -402,6 +410,41 @@ pub async fn upsert_upstream(
         Some(p) => p,
         None => return svc_unavailable("oidc_provider not enabled"),
     };
+
+    // Issuer validation — scheme/host/userinfo/fragment + literal-IP
+    // private-range rejection. Gated by allow_insecure_issuers (false
+    // until config plumbing lands).
+    if let Err(e) = issuer_validation::validate_issuer(&body.issuer, false) {
+        return bad_request(&format!("issuer rejected: {e}"));
+    }
+
+    let auth_params_map = body.auth_params.unwrap_or_default();
+    let mut errors: Vec<serde_json::Value> = Vec::new();
+    for (k, v) in &auth_params_map {
+        if let Err(e) = auth_params::validate_pair(k, v) {
+            errors.push(json!({"key": k, "error": format!("{e}")}));
+        }
+    }
+    if !errors.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "invalid_request",
+                "error_description": "auth_params validation failed",
+                "auth_params_errors": errors,
+            })),
+        )
+            .into_response();
+    }
+
+    let scopes_vec = match body.scopes {
+        Some(v) if !v.is_empty() => normalize_scopes(v),
+        _ => crate::oidc::DEFAULT_UPSTREAM_SCOPES
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    };
+
     let row = UpstreamProvider {
         slug: body.slug,
         issuer: body.issuer,
@@ -410,11 +453,41 @@ pub async fn upsert_upstream(
         display_name: body.display_name,
         icon_url: body.icon_url,
         enabled: body.enabled,
+        scopes: scopes_vec,
+        auth_params: auth_params_map,
     };
     if let Err(e) = provider.upstream.upsert(&row).await {
         return server_error(&format!("upsert upstream: {e}"));
     }
+    if let Some(registry) = &ctx.oidc {
+        let row_clone = row.clone();
+        let public_url = provider.public_url.clone();
+        let registry = registry.clone();
+        let slug = row.slug.clone();
+        let handle = tokio::spawn(async move {
+            super::sync_upstream_to_registry(&registry, &row_clone, &public_url).await;
+        });
+        tokio::spawn(async move {
+            if let Err(e) = handle.await {
+                tracing::error!(
+                    slug = %slug,
+                    panic = e.is_panic(),
+                    cancelled = e.is_cancelled(),
+                    "registry sync task did not complete cleanly: {e}"
+                );
+            }
+        });
+    }
     (StatusCode::OK, Json(row)).into_response()
+}
+
+/// Make sure `openid` is always present — operators sometimes omit it
+/// even though every OIDC IdP requires it for an authentication request.
+fn normalize_scopes(mut scopes: Vec<String>) -> Vec<String> {
+    if !scopes.iter().any(|s| s == "openid") {
+        scopes.insert(0, "openid".to_string());
+    }
+    scopes
 }
 
 pub async fn list_upstream(
@@ -473,7 +546,12 @@ pub async fn delete_upstream(
         None => return svc_unavailable("oidc_provider not enabled"),
     };
     match provider.upstream.delete(&slug).await {
-        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(true) => {
+            if let Some(registry) = &ctx.oidc {
+                registry.remove(&slug);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "unknown slug"})),

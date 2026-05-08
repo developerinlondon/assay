@@ -87,7 +87,7 @@ backend-sqlite = [
 ]
 
 [dependencies]
-assay-auth = { path = "../assay-auth", version = "0.3" }
+assay-auth = { path = "../assay-auth", version = "0.4" }
 assay-dashboard = { path = "../assay-dashboard", version = "0.4" }
 assay-domain = { path = "../assay-domain", version = "0.2" }
 assay-vault = { path = "../assay-vault", version = "0.2", optional = true, default-features = false }

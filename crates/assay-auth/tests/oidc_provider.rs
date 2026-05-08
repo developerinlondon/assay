@@ -303,6 +303,12 @@ mod sqlite_tests {
             display_name: "Google".to_string(),
             icon_url: None,
             enabled: true,
+            scopes: vec![
+                "openid".to_string(),
+                "email".to_string(),
+                "profile".to_string(),
+            ],
+            auth_params: std::collections::BTreeMap::new(),
         };
         store.upsert(&p).await.expect("upsert");
         store.upsert(&p).await.expect("upsert again");
@@ -442,6 +448,7 @@ mod sqlite_tests {
             return_to: Some("/authorize?...".to_string()),
             created_at: 1.0,
             expires_at: 1000.0,
+            binding_hash: String::new(),
         };
         store.create(&s).await.expect("create");
         let took = store
@@ -598,6 +605,7 @@ mod pg_tests {
             return_to: None,
             created_at: 1.0,
             expires_at: 1000.0,
+            binding_hash: String::new(),
         };
         store.create(&s).await.expect("create");
         let took = store

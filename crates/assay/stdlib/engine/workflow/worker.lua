@@ -152,12 +152,16 @@ function M.listen(client, opts)
   for name in pairs(client._workflows) do wf_names[#wf_names + 1] = name end
   for name in pairs(client._activities) do act_names[#act_names + 1] = name end
 
+  -- Force JSON-array shape on both fields. The empty-table case
+  -- (worker that registers only workflows, or only activities) would
+  -- otherwise serialize as `{}` and fail the engine's `Option<Vec<_>>`
+  -- deserializer. See assay/src/lua/builtins/json.rs for the shape rules.
   local reg_resp = client._api("POST", "/workers/register", {
     identity = identity,
     namespace = namespace,
     queue = queue,
-    workflows = wf_names,
-    activities = act_names,
+    workflows = json.array(wf_names),
+    activities = json.array(act_names),
     max_concurrent_workflows = opts.max_concurrent_workflows or 10,
     max_concurrent_activities = opts.max_concurrent_activities or 20,
   })

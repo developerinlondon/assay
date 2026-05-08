@@ -33,12 +33,15 @@ use url::Url;
 use crate::ctx::AuthCtx;
 
 pub mod admin;
+pub mod auth_params;
 pub mod authorize;
+pub mod binding;
 pub mod consent;
 pub mod discovery;
 pub mod federation;
 pub mod handlers;
 pub mod introspect;
+pub mod issuer_validation;
 pub mod jwks;
 pub mod revoke;
 pub mod store;
@@ -139,6 +142,61 @@ impl OidcProviderConfig {
     pub fn with_jwks_source(mut self, src: JwksSource) -> Self {
         self.jwks_source = src;
         self
+    }
+}
+
+/// Build the federation callback URL for an upstream provider.
+/// Trims a trailing slash from `public_url` so a misconfigured
+/// `server.public_url` (e.g. `https://auth.example.com/`) doesn't
+/// produce a double-slash, which would break exact OIDC redirect_uri
+/// matching.
+pub fn upstream_callback_url(public_url: &url::Url, slug: &str) -> String {
+    let base = public_url.as_str().trim_end_matches('/');
+    format!("{base}/oidc/upstream/{slug}/callback")
+}
+
+/// Sync a single upstream provider row into the in-memory
+/// [`crate::oidc::OidcRegistry`]. If the row is enabled, performs OIDC
+/// discovery against the issuer and caches the client; if disabled,
+/// removes any cached entry for that slug.
+///
+/// Reads `row.scopes` and `row.auth_params` directly. When `row.scopes`
+/// is empty (typically because a row predates the V5 migration filling
+/// in the default), falls back to [`crate::oidc::DEFAULT_UPSTREAM_SCOPES`].
+pub async fn sync_upstream_to_registry(
+    registry: &crate::oidc::OidcRegistry,
+    row: &types::UpstreamProvider,
+    public_url: &url::Url,
+) {
+    if row.enabled {
+        let uri = match url::Url::parse(&upstream_callback_url(public_url, &row.slug)) {
+            Ok(u) => u,
+            Err(e) => {
+                tracing::warn!("invalid callback URL for upstream {}: {e}", row.slug);
+                return;
+            }
+        };
+        let scopes = if row.scopes.is_empty() {
+            crate::oidc::DEFAULT_UPSTREAM_SCOPES
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        } else {
+            row.scopes.clone()
+        };
+        let provider = crate::oidc::UpstreamProvider {
+            slug: row.slug.clone(),
+            issuer: row.issuer.clone(),
+            client_id: row.client_id.clone(),
+            client_secret: row.client_secret.clone(),
+            scopes,
+            auth_params: row.auth_params.clone(),
+        };
+        if let Err(e) = registry.add(provider, uri).await {
+            tracing::warn!("registry sync failed for upstream {}: {e}", row.slug);
+        }
+    } else {
+        registry.remove(&row.slug);
     }
 }
 
