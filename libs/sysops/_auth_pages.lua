@@ -37,11 +37,26 @@ function M.register(routes, url)
   routes.GET[url("/auth")]                     = function(_req) return { status = 303, headers = { Location = url("/auth/users") }, body = "" } end
   routes.GET[url("/auth/users")]               = h.auth_users
   routes.POST[url("/auth/users")]              = h.auth_users_create
-  routes.GET[url("/auth/users/*/edit")]        = h.auth_user_edit
-  routes.POST[url("/auth/users/*/edit")]       = h.auth_user_save
-  routes.POST[url("/auth/users/*/delete")]     = h.auth_user_delete
+  -- The runtime URL matcher only supports trailing `*` wildcards, so we
+  -- can't write `/auth/users/*/edit` directly. Register a single
+  -- trailing-wildcard route per surface and dispatch by the suffix.
+  routes.GET[url("/auth/users/*")]             = function(req)
+    local p = (req and req.path) or ""
+    if p:match("/edit$") then return h.auth_user_edit(req) end
+    return { status = 404, body = "not found" }
+  end
+  routes.POST[url("/auth/users/*")]            = function(req)
+    local p = (req and req.path) or ""
+    if p:match("/edit$")    then return h.auth_user_save(req)   end
+    if p:match("/delete$")  then return h.auth_user_delete(req) end
+    return { status = 404, body = "not found" }
+  end
   routes.GET[url("/auth/sessions")]            = h.auth_sessions
-  routes.POST[url("/auth/sessions/*/revoke")]  = h.auth_session_revoke
+  routes.POST[url("/auth/sessions/*")]         = function(req)
+    local p = (req and req.path) or ""
+    if p:match("/revoke$") then return h.auth_session_revoke(req) end
+    return { status = 404, body = "not found" }
+  end
   routes.GET[url("/auth/oidc-clients")]   = h.auth_oidc_clients
   routes.POST[url("/auth/oidc-clients")]  = h.auth_oidc_client_create
   routes.POST[url("/auth/oidc-clients/*")] = function(req)

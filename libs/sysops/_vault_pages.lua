@@ -50,7 +50,13 @@ function M.register(routes, url)
   routes.POST[url("/vault/init")]                    = h.vault_init
   routes.GET[url("/vault/dynamic")]                  = h.vault_dynamic
   routes.POST[url("/vault/dynamic/lease")]           = h.vault_dynamic_lease
-  routes.POST[url("/vault/dynamic/leases/*/revoke")] = h.vault_dynamic_revoke
+  -- Trailing-wildcard dispatcher (the runtime URL matcher doesn't
+  -- support mid-path wildcards like `/vault/dynamic/leases/*/revoke`).
+  routes.POST[url("/vault/dynamic/leases/*")]        = function(req)
+    local p = (req and req.path) or ""
+    if p:match("/revoke$") then return h.vault_dynamic_revoke(req) end
+    return { status = 404, body = "not found" }
+  end
   routes.GET[url("/vault/share")]                    = h.vault_share
   routes.POST[url("/vault/share")]                   = h.vault_share_mint
   routes.POST[url("/vault/share/revoke")]            = h.vault_share_revoke
