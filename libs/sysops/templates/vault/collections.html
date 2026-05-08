@@ -1,0 +1,152 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; collections</div>
+    <h1 class="page-title">Vault collections</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">collections</span><span class="v">{{ collections | length }}</span></span>
+    {% if org_id and org_id != "" %}
+      <span><span class="k">org</span><span class="v">{{ org_id }}</span></span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab active" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+{% if error_msg and error_msg != "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+<div class="filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <form method="get" action="/vault/collections" style="display:flex;gap:8px;align-items:center;flex:1">
+    <input class="input" name="org_id" type="text" value="{{ org_id | default('') }}"
+           placeholder="org_id (optional filter)" style="min-width:300px" />
+    <button type="submit" class="chip active">Apply</button>
+    <a class="chip" href="/vault/collections">Reset</a>
+  </form>
+  <button type="button" class="btn btn-primary"
+          onclick="document.getElementById('collection-create-dialog').showModal()">+ New collection</button>
+</div>
+
+{% if status == 0 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Collections listing is unavailable. The vault may be sealed, the collections module disabled, or admin auth missing.</span>
+</div>
+{% elif status == 503 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Collections surface is not configured on this engine instance.</span>
+</div>
+{% else %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr><th>Name</th><th>Kind</th><th>Org</th><th>Created by</th><th>Created at</th><th>ID</th></tr>
+    </thead>
+    <tbody>
+      {% for c in collections %}
+      <tr>
+        <td class="name-cell">{{ c.name }}</td>
+        <td>
+          {% if c.kind == "org" %}
+            <span class="pill pill-info">org</span>
+          {% else %}
+            <span class="pill pill-muted">personal</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ c.org_id | default("—") }}</td>
+        <td class="muted">{{ c.created_by | default("—") }}</td>
+        <td class="muted num">{{ c.created_at | default("—") }}</td>
+        <td class="muted">{{ c.id }}</td>
+      </tr>
+      {% endfor %}
+      {% if (collections | length) == 0 %}
+      <tr><td colspan="6" style="color:var(--fg-3);text-align:center;padding:18px">no collections defined</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<dialog id="collection-create-dialog" class="omc-dialog">
+  <form method="post" action="/vault/collections" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">New collection</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('collection-create-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Name</span>
+        <input class="input" type="text" name="name" required placeholder="my-collection" autofocus
+               value="{{ form_name | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Description (optional)</span>
+        <input class="input" type="text" name="description" placeholder="(optional)"
+               value="{{ form_description | default('') }}">
+      </label>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('collection-create-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Create collection</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('collection-create-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>

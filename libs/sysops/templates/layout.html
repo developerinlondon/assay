@@ -66,6 +66,23 @@
     <a href="/audit" class="{% if nav_active in ['audit'] %}active{% endif %}">Admin</a>
   </nav>
 
+  {# Optional 0.1.5 Auth + Vault sections. Hidden unless the consumer
+     opts in via opts.active_modules = { "auth", "vault", … }. Existing
+     host-ops sidebar entries above are unchanged. Each section is a
+     flat link to its landing page; sub-navigation lives inside the page
+     as a tab strip (matches the knowhere-pkg layout). #}
+  {% if 'auth' in (active_modules | default([])) %}
+  <nav class="nav nav-flat">
+    <a href="/auth/users" class="{% if 'auth:' in (nav_active or '') or 'zanzibar:' in (nav_active or '') %}active{% endif %}">Auth</a>
+  </nav>
+  {% endif %}
+
+  {% if 'vault' in (active_modules | default([])) %}
+  <nav class="nav nav-flat">
+    <a href="/vault" class="{% if 'vault:' in (nav_active or '') %}active{% endif %}">Vault</a>
+  </nav>
+  {% endif %}
+
   {# Consumer-app links (mount opts.extra_sidebar_links). Each entry is
      either a flat {href,label,nav_active} or a group
      {label, children=[{href,label,nav_active}, …]}. Groups render a

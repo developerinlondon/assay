@@ -29,6 +29,15 @@
 --!   catalog_paths       list of catalog directories
 --!   template_paths      list of template directories
 --!   desired_state_path  file path for the persisted desired-state JSON
+--!
+--! Optional 0.1.5 fields (set by mount() from opts when provided):
+--!   active_modules      list of module names ("auth", "vault") that opt
+--!                       the consumer into the new sidebar links + page
+--!                       routes. Empty / nil = legacy 0.1.4 behaviour
+--!                       (host-ops only, link to engine SPA).
+--!   engine_admin_key    bearer token for admin-scoped engine calls
+--!                       (auth/admin/*, vault/sys/*). Used by SDK
+--!                       modules — page handlers don't read it directly.
 
 return {
   prefix             = "/",
@@ -46,4 +55,6 @@ return {
   backup_profile_dir  = nil,
   engine_base_url     = nil,
   extra_sidebar_links = nil,
+  active_modules      = {},
+  engine_admin_key    = nil,
 }

@@ -1,0 +1,191 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; OIDC</div>
+    <h1 class="page-title">{{ page_title }}</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">clients</span><span class="v">{{ clients | length }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/auth/users">Users</a>
+  <a class="tab" href="/auth/sessions">Sessions</a>
+  <a class="tab{% if nav_active == 'auth:oidc_clients' %} active{% endif %}" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab" href="/auth/upstreams">Upstreams</a>
+  <a class="tab" href="/auth/jwks">JWKS</a>
+  <a class="tab" href="/auth/biscuit">Biscuit</a>
+  <a class="tab" href="/auth/audit">Audit</a>
+  <a class="tab" href="/zanzibar">Zanzibar</a>
+</div>
+
+{% if error_msg %}
+<div class="banner"><span class="b-mark"></span><span>{{ error_msg }}</span></div>
+{% endif %}
+{% if ok_msg %}
+<div class="banner"><span class="b-mark"></span><span>{{ ok_msg }}</span></div>
+{% endif %}
+
+{% if error %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>
+    {% if status == 401 %}
+      admin auth required to load this list (status {{ status }}).
+    {% else %}
+      could not load OIDC clients from engine (status {{ status | default("?") }}).
+    {% endif %}
+  </span>
+</div>
+{% endif %}
+
+<div class="filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1"></div>
+  <button type="button" class="btn btn-primary"
+          onclick="document.getElementById('oidc-create-dialog').showModal()">+ Register OIDC client</button>
+</div>
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Client ID</th>
+        <th>Name</th>
+        <th class="wrap">Redirect URIs</th>
+        <th>Grant types</th>
+        <th>Auth method</th>
+        <th>Public</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in clients %}
+      <tr>
+        <td class="num">{{ c.client_id }}</td>
+        <td class="name-cell">{{ c.name }}</td>
+        <td class="wrap muted">{{ c.redirect_uris | default("—") }}</td>
+        <td class="muted">{{ c.grant_types | default("—") }}</td>
+        <td class="muted">{{ c.token_endpoint_auth_method | default(c.auth_method) }}</td>
+        <td>
+          {% if c.is_public or c.token_endpoint_auth_method == "none" %}
+            <span class="pill pill-info">yes</span>
+          {% else %}
+            <span class="pill pill-muted">no</span>
+          {% endif %}
+        </td>
+        <td class="num muted">{{ c.created_at | default("—") }}</td>
+        <td style="white-space:nowrap;display:flex;gap:4px;align-items:center">
+          {% if c.token_endpoint_auth_method != "none" %}
+          <form method="post" action="/auth/oidc-clients/{{ c.client_id }}/rotate-secret"
+                onsubmit="return confirm('Rotate secret for {{ c.client_id }}? The new secret will be shown once.')"
+                style="display:inline">
+            <button type="submit" class="btn btn-sm">Rotate secret</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/auth/oidc-clients/{{ c.client_id }}/delete"
+                onsubmit="return confirm('Permanently delete client {{ c.client_id }}?')"
+                style="display:inline">
+            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if (clients | length) == 0 and not error %}
+      <tr><td colspan="8" style="color:var(--fg-3);text-align:center;padding:18px">no OIDC clients registered</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<dialog id="oidc-create-dialog" class="omc-dialog">
+  <form method="post" action="/auth/oidc-clients" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">Register OIDC client</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('oidc-create-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Client ID (optional — engine generates one if omitted)</span>
+        <input class="input" type="text" name="client_id" placeholder="my-app"
+               value="{{ form_client_id | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Name</span>
+        <input class="input" type="text" name="name" required placeholder="My Application"
+               value="{{ form_name | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Redirect URIs (one URL per line or comma-separated)</span>
+        <textarea class="input" name="redirect_uris" required rows="3"
+                  placeholder="https://app.example.com/callback">{{ form_redirect_uris | default('') }}</textarea>
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Grant types (comma-separated, optional)</span>
+        <input class="input" type="text" name="grant_types"
+               placeholder="authorization_code,refresh_token,client_credentials"
+               value="{{ form_grant_types | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Token endpoint auth method</span>
+        <select class="input" name="token_endpoint_auth_method">
+          <option value="none"{% if form_token_endpoint_auth_method | default('none') == 'none' %} selected{% endif %}>none</option>
+          <option value="client_secret_basic"{% if form_token_endpoint_auth_method == 'client_secret_basic' %} selected{% endif %}>client_secret_basic</option>
+          <option value="client_secret_post"{% if form_token_endpoint_auth_method == 'client_secret_post' %} selected{% endif %}>client_secret_post</option>
+        </select>
+      </label>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('oidc-create-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Register client</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('oidc-create-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>
