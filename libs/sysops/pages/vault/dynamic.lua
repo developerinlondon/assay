@@ -54,7 +54,15 @@ function M.lease(req)
   end
   local _, err = sdk.lease(f.provider, f.role)
   if err then
-    return { status = 303, headers = { Location = "/vault/dynamic?error=" .. urlenc(tostring(err.status) .. ":lease failed") } }
+    return {
+      status  = 303,
+      headers = {
+        Location = "/vault/dynamic"
+          .. "?error=" .. urlenc(("lease failed (status %s)"):format(err.status or "?"))
+          .. "&form_provider=" .. urlenc(f.provider or "")
+          .. "&form_role=" .. urlenc(f.role or ""),
+      },
+    }
   end
   return { status = 303, headers = { Location = "/vault/dynamic?ok=leased" } }
 end

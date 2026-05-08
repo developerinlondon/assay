@@ -64,18 +64,28 @@ function M.create(req)
   local f   = form.parse(req)
   local sdk = auth.new(ctx.engine).users
   if not nz(f.email) then
-    return { status = 303, headers = { Location = "/auth/users?error=400:email+required" } }
+    return { status = 303, headers = { Location = "/auth/users?error=" .. urlenc("email is required") } }
   end
   local fields = {
-    email        = f.email,
-    display_name = nz(f.display_name),
+    email          = f.email,
+    display_name   = nz(f.display_name),
+    email_verified = (f.email_verified == "true"),
   }
   if nz(f.initial_password) then fields.password = f.initial_password end
   local _, err = sdk.create(fields)
   if err then
-    return { status = 303, headers = { Location = "/auth/users?error=" .. urlenc(tostring(err.status) .. ":create failed") } }
+    -- Bounce back with typed values + error so the modal re-opens.
+    return {
+      status  = 303,
+      headers = {
+        Location = "/auth/users"
+          .. "?error=" .. urlenc(("create failed (status %s)"):format(err.status or "?"))
+          .. "&form_email=" .. urlenc(f.email or "")
+          .. "&form_display_name=" .. urlenc(f.display_name or ""),
+      },
+    }
   end
-  return { status = 303, headers = { Location = "/auth/users" } }
+  return { status = 303, headers = { Location = "/auth/users?ok=" .. urlenc("user created") } }
 end
 
 function M.delete(req)

@@ -68,7 +68,18 @@ function M.create(req)
   }
   local _, err = sdk.create_client(fields)
   if err then
-    return { status = 303, headers = { Location = "/auth/oidc-clients?error=" .. urlenc(tostring(err.status) .. ":create failed") } }
+    return {
+      status  = 303,
+      headers = {
+        Location = "/auth/oidc-clients"
+          .. "?error=" .. urlenc(("create failed (status %s)"):format(err.status or "?"))
+          .. "&form_client_id=" .. urlenc(f.client_id or "")
+          .. "&form_name=" .. urlenc(f.name or "")
+          .. "&form_redirect_uris=" .. urlenc(f.redirect_uris or "")
+          .. "&form_grant_types=" .. urlenc(f.grant_types or "")
+          .. "&form_token_endpoint_auth_method=" .. urlenc(f.token_endpoint_auth_method or "none"),
+      },
+    }
   end
   return { status = 303, headers = { Location = "/auth/oidc-clients?ok=client+created" } }
 end

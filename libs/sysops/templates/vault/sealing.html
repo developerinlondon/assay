@@ -92,12 +92,85 @@
   <div style="padding:12px 16px">
     <h4 style="margin:0 0 8px 0">Init shamir KEK</h4>
     <p class="muted" style="margin:0 0 8px 0">Operator-only. Returns the shares ONCE &mdash; the engine cannot regenerate them. Run only on first setup or migration from plaintext sealing.</p>
-    <form method="post" action="/vault/init" class="filter-bar" style="flex-wrap:wrap;gap:10px"
-          onsubmit="return confirm('Init shamir KEK now? Existing KEK metadata will be replaced. Save the returned shares immediately — they cannot be recovered.')">
-      <input class="input" name="shares_count" type="number" min="2" placeholder="shares_count (e.g. 5)" required style="width:200px" />
-      <input class="input" name="threshold" type="number" min="1" placeholder="threshold (e.g. 3)" required style="width:200px" />
-      <button type="submit" class="chip" style="background:var(--err,#a33);color:#fff">Init shamir</button>
-    </form>
+    <button type="button" class="btn btn-primary btn-sm"
+            onclick="document.getElementById('init-shamir-dialog').showModal()">+ Init shamir KEK</button>
   </div>
 </div>
 {% endif %}
+
+<dialog id="init-shamir-dialog" class="omc-dialog">
+  <form method="post" action="/vault/init" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">Init shamir KEK</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('init-shamir-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Shares count</span>
+        <input class="input" type="number" name="shares_count" required min="2"
+               placeholder="5" autofocus
+               value="{{ form_shares_count | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Threshold</span>
+        <input class="input" type="number" name="threshold" required min="1"
+               placeholder="3"
+               value="{{ form_threshold | default('') }}">
+      </label>
+
+      <p class="muted" style="font-size:0.85em;margin:0">
+        Existing KEK metadata will be replaced. Save the returned shares immediately — they cannot be recovered.
+      </p>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('init-shamir-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary"
+              onclick="return confirm('Init shamir KEK now? Existing KEK metadata will be replaced. Save the returned shares immediately.')">Init shamir</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('init-shamir-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>

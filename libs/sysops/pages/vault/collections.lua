@@ -60,7 +60,15 @@ function M.create(req)
   end
   local _, err = sdk.create(f.name, nz(f.description))
   if err then
-    return { status = 303, headers = { Location = "/vault/collections?error=" .. urlenc(tostring(err.status) .. ":create failed") } }
+    return {
+      status  = 303,
+      headers = {
+        Location = "/vault/collections"
+          .. "?error=" .. urlenc(("create failed (status %s)"):format(err.status or "?"))
+          .. "&form_name=" .. urlenc(f.name or "")
+          .. "&form_description=" .. urlenc(f.description or ""),
+      },
+    }
   end
   return { status = 303, headers = { Location = "/vault/collections?ok=created" } }
 end

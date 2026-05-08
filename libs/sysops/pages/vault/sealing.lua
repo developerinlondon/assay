@@ -79,7 +79,15 @@ function M.init(req)
   local sdk = vault.new(ctx.engine).sealing
   local data, err = sdk.init(n, t)
   if err then
-    return { status = 303, headers = { Location = "/vault/sealing?error=" .. urlenc(tostring(err.status) .. ":init failed") } }
+    return {
+      status  = 303,
+      headers = {
+        Location = "/vault/sealing"
+          .. "?error=" .. urlenc(("init failed (status %s)"):format(err.status or "?"))
+          .. "&form_shares_count=" .. urlenc(tostring(n))
+          .. "&form_threshold=" .. urlenc(tostring(t)),
+      },
+    }
   end
   local b = type(data) == "table" and data or {}
   return render.render("vault/sealing_init_result", {

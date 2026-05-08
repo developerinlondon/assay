@@ -62,7 +62,18 @@ function M.upsert(req)
   }
   local _, err = sdk.upsert_upstream(fields)
   if err then
-    return { status = 303, headers = { Location = "/auth/upstreams?error=" .. urlenc(tostring(err.status) .. ":upsert failed") } }
+    return {
+      status  = 303,
+      headers = {
+        Location = "/auth/upstreams"
+          .. "?error=" .. urlenc(("upsert failed (status %s)"):format(err.status or "?"))
+          .. "&form_slug=" .. urlenc(f.slug or "")
+          .. "&form_display_name=" .. urlenc(f.display_name or "")
+          .. "&form_issuer=" .. urlenc(f.issuer or "")
+          .. "&form_client_id=" .. urlenc(f.client_id or "")
+          .. "&form_icon_url=" .. urlenc(f.icon_url or ""),
+      },
+    }
   end
   return { status = 303, headers = { Location = "/auth/upstreams?ok=provider+saved" } }
 end

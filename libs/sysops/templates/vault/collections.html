@@ -29,12 +29,16 @@
 </div>
 {% endif %}
 
-<form class="filter-bar" method="get" action="/vault/collections">
-  <input class="input" name="org_id" type="text" value="{{ org_id | default('') }}"
-         placeholder="org_id (optional filter)" style="min-width:300px" />
-  <button type="submit" class="chip active">Apply</button>
-  <a class="chip" href="/vault/collections">Reset</a>
-</form>
+<div class="filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <form method="get" action="/vault/collections" style="display:flex;gap:8px;align-items:center;flex:1">
+    <input class="input" name="org_id" type="text" value="{{ org_id | default('') }}"
+           placeholder="org_id (optional filter)" style="min-width:300px" />
+    <button type="submit" class="chip active">Apply</button>
+    <a class="chip" href="/vault/collections">Reset</a>
+  </form>
+  <button type="button" class="btn btn-primary"
+          onclick="document.getElementById('collection-create-dialog').showModal()">+ New collection</button>
+</div>
 
 {% if status == 0 %}
 <div class="banner">
@@ -48,15 +52,6 @@
 </div>
 {% else %}
 <div class="card">
-  <div class="card-head"><h3>Create collection</h3></div>
-  <form method="post" action="/vault/collections" class="filter-bar" style="flex-wrap:wrap;gap:10px;padding:12px 16px">
-    <input class="input" name="name" type="text" placeholder="collection name" required style="min-width:240px" />
-    <input class="input" name="description" type="text" placeholder="description (optional)" style="min-width:300px" />
-    <button type="submit" class="chip active">Create</button>
-  </form>
-</div>
-
-<div class="card" style="margin-top:16px">
   <table class="table">
     <thead>
       <tr><th>Name</th><th>Kind</th><th>Org</th><th>Created by</th><th>Created at</th><th>ID</th></tr>
@@ -85,3 +80,73 @@
   </table>
 </div>
 {% endif %}
+
+<dialog id="collection-create-dialog" class="omc-dialog">
+  <form method="post" action="/vault/collections" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">New collection</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('collection-create-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Name</span>
+        <input class="input" type="text" name="name" required placeholder="my-collection" autofocus
+               value="{{ form_name | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Description (optional)</span>
+        <input class="input" type="text" name="description" placeholder="(optional)"
+               value="{{ form_description | default('') }}">
+      </label>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('collection-create-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Create collection</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('collection-create-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>

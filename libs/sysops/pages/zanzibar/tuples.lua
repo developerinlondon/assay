@@ -5,6 +5,12 @@ local auth   = require("sysops.auth")
 
 local M = {}
 
+local function urlenc(s)
+  return (tostring(s or "")):gsub("([^%w%-_%.~])", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end)
+end
+
 local function tuple_body(f)
   return {
     object_type  = f.object_type  or "",
@@ -52,7 +58,19 @@ function M.write(req)
   local sdk = auth.new(ctx.engine).zanzibar
   local _, err = sdk.write_tuple(tuple_body(f))
   if err then
-    return { status = 303, headers = { Location = "/zanzibar/tuples?write_err=" .. tostring(err.status) } }
+    return {
+      status  = 303,
+      headers = {
+        Location = "/zanzibar/tuples"
+          .. "?write_err=" .. tostring(err.status)
+          .. "&form_object_type=" .. urlenc(f.object_type or "")
+          .. "&form_object_id=" .. urlenc(f.object_id or "")
+          .. "&form_relation=" .. urlenc(f.relation or "")
+          .. "&form_subject_type=" .. urlenc(f.subject_type or "")
+          .. "&form_subject_id=" .. urlenc(f.subject_id or "")
+          .. "&form_subject_rel=" .. urlenc(f.subject_rel or ""),
+      },
+    }
   end
   return { status = 303, headers = { Location = "/zanzibar/tuples?saved=1" } }
 end

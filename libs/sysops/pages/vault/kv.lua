@@ -53,7 +53,15 @@ function M.put(req)
   end
   local _, err = sdk.put(f.path, f.data or "")
   if err then
-    return { status = 303, headers = { Location = "/vault/kv?error=" .. urlenc(tostring(err.status) .. ":put failed") } }
+    return {
+      status  = 303,
+      headers = {
+        Location = "/vault/kv"
+          .. "?error=" .. urlenc(("put failed (status %s)"):format(err.status or "?"))
+          .. "&form_path=" .. urlenc(f.path or "")
+          .. "&form_data=" .. urlenc(f.data or ""),
+      },
+    }
   end
   return { status = 303, headers = { Location = "/vault/kv?ok=put&path=" .. urlenc(f.path) } }
 end

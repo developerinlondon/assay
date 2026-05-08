@@ -27,12 +27,16 @@
 <div class="banner"><span class="b-mark"></span><span>{{ ok_msg }}</span></div>
 {% endif %}
 
-<form class="filter-bar" method="get" action="/auth/users">
-  <input class="input" name="search" type="text"
-         value="{{ search }}" placeholder="search email / display name…" />
-  <button type="submit" class="chip active">Search</button>
-  {% if search %}<a class="chip" href="/auth/users">Clear</a>{% endif %}
-</form>
+<div class="filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <form method="get" action="/auth/users" style="display:flex;gap:8px;align-items:center;flex:1">
+    <input class="input" name="search" type="text"
+           value="{{ search }}" placeholder="search email / display name…" />
+    <button type="submit" class="chip active">Search</button>
+    {% if search %}<a class="chip" href="/auth/users">Clear</a>{% endif %}
+  </form>
+  <button type="button" class="btn btn-primary"
+          onclick="document.getElementById('user-create-dialog').showModal()">+ Create user</button>
+</div>
 
 {% if error %}
 <div class="banner">
@@ -46,29 +50,6 @@
   </span>
 </div>
 {% endif %}
-
-<details class="card" style="margin-bottom:12px">
-  <summary style="cursor:pointer;padding:10px 14px;font-size:12px;color:var(--fg-2)">+ Create user</summary>
-  <div class="card-body">
-    <form method="post" action="/auth/users"
-          style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
-        Email
-        <input class="input" type="email" name="email" required placeholder="user@example.com" />
-      </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
-        Display name
-        <input class="input" type="text" name="display_name" placeholder="optional" />
-      </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
-        Initial password
-        <input class="input" type="password" name="initial_password"
-               autocomplete="new-password" placeholder="optional" />
-      </label>
-      <button type="submit" class="btn btn-primary btn-sm">Create user</button>
-    </form>
-  </div>
-</details>
 
 <div class="card">
   <table class="table">
@@ -120,3 +101,96 @@
     </tbody>
   </table>
 </div>
+
+{# Create-user modal. Pops over the listing on click. Submits to the
+   existing /auth/users POST handler — on success the engine redirects
+   back to this page with ?ok=…; on error it redirects with ?error=… and
+   the inline script below re-opens the dialog so the user can retry. #}
+<dialog id="user-create-dialog" class="omc-dialog">
+  <form method="post" action="/auth/users" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">Create new user</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('user-create-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Email</span>
+        <input class="input" type="email" name="email" required maxlength="320"
+               placeholder="user@example.com" autofocus
+               value="{{ form_email | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Display name</span>
+        <input class="input" type="text" name="display_name" maxlength="120"
+               placeholder="(optional)"
+               value="{{ form_display_name | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Initial password</span>
+        <input class="input" type="password" name="initial_password"
+               autocomplete="new-password" placeholder="(optional)">
+        <span class="muted" style="font-size:0.8em">
+          Leave blank for passkey- or upstream-IdP-only accounts.
+        </span>
+      </label>
+
+      <label class="omc-field" style="flex-direction:row;align-items:center;gap:8px">
+        <input type="checkbox" name="email_verified" value="true">
+        <span>mark email verified (skip verification email)</span>
+      </label>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('user-create-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Create user</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  // Re-open the dialog if the user just got bounced back here with an
+  // error from the POST. Keeps focus on the form rather than burying
+  // it behind the listing.
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('user-create-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>

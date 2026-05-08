@@ -50,7 +50,18 @@ function M.mint(req)
   if nz(f.max_ip_cidr) then opts.max_ip_cidr = f.max_ip_cidr end
   local data, err = sdk.mint(opts)
   if err then
-    return { status = 303, headers = { Location = "/vault/share?error=" .. urlenc(tostring(err.status) .. ":mint failed") } }
+    return {
+      status  = 303,
+      headers = {
+        Location = "/vault/share"
+          .. "?error=" .. urlenc(("mint failed (status %s)"):format(err.status or "?"))
+          .. "&form_target_kind=" .. urlenc(f.target_kind or "")
+          .. "&form_target_id=" .. urlenc(f.target_id or "")
+          .. "&form_ttl_secs=" .. urlenc(f.ttl_secs or "")
+          .. "&form_max_uses=" .. urlenc(f.max_uses or "")
+          .. "&form_max_ip_cidr=" .. urlenc(f.max_ip_cidr or ""),
+      },
+    }
   end
   local b = type(data) == "table" and data or {}
   local rev_ids = type(b.revocation_ids) == "table"

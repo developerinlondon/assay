@@ -37,23 +37,14 @@
   <span>Transit surface is not configured on this engine instance.</span>
 </div>
 {% else %}
-<div class="card">
-  <div class="card-head"><h3>Create key</h3></div>
-  <form method="post" action="/vault/transit/create" class="filter-bar" style="flex-wrap:wrap;gap:10px;padding:12px 16px">
-    <input class="input" name="name" type="text" placeholder="key name" required style="min-width:240px" />
-    <select class="input" name="algo" style="width:200px">
-      <option value="">algo (default)</option>
-      <option value="aes256-gcm">aes256-gcm</option>
-      <option value="chacha20-poly1305">chacha20-poly1305</option>
-      <option value="rsa-2048">rsa-2048</option>
-      <option value="rsa-4096">rsa-4096</option>
-      <option value="ed25519">ed25519</option>
-    </select>
-    <button type="submit" class="chip active">Create</button>
-  </form>
+
+<div class="filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1"></div>
+  <button type="button" class="btn btn-primary"
+          onclick="document.getElementById('transit-create-dialog').showModal()">+ Create transit key</button>
 </div>
 
-<div class="card" style="margin-top:16px">
+<div class="card">
   <table class="table">
     <thead>
       <tr><th>Name</th><th>Algorithm</th><th>Latest version</th><th>Created</th><th></th></tr>
@@ -112,3 +103,79 @@
   </div>
 </div>
 {% endif %}
+
+<dialog id="transit-create-dialog" class="omc-dialog">
+  <form method="post" action="/vault/transit/create" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">Create transit key</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('transit-create-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Key name</span>
+        <input class="input" type="text" name="name" required placeholder="my-key" autofocus
+               value="{{ form_name | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Algorithm</span>
+        <select class="input" name="algo">
+          <option value="">default</option>
+          <option value="aes256-gcm"{% if form_algo == 'aes256-gcm' %} selected{% endif %}>aes256-gcm</option>
+          <option value="chacha20-poly1305"{% if form_algo == 'chacha20-poly1305' %} selected{% endif %}>chacha20-poly1305</option>
+          <option value="rsa-2048"{% if form_algo == 'rsa-2048' %} selected{% endif %}>rsa-2048</option>
+          <option value="rsa-4096"{% if form_algo == 'rsa-4096' %} selected{% endif %}>rsa-4096</option>
+          <option value="ed25519"{% if form_algo == 'ed25519' %} selected{% endif %}>ed25519</option>
+        </select>
+      </label>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('transit-create-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Create key</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('transit-create-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>

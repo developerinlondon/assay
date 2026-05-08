@@ -59,7 +59,15 @@ function M.create(req)
   end
   local _, err = sdk.create(f.name, nz(f.algo))
   if err then
-    return { status = 303, headers = { Location = "/vault/transit?error=" .. urlenc(tostring(err.status) .. ":create failed") } }
+    return {
+      status  = 303,
+      headers = {
+        Location = "/vault/transit"
+          .. "?error=" .. urlenc(("create failed (status %s)"):format(err.status or "?"))
+          .. "&form_name=" .. urlenc(f.name or "")
+          .. "&form_algo=" .. urlenc(f.algo or ""),
+      },
+    }
   end
   return { status = 303, headers = { Location = "/vault/transit?ok=created" } }
 end

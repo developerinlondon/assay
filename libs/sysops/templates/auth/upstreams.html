@@ -39,46 +39,11 @@
 </div>
 {% endif %}
 
-<details class="card" style="margin-bottom:12px">
-  <summary style="cursor:pointer;padding:10px 14px;font-size:12px;color:var(--fg-2)">+ Add upstream provider</summary>
-  <div class="card-body">
-    <form method="post" action="/auth/upstreams"
-          style="display:flex;flex-direction:column;gap:10px;max-width:600px">
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
-        Slug
-        <input class="input" type="text" name="slug" required placeholder="google" />
-      </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
-        Display name
-        <input class="input" type="text" name="display_name" placeholder="Google" />
-      </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
-        Issuer URL
-        <input class="input" type="url" name="issuer" required
-               placeholder="https://accounts.google.com" />
-      </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
-        Client ID
-        <input class="input" type="text" name="client_id" />
-      </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
-        Client secret
-        <input class="input" type="password" name="client_secret" autocomplete="new-password" />
-      </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
-        Icon URL
-        <input class="input" type="url" name="icon_url" placeholder="optional" />
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-2)">
-        <input type="checkbox" name="enabled" value="on" checked />
-        Enabled
-      </label>
-      <div>
-        <button type="submit" class="btn btn-primary btn-sm">Add provider</button>
-      </div>
-    </form>
-  </div>
-</details>
+<div class="filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1"></div>
+  <button type="button" class="btn btn-primary"
+          onclick="document.getElementById('upstream-create-dialog').showModal()">+ Add upstream provider</button>
+</div>
 
 <div class="card">
   <table class="table">
@@ -119,3 +84,102 @@
     </tbody>
   </table>
 </div>
+
+<dialog id="upstream-create-dialog" class="omc-dialog">
+  <form method="post" action="/auth/upstreams" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">Add upstream provider</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('upstream-create-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Slug</span>
+        <input class="input" type="text" name="slug" required placeholder="google"
+               value="{{ form_slug | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Display name</span>
+        <input class="input" type="text" name="display_name" placeholder="Google"
+               value="{{ form_display_name | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Issuer URL</span>
+        <input class="input" type="url" name="issuer" required
+               placeholder="https://accounts.google.com"
+               value="{{ form_issuer | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Client ID</span>
+        <input class="input" type="text" name="client_id"
+               value="{{ form_client_id | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Client secret</span>
+        <input class="input" type="password" name="client_secret" autocomplete="new-password">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Icon URL</span>
+        <input class="input" type="url" name="icon_url" placeholder="optional"
+               value="{{ form_icon_url | default('') }}">
+      </label>
+
+      <label class="omc-field" style="flex-direction:row;align-items:center;gap:8px">
+        <input type="checkbox" name="enabled" value="on" checked>
+        <span>Enabled</span>
+      </label>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('upstream-create-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Add provider</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('upstream-create-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>
