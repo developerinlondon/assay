@@ -414,6 +414,34 @@ pub async fn upsert_upstream(
     if let Err(e) = provider.upstream.upsert(&row).await {
         return server_error(&format!("upsert upstream: {e}"));
     }
+    // Sync to the in-memory OidcRegistry so federation handlers
+    // (GET /auth/oidc/upstream/{slug}/start) pick up the provider
+    // immediately — no restart required. Non-fatal: if the upstream
+    // discovery fails, the row stays in the DB and can be retried
+    // on the next upsert or engine restart.
+    if let Some(registry) = &ctx.oidc {
+        let redirect_uri = format!(
+            "{}/oidc/upstream/{}/callback",
+            provider.public_url, row.slug
+        );
+        match url::Url::parse(&redirect_uri) {
+            Ok(uri) => {
+                let reg_provider = crate::oidc::UpstreamProvider {
+                    slug: row.slug.clone(),
+                    issuer: row.issuer.clone(),
+                    client_id: row.client_id.clone(),
+                    client_secret: row.client_secret.clone(),
+                    scopes: vec!["openid".into(), "email".into(), "profile".into()],
+                };
+                if let Err(e) = registry.add(reg_provider, uri).await {
+                    tracing::warn!("registry sync failed for upstream {}: {e}", row.slug);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("invalid redirect_uri for upstream {}: {e}", row.slug);
+            }
+        }
+    }
     (StatusCode::OK, Json(row)).into_response()
 }
 
@@ -473,7 +501,12 @@ pub async fn delete_upstream(
         None => return svc_unavailable("oidc_provider not enabled"),
     };
     match provider.upstream.delete(&slug).await {
-        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(true) => {
+            if let Some(registry) = &ctx.oidc {
+                registry.remove(&slug);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "unknown slug"})),

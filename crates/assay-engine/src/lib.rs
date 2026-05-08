@@ -297,6 +297,53 @@ async fn build_auth_ctx_pg(
             pool.clone(),
         ));
         ctx = ctx.with_oidc_provider(provider);
+
+        // Load existing upstream identity providers from the DB into
+        // the in-memory OidcRegistry so federation handlers can resolve
+        // them immediately after boot — no restart needed when an admin
+        // adds a provider later (admin CRUD also syncs the registry).
+        if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {
+            match provider.upstream.list().await {
+                Ok(rows) => {
+                    let redirect_base = format!("{}/oidc/upstream", provider.public_url);
+                    for row in rows {
+                        if row.enabled {
+                            let redirect_uri = format!("{}/{}/callback", redirect_base, row.slug);
+                            match url::Url::parse(&redirect_uri) {
+                                Ok(uri) => {
+                                    let reg_provider = assay_auth::oidc::UpstreamProvider {
+                                        slug: row.slug.clone(),
+                                        issuer: row.issuer.clone(),
+                                        client_id: row.client_id.clone(),
+                                        client_secret: row.client_secret.clone(),
+                                        scopes: vec![
+                                            "openid".into(),
+                                            "email".into(),
+                                            "profile".into(),
+                                        ],
+                                    };
+                                    if let Err(e) = registry.add(reg_provider, uri).await {
+                                        tracing::warn!(
+                                            "failed to load upstream provider {} at boot: {e}",
+                                            row.slug
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "invalid redirect_uri for upstream {}: {e}",
+                                        row.slug
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("failed to list upstream providers at boot: {e}");
+                }
+            }
+        }
     }
 
     Ok(ctx)
@@ -376,6 +423,49 @@ async fn build_auth_ctx_sqlite(
         )
         .with_jwks_source(assay_auth::oidc_provider::JwksSource::Sqlite(pool.clone()));
         ctx = ctx.with_oidc_provider(provider);
+
+        if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {
+            match provider.upstream.list().await {
+                Ok(rows) => {
+                    let redirect_base = format!("{}/oidc/upstream", provider.public_url);
+                    for row in rows {
+                        if row.enabled {
+                            let redirect_uri = format!("{}/{}/callback", redirect_base, row.slug);
+                            match url::Url::parse(&redirect_uri) {
+                                Ok(uri) => {
+                                    let reg_provider = assay_auth::oidc::UpstreamProvider {
+                                        slug: row.slug.clone(),
+                                        issuer: row.issuer.clone(),
+                                        client_id: row.client_id.clone(),
+                                        client_secret: row.client_secret.clone(),
+                                        scopes: vec![
+                                            "openid".into(),
+                                            "email".into(),
+                                            "profile".into(),
+                                        ],
+                                    };
+                                    if let Err(e) = registry.add(reg_provider, uri).await {
+                                        tracing::warn!(
+                                            "failed to load upstream provider {} at boot: {e}",
+                                            row.slug
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "invalid redirect_uri for upstream {}: {e}",
+                                        row.slug
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("failed to list upstream providers at boot: {e}");
+                }
+            }
+        }
     }
 
     Ok(ctx)
