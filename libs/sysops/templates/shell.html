@@ -23,7 +23,8 @@
 </div>
 {% endif %}
 
-<div id="terminal" class="shell-terminal"></div>
+<div id="terminal" class="shell-terminal" aria-hidden="true"></div>
+<p style="color:var(--fg-3);font-size:11px;margin:4px 0 0">Terminal output is rendered on a canvas. Use a native SSH client for screen-reader access.</p>
 
 <link rel="stylesheet" href="/static/vendor/xterm/xterm.css">
 <script src="/static/vendor/xterm/xterm.js"></script>
@@ -31,4 +32,4 @@
 <script>
   window.SHELL_WS_URL = "{{ ws_url | safe }}";
 </script>
-<script src="/static/shell.js"></script>
+<script src="/static/shell.js?v=2"></script>
