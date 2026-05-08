@@ -96,7 +96,75 @@ surface, not in the sysops host secret store.
 - Backups — moves to the future `assay-ops` extension; rebuilt cleanly via the `rustic` CLI binary
   at that point.
 - Packages — owned by plan 20's `pkg` stdlib, available directly to consumer apps.
-- Auth / vault / workflow / engine consoles — separate libraries or extensions.
+- Workflow / engine consoles — served by the engine SPA via the existing sidebar `Engine` link.
+
+## Optional auth + vault modules (0.1.5)
+
+Sysops 0.1.5 adds opt-in auth and vault dashboards that render in-process as Lua pages instead of
+forcing a hand-off to the engine SPA. They're gated behind `mount` opts so existing 0.1.4
+consumers see no change.
+
+```lua
+sysops.mount(routes, {
+  -- … all existing opts …
+  active_modules    = { "auth", "vault" },     -- enable both, or pick one
+  engine_admin_key  = env.get("KNOWHERE_ADMIN_API_KEYS"),
+})
+```
+
+When `"auth"` is in `active_modules`, the sidebar gains an **Auth** link to `/auth/users` and
+sysops registers GET/POST routes for:
+
+| Path                       | Page                                |
+| -------------------------- | ----------------------------------- |
+| `/auth/users`              | List + create + delete users        |
+| `/auth/users/{id}/edit`    | Edit a user                         |
+| `/auth/sessions`           | List + revoke sessions              |
+| `/auth/oidc-clients`       | OIDC client list (read-only)        |
+| `/auth/upstreams`          | Upstream IdP list (read-only)       |
+| `/auth/jwks`               | JWKS keys                           |
+| `/auth/biscuit`            | Biscuit signing-key info            |
+| `/auth/audit`              | Auth audit log                      |
+| `/zanzibar`                | Zanzibar namespaces                 |
+| `/zanzibar/tuples`         | Write / delete tuples               |
+| `/zanzibar/check`          | Run a `check(s,r,o)` query          |
+
+When `"vault"` is in `active_modules`, the sidebar gains a **Vault** link to `/vault` and sysops
+registers GET/POST routes for:
+
+| Path                  | Page                                     |
+| --------------------- | ---------------------------------------- |
+| `/vault`              | Overview + seal status pill              |
+| `/vault/kv`           | KV browser (`?prefix=…`) + put / del     |
+| `/vault/transit`      | Transit keys + encrypt / decrypt         |
+| `/vault/sealing`      | Seal / unseal / shamir init              |
+| `/vault/dynamic`      | Dynamic credential leases                |
+| `/vault/share`        | Share tokens (mint / revoke)             |
+| `/vault/collections`  | Shared cipher collections                |
+| `/vault/me`           | Personal cipher vault (bitwarden compat) |
+
+All pages call the engine via the HTTP client passed as `opts.engine`. Admin-scoped endpoints
+(users / sessions / sealing / transit / zanzibar) require `engine_admin_key`.
+
+## SDK (0.1.5)
+
+Pure-Lua HTTP wrappers around the engine vault + auth API. Useful from plugins and other lib code
+that needs to read or write engine state without re-rolling HTTP. Each module accepts the same
+HTTP client passed via `mount` opts:
+
+```lua
+local vault = require("sysops.vault").new(ctx.engine)
+vault.kv.get("apps/foo/db_url")
+vault.transit.encrypt("master", "hello world")
+vault.dynamic.lease("postgres", "readonly")
+vault.sealing.status()
+
+local auth = require("sysops.auth").new(ctx.engine)
+auth.users.list({ search = "alice" })
+auth.zanzibar.check("user:alice", "viewer", "doc:foo")
+```
+
+Every method returns `(data, nil)` on 2xx or `(nil, err)` where `err = { status, body }`.
 
 ## Install
 

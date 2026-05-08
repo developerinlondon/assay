@@ -1,0 +1,72 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; federation</div>
+    <h1 class="page-title">{{ page_title }}</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">providers</span><span class="v">{{ upstreams | length }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/auth/users">Users</a>
+  <a class="tab" href="/auth/sessions">Sessions</a>
+  <a class="tab" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab{% if nav_active == 'auth:upstreams' %} active{% endif %}" href="/auth/upstreams">Upstreams</a>
+  <a class="tab" href="/auth/jwks">JWKS</a>
+  <a class="tab" href="/auth/biscuit">Biscuit</a>
+  <a class="tab" href="/auth/audit">Audit</a>
+  <a class="tab" href="/zanzibar">Zanzibar</a>
+</div>
+
+{% if error_msg %}
+<div class="banner"><span class="b-mark"></span><span>{{ error_msg }}</span></div>
+{% endif %}
+{% if ok_msg %}
+<div class="banner"><span class="b-mark"></span><span>{{ ok_msg }}</span></div>
+{% endif %}
+
+{% if error %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>
+    {% if status == 401 %}
+      admin auth required to load this list (status {{ status }}).
+    {% else %}
+      could not load upstream providers from engine (status {{ status | default("?") }}).
+    {% endif %}
+  </span>
+</div>
+{% endif %}
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Slug</th>
+        <th>Display name</th>
+        <th class="wrap">Issuer</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in upstreams %}
+      <tr>
+        <td class="name-cell">{{ u.slug }}</td>
+        <td>{{ u.display_name }}</td>
+        <td class="wrap muted">{{ u.issuer }}</td>
+        <td>
+          {% if u.enabled %}
+            <span class="pill pill-ok">enabled</span>
+          {% else %}
+            <span class="pill pill-muted">disabled</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if (upstreams | length) == 0 and not error %}
+      <tr><td colspan="4" style="color:var(--fg-3);text-align:center;padding:18px">no upstream identity providers registered</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>

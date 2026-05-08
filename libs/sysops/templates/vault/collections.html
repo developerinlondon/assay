@@ -1,0 +1,87 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; collections</div>
+    <h1 class="page-title">Vault collections</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">collections</span><span class="v">{{ collections | length }}</span></span>
+    {% if org_id and org_id != "" %}
+      <span><span class="k">org</span><span class="v">{{ org_id }}</span></span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab active" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+{% if error_msg and error_msg != "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+<form class="filter-bar" method="get" action="/vault/collections">
+  <input class="input" name="org_id" type="text" value="{{ org_id | default('') }}"
+         placeholder="org_id (optional filter)" style="min-width:300px" />
+  <button type="submit" class="chip active">Apply</button>
+  <a class="chip" href="/vault/collections">Reset</a>
+</form>
+
+{% if status == 0 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Collections listing is unavailable. The vault may be sealed, the collections module disabled, or admin auth missing.</span>
+</div>
+{% elif status == 503 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Collections surface is not configured on this engine instance.</span>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-head"><h3>Create collection</h3></div>
+  <form method="post" action="/vault/collections" class="filter-bar" style="flex-wrap:wrap;gap:10px;padding:12px 16px">
+    <input class="input" name="name" type="text" placeholder="collection name" required style="min-width:240px" />
+    <input class="input" name="description" type="text" placeholder="description (optional)" style="min-width:300px" />
+    <button type="submit" class="chip active">Create</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <table class="table">
+    <thead>
+      <tr><th>Name</th><th>Kind</th><th>Org</th><th>Created by</th><th>Created at</th><th>ID</th></tr>
+    </thead>
+    <tbody>
+      {% for c in collections %}
+      <tr>
+        <td class="name-cell">{{ c.name }}</td>
+        <td>
+          {% if c.kind == "org" %}
+            <span class="pill pill-info">org</span>
+          {% else %}
+            <span class="pill pill-muted">personal</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ c.org_id | default("—") }}</td>
+        <td class="muted">{{ c.created_by | default("—") }}</td>
+        <td class="muted num">{{ c.created_at | default("—") }}</td>
+        <td class="muted">{{ c.id }}</td>
+      </tr>
+      {% endfor %}
+      {% if (collections | length) == 0 %}
+      <tr><td colspan="6" style="color:var(--fg-3);text-align:center;padding:18px">no collections defined</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

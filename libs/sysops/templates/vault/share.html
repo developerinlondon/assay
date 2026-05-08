@@ -1,0 +1,80 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; share</div>
+    <h1 class="page-title">Vault share</h1>
+  </div>
+  <div class="page-meta">
+    <span class="pill pill-muted">no-list endpoint</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab active" href="/vault/share">Share</a>
+</div>
+
+{% if error_msg and error_msg != "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+{% if minted_token and minted_token != "" %}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-head"><h3>Mint result &mdash; save this token NOW (the engine will not show it again)</h3></div>
+  <table class="table">
+    <tbody>
+      <tr><td class="name-cell">token</td><td><code style="word-break:break-all">{{ minted_token }}</code></td></tr>
+      <tr><td class="name-cell">revocation_ids</td><td><code>{{ minted_rev_ids }}</code></td></tr>
+      <tr><td class="name-cell">expires_at</td><td class="muted num">{{ minted_expires }}</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if revoked_id and revoked_id != "" %}
+<div class="banner" style="background:rgba(34,170,68,0.15);border-color:rgba(34,170,68,0.4)">
+  <span class="b-mark"></span>
+  <span>Revoked <code>{{ revoked_id }}</code>.</span>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head"><h3>Mint share token</h3></div>
+  <form method="post" action="/vault/share" class="filter-bar" style="flex-wrap:wrap;padding:14px 16px;gap:10px">
+    <select class="input" name="target_kind" required>
+      <option value="item">item</option>
+      <option value="vault">vault</option>
+      <option value="collection">collection</option>
+    </select>
+    <input class="input" name="target_id" type="text" placeholder="target_id (item/vault/collection uuid)" required style="min-width:280px" />
+    <input class="input" name="ttl_secs" type="number" min="1" placeholder="ttl_secs (e.g. 3600)" required style="width:160px" />
+    <input class="input" name="max_uses" type="number" min="1" placeholder="max_uses (optional)" style="width:160px" />
+    <input class="input" name="max_ip_cidr" type="text" placeholder="max_ip_cidr (optional)" style="width:200px" />
+    <button class="chip active" type="submit">Mint</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Revoke by revocation_id</h3></div>
+  <form method="post" action="/vault/share/revoke" class="filter-bar" style="flex-wrap:wrap;padding:14px 16px;gap:10px"
+        onsubmit="return confirm('Revoke this share? This cannot be undone.')">
+    <input class="input" name="revocation_id" type="text" placeholder="revocation_id (hex)" required style="min-width:340px" />
+    <input class="input" name="reason" type="text" placeholder="reason (optional)" style="min-width:240px" />
+    <button class="chip" type="submit" style="background:var(--err,#a33);color:#fff">Revoke</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Listing</h3></div>
+  <div style="padding:14px 16px;color:var(--fg-3)">
+    The engine's share router does not expose a list endpoint &mdash; only mint, revoke, and redeem. Active tokens and their revocation IDs must be tracked outside the engine (e.g. in audit logs).
+  </div>
+</div>

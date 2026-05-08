@@ -1,0 +1,55 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; sealing &middot; init</div>
+    <h1 class="page-title">Init complete &mdash; save these shares</h1>
+  </div>
+  <div class="page-meta">
+    <span class="pill pill-warn">SHOW-ONCE</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab active" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+<div class="banner" style="background:rgba(204,160,40,0.15);border-color:rgba(204,160,40,0.5)">
+  <span class="b-mark"></span>
+  <span><strong>Save the {{ shares_count }} shares below.</strong> The engine will not return them again. {{ threshold }} of {{ shares_count }} are required to unseal.</span>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>KEK metadata</h3></div>
+  <table class="table">
+    <tbody>
+      <tr><td class="name-cell">kid</td><td class="muted">{{ kid }}</td></tr>
+      <tr><td class="name-cell">threshold</td><td>{{ threshold }}</td></tr>
+      <tr><td class="name-cell">shares_count</td><td>{{ shares_count }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Shares (base64)</h3></div>
+  <table class="table">
+    <thead><tr><th style="width:60px">#</th><th>Share</th></tr></thead>
+    <tbody>
+      {% for s in shares %}
+      <tr>
+        <td class="num">{{ loop.index }}</td>
+        <td><code style="word-break:break-all">{{ s }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="filter-bar" style="margin-top:16px">
+  <a class="chip" href="/vault/sealing">Back to sealing</a>
+</div>

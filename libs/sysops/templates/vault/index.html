@@ -1,0 +1,53 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a></div>
+    <h1 class="page-title">Vault</h1>
+  </div>
+  <div class="page-meta">
+    {% if seal._status == 0 or seal._status == nil %}
+      <span class="pill pill-muted">unavailable</span>
+    {% elif seal.sealed %}
+      <span class="pill pill-warn">SEALED</span>
+    {% else %}
+      <span class="pill pill-ok">UNSEALED</span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab active" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+{% if seal._status == 0 or seal._status == nil %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Vault status is unavailable. The vault module may be disabled, the engine may not be wired in, or the admin auth context is missing.</span>
+</div>
+{% else %}
+<div class="card">
+  <table class="table">
+    <tbody>
+      <tr><td class="name-cell">sealed</td><td>
+        {% if seal.sealed %}<span class="pill pill-warn">yes</span>{% else %}<span class="pill pill-ok">no</span>{% endif %}
+      </td></tr>
+      <tr><td class="name-cell">method</td><td>{{ seal.method | default("—") }}</td></tr>
+      <tr><td class="name-cell">kid</td><td class="muted">{{ kid_short }}</td></tr>
+      {% if seal.share_threshold %}
+      <tr><td class="name-cell">threshold</td><td>{{ seal.share_threshold }}</td></tr>
+      <tr><td class="name-cell">share count</td><td>{{ seal.share_count | default("—") }}</td></tr>
+      <tr><td class="name-cell">shares progress</td><td>{{ seal.shares_progress | default(0) }}</td></tr>
+      {% endif %}
+      {% if seal.last_seal_change_at %}
+      <tr><td class="name-cell">last seal change</td><td class="muted">{{ seal.last_seal_change_at }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

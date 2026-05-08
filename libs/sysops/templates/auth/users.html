@@ -1,0 +1,122 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; users</div>
+    <h1 class="page-title">{{ page_title }}</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">listed</span><span class="v">{{ users | length }}</span></span>
+    <span><span class="k">total</span><span class="v">{{ total }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab{% if nav_active == 'auth:users' %} active{% endif %}" href="/auth/users">Users</a>
+  <a class="tab{% if nav_active == 'auth:sessions' %} active{% endif %}" href="/auth/sessions">Sessions</a>
+  <a class="tab{% if nav_active == 'auth:oidc_clients' %} active{% endif %}" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab{% if nav_active == 'auth:upstreams' %} active{% endif %}" href="/auth/upstreams">Upstreams</a>
+  <a class="tab{% if nav_active == 'auth:jwks' %} active{% endif %}" href="/auth/jwks">JWKS</a>
+  <a class="tab{% if nav_active == 'auth:biscuit' %} active{% endif %}" href="/auth/biscuit">Biscuit</a>
+  <a class="tab{% if nav_active == 'auth:audit' %} active{% endif %}" href="/auth/audit">Audit</a>
+  <a class="tab{% if 'zanzibar:' in (nav_active or '') %} active{% endif %}" href="/zanzibar">Zanzibar</a>
+</div>
+
+{% if error_msg %}
+<div class="banner"><span class="b-mark"></span><span>{{ error_msg }}</span></div>
+{% endif %}
+{% if ok_msg %}
+<div class="banner"><span class="b-mark"></span><span>{{ ok_msg }}</span></div>
+{% endif %}
+
+<form class="filter-bar" method="get" action="/auth/users">
+  <input class="input" name="search" type="text"
+         value="{{ search }}" placeholder="search email / display name…" />
+  <button type="submit" class="chip active">Search</button>
+  {% if search %}<a class="chip" href="/auth/users">Clear</a>{% endif %}
+</form>
+
+{% if error %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>
+    {% if status == 401 %}
+      admin auth required to load this list (status {{ status }}).
+    {% else %}
+      could not load users from engine (status {{ status | default("?") }}).
+    {% endif %}
+  </span>
+</div>
+{% endif %}
+
+<details class="card" style="margin-bottom:12px">
+  <summary style="cursor:pointer;padding:10px 14px;font-size:12px;color:var(--fg-2)">+ Create user</summary>
+  <div class="card-body">
+    <form method="post" action="/auth/users"
+          style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Email
+        <input class="input" type="email" name="email" required placeholder="user@example.com" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Display name
+        <input class="input" type="text" name="display_name" placeholder="optional" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Initial password
+        <input class="input" type="password" name="initial_password"
+               autocomplete="new-password" placeholder="optional" />
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm">Create user</button>
+    </form>
+  </div>
+</details>
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Email</th>
+        <th>Display name</th>
+        <th>Verified</th>
+        <th>Created</th>
+        <th>Passkey</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td class="num" title="{{ u.id }}">{{ u.id_short }}</td>
+        <td>{{ u.email | default("—") }}</td>
+        <td class="muted">{{ u.display_name | default("—") }}</td>
+        <td>
+          {% if u.email_verified %}
+            <span class="pill pill-ok">yes</span>
+          {% else %}
+            <span class="pill pill-muted">no</span>
+          {% endif %}
+        </td>
+        <td class="num muted">{{ u.created_at | default("—") }}</td>
+        <td>
+          {% if u.has_passkey %}
+            <span class="pill pill-info">●</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td style="white-space:nowrap;display:flex;gap:4px;align-items:center">
+          <a class="btn btn-sm" href="/auth/users/{{ u.id }}/edit">Edit</a>
+          <form method="post" action="/auth/users/{{ u.id }}/delete"
+                onsubmit="return confirm('Permanently delete user {{ u.id }}?')"
+                style="display:inline">
+            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if (users | length) == 0 and not error %}
+      <tr><td colspan="7" style="color:var(--fg-3);text-align:center;padding:18px">no users match your filter</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>

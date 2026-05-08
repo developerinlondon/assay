@@ -1,0 +1,95 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; dynamic creds</div>
+    <h1 class="page-title">Dynamic credentials</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">leases</span><span class="v">{{ leases | length }}</span></span>
+    {% if provider and provider != "" %}
+      <span><span class="k">provider</span><span class="v">{{ provider }}</span></span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab active" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+{% if error_msg and error_msg != "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+<form class="filter-bar" method="get" action="/vault/dynamic">
+  <input class="input" name="provider" type="text" value="{{ provider | default('') }}" placeholder="provider (postgres / aws / gcp / …)" style="min-width:240px" />
+  <button type="submit" class="chip active">Apply</button>
+  <a class="chip" href="/vault/dynamic">Reset</a>
+</form>
+
+{% if status == 0 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Dynamic creds listing is unavailable. The vault may be sealed, the dynamic-creds module disabled, or admin auth missing.</span>
+</div>
+{% elif status == 503 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Dynamic-creds surface is not configured on this engine instance.</span>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-head"><h3>Issue lease</h3></div>
+  <form method="post" action="/vault/dynamic/lease" class="filter-bar" style="flex-wrap:wrap;gap:10px;padding:12px 16px">
+    <input class="input" name="provider" type="text" placeholder="provider (e.g. postgres)" required style="min-width:200px" />
+    <input class="input" name="role" type="text" placeholder="role (e.g. readonly)" required style="min-width:200px" />
+    <button type="submit" class="chip active">Issue</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <table class="table">
+    <thead>
+      <tr><th>Lease ID</th><th>Provider</th><th>Role</th><th>Issued</th><th>Expires</th><th>TTL</th><th>State</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for l in leases %}
+      <tr>
+        <td class="name-cell">{{ l.id }}</td>
+        <td>{{ l.provider }}</td>
+        <td class="muted">{{ l.role }}</td>
+        <td class="muted num">{{ l.issued_at | default("—") }}</td>
+        <td class="num">{{ l.expires_at | default("—") }}</td>
+        <td class="num">{{ l.ttl | default("—") }}</td>
+        <td>
+          {% if l.revoked_at %}
+            <span class="pill pill-err">revoked</span>
+          {% else %}
+            <span class="pill pill-ok">active</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if not l.revoked_at %}
+          <form method="post" action="/vault/dynamic/leases/{{ l.id }}/revoke" style="margin:0"
+                onsubmit="return confirm('Revoke lease {{ l.id }}?')">
+            <button type="submit" class="chip" style="background:var(--err,#a33);color:#fff;padding:4px 10px">Revoke</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if (leases | length) == 0 %}
+      <tr><td colspan="8" style="color:var(--fg-3);text-align:center;padding:18px">no leased dynamic credentials</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

@@ -1,0 +1,86 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; kv</div>
+    <h1 class="page-title">Vault KV</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">paths</span><span class="v">{{ entries | length }}</span></span>
+    {% if prefix and prefix != "" %}
+      <span><span class="k">prefix</span><span class="v">{{ prefix }}</span></span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab active" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+{% if error_msg and error_msg != "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+<form class="filter-bar" method="get" action="/vault/kv">
+  <input class="input" name="prefix" type="text" value="{{ prefix | default('') }}" placeholder="path prefix (optional)…" style="min-width:300px" />
+  <button type="submit" class="chip active">Apply</button>
+  <a class="chip" href="/vault/kv">Reset</a>
+</form>
+
+{% if status == 0 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>KV listing is unavailable. The vault may be sealed, the kv module disabled, or admin auth missing.</span>
+</div>
+{% elif status == 503 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>KV surface is not configured on this engine instance.</span>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-head"><h3>Write KV value</h3></div>
+  <form method="post" action="/vault/kv/put" class="filter-bar" style="flex-wrap:wrap;gap:10px;padding:12px 16px">
+    <input class="input" name="path" type="text" placeholder="path (e.g. apps/foo/db_url)" required style="min-width:280px" />
+    <textarea class="input" name="data" rows="2" placeholder="value (UTF-8 string; client owns any outer encoding)" required style="min-width:380px;flex:1"></textarea>
+    <button type="submit" class="chip active">PUT</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <table class="table">
+    <thead>
+      <tr><th>Path</th><th>Latest version</th><th>Updated</th><th>Created</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for e in entries %}
+      <tr>
+        <td class="name-cell">{{ e.path }}</td>
+        <td class="num">{{ e.latest_version | default("—") }}</td>
+        <td class="muted num">{{ e.updated_at | default("—") }}</td>
+        <td class="muted num">{{ e.created_at | default("—") }}</td>
+        <td>
+          <form method="post" action="/vault/kv/delete" style="margin:0"
+                onsubmit="return confirm('Soft-delete {{ e.path }} v{{ e.latest_version }}?')">
+            <input type="hidden" name="path" value="{{ e.path }}">
+            <input type="hidden" name="version" value="{{ e.latest_version | default(0) }}">
+            <button type="submit" class="chip" style="background:var(--err,#a33);color:#fff;padding:4px 10px">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if (entries | length) == 0 %}
+      <tr><td colspan="5" style="color:var(--fg-3);text-align:center;padding:18px">no kv paths under this prefix</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
