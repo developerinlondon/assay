@@ -5,6 +5,8 @@
 //! shape. Timestamps are `f64` seconds since UNIX epoch (matches the rest
 //! of the auth schema).
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Token-endpoint authentication method per OIDC Core §9. The `none`
@@ -107,6 +109,11 @@ impl OidcClient {
 /// Mirrors [`crate::oidc::UpstreamProvider`] shape; this struct adds the
 /// admin-facing fields (`display_name`, `icon_url`, `enabled`) that the
 /// in-memory registry doesn't carry.
+///
+/// `scopes` is space-separated at storage time, parsed into a `Vec` here.
+/// `auth_params` carries IdP-specific authorize-URL parameters
+/// (e.g. `prompt`, `hd`, `domain_hint`); validated against the
+/// [`crate::oidc_provider::auth_params`] whitelist on every write.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UpstreamProvider {
     pub slug: String,
@@ -116,6 +123,10 @@ pub struct UpstreamProvider {
     pub display_name: String,
     pub icon_url: Option<String>,
     pub enabled: bool,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub auth_params: BTreeMap<String, String>,
 }
 
 /// One issued (and not-yet-consumed) authorization code — row in
@@ -178,6 +189,11 @@ pub struct ConsentGrant {
 /// One in-flight upstream-federation login — row in
 /// `auth.oidc_upstream_states`. Created by `start_upstream_login`,
 /// consumed (and deleted) by `complete_upstream_login`.
+///
+/// `binding_hash` is the SHA-256 hex of the cookie-bound binding
+/// token; empty string is the migration sentinel for in-flight rows
+/// created before the binding-check deploy (those skip the check; the
+/// 5-minute row TTL bounds the bypass window).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UpstreamLoginState {
     pub state: String,
@@ -187,6 +203,8 @@ pub struct UpstreamLoginState {
     pub return_to: Option<String>,
     pub created_at: f64,
     pub expires_at: f64,
+    #[serde(default)]
+    pub binding_hash: String,
 }
 
 #[cfg(test)]

@@ -7,6 +7,17 @@ Key coding practices for this project:
 - **autonomous-workflow** — Proposal-first development, decision authority, commit hygiene
 - **code-quality** — Warnings-as-errors, no underscore prefixes, test coverage, type safety
 
+## Repository sync hygiene
+
+When feature work has merged, switch back to `main`, fetch upstream, and fast-forward local `main`
+to `origin/main` before starting or debugging follow-up work. Do not leave merged feature branches
+or locally-applied copies of merged commits as a dirty worktree; that makes later sessions confuse
+released upstream changes with unfinished local work.
+
+Use the main checkout for active work. Do not create extra git worktrees for this repo unless the
+human operator explicitly asks for parallel checkouts; one workstream in the main worktree is
+enough.
+
 ## Library hygiene: no application-domain leakage
 
 **Assay is a general-purpose library. It must have zero knowledge of any specific application that
@@ -398,16 +409,16 @@ HTTP responses: `{status, body, headers}`. Options: `{headers = {["X-Key"] = "va
 
 Lua tests run inside Assay and already have the `assert` builtin table. Do not define local
 assertion helpers such as `assert_eq`, `assert_truthy`, `fail`, or generic `check` wrappers in
-`*.test.lua` scripts. Use the builtins directly: `assert.eq`, `assert.ne`, `assert.gt`,
-`assert.lt`, `assert.contains`, `assert.not_nil`, and `assert.matches`.
+`*.test.lua` scripts. Use the builtins directly: `assert.eq`, `assert.ne`, `assert.gt`, `assert.lt`,
+`assert.contains`, `assert.not_nil`, and `assert.matches`.
 
 Small progress-print helpers like `ok(label)` are fine. Standalone orchestration runners may still
 use teardown-aware fatal helpers when they are not expressing a test assertion.
 
-Use moon/mise tasks for Lua suites. The assay-engine Lua client smoke suite is
-`mise run engine-lua` / `moon run engine-lua:test`, with lifecycle orchestration in
-`crates/assay-engine/tests-lua/run.lua`. Do not add bash `run.sh` wrappers for Assay-owned Lua
-test lifecycle; prefer Assay Lua plus `process.spawn`, `process.wait`, `http`, and `fs` so the test
+Use moon/mise tasks for Lua suites. The assay-engine Lua client smoke suite is `mise run engine-lua`
+/ `moon run engine-lua:test`, with lifecycle orchestration in
+`crates/assay-engine/tests-lua/run.lua`. Do not add bash `run.sh` wrappers for Assay-owned Lua test
+lifecycle; prefer Assay Lua plus `process.spawn`, `process.wait`, `http`, and `fs` so the test
 harness exercises the runtime it is validating.
 
 ### `http.serve` Response Shapes

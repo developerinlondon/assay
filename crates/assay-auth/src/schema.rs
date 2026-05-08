@@ -54,7 +54,12 @@ pub const MODULE_NAME: &str = "auth";
 ///               `auth.oidc_consents`, and `auth.oidc_upstream_states`.
 ///               Together they make `assay-engine` a conformant OIDC
 ///               provider (Hydra equivalent).
-pub const MIGRATION_VERSION: i32 = 4;
+/// V5: extends `auth.upstream_providers` with `scopes` and
+///               `auth_params` columns (per-IdP authorize-URL parameters)
+///               and `auth.oidc_upstream_states` with `binding_hash`
+///               (cookie-bound CSRF binding token hash) — the
+///               provider-agnostic federation hardening pack.
+pub const MIGRATION_VERSION: i32 = 5;
 
 /// Postgres DDL for the auth schema, version 1.
 ///
@@ -297,6 +302,24 @@ CREATE TABLE IF NOT EXISTS auth.oidc_upstream_states (
     created_at      DOUBLE PRECISION NOT NULL,
     expires_at      DOUBLE PRECISION NOT NULL
 );
+"#;
+
+/// Postgres DDL for the auth schema, version 5 — provider-agnostic
+/// upstream federation. Adds per-IdP `scopes` + `auth_params` columns
+/// to `auth.upstream_providers` and the `binding_hash` column on
+/// `auth.oidc_upstream_states` for cookie-bound CSRF protection.
+///
+/// Empty `binding_hash` is the migration sentinel: rows that started
+/// before the deploy keep `''` and skip the binding check; the
+/// 5-minute row TTL bounds the bypass window.
+pub const PG_DDL_V5: &str = r#"
+ALTER TABLE auth.upstream_providers
+    ADD COLUMN IF NOT EXISTS scopes TEXT NOT NULL DEFAULT '["openid","email","profile"]';
+ALTER TABLE auth.upstream_providers
+    ADD COLUMN IF NOT EXISTS auth_params TEXT NOT NULL DEFAULT '{}';
+
+ALTER TABLE auth.oidc_upstream_states
+    ADD COLUMN IF NOT EXISTS binding_hash TEXT NOT NULL DEFAULT '';
 "#;
 
 /// SQLite DDL for the auth schema, version 1.
@@ -569,6 +592,31 @@ pub const SQLITE_DDL_V4: &[(&str, &str)] = &[
     ),
 ];
 
+/// SQLite DDL for the auth schema, version 5 — provider-agnostic
+/// upstream federation columns.
+///
+/// SQLite has no `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, so the
+/// runner tolerates the "duplicate column name" error these statements
+/// emit on a second-run (the column already exists; equivalent to
+/// `IF NOT EXISTS` semantics for our purposes). Mirrors [`PG_DDL_V5`].
+pub const SQLITE_DDL_V5: &[(&str, &str)] = &[
+    (
+        "upstream_providers.scopes",
+        "ALTER TABLE auth.upstream_providers \
+         ADD COLUMN scopes TEXT NOT NULL DEFAULT '[\"openid\",\"email\",\"profile\"]'",
+    ),
+    (
+        "upstream_providers.auth_params",
+        "ALTER TABLE auth.upstream_providers \
+         ADD COLUMN auth_params TEXT NOT NULL DEFAULT '{}'",
+    ),
+    (
+        "oidc_upstream_states.binding_hash",
+        "ALTER TABLE auth.oidc_upstream_states \
+         ADD COLUMN binding_hash TEXT NOT NULL DEFAULT ''",
+    ),
+];
+
 /// Postgres migration runner.
 ///
 /// Applies every DDL pack up to and including the current
@@ -579,7 +627,7 @@ pub const SQLITE_DDL_V4: &[(&str, &str)] = &[
 #[cfg(feature = "backend-postgres")]
 pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     use anyhow::Context;
-    for ddl in [PG_DDL_V1, PG_DDL_V2, PG_DDL_V3, PG_DDL_V4] {
+    for ddl in [PG_DDL_V1, PG_DDL_V2, PG_DDL_V3, PG_DDL_V4, PG_DDL_V5] {
         for stmt in split_pg_statements(ddl) {
             sqlx::query(&stmt)
                 .execute(pool)
@@ -615,6 +663,18 @@ pub async fn migrate_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
                 .execute(pool)
                 .await
                 .with_context(|| format!("auth sqlite migrate: {label}"))?;
+        }
+    }
+    for (label, stmt) in SQLITE_DDL_V5 {
+        if let Err(e) = sqlx::query(stmt).execute(pool).await {
+            // SQLite's `ALTER TABLE … ADD COLUMN` is not idempotent;
+            // tolerate the duplicate-column error so re-running the
+            // migration on an already-V5 DB is a no-op.
+            let msg = format!("{e}");
+            if msg.contains("duplicate column name") {
+                continue;
+            }
+            return Err(anyhow::anyhow!("auth sqlite migrate: {label}: {e}"));
         }
     }
     sqlx::query("INSERT OR IGNORE INTO engine.migrations (module, version) VALUES (?, ?)")

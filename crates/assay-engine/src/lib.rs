@@ -297,6 +297,24 @@ async fn build_auth_ctx_pg(
             pool.clone(),
         ));
         ctx = ctx.with_oidc_provider(provider);
+
+        if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {
+            match provider.upstream.list().await {
+                Ok(rows) => {
+                    for row in rows {
+                        assay_auth::oidc_provider::sync_upstream_to_registry(
+                            registry,
+                            &row,
+                            &provider.public_url,
+                        )
+                        .await;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("failed to list upstream providers at boot: {e}");
+                }
+            }
+        }
     }
 
     Ok(ctx)
@@ -376,6 +394,24 @@ async fn build_auth_ctx_sqlite(
         )
         .with_jwks_source(assay_auth::oidc_provider::JwksSource::Sqlite(pool.clone()));
         ctx = ctx.with_oidc_provider(provider);
+
+        if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {
+            match provider.upstream.list().await {
+                Ok(rows) => {
+                    for row in rows {
+                        assay_auth::oidc_provider::sync_upstream_to_registry(
+                            registry,
+                            &row,
+                            &provider.public_url,
+                        )
+                        .await;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("failed to list upstream providers at boot: {e}");
+                }
+            }
+        }
     }
 
     Ok(ctx)

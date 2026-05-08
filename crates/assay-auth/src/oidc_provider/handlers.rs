@@ -38,6 +38,12 @@ use super::userinfo::{self, AccessTokenClaims};
 /// consent POST can resume without persisting state.
 const RESUME_COOKIE: &str = "assay_oidc_resume";
 
+/// Cookie name carrying the raw upstream-OIDC binding token. Set on
+/// `/oidc/upstream/{slug}/start`'s 302; checked by `/callback` against
+/// the state row's `binding_hash`. Cleared on every callback response
+/// (success or failure).
+const UPSTREAM_BINDING_COOKIE: &str = "assay_oidc_binding";
+
 // =====================================================================
 //   /authorize
 // =====================================================================
@@ -955,19 +961,26 @@ pub async fn upstream_start(
             return error_html(StatusCode::BAD_REQUEST, &format!("upstream start: {e}"));
         }
     };
-    Redirect::to(&started.redirect_url).into_response()
+    let mut response = Redirect::to(&started.redirect_url).into_response();
+    if let Ok(value) = build_binding_cookie(&started.binding_token, &provider.public_url).parse() {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
 }
 
-/// Query for the federation callback.
+/// Query for the federation callback. `iss` is RFC 9207; lenient
+/// (warn-on-missing, reject-on-mismatch).
 #[derive(Deserialize)]
 pub struct UpstreamCallbackQuery {
     pub code: String,
     pub state: String,
+    pub iss: Option<String>,
 }
 
 /// `GET /oidc/upstream/{slug}/callback` — finish federated login.
 pub async fn upstream_callback(
     State(ctx): State<AuthCtx>,
+    headers: HeaderMap,
     Path(_slug): Path<String>,
     Query(q): Query<UpstreamCallbackQuery>,
 ) -> Response {
@@ -979,17 +992,23 @@ pub async fn upstream_callback(
         Some(r) => r,
         None => return server_misconfigured("oidc client registry is not enabled"),
     };
+    let binding_token = parse_cookie(&headers, UPSTREAM_BINDING_COOKIE);
     let info = match super::federation::complete_upstream_login(
         registry,
         &provider.upstream_states,
         &q.code,
         &q.state,
+        binding_token.as_deref(),
+        q.iss.as_deref(),
     )
     .await
     {
         Ok(i) => i,
         Err(e) => {
-            return error_html(StatusCode::BAD_REQUEST, &format!("upstream complete: {e}"));
+            let mut response =
+                error_html(StatusCode::BAD_REQUEST, &format!("upstream complete: {e}"));
+            append_clear_binding_cookie(&mut response);
+            return response;
         }
     };
 
@@ -1015,32 +1034,72 @@ pub async fn upstream_callback(
                 created_at: now_secs(),
             };
             if let Err(e) = ctx.users.create_user(&user).await {
-                return server_error_html(&format!("create user: {e}"));
+                let mut response = server_error_html(&format!("create user: {e}"));
+                append_clear_binding_cookie(&mut response);
+                return response;
             }
             if let Err(e) = ctx
                 .users
                 .link_upstream(&id, &info.provider_slug, &info.subject)
                 .await
             {
-                return server_error_html(&format!("link upstream: {e}"));
+                let mut response = server_error_html(&format!("link upstream: {e}"));
+                append_clear_binding_cookie(&mut response);
+                return response;
             }
             user
         }
-        Err(e) => return server_error_html(&format!("upstream user lookup: {e}")),
+        Err(e) => {
+            let mut response = server_error_html(&format!("upstream user lookup: {e}"));
+            append_clear_binding_cookie(&mut response);
+            return response;
+        }
     };
 
     // Mint an assay session.
     let mgr = crate::session::SessionManager::with_default_duration(ctx.sessions.clone());
     let session = match mgr.create(&user.id).await {
         Ok(s) => s,
-        Err(e) => return server_error_html(&format!("create session: {e}")),
+        Err(e) => {
+            let mut response = server_error_html(&format!("create session: {e}"));
+            append_clear_binding_cookie(&mut response);
+            return response;
+        }
     };
     let mut response = Redirect::to(info.return_to.as_deref().unwrap_or("/")).into_response();
     let cookie = crate::session::cookie_for(&session, &provider.public_url);
     if let Ok(value) = cookie.to_string().parse() {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
+    append_clear_binding_cookie(&mut response);
     response
+}
+
+/// Build the `Set-Cookie` value for the binding token. Omits `Secure`
+/// only when the public URL is `http` to a localhost host (dev rigs).
+fn build_binding_cookie(raw: &str, public_url: &url::Url) -> String {
+    let secure = !is_plain_http(public_url);
+    let secure_attr = if secure { "; Secure" } else { "" };
+    format!(
+        "{UPSTREAM_BINDING_COOKIE}={raw}; Path=/oidc/upstream/; HttpOnly; SameSite=Lax; \
+         Max-Age=300{secure_attr}"
+    )
+}
+
+/// Append a `Set-Cookie: …; Max-Age=0` header to clear the binding
+/// cookie. Called on every callback response — the cookie's job ended
+/// the moment the callback ran.
+fn append_clear_binding_cookie(response: &mut Response) {
+    let cleared = format!(
+        "{UPSTREAM_BINDING_COOKIE}=; Path=/oidc/upstream/; Max-Age=0; HttpOnly; SameSite=Lax"
+    );
+    if let Ok(value) = cleared.parse() {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+}
+
+fn is_plain_http(url: &url::Url) -> bool {
+    url.scheme() != "https"
 }
 
 // =====================================================================
