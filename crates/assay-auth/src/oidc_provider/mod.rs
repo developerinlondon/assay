@@ -33,12 +33,15 @@ use url::Url;
 use crate::ctx::AuthCtx;
 
 pub mod admin;
+pub mod auth_params;
 pub mod authorize;
+pub mod binding;
 pub mod consent;
 pub mod discovery;
 pub mod federation;
 pub mod handlers;
 pub mod introspect;
+pub mod issuer_validation;
 pub mod jwks;
 pub mod revoke;
 pub mod store;
@@ -157,14 +160,13 @@ pub fn upstream_callback_url(public_url: &url::Url, slug: &str) -> String {
 /// discovery against the issuer and caches the client; if disabled,
 /// removes any cached entry for that slug.
 ///
-/// `default_scopes` is used because the admin-facing
-/// [`types::UpstreamProvider`] does not yet carry a scopes
-/// column — all providers get the same set until the DB schema gains one.
+/// Reads `row.scopes` and `row.auth_params` directly. When `row.scopes`
+/// is empty (typically because a row predates the V5 migration filling
+/// in the default), falls back to [`crate::oidc::DEFAULT_UPSTREAM_SCOPES`].
 pub async fn sync_upstream_to_registry(
     registry: &crate::oidc::OidcRegistry,
     row: &types::UpstreamProvider,
     public_url: &url::Url,
-    default_scopes: &[String],
 ) {
     if row.enabled {
         let uri = match url::Url::parse(&upstream_callback_url(public_url, &row.slug)) {
@@ -174,12 +176,21 @@ pub async fn sync_upstream_to_registry(
                 return;
             }
         };
+        let scopes = if row.scopes.is_empty() {
+            crate::oidc::DEFAULT_UPSTREAM_SCOPES
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        } else {
+            row.scopes.clone()
+        };
         let provider = crate::oidc::UpstreamProvider {
             slug: row.slug.clone(),
             issuer: row.issuer.clone(),
             client_id: row.client_id.clone(),
             client_secret: row.client_secret.clone(),
-            scopes: default_scopes.to_vec(),
+            scopes,
+            auth_params: row.auth_params.clone(),
         };
         if let Err(e) = registry.add(provider, uri).await {
             tracing::warn!("registry sync failed for upstream {}: {e}", row.slug);

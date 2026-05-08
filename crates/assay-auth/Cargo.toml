@@ -40,6 +40,7 @@ auth-oidc-provider = [
   "dep:oxide-auth",
   "dep:askama",
   "dep:sha2",
+  "dep:subtle",
 ]
 auth-passkey = ["dep:webauthn-rs", "auth-session"]
 auth-password = ["dep:argon2", "dep:password-hash"]
@@ -85,6 +86,7 @@ password-hash = { version = "0.5", optional = true }
 # ed25519-dalek 2.x still uses rand_core 0.6 for its key generation API.
 rand_core_06 = { package = "rand_core", version = "0.6", optional = true, features = ["getrandom"] }
 sha2 = { version = "0.10", optional = true }
+subtle = { version = "2", optional = true }
 # `danger-allow-state-serialisation` enables serde on the in-flight
 # `PasskeyRegistration` / `PasskeyAuthentication` state types so we can
 # stash them server-side between ceremony start and finish (we round-trip

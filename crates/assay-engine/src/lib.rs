@@ -301,16 +301,11 @@ async fn build_auth_ctx_pg(
         if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {
             match provider.upstream.list().await {
                 Ok(rows) => {
-                    let scopes: Vec<String> = assay_auth::oidc::DEFAULT_UPSTREAM_SCOPES
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect();
                     for row in rows {
                         assay_auth::oidc_provider::sync_upstream_to_registry(
                             registry,
                             &row,
                             &provider.public_url,
-                            &scopes,
                         )
                         .await;
                     }
@@ -403,16 +398,11 @@ async fn build_auth_ctx_sqlite(
         if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {
             match provider.upstream.list().await {
                 Ok(rows) => {
-                    let scopes: Vec<String> = assay_auth::oidc::DEFAULT_UPSTREAM_SCOPES
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect();
                     for row in rows {
                         assay_auth::oidc_provider::sync_upstream_to_registry(
                             registry,
                             &row,
                             &provider.public_url,
-                            &scopes,
                         )
                         .await;
                     }

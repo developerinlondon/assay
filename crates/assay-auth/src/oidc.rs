@@ -18,8 +18,9 @@
 //! Engine boot constructs an empty registry; populated providers come
 //! from a future admin API or seed config (out of phase 5 scope).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::time::Duration;
 
 use openidconnect::core::{
     CoreAuthenticationFlow, CoreClient, CoreProviderMetadata, CoreUserInfoClaims,
@@ -35,9 +36,11 @@ use url::Url;
 
 use crate::error::{Error, Result};
 
-/// Default scopes requested during upstream federation login.
-/// Shared by all call sites that convert from the admin-facing
-/// `oidc_provider::types::UpstreamProvider` (which has no scopes column).
+/// Fallback scopes requested during upstream federation login when a
+/// row's `scopes` column is empty. The admin API normally fills the
+/// column from the request body (or its server-side default of
+/// `'["openid","email","profile"]'`); this constant only fires for
+/// rows that pre-date the V5 migration filling in the default.
 pub const DEFAULT_UPSTREAM_SCOPES: &[&str] = &["openid", "email", "profile"];
 
 /// POD record describing one upstream identity provider. Mirrors the
@@ -63,6 +66,11 @@ pub struct UpstreamProvider {
     /// `["openid", "email", "profile"]`. `openid` is added implicitly
     /// by [`openidconnect`]; we forward the rest unchanged.
     pub scopes: Vec<String>,
+    /// Per-IdP authorize-URL parameters (`prompt`, `hd`, `domain_hint`,
+    /// `idp_*`, …). Validated against the
+    /// [`crate::oidc_provider::auth_params`] whitelist before the row
+    /// reaches this struct. Empty by default.
+    pub auth_params: BTreeMap<String, String>,
 }
 
 /// Verified userinfo returned by [`OidcClient::complete_login`]. Carries
@@ -144,6 +152,9 @@ impl OidcClient {
             }
             request = request.add_scope(Scope::new(scope.clone()));
         }
+        for (k, v) in &self.provider.auth_params {
+            request = request.add_extra_param(k.clone(), v.clone());
+        }
         let (url, csrf_token, nonce) = request.set_pkce_challenge(pkce_challenge).url();
         StartedLogin {
             url,
@@ -167,7 +178,7 @@ impl OidcClient {
         pkce_verifier: PkceCodeVerifier,
         nonce: Nonce,
     ) -> Result<UpstreamUserInfo> {
-        let http = build_oidc_http_client()?;
+        let http = build_oidc_http_client(HttpClientOptions::default())?;
         let token_response = self
             .inner
             .exchange_code(AuthorizationCode::new(code))
@@ -286,7 +297,7 @@ impl OidcRegistry {
     pub async fn add(&self, provider: UpstreamProvider, redirect_uri: Url) -> Result<()> {
         let issuer = IssuerUrl::new(provider.issuer.clone())
             .map_err(|e| Error::Oidc(format!("issuer url {}: {e}", provider.issuer)))?;
-        let http = build_oidc_http_client()?;
+        let http = build_oidc_http_client(HttpClientOptions::default())?;
         let metadata = CoreProviderMetadata::discover_async(issuer, &http)
             .await
             .map_err(|e| Error::Oidc(format!("discover {}: {e}", provider.slug)))?;
@@ -345,13 +356,40 @@ impl OidcRegistry {
     }
 }
 
+/// Tunables for the discovery / token / userinfo HTTP client.
+///
+/// Defaults: 5s connect timeout, 10s overall request timeout.
+#[derive(Clone, Debug)]
+pub struct HttpClientOptions {
+    pub connect_timeout_secs: u64,
+    pub request_timeout_secs: u64,
+}
+
+impl Default for HttpClientOptions {
+    fn default() -> Self {
+        // TODO: plumb via [auth.oidc] config (discovery_connect_timeout_secs,
+        //       discovery_request_timeout_secs).
+        Self {
+            connect_timeout_secs: 5,
+            request_timeout_secs: 10,
+        }
+    }
+}
+
 /// Build the reqwest client `openidconnect` uses for discovery, token
 /// exchange, JWKS fetches, and userinfo. We disable redirects on the
 /// security advice in the [`openidconnect`] crate docs (SSRF mitigation)
 /// and use rustls — matches the rest of assay's HTTP stack.
-fn build_oidc_http_client() -> Result<oidc_reqwest::Client> {
+///
+/// Plumbs explicit connect/read timeouts so a stored `issuer` pointing
+/// at a hung endpoint can't pin the engine on boot or admin upsert.
+/// SSRF protection is handled at the literal-host layer in
+/// [`crate::oidc_provider::issuer_validation`].
+pub fn build_oidc_http_client(opts: HttpClientOptions) -> Result<oidc_reqwest::Client> {
     oidc_reqwest::ClientBuilder::new()
         .redirect(oidc_reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(opts.connect_timeout_secs))
+        .timeout(Duration::from_secs(opts.request_timeout_secs))
         .build()
         .map_err(|e| Error::Oidc(format!("build oidc http client: {e}")))
 }
@@ -407,6 +445,7 @@ mod tests {
             client_id: "client".to_string(),
             client_secret: "secret".to_string(),
             scopes: vec!["openid".to_string(), "email".to_string()],
+            auth_params: BTreeMap::new(),
         };
         let dup = p.clone();
         assert_eq!(p, dup);
@@ -424,6 +463,7 @@ mod tests {
             client_id: "client".to_string(),
             client_secret: "secret".to_string(),
             scopes: vec!["openid".to_string()],
+            auth_params: BTreeMap::new(),
         };
         let redirect = Url::parse("https://example.com/login/ghost/callback").unwrap();
         let result = reg.add(provider, redirect).await;
