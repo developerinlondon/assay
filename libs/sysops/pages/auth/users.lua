@@ -30,8 +30,8 @@ function M.page(req)
   local sdk    = auth.new(ctx.engine).users
   local data, err = sdk.list({ search = search ~= "" and search or nil })
   local users = {}
-  if data and type(data.users) == "table" then
-    for _, u in ipairs(data.users) do
+  if data and type(data.items) == "table" then
+    for _, u in ipairs(data.items) do
       users[#users + 1] = {
         id            = u.id,
         id_short      = id_short(u.id),

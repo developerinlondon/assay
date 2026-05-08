@@ -25,8 +25,8 @@ function M.page(req)
   if user_id ~= "" then opts.user_id = user_id end
   local data, err = sdk.list(opts)
   local sessions = {}
-  if data and type(data.sessions) == "table" then
-    for _, s in ipairs(data.sessions) do
+  if data and type(data.items) == "table" then
+    for _, s in ipairs(data.items) do
       sessions[#sessions + 1] = {
         id         = s.id,
         id_short   = id_short(s.id),

@@ -23,7 +23,9 @@ function M.page(req)
   local sdk    = vault.new(ctx.engine).collections
   local data, err = sdk.list()
   local collections = {}
-  if data and type(data.collections) == "table" then
+  if data and type(data.items) == "table" then
+    collections = data.items
+  elseif data and type(data.collections) == "table" then
     collections = data.collections
   elseif data and type(data.folders) == "table" then
     collections = data.folders

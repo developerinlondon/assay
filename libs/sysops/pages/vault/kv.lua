@@ -23,7 +23,9 @@ function M.page(req)
   local sdk    = vault.new(ctx.engine).kv
   local data, err = sdk.list(prefix)
   local entries = {}
-  if data and type(data.entries) == "table" then
+  if data and type(data.items) == "table" then
+    entries = data.items
+  elseif data and type(data.entries) == "table" then
     entries = data.entries
   elseif data and type(data.keys) == "table" then
     for _, k in ipairs(data.keys) do

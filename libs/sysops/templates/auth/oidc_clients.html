@@ -39,6 +39,40 @@
 </div>
 {% endif %}
 
+<details class="card" style="margin-bottom:12px">
+  <summary style="cursor:pointer;padding:10px 14px;font-size:12px;color:var(--fg-2)">+ Register OIDC client</summary>
+  <div class="card-body">
+    <form method="post" action="/auth/oidc-clients"
+          style="display:flex;flex-direction:column;gap:10px;max-width:600px">
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Client ID (optional — engine generates one if omitted)
+        <input class="input" type="text" name="client_id" placeholder="my-app" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Name
+        <input class="input" type="text" name="name" required placeholder="My Application" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Redirect URIs (comma-separated)
+        <input class="input" type="text" name="redirect_uris" required
+               placeholder="https://app.example.com/callback, https://app.example.com/silent" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Grant types (comma-separated, optional)
+        <input class="input" type="text" name="grant_types"
+               placeholder="authorization_code, refresh_token" />
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-2)">
+        <input type="checkbox" name="is_public" value="on" />
+        Public (PKCE-only, no client secret)
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary btn-sm">Register client</button>
+      </div>
+    </form>
+  </div>
+</details>
+
 <div class="card">
   <table class="table">
     <thead>
@@ -50,6 +84,7 @@
         <th>Auth method</th>
         <th>Public</th>
         <th>Created</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -59,19 +94,33 @@
         <td class="name-cell">{{ c.name }}</td>
         <td class="wrap muted">{{ c.redirect_uris | default("—") }}</td>
         <td class="muted">{{ c.grant_types | default("—") }}</td>
-        <td class="muted">{{ c.auth_method }}</td>
+        <td class="muted">{{ c.token_endpoint_auth_method | default(c.auth_method) }}</td>
         <td>
-          {% if c.is_public %}
+          {% if c.is_public or c.token_endpoint_auth_method == "none" %}
             <span class="pill pill-info">yes</span>
           {% else %}
             <span class="pill pill-muted">no</span>
           {% endif %}
         </td>
         <td class="num muted">{{ c.created_at | default("—") }}</td>
+        <td style="white-space:nowrap;display:flex;gap:4px;align-items:center">
+          {% if c.token_endpoint_auth_method != "none" %}
+          <form method="post" action="/auth/oidc-clients/{{ c.client_id }}/rotate-secret"
+                onsubmit="return confirm('Rotate secret for {{ c.client_id }}? The new secret will be shown once.')"
+                style="display:inline">
+            <button type="submit" class="btn btn-sm">Rotate secret</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/auth/oidc-clients/{{ c.client_id }}/delete"
+                onsubmit="return confirm('Permanently delete client {{ c.client_id }}?')"
+                style="display:inline">
+            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
       {% if (clients | length) == 0 and not error %}
-      <tr><td colspan="7" style="color:var(--fg-3);text-align:center;padding:18px">no OIDC clients registered</td></tr>
+      <tr><td colspan="8" style="color:var(--fg-3);text-align:center;padding:18px">no OIDC clients registered</td></tr>
       {% endif %}
     </tbody>
   </table>

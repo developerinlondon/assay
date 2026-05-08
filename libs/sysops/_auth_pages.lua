@@ -12,7 +12,12 @@ M.handlers = {
   auth_sessions          = require("pages.auth.sessions").page,
   auth_session_revoke    = require("pages.auth.sessions").revoke,
   auth_oidc_clients      = require("pages.auth.oidc_clients").page,
+  auth_oidc_client_create = require("pages.auth.oidc_clients").create,
+  auth_oidc_client_delete = require("pages.auth.oidc_clients").delete,
+  auth_oidc_client_rotate = require("pages.auth.oidc_clients").rotate,
   auth_upstreams         = require("pages.auth.upstreams").page,
+  auth_upstream_upsert   = require("pages.auth.upstreams").upsert,
+  auth_upstream_delete   = require("pages.auth.upstreams").delete,
   auth_jwks              = require("pages.auth.jwks").page,
   auth_biscuit           = require("pages.auth.biscuit").page,
   auth_audit             = require("pages.auth.audit").page,
@@ -37,8 +42,19 @@ function M.register(routes, url)
   routes.POST[url("/auth/users/*/delete")]     = h.auth_user_delete
   routes.GET[url("/auth/sessions")]            = h.auth_sessions
   routes.POST[url("/auth/sessions/*/revoke")]  = h.auth_session_revoke
-  routes.GET[url("/auth/oidc-clients")]        = h.auth_oidc_clients
-  routes.GET[url("/auth/upstreams")]           = h.auth_upstreams
+  routes.GET[url("/auth/oidc-clients")]   = h.auth_oidc_clients
+  routes.POST[url("/auth/oidc-clients")]  = h.auth_oidc_client_create
+  routes.POST[url("/auth/oidc-clients/*")] = function(req)
+    local path = (req and req.path) or ""
+    if path:match("/rotate%-secret$") then
+      return h.auth_oidc_client_rotate(req)
+    else
+      return h.auth_oidc_client_delete(req)
+    end
+  end
+  routes.GET[url("/auth/upstreams")]      = h.auth_upstreams
+  routes.POST[url("/auth/upstreams")]     = h.auth_upstream_upsert
+  routes.POST[url("/auth/upstreams/*")]   = h.auth_upstream_delete
   routes.GET[url("/auth/jwks")]                = h.auth_jwks
   routes.GET[url("/auth/biscuit")]             = h.auth_biscuit
   routes.GET[url("/auth/audit")]               = h.auth_audit

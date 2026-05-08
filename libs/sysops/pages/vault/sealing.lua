@@ -30,6 +30,10 @@ function M.page(req)
   local q    = (req and req.params) or {}
   local sdk  = vault.new(ctx.engine).sealing
   local seal, err = sdk.status()
+  -- Tag the response with `_status` so the template's
+  -- `{% if seal._status == 0 or seal._status == nil %}` branch resolves
+  -- to the unavailable banner only when the call actually failed.
+  if seal and not err then seal._status = 200 end
   return render.render("vault/sealing", {
     nav_active = "vault:sealing",
     title      = "Sealing · Vault",

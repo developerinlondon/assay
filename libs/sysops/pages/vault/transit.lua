@@ -22,7 +22,9 @@ local function keys_page(req, extra)
   local sdk = vault.new(ctx.engine).transit
   local data, err = sdk.keys()
   local keys = {}
-  if data and type(data.keys) == "table" then
+  if data and type(data.items) == "table" then
+    keys = data.items
+  elseif data and type(data.keys) == "table" then
     keys = data.keys
   elseif type(data) == "table" and not data.keys then
     for _, v in pairs(data) do

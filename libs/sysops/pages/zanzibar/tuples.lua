@@ -25,6 +25,8 @@ function M.page(req)
   local status = err and err.status or 200
   if err and (err.status == 404 or err.status == 405 or err.status == 501) then
     unsupported = true
+  elseif data and type(data.items) == "table" then
+    tuples = data.items
   elseif data and type(data.tuples) == "table" then
     tuples = data.tuples
   end

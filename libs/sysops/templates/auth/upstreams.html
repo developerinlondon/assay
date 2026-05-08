@@ -39,6 +39,47 @@
 </div>
 {% endif %}
 
+<details class="card" style="margin-bottom:12px">
+  <summary style="cursor:pointer;padding:10px 14px;font-size:12px;color:var(--fg-2)">+ Add upstream provider</summary>
+  <div class="card-body">
+    <form method="post" action="/auth/upstreams"
+          style="display:flex;flex-direction:column;gap:10px;max-width:600px">
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Slug
+        <input class="input" type="text" name="slug" required placeholder="google" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Display name
+        <input class="input" type="text" name="display_name" placeholder="Google" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Issuer URL
+        <input class="input" type="url" name="issuer" required
+               placeholder="https://accounts.google.com" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Client ID
+        <input class="input" type="text" name="client_id" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Client secret
+        <input class="input" type="password" name="client_secret" autocomplete="new-password" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Icon URL
+        <input class="input" type="url" name="icon_url" placeholder="optional" />
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-2)">
+        <input type="checkbox" name="enabled" value="on" checked />
+        Enabled
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary btn-sm">Add provider</button>
+      </div>
+    </form>
+  </div>
+</details>
+
 <div class="card">
   <table class="table">
     <thead>
@@ -47,6 +88,7 @@
         <th>Display name</th>
         <th class="wrap">Issuer</th>
         <th>Status</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -62,10 +104,17 @@
             <span class="pill pill-muted">disabled</span>
           {% endif %}
         </td>
+        <td>
+          <form method="post" action="/auth/upstreams/{{ u.slug }}/delete"
+                onsubmit="return confirm('Remove upstream provider {{ u.slug }}?')"
+                style="display:inline">
+            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
       {% if (upstreams | length) == 0 and not error %}
-      <tr><td colspan="4" style="color:var(--fg-3);text-align:center;padding:18px">no upstream identity providers registered</td></tr>
+      <tr><td colspan="5" style="color:var(--fg-3);text-align:center;padding:18px">no upstream identity providers registered</td></tr>
       {% endif %}
     </tbody>
   </table>

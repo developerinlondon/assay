@@ -23,7 +23,9 @@ function M.page(req)
   local sdk      = vault.new(ctx.engine).dynamic
   local data, err = sdk.list(nz(provider))
   local leases = {}
-  if data and type(data.leases) == "table" then
+  if data and type(data.items) == "table" then
+    leases = data.items
+  elseif data and type(data.leases) == "table" then
     leases = data.leases
   elseif type(data) == "table" and not data.leases then
     leases = data

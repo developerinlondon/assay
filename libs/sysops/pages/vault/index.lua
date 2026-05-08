@@ -11,6 +11,10 @@ function M.page(req)
   if seal and type(seal.kid) == "string" then
     kid_short = seal.kid:sub(1, 12) .. "…"
   end
+  -- Tag the response with `_status` so the template's
+  -- `{% if seal._status == 0 or seal._status == nil %}` branch resolves
+  -- to the unavailable banner only when the call actually failed.
+  if seal and not err then seal._status = 200 end
   return render.render("vault/index", {
     nav_active = "vault:overview",
     title      = "Vault",

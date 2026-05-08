@@ -13,7 +13,8 @@ function M.page(req)
   local opts     = {}
   if since_q ~= "" then opts.since = since_q end
   local data, err = sdk.list(opts)
-  local raw     = (data and type(data.entries) == "table") and data.entries or {}
+  local raw     = (data and type(data.items) == "table") and data.items
+                  or (data and type(data.entries) == "table") and data.entries or {}
   local entries = {}
   for _, e in ipairs(raw) do
     if actor_q ~= "" and not tostring(e.actor or ""):lower():find(actor_q:lower(), 1, true) then
