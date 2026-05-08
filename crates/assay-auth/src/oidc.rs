@@ -35,6 +35,11 @@ use url::Url;
 
 use crate::error::{Error, Result};
 
+/// Default scopes requested during upstream federation login.
+/// Shared by all call sites that convert from the admin-facing
+/// `oidc_provider::types::UpstreamProvider` (which has no scopes column).
+pub const DEFAULT_UPSTREAM_SCOPES: &[&str] = &["openid", "email", "profile"];
+
 /// POD record describing one upstream identity provider. Mirrors the
 /// planned `auth.upstream_providers` table shape (see plan 12d) so the
 /// admin API can `INSERT … RETURNING *` and feed the row directly into

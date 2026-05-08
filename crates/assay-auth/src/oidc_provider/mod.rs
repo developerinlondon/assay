@@ -142,6 +142,53 @@ impl OidcProviderConfig {
     }
 }
 
+/// Build the federation callback URL for an upstream provider.
+/// Trims a trailing slash from `public_url` so a misconfigured
+/// `server.public_url` (e.g. `https://auth.example.com/`) doesn't
+/// produce a double-slash, which would break exact OIDC redirect_uri
+/// matching.
+pub fn upstream_callback_url(public_url: &url::Url, slug: &str) -> String {
+    let base = public_url.as_str().trim_end_matches('/');
+    format!("{base}/oidc/upstream/{slug}/callback")
+}
+
+/// Sync a single upstream provider row into the in-memory
+/// [`crate::oidc::OidcRegistry`]. If the row is enabled, performs OIDC
+/// discovery against the issuer and caches the client; if disabled,
+/// removes any cached entry for that slug.
+///
+/// `default_scopes` is used because the admin-facing
+/// [`types::UpstreamProvider`] does not yet carry a scopes
+/// column — all providers get the same set until the DB schema gains one.
+pub async fn sync_upstream_to_registry(
+    registry: &crate::oidc::OidcRegistry,
+    row: &types::UpstreamProvider,
+    public_url: &url::Url,
+    default_scopes: &[String],
+) {
+    if row.enabled {
+        let uri = match url::Url::parse(&upstream_callback_url(public_url, &row.slug)) {
+            Ok(u) => u,
+            Err(e) => {
+                tracing::warn!("invalid callback URL for upstream {}: {e}", row.slug);
+                return;
+            }
+        };
+        let provider = crate::oidc::UpstreamProvider {
+            slug: row.slug.clone(),
+            issuer: row.issuer.clone(),
+            client_id: row.client_id.clone(),
+            client_secret: row.client_secret.clone(),
+            scopes: default_scopes.to_vec(),
+        };
+        if let Err(e) = registry.add(provider, uri).await {
+            tracing::warn!("registry sync failed for upstream {}: {e}", row.slug);
+        }
+    } else {
+        registry.remove(&row.slug);
+    }
+}
+
 /// OIDC spec router — the OAuth2/OIDC well-known surface, mounted at
 /// `/auth` by the engine binary. See route declarations below for the
 /// authoritative path/handler list.

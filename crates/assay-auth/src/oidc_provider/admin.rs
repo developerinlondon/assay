@@ -414,33 +414,17 @@ pub async fn upsert_upstream(
     if let Err(e) = provider.upstream.upsert(&row).await {
         return server_error(&format!("upsert upstream: {e}"));
     }
-    // Sync to the in-memory OidcRegistry so federation handlers
-    // (GET /auth/oidc/upstream/{slug}/start) pick up the provider
-    // immediately — no restart required. Non-fatal: if the upstream
-    // discovery fails, the row stays in the DB and can be retried
-    // on the next upsert or engine restart.
     if let Some(registry) = &ctx.oidc {
-        let redirect_uri = format!(
-            "{}/oidc/upstream/{}/callback",
-            provider.public_url, row.slug
-        );
-        match url::Url::parse(&redirect_uri) {
-            Ok(uri) => {
-                let reg_provider = crate::oidc::UpstreamProvider {
-                    slug: row.slug.clone(),
-                    issuer: row.issuer.clone(),
-                    client_id: row.client_id.clone(),
-                    client_secret: row.client_secret.clone(),
-                    scopes: vec!["openid".into(), "email".into(), "profile".into()],
-                };
-                if let Err(e) = registry.add(reg_provider, uri).await {
-                    tracing::warn!("registry sync failed for upstream {}: {e}", row.slug);
-                }
-            }
-            Err(e) => {
-                tracing::warn!("invalid redirect_uri for upstream {}: {e}", row.slug);
-            }
-        }
+        let scopes: Vec<String> = crate::oidc::DEFAULT_UPSTREAM_SCOPES
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let row = row.clone();
+        let public_url = provider.public_url.clone();
+        let registry = registry.clone();
+        tokio::spawn(async move {
+            super::sync_upstream_to_registry(&registry, &row, &public_url, &scopes).await;
+        });
     }
     (StatusCode::OK, Json(row)).into_response()
 }
