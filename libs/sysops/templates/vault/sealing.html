@@ -1,0 +1,176 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; sealing</div>
+    <h1 class="page-title">Vault sealing</h1>
+  </div>
+  <div class="page-meta">
+    {% if seal._status == 0 or seal._status == nil %}
+      <span class="pill pill-muted">unavailable</span>
+    {% elif seal.sealed %}
+      <span class="pill pill-warn">SEALED</span>
+    {% else %}
+      <span class="pill pill-ok">UNSEALED</span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab active" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+{% if error_msg and error_msg != "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+{% if seal._status == 0 or seal._status == nil %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Sealing detail is unavailable. The vault module may be disabled or admin auth missing.</span>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-head"><h3>Seal state</h3></div>
+  <table class="table">
+    <tbody>
+      <tr><td class="name-cell">sealed</td><td>
+        {% if seal.sealed %}<span class="pill pill-warn">yes</span>{% else %}<span class="pill pill-ok">no</span>{% endif %}
+      </td></tr>
+      <tr><td class="name-cell">method</td><td>{{ seal.method | default("—") }}</td></tr>
+      <tr><td class="name-cell">kid</td><td class="muted">{{ kid_short }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+{% if seal.method == "shamir" or 'shamir' in (seal.method or '') %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Shamir shares</h3></div>
+  <table class="table">
+    <tbody>
+      <tr><td class="name-cell">threshold</td><td>{{ seal.share_threshold | default("—") }}</td></tr>
+      <tr><td class="name-cell">share count</td><td>{{ seal.share_count | default("—") }}</td></tr>
+      <tr><td class="name-cell">shares progress</td><td>{{ seal.shares_progress | default(0) }}</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Operations</h3></div>
+
+  {% if not seal.sealed %}
+  <div style="padding:12px 16px;border-bottom:1px solid var(--border-1,#333)">
+    <h4 style="margin:0 0 8px 0">Seal vault</h4>
+    <p class="muted" style="margin:0 0 8px 0">Sealing wipes the in-memory KEK; subsequent /api/v1/vault/* requests will 503 until quorum unseal. Type SEAL to confirm.</p>
+    <form method="post" action="/vault/seal" class="filter-bar"
+          onsubmit="return (prompt('Type SEAL to confirm sealing the vault:') === 'SEAL') &amp;&amp; confirm('Seal the vault now? Every dependent surface will return 503.')">
+      <button type="submit" class="chip" style="background:var(--err,#a33);color:#fff">Seal vault</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if seal.sealed %}
+  <div style="padding:12px 16px;border-bottom:1px solid var(--border-1,#333)">
+    <h4 style="margin:0 0 8px 0">Submit unseal share</h4>
+    <p class="muted" style="margin:0 0 8px 0">Engine accepts ONE share per submit. Repeat until <code>shares_progress &gt;= threshold</code>. Each submit refreshes the page with updated progress.</p>
+    <form method="post" action="/vault/unseal" class="filter-bar" style="flex-wrap:wrap;gap:10px">
+      <input class="input" name="share_b64" type="text" placeholder="share_b64 (base64)" required style="min-width:420px" />
+      <button type="submit" class="chip active">Submit share</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div style="padding:12px 16px">
+    <h4 style="margin:0 0 8px 0">Init shamir KEK</h4>
+    <p class="muted" style="margin:0 0 8px 0">Operator-only. Returns the shares ONCE &mdash; the engine cannot regenerate them. Run only on first setup or migration from plaintext sealing.</p>
+    <button type="button" class="btn btn-primary btn-sm"
+            onclick="document.getElementById('init-shamir-dialog').showModal()">+ Init shamir KEK</button>
+  </div>
+</div>
+{% endif %}
+
+<dialog id="init-shamir-dialog" class="omc-dialog">
+  <form method="post" action="/vault/init" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">Init shamir KEK</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('init-shamir-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Shares count</span>
+        <input class="input" type="number" name="shares_count" required min="2"
+               placeholder="5" autofocus
+               value="{{ form_shares_count | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Threshold</span>
+        <input class="input" type="number" name="threshold" required min="1"
+               placeholder="3"
+               value="{{ form_threshold | default('') }}">
+      </label>
+
+      <p class="muted" style="font-size:0.85em;margin:0">
+        Existing KEK metadata will be replaced. Save the returned shares immediately — they cannot be recovered.
+      </p>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('init-shamir-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary"
+              onclick="return confirm('Init shamir KEK now? Existing KEK metadata will be replaced. Save the returned shares immediately.')">Init shamir</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('init-shamir-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>

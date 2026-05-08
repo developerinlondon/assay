@@ -1,0 +1,58 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; zanzibar</div>
+    <h1 class="page-title">Zanzibar</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">namespaces</span><span class="v">{{ namespaces | length }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/auth/users">Users</a>
+  <a class="tab" href="/auth/sessions">Sessions</a>
+  <a class="tab" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab" href="/auth/upstreams">Upstreams</a>
+  <a class="tab" href="/auth/jwks">JWKS</a>
+  <a class="tab" href="/auth/biscuit">Biscuit</a>
+  <a class="tab" href="/auth/audit">Audit</a>
+  <a class="tab active" href="/zanzibar">Zanzibar</a>
+</div>
+
+<div class="tabs">
+  <a class="tab{% if nav_active == 'zanzibar:index' %} active{% endif %}" href="/zanzibar">Namespaces</a>
+  <a class="tab{% if nav_active == 'zanzibar:tuples' %} active{% endif %}" href="/zanzibar/tuples">Tuples</a>
+  <a class="tab{% if nav_active == 'zanzibar:check' %} active{% endif %}" href="/zanzibar/check">Check</a>
+</div>
+
+{% if status == 0 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Zanzibar is unavailable. The auth-zanzibar feature may be disabled at compile time, the store may not be wired up, or admin auth is missing.</span>
+</div>
+{% elif status == 503 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Zanzibar is not configured on this engine instance.</span>
+</div>
+{% else %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr><th>Name</th><th>Relations &amp; permissions</th><th>Count</th></tr>
+    </thead>
+    <tbody>
+      {% for n in namespaces %}
+      <tr>
+        <td class="name-cell">{{ n.name }}</td>
+        <td class="muted wrap">{{ n.relations | default("—") }}</td>
+        <td class="num">{{ n.relation_count }}</td>
+      </tr>
+      {% endfor %}
+      {% if (namespaces | length) == 0 %}
+      <tr><td colspan="3" style="color:var(--fg-3);text-align:center;padding:18px">no namespaces defined</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

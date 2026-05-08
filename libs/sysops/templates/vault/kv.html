@@ -1,0 +1,152 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; kv</div>
+    <h1 class="page-title">Vault KV</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">paths</span><span class="v">{{ entries | length }}</span></span>
+    {% if prefix and prefix != "" %}
+      <span><span class="k">prefix</span><span class="v">{{ prefix }}</span></span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab active" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+{% if error_msg and error_msg != "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+<div class="filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <form method="get" action="/vault/kv" style="display:flex;gap:8px;align-items:center;flex:1">
+    <input class="input" name="prefix" type="text" value="{{ prefix | default('') }}" placeholder="path prefix (optional)…" style="min-width:300px" />
+    <button type="submit" class="chip active">Apply</button>
+    <a class="chip" href="/vault/kv">Reset</a>
+  </form>
+  <button type="button" class="btn btn-primary"
+          onclick="document.getElementById('kv-create-dialog').showModal()">+ Write KV value</button>
+</div>
+
+{% if status == 0 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>KV listing is unavailable. The vault may be sealed, the kv module disabled, or admin auth missing.</span>
+</div>
+{% elif status == 503 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>KV surface is not configured on this engine instance.</span>
+</div>
+{% else %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr><th>Path</th><th>Latest version</th><th>Updated</th><th>Created</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for e in entries %}
+      <tr>
+        <td class="name-cell">{{ e.path }}</td>
+        <td class="num">{{ e.latest_version | default("—") }}</td>
+        <td class="muted num">{{ e.updated_at | default("—") }}</td>
+        <td class="muted num">{{ e.created_at | default("—") }}</td>
+        <td>
+          <form method="post" action="/vault/kv/delete" style="margin:0"
+                onsubmit="return confirm('Soft-delete {{ e.path }} v{{ e.latest_version }}?')">
+            <input type="hidden" name="path" value="{{ e.path }}">
+            <input type="hidden" name="version" value="{{ e.latest_version | default(0) }}">
+            <button type="submit" class="chip" style="background:var(--err,#a33);color:#fff;padding:4px 10px">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if (entries | length) == 0 %}
+      <tr><td colspan="5" style="color:var(--fg-3);text-align:center;padding:18px">no kv paths under this prefix</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<dialog id="kv-create-dialog" class="omc-dialog">
+  <form method="post" action="/vault/kv/put" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">Write KV value</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('kv-create-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Path</span>
+        <input class="input" type="text" name="path" required
+               placeholder="apps/foo/db_url" autofocus
+               value="{{ form_path | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Value</span>
+        <textarea class="input" name="data" required rows="4"
+                  placeholder="value (UTF-8 string; client owns any outer encoding)">{{ form_data | default('') }}</textarea>
+      </label>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('kv-create-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary">PUT</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('kv-create-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>

@@ -1,0 +1,79 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; users</div>
+    <h1 class="page-title">{{ page_title }}</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">id</span><span class="v num">{{ user.id }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab active" href="/auth/users">Users</a>
+  <a class="tab" href="/auth/sessions">Sessions</a>
+  <a class="tab" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab" href="/auth/upstreams">Upstreams</a>
+  <a class="tab" href="/auth/jwks">JWKS</a>
+  <a class="tab" href="/auth/biscuit">Biscuit</a>
+  <a class="tab" href="/auth/audit">Audit</a>
+  <a class="tab" href="/zanzibar">Zanzibar</a>
+</div>
+
+{% if error_msg %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>
+    {% if status == 401 %}
+      admin auth required to load this user (status {{ status }}).
+    {% elif status == 404 %}
+      user not found (status 404).
+    {% else %}
+      could not load user from engine (status {{ status | default("?") }}).
+    {% endif %}
+  </span>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-body">
+    <form method="post" action="/auth/users/{{ user.id }}/edit"
+          style="display:flex;flex-direction:column;gap:10px;max-width:520px">
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Email
+        <input class="input" type="email" name="email"
+               value="{{ user.email }}" placeholder="user@example.com" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--fg-3)">
+        Display name
+        <input class="input" type="text" name="display_name"
+               value="{{ user.display_name }}" placeholder="optional" />
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-2)">
+        <input type="checkbox" name="email_verified" value="on"
+               {% if user.email_verified %}checked{% endif %} />
+        Email verified
+      </label>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
+        <a class="btn btn-sm" href="/auth/users">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-head"><h3>Danger zone</h3></div>
+  <div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap">
+    <form method="post" action="/auth/users/{{ user.id }}/delete"
+          onsubmit="return confirm('Permanently delete user {{ user.id }}? Sessions, passkeys, and upstream links cascade.')">
+      <button type="submit" class="btn btn-danger btn-sm">Delete user</button>
+    </form>
+  </div>
+</div>

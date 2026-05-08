@@ -1,0 +1,181 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; transit</div>
+    <h1 class="page-title">Vault transit</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">keys</span><span class="v">{{ keys | length }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab active" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+{% if error_msg and error_msg != "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+{% if status == 0 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Transit listing is unavailable. The vault may be sealed, the transit module disabled, or admin auth missing.</span>
+</div>
+{% elif status == 503 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Transit surface is not configured on this engine instance.</span>
+</div>
+{% else %}
+
+<div class="filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1"></div>
+  <button type="button" class="btn btn-primary"
+          onclick="document.getElementById('transit-create-dialog').showModal()">+ Create transit key</button>
+</div>
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr><th>Name</th><th>Algorithm</th><th>Latest version</th><th>Created</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for k in keys %}
+      <tr>
+        <td class="name-cell">{{ k.name }}</td>
+        <td class="muted">{{ k.algo | default("—") }}</td>
+        <td class="num">{{ k.latest_ver | default(k.latest_version | default("—")) }}</td>
+        <td class="muted num">{{ k.created_at | default("—") }}</td>
+        <td>
+          <form method="post" action="/vault/transit/rotate" style="display:inline;margin:0"
+                onsubmit="return confirm('Rotate key {{ k.name }}? A new version is appended; old versions remain available for decrypt.')">
+            <input type="hidden" name="name" value="{{ k.name }}">
+            <button type="submit" class="chip" style="padding:4px 10px">Rotate</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if (keys | length) == 0 %}
+      <tr><td colspan="5" style="color:var(--fg-3);text-align:center;padding:18px">no transit keys defined</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Encrypt</h3></div>
+  <form method="post" action="/vault/transit/encrypt" class="filter-bar" style="flex-wrap:wrap;gap:10px;padding:12px 16px">
+    <select class="input" name="name" required style="width:240px">
+      <option value="">key name…</option>
+      {% for k in keys %}<option value="{{ k.name }}">{{ k.name }}</option>{% endfor %}
+    </select>
+    <textarea class="input" name="plaintext" rows="2" placeholder="plaintext (raw UTF-8; b64 encoded for transport)" required style="min-width:380px;flex:1"></textarea>
+    <button type="submit" class="chip active">Encrypt</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Decrypt</h3></div>
+  <form method="post" action="/vault/transit/decrypt" class="filter-bar" style="flex-wrap:wrap;gap:10px;padding:12px 16px">
+    <select class="input" name="name" required style="width:240px">
+      <option value="">key name…</option>
+      {% for k in keys %}<option value="{{ k.name }}">{{ k.name }}</option>{% endfor %}
+    </select>
+    <textarea class="input" name="ciphertext" rows="2" placeholder="vault:v1:… ciphertext" required style="min-width:380px;flex:1"></textarea>
+    <button type="submit" class="chip active">Decrypt</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Delete key</h3></div>
+  <div style="padding:14px 16px;color:var(--fg-3)">
+    The engine's transit router does not expose a DELETE endpoint &mdash; keys are append-only. Rotate instead, or use the engine's storage backend directly to drop keys.
+  </div>
+</div>
+{% endif %}
+
+<dialog id="transit-create-dialog" class="omc-dialog">
+  <form method="post" action="/vault/transit/create" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">Create transit key</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('transit-create-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Key name</span>
+        <input class="input" type="text" name="name" required placeholder="my-key" autofocus
+               value="{{ form_name | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Algorithm</span>
+        <select class="input" name="algo">
+          <option value="">default</option>
+          <option value="aes256-gcm"{% if form_algo == 'aes256-gcm' %} selected{% endif %}>aes256-gcm</option>
+          <option value="chacha20-poly1305"{% if form_algo == 'chacha20-poly1305' %} selected{% endif %}>chacha20-poly1305</option>
+          <option value="rsa-2048"{% if form_algo == 'rsa-2048' %} selected{% endif %}>rsa-2048</option>
+          <option value="rsa-4096"{% if form_algo == 'rsa-4096' %} selected{% endif %}>rsa-4096</option>
+          <option value="ed25519"{% if form_algo == 'ed25519' %} selected{% endif %}>ed25519</option>
+        </select>
+      </label>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('transit-create-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Create key</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('transit-create-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>

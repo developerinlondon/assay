@@ -1,0 +1,69 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; signing keys</div>
+    <h1 class="page-title">{{ page_title }}</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">keys</span><span class="v">{{ keys | length }}</span></span>
+    <span><span class="k">source</span><span class="v">{{ source }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/auth/users">Users</a>
+  <a class="tab" href="/auth/sessions">Sessions</a>
+  <a class="tab" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab" href="/auth/upstreams">Upstreams</a>
+  <a class="tab{% if nav_active == 'auth:jwks' %} active{% endif %}" href="/auth/jwks">JWKS</a>
+  <a class="tab" href="/auth/biscuit">Biscuit</a>
+  <a class="tab" href="/auth/audit">Audit</a>
+  <a class="tab" href="/zanzibar">Zanzibar</a>
+</div>
+
+{% if error %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>
+    {% if status == 401 %}
+      admin auth required to load this list (status {{ status }}).
+    {% else %}
+      could not load JWKS from engine (status {{ status | default("?") }}).
+    {% endif %}
+  </span>
+</div>
+{% endif %}
+
+{% if (keys | length) == 0 and not error %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>no JWKs published yet — provider may not be configured.</span>
+</div>
+{% endif %}
+
+{% for k in keys %}
+<div class="card" style="margin-bottom:12px">
+  <div class="card-body">
+    <div class="kvgrid">
+      <span class="k">kid</span><span class="v num">{{ k.kid | default("—") }}</span>
+      <span class="k">alg</span><span class="v">{{ k.alg | default("—") }}</span>
+      <span class="k">kty</span><span class="v">{{ k.kty | default("—") }}</span>
+      <span class="k">use</span><span class="v">{{ k.use | default("—") }}</span>
+      {% if k.crv %}
+      <span class="k">crv</span><span class="v">{{ k.crv }}</span>
+      {% endif %}
+      {% if k.kty == "RSA" %}
+      <span class="k">n</span><span class="v num" title="{{ k.n_full }}">{{ k.n_short }}</span>
+      <span class="k">e</span><span class="v num" title="{{ k.e_full }}">{{ k.e_short }}</span>
+      {% elif k.kty == "EC" or k.kty == "OKP" %}
+      <span class="k">x</span><span class="v num" title="{{ k.x_full }}">{{ k.x_short }}</span>
+      {% if k.y_full %}
+      <span class="k">y</span><span class="v num" title="{{ k.y_full }}">{{ k.y_short }}</span>
+      {% endif %}
+      {% endif %}
+      {% if k.created_at %}
+      <span class="k">created</span><span class="v num">{{ k.created_at }}</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endfor %}

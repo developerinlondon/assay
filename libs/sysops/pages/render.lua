@@ -88,7 +88,10 @@ function M.layout_defaults(ctx, req, fallback_nav_active)
     ctx.machines = ctx.machines or (snap and snap.machines) or {}
   end
   ctx.actor = ctx.actor or M.actor_from(req)
-  ctx.active_modules = ctx.active_modules or {}
+  -- 0.1.5: surface mount-supplied opts.active_modules to the layout so
+  -- the conditional Auth + Vault sidebar links render. Empty list when
+  -- consumer hasn't opted in — same effect as 0.1.4.
+  ctx.active_modules = ctx.active_modules or hctx.active_modules or {}
   -- Engine sidecar URL (set via mount opts.engine_base_url). Layout
   -- conditionally renders /auth/console, /vault/console, /engine/console,
   -- /workflow/ sidebar links when present.

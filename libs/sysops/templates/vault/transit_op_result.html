@@ -1,0 +1,45 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; transit &middot; {{ op }}</div>
+    <h1 class="page-title">Transit {{ op }} result</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">key</span><span class="v">{{ name }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab active" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+<div class="card">
+  <div class="card-head"><h3>{{ op }} on key <code>{{ name }}</code></h3></div>
+  <table class="table">
+    <tbody>
+      <tr><td class="name-cell">input</td><td class="muted">{{ input_kind }}</td></tr>
+      <tr><td class="name-cell">{{ output_kind }}</td>
+        <td>
+          {% if redacted %}
+            <details>
+              <summary class="muted" style="cursor:pointer">click to reveal &mdash; logged in audit trail</summary>
+              <pre style="white-space:pre-wrap;word-break:break-all;margin-top:8px">{{ output_val }}</pre>
+            </details>
+          {% else %}
+            <code style="word-break:break-all">{{ output_val }}</code>
+          {% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="filter-bar" style="margin-top:16px">
+  <a class="chip" href="/vault/transit">Back to transit</a>
+</div>

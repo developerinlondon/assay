@@ -1,0 +1,93 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; my vault</div>
+    <h1 class="page-title">My vault</h1>
+  </div>
+  <div class="page-meta">
+    {% if user_id and user_id != "" %}
+      <span><span class="k">user</span><span class="v">{{ user_id }}</span></span>
+    {% endif %}
+    {% if meta %}
+      <span><span class="k">items</span><span class="v">{{ items | length }}</span></span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab active" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab" href="/vault/share">Share</a>
+</div>
+
+<form class="filter-bar" method="get" action="/vault/me">
+  <input class="input" name="user_id" type="text" value="{{ user_id | default('') }}"
+         placeholder="user_id (operator-side; admin-keyed lookup)" style="min-width:340px" />
+  <button type="submit" class="chip active">Load</button>
+  <a class="chip" href="/vault/me">Reset</a>
+</form>
+
+{% if not user_id or user_id == "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Enter a user_id above to load that user's personal vault metadata. The Bitwarden-compat <code>/api/accounts/profile</code> and <code>/api/sync</code> endpoints are user-JWT gated and therefore unreachable from the admin console.</span>
+</div>
+{% elif status == 0 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Personal-vault lookup is unavailable. The vault may be sealed, the personal_vaults module disabled, or admin auth missing.</span>
+</div>
+{% elif status == 404 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>No personal vault provisioned for user <code>{{ user_id }}</code>. The user must run a Bitwarden client (or call <code>POST /api/v1/vault/me/{{ user_id }}</code>) before items appear.</span>
+</div>
+{% elif status == 503 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Personal-vault surface is not configured on this engine instance.</span>
+</div>
+{% elif status >= 400 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Lookup failed (HTTP {{ status }}).</span>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-head"><h3>Personal vault</h3></div>
+  <table class="table">
+    <tbody>
+      <tr><td class="name-cell">vault id</td><td class="muted">{{ meta.id | default("—") }}</td></tr>
+      <tr><td class="name-cell">owner_user_id</td><td class="muted">{{ meta.owner_user_id | default(user_id) }}</td></tr>
+      <tr><td class="name-cell">created_at</td><td class="muted num">{{ meta.created_at | default("—") }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Items ({{ items | length }})</h3></div>
+  <table class="table">
+    <thead>
+      <tr><th>Name</th><th>Type</th><th>Folder</th><th>Created</th><th>ID</th></tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td class="name-cell">{{ it.name | default("—") }}</td>
+        <td>{{ it.item_type | default("—") }}</td>
+        <td class="muted">{{ it.folder_id | default("—") }}</td>
+        <td class="muted num">{{ it.created_at | default("—") }}</td>
+        <td class="muted">{{ it.id }}</td>
+      </tr>
+      {% endfor %}
+      {% if (items | length) == 0 %}
+      <tr><td colspan="5" style="color:var(--fg-3);text-align:center;padding:18px">no items in this personal vault</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

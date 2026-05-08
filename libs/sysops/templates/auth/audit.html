@@ -1,0 +1,97 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; audit</div>
+    <h1 class="page-title">{{ page_title }}</h1>
+  </div>
+  <div class="page-meta">
+    <span><span class="k">entries</span><span class="v">{{ entries | length }}</span></span>
+    <span><span class="k">total</span><span class="v">{{ total }}</span></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/auth/users">Users</a>
+  <a class="tab" href="/auth/sessions">Sessions</a>
+  <a class="tab" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab" href="/auth/upstreams">Upstreams</a>
+  <a class="tab" href="/auth/jwks">JWKS</a>
+  <a class="tab" href="/auth/biscuit">Biscuit</a>
+  <a class="tab{% if nav_active == 'auth:audit' %} active{% endif %}" href="/auth/audit">Audit</a>
+  <a class="tab" href="/zanzibar">Zanzibar</a>
+</div>
+
+<form class="filter-bar" method="get" action="/auth/audit">
+  <input class="input" name="actor"  type="text" value="{{ actor_q }}"  placeholder="actor…" />
+  <input class="input" name="action" type="text" value="{{ action_q }}" placeholder="action…" />
+  <input class="input" name="since"  type="text" value="{{ since_q }}"  placeholder="since (unix seconds)" />
+  <button type="submit" class="chip active">Filter</button>
+  {% if actor_q or action_q or since_q %}
+  <a class="chip" href="/auth/audit">Clear</a>
+  {% endif %}
+</form>
+
+{% if error %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>
+    {% if status == 401 %}
+      admin auth required to load this list (status {{ status }}).
+    {% else %}
+      could not load audit entries from engine (status {{ status | default("?") }}).
+    {% endif %}
+  </span>
+</div>
+{% elif enabled == false %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>auth audit table is not yet materialised in the current engine schema — the endpoint reports <code>enabled: false</code>.</span>
+</div>
+{% endif %}
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Actor</th>
+        <th>Action</th>
+        <th>Target type</th>
+        <th>Target id</th>
+        <th>Status</th>
+        <th class="wrap">Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in entries %}
+      <tr>
+        <td class="num muted">{{ e.ts | default("—") }}</td>
+        <td>{{ e.actor }}</td>
+        <td class="num">{{ e.action }}</td>
+        <td class="muted">{{ e.target_type }}</td>
+        <td class="num muted">{{ e.target_id }}</td>
+        <td>
+          {% if e.status == "success" or e.status == "ok" %}
+            <span class="pill pill-ok">{{ e.status }}</span>
+          {% elif e.status == "fail" or e.status == "error" %}
+            <span class="pill pill-err">{{ e.status }}</span>
+          {% else %}
+            <span class="pill pill-muted">{{ e.status }}</span>
+          {% endif %}
+        </td>
+        <td class="wrap muted">
+          {% if e.collapsed %}
+          <details><summary style="cursor:pointer">view</summary>
+          <pre style="white-space:pre-wrap;margin-top:6px">{{ e.details }}</pre>
+          </details>
+          {% else %}
+          <pre style="white-space:pre-wrap;margin:0">{{ e.details }}</pre>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if (entries | length) == 0 and not error %}
+      <tr><td colspan="7" style="color:var(--fg-3);text-align:center;padding:18px">no audit entries</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>

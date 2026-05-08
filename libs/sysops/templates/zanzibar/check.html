@@ -1,0 +1,67 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; zanzibar &middot; check</div>
+    <h1 class="page-title">Zanzibar check</h1>
+  </div>
+  <div class="page-meta">
+    {% if err and err != "" %}
+      <span class="pill pill-err">error</span>
+    {% elif submitted %}
+      {% if allowed %}
+        <span class="pill pill-ok">allowed</span>
+      {% else %}
+        <span class="pill pill-muted">denied</span>
+      {% endif %}
+    {% else %}
+      <span class="pill pill-muted">no result yet</span>
+    {% endif %}
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/auth/users">Users</a>
+  <a class="tab" href="/auth/sessions">Sessions</a>
+  <a class="tab" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab" href="/auth/upstreams">Upstreams</a>
+  <a class="tab" href="/auth/jwks">JWKS</a>
+  <a class="tab" href="/auth/biscuit">Biscuit</a>
+  <a class="tab" href="/auth/audit">Audit</a>
+  <a class="tab active" href="/zanzibar">Zanzibar</a>
+</div>
+
+<div class="tabs">
+  <a class="tab" href="/zanzibar">Namespaces</a>
+  <a class="tab" href="/zanzibar/tuples">Tuples</a>
+  <a class="tab active" href="/zanzibar/check">Check</a>
+</div>
+
+<form method="post" action="/zanzibar/check"
+      style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 16px">
+  <input class="input" name="resource_type" type="text" value="{{ form.resource_type | default('') }}" placeholder="resource_type (e.g. document)" style="min-width:180px" required />
+  <input class="input" name="resource_id"   type="text" value="{{ form.resource_id   | default('') }}" placeholder="resource_id   (e.g. foo)"      style="min-width:160px" required />
+  <input class="input" name="permission"    type="text" value="{{ form.permission    | default('') }}" placeholder="permission    (e.g. view)"     style="min-width:140px" required />
+  <input class="input" name="subject_type"  type="text" value="{{ form.subject_type  | default('') }}" placeholder="subject_type  (e.g. user)"     style="min-width:160px" required />
+  <input class="input" name="subject_id"    type="text" value="{{ form.subject_id    | default('') }}" placeholder="subject_id    (e.g. alice)"    style="min-width:160px" required />
+  <input class="input" name="subject_rel"   type="text" value="{{ form.subject_rel   | default('') }}" placeholder="subject_rel   (optional)"      style="min-width:140px" />
+  <button type="submit" class="btn btn-sm btn-primary">Check</button>
+</form>
+
+<div class="card">
+  <div class="card-head"><h3>Result</h3></div>
+  <div class="card-body">
+    {% if err and err != "" %}
+      <span class="pill pill-err">{{ err }}</span>
+    {% elif submitted %}
+      {% if allowed %}
+        <span class="pill pill-ok">allowed</span>
+      {% else %}
+        <span class="pill pill-muted">denied</span>
+      {% endif %}
+      {% if result and result != "" %}
+        <span class="muted" style="margin-left:8px">({{ result }})</span>
+      {% endif %}
+    {% else %}
+      <span class="muted">submit the form above to evaluate a permission</span>
+    {% endif %}
+  </div>
+</div>

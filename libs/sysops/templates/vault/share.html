@@ -1,0 +1,165 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/vault">Vault</a> &middot; share</div>
+    <h1 class="page-title">Vault share</h1>
+  </div>
+  <div class="page-meta">
+    <span class="pill pill-muted">no-list endpoint</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/vault">Overview</a>
+  <a class="tab" href="/vault/kv">KV</a>
+  <a class="tab" href="/vault/transit">Transit</a>
+  <a class="tab" href="/vault/sealing">Sealing</a>
+  <a class="tab" href="/vault/me">My vault</a>
+  <a class="tab" href="/vault/collections">Collections</a>
+  <a class="tab" href="/vault/dynamic">Leases</a>
+  <a class="tab active" href="/vault/share">Share</a>
+</div>
+
+{% if error_msg and error_msg != "" %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+{% if minted_token and minted_token != "" %}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-head"><h3>Mint result &mdash; save this token NOW (the engine will not show it again)</h3></div>
+  <table class="table">
+    <tbody>
+      <tr><td class="name-cell">token</td><td><code style="word-break:break-all">{{ minted_token }}</code></td></tr>
+      <tr><td class="name-cell">revocation_ids</td><td><code>{{ minted_rev_ids }}</code></td></tr>
+      <tr><td class="name-cell">expires_at</td><td class="muted num">{{ minted_expires }}</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if revoked_id and revoked_id != "" %}
+<div class="banner" style="background:rgba(34,170,68,0.15);border-color:rgba(34,170,68,0.4)">
+  <span class="b-mark"></span>
+  <span>Revoked <code>{{ revoked_id }}</code>.</span>
+</div>
+{% endif %}
+
+<div class="filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1"></div>
+  <button type="button" class="btn btn-primary"
+          onclick="document.getElementById('share-create-dialog').showModal()">+ Mint share token</button>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Revoke by revocation_id</h3></div>
+  <form method="post" action="/vault/share/revoke" class="filter-bar" style="flex-wrap:wrap;padding:14px 16px;gap:10px"
+        onsubmit="return confirm('Revoke this share? This cannot be undone.')">
+    <input class="input" name="revocation_id" type="text" placeholder="revocation_id (hex)" required style="min-width:340px" />
+    <input class="input" name="reason" type="text" placeholder="reason (optional)" style="min-width:240px" />
+    <button class="chip" type="submit" style="background:var(--err,#a33);color:#fff">Revoke</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Listing</h3></div>
+  <div style="padding:14px 16px;color:var(--fg-3)">
+    The engine's share router does not expose a list endpoint &mdash; only mint, revoke, and redeem. Active tokens and their revocation IDs must be tracked outside the engine (e.g. in audit logs).
+  </div>
+</div>
+
+<dialog id="share-create-dialog" class="omc-dialog">
+  <form method="post" action="/vault/share" class="omc-dialog-form">
+    <header class="omc-dialog-head">
+      <h2 style="margin:0;font-size:18px">Mint share token</h2>
+      <button type="button" class="omc-dialog-x" aria-label="close"
+              onclick="document.getElementById('share-create-dialog').close()">×</button>
+    </header>
+
+    <div class="omc-dialog-body">
+      <label class="omc-field">
+        <span class="omc-field-label">Target kind</span>
+        <select class="input" name="target_kind" required>
+          <option value="item"{% if form_target_kind == 'item' or not form_target_kind %} selected{% endif %}>item</option>
+          <option value="vault"{% if form_target_kind == 'vault' %} selected{% endif %}>vault</option>
+          <option value="collection"{% if form_target_kind == 'collection' %} selected{% endif %}>collection</option>
+        </select>
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Target ID</span>
+        <input class="input" type="text" name="target_id" required
+               placeholder="item/vault/collection uuid" autofocus
+               value="{{ form_target_id | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">TTL (seconds)</span>
+        <input class="input" type="number" name="ttl_secs" required min="1"
+               placeholder="3600"
+               value="{{ form_ttl_secs | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">Max uses (optional)</span>
+        <input class="input" type="number" name="max_uses" min="1"
+               placeholder="(unlimited)"
+               value="{{ form_max_uses | default('') }}">
+      </label>
+
+      <label class="omc-field">
+        <span class="omc-field-label">IP CIDR restriction (optional)</span>
+        <input class="input" type="text" name="max_ip_cidr"
+               placeholder="192.168.0.0/24"
+               value="{{ form_max_ip_cidr | default('') }}">
+      </label>
+    </div>
+
+    <footer class="omc-dialog-foot">
+      <button type="button" class="btn-sm"
+              onclick="document.getElementById('share-create-dialog').close()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Mint token</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .omc-dialog {
+    border: 1px solid var(--bg-3);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--bg-1);
+    color: var(--fg-1);
+    max-width: 520px;
+    width: 92vw;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .omc-dialog::backdrop { background: rgba(0,0,0,.55); }
+  .omc-dialog-form { display: flex; flex-direction: column; gap: 0; }
+  .omc-dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--bg-3);
+  }
+  .omc-dialog-x {
+    background: transparent; border: 0; color: var(--fg-3);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .omc-dialog-x:hover { color: var(--fg-1); }
+  .omc-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .omc-dialog-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--bg-3);
+  }
+  .omc-field { display: flex; flex-direction: column; gap: 4px; }
+  .omc-field-label { font-size: 12px; color: var(--fg-3); }
+</style>
+<script>
+  (function() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('error')) {
+      var d = document.getElementById('share-create-dialog');
+      if (d && d.showModal) d.showModal();
+    }
+  })();
+</script>

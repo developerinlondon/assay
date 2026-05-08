@@ -2,6 +2,40 @@
 
 All notable changes to Assay are documented here.
 
+## sysops 0.1.5 — 2026-05-08
+
+### Added
+
+- Opt-in `active_modules` mount option. Pass `active_modules = { "auth", "vault" }` to
+  `sysops.mount(routes, opts)` to enable the new in-sysops auth + vault pages. Without the opt-in,
+  sysops 0.1.5 is byte-identical in behaviour to 0.1.4 — same sidebar, same routes.
+- `sysops.vault` SDK aggregator. `local v = require("sysops.vault").new(engine)` returns a table
+  with sub-clients for KV, transit, sealing, dynamic credentials, share tokens, collections, and the
+  bitwarden-compatible personal vault — pure-Lua HTTP wrappers around `/api/v1/vault/*`. Existing
+  `vault.secret_store(opts)` keeps working for legacy 0.1.4 callers.
+- `sysops.auth` SDK aggregator. `local a = require("sysops.auth").new(engine)` returns sub-clients
+  for session (login / logout / whoami / passkey), users, sessions, OIDC clients, upstreams, JWKS,
+  biscuit, audit, and zanzibar (check / expand / tuples).
+- Auth + Zanzibar dashboard pages under `/auth/users`, `/auth/sessions`, `/auth/oidc-clients`,
+  `/auth/upstreams`, `/auth/jwks`, `/auth/biscuit`, `/auth/audit`, `/zanzibar`, `/zanzibar/tuples`,
+  `/zanzibar/check` — Lua-rendered, mirror the knowhere-pkg layout (page-header eyebrow + in-page
+  tab strip + cards). Gated on `active_modules` containing `"auth"`.
+- Vault dashboard pages under `/vault` (overview), `/vault/kv`, `/vault/transit`, `/vault/sealing`,
+  `/vault/dynamic`, `/vault/share`, `/vault/collections`, `/vault/me`. Gated on `active_modules`
+  containing `"vault"`.
+- New optional mount opt: `engine_admin_key` (bearer token used by the SDK for admin-scoped engine
+  calls).
+
+### Changed
+
+- `templates/layout.html` adds two conditional `<nav>` blocks for Auth and Vault. Existing Host /
+  Networks / Engine / Admin sidebar entries are unchanged in text, position, and CSS.
+
+### References
+
+- Plan: `.claude/plans/25-v0.1.5-sysops-auth-vault-pages.md`
+- Revisits plan 22's "Engine link only, no Lua port" decision — opt-in only, same default behaviour.
+
 ## sysops 0.1.4 — 2026-05-07
 
 ### Added

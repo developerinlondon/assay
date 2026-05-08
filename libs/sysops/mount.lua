@@ -82,6 +82,17 @@ local function require_table(opts, key)
   return v
 end
 
+-- Membership test for the 0.1.5 `active_modules` opt-in list. Used to
+-- gate route registration for `/auth/*`, `/vault/*`, `/zanzibar/*` so
+-- consumers that don't opt in see exactly the 0.1.4 behaviour.
+local function has_module(modules, name)
+  if type(modules) ~= "table" then return false end
+  for _, m in ipairs(modules) do
+    if m == name then return true end
+  end
+  return false
+end
+
 ----------------------------------------------------------------------
 -- URL → handler-slug map. Every value here is a key into pages.lua's
 -- handler table. Wildcards inside the URL become http.serve glob
@@ -258,6 +269,18 @@ function M.mount(routes, opts)
   -- Plain pass-through — no plugin loader, no dispatch shim.
   ctx.extra_sidebar_links = opts.extra_sidebar_links
 
+  -- 0.1.5 module opt-in. `opts.active_modules = { "auth", "vault" }`
+  -- (or any subset) flips the corresponding sidebar links + page
+  -- routes on. Empty / nil = legacy 0.1.4 behaviour, host-ops surfaces
+  -- only and a single Engine link to the engine SPA.
+  ctx.active_modules = opts.active_modules or {}
+
+  -- Bearer token for admin-scoped engine calls. Read by SDK modules
+  -- under sysops.auth.* and sysops.vault.* (admin/users, sys/seal,
+  -- transit, dynamic, …). Page handlers DO NOT read this directly —
+  -- they call the SDK and get back rendered banners on 401.
+  ctx.engine_admin_key = opts.engine_admin_key
+
   ctx.lib_root = opts.lib_root or "."
   local lib_root = ctx.lib_root
 
@@ -279,10 +302,22 @@ function M.mount(routes, opts)
   routes.GET[ctx.url("/machines/*")]      = machines_get_wildcard
   routes.GET[ctx.url("/api/machines/*")]  = api_machines_get_wildcard
 
+  -- 0.1.5 module registrations. Each is a no-op unless the consumer
+  -- opted into that module via `opts.active_modules`. Modules carry
+  -- their own slug→handler maps + route registration so this file
+  -- doesn't need to know about every Auth/Vault URL.
+  if has_module(opts.active_modules, "auth") then
+    require("sysops._auth_pages").register(routes, ctx.url)
+  end
+  if has_module(opts.active_modules, "vault") then
+    require("sysops._vault_pages").register(routes, ctx.url)
+  end
+
   return ctx
 end
 
 --- Internal helpers exposed for testing.
-M._build_url = build_url
+M._build_url  = build_url
+M._has_module = has_module
 
 return M
