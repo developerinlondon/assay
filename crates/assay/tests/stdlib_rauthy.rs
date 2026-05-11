@@ -523,9 +523,9 @@ async fn test_client_preset_immich() {
         assert.eq(p.name, "Immich")
         assert.eq(p.confidential, true)
         assert.eq(p.id_token_alg, "RS256")
-        -- Immich web does NOT initiate PKCE (Authelia integration guide
-        -- sets require_pkce: false). Preset must omit `challenges`.
-        assert.eq(p.challenges, nil)
+        -- Immich's web frontend uses openid-client, which always sends a
+        -- PKCE code_challenge. The Rauthy client must allow S256.
+        assert.eq(p.challenges[1], "S256")
         assert.eq(p.redirect_uris[1], "https://photos.example.com/auth/login")
         assert.eq(p.redirect_uris[2], "https://photos.example.com/user-settings")
         assert.eq(p.scopes[4], "groups")

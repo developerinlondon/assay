@@ -429,10 +429,12 @@ end
 --   * Redirect URIs cover Immich's two OIDC entry points:
 --       /auth/login       — initial login redirect handler
 --       /user-settings    — account-link flow from the settings page
---   * No `challenges` — Immich's OIDC flow does NOT initiate PKCE in
---     the official web release; the Authelia integration guide
---     explicitly sets `require_pkce: false` for Immich. Confidential
---     client + client_secret carries authn.
+--   * `challenges = ["S256"]` — Immich's web frontend builds its
+--     authorize URL via `openid-client`, which generates a
+--     `code_challenge` (PKCE S256) unconditionally on every flow.
+--     The Rauthy client must allow it or the request is rejected as
+--     a spec mismatch. Older Authelia/Immich guides predate this and
+--     said PKCE was off; that's no longer true.
 --   * `groups` scope is requested for general group sync, but note:
 --     Immich's admin role is read from a SEPARATE claim called
 --     `immich_role` (configured in the Immich admin UI under
@@ -462,6 +464,7 @@ function M.client_presets.immich(opts)
     access_token_lifetime = 1800,
     scopes = { "openid", "email", "profile", "groups" },
     default_scopes = { "openid", "email", "profile", "groups" },
+    challenges = { "S256" },
     force_mfa = false,
   }
 end
