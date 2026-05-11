@@ -349,4 +349,141 @@ function M.client_presets.outline(opts)
   }
 end
 
+-- Seafile (11.0+). Confidential client, OIDC via python-social-auth.
+--   * Redirect URI is `/oauth/complete/oidc/` — python-social-auth's
+--     fixed callback for the `openidconnect` backend.
+--   * `groups` scope is requested so admin role mapping works
+--     (Seafile maps OIDC groups -> internal roles via OIDC_GROUPS_CLAIM).
+--   * No `challenges` — python-social-auth doesn't initiate PKCE by
+--     default for confidential clients; the client_secret carries authn.
+function M.client_presets.seafile(opts)
+  if not opts or not opts.host then
+    error("rauthy.client_presets.seafile: opts.host required")
+  end
+  local host = opts.host
+  return {
+    id = opts.id or "seafile",
+    name = opts.name or "Seafile",
+    confidential = true,
+    enabled = true,
+    redirect_uris = {
+      "https://" .. host .. "/oauth/complete/oidc/",
+    },
+    post_logout_redirect_uris = { "https://" .. host },
+    allowed_origins = { "https://" .. host },
+    flows_enabled = { "authorization_code", "refresh_token" },
+    access_token_alg = "RS256",
+    id_token_alg = "RS256",
+    auth_code_lifetime = 60,
+    access_token_lifetime = 1800,
+    scopes = { "openid", "email", "profile", "groups" },
+    default_scopes = { "openid", "email", "profile", "groups" },
+    force_mfa = false,
+  }
+end
+
+-- Paperless-ngx (2.0+). Confidential client, OIDC via django-allauth.
+--   * Redirect URI is `/accounts/oidc/rauthy/login/callback/` —
+--     django-allauth path pattern is
+--     `/accounts/oidc/<provider_id>/login/callback/` and the gitops
+--     component pins `provider_id = "rauthy"`.
+--   * `groups` scope passed through; Paperless reads `groups` via its
+--     OIDC role-mapping config on the django side.
+--   * No `challenges` — django-allauth's OIDC adapter doesn't require
+--     PKCE for confidential clients; flip it on per-deployment if
+--     `OAUTH_PKCE_ENABLED` is set in Paperless config.
+function M.client_presets.paperless(opts)
+  if not opts or not opts.host then
+    error("rauthy.client_presets.paperless: opts.host required")
+  end
+  local host = opts.host
+  return {
+    id = opts.id or "paperless",
+    name = opts.name or "Paperless-ngx",
+    confidential = true,
+    enabled = true,
+    redirect_uris = {
+      "https://" .. host .. "/accounts/oidc/rauthy/login/callback/",
+    },
+    post_logout_redirect_uris = { "https://" .. host },
+    allowed_origins = { "https://" .. host },
+    flows_enabled = { "authorization_code", "refresh_token" },
+    access_token_alg = "RS256",
+    id_token_alg = "RS256",
+    auth_code_lifetime = 60,
+    access_token_lifetime = 1800,
+    scopes = { "openid", "email", "profile", "groups" },
+    default_scopes = { "openid", "email", "profile", "groups" },
+    force_mfa = false,
+  }
+end
+
+-- Immich (1.91+) web client. Confidential.
+--   * Redirect URI is `/auth/login` — Immich's SPA route that handles
+--     the OIDC code exchange.
+--   * `groups` scope so Immich's `oauth.role_claim` mapping can grant
+--     admin on the "admin" group.
+--   * `challenges = [S256]` — Immich's openid-client config initiates
+--     PKCE on the web flow; Rauthy must accept S256.
+function M.client_presets.immich(opts)
+  if not opts or not opts.host then
+    error("rauthy.client_presets.immich: opts.host required")
+  end
+  local host = opts.host
+  return {
+    id = opts.id or "immich",
+    name = opts.name or "Immich",
+    confidential = true,
+    enabled = true,
+    redirect_uris = {
+      "https://" .. host .. "/auth/login",
+    },
+    post_logout_redirect_uris = { "https://" .. host },
+    allowed_origins = { "https://" .. host },
+    flows_enabled = { "authorization_code", "refresh_token" },
+    access_token_alg = "RS256",
+    id_token_alg = "RS256",
+    auth_code_lifetime = 60,
+    access_token_lifetime = 1800,
+    scopes = { "openid", "email", "profile", "groups" },
+    default_scopes = { "openid", "email", "profile", "groups" },
+    challenges = { "S256" },
+    force_mfa = false,
+  }
+end
+
+-- Immich mobile (Flutter app). PUBLIC client + mandatory PKCE.
+--   * `confidential = false` — a mobile binary can't safely hold a
+--     client_secret; PKCE replaces secret-based authn.
+--   * Redirect URI is the `app.immich:///oauth-callback` deep link
+--     (three slashes — the empty host segment matches the registered
+--     scheme on Immich's Flutter app).
+--   * `challenges = [S256]` mandatory for public clients.
+function M.client_presets.immich_mobile(opts)
+  if not opts or not opts.host then
+    error("rauthy.client_presets.immich_mobile: opts.host required")
+  end
+  local host = opts.host
+  return {
+    id = opts.id or "immich-mobile",
+    name = opts.name or "Immich (mobile)",
+    confidential = false,
+    enabled = true,
+    redirect_uris = {
+      "app.immich:///oauth-callback",
+    },
+    post_logout_redirect_uris = { "https://" .. host },
+    allowed_origins = { "https://" .. host },
+    flows_enabled = { "authorization_code", "refresh_token" },
+    access_token_alg = "RS256",
+    id_token_alg = "RS256",
+    auth_code_lifetime = 60,
+    access_token_lifetime = 1800,
+    scopes = { "openid", "email", "profile", "groups" },
+    default_scopes = { "openid", "email", "profile", "groups" },
+    challenges = { "S256" },
+    force_mfa = false,
+  }
+end
+
 return M
