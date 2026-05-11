@@ -45,6 +45,15 @@ local function drift_field(payload, got)
   for k, v in pairs(payload) do
     if not field_eq(v, got[k]) then return k end
   end
+  -- Reverse direction: a field present in `got` but absent from `payload`
+  -- means the caller wants it removed. Without this, a preset shipped today
+  -- with `challenges = {"S256"}` and later overridden to omit `challenges`
+  -- would silently noop because the forward loop never visits the missing
+  -- key. Rauthy's PUT is a full-replacement, so a follow-up put() correctly
+  -- clears the field.
+  for k, v in pairs(got) do
+    if payload[k] == nil and v ~= nil then return k end
+  end
   return nil
 end
 
@@ -309,8 +318,10 @@ end
 -- Outline wiki. Confidential client (shared client_secret).
 --   * `id_token_alg = RS256` — Outline uses jose for JWT validation; RS256 is the
 --     widely-supported default. EdDSA is not in jose's default key-resolution path.
---   * `challenges = [S256]` — Outline performs PKCE on browser flows by default
---     and Rauthy requires the client to declare the challenge method.
+--   * No `challenges` field — Outline 1.8.x sends authorize requests without
+--     `code_challenge`, and Rauthy 400's "code_challenge missing" on any client
+--     that declares challenges. Confidential client + client_secret carries the
+--     authn weight; PKCE is redundant here.
 --   * Redirect URI is `/auth/oidc.callback` (Outline's hardcoded OIDC callback path).
 function M.client_presets.outline(opts)
   if not opts or not opts.host then
@@ -334,7 +345,6 @@ function M.client_presets.outline(opts)
     access_token_lifetime = 1800,
     scopes = { "openid", "email", "profile" },
     default_scopes = { "openid", "email", "profile" },
-    challenges = { "S256" },
     force_mfa = false,
   }
 end
