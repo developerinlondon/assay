@@ -9,14 +9,14 @@ OCI container registry operations. Pull, push, copy, tag, and mutate images acro
 
 ### Image operations
 
-- `oci.copy(src, dst, opts?)` → true — Copy an image between registries. Pulls each layer one at
-  a time from `src` and pushes to `dst`; peak memory is the size of the largest single layer.
-  `opts` accepts `{src_auth, dst_auth}` where each auth table is `{username, password}`.
+- `oci.copy(src, dst, opts?)` → true — Copy an image between registries. Pulls each layer one at a
+  time from `src` and pushes to `dst`; peak memory is the size of the largest single layer. `opts`
+  accepts `{src_auth, dst_auth}` where each auth table is `{username, password}`.
 
-- `oci.tag(src, new_tag, opts?)` → true — Re-tag an image **within the same registry+repository**
-  by pulling the manifest and pushing it under `new_tag`. No layer data is copied — the new tag
-  points at the existing blobs. `opts` accepts `{auth = {username, password}}`. For cross-registry
-  tagging, use `oci.copy`.
+- `oci.tag(src, new_tag, opts?)` → true — Re-tag an image **within the same registry+repository** by
+  pulling the manifest and pushing it under `new_tag`. No layer data is copied — the new tag points
+  at the existing blobs. `opts` accepts `{auth = {username, password}}`. For cross-registry tagging,
+  use `oci.copy`.
 
 - `oci.mutate(src, dst, files, opts?)` → true — Copy `src` to `dst` and append a new tar.gz layer
   containing `files` (a table of `{path = content}`). The image config is updated so

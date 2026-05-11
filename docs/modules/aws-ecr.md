@@ -4,24 +4,24 @@ category: Cloud & AWS
 
 ## assay.aws.ecr
 
-AWS Elastic Container Registry client. Get authorization tokens for `docker login` or pushing/pulling
-images. Uses `assay.aws.sigv4` internally for request signing.
+AWS Elastic Container Registry client. Get authorization tokens for `docker login` or
+pushing/pulling images. Uses `assay.aws.sigv4` internally for request signing.
 
 ### Client
 
 - `ecr.client(opts)` → client. `opts` is a table with the fields:
-  - `access_key` *(required)* — AWS access key ID
-  - `secret_key` *(required)* — AWS secret access key
-  - `region`     *(required)* — AWS region
-  - `session_token` *(optional)* — STS session token
-  - `endpoint`      *(optional)* — override the API endpoint (full URL or bare host).
-    Defaults to `https://api.ecr.<region>.amazonaws.com`. Useful for VPC endpoints
-    or for injecting a mock server in tests.
+  - `access_key` _(required)_ — AWS access key ID
+  - `secret_key` _(required)_ — AWS secret access key
+  - `region` _(required)_ — AWS region
+  - `session_token` _(optional)_ — STS session token
+  - `endpoint` _(optional)_ — override the API endpoint (full URL or bare host). Defaults to
+    `https://api.ecr.<region>.amazonaws.com`. Useful for VPC endpoints or for injecting a mock
+    server in tests.
 
 ### Authorization
 
-- `c:get_authorization_token()` → `{token, proxy_endpoint, expires_at}` — Get an ECR
-  authorization token. The `token` field is the password for `docker login -u AWS`.
+- `c:get_authorization_token()` → `{token, proxy_endpoint, expires_at}` — Get an ECR authorization
+  token. The `token` field is the password for `docker login -u AWS`.
 
 Example:
 

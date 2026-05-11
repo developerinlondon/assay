@@ -10,11 +10,11 @@ Tar archive creation, extraction, and listing. Supports plain tar and gzip-compr
 ### Functions
 
 - `tar.create(output, files, opts?)` → true — Create a tar archive. `files` is a table of
-  `{path = content}`. `opts.gzip` (default `true`) controls gzip compression. Output path
-  determines format (`.tar.gz` enables gzip).
+  `{path = content}`. `opts.gzip` (default `true`) controls gzip compression. Output path determines
+  format (`.tar.gz` enables gzip).
 
-- `tar.extract(archive, dest)` → true — Extract a tar or tar.gz archive to `dest`. Auto-detects
-  gzip compression from the filename extension.
+- `tar.extract(archive, dest)` → true — Extract a tar or tar.gz archive to `dest`. Auto-detects gzip
+  compression from the filename extension.
 
 - `tar.list(archive)` → `[string]` — List all file paths in a tar or tar.gz archive.
 
