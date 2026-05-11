@@ -13,19 +13,19 @@ Parameterized for any AWS service (ecr, ec2, sts, iam, etc.).
   `authorization`, `x-amz-date`, `x-amz-content-sha256`, and any custom headers passed in. The
   `opts` table:
 
-  | Key | Type | Required | Description |
-  |-----|------|----------|-------------|
-  | `access_key` | string | Yes | AWS access key ID |
-  | `secret_key` | string | Yes | AWS secret access key |
-  | `session_token` | string | No | AWS session token (for STS credentials) |
-  | `service` | string | Yes | AWS service name (e.g. `"ecr"`) |
-  | `region` | string | Yes | AWS region (e.g. `"us-east-1"`) |
-  | `method` | string | No | HTTP method (default `"GET"`) |
-  | `host` | string | Yes | API hostname |
-  | `path` | string | No | Request path (default `"/"`) |
-  | `query` | string | No | Query string |
-  | `payload` | string | No | Request body (default `""`) |
-  | `headers` | table | No | Additional headers to include and sign |
+  | Key             | Type   | Required | Description                             |
+  | --------------- | ------ | -------- | --------------------------------------- |
+  | `access_key`    | string | Yes      | AWS access key ID                       |
+  | `secret_key`    | string | Yes      | AWS secret access key                   |
+  | `session_token` | string | No       | AWS session token (for STS credentials) |
+  | `service`       | string | Yes      | AWS service name (e.g. `"ecr"`)         |
+  | `region`        | string | Yes      | AWS region (e.g. `"us-east-1"`)         |
+  | `method`        | string | No       | HTTP method (default `"GET"`)           |
+  | `host`          | string | Yes      | API hostname                            |
+  | `path`          | string | No       | Request path (default `"/"`)            |
+  | `query`         | string | No       | Query string                            |
+  | `payload`       | string | No       | Request body (default `""`)             |
+  | `headers`       | table  | No       | Additional headers to include and sign  |
 
 Example:
 
@@ -45,3 +45,4 @@ local headers = sigv4.sign({
   },
 })
 -- Use headers with http.post/get
+```
