@@ -619,6 +619,35 @@ jobs:
             ghcr.io/developerinlondon/assay:${{ needs.detect.outputs.assay_lua_version }}
             ghcr.io/developerinlondon/assay:latest
 
+      # `-sh` variant: same scratch image plus a static busybox at /bin/sh
+      # so GitLab CI runners (which wrap every script: line in `sh -c`)
+      # can use the image directly. K8s consumers keep using the plain
+      # `:<version>` tag; this one is opt-in.
+      - name: Check if assay-sh docker image already exists
+        id: docker-check-sh
+        env:
+          VERSION: ${{ needs.detect.outputs.assay_lua_version }}
+        run: |
+          set -uo pipefail
+          if docker buildx imagetools inspect "ghcr.io/developerinlondon/assay:${VERSION}-sh" >/dev/null 2>&1; then
+            echo "ghcr.io/developerinlondon/assay:${VERSION}-sh already published — skipping docker push"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ghcr.io/developerinlondon/assay:${VERSION}-sh not found — will push"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/build-push-action@v7
+        if: steps.docker-check-sh.outputs.exists != 'true'
+        with:
+          context: artifacts
+          file: ${{ github.workspace }}/Dockerfile.sh
+          push: true
+          build-args: |
+            RUST_VERSION=${{ needs.detect.outputs.rust_version }}
+          tags: |
+            ghcr.io/developerinlondon/assay:${{ needs.detect.outputs.assay_lua_version }}-sh
+
   publish-extension:
     needs: detect
     if: needs.detect.outputs.extension_bumped == 'true'
