@@ -77,6 +77,9 @@ rand = "0.10.0"
 # Lightweight regex
 regex-lite = "0.1.9"
 
+# OCI container registry operations (push, pull, copy, mutate)
+oci-distribution = "0.11"
+
 # Process signals (kill)
 libc = "0.2"
 
