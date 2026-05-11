@@ -48,6 +48,7 @@
 - [assay.certmanager](https://assay.rs/modules/certmanager.html): cert-manager certificates, issuers, ACME
 - [assay.eso](https://assay.rs/modules/eso.html): External Secrets Operator
 - [assay.dex](https://assay.rs/modules/dex.html): Dex OIDC discovery, JWKS, health
+- [assay.rauthy](https://assay.rs/modules/rauthy.html): Rauthy IdP — OAuth2 client reconcile, secret rotation, presets
 - [assay.zitadel](https://assay.rs/modules/zitadel.html): Zitadel OIDC identity, JWT machine auth
 - [assay.ory](https://assay.rs/modules/ory.html): Ory stack — Kratos identity, Hydra OAuth2, Keto ReBAC, RBAC engine
 

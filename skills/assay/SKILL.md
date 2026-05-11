@@ -279,6 +279,7 @@ All 35 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.certmanager`  | Certificates, issuers, ACME orders and challenges                                                       |
 | `assay.eso`          | ExternalSecrets, SecretStores, ClusterSecretStores sync status                                          |
 | `assay.dex`          | OIDC discovery, JWKS, health, configuration validation                                                  |
+| `assay.rauthy`       | Rauthy IdP — OAuth2 client reconcile, secret rotation, presets                                          |
 | `assay.zitadel`      | OIDC identity management with JWT machine auth                                                          |
 | `assay.ory.kratos`   | Ory Kratos — login/registration/recovery/settings flows, identities, sessions                           |
 | `assay.ory.hydra`    | Ory Hydra OAuth2/OIDC — clients, authorize URLs, tokens, login/consent, JWKs                            |
