@@ -1,10 +1,13 @@
 //! Regression guards on the repo's Dockerfiles.
 //!
-//! Both published images are `FROM scratch` with just the relevant
+//! All published images are `FROM scratch` with just the relevant
 //! binary + a CA bundle:
 //!
 //! - `ghcr.io/developerinlondon/assay`        — runtime, built from `Dockerfile`
 //! - `ghcr.io/developerinlondon/assay-engine` — server,  built from `Dockerfile.assay-engine`
+//! - `ghcr.io/developerinlondon/assay:<v>-sh` — runtime + busybox `/bin/sh`,
+//!   built from `Dockerfile.sh`. Still `FROM scratch`; only present so
+//!   the image works inside GitLab CI's `sh -c "$script"` wrapper.
 //!
 //! Scratch keeps both images ~10 MB each, reduces the CVE surface to
 //! assay's own supply chain, and makes every downstream image that
@@ -28,6 +31,7 @@
 const DOCKERFILES: &[(&str, &str)] = &[
     ("../../Dockerfile", "/assay"),
     ("../../Dockerfile.assay-engine", "/assay-engine"),
+    ("../../Dockerfile.sh", "/assay"),
 ];
 
 fn read_dockerfile(rel_path: &str) -> String {

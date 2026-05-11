@@ -2,6 +2,16 @@
 
 All notable changes to Assay are documented here.
 
+## Unreleased
+
+### Container image
+
+- New `ghcr.io/developerinlondon/assay:<version>-sh` tag — same scratch
+  image as the plain `:<version>` tag, plus a 1 MB static busybox at
+  `/bin/sh`. Use in environments that wrap the launch in `sh -c` (notably
+  GitLab CI's docker executor). K8s consumers that already use
+  `command: ["/assay", ...]` should keep the plain `:<version>` tag.
+
 ## assay 0.16.0 — 2026-05-11
 
 ### 🏗️ Container Registry (lite crane replacement)
