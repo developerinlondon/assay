@@ -349,13 +349,17 @@ function M.client_presets.outline(opts)
   }
 end
 
--- Seafile (11.0+). Confidential client, OIDC via python-social-auth.
---   * Redirect URI is `/oauth/complete/oidc/` — python-social-auth's
---     fixed callback for the `openidconnect` backend.
---   * `groups` scope is requested so admin role mapping works
---     (Seafile maps OIDC groups -> internal roles via OIDC_GROUPS_CLAIM).
---   * No `challenges` — python-social-auth doesn't initiate PKCE by
---     default for confidential clients; the client_secret carries authn.
+-- Seafile (CE 11.0+, including 13.x). Confidential client.
+--   * Redirect URI is `/oauth/callback/` — Seafile CE uses its own
+--     OAuth handler (NOT python-social-auth's `openidconnect`), and the
+--     callback path is whatever `OAUTH_REDIRECT_URL` in seahub_settings.py
+--     points at. `/oauth/callback/` is the documented convention.
+--   * `groups` scope is requested for general group sync.
+--   * Note: Seafile CE has NO supported OIDC admin-claim mapping.
+--     First admin must be promoted manually after the first OIDC login
+--     (or via a custom hook in conf/seahub_custom_functions/__init__.py).
+--   * No `challenges` — Seafile's OAuth handler doesn't initiate PKCE;
+--     the client_secret carries authn.
 function M.client_presets.seafile(opts)
   if not opts or not opts.host then
     error("rauthy.client_presets.seafile: opts.host required")
@@ -367,7 +371,7 @@ function M.client_presets.seafile(opts)
     confidential = true,
     enabled = true,
     redirect_uris = {
-      "https://" .. host .. "/oauth/complete/oidc/",
+      "https://" .. host .. "/oauth/callback/",
     },
     post_logout_redirect_uris = { "https://" .. host },
     allowed_origins = { "https://" .. host },
@@ -385,13 +389,15 @@ end
 -- Paperless-ngx (2.0+). Confidential client, OIDC via django-allauth.
 --   * Redirect URI is `/accounts/oidc/rauthy/login/callback/` —
 --     django-allauth path pattern is
---     `/accounts/oidc/<provider_id>/login/callback/` and the gitops
---     component pins `provider_id = "rauthy"`.
---   * `groups` scope passed through; Paperless reads `groups` via its
---     OIDC role-mapping config on the django side.
---   * No `challenges` — django-allauth's OIDC adapter doesn't require
---     PKCE for confidential clients; flip it on per-deployment if
---     `OAUTH_PKCE_ENABLED` is set in Paperless config.
+--     `/accounts/oidc/<provider_id>/login/callback/` and the deployer
+--     pins `provider_id = "rauthy"` in PAPERLESS_SOCIALACCOUNT_PROVIDERS.
+--   * `groups` scope passed through. Paperless syncs OIDC groups to its
+--     own group table when PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS=true.
+--     Note: superuser (admin) flag is NOT set from any OIDC claim —
+--     must be granted in Django admin manually.
+--   * `challenges = [S256]` — Paperless's docs explicitly recommend
+--     PKCE (`OAUTH_PKCE_ENABLED: true` in the provider settings), so
+--     Rauthy must accept S256.
 function M.client_presets.paperless(opts)
   if not opts or not opts.host then
     error("rauthy.client_presets.paperless: opts.host required")
@@ -414,17 +420,25 @@ function M.client_presets.paperless(opts)
     access_token_lifetime = 1800,
     scopes = { "openid", "email", "profile", "groups" },
     default_scopes = { "openid", "email", "profile", "groups" },
+    challenges = { "S256" },
     force_mfa = false,
   }
 end
 
 -- Immich (1.91+) web client. Confidential.
---   * Redirect URI is `/auth/login` — Immich's SPA route that handles
---     the OIDC code exchange.
---   * `groups` scope so Immich's `oauth.role_claim` mapping can grant
---     admin on the "admin" group.
---   * `challenges = [S256]` — Immich's openid-client config initiates
---     PKCE on the web flow; Rauthy must accept S256.
+--   * Redirect URIs cover Immich's two OIDC entry points:
+--       /auth/login       — initial login redirect handler
+--       /user-settings    — account-link flow from the settings page
+--   * No `challenges` — Immich's OIDC flow does NOT initiate PKCE in
+--     the official web release; the Authelia integration guide
+--     explicitly sets `require_pkce: false` for Immich. Confidential
+--     client + client_secret carries authn.
+--   * `groups` scope is requested for general group sync, but note:
+--     Immich's admin role is read from a SEPARATE claim called
+--     `immich_role` (configured in the Immich admin UI under
+--     "Role Claim"). To map a Rauthy "admin" group -> Immich admin,
+--     configure Rauthy to emit `immich_role: "admin"` as a custom
+--     claim for that group; the `groups` scope alone won't promote.
 function M.client_presets.immich(opts)
   if not opts or not opts.host then
     error("rauthy.client_presets.immich: opts.host required")
@@ -437,6 +451,7 @@ function M.client_presets.immich(opts)
     enabled = true,
     redirect_uris = {
       "https://" .. host .. "/auth/login",
+      "https://" .. host .. "/user-settings",
     },
     post_logout_redirect_uris = { "https://" .. host },
     allowed_origins = { "https://" .. host },
@@ -447,7 +462,6 @@ function M.client_presets.immich(opts)
     access_token_lifetime = 1800,
     scopes = { "openid", "email", "profile", "groups" },
     default_scopes = { "openid", "email", "profile", "groups" },
-    challenges = { "S256" },
     force_mfa = false,
   }
 end

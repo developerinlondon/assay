@@ -467,7 +467,7 @@ async fn test_client_preset_seafile() {
         assert.eq(p.confidential, true)
         assert.eq(p.id_token_alg, "RS256")
         assert.eq(p.challenges, nil)
-        assert.eq(p.redirect_uris[1], "https://seafile.example.com/oauth/complete/oidc/")
+        assert.eq(p.redirect_uris[1], "https://seafile.example.com/oauth/callback/")
         assert.eq(p.scopes[4], "groups")
     "#;
     run_lua(script).await.unwrap();
@@ -493,7 +493,9 @@ async fn test_client_preset_paperless() {
         assert.eq(p.name, "Paperless-ngx")
         assert.eq(p.confidential, true)
         assert.eq(p.id_token_alg, "RS256")
-        assert.eq(p.challenges, nil)
+        -- Paperless docs explicitly recommend PKCE
+        -- (OAUTH_PKCE_ENABLED: true), so Rauthy must accept S256.
+        assert.eq(p.challenges[1], "S256")
         assert.eq(p.redirect_uris[1],
           "https://paperless.example.com/accounts/oidc/rauthy/login/callback/")
         assert.eq(p.scopes[4], "groups")
@@ -521,8 +523,11 @@ async fn test_client_preset_immich() {
         assert.eq(p.name, "Immich")
         assert.eq(p.confidential, true)
         assert.eq(p.id_token_alg, "RS256")
-        assert.eq(p.challenges[1], "S256")
+        -- Immich web does NOT initiate PKCE (Authelia integration guide
+        -- sets require_pkce: false). Preset must omit `challenges`.
+        assert.eq(p.challenges, nil)
         assert.eq(p.redirect_uris[1], "https://photos.example.com/auth/login")
+        assert.eq(p.redirect_uris[2], "https://photos.example.com/user-settings")
         assert.eq(p.scopes[4], "groups")
     "#;
     run_lua(script).await.unwrap();
