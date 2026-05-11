@@ -2,6 +2,12 @@
 
 All notable changes to Assay are documented here.
 
+## [assay-vault 0.3.0] — 2026-05-11
+
+- Pin `assay-auth = "0.4"` (was `"0.3"`); republish to unblock `assay-engine` publish.
+- `assay-engine` `assay-vault` dep `"0.2"` → `"0.3"` to match.
+- Same pattern as `assay-vault 0.1.0 → 0.2.0` in #99.
+
 ## assay 0.15.11 — 2026-05-11
 
 ### Added

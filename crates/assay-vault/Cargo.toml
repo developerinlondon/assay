@@ -1,6 +1,6 @@
 [package]
 name = "assay-vault"
-version = "0.2.0"
+version = "0.3.0"
 categories = ["cryptography", "asynchronous", "database"]
 edition = "2024"
 keywords = ["vault", "secrets", "kv", "transit", "biscuit"]
