@@ -349,4 +349,155 @@ function M.client_presets.outline(opts)
   }
 end
 
+-- Seafile (CE 11.0+, including 13.x). Confidential client.
+--   * Redirect URI is `/oauth/callback/` — Seafile CE uses its own
+--     OAuth handler (NOT python-social-auth's `openidconnect`), and the
+--     callback path is whatever `OAUTH_REDIRECT_URL` in seahub_settings.py
+--     points at. `/oauth/callback/` is the documented convention.
+--   * `groups` scope is requested for general group sync.
+--   * Note: Seafile CE has NO supported OIDC admin-claim mapping.
+--     First admin must be promoted manually after the first OIDC login
+--     (or via a custom hook in conf/seahub_custom_functions/__init__.py).
+--   * No `challenges` — Seafile's OAuth handler doesn't initiate PKCE;
+--     the client_secret carries authn.
+function M.client_presets.seafile(opts)
+  if not opts or not opts.host then
+    error("rauthy.client_presets.seafile: opts.host required")
+  end
+  local host = opts.host
+  return {
+    id = opts.id or "seafile",
+    name = opts.name or "Seafile",
+    confidential = true,
+    enabled = true,
+    redirect_uris = {
+      "https://" .. host .. "/oauth/callback/",
+    },
+    post_logout_redirect_uris = { "https://" .. host },
+    allowed_origins = { "https://" .. host },
+    flows_enabled = { "authorization_code", "refresh_token" },
+    access_token_alg = "RS256",
+    id_token_alg = "RS256",
+    auth_code_lifetime = 60,
+    access_token_lifetime = 1800,
+    scopes = { "openid", "email", "profile", "groups" },
+    default_scopes = { "openid", "email", "profile", "groups" },
+    force_mfa = false,
+  }
+end
+
+-- Paperless-ngx (2.0+). Confidential client, OIDC via django-allauth.
+--   * Redirect URI is `/accounts/oidc/rauthy/login/callback/` —
+--     django-allauth path pattern is
+--     `/accounts/oidc/<provider_id>/login/callback/` and the deployer
+--     pins `provider_id = "rauthy"` in PAPERLESS_SOCIALACCOUNT_PROVIDERS.
+--   * `groups` scope passed through. Paperless syncs OIDC groups to its
+--     own group table when PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS=true.
+--     Note: superuser (admin) flag is NOT set from any OIDC claim —
+--     must be granted in Django admin manually.
+--   * `challenges = [S256]` — Paperless's docs explicitly recommend
+--     PKCE (`OAUTH_PKCE_ENABLED: true` in the provider settings), so
+--     Rauthy must accept S256.
+function M.client_presets.paperless(opts)
+  if not opts or not opts.host then
+    error("rauthy.client_presets.paperless: opts.host required")
+  end
+  local host = opts.host
+  return {
+    id = opts.id or "paperless",
+    name = opts.name or "Paperless-ngx",
+    confidential = true,
+    enabled = true,
+    redirect_uris = {
+      "https://" .. host .. "/accounts/oidc/rauthy/login/callback/",
+    },
+    post_logout_redirect_uris = { "https://" .. host },
+    allowed_origins = { "https://" .. host },
+    flows_enabled = { "authorization_code", "refresh_token" },
+    access_token_alg = "RS256",
+    id_token_alg = "RS256",
+    auth_code_lifetime = 60,
+    access_token_lifetime = 1800,
+    scopes = { "openid", "email", "profile", "groups" },
+    default_scopes = { "openid", "email", "profile", "groups" },
+    challenges = { "S256" },
+    force_mfa = false,
+  }
+end
+
+-- Immich (1.91+) web client. Confidential.
+--   * Redirect URIs cover Immich's two OIDC entry points:
+--       /auth/login       — initial login redirect handler
+--       /user-settings    — account-link flow from the settings page
+--   * No `challenges` — Immich's OIDC flow does NOT initiate PKCE in
+--     the official web release; the Authelia integration guide
+--     explicitly sets `require_pkce: false` for Immich. Confidential
+--     client + client_secret carries authn.
+--   * `groups` scope is requested for general group sync, but note:
+--     Immich's admin role is read from a SEPARATE claim called
+--     `immich_role` (configured in the Immich admin UI under
+--     "Role Claim"). To map a Rauthy "admin" group -> Immich admin,
+--     configure Rauthy to emit `immich_role: "admin"` as a custom
+--     claim for that group; the `groups` scope alone won't promote.
+function M.client_presets.immich(opts)
+  if not opts or not opts.host then
+    error("rauthy.client_presets.immich: opts.host required")
+  end
+  local host = opts.host
+  return {
+    id = opts.id or "immich",
+    name = opts.name or "Immich",
+    confidential = true,
+    enabled = true,
+    redirect_uris = {
+      "https://" .. host .. "/auth/login",
+      "https://" .. host .. "/user-settings",
+    },
+    post_logout_redirect_uris = { "https://" .. host },
+    allowed_origins = { "https://" .. host },
+    flows_enabled = { "authorization_code", "refresh_token" },
+    access_token_alg = "RS256",
+    id_token_alg = "RS256",
+    auth_code_lifetime = 60,
+    access_token_lifetime = 1800,
+    scopes = { "openid", "email", "profile", "groups" },
+    default_scopes = { "openid", "email", "profile", "groups" },
+    force_mfa = false,
+  }
+end
+
+-- Immich mobile (Flutter app). PUBLIC client + mandatory PKCE.
+--   * `confidential = false` — a mobile binary can't safely hold a
+--     client_secret; PKCE replaces secret-based authn.
+--   * Redirect URI is the `app.immich:///oauth-callback` deep link
+--     (three slashes — the empty host segment matches the registered
+--     scheme on Immich's Flutter app).
+--   * `challenges = [S256]` mandatory for public clients.
+function M.client_presets.immich_mobile(opts)
+  if not opts or not opts.host then
+    error("rauthy.client_presets.immich_mobile: opts.host required")
+  end
+  local host = opts.host
+  return {
+    id = opts.id or "immich-mobile",
+    name = opts.name or "Immich (mobile)",
+    confidential = false,
+    enabled = true,
+    redirect_uris = {
+      "app.immich:///oauth-callback",
+    },
+    post_logout_redirect_uris = { "https://" .. host },
+    allowed_origins = { "https://" .. host },
+    flows_enabled = { "authorization_code", "refresh_token" },
+    access_token_alg = "RS256",
+    id_token_alg = "RS256",
+    auth_code_lifetime = 60,
+    access_token_lifetime = 1800,
+    scopes = { "openid", "email", "profile", "groups" },
+    default_scopes = { "openid", "email", "profile", "groups" },
+    challenges = { "S256" },
+    force_mfa = false,
+  }
+end
+
 return M
