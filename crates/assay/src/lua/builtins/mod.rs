@@ -12,12 +12,14 @@ mod json;
 mod linux;
 mod machinectl;
 mod markdown;
+mod oci;
 mod os_info;
 mod process;
 mod process_pty;
 mod serialization;
 mod shell;
 mod systemd;
+mod tarball;
 mod template;
 mod ws;
 
@@ -56,5 +58,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     cgroup::register_cgroup(lua)?;
     systemd::register_systemd(lua)?;
     machinectl::register_machinectl(lua)?;
+    oci::register_oci(lua)?;
+    tarball::register_tar(lua)?;
     Ok(())
 }
