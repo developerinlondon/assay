@@ -196,6 +196,47 @@ async fn test_reconcile_noop_when_no_drift() {
 }
 
 #[tokio::test]
+async fn test_reconcile_put_when_payload_omits_field_present_on_server() {
+    // Server has `challenges: ["S256"]`; caller's payload omits it (meaning
+    // "remove that field"). Reconcile should detect drift on `challenges`
+    // and issue a PUT — not silently noop.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/clients/openbao"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "openbao",
+            "name": "OpenBao",
+            "confidential": true,
+            "challenges": ["S256"],
+            "redirect_uris": ["https://o.example.com/cb"]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/clients/openbao"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        r#"
+        local rauthy = require("assay.rauthy")
+        local c = rauthy.client("{}", "{}")
+        local r = c.clients:reconcile({{
+          id = "openbao", name = "OpenBao",
+          confidential = true,
+          redirect_uris = {{ "https://o.example.com/cb" }},
+        }})
+        assert.eq(r.action, "put")
+        assert.eq(r.drift_on, "challenges")
+        "#,
+        server.uri(),
+        api_key_lua_literal()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
 async fn test_reconcile_create_on_404() {
     let server = MockServer::start().await;
     // GET → 404
@@ -383,7 +424,9 @@ async fn test_client_preset_outline() {
         assert.eq(p.confidential, true)
         assert.eq(p.id_token_alg, "RS256")
         assert.eq(p.access_token_alg, "RS256")
-        assert.eq(p.challenges[1], "S256")
+        -- Outline 1.8.x sends authorize without code_challenge; the preset
+        -- intentionally omits `challenges` so Rauthy doesn't enforce PKCE.
+        assert.eq(p.challenges, nil)
         assert.eq(p.redirect_uris[1], "https://wiki.example.com/auth/oidc.callback")
         assert.eq(p.scopes[1], "openid")
         assert.eq(p.scopes[2], "email")
