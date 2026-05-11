@@ -456,3 +456,120 @@ async fn test_client_preset_openbao_requires_host() {
     "#;
     run_lua(script).await.unwrap();
 }
+
+#[tokio::test]
+async fn test_client_preset_seafile() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local p = rauthy.client_presets.seafile({ host = "seafile.example.com" })
+        assert.eq(p.id, "seafile")
+        assert.eq(p.name, "Seafile")
+        assert.eq(p.confidential, true)
+        assert.eq(p.id_token_alg, "RS256")
+        assert.eq(p.challenges, nil)
+        assert.eq(p.redirect_uris[1], "https://seafile.example.com/oauth/callback/")
+        assert.eq(p.scopes[4], "groups")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_client_preset_seafile_requires_host() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local ok, err = pcall(rauthy.client_presets.seafile, {})
+        assert.eq(ok, false)
+        assert.eq(string.find(err, "opts.host required") ~= nil, true)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_client_preset_paperless() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local p = rauthy.client_presets.paperless({ host = "paperless.example.com" })
+        assert.eq(p.id, "paperless")
+        assert.eq(p.name, "Paperless-ngx")
+        assert.eq(p.confidential, true)
+        assert.eq(p.id_token_alg, "RS256")
+        -- Paperless docs explicitly recommend PKCE
+        -- (OAUTH_PKCE_ENABLED: true), so Rauthy must accept S256.
+        assert.eq(p.challenges[1], "S256")
+        assert.eq(p.redirect_uris[1],
+          "https://paperless.example.com/accounts/oidc/rauthy/login/callback/")
+        assert.eq(p.scopes[4], "groups")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_client_preset_paperless_requires_host() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local ok, err = pcall(rauthy.client_presets.paperless, {})
+        assert.eq(ok, false)
+        assert.eq(string.find(err, "opts.host required") ~= nil, true)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_client_preset_immich() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local p = rauthy.client_presets.immich({ host = "photos.example.com" })
+        assert.eq(p.id, "immich")
+        assert.eq(p.name, "Immich")
+        assert.eq(p.confidential, true)
+        assert.eq(p.id_token_alg, "RS256")
+        -- Immich web does NOT initiate PKCE (Authelia integration guide
+        -- sets require_pkce: false). Preset must omit `challenges`.
+        assert.eq(p.challenges, nil)
+        assert.eq(p.redirect_uris[1], "https://photos.example.com/auth/login")
+        assert.eq(p.redirect_uris[2], "https://photos.example.com/user-settings")
+        assert.eq(p.scopes[4], "groups")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_client_preset_immich_requires_host() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local ok, err = pcall(rauthy.client_presets.immich, {})
+        assert.eq(ok, false)
+        assert.eq(string.find(err, "opts.host required") ~= nil, true)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_client_preset_immich_mobile() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local p = rauthy.client_presets.immich_mobile({ host = "photos.example.com" })
+        assert.eq(p.id, "immich-mobile")
+        assert.eq(p.name, "Immich (mobile)")
+        -- Public client (no shared secret) -> MUST use PKCE.
+        assert.eq(p.confidential, false)
+        assert.eq(p.challenges[1], "S256")
+        assert.eq(p.redirect_uris[1], "app.immich:///oauth-callback")
+        -- post_logout_redirect_uris still points at the web origin for the
+        -- back-channel logout fallback.
+        assert.eq(p.post_logout_redirect_uris[1], "https://photos.example.com")
+        assert.eq(p.scopes[4], "groups")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_client_preset_immich_mobile_requires_host() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local ok, err = pcall(rauthy.client_presets.immich_mobile, {})
+        assert.eq(ok, false)
+        assert.eq(string.find(err, "opts.host required") ~= nil, true)
+    "#;
+    run_lua(script).await.unwrap();
+}
