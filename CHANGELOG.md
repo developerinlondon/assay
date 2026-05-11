@@ -2,6 +2,24 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.15.11 — 2026-05-11
+
+### Added
+
+- `assay.rauthy` — Rauthy IdP admin client. `c.sys:health()`, `c.discovery:{config,jwks}`, full
+  `c.clients` lifecycle (`list`/`get`/`create`/`put`/`delete`/`rebuild`/`rotate_secret`) plus
+  idempotent `c.clients:reconcile(payload)`.
+- `reconcile` rotates secrets only on real drift: 404 → create+rotate; `challenges` missing →
+  rebuild+rotate (workaround for a Rauthy 0.35 cache quirk); other drift → put-only; no drift →
+  noop.
+- `rauthy.client_presets.openbao({host})` / `.argocd({host})` — ready-made client payloads with each
+  consumer's OIDC verifier quirks baked in.
+
+### Known limits
+
+- Provider config (e.g. Google federation) not exposed — Rauthy 0.35's `/providers/*` is
+  admin-session-only, no API-key path. Upstream feature request to follow.
+
 ## sysops 0.1.5 — 2026-05-08
 
 ### Added
