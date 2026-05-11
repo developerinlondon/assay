@@ -15,6 +15,18 @@ async fn test_require_ecr() {
 }
 
 #[tokio::test]
+async fn test_ecr_client_requires_credentials() {
+    let script = r#"
+        local ecr = require("assay.aws.ecr")
+        local ok = pcall(function()
+            ecr.client({ region = "us-east-1" })
+        end)
+        assert.eq(ok, false)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
 async fn test_ecr_get_authorization_token() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -25,18 +37,21 @@ async fn test_ecr_get_authorization_token() {
         .mount(&server)
         .await;
 
-    let host = server.uri().replace("http://", "");
-
     let script = format!(
         r#"
         local ecr = require("assay.aws.ecr")
-        local c = ecr.client("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "", "us-east-1")
-        -- Override host for testing
+        local c = ecr.client({{
+            access_key = "AKIAIOSFODNN7EXAMPLE",
+            secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region = "us-east-1",
+            endpoint = "{}",
+        }})
         local result = c:get_authorization_token()
         assert.eq(result.token, "password")
-        assert.not_nil(result.proxy_endpoint)
-        assert.not_nil(result.expires_at)
-        "#
+        assert.eq(result.proxy_endpoint, "https://123456789012.dkr.ecr.us-east-1.amazonaws.com")
+        assert.eq(result.expires_at, "2026-01-01T00:00:00Z")
+        "#,
+        server.uri()
     );
     run_lua(&script).await.unwrap();
 }
@@ -46,17 +61,27 @@ async fn test_ecr_get_authorization_token_errors_on_non_200() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/"))
-        .respond_with(ResponseTemplate::new(403).set_body_string(r#"{"__type":"AccessDeniedException"}"#))
+        .respond_with(
+            ResponseTemplate::new(403).set_body_string(r#"{"__type":"AccessDeniedException"}"#),
+        )
         .mount(&server)
         .await;
 
     let script = format!(
         r#"
         local ecr = require("assay.aws.ecr")
-        local c = ecr.client("BADKEY", "BADSECRET", "", "us-east-1")
-        local ok = pcall(function() c:get_authorization_token() end)
+        local c = ecr.client({{
+            access_key = "BADKEY",
+            secret_key = "BADSECRET",
+            region = "us-east-1",
+            endpoint = "{}",
+        }})
+        local ok, err = pcall(function() c:get_authorization_token() end)
         assert.eq(ok, false)
-        "#
+        -- error message should surface the HTTP body for debugging
+        assert.contains(tostring(err), "AccessDeniedException")
+        "#,
+        server.uri()
     );
     run_lua(&script).await.unwrap();
 }

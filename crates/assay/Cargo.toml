@@ -78,7 +78,9 @@ rand = "0.10.0"
 regex-lite = "0.1.9"
 
 # OCI container registry operations (push, pull, copy, mutate)
-oci-distribution = "0.11"
+# default-features disabled to drop native-tls/openssl; the rest of the
+# codebase is rustls-only and the Ubuntu CI runner has no OpenSSL headers.
+oci-distribution = { version = "0.11", default-features = false, features = ["rustls-tls-native-roots"] }
 
 # Process signals (kill)
 libc = "0.2"
