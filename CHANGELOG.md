@@ -2,6 +2,31 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.16.0 — 2026-05-11
+
+### 🏗️ Container Registry (lite crane replacement)
+
+- `oci.copy(src, dst, opts?)` — copy images between registries
+- `oci.tag(src, tag)` — tag an existing image
+- `oci.mutate(src, dst, files)` — add files as new OCI layers
+- All use `oci-distribution` under the hood, no external binary needed
+
+### 📦 Tar archive support
+
+- `tar.create(output, files, opts?)` — create tar/tar.gz from `{path = content}`
+- `tar.extract(archive, dest)` — extract to directory
+- `tar.list(archive)` — list contents
+
+### ☁️ AWS ECR support
+
+- `assay.aws.ecr` — `client():get_authorization_token()` returns ECR auth tokens
+- `assay.aws.sigv4` — reusable AWS Signature V4 signing for any service
+
+### Internal
+
+- Added `oci-distribution` crate dependency
+- Binary size remains ~8.7MB (shared deps with existing reqwest/tokio)
+
 ## [assay-vault 0.3.0] — 2026-05-11
 
 - Pin `assay-auth = "0.4"` (was `"0.3"`); republish to unblock `assay-engine` publish.
