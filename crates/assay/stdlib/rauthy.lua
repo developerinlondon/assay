@@ -15,6 +15,7 @@
 --- @quickref c.clients:reconcile(payload) -> {action, secret?, drift_on?, reason?} | Idempotent reconcile; only rebuilds on `challenges` drift or 404
 --- @quickref M.client_presets.openbao({host, id?, name?}) -> payload | OpenBao OAuth2 client payload (RS256 + S256 PKCE; required by Vault go-oidc)
 --- @quickref M.client_presets.argocd({host, id?, name?}) -> payload | ArgoCD OAuth2 client payload (PKCE-public, EdDSA, CLI device-login redirect)
+--- @quickref M.client_presets.outline({host, id?, name?}) -> payload | Outline wiki OAuth2 client payload (confidential, RS256, S256 PKCE)
 
 local M = {}
 
@@ -300,6 +301,39 @@ function M.client_presets.argocd(opts)
     access_token_lifetime = 1800,
     scopes = { "openid", "email", "profile", "groups" },
     default_scopes = { "openid", "email", "profile", "groups" },
+    challenges = { "S256" },
+    force_mfa = false,
+  }
+end
+
+-- Outline wiki. Confidential client (shared client_secret).
+--   * `id_token_alg = RS256` — Outline uses jose for JWT validation; RS256 is the
+--     widely-supported default. EdDSA is not in jose's default key-resolution path.
+--   * `challenges = [S256]` — Outline performs PKCE on browser flows by default
+--     and Rauthy requires the client to declare the challenge method.
+--   * Redirect URI is `/auth/oidc.callback` (Outline's hardcoded OIDC callback path).
+function M.client_presets.outline(opts)
+  if not opts or not opts.host then
+    error("rauthy.client_presets.outline: opts.host required")
+  end
+  local host = opts.host
+  return {
+    id = opts.id or "outline",
+    name = opts.name or "Outline",
+    confidential = true,
+    enabled = true,
+    redirect_uris = {
+      "https://" .. host .. "/auth/oidc.callback",
+    },
+    post_logout_redirect_uris = { "https://" .. host },
+    allowed_origins = { "https://" .. host },
+    flows_enabled = { "authorization_code", "refresh_token" },
+    access_token_alg = "RS256",
+    id_token_alg = "RS256",
+    auth_code_lifetime = 60,
+    access_token_lifetime = 1800,
+    scopes = { "openid", "email", "profile" },
+    default_scopes = { "openid", "email", "profile" },
     challenges = { "S256" },
     force_mfa = false,
   }

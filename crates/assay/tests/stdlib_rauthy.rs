@@ -374,6 +374,36 @@ async fn test_client_preset_argocd() {
 }
 
 #[tokio::test]
+async fn test_client_preset_outline() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local p = rauthy.client_presets.outline({ host = "wiki.example.com" })
+        assert.eq(p.id, "outline")
+        assert.eq(p.name, "Outline")
+        assert.eq(p.confidential, true)
+        assert.eq(p.id_token_alg, "RS256")
+        assert.eq(p.access_token_alg, "RS256")
+        assert.eq(p.challenges[1], "S256")
+        assert.eq(p.redirect_uris[1], "https://wiki.example.com/auth/oidc.callback")
+        assert.eq(p.scopes[1], "openid")
+        assert.eq(p.scopes[2], "email")
+        assert.eq(p.scopes[3], "profile")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_client_preset_outline_requires_host() {
+    let script = r#"
+        local rauthy = require("assay.rauthy")
+        local ok, err = pcall(rauthy.client_presets.outline, {})
+        assert.eq(ok, false)
+        assert.eq(string.find(err, "opts.host required") ~= nil, true)
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
 async fn test_client_preset_openbao_requires_host() {
     let script = r#"
         local rauthy = require("assay.rauthy")
