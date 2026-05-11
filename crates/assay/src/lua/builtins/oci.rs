@@ -1,11 +1,11 @@
-use flate2::write::GzEncoder;
 use flate2::Compression;
+use flate2::write::GzEncoder;
 use futures_util::StreamExt;
 use mlua::{Lua, Table};
+use oci_distribution::Reference;
 use oci_distribution::client::{Client as OciClient, ClientConfig};
 use oci_distribution::manifest::{OciDescriptor, OciManifest};
 use oci_distribution::secrets::RegistryAuth;
-use oci_distribution::Reference;
 use sha2::{Digest, Sha256};
 use std::io::Write;
 
@@ -130,11 +130,7 @@ async fn copy_image(
     // Prime auth on the destination registry up-front so we get a fast,
     // clear failure if creds are wrong, before doing any heavy I/O.
     client
-        .auth(
-            dst,
-            dst_auth,
-            oci_distribution::RegistryOperation::Push,
-        )
+        .auth(dst, dst_auth, oci_distribution::RegistryOperation::Push)
         .await
         .map_err(|e| ext(format!("auth dst {dst}: {e}")))?;
 
@@ -191,11 +187,7 @@ async fn stream_copy_blob(
 /// Pull the manifest only (no layers), then push it under the new tag.
 /// This is the cheap, correct OCI retag: it does not re-upload blobs.
 /// For cross-registry retagging use `oci.copy`.
-async fn retag_image(
-    src: &Reference,
-    dst: &Reference,
-    auth: &RegistryAuth,
-) -> mlua::Result<()> {
+async fn retag_image(src: &Reference, dst: &Reference, auth: &RegistryAuth) -> mlua::Result<()> {
     if src.registry() != dst.registry() || src.repository() != dst.repository() {
         return Err(ext(format!(
             "oci.tag: src and dst must share registry+repository; got {src} and {dst}. Use oci.copy for cross-registry."
@@ -234,11 +226,7 @@ async fn mutate_image(
         .map_err(|e| ext(format!("pull manifest {src}: {e}")))?;
 
     client
-        .auth(
-            dst,
-            dst_auth,
-            oci_distribution::RegistryOperation::Push,
-        )
+        .auth(dst, dst_auth, oci_distribution::RegistryOperation::Push)
         .await
         .map_err(|e| ext(format!("auth dst {dst}: {e}")))?;
 
@@ -298,7 +286,9 @@ fn build_tar(files: &[(String, Vec<u8>)]) -> mlua::Result<Vec<u8>> {
             header.set_size(content.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            builder.append_data(&mut header, path, content.as_slice()).map_err(ext)?;
+            builder
+                .append_data(&mut header, path, content.as_slice())
+                .map_err(ext)?;
         }
         builder.finish().map_err(ext)?;
     }
@@ -324,8 +314,8 @@ fn hex_sha256(data: &[u8]) -> String {
 /// for an image config blob; only the manifest needs canonical encoding,
 /// and oci-distribution's `push_manifest` handles that.
 fn append_diff_id(config_str: &str, diff_id: &str) -> mlua::Result<Vec<u8>> {
-    let mut config: serde_json::Value = serde_json::from_str(config_str)
-        .map_err(|e| ext(format!("parse image config: {e}")))?;
+    let mut config: serde_json::Value =
+        serde_json::from_str(config_str).map_err(|e| ext(format!("parse image config: {e}")))?;
 
     let rootfs = config
         .get_mut("rootfs")
