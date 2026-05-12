@@ -31,7 +31,9 @@
 const DOCKERFILES: &[(&str, &str)] = &[
     ("../../Dockerfile", "/assay"),
     ("../../Dockerfile.assay-engine", "/assay-engine"),
-    ("../../Dockerfile.sh", "/assay"),
+    // The -sh variant puts assay at /usr/local/bin/assay so GitLab CI's
+    // `script:` lines can call bare `assay` via the default $PATH.
+    ("../../Dockerfile.sh", "/usr/local/bin/assay"),
 ];
 
 fn read_dockerfile(rel_path: &str) -> String {

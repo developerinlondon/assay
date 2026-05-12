@@ -2,6 +2,12 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.16.2 — 2026-05-12
+
+### Fixed
+
+- `:<version>-sh` image: ship the full busybox applet set, not just `/bin/sh`; move `assay` to `/usr/local/bin/assay` so it resolves on `$PATH`.
+
 ## assay 0.16.1 — 2026-05-11
 
 ### Fixed
