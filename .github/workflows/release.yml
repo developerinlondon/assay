@@ -481,18 +481,18 @@ jobs:
           fi
           echo "OK — assay-engine ${actual} live in cluster"
 
-  release-assay-lua:
-    needs: [detect, libraries, binaries]
+  # Crates.io publish is isolated from the binary/docker side: it builds
+  # from source and ships to crates.io with a different secret. If the
+  # token is rotated/expired, only this job fails — the binaries are
+  # still attached to the GH release and the docker images still ship.
+  release-assay-lua-crate:
+    needs: [detect, libraries]
     if: |
       always() &&
-      (needs.libraries.result == 'success' || needs.libraries.result == 'skipped') &&
-      (needs.binaries.result == 'success' || needs.binaries.result == 'skipped')
+      (needs.libraries.result == 'success' || needs.libraries.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -511,6 +511,21 @@ jobs:
           else
             cargo publish --allow-dirty -p assay-lua
           fi
+
+  # Tag, GH release, and both docker images. Does not depend on the
+  # crate publish — runs in parallel with release-assay-lua-crate.
+  release-assay-lua:
+    needs: [detect, libraries, binaries]
+    if: |
+      always() &&
+      (needs.libraries.result == 'success' || needs.libraries.result == 'skipped') &&
+      (needs.binaries.result == 'success' || needs.binaries.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/download-artifact@v8
         if: needs.detect.outputs.assay_lua_release_exists != 'true'
