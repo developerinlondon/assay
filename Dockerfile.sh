@@ -41,9 +41,12 @@ FROM ${BUILD_MODE} AS picked
 FROM alpine:3 AS certs
 RUN apk add --no-cache ca-certificates
 
-# busybox:musl is itself FROM scratch + a single ~1 MB static binary.
-# We pull `/bin/busybox` out of it and rename to `/bin/sh` in the final
-# image — that's all GitLab CI's `sh -c` wrapper needs.
+# busybox:musl is itself FROM scratch + a ~1 MB static binary plus a
+# directory of relative symlinks (sh → busybox, grep → busybox, etc.).
+# We copy the whole /bin so GitLab Runner's prelude script — which
+# invokes grep, mkdir, sed, tar and a handful of other coreutils — has
+# what it needs. The ~1 MB binary is the only real disk cost; the
+# symlinks share the same inode-equivalent on the image layer.
 FROM busybox:musl AS shell
 
 # /etc/ssl/certs/ca-certificates.crt is load-bearing — every assay
@@ -51,6 +54,9 @@ FROM busybox:musl AS shell
 # it. Without this file on FROM scratch every TLS connection fails.
 FROM scratch
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=shell /bin/busybox /bin/sh
-COPY --from=picked /assay /assay
-ENTRYPOINT ["/assay"]
+COPY --from=shell /bin /bin
+# assay goes under /usr/local/bin/ so the bare `assay` command resolves
+# via the default PATH (=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin).
+# Scripts like `assay foo.lua` work without an absolute path.
+COPY --from=picked /assay /usr/local/bin/assay
+ENTRYPOINT ["/usr/local/bin/assay"]
