@@ -33,23 +33,30 @@ local original_systemd = systemd
 systemd = {
   list_units = function(filter)
     local units = {
-      {
-        name = "demo.service",
-        description = "Demo service",
-        load = "loaded",
-        active = "active",
-        sub = "running",
-      },
-      {
-        name = "demo.timer",
-        description = "Demo timer",
-        load = "loaded",
-        active = "active",
+    {
+      name = "demo.service",
+      description = "Demo service",
+      load = "loaded",
+      active = "active",
+      sub = "running",
+    },
+    {
+      name = "heavy.service",
+      description = "Heavy service",
+      load = "loaded",
+      active = "active",
+      sub = "running",
+    },
+    {
+      name = "demo.timer",
+      description = "Demo timer",
+      load = "loaded",
+      active = "active",
         sub = "waiting",
       },
     }
-    if filter == "*.service" then return { units[1] } end
-    if filter == "*.timer" then return { units[2] } end
+    if filter == "*.service" then return { units[1], units[2] } end
+    if filter == "*.timer" then return { units[3] } end
     return units
   end,
   unit_status = function(name)
@@ -69,6 +76,21 @@ systemd = {
         main_pid = 4242,
         exec_start = "/usr/bin/demo --flag",
         restart = "on-failure",
+      }
+    end
+    if name == "heavy.service" then
+      return {
+        name = "heavy.service",
+        load = "loaded",
+        active = "active",
+        sub = "running",
+        description = "Heavy service",
+        memory_current = 134217728,
+        tasks_current = 11,
+        cpu_usage_nsec = 210000000,
+        n_restarts = 0,
+        unit_file_state = "enabled",
+        fragment_path = "/etc/systemd/system/heavy.service",
       }
     end
     return {
@@ -163,6 +185,11 @@ do
   assert.contains(r.body, "Memory", "services memory column")
   assert.contains(r.body, "Tasks", "services tasks column")
   assert.contains(r.body, "CPU Time", "services CPU time column")
+  assert.eq(r.body:find("<th>Sub</th>", 1, true), nil, "services omits sub column")
+  assert.eq(r.body:find("<th>Restarts</th>", 1, true), nil, "services omits restarts column")
+  assert.eq(r.body:find(">Description</th>", 1, true), nil, "services omits description column")
+  assert.contains(r.body, "sort=memory", "services memory sort link")
+  assert.contains(r.body, "sort=cpu", "services CPU sort link")
   assert.contains(r.body, "64 M", "services memory value")
   assert.contains(r.body, "0.63s", "services CPU time value")
   assert.contains(r.body, "service-toggle", "services row has expandable unit control")
@@ -177,6 +204,27 @@ do
   assert.contains(r.body, 'action="/api/services/stop"', "services stop form")
   assert.contains(r.body, 'action="/api/services/restart"', "services restart form")
   ok("/services renders expandable service details + lifecycle actions")
+end
+
+do
+  local r = get("/services?sort=memory&dir=desc")
+  assert.eq(r.status, 200, "GET /services memory sort")
+  assert.not_nil(r.body, "services memory-sort body")
+  local heavy_pos = r.body:find("heavy.service", 1, true)
+  local demo_pos = r.body:find("demo.service", 1, true)
+  assert.not_nil(heavy_pos, "services memory sort includes heavy service")
+  assert.not_nil(demo_pos, "services memory sort includes demo service")
+  assert.eq(heavy_pos < demo_pos, true, "services sorts by memory descending")
+
+  r = get("/services?sort=cpu&dir=desc")
+  assert.eq(r.status, 200, "GET /services CPU sort")
+  assert.not_nil(r.body, "services CPU-sort body")
+  heavy_pos = r.body:find("heavy.service", 1, true)
+  demo_pos = r.body:find("demo.service", 1, true)
+  assert.not_nil(heavy_pos, "services CPU sort includes heavy service")
+  assert.not_nil(demo_pos, "services CPU sort includes demo service")
+  assert.eq(demo_pos < heavy_pos, true, "services sorts by CPU descending")
+  ok("/services sorts by memory and CPU")
 end
 
 -- ── /cron, /logs, /tunnels, /tailscale, /interfaces: smoke each ───────

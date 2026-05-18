@@ -65,9 +65,11 @@ do
   })
 
   assert.eq(rows[1].memory, "64 M", "service memory is human formatted")
+  assert.eq(rows[1].memory_sort, 67108864, "service memory sort value")
   assert.eq(rows[1].tasks, 22, "service tasks are numeric")
   assert.eq(rows[1].tasks_label, "22", "service tasks label")
   assert.eq(rows[1].cpu_time, "0.63s", "service CPU time is human formatted")
+  assert.eq(rows[1].cpu_sort, 630000000, "service CPU sort value")
   assert.eq(rows[1].restarts, 2, "service restart count")
   assert.eq(rows[1].restart_allowed, true, "service restart allowed")
   assert.eq(rows[1].dom_id, "svc-demo-service", "service gets stable detail DOM id")
@@ -78,6 +80,8 @@ do
   assert.eq(detail_value(rows[1], "Restart policy"), "on-failure", "service detail includes restart policy")
 
   assert.eq(rows[2].memory, "—", "non-service memory placeholder")
+  assert.eq(rows[2].memory_sort, nil, "non-service memory sort placeholder")
+  assert.eq(rows[2].cpu_sort, nil, "non-service CPU sort placeholder")
   assert.eq(rows[2].restart_allowed, false, "non-service restart blocked")
   assert.eq(#(rows[2].details or {}), 0, "non-service detail list is empty")
 end

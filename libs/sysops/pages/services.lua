@@ -22,8 +22,50 @@ local function services_url(args)
     .. "?state=" .. urlenc(args.state or "all")
     .. "&type=" .. urlenc(args.type or "service")
     .. "&search=" .. urlenc(args.search or "")
+    .. (args.sort and args.sort ~= "" and ("&sort=" .. urlenc(args.sort) .. "&dir=" .. urlenc(args.dir or "desc")) or "")
     .. (args.ok and ("&ok=" .. urlenc(args.ok)) or "")
     .. (args.error and ("&error=" .. urlenc(args.error)) or "")
+end
+
+local function clean_sort_key(v)
+  v = tostring(v or "")
+  if v == "memory" or v == "cpu" then return v end
+  return ""
+end
+
+local function clean_sort_dir(v)
+  if tostring(v or "") == "asc" then return "asc" end
+  return "desc"
+end
+
+local function next_sort_dir(key, sort_key, sort_dir)
+  if sort_key == key and sort_dir == "desc" then return "asc" end
+  return "desc"
+end
+
+local function sort_value(row, sort_key)
+  if sort_key == "memory" then return row.memory_sort end
+  if sort_key == "cpu" then return row.cpu_sort end
+  return nil
+end
+
+local function sort_units(units, sort_key, sort_dir)
+  if sort_key == "" then return units end
+
+  table.sort(units, function(a, b)
+    local av = sort_value(a, sort_key)
+    local bv = sort_value(b, sort_key)
+    local an = tostring(a.name or a.unit or "")
+    local bn = tostring(b.name or b.unit or "")
+
+    if av == nil and bv == nil then return an < bn end
+    if av == nil then return false end
+    if bv == nil then return true end
+    if av == bv then return an < bn end
+    if sort_dir == "asc" then return av < bv end
+    return av > bv
+  end)
+  return units
 end
 
 function M.page(req)
@@ -33,6 +75,8 @@ function M.page(req)
   local state_filter = q.state  or "all"
   local type_filter  = q.type   or "service"
   local search       = (q.search or ""):lower()
+  local sort_key     = clean_sort_key(q.sort)
+  local sort_dir     = clean_sort_dir(q.dir)
 
   local glob = type_filter ~= "all" and ("*." .. type_filter) or nil
   local units = pcall_or_empty(systemd.list_units, glob)
@@ -66,11 +110,13 @@ function M.page(req)
     end
   end
 
+  local enriched = sort_units(service_units.enrich(filtered), sort_key, sort_dir)
+
   return render.render("services", {
     nav_active   = "services",
     host         = snap.host,
     machines     = snap.machines,
-    units        = service_units.enrich(filtered),
+    units        = enriched,
     counts       = {
       total    = total,   active  = active,
       failed   = failed,  inactive = inactive,
@@ -80,6 +126,48 @@ function M.page(req)
     state_filter = state_filter,
     type_filter  = type_filter,
     search       = search,
+    sort_key     = sort_key,
+    sort_dir     = sort_dir,
+    state_all_url = services_url({
+      state = "all", type = type_filter, search = search,
+      sort = sort_key, dir = sort_dir,
+    }),
+    state_active_url = services_url({
+      state = "active", type = type_filter, search = search,
+      sort = sort_key, dir = sort_dir,
+    }),
+    state_failed_url = services_url({
+      state = "failed", type = type_filter, search = search,
+      sort = sort_key, dir = sort_dir,
+    }),
+    state_inactive_url = services_url({
+      state = "inactive", type = type_filter, search = search,
+      sort = sort_key, dir = sort_dir,
+    }),
+    type_service_url = services_url({
+      state = state_filter, type = "service", search = search,
+      sort = sort_key, dir = sort_dir,
+    }),
+    type_timer_url = services_url({
+      state = state_filter, type = "timer", search = search,
+      sort = sort_key, dir = sort_dir,
+    }),
+    type_socket_url = services_url({
+      state = state_filter, type = "socket", search = search,
+      sort = sort_key, dir = sort_dir,
+    }),
+    type_all_url = services_url({
+      state = state_filter, type = "all", search = search,
+      sort = sort_key, dir = sort_dir,
+    }),
+    memory_sort_url = services_url({
+      state = state_filter, type = type_filter, search = search,
+      sort = "memory", dir = next_sort_dir("memory", sort_key, sort_dir),
+    }),
+    cpu_sort_url = services_url({
+      state = state_filter, type = type_filter, search = search,
+      sort = "cpu", dir = next_sort_dir("cpu", sort_key, sort_dir),
+    }),
     ok_msg       = q.ok,
     error_msg    = q.error,
   }, req)
@@ -91,6 +179,8 @@ local function lifecycle(req, action)
   local state_filter = f.state or "all"
   local type_filter = f.type or "service"
   local search = f.search or ""
+  local sort_key = clean_sort_key(f.sort)
+  local sort_dir = clean_sort_dir(f.dir)
 
   local res = service_units.action(unit, action)
   if not res.ok then
@@ -101,6 +191,8 @@ local function lifecycle(req, action)
           state = state_filter,
           type = type_filter,
           search = search,
+          sort = sort_key,
+          dir = sort_dir,
           error = action .. " failed for " .. unit .. ": " .. (res.error or "?"),
         }),
       },
@@ -114,6 +206,8 @@ local function lifecycle(req, action)
         state = state_filter,
         type = type_filter,
         search = search,
+        sort = sort_key,
+        dir = sort_dir,
         ok = action .. " requested for " .. unit,
       }),
     },

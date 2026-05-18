@@ -84,7 +84,7 @@ surface, not in the sysops host secret store.
 
 - Dashboard (machines grid, status strip, recent activity)
 - nspawn container list + per-container detail (services, cron, logs, shell)
-- Host services (systemd unit list, per-service stats, expandable systemd details, start/stop/restart actions)
+- Host services (systemd unit list, sortable CPU/memory stats, expandable systemd details, start/stop/restart actions)
 - Host cron (timers + crontabs)
 - Host logs (journal viewer + SSE stream)
 - Networks (tunnels, interfaces, tailscale)

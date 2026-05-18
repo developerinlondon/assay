@@ -255,12 +255,16 @@ local function decorate(row)
   end
 
   local stats = merged_stats(unit)
+  local memory = number_value(stats.memory_current)
+  local cpu = number_value(stats.cpu_usage_nsec)
   local tasks = number_value(stats.tasks_current)
   local restarts = number_value(stats.n_restarts)
-  row.memory = M.fmt_bytes(stats.memory_current)
+  row.memory = M.fmt_bytes(memory)
+  row.memory_sort = memory
   row.tasks = tasks
   row.tasks_label = tasks and tostring(math.floor(tasks)) or "—"
-  row.cpu_time = M.fmt_cpu_time(stats.cpu_usage_nsec)
+  row.cpu_time = M.fmt_cpu_time(cpu)
+  row.cpu_sort = cpu
   row.restarts = restarts
   row.restarts_label = restarts and tostring(math.floor(restarts)) or "—"
   row.restart_allowed = true

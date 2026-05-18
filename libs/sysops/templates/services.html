@@ -28,28 +28,28 @@
 
 <div class="filter-bar">
   <input class="input" id="svc-search" name="search" type="text"
-         value="{{ search }}" placeholder="search by name / description…"
+         value="{{ search }}" placeholder="search by unit"
          onchange="svcFilter()" oninput="svcFilter()" />
 
   <a class="chip {% if state_filter == 'all' %}active{% endif %}"
-     href="/services?state=all&type={{ type_filter }}&search={{ search }}">All <span class="n">{{ counts.total }}</span></a>
+     href="{{ state_all_url }}">All <span class="n">{{ counts.total }}</span></a>
   <a class="chip {% if state_filter == 'active' %}active{% endif %}"
-     href="/services?state=active&type={{ type_filter }}&search={{ search }}">Active <span class="n">{{ counts.active }}</span></a>
+     href="{{ state_active_url }}">Active <span class="n">{{ counts.active }}</span></a>
   <a class="chip {% if state_filter == 'failed' %}active{% endif %}"
-     href="/services?state=failed&type={{ type_filter }}&search={{ search }}">Failed <span class="n">{{ counts.failed }}</span></a>
+     href="{{ state_failed_url }}">Failed <span class="n">{{ counts.failed }}</span></a>
   <a class="chip {% if state_filter == 'inactive' %}active{% endif %}"
-     href="/services?state=inactive&type={{ type_filter }}&search={{ search }}">Inactive <span class="n">{{ counts.inactive }}</span></a>
+     href="{{ state_inactive_url }}">Inactive <span class="n">{{ counts.inactive }}</span></a>
 
   <span style="width:12px"></span>
 
   <a class="chip {% if type_filter == 'service' %}active{% endif %}"
-     href="/services?state={{ state_filter }}&type=service&search={{ search }}">Service <span class="n">{{ counts.service }}</span></a>
+     href="{{ type_service_url }}">Service <span class="n">{{ counts.service }}</span></a>
   <a class="chip {% if type_filter == 'timer' %}active{% endif %}"
-     href="/services?state={{ state_filter }}&type=timer&search={{ search }}">Timer <span class="n">{{ counts.timer }}</span></a>
+     href="{{ type_timer_url }}">Timer <span class="n">{{ counts.timer }}</span></a>
   <a class="chip {% if type_filter == 'socket' %}active{% endif %}"
-     href="/services?state={{ state_filter }}&type=socket&search={{ search }}">Socket <span class="n">{{ counts.socket }}</span></a>
+     href="{{ type_socket_url }}">Socket <span class="n">{{ counts.socket }}</span></a>
   <a class="chip {% if type_filter == 'all' %}active{% endif %}"
-     href="/services?state={{ state_filter }}&type=all&search={{ search }}">All types</a>
+     href="{{ type_all_url }}">All types</a>
 </div>
 
 <div class="card">
@@ -59,12 +59,15 @@
         <th>Unit</th>
         <th>Load</th>
         <th>Active</th>
-        <th>Sub</th>
-        <th>Memory</th>
+        <th>
+          <a class="sort-link {% if sort_key == 'memory' %}active{% endif %}"
+             href="{{ memory_sort_url }}">Memory{% if sort_key == 'memory' %} <span>{{ sort_dir }}</span>{% endif %}</a>
+        </th>
         <th>Tasks</th>
-        <th>CPU Time</th>
-        <th>Restarts</th>
-        <th class="wrap">Description</th>
+        <th>
+          <a class="sort-link {% if sort_key == 'cpu' %}active{% endif %}"
+             href="{{ cpu_sort_url }}">CPU Time{% if sort_key == 'cpu' %} <span>{{ sort_dir }}</span>{% endif %}</a>
+        </th>
       </tr>
     </thead>
     <tbody>
@@ -93,16 +96,13 @@
             <span class="pill pill-info">{{ u.active }}</span>
           {% endif %}
         </td>
-        <td>{{ u.sub }}</td>
         <td class="mono">{{ u.memory }}</td>
         <td class="mono">{{ u.tasks_label }}</td>
         <td class="mono">{{ u.cpu_time }}</td>
-        <td class="mono">{{ u.restarts_label }}</td>
-        <td class="wrap muted">{{ u.description }}</td>
       </tr>
       {% if u.has_details %}
       <tr class="service-detail-row" id="{{ u.dom_id }}" hidden>
-        <td colspan="9">
+        <td colspan="6">
           <div class="service-detail-panel">
             <div class="service-detail-grid">
               {% for d in u.details %}
@@ -120,6 +120,8 @@
                 <input type="hidden" name="state" value="{{ state_filter }}">
                 <input type="hidden" name="type" value="{{ type_filter }}">
                 <input type="hidden" name="search" value="{{ search }}">
+                <input type="hidden" name="sort" value="{{ sort_key }}">
+                <input type="hidden" name="dir" value="{{ sort_dir }}">
                 <button type="submit" class="btn btn-sm btn-primary">Start</button>
               </form>
               <form method="post" action="/api/services/stop" style="margin:0"
@@ -128,6 +130,8 @@
                 <input type="hidden" name="state" value="{{ state_filter }}">
                 <input type="hidden" name="type" value="{{ type_filter }}">
                 <input type="hidden" name="search" value="{{ search }}">
+                <input type="hidden" name="sort" value="{{ sort_key }}">
+                <input type="hidden" name="dir" value="{{ sort_dir }}">
                 <button type="submit" class="btn btn-sm btn-danger">Stop</button>
               </form>
               <form method="post" action="/api/services/restart" style="margin:0"
@@ -136,6 +140,8 @@
                 <input type="hidden" name="state" value="{{ state_filter }}">
                 <input type="hidden" name="type" value="{{ type_filter }}">
                 <input type="hidden" name="search" value="{{ search }}">
+                <input type="hidden" name="sort" value="{{ sort_key }}">
+                <input type="hidden" name="dir" value="{{ sort_dir }}">
                 <button type="submit" class="btn btn-sm">Restart</button>
               </form>
             </div>
