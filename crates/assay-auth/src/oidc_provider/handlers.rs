@@ -1145,82 +1145,6 @@ fn validate_return_to(raw: Option<String>, public_url: &url::Url) -> Option<Stri
     }
 }
 
-#[cfg(test)]
-mod return_to_tests {
-    use super::validate_return_to;
-    use url::Url;
-
-    fn issuer() -> Url {
-        Url::parse("https://gondor.example.com/auth").unwrap()
-    }
-
-    #[test]
-    fn accepts_relative_path() {
-        let u = issuer();
-        assert_eq!(validate_return_to(Some("/".into()), &u), Some("/".into()));
-        assert_eq!(
-            validate_return_to(Some("/dashboard".into()), &u),
-            Some("/dashboard".into())
-        );
-        assert_eq!(
-            validate_return_to(Some("/a?b=c#d".into()), &u),
-            Some("/a?b=c#d".into())
-        );
-    }
-
-    #[test]
-    fn accepts_same_origin_absolute() {
-        let u = issuer();
-        let here = "https://gondor.example.com/some/path".to_string();
-        assert_eq!(validate_return_to(Some(here.clone()), &u), Some(here));
-    }
-
-    #[test]
-    fn rejects_cross_origin() {
-        let u = issuer();
-        assert_eq!(
-            validate_return_to(Some("https://evil.com".into()), &u),
-            None
-        );
-        assert_eq!(
-            validate_return_to(Some("https://evil.com/path".into()), &u),
-            None
-        );
-        // Different subdomain — also cross-origin.
-        assert_eq!(
-            validate_return_to(Some("https://other.example.com/x".into()), &u),
-            None
-        );
-    }
-
-    #[test]
-    fn rejects_protocol_relative() {
-        let u = issuer();
-        assert_eq!(validate_return_to(Some("//evil.com/x".into()), &u), None);
-        assert_eq!(validate_return_to(Some("//evil.com".into()), &u), None);
-    }
-
-    #[test]
-    fn rejects_javascript_and_data_schemes() {
-        let u = issuer();
-        assert_eq!(
-            validate_return_to(Some("javascript:alert(1)".into()), &u),
-            None
-        );
-        assert_eq!(
-            validate_return_to(Some("data:text/html,<script>".into()), &u),
-            None
-        );
-    }
-
-    #[test]
-    fn passes_through_none_and_empty() {
-        let u = issuer();
-        assert_eq!(validate_return_to(None, &u), None);
-        assert_eq!(validate_return_to(Some(String::new()), &u), None);
-    }
-}
-
 // =====================================================================
 //   helpers
 // =====================================================================
@@ -1363,5 +1287,75 @@ mod tests {
     fn url_encode_handles_reserved_bytes() {
         assert_eq!(url_encode("a b/c"), "a%20b%2Fc");
         assert_eq!(url_encode("Plain-Text_1.0~"), "Plain-Text_1.0~");
+    }
+
+    fn return_to_issuer() -> url::Url {
+        url::Url::parse("https://gondor.example.com/auth").unwrap()
+    }
+
+    #[test]
+    fn validate_return_to_accepts_relative_path() {
+        let u = return_to_issuer();
+        assert_eq!(validate_return_to(Some("/".into()), &u), Some("/".into()));
+        assert_eq!(
+            validate_return_to(Some("/dashboard".into()), &u),
+            Some("/dashboard".into())
+        );
+        assert_eq!(
+            validate_return_to(Some("/a?b=c#d".into()), &u),
+            Some("/a?b=c#d".into())
+        );
+    }
+
+    #[test]
+    fn validate_return_to_accepts_same_origin_absolute() {
+        let u = return_to_issuer();
+        let here = "https://gondor.example.com/some/path".to_string();
+        assert_eq!(validate_return_to(Some(here.clone()), &u), Some(here));
+    }
+
+    #[test]
+    fn validate_return_to_rejects_cross_origin() {
+        let u = return_to_issuer();
+        assert_eq!(
+            validate_return_to(Some("https://evil.com".into()), &u),
+            None
+        );
+        assert_eq!(
+            validate_return_to(Some("https://evil.com/path".into()), &u),
+            None
+        );
+        // Different subdomain — also cross-origin.
+        assert_eq!(
+            validate_return_to(Some("https://other.example.com/x".into()), &u),
+            None
+        );
+    }
+
+    #[test]
+    fn validate_return_to_rejects_protocol_relative() {
+        let u = return_to_issuer();
+        assert_eq!(validate_return_to(Some("//evil.com/x".into()), &u), None);
+        assert_eq!(validate_return_to(Some("//evil.com".into()), &u), None);
+    }
+
+    #[test]
+    fn validate_return_to_rejects_javascript_and_data_schemes() {
+        let u = return_to_issuer();
+        assert_eq!(
+            validate_return_to(Some("javascript:alert(1)".into()), &u),
+            None
+        );
+        assert_eq!(
+            validate_return_to(Some("data:text/html,<script>".into()), &u),
+            None
+        );
+    }
+
+    #[test]
+    fn validate_return_to_passes_through_none_and_empty() {
+        let u = return_to_issuer();
+        assert_eq!(validate_return_to(None, &u), None);
+        assert_eq!(validate_return_to(Some(String::new()), &u), None);
     }
 }
