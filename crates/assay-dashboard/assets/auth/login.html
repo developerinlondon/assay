@@ -2,15 +2,23 @@
 <html lang="en" data-default-theme="__BRAND_DEFAULT_THEME__">
 <head>
   <script>
+    /* Pre-paint theme resolver: saved → default → prefers-color-scheme.
+       On any failure (storage disabled, matchMedia absent, sandboxed
+       iframe), fall back to `dark` rather than swallowing silently —
+       the page never renders untyped. */
     (function () {
+      var fallback = 'dark';
+      var theme = fallback;
       try {
         var saved = localStorage.getItem('assay-theme');
         var def = (document.documentElement.dataset.defaultTheme || 'auto');
-        var theme = saved
+        theme = saved
           || ((def === 'dark' || def === 'light') ? def : null)
           || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-        document.documentElement.setAttribute('data-theme', theme);
-      } catch (e) {}
+      } catch (_e) {
+        theme = fallback;
+      }
+      document.documentElement.setAttribute('data-theme', theme);
     })();
   </script>
   <meta charset="UTF-8">

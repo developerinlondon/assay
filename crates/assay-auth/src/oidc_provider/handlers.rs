@@ -1290,7 +1290,7 @@ mod tests {
     }
 
     fn return_to_issuer() -> url::Url {
-        url::Url::parse("https://gondor.example.com/auth").unwrap()
+        url::Url::parse("https://app.example.com/auth").unwrap()
     }
 
     #[test]
@@ -1310,7 +1310,7 @@ mod tests {
     #[test]
     fn validate_return_to_accepts_same_origin_absolute() {
         let u = return_to_issuer();
-        let here = "https://gondor.example.com/some/path".to_string();
+        let here = "https://app.example.com/some/path".to_string();
         assert_eq!(validate_return_to(Some(here.clone()), &u), Some(here));
     }
 

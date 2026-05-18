@@ -49,6 +49,11 @@
 
         if (u.icon_url) {
           const img = document.createElement('img');
+          // `no-referrer` keeps the Referer header off the icon
+          // fetch — otherwise a third-party CDN hosting the icon
+          // would see `/auth/login?return_to=...` (OIDC request
+          // metadata) in its logs.
+          img.referrerPolicy = 'no-referrer';
           img.src = u.icon_url;
           img.alt = '';
           img.width = 20;
