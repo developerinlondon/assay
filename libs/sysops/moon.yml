@@ -16,7 +16,7 @@ tasks:
     # Run the smoke test from the workspace root so relative paths
     # (libs/..., target/release/assay) resolve cleanly. The release
     # binary is produced by the assay-lua:build-runtime dep below.
-    command: "bash -c 'cd $workspaceRoot && ./target/release/assay libs/sysops/tests-lua/smoke.test.lua && ./target/release/assay libs/sysops/tests-lua/vault.test.lua'"
+    command: "bash -c 'cd $workspaceRoot && ./target/release/assay libs/sysops/tests-lua/services.test.lua && ./target/release/assay libs/sysops/tests-lua/smoke.test.lua && ./target/release/assay libs/sysops/tests-lua/vault.test.lua'"
     env:
       LUA_PATH: "libs/?.lua;libs/?/init.lua;libs/sysops/?.lua;libs/sysops/tests-lua/?.lua;;"
     deps:

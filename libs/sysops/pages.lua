@@ -73,6 +73,9 @@ return {
 
   -- Host-level read-only pages.
   services    = svcs_pg.page,
+  services_start = svcs_pg.start,
+  services_stop = svcs_pg.stop,
+  services_restart = svcs_pg.restart,
   cron        = cron_pg.page,
   logs        = logs_pg.page,
   logs_stream = logs_api.stream,
