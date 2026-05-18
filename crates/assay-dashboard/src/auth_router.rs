@@ -122,6 +122,9 @@ async fn favicon() -> impl IntoResponse {
 }
 
 async fn login_index() -> impl IntoResponse {
+    // The login template carries its own literal title token
+    // (`Sign in · __BRAND_NAME__`), so we don't need the brittle
+    // post-render `.replace(...)` the admin index uses.
     let body = {
         let asset_version = env!("CARGO_PKG_VERSION");
         crate::whitelabel::render_index(
@@ -129,7 +132,6 @@ async fn login_index() -> impl IntoResponse {
             asset_version,
             &crate::whitelabel::WHITELABEL,
         )
-        .replace("Assay Workflow Dashboard", "Sign in")
     };
     (
         StatusCode::OK,

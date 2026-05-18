@@ -281,7 +281,7 @@ async fn build_auth_ctx_pg(
     #[cfg(feature = "auth-oidc-provider")]
     if cfg.auth.oidc_provider.enabled {
         let issuer = oidc_issuer(cfg);
-        let public_url = parse_public_url(cfg)?;
+        let public_url = oidc_public_url(cfg)?;
         let provider = assay_auth::oidc_provider::OidcProviderConfig::new(
             issuer,
             public_url,
@@ -380,7 +380,7 @@ async fn build_auth_ctx_sqlite(
     #[cfg(feature = "auth-oidc-provider")]
     if cfg.auth.oidc_provider.enabled {
         let issuer = oidc_issuer(cfg);
-        let public_url = parse_public_url(cfg)?;
+        let public_url = oidc_public_url(cfg)?;
         let provider = assay_auth::oidc_provider::OidcProviderConfig::new(
             issuer,
             public_url,
@@ -472,11 +472,22 @@ fn oidc_issuer(cfg: &EngineConfig) -> String {
         .unwrap_or_else(|| effective_issuer(cfg))
 }
 
-/// Parse `server.public_url` as a `url::Url`. Used by the OIDC provider
-/// to derive default redirect targets and by passkey RP setup.
+/// Parse `server.public_url` as a `url::Url`. Used by passkey RP setup
+/// (which wants the bare origin) — not by the OIDC provider, which
+/// needs the issuer URL (with `/auth`); see [`oidc_public_url`].
 fn parse_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
     url::Url::parse(&cfg.server.public_url)
         .map_err(|e| anyhow::anyhow!("server.public_url {:?}: {e}", cfg.server.public_url))
+}
+
+/// Base URL the OIDC provider exposes its endpoints at — same as
+/// [`oidc_issuer`] (which already accounts for the `/auth` mount
+/// prefix), parsed as a `url::Url`. Passed into `OidcProviderConfig`
+/// so `upstream_callback_url(...)` produces an absolute URI that
+/// matches the actual handler path.
+fn oidc_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
+    let issuer = oidc_issuer(cfg);
+    url::Url::parse(&issuer).map_err(|e| anyhow::anyhow!("oidc issuer {issuer:?}: {e}"))
 }
 
 /// Build a passkey manager from `auth.passkey` config. Returns `None`

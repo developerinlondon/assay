@@ -952,7 +952,7 @@ pub async fn upstream_start(
         registry,
         &provider.upstream_states,
         &slug,
-        q.return_to,
+        validate_return_to(q.return_to, &provider.public_url),
     )
     .await
     {
@@ -1007,7 +1007,7 @@ pub async fn upstream_callback(
         Err(e) => {
             let mut response =
                 error_html(StatusCode::BAD_REQUEST, &format!("upstream complete: {e}"));
-            append_clear_binding_cookie(&mut response);
+            append_clear_binding_cookie(&mut response, &provider.public_url);
             return response;
         }
     };
@@ -1035,7 +1035,7 @@ pub async fn upstream_callback(
             };
             if let Err(e) = ctx.users.create_user(&user).await {
                 let mut response = server_error_html(&format!("create user: {e}"));
-                append_clear_binding_cookie(&mut response);
+                append_clear_binding_cookie(&mut response, &provider.public_url);
                 return response;
             }
             if let Err(e) = ctx
@@ -1044,14 +1044,14 @@ pub async fn upstream_callback(
                 .await
             {
                 let mut response = server_error_html(&format!("link upstream: {e}"));
-                append_clear_binding_cookie(&mut response);
+                append_clear_binding_cookie(&mut response, &provider.public_url);
                 return response;
             }
             user
         }
         Err(e) => {
             let mut response = server_error_html(&format!("upstream user lookup: {e}"));
-            append_clear_binding_cookie(&mut response);
+            append_clear_binding_cookie(&mut response, &provider.public_url);
             return response;
         }
     };
@@ -1062,7 +1062,7 @@ pub async fn upstream_callback(
         Ok(s) => s,
         Err(e) => {
             let mut response = server_error_html(&format!("create session: {e}"));
-            append_clear_binding_cookie(&mut response);
+            append_clear_binding_cookie(&mut response, &provider.public_url);
             return response;
         }
     };
@@ -1071,17 +1071,28 @@ pub async fn upstream_callback(
     if let Ok(value) = cookie.to_string().parse() {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
-    append_clear_binding_cookie(&mut response);
+    append_clear_binding_cookie(&mut response, &provider.public_url);
     response
 }
 
 /// Build the `Set-Cookie` value for the binding token. Omits `Secure`
 /// only when the public URL is `http` to a localhost host (dev rigs).
+/// Cookie `Path` for the binding cookie, derived from the OIDC public
+/// URL so it matches whatever mount prefix the engine nests the spec
+/// router under (typically `/auth`). Hardcoding `/oidc/upstream/` left
+/// the cookie unsent on callbacks when the spec router was nested at
+/// any prefix other than `/`.
+fn binding_cookie_path(public_url: &url::Url) -> String {
+    let base = public_url.path().trim_end_matches('/');
+    format!("{base}/oidc/upstream/")
+}
+
 fn build_binding_cookie(raw: &str, public_url: &url::Url) -> String {
     let secure = !is_plain_http(public_url);
     let secure_attr = if secure { "; Secure" } else { "" };
+    let path = binding_cookie_path(public_url);
     format!(
-        "{UPSTREAM_BINDING_COOKIE}={raw}; Path=/oidc/upstream/; HttpOnly; SameSite=Lax; \
+        "{UPSTREAM_BINDING_COOKIE}={raw}; Path={path}; HttpOnly; SameSite=Lax; \
          Max-Age=300{secure_attr}"
     )
 }
@@ -1089,10 +1100,10 @@ fn build_binding_cookie(raw: &str, public_url: &url::Url) -> String {
 /// Append a `Set-Cookie: …; Max-Age=0` header to clear the binding
 /// cookie. Called on every callback response — the cookie's job ended
 /// the moment the callback ran.
-fn append_clear_binding_cookie(response: &mut Response) {
-    let cleared = format!(
-        "{UPSTREAM_BINDING_COOKIE}=; Path=/oidc/upstream/; Max-Age=0; HttpOnly; SameSite=Lax"
-    );
+fn append_clear_binding_cookie(response: &mut Response, public_url: &url::Url) {
+    let path = binding_cookie_path(public_url);
+    let cleared =
+        format!("{UPSTREAM_BINDING_COOKIE}=; Path={path}; Max-Age=0; HttpOnly; SameSite=Lax");
     if let Ok(value) = cleared.parse() {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
@@ -1100,6 +1111,114 @@ fn append_clear_binding_cookie(response: &mut Response) {
 
 fn is_plain_http(url: &url::Url) -> bool {
     url.scheme() != "https"
+}
+
+/// Validate the `return_to` parameter passed to `/oidc/upstream/{slug}/start`.
+/// Without this check, an attacker can craft a link to the legitimate
+/// login surface that, after a successful upstream login, bounces the
+/// victim to an attacker-controlled URL (open-redirect).
+///
+/// Acceptance rules:
+///   - `None` / empty → `None`
+///   - Path-only same-origin URLs (`/foo`, `/`) → accepted as-is
+///   - Absolute URLs whose origin matches `public_url`'s origin → accepted
+///   - Everything else (protocol-relative `//evil`, cross-origin
+///     `https://evil`, schemes like `javascript:`) → `None`
+fn validate_return_to(raw: Option<String>, public_url: &url::Url) -> Option<String> {
+    let s = raw?;
+    if s.is_empty() {
+        return None;
+    }
+    // Reject protocol-relative URLs — `//evil/path` resolves to a
+    // cross-origin redirect when browsers see it as `<current-scheme>://evil/path`.
+    if s.starts_with("//") {
+        return None;
+    }
+    // Accept same-origin path-only redirects.
+    if s.starts_with('/') {
+        return Some(s);
+    }
+    // Accept absolute URLs only if their origin matches ours.
+    match url::Url::parse(&s) {
+        Ok(u) if u.origin() == public_url.origin() => Some(s),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod return_to_tests {
+    use super::validate_return_to;
+    use url::Url;
+
+    fn issuer() -> Url {
+        Url::parse("https://gondor.example.com/auth").unwrap()
+    }
+
+    #[test]
+    fn accepts_relative_path() {
+        let u = issuer();
+        assert_eq!(validate_return_to(Some("/".into()), &u), Some("/".into()));
+        assert_eq!(
+            validate_return_to(Some("/dashboard".into()), &u),
+            Some("/dashboard".into())
+        );
+        assert_eq!(
+            validate_return_to(Some("/a?b=c#d".into()), &u),
+            Some("/a?b=c#d".into())
+        );
+    }
+
+    #[test]
+    fn accepts_same_origin_absolute() {
+        let u = issuer();
+        let here = "https://gondor.example.com/some/path".to_string();
+        assert_eq!(validate_return_to(Some(here.clone()), &u), Some(here));
+    }
+
+    #[test]
+    fn rejects_cross_origin() {
+        let u = issuer();
+        assert_eq!(
+            validate_return_to(Some("https://evil.com".into()), &u),
+            None
+        );
+        assert_eq!(
+            validate_return_to(Some("https://evil.com/path".into()), &u),
+            None
+        );
+        // Different subdomain — also cross-origin.
+        assert_eq!(
+            validate_return_to(Some("https://other.example.com/x".into()), &u),
+            None
+        );
+    }
+
+    #[test]
+    fn rejects_protocol_relative() {
+        let u = issuer();
+        assert_eq!(validate_return_to(Some("//evil.com/x".into()), &u), None);
+        assert_eq!(validate_return_to(Some("//evil.com".into()), &u), None);
+    }
+
+    #[test]
+    fn rejects_javascript_and_data_schemes() {
+        let u = issuer();
+        assert_eq!(
+            validate_return_to(Some("javascript:alert(1)".into()), &u),
+            None
+        );
+        assert_eq!(
+            validate_return_to(Some("data:text/html,<script>".into()), &u),
+            None
+        );
+    }
+
+    #[test]
+    fn passes_through_none_and_empty() {
+        let u = issuer();
+        assert_eq!(validate_return_to(None, &u), None);
+        assert_eq!(validate_return_to(Some(String::new()), &u), None);
+    }
 }
 
 // =====================================================================
