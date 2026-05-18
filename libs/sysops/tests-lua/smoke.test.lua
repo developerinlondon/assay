@@ -64,6 +64,11 @@ systemd = {
         tasks_current = 22,
         cpu_usage_nsec = 630000000,
         n_restarts = 2,
+        unit_file_state = "enabled",
+        fragment_path = "/etc/systemd/system/demo.service",
+        main_pid = 4242,
+        exec_start = "/usr/bin/demo --flag",
+        restart = "on-failure",
       }
     end
     return {
@@ -160,10 +165,18 @@ do
   assert.contains(r.body, "CPU Time", "services CPU time column")
   assert.contains(r.body, "64 M", "services memory value")
   assert.contains(r.body, "0.63s", "services CPU time value")
+  assert.contains(r.body, "service-toggle", "services row has expandable unit control")
+  assert.contains(r.body, "service-detail-row", "services renders expanded-detail row shell")
+  assert.contains(r.body, "Unit file", "services detail includes unit file label")
+  assert.contains(r.body, "enabled", "services detail includes unit file value")
+  assert.contains(r.body, "Main PID", "services detail includes main pid label")
+  assert.contains(r.body, "4242", "services detail includes main pid value")
+  assert.contains(r.body, "Exec start", "services detail includes exec label")
+  assert.contains(r.body, "demo --flag", "services detail includes exec value")
   assert.contains(r.body, 'action="/api/services/start"', "services start form")
   assert.contains(r.body, 'action="/api/services/stop"', "services stop form")
   assert.contains(r.body, 'action="/api/services/restart"', "services restart form")
-  ok("/services renders with stats + lifecycle actions")
+  ok("/services renders expandable service details + lifecycle actions")
 end
 
 -- ── /cron, /logs, /tunnels, /tailscale, /interfaces: smoke each ───────

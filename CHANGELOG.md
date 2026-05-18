@@ -7,8 +7,8 @@ All notable changes to Assay are documented here.
 ### Added
 
 - Host Services now shows per-`.service` usage stats: memory, task count, accumulated CPU time, and
-  restart count. Stats are best-effort and degrade to placeholders when a unit or host does not
-  expose accounting data.
+  restart count. Clicking a service expands a systemd detail panel with unit file state/path, main
+  PID, exec command, restart policy, and related accounting fields.
 - Host Services adds `.service`-only start, stop, and restart actions. POST handlers validate the
   unit name, call the allow-listed systemd lifecycle path, and redirect back to the current filtered
   services view with a success or error banner.

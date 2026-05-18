@@ -11,6 +11,13 @@ local services = require("services.host.service_units")
 local original_systemd = systemd
 local action_calls = {}
 
+local function detail_value(row, label)
+  for _, d in ipairs(row.details or {}) do
+    if d.label == label then return d.value end
+  end
+  return nil
+end
+
 systemd = {
   unit_status = function(name)
     if name == "demo.service" then
@@ -19,6 +26,12 @@ systemd = {
         tasks_current = 22,
         cpu_usage_nsec = 630000000,
         n_restarts = 2,
+        unit_file_state = "enabled",
+        fragment_path = "/etc/systemd/system/demo.service",
+        main_pid = 4242,
+        exec_start = "/usr/bin/demo --flag",
+        restart = "on-failure",
+        user = "demo",
       }
     end
     return {}
@@ -57,9 +70,16 @@ do
   assert.eq(rows[1].cpu_time, "0.63s", "service CPU time is human formatted")
   assert.eq(rows[1].restarts, 2, "service restart count")
   assert.eq(rows[1].restart_allowed, true, "service restart allowed")
+  assert.eq(rows[1].dom_id, "svc-demo-service", "service gets stable detail DOM id")
+  assert.eq(detail_value(rows[1], "Unit file"), "enabled", "service detail includes unit file state")
+  assert.eq(detail_value(rows[1], "Fragment path"), "/etc/systemd/system/demo.service", "service detail includes unit path")
+  assert.eq(detail_value(rows[1], "Main PID"), "4242", "service detail includes main pid")
+  assert.eq(detail_value(rows[1], "Exec start"), "/usr/bin/demo --flag", "service detail includes exec command")
+  assert.eq(detail_value(rows[1], "Restart policy"), "on-failure", "service detail includes restart policy")
 
   assert.eq(rows[2].memory, "—", "non-service memory placeholder")
   assert.eq(rows[2].restart_allowed, false, "non-service restart blocked")
+  assert.eq(#(rows[2].details or {}), 0, "non-service detail list is empty")
 end
 
 do

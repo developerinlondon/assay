@@ -65,13 +65,22 @@
         <th>CPU Time</th>
         <th>Restarts</th>
         <th class="wrap">Description</th>
-        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for u in units %}
       <tr>
-        <td class="name-cell">{{ u.name }}</td>
+        <td class="name-cell">
+          {% if u.has_details %}
+          <button type="button" class="service-toggle"
+                  aria-expanded="false" aria-controls="{{ u.dom_id }}"
+                  onclick="svcToggle('{{ u.dom_id }}', this)">
+            <span class="service-toggle-mark">+</span><span>{{ u.name }}</span>
+          </button>
+          {% else %}
+          {{ u.name }}
+          {% endif %}
+        </td>
         <td>{{ u.load }}</td>
         <td>
           {% if u.active == "active" %}
@@ -90,39 +99,51 @@
         <td class="mono">{{ u.cpu_time }}</td>
         <td class="mono">{{ u.restarts_label }}</td>
         <td class="wrap muted">{{ u.description }}</td>
-        <td>
-          {% if u.action_allowed %}
-          <div style="display:flex;gap:6px;align-items:center">
-            <form method="post" action="/api/services/start" style="margin:0"
-                  onsubmit="return confirm('Start {{ u.name }}?')">
-              <input type="hidden" name="unit" value="{{ u.name }}">
-              <input type="hidden" name="state" value="{{ state_filter }}">
-              <input type="hidden" name="type" value="{{ type_filter }}">
-              <input type="hidden" name="search" value="{{ search }}">
-              <button type="submit" class="btn btn-sm btn-primary">Start</button>
-            </form>
-            <form method="post" action="/api/services/stop" style="margin:0"
-                  onsubmit="return confirm('Stop {{ u.name }}?')">
-              <input type="hidden" name="unit" value="{{ u.name }}">
-              <input type="hidden" name="state" value="{{ state_filter }}">
-              <input type="hidden" name="type" value="{{ type_filter }}">
-              <input type="hidden" name="search" value="{{ search }}">
-              <button type="submit" class="btn btn-sm btn-danger">Stop</button>
-            </form>
-            <form method="post" action="/api/services/restart" style="margin:0"
-                  onsubmit="return confirm('Restart {{ u.name }}?')">
-              <input type="hidden" name="unit" value="{{ u.name }}">
-              <input type="hidden" name="state" value="{{ state_filter }}">
-              <input type="hidden" name="type" value="{{ type_filter }}">
-              <input type="hidden" name="search" value="{{ search }}">
-              <button type="submit" class="btn btn-sm">Restart</button>
-            </form>
+      </tr>
+      {% if u.has_details %}
+      <tr class="service-detail-row" id="{{ u.dom_id }}" hidden>
+        <td colspan="9">
+          <div class="service-detail-panel">
+            <div class="service-detail-grid">
+              {% for d in u.details %}
+              <div class="service-detail-item">
+                <div class="service-detail-label">{{ d.label }}</div>
+                <div class="service-detail-value">{{ d.value }}</div>
+              </div>
+              {% endfor %}
+            </div>
+            {% if u.action_allowed %}
+            <div class="service-actions">
+              <form method="post" action="/api/services/start" style="margin:0"
+                    onsubmit="return confirm('Start {{ u.name }}?')">
+                <input type="hidden" name="unit" value="{{ u.name }}">
+                <input type="hidden" name="state" value="{{ state_filter }}">
+                <input type="hidden" name="type" value="{{ type_filter }}">
+                <input type="hidden" name="search" value="{{ search }}">
+                <button type="submit" class="btn btn-sm btn-primary">Start</button>
+              </form>
+              <form method="post" action="/api/services/stop" style="margin:0"
+                    onsubmit="return confirm('Stop {{ u.name }}?')">
+                <input type="hidden" name="unit" value="{{ u.name }}">
+                <input type="hidden" name="state" value="{{ state_filter }}">
+                <input type="hidden" name="type" value="{{ type_filter }}">
+                <input type="hidden" name="search" value="{{ search }}">
+                <button type="submit" class="btn btn-sm btn-danger">Stop</button>
+              </form>
+              <form method="post" action="/api/services/restart" style="margin:0"
+                    onsubmit="return confirm('Restart {{ u.name }}?')">
+                <input type="hidden" name="unit" value="{{ u.name }}">
+                <input type="hidden" name="state" value="{{ state_filter }}">
+                <input type="hidden" name="type" value="{{ type_filter }}">
+                <input type="hidden" name="search" value="{{ search }}">
+                <button type="submit" class="btn btn-sm">Restart</button>
+              </form>
+            </div>
+            {% endif %}
           </div>
-          {% else %}
-          <span class="muted">—</span>
-          {% endif %}
         </td>
       </tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
@@ -133,6 +154,22 @@
 </div>
 
 <script>
+function svcToggle(id, control) {
+  var row = document.getElementById(id);
+  if (!row) return;
+  var open = row.hasAttribute("hidden");
+  if (open) {
+    row.removeAttribute("hidden");
+  } else {
+    row.setAttribute("hidden", "");
+  }
+  if (control) {
+    control.setAttribute("aria-expanded", open ? "true" : "false");
+    var mark = control.querySelector(".service-toggle-mark");
+    if (mark) mark.textContent = open ? "-" : "+";
+  }
+}
+
 function svcFilter() {
   var q = document.getElementById("svc-search").value;
   var url = new URL(window.location.href);
