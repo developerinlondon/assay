@@ -1,19 +1,28 @@
-// Login landing — fetch enabled upstreams from /auth/upstreams and
-// render one button per row. Preserves the `return_to` query
-// parameter so the user lands back at the page that bounced them
-// here once the upstream round-trip completes.
+/* Assay Auth — login landing controller.
+ *
+ * Fetches enabled upstream IdPs from /auth/upstreams and renders one
+ * button per row, preserving the `return_to` query parameter so the
+ * user lands back at the page that bounced them here once the
+ * upstream round-trip completes.
+ *
+ * DOM-build only — never innerHTML with provider-supplied fields
+ * (display_name, icon_url). textContent + element properties are
+ * XSS-safe by construction.
+ */
 
 (function () {
-  var params = new URLSearchParams(window.location.search);
-  var returnTo = params.get('return_to') || '/';
+  'use strict';
 
-  var container = document.getElementById('upstreams');
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = params.get('return_to') || '/';
+
+  const container = document.getElementById('upstreams');
   if (!container) return;
 
   function showStatus(text, isError) {
     container.dataset.state = isError ? 'error' : 'empty';
     container.innerHTML = '';
-    var p = document.createElement('p');
+    const p = document.createElement('p');
     p.className = 'login-status' + (isError ? ' login-status-error' : '');
     p.textContent = text;
     container.appendChild(p);
@@ -32,21 +41,21 @@
       container.dataset.state = 'ready';
       container.innerHTML = '';
       upstreams.forEach(function (u) {
-        var a = document.createElement('a');
+        const a = document.createElement('a');
         a.className = 'login-button';
         a.href = '/auth/oidc/upstream/' + encodeURIComponent(u.slug)
           + '/start?return_to=' + encodeURIComponent(returnTo);
         a.dataset.slug = u.slug;
 
         if (u.icon_url) {
-          var img = document.createElement('img');
+          const img = document.createElement('img');
           img.src = u.icon_url;
           img.alt = '';
           img.width = 20;
           img.height = 20;
           a.appendChild(img);
         }
-        var label = document.createElement('span');
+        const label = document.createElement('span');
         label.textContent = 'Sign in with ' + (u.display_name || u.slug);
         a.appendChild(label);
         container.appendChild(a);
