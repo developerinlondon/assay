@@ -110,7 +110,8 @@ function M.page(req)
     end
   end
 
-  local enriched = sort_units(service_units.enrich(filtered), sort_key, sort_dir)
+  local cpu_usage = service_units.sample_cpu_usage(filtered)
+  local enriched = sort_units(service_units.enrich(filtered, { cpu_usage = cpu_usage }), sort_key, sort_dir)
 
   return render.render("services", {
     nav_active   = "services",

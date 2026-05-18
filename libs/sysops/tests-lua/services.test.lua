@@ -47,6 +47,39 @@ systemd = {
 }
 
 do
+  local t = 100
+  local calls = 0
+  local samples = {
+    {
+      ["demo.service"] = 1000000000,
+      ["idle.service"] = 500000000,
+    },
+    {
+      ["demo.service"] = 1200000000,
+      ["idle.service"] = 500000000,
+    },
+  }
+  local usage = services.sample_cpu_usage({
+    { name = "demo.service" },
+    { name = "idle.service" },
+    { name = "demo.timer" },
+  }, {
+    interval = 0.5,
+    clock = function() return t end,
+    sleep = function(seconds) t = t + seconds end,
+    sample = function()
+      calls = calls + 1
+      return samples[calls] or {}
+    end,
+  })
+
+  assert.eq(calls, 2, "CPU usage samples twice")
+  assert.eq(usage["demo.service"], 40, "CPU usage uses CPU delta over wall time")
+  assert.eq(usage["idle.service"], 0, "CPU usage handles idle units")
+  assert.eq(usage["demo.timer"], nil, "CPU usage skips non-service units")
+end
+
+do
   local rows = services.enrich({
     {
       name = "demo.service",
@@ -62,14 +95,19 @@ do
       sub = "waiting",
       description = "Demo timer",
     },
+  }, {
+    cpu_usage = {
+      ["demo.service"] = 40,
+    },
   })
 
   assert.eq(rows[1].memory, "64 M", "service memory is human formatted")
   assert.eq(rows[1].memory_sort, 67108864, "service memory sort value")
   assert.eq(rows[1].tasks, 22, "service tasks are numeric")
   assert.eq(rows[1].tasks_label, "22", "service tasks label")
-  assert.eq(rows[1].cpu_time, "0.63s", "service CPU time is human formatted")
-  assert.eq(rows[1].cpu_sort, 630000000, "service CPU sort value")
+  assert.eq(rows[1].cpu_usage, 40, "service CPU usage value")
+  assert.eq(rows[1].cpu_label, "40%", "service CPU usage is human formatted")
+  assert.eq(rows[1].cpu_sort, 40, "service CPU sort value")
   assert.eq(rows[1].restarts, 2, "service restart count")
   assert.eq(rows[1].restart_allowed, true, "service restart allowed")
   assert.eq(rows[1].dom_id, "svc-demo-service", "service gets stable detail DOM id")
@@ -81,6 +119,7 @@ do
 
   assert.eq(rows[2].memory, "—", "non-service memory placeholder")
   assert.eq(rows[2].memory_sort, nil, "non-service memory sort placeholder")
+  assert.eq(rows[2].cpu_label, "—", "non-service CPU usage placeholder")
   assert.eq(rows[2].cpu_sort, nil, "non-service CPU sort placeholder")
   assert.eq(rows[2].restart_allowed, false, "non-service restart blocked")
   assert.eq(#(rows[2].details or {}), 0, "non-service detail list is empty")

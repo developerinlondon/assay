@@ -98,7 +98,6 @@ end
 
 local function detail_rows(row, info)
   local details = {}
-  append_detail(details, "Load state", row.load)
   append_detail(details, "Active state", row.active)
   append_detail(details, "Sub state", row.sub)
   append_detail(details, "Unit file", info.unit_file_state)
@@ -135,24 +134,14 @@ function M.fmt_bytes(bytes)
   return tostring(math.floor(bytes)) .. " B"
 end
 
-function M.fmt_cpu_time(nsec)
-  nsec = number_value(nsec)
-  if not nsec then return "—" end
-  if nsec == 0 then return "0s" end
-
-  local secs = nsec / 1000000000
-  if secs < 60 then
-    local s = string.format("%.2f", secs):gsub("0+$", ""):gsub("%.$", "")
-    return s .. "s"
+function M.fmt_cpu_usage(pct)
+  pct = number_value(pct)
+  if not pct then return "—" end
+  if pct < 0.05 then return "0%" end
+  if pct < 100 then
+    return string.format("%.1f%%", pct):gsub("%.0%%$", "%%")
   end
-  if secs < 3600 then
-    local mins = math.floor(secs / 60)
-    local rem = math.floor(secs % 60)
-    return string.format("%dm %ds", mins, rem)
-  end
-  local hours = math.floor(secs / 3600)
-  local mins = math.floor((secs % 3600) / 60)
-  return string.format("%dh %dm", hours, mins)
+  return tostring(math.floor(pct + 0.5)) .. "%"
 end
 
 local function stats_from_unit_status(unit)
@@ -237,6 +226,95 @@ local function merged_stats(unit)
   return out
 end
 
+local function service_names(units)
+  local names = {}
+  for _, u in ipairs(units or {}) do
+    local name = u.name or u.unit or ""
+    if M.valid_service_name(name) then names[#names + 1] = name end
+  end
+  return names
+end
+
+local function cpu_nsec_from_unit_status(names)
+  local out = {}
+  for _, name in ipairs(names) do
+    local stats = stats_from_unit_status(name)
+    local nsec = number_value(stats.cpu_usage_nsec)
+    if nsec then out[name] = nsec end
+  end
+  return out
+end
+
+local function cpu_nsec_from_systemctl_show(names)
+  if #names == 0 or type(shell) ~= "table" or type(shell.exec) ~= "function" then return {} end
+
+  local cmd = "systemctl show --property=Id --property=CPUUsageNSec --"
+  for _, name in ipairs(names) do
+    cmd = cmd .. " " .. shell_quote(name)
+  end
+
+  local ok, result = pcall(shell.exec, cmd)
+  if not ok or type(result) ~= "table" or result.status ~= 0 then return {} end
+
+  local out = {}
+  for block in (tostring(result.stdout or "") .. "\n\n"):gmatch("(.-)\n\n") do
+    local id, cpu
+    for line in block:gmatch("[^\n]+") do
+      local key, value = line:match("^([^=]+)=(.*)$")
+      if key == "Id" then id = value end
+      if key == "CPUUsageNSec" then cpu = number_value(value) end
+    end
+    if id and cpu then out[id] = cpu end
+  end
+  return out
+end
+
+local function cpu_nsec_sample(names)
+  local out = cpu_nsec_from_unit_status(names)
+  if #names == 0 then return out end
+
+  local missing = {}
+  for _, name in ipairs(names) do
+    if out[name] == nil then missing[#missing + 1] = name end
+  end
+  if #missing == 0 then return out end
+
+  local fallback = cpu_nsec_from_systemctl_show(missing)
+  for name, nsec in pairs(fallback) do out[name] = nsec end
+  return out
+end
+
+function M.sample_cpu_usage(units, opts)
+  opts = opts or {}
+  local names = service_names(units)
+  if #names == 0 then return {} end
+
+  local sampler = opts.sample or cpu_nsec_sample
+  local clock = opts.clock or time or os.time
+  local sleeper = opts.sleep or sleep
+  local interval = number_value(opts.interval) or 0.2
+
+  local first = sampler(names)
+  local t1 = clock()
+  if sleeper and interval > 0 then sleeper(interval) end
+  local second = sampler(names)
+  local t2 = clock()
+  local t1n = number_value(t1)
+  local t2n = number_value(t2)
+  local elapsed = t1n and t2n and (t2n - t1n) or 0
+
+  local out = {}
+  if elapsed <= 0 then return out end
+  for _, name in ipairs(names) do
+    local a = number_value(first[name])
+    local b = number_value(second[name])
+    if a and b and b >= a then
+      out[name] = ((b - a) / 1000000000) / elapsed * 100
+    end
+  end
+  return out
+end
+
 local function decorate(row)
   local unit = row.name or row.unit or ""
   local is_service = M.valid_service_name(unit)
@@ -244,7 +322,9 @@ local function decorate(row)
     row.memory = "—"
     row.tasks = nil
     row.tasks_label = "—"
-    row.cpu_time = "—"
+    row.cpu_usage = nil
+    row.cpu_label = "—"
+    row.cpu_sort = nil
     row.restarts = nil
     row.restarts_label = "—"
     row.restart_allowed = false
@@ -256,15 +336,15 @@ local function decorate(row)
 
   local stats = merged_stats(unit)
   local memory = number_value(stats.memory_current)
-  local cpu = number_value(stats.cpu_usage_nsec)
   local tasks = number_value(stats.tasks_current)
   local restarts = number_value(stats.n_restarts)
+  local cpu_usage = row.cpu_usage
   row.memory = M.fmt_bytes(memory)
   row.memory_sort = memory
   row.tasks = tasks
   row.tasks_label = tasks and tostring(math.floor(tasks)) or "—"
-  row.cpu_time = M.fmt_cpu_time(cpu)
-  row.cpu_sort = cpu
+  row.cpu_label = M.fmt_cpu_usage(cpu_usage)
+  row.cpu_sort = cpu_usage
   row.restarts = restarts
   row.restarts_label = restarts and tostring(math.floor(restarts)) or "—"
   row.restart_allowed = true
@@ -275,11 +355,15 @@ local function decorate(row)
   return row
 end
 
-function M.enrich(units)
+function M.enrich(units, opts)
+  opts = opts or {}
+  local cpu_usage = opts.cpu_usage or {}
   local out = {}
   for _, u in ipairs(units or {}) do
     local row = {}
     for k, v in pairs(u) do row[k] = v end
+    local unit = row.name or row.unit or ""
+    row.cpu_usage = cpu_usage[unit]
     out[#out + 1] = decorate(row)
   end
   return out

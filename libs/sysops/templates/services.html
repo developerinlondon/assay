@@ -57,16 +57,15 @@
     <thead>
       <tr>
         <th>Unit</th>
-        <th>Load</th>
         <th>Active</th>
         <th>
           <a class="sort-link {% if sort_key == 'memory' %}active{% endif %}"
-             href="{{ memory_sort_url }}">Memory{% if sort_key == 'memory' %} <span>{{ sort_dir }}</span>{% endif %}</a>
+             href="{{ memory_sort_url }}">Memory{% if sort_key == 'memory' %} <span>{% if sort_dir == 'desc' %}↓{% else %}↑{% endif %}</span>{% endif %}</a>
         </th>
         <th>Tasks</th>
         <th>
           <a class="sort-link {% if sort_key == 'cpu' %}active{% endif %}"
-             href="{{ cpu_sort_url }}">CPU Time{% if sort_key == 'cpu' %} <span>{{ sort_dir }}</span>{% endif %}</a>
+             href="{{ cpu_sort_url }}">CPU{% if sort_key == 'cpu' %} <span>{% if sort_dir == 'desc' %}↓{% else %}↑{% endif %}</span>{% endif %}</a>
         </th>
       </tr>
     </thead>
@@ -84,7 +83,6 @@
           {{ u.name }}
           {% endif %}
         </td>
-        <td>{{ u.load }}</td>
         <td>
           {% if u.active == "active" %}
             <span class="pill pill-ok">Active</span>
@@ -98,11 +96,11 @@
         </td>
         <td class="mono">{{ u.memory }}</td>
         <td class="mono">{{ u.tasks_label }}</td>
-        <td class="mono">{{ u.cpu_time }}</td>
+        <td class="mono">{{ u.cpu_label }}</td>
       </tr>
       {% if u.has_details %}
       <tr class="service-detail-row" id="{{ u.dom_id }}" hidden>
-        <td colspan="6">
+        <td colspan="5">
           <div class="service-detail-panel">
             <div class="service-detail-grid">
               {% for d in u.details %}

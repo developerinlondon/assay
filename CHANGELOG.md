@@ -6,7 +6,7 @@ All notable changes to Assay are documented here.
 
 ### Added
 
-- Host Services now shows a compact per-`.service` stats table with sortable memory and CPU-time
+- Host Services now shows a compact per-`.service` stats table with sortable memory and CPU-usage
   columns. Clicking a service expands a systemd detail panel with unit file state/path, main PID,
   exec command, restart policy, and related accounting fields.
 - Host Services adds `.service`-only start, stop, and restart actions. POST handlers validate the

@@ -29,6 +29,7 @@ local opts = stubs.opts({
 })
 
 local original_systemd = systemd
+local cpu_status_calls = {}
 
 systemd = {
   list_units = function(filter)
@@ -60,6 +61,7 @@ systemd = {
     return units
   end,
   unit_status = function(name)
+    cpu_status_calls[name] = (cpu_status_calls[name] or 0) + 1
     if name == "demo.service" then
       return {
         name = "demo.service",
@@ -69,7 +71,7 @@ systemd = {
         description = "Demo service",
         memory_current = 67108864,
         tasks_current = 22,
-        cpu_usage_nsec = 630000000,
+        cpu_usage_nsec = 1000000000 + (cpu_status_calls[name] * 2000000000),
         n_restarts = 2,
         unit_file_state = "enabled",
         fragment_path = "/etc/systemd/system/demo.service",
@@ -87,7 +89,7 @@ systemd = {
         description = "Heavy service",
         memory_current = 134217728,
         tasks_current = 11,
-        cpu_usage_nsec = 210000000,
+        cpu_usage_nsec = 1000000000 + (cpu_status_calls[name] * 100000000),
         n_restarts = 0,
         unit_file_state = "enabled",
         fragment_path = "/etc/systemd/system/heavy.service",
@@ -184,14 +186,18 @@ do
   assert.contains(r.body, "<aside", "services sidebar")
   assert.contains(r.body, "Memory", "services memory column")
   assert.contains(r.body, "Tasks", "services tasks column")
-  assert.contains(r.body, "CPU Time", "services CPU time column")
+  assert.contains(r.body, "CPU", "services CPU usage column")
+  assert.eq(r.body:find("<th>Load</th>", 1, true), nil, "services omits load column")
+  assert.eq(r.body:find("<td>loaded</td>", 1, true), nil, "services omits load cells")
+  assert.eq(r.body:find("Load state", 1, true), nil, "services omits load detail")
   assert.eq(r.body:find("<th>Sub</th>", 1, true), nil, "services omits sub column")
   assert.eq(r.body:find("<th>Restarts</th>", 1, true), nil, "services omits restarts column")
   assert.eq(r.body:find(">Description</th>", 1, true), nil, "services omits description column")
+  assert.eq(r.body:find("CPU Time", 1, true), nil, "services omits CPU time column")
   assert.contains(r.body, "sort=memory", "services memory sort link")
   assert.contains(r.body, "sort=cpu", "services CPU sort link")
   assert.contains(r.body, "64 M", "services memory value")
-  assert.contains(r.body, "0.63s", "services CPU time value")
+  assert.contains(r.body, "%", "services CPU usage value")
   assert.contains(r.body, "service-toggle", "services row has expandable unit control")
   assert.contains(r.body, "service-detail-row", "services renders expanded-detail row shell")
   assert.contains(r.body, "Unit file", "services detail includes unit file label")
@@ -210,15 +216,25 @@ do
   local r = get("/services?sort=memory&dir=desc")
   assert.eq(r.status, 200, "GET /services memory sort")
   assert.not_nil(r.body, "services memory-sort body")
+  assert.contains(r.body, "Memory <span>↓</span>", "services memory desc arrow")
+  assert.eq(r.body:find("Memory <span>desc</span>", 1, true), nil, "services memory sort hides desc text")
   local heavy_pos = r.body:find("heavy.service", 1, true)
   local demo_pos = r.body:find("demo.service", 1, true)
   assert.not_nil(heavy_pos, "services memory sort includes heavy service")
   assert.not_nil(demo_pos, "services memory sort includes demo service")
   assert.eq(heavy_pos < demo_pos, true, "services sorts by memory descending")
 
+  r = get("/services?sort=memory&dir=asc")
+  assert.eq(r.status, 200, "GET /services memory sort asc")
+  assert.not_nil(r.body, "services memory-sort asc body")
+  assert.contains(r.body, "Memory <span>↑</span>", "services memory asc arrow")
+  assert.eq(r.body:find("Memory <span>asc</span>", 1, true), nil, "services memory sort hides asc text")
+
   r = get("/services?sort=cpu&dir=desc")
   assert.eq(r.status, 200, "GET /services CPU sort")
   assert.not_nil(r.body, "services CPU-sort body")
+  assert.contains(r.body, "CPU <span>↓</span>", "services CPU desc arrow")
+  assert.eq(r.body:find("CPU <span>desc</span>", 1, true), nil, "services CPU sort hides desc text")
   heavy_pos = r.body:find("heavy.service", 1, true)
   demo_pos = r.body:find("demo.service", 1, true)
   assert.not_nil(heavy_pos, "services CPU sort includes heavy service")
