@@ -295,7 +295,8 @@ async fn build_auth_ctx_pg(
         )
         .with_jwks_source(assay_auth::oidc_provider::JwksSource::Postgres(
             pool.clone(),
-        ));
+        ))
+        .with_auto_provision(cfg.auth.oidc_provider.auto_provision);
         ctx = ctx.with_oidc_provider(provider);
 
         if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {
@@ -392,7 +393,8 @@ async fn build_auth_ctx_sqlite(
             assay_auth::oidc_provider::SqliteOidcConsentStore::new(pool.clone()).into_dyn(),
             assay_auth::oidc_provider::SqliteOidcUpstreamStateStore::new(pool.clone()).into_dyn(),
         )
-        .with_jwks_source(assay_auth::oidc_provider::JwksSource::Sqlite(pool.clone()));
+        .with_jwks_source(assay_auth::oidc_provider::JwksSource::Sqlite(pool.clone()))
+        .with_auto_provision(cfg.auth.oidc_provider.auto_provision);
         ctx = ctx.with_oidc_provider(provider);
 
         if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {

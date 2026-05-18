@@ -1012,7 +1012,14 @@ pub async fn upstream_callback(
         }
     };
 
-    // Look up or create the local user.
+    // Look up or create the local user. Two regimes:
+    //   auto_provision=true  → first sign-in for an upstream subject
+    //                          creates an `auth.users` row from the
+    //                          upstream claims (legacy / open-signup).
+    //   auto_provision=false → invite-only. Look up by email; if no
+    //                          row exists, return 403 — operators
+    //                          pre-populate `auth.users` via the admin
+    //                          API or the sysops `/auth/users` page.
     let user = match ctx
         .users
         .get_user_by_upstream(&info.provider_slug, &info.subject)
@@ -1020,27 +1027,54 @@ pub async fn upstream_callback(
     {
         Ok(Some(u)) => u,
         Ok(None) => {
-            // First time we've seen this upstream subject — create the
-            // user + the link.
-            let id = format!(
-                "usr_{}",
-                data_encoding::BASE64URL_NOPAD.encode(&random_bytes::<16>())
-            );
-            let user = crate::store::User {
-                id: id.clone(),
-                email: info.email.clone(),
-                email_verified: info.email_verified,
-                display_name: info.display_name.clone(),
-                created_at: now_secs(),
+            let existing = if provider.auto_provision {
+                None
+            } else {
+                match ctx.users.get_user_by_email(&info.email).await {
+                    Ok(Some(u)) => Some(u),
+                    Ok(None) => {
+                        let mut response = error_html(
+                            StatusCode::FORBIDDEN,
+                            &format!(
+                                "{} is not on the access list. Ask an administrator to invite you.",
+                                info.email
+                            ),
+                        );
+                        append_clear_binding_cookie(&mut response, &provider.public_url);
+                        return response;
+                    }
+                    Err(e) => {
+                        let mut response = server_error_html(&format!("user lookup by email: {e}"));
+                        append_clear_binding_cookie(&mut response, &provider.public_url);
+                        return response;
+                    }
+                }
             };
-            if let Err(e) = ctx.users.create_user(&user).await {
-                let mut response = server_error_html(&format!("create user: {e}"));
-                append_clear_binding_cookie(&mut response, &provider.public_url);
-                return response;
-            }
+            let user = if let Some(u) = existing {
+                // Invite-only: existing row, just link the upstream.
+                u
+            } else {
+                let id = format!(
+                    "usr_{}",
+                    data_encoding::BASE64URL_NOPAD.encode(&random_bytes::<16>())
+                );
+                let user = crate::store::User {
+                    id: id.clone(),
+                    email: info.email.clone(),
+                    email_verified: info.email_verified,
+                    display_name: info.display_name.clone(),
+                    created_at: now_secs(),
+                };
+                if let Err(e) = ctx.users.create_user(&user).await {
+                    let mut response = server_error_html(&format!("create user: {e}"));
+                    append_clear_binding_cookie(&mut response, &provider.public_url);
+                    return response;
+                }
+                user
+            };
             if let Err(e) = ctx
                 .users
-                .link_upstream(&id, &info.provider_slug, &info.subject)
+                .link_upstream(&user.id, &info.provider_slug, &info.subject)
                 .await
             {
                 let mut response = server_error_html(&format!("link upstream: {e}"));

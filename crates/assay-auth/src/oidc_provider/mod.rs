@@ -99,6 +99,13 @@ pub struct OidcProviderConfig {
     pub consents: Arc<dyn OidcConsentStore>,
     pub upstream_states: Arc<dyn OidcUpstreamStateStore>,
     pub jwks_source: JwksSource,
+    /// When `true` (legacy default), `upstream_callback` creates an
+    /// `auth.users` row the first time it sees a new upstream subject.
+    /// When `false`, the callback looks up by `email` and rejects with
+    /// 403 if no row exists — the "invite-only" posture an operator
+    /// gets by pre-populating `auth.users` via the admin API / the
+    /// `/auth/users` sysops page.
+    pub auto_provision: bool,
 }
 
 impl OidcProviderConfig {
@@ -135,7 +142,19 @@ impl OidcProviderConfig {
             consents,
             upstream_states,
             jwks_source: JwksSource::Memory(Vec::new()),
+            // Default `true` to preserve historical library behaviour;
+            // engine deployments set `false` via engine.toml for
+            // invite-only posture.
+            auto_provision: true,
         }
+    }
+
+    /// Toggle invite-only vs auto-provision at the federation callback.
+    /// `false` → `auth.users` row must already exist (lookup by email).
+    /// `true`  → callback creates the row on first sign-in (legacy).
+    pub fn with_auto_provision(mut self, on: bool) -> Self {
+        self.auto_provision = on;
+        self
     }
 
     /// Replace the JWKS source. Engine boot calls this with the

@@ -239,6 +239,15 @@ pub struct AuthOidcProviderConfig {
     /// Override the issuer URL used by the OIDC provider. Defaults to
     /// the parent [`AuthConfig::issuer`] when unset.
     pub issuer_override: Option<String>,
+    /// `true`  → federation callback creates an `auth.users` row on
+    ///           first sign-in for a new upstream identity (open
+    ///           signup; legacy library default).
+    /// `false` → callback looks up by email; missing rows return 403.
+    ///           Operators pre-populate `auth.users` via the admin API
+    ///           or the sysops `/auth/users` page (invite-only).
+    ///           Recommended for shared / multi-tenant deployments.
+    #[serde(default)]
+    pub auto_provision: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
