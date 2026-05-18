@@ -13,7 +13,9 @@
           || ((def === 'dark' || def === 'light') ? def : null)
           || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
         document.documentElement.setAttribute('data-theme', theme);
-      } catch (e) {}
+      } catch (_e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
     })();
   </script>
   <meta charset="UTF-8">
