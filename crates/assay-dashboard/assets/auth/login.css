@@ -1,0 +1,132 @@
+/* Login landing — centred single-card layout. Self-contained so the
+   page renders before any other dashboard CSS loads. Reuses the same
+   accent + surface tokens as the workflow/auth consoles. */
+
+:root {
+  --login-bg: #0d1117;
+  --login-card: #161b22;
+  --login-text: #e6edf3;
+  --login-muted: #8b949e;
+  --login-accent: #e6662a;
+  --login-border: #30363d;
+  --login-button-hover-bg: rgba(230, 102, 42, 0.06);
+}
+
+[data-theme="light"] {
+  --login-bg: #f6f8fa;
+  --login-card: #ffffff;
+  --login-text: #1f2328;
+  --login-muted: #59636e;
+  --login-accent: #cf5d27;
+  --login-border: #d0d7de;
+  --login-button-hover-bg: rgba(207, 93, 39, 0.06);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--login-bg);
+  color: var(--login-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+.login-card {
+  background: var(--login-card);
+  border: 1px solid var(--login-border);
+  border-radius: 12px;
+  padding: 2.5rem 2.25rem;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  box-sizing: border-box;
+}
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1.75rem;
+}
+
+.login-mark {
+  width: 56px;
+  height: 56px;
+  background: var(--login-accent);
+  color: #fff;
+  font-size: 1.75rem;
+  font-weight: 700;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.login-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-height: 3rem;
+}
+
+.login-button {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--login-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--login-text);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.login-button:hover,
+.login-button:focus-visible {
+  border-color: var(--login-accent);
+  background: var(--login-button-hover-bg);
+  outline: none;
+}
+
+.login-button img {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.login-status {
+  margin: 0;
+  text-align: center;
+  color: var(--login-muted);
+  font-size: 0.9rem;
+}
+
+.login-status-error {
+  color: #f85149;
+}

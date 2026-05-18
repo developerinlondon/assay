@@ -61,6 +61,13 @@ pub const AUTH_ZANZIBAR_JS: &str = include_str!("../assets/auth/components/zanzi
 pub const AUTH_KEYS_JS: &str = include_str!("../assets/auth/components/keys.js");
 pub const AUTH_AUDIT_JS: &str = include_str!("../assets/auth/components/audit.js");
 
+// Public login landing. The engine merges this asset router at root,
+// so `/auth/login` sits alongside the admin console under the same
+// `/auth/*` namespace as the OIDC spec endpoints.
+pub const AUTH_LOGIN_HTML: &str = include_str!("../assets/auth/login.html");
+pub const AUTH_LOGIN_CSS: &str = include_str!("../assets/auth/login.css");
+pub const AUTH_LOGIN_JS: &str = include_str!("../assets/auth/login.js");
+
 // =====================================================================
 //   Engine console assets (always present — engine-core is always on)
 // =====================================================================

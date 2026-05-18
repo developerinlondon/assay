@@ -16,9 +16,9 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 
 use crate::assets::{
-    AUTH_API_JS, AUTH_APP_JS, AUTH_AUDIT_JS, AUTH_INDEX_HTML, AUTH_KEYS_JS, AUTH_OIDC_CLIENTS_JS,
-    AUTH_OIDC_UPSTREAM_JS, AUTH_SESSIONS_JS, AUTH_STYLE_CSS, AUTH_USERS_JS, AUTH_ZANZIBAR_JS,
-    FAVICON_SVG,
+    AUTH_API_JS, AUTH_APP_JS, AUTH_AUDIT_JS, AUTH_INDEX_HTML, AUTH_KEYS_JS, AUTH_LOGIN_CSS,
+    AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_OIDC_CLIENTS_JS, AUTH_OIDC_UPSTREAM_JS, AUTH_SESSIONS_JS,
+    AUTH_STYLE_CSS, AUTH_USERS_JS, AUTH_ZANZIBAR_JS, FAVICON_SVG,
 };
 
 /// Build the auth-console asset router. Stateless `Router<()>` ready
@@ -42,6 +42,12 @@ pub fn router() -> Router<()> {
         .route("/auth/components/keys.js", get(keys_js))
         .route("/auth/components/audit.js", get(audit_js))
         .route("/auth/favicon.svg", get(favicon))
+        // Public login landing — target of assay_auth's
+        // `return_to_for(...)` redirect for unauthenticated /authorize.
+        .route("/auth/login", get(login_index))
+        .route("/auth/login/", get(login_index))
+        .route("/auth/login.js", get(login_js))
+        .route("/auth/login.css", get(login_css))
 }
 
 const NO_CACHE: &str = "no-cache, no-store, must-revalidate";
@@ -113,4 +119,32 @@ async fn audit_js() -> impl IntoResponse {
 }
 async fn favicon() -> impl IntoResponse {
     asset("image/svg+xml", FAVICON_SVG)
+}
+
+async fn login_index() -> impl IntoResponse {
+    let body = {
+        let asset_version = env!("CARGO_PKG_VERSION");
+        crate::whitelabel::render_index(
+            AUTH_LOGIN_HTML,
+            asset_version,
+            &crate::whitelabel::WHITELABEL,
+        )
+        .replace("Assay Workflow Dashboard", "Sign in")
+    };
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, NO_CACHE),
+        ],
+        body,
+    )
+}
+
+async fn login_js() -> impl IntoResponse {
+    asset("application/javascript", AUTH_LOGIN_JS)
+}
+
+async fn login_css() -> impl IntoResponse {
+    asset("text/css", AUTH_LOGIN_CSS)
 }

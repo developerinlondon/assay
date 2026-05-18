@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" data-default-theme="__BRAND_DEFAULT_THEME__">
+<head>
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('assay-theme');
+        var def = (document.documentElement.dataset.defaultTheme || 'auto');
+        var theme = saved
+          || ((def === 'dark' || def === 'light') ? def : null)
+          || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {}
+    })();
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>__PAGE_TITLE__</title>
+  __FAVICON_LINK__
+  <link rel="stylesheet" href="/auth/login.css?v=__ASSETV__">
+  __EXTRA_CSS_LINK__
+</head>
+<body>
+  <main class="login">
+    <section class="login-card" aria-labelledby="login-title">
+      <header class="login-brand">
+        <span class="login-mark" aria-hidden="true">__BRAND_MARK__</span>
+        <h1 class="login-title" id="login-title">__BRAND_NAME__</h1>
+      </header>
+      <div class="login-buttons" id="upstreams" data-state="loading" aria-live="polite">
+        <p class="login-status">Loading sign-in options&hellip;</p>
+      </div>
+      <noscript>
+        <p class="login-status login-status-error">
+          JavaScript is required to render sign-in options.
+        </p>
+      </noscript>
+    </section>
+  </main>
+  <script src="/auth/login.js?v=__ASSETV__"></script>
+</body>
+</html>

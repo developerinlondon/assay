@@ -47,6 +47,7 @@ pub mod revoke;
 pub mod store;
 pub mod token;
 pub mod types;
+pub mod upstreams_public;
 pub mod userinfo;
 
 pub use store::{
@@ -232,6 +233,11 @@ where
             "/oidc/upstream/{slug}/callback",
             get(handlers::upstream_callback),
         )
+        // Public listing of enabled upstream IdPs — consumed by the
+        // login landing in `assay-dashboard` to render upstream buttons
+        // without an admin key. Returns only slug + display_name +
+        // icon_url; secrets and disabled rows are filtered server-side.
+        .route("/upstreams", get(upstreams_public::list_public))
 }
 
 /// OIDC admin router — operator-only CRUD for OIDC clients and
