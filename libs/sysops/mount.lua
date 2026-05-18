@@ -151,6 +151,11 @@ local POST_ROUTES = {
   -- Provision a new container (POST /api/machines).
   ["/api/machines"]                  = "machine_provision",
 
+  -- Host service lifecycle actions.
+  ["/api/services/start"]            = "services_start",
+  ["/api/services/stop"]             = "services_stop",
+  ["/api/services/restart"]          = "services_restart",
+
   -- Lifecycle actions: /api/machines/<name>/<action>.
   -- Note: this also catches POST /api/machines/<name>/destroy etc.
   ["/api/machines/*"]                = "machine_action",

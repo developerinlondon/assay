@@ -28,6 +28,59 @@ local opts = stubs.opts({
   },
 })
 
+local original_systemd = systemd
+
+systemd = {
+  list_units = function(filter)
+    local units = {
+      {
+        name = "demo.service",
+        description = "Demo service",
+        load = "loaded",
+        active = "active",
+        sub = "running",
+      },
+      {
+        name = "demo.timer",
+        description = "Demo timer",
+        load = "loaded",
+        active = "active",
+        sub = "waiting",
+      },
+    }
+    if filter == "*.service" then return { units[1] } end
+    if filter == "*.timer" then return { units[2] } end
+    return units
+  end,
+  unit_status = function(name)
+    if name == "demo.service" then
+      return {
+        name = "demo.service",
+        load = "loaded",
+        active = "active",
+        sub = "running",
+        description = "Demo service",
+        memory_current = 67108864,
+        tasks_current = 22,
+        cpu_usage_nsec = 630000000,
+        n_restarts = 2,
+      }
+    end
+    return {
+      name = name,
+      load = "loaded",
+      active = "active",
+      sub = "running",
+      description = name,
+    }
+  end,
+  list_timers = function() return {} end,
+  journal = function() return {} end,
+  unit_action = function()
+    return { status = 0, stdout = "", stderr = "" }
+  end,
+}
+
 -- Build the routes table; mount() registers every host-ops route on it.
 local routes = { GET = {}, POST = {} }
 sysops.mount(routes, opts)
@@ -40,6 +93,10 @@ print(("  routes registered: GET=%d, POST=%d, alive=%s"):format(
   (function() local n = 0; for _ in pairs(routes.GET) do n = n + 1 end; return n end)(),
   (function() local n = 0; for _ in pairs(routes.POST) do n = n + 1 end; return n end)(),
   type(routes.GET["/__smoke_alive"])))
+
+assert.eq(type(routes.POST["/api/services/restart"]), "function", "service restart route")
+assert.eq(type(routes.POST["/api/services/start"]), "function", "service start route")
+assert.eq(type(routes.POST["/api/services/stop"]), "function", "service stop route")
 
 -- Boot the server in a worker; the test thread issues HTTP requests
 -- against it.
@@ -98,7 +155,15 @@ do
   assert.eq(r.status, 200, "GET /services")
   assert.not_nil(r.body, "services body")
   assert.contains(r.body, "<aside", "services sidebar")
-  ok("/services renders")
+  assert.contains(r.body, "Memory", "services memory column")
+  assert.contains(r.body, "Tasks", "services tasks column")
+  assert.contains(r.body, "CPU Time", "services CPU time column")
+  assert.contains(r.body, "64 M", "services memory value")
+  assert.contains(r.body, "0.63s", "services CPU time value")
+  assert.contains(r.body, 'action="/api/services/start"', "services start form")
+  assert.contains(r.body, 'action="/api/services/stop"', "services stop form")
+  assert.contains(r.body, 'action="/api/services/restart"', "services restart form")
+  ok("/services renders with stats + lifecycle actions")
 end
 
 -- ── /cron, /logs, /tunnels, /tailscale, /interfaces: smoke each ───────
@@ -158,3 +223,5 @@ do
 end
 
 print("[sysops.smoke] all passed")
+
+systemd = original_systemd

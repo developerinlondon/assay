@@ -1,4 +1,6 @@
 local render = require("pages.render")
+local form = require("pages.form")
+local service_units = require("services.host.service_units")
 local ctx = require("sysops.ctx")
 local M = {}
 
@@ -6,6 +8,22 @@ local function pcall_or_empty(fn, ...)
   local ok, result = pcall(fn, ...)
   if ok and type(result) == "table" then return result end
   return {}
+end
+
+local function urlenc(s)
+  return (tostring(s or "")):gsub("([^%w%-_%.~])", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end)
+end
+
+local function services_url(args)
+  args = args or {}
+  return "/services"
+    .. "?state=" .. urlenc(args.state or "all")
+    .. "&type=" .. urlenc(args.type or "service")
+    .. "&search=" .. urlenc(args.search or "")
+    .. (args.ok and ("&ok=" .. urlenc(args.ok)) or "")
+    .. (args.error and ("&error=" .. urlenc(args.error)) or "")
 end
 
 function M.page(req)
@@ -52,7 +70,7 @@ function M.page(req)
     nav_active   = "services",
     host         = snap.host,
     machines     = snap.machines,
-    units        = filtered,
+    units        = service_units.enrich(filtered),
     counts       = {
       total    = total,   active  = active,
       failed   = failed,  inactive = inactive,
@@ -62,7 +80,56 @@ function M.page(req)
     state_filter = state_filter,
     type_filter  = type_filter,
     search       = search,
+    ok_msg       = q.ok,
+    error_msg    = q.error,
   }, req)
+end
+
+local function lifecycle(req, action)
+  local f = form.parse(req)
+  local unit = f.unit or ""
+  local state_filter = f.state or "all"
+  local type_filter = f.type or "service"
+  local search = f.search or ""
+
+  local res = service_units.action(unit, action)
+  if not res.ok then
+    return {
+      status = 303,
+      headers = {
+        ["Location"] = services_url({
+          state = state_filter,
+          type = type_filter,
+          search = search,
+          error = action .. " failed for " .. unit .. ": " .. (res.error or "?"),
+        }),
+      },
+    }
+  end
+
+  return {
+    status = 303,
+    headers = {
+      ["Location"] = services_url({
+        state = state_filter,
+        type = type_filter,
+        search = search,
+        ok = action .. " requested for " .. unit,
+      }),
+    },
+  }
+end
+
+function M.restart(req)
+  return lifecycle(req, "restart")
+end
+
+function M.start(req)
+  return lifecycle(req, "start")
+end
+
+function M.stop(req)
+  return lifecycle(req, "stop")
 end
 
 return M

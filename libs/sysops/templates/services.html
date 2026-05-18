@@ -19,6 +19,13 @@
   <a class="tab" href="/backups">Backups</a>
 </div>
 
+{% if error_msg and error_msg != "" %}
+<div class="banner warn"><span class="b-mark"></span><span>{{ error_msg }}</span></div>
+{% endif %}
+{% if ok_msg and ok_msg != "" %}
+<div class="banner"><span class="b-mark"></span><span>{{ ok_msg }}</span></div>
+{% endif %}
+
 <div class="filter-bar">
   <input class="input" id="svc-search" name="search" type="text"
          value="{{ search }}" placeholder="search by name / description…"
@@ -53,7 +60,12 @@
         <th>Load</th>
         <th>Active</th>
         <th>Sub</th>
+        <th>Memory</th>
+        <th>Tasks</th>
+        <th>CPU Time</th>
+        <th>Restarts</th>
         <th class="wrap">Description</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -73,7 +85,43 @@
           {% endif %}
         </td>
         <td>{{ u.sub }}</td>
+        <td class="mono">{{ u.memory }}</td>
+        <td class="mono">{{ u.tasks_label }}</td>
+        <td class="mono">{{ u.cpu_time }}</td>
+        <td class="mono">{{ u.restarts_label }}</td>
         <td class="wrap muted">{{ u.description }}</td>
+        <td>
+          {% if u.action_allowed %}
+          <div style="display:flex;gap:6px;align-items:center">
+            <form method="post" action="/api/services/start" style="margin:0"
+                  onsubmit="return confirm('Start {{ u.name }}?')">
+              <input type="hidden" name="unit" value="{{ u.name }}">
+              <input type="hidden" name="state" value="{{ state_filter }}">
+              <input type="hidden" name="type" value="{{ type_filter }}">
+              <input type="hidden" name="search" value="{{ search }}">
+              <button type="submit" class="btn btn-sm btn-primary">Start</button>
+            </form>
+            <form method="post" action="/api/services/stop" style="margin:0"
+                  onsubmit="return confirm('Stop {{ u.name }}?')">
+              <input type="hidden" name="unit" value="{{ u.name }}">
+              <input type="hidden" name="state" value="{{ state_filter }}">
+              <input type="hidden" name="type" value="{{ type_filter }}">
+              <input type="hidden" name="search" value="{{ search }}">
+              <button type="submit" class="btn btn-sm btn-danger">Stop</button>
+            </form>
+            <form method="post" action="/api/services/restart" style="margin:0"
+                  onsubmit="return confirm('Restart {{ u.name }}?')">
+              <input type="hidden" name="unit" value="{{ u.name }}">
+              <input type="hidden" name="state" value="{{ state_filter }}">
+              <input type="hidden" name="type" value="{{ type_filter }}">
+              <input type="hidden" name="search" value="{{ search }}">
+              <button type="submit" class="btn btn-sm">Restart</button>
+            </form>
+          </div>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
