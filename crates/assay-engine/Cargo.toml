@@ -1,6 +1,6 @@
 [package]
 name = "assay-engine"
-version = "0.4.3"
+version = "0.4.4"
 categories = ["asynchronous", "database", "web-programming::http-server"]
 edition = "2024"
 keywords = ["workflow", "auth", "oidc", "zanzibar", "postgres"]
