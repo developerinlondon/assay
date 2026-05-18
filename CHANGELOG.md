@@ -2,11 +2,25 @@
 
 All notable changes to Assay are documented here.
 
+## sysops 0.1.6 — 2026-05-18
+
+### Added
+
+- Host Services now shows a compact per-`.service` stats table with sortable memory and CPU-usage
+  columns. Clicking a service expands a systemd detail panel with unit file state/path, main PID,
+  exec command, restart policy, and related accounting fields.
+- Host Services adds `.service`-only start, stop, and restart actions. POST handlers validate the
+  unit name, call the allow-listed systemd lifecycle path, and redirect back to the current filtered
+  services view with a success or error banner.
+- `libs/sysops:smoke` now runs a focused service-unit helper contract test before the broader page
+  smoke and vault tests.
+
 ## assay 0.16.2 — 2026-05-12
 
 ### Fixed
 
-- `:<version>-sh` image: ship the full busybox applet set, not just `/bin/sh`; move `assay` to `/usr/local/bin/assay` so it resolves on `$PATH`.
+- `:<version>-sh` image: ship the full busybox applet set, not just `/bin/sh`; move `assay` to
+  `/usr/local/bin/assay` so it resolves on `$PATH`.
 
 ## assay 0.16.1 — 2026-05-11
 

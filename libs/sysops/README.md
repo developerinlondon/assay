@@ -84,7 +84,7 @@ surface, not in the sysops host secret store.
 
 - Dashboard (machines grid, status strip, recent activity)
 - nspawn container list + per-container detail (services, cron, logs, shell)
-- Host services (systemd unit list)
+- Host services (systemd unit list, sortable CPU/memory stats, expandable systemd details, start/stop/restart actions)
 - Host cron (timers + crontabs)
 - Host logs (journal viewer + SSE stream)
 - Networks (tunnels, interfaces, tailscale)
@@ -187,11 +187,14 @@ return {
 
 ```
 LUA_PATH='libs/?.lua;libs/?/init.lua;libs/sysops/?.lua;libs/sysops/tests-lua/?.lua;;' \
+  assay libs/sysops/tests-lua/services.test.lua
+LUA_PATH='libs/?.lua;libs/?/init.lua;libs/sysops/?.lua;libs/sysops/tests-lua/?.lua;;' \
   assay libs/sysops/tests-lua/smoke.test.lua
 ```
 
-The smoke test boots the lib with stub services and asserts a representative set of routes render.
-See plan 21 phase 4 for the test strategy.
+The service helper test covers service stats formatting, detail extraction, and lifecycle action validation. The smoke test boots
+the lib with stub services and asserts a representative set of routes render. See plan 21 phase 4
+for the test strategy.
 
 ## Versioning
 
