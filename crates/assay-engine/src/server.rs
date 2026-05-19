@@ -174,16 +174,21 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
 /// resource-server pattern). No session, no zanzibar — policy lives
 /// upstream.
 ///
-/// The one bypass: vault share-redeem (`GET /api/v1/vault/share/{token}`,
-/// excluding `/share/revoke`) — the biscuit token in the URL is its
-/// own authentication.
+/// The one bypass: vault share-redeem (`GET /share/{token}` —
+/// path-relative because this middleware runs INSIDE the nested
+/// `/api/v1/vault` router, after axum has stripped the prefix).
+/// `/share/revoke` is excluded — it's an admin operation that mints
+/// or revokes tokens. The biscuit token in the share-redeem URL is
+/// its own authentication.
 async fn admin_bearer_middleware<S: WorkflowStore + Clone + 'static>(
     axum::extract::State(state): axum::extract::State<EngineState<S>>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let path = request.uri().path();
-    if path.starts_with("/api/v1/vault/share/") && path != "/api/v1/vault/share/revoke" {
+    if (path.starts_with("/share/") && path != "/share/revoke")
+        || (path.starts_with("/api/v1/vault/share/") && path != "/api/v1/vault/share/revoke")
+    {
         return next.run(request).await;
     }
     let keys = crate::state::AdminApiKeys(Arc::clone(&state.admin_api_keys));

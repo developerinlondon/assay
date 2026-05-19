@@ -1,6 +1,6 @@
 [package]
 name = "assay-vault"
-version = "0.3.0"
+version = "0.4.0"
 categories = ["cryptography", "asynchronous", "database"]
 edition = "2024"
 keywords = ["vault", "secrets", "kv", "transit", "biscuit"]
@@ -69,7 +69,7 @@ backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 # password + JWT primitives). When vault-bitwarden-compat is off, the
 # vault crate has no dependency on the auth crate — making vault
 # genuinely standalone for non-BW deployments.
-assay-auth = { path = "../assay-auth", version = "0.4", optional = true }
+assay-auth = { path = "../assay-auth", version = "0.5", optional = true }
 assay-domain = { path = "../assay-domain", version = "0.2" }
 
 # Phase 0 holds the dep set deliberately small: just what the schema
