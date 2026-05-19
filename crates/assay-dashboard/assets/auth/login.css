@@ -94,7 +94,7 @@ body {
 .login-button {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.75rem;
   padding: 0.7rem 1rem;
   border: 1px solid var(--login-border);
   border-radius: 8px;
@@ -103,7 +103,8 @@ body {
   text-decoration: none;
   font-weight: 500;
   font-size: 0.95rem;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: border-color 120ms ease, background-color 120ms ease,
+              box-shadow 120ms ease, transform 80ms ease;
 }
 
 .login-button:hover,
@@ -113,11 +114,70 @@ body {
   outline: none;
 }
 
-.login-button img {
-  flex: 0 0 auto;
+.login-button:active {
+  transform: translateY(1px);
+}
+
+.login-button-icon {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--login-text);
+}
+
+.login-button-icon img,
+.login-button-icon svg {
   width: 20px;
   height: 20px;
   object-fit: contain;
+  display: block;
+}
+
+.login-button-label {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+/* Brand-tinted hover states for well-known providers. Border + faint
+   background only — we never paint the whole button in a brand colour
+   (too garish; clashes with theme). The icon keeps its own colours. */
+.login-button.is-google:hover,
+.login-button.is-google:focus-visible {
+  border-color: #4285F4;
+  background: rgba(66, 133, 244, 0.08);
+}
+.login-button.is-github:hover,
+.login-button.is-github:focus-visible {
+  border-color: var(--login-text);
+  background: rgba(110, 118, 129, 0.12);
+}
+.login-button.is-gitlab:hover,
+.login-button.is-gitlab:focus-visible {
+  border-color: #FC6D26;
+  background: rgba(252, 109, 38, 0.08);
+}
+.login-button.is-microsoft:hover,
+.login-button.is-microsoft:focus-visible {
+  border-color: #00A4EF;
+  background: rgba(0, 164, 239, 0.08);
+}
+.login-button.is-apple:hover,
+.login-button.is-apple:focus-visible {
+  border-color: var(--login-text);
+  background: rgba(110, 118, 129, 0.12);
+}
+.login-button.is-discord:hover,
+.login-button.is-discord:focus-visible {
+  border-color: #5865F2;
+  background: rgba(88, 101, 242, 0.08);
+}
+.login-button.is-slack:hover,
+.login-button.is-slack:focus-visible {
+  border-color: #4A154B;
+  background: rgba(74, 21, 75, 0.08);
 }
 
 .login-status {
