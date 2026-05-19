@@ -11,6 +11,7 @@
 use std::sync::Arc;
 
 use assay_auth::AuthCtx;
+#[cfg(feature = "dashboard")]
 use assay_dashboard::DashboardCtx;
 #[cfg(feature = "vault")]
 use assay_vault::VaultCtx;
@@ -23,6 +24,7 @@ use crate::config::EngineConfig;
 #[derive(Clone)]
 pub struct EngineState<S: WorkflowStore> {
     pub workflow: Arc<WorkflowCtx<S>>,
+    #[cfg(feature = "dashboard")]
     pub dashboard: Arc<DashboardCtx>,
     /// Composed auth context — present iff the runtime
     /// `engine.modules.auth.enabled` row is TRUE. `axum::FromRef`

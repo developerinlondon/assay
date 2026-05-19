@@ -36,6 +36,7 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "dashboard")]
 use assay_dashboard::{DashboardCtx, WhitelabelConfig};
 use assay_domain::events::EngineEventBus;
 use assay_workflow::{WorkflowCtx, WorkflowStore};
@@ -235,9 +236,12 @@ async fn compose<S: WorkflowStore + Clone + 'static>(
         cfg.engine_events_ttl_secs,
     ));
 
-    let whitelabel = Arc::new(WhitelabelConfig::from_env());
-    let asset_version = env!("CARGO_PKG_VERSION").to_string();
-    let dashboard_ctx = Arc::new(DashboardCtx::new(whitelabel, asset_version));
+    #[cfg(feature = "dashboard")]
+    let dashboard_ctx = {
+        let whitelabel = Arc::new(WhitelabelConfig::from_env());
+        let asset_version = env!("CARGO_PKG_VERSION").to_string();
+        Arc::new(DashboardCtx::new(whitelabel, asset_version))
+    };
     let admin_api_keys = Arc::new(cfg.auth.admin_api_keys.clone());
     let started_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -247,6 +251,7 @@ async fn compose<S: WorkflowStore + Clone + 'static>(
 
     let state = EngineState {
         workflow: workflow_ctx,
+        #[cfg(feature = "dashboard")]
         dashboard: dashboard_ctx,
         auth: auth_ctx,
         #[cfg(feature = "vault")]

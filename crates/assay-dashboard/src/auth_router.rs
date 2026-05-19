@@ -1,15 +1,12 @@
-//! `/auth/login` asset router.
+//! Auth-console asset router (`/auth/...`).
 //!
-//! Per the decoupled-modules architecture, the engine no longer hosts
-//! operator SPAs (sysops/gondor does). The only browser-facing asset
-//! that stays on the engine is the OIDC login page — it's the target
-//! of the `/authorize` redirect, so it has to live where the OIDC
-//! authorization-code flow can find it.
+//! Serves the SPA shell + JS components that talk to the engine's
+//! `/auth/admin/*` and `/auth/admin/oidc/*` HTTP endpoints, plus the
+//! `/auth/login` browser landing for OIDC authorization-code redirects.
 //!
-//! Other handlers in this file (index, app_js, component bundles) are
-//! retained for the moment but no longer mounted; Stage 5 of the
-//! decoupling refactor removes the whole assay-dashboard crate.
-#![allow(dead_code)]
+//! Stateless on purpose — every asset is baked in via `include_str!`
+//! and the index template substitution reuses the workflow dashboard's
+//! whitelabel knobs.
 
 use axum::Router;
 use axum::http::{StatusCode, header};
@@ -30,6 +27,19 @@ use crate::assets::{
 /// workflow dashboard's `router::NO_CACHE`).
 pub fn router() -> Router<()> {
     Router::new()
+        .route("/auth/console", get(index))
+        .route("/auth/console/", get(index))
+        .route("/auth/style.css", get(style_css))
+        .route("/auth/app.js", get(app_js))
+        .route("/auth/components/api.js", get(api_js))
+        .route("/auth/components/users.js", get(users_js))
+        .route("/auth/components/sessions.js", get(sessions_js))
+        .route("/auth/components/oidc_clients.js", get(oidc_clients_js))
+        .route("/auth/components/oidc_upstream.js", get(oidc_upstream_js))
+        .route("/auth/components/zanzibar.js", get(zanzibar_js))
+        .route("/auth/components/keys.js", get(keys_js))
+        .route("/auth/components/audit.js", get(audit_js))
+        .route("/auth/favicon.svg", get(favicon))
         // Login landing — target of assay_auth's `return_to_for(...)`
         // redirect for unauthenticated /authorize. Browser-facing by
         // design.
@@ -38,7 +48,6 @@ pub fn router() -> Router<()> {
         .route("/auth/login.js", get(login_js))
         .route("/auth/login.css", get(login_css))
         .route("/auth/icons.svg", get(icons_svg))
-        .route("/auth/favicon.svg", get(favicon))
 }
 
 const NO_CACHE: &str = "no-cache, no-store, must-revalidate";

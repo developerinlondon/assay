@@ -68,13 +68,23 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // 401, so mounting unconditionally is safe for no-auth builds.
     let engine_api_router = crate::engine_api::router::<S>().with_state(state.clone());
 
-    // Operator dashboards (vault / workflow / engine-core console SPAs)
-    // are NOT mounted by the engine — the decoupled-modules architecture
-    // puts operator UX in the sysops dashboard (gondor). The engine
-    // serves API only. /auth/login is the one browser-facing exception
-    // (mounted below) — it's a protocol requirement for OIDC
-    // authorization-code flow.
     let mut app = workflow_router.merge(healthz).merge(engine_api_router);
+
+    // Built-in operator SPAs (`dashboard` feature). When enabled the
+    // engine ships its own browser UI — auth console, vault console,
+    // workflow dashboard, engine console — so a stand-alone deployment
+    // (no sysops in front) is usable from a browser. SPAs prompt for
+    // an admin api-key and store it in localStorage, then call the
+    // engine API with that bearer. Deployments fronting the engine
+    // with sysops/gondor skip this whole asset bundle by building
+    // `--no-default-features --features "<…>"` (omit dashboard).
+    #[cfg(feature = "dashboard")]
+    {
+        let dashboard_router =
+            assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
+        let engine_console_router = assay_dashboard::engine_router();
+        app = app.merge(dashboard_router).merge(engine_console_router);
+    }
 
     // Mount the auth routers when AuthCtx is present. We bind state to
     // each router *before* nesting so the merged tree remains
@@ -105,13 +115,16 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
             assay_auth::engine_auth_router::<EngineState<S>>().with_state(state.clone());
         app = app.nest("/api/v1/engine/auth", engine_auth_router);
 
-        // `/auth/login` — protocol surface for OIDC authorization-code
-        // redirects. Browser-facing by design. The login pages and
-        // their assets are the ONLY dashboard assets the engine still
-        // hosts; everything else (operator SPAs, admin consoles) lives
-        // in sysops/gondor.
-        let login_router = assay_dashboard::auth_router();
-        app = app.merge(login_router);
+        // Auth-console SPA + /auth/login. Browser-facing; gated on
+        // `dashboard`. Deployments without `dashboard` lose
+        // /auth/login (and so cannot serve OIDC authorization-code
+        // redirects directly to a browser), which is the price of
+        // running engine as a pure API.
+        #[cfg(feature = "dashboard")]
+        {
+            let asset_router = assay_dashboard::auth_router();
+            app = app.merge(asset_router);
+        }
     }
 
     // Vault module — plan 17 / v0.3.0. Mounted under /api/v1/vault when

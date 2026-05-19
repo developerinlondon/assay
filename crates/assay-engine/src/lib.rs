@@ -47,6 +47,7 @@ pub mod server;
 pub mod state;
 
 pub use assay_auth as auth;
+#[cfg(feature = "dashboard")]
 pub use assay_dashboard as dashboard;
 pub use assay_domain as core;
 pub use assay_workflow as workflow;
@@ -460,6 +461,7 @@ fn oidc_issuer(cfg: &EngineConfig) -> String {
 /// Parse `server.public_url` as a `url::Url`. Used by passkey RP setup
 /// (which wants the bare origin) — not by the OIDC provider, which
 /// needs the issuer URL (with `/auth`); see [`oidc_public_url`].
+#[cfg(feature = "auth-passkey")]
 fn parse_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
     url::Url::parse(&cfg.server.public_url)
         .map_err(|e| anyhow::anyhow!("server.public_url {:?}: {e}", cfg.server.public_url))
@@ -478,6 +480,7 @@ fn oidc_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
 /// Build a passkey manager from `auth.passkey` config. Returns `None`
 /// when the public_url isn't parseable as a URL with a host (passkeys
 /// require an origin) — we log + skip rather than fail boot.
+#[cfg(feature = "auth-passkey")]
 fn build_passkey_manager(
     cfg: &EngineConfig,
     users: Arc<dyn assay_auth::store::UserStore>,

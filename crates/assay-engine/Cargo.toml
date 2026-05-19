@@ -33,7 +33,17 @@ default = [
   "auth-oidc-provider",
   "auth-zanzibar",
   "vault",
+  "dashboard",
 ]
+
+# Bundled operator UIs (auth-console, vault, workflow, engine-core
+# consoles + /auth/login). Pluggable — deployments fronting the engine
+# with sysops/gondor or another dashboard can build with
+# `--no-default-features --features "<...> server"` and skip the SPA
+# assets entirely. With this feature off, the engine is API-only;
+# /auth/login is also gone, so external OIDC RPs must use a different
+# IdP or supply their own login surface.
+dashboard = ["dep:assay-dashboard"]
 
 # Pass-through declarations so engine's `cfg` matches assay-auth's. Each
 # can be turned off independently for a slimmer build.
@@ -88,7 +98,7 @@ backend-sqlite = [
 
 [dependencies]
 assay-auth = { path = "../assay-auth", version = "0.4" }
-assay-dashboard = { path = "../assay-dashboard", version = "0.4" }
+assay-dashboard = { path = "../assay-dashboard", version = "0.4", optional = true }
 assay-domain = { path = "../assay-domain", version = "0.2" }
 assay-vault = { path = "../assay-vault", version = "0.3", optional = true, default-features = false }
 assay-workflow = { path = "../assay-workflow", version = "0.3" }
