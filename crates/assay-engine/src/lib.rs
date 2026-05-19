@@ -110,8 +110,6 @@ async fn build_vault_ctx_pg(
             .with_folders(assay_vault::store::postgres::PgFolderStore::new(
                 pool.clone(),
             ));
-        // Plan §S4 — seed default Zanzibar namespaces (vault,
-        // collection, kv_path, team, family, org). Idempotent.
     }
     #[cfg(feature = "vault-share")]
     {
