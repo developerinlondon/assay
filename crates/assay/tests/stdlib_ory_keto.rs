@@ -240,3 +240,155 @@ async fn test_keto_write_requires_write_url() {
     );
     run_lua(&script).await.unwrap();
 }
+
+#[tokio::test]
+async fn test_keto_tuples_upsert_created_when_absent() {
+    // Empty list response -> upsert creates exactly one tuple.
+    let read_server = MockServer::start().await;
+    let write_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/relation-tuples"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "relation_tuples": [],
+            "next_page_token": ""
+        })))
+        .mount(&read_server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/admin/relation-tuples"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({})))
+        .mount(&write_server)
+        .await;
+
+    let script = format!(
+        r#"
+        local keto = require("assay.ory.keto")
+        local k = keto.client("{}", {{ write_url = "{}" }})
+        local action, dups = k.tuples:upsert({{
+          namespace = "Role",
+          object = "namespace1:role-a",
+          relation = "members",
+          subject_id = "user:alice",
+        }})
+        assert.eq(action, "created")
+        assert.eq(dups, 0)
+        "#,
+        read_server.uri(),
+        write_server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_keto_tuples_upsert_noop_when_one_exists() {
+    // List returns exactly one matching tuple -> upsert is a no-op
+    // (no PUT, no DELETE issued).
+    let read_server = MockServer::start().await;
+    let write_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/relation-tuples"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "relation_tuples": [
+                {
+                    "namespace": "Role",
+                    "object": "namespace1:role-a",
+                    "relation": "members",
+                    "subject_id": "user:alice"
+                }
+            ],
+            "next_page_token": ""
+        })))
+        .mount(&read_server)
+        .await;
+    // No write mocks mounted — if upsert tries to call PUT or DELETE,
+    // wiremock returns 404 and the upsert errors. That's the assertion
+    // shape we want: "noop" really means no write side-effect.
+
+    let script = format!(
+        r#"
+        local keto = require("assay.ory.keto")
+        local k = keto.client("{}", {{ write_url = "{}" }})
+        local action, dups = k.tuples:upsert({{
+          namespace = "Role",
+          object = "namespace1:role-a",
+          relation = "members",
+          subject_id = "user:alice",
+        }})
+        assert.eq(action, "noop")
+        assert.eq(dups, 0)
+        "#,
+        read_server.uri(),
+        write_server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_keto_tuples_upsert_repairs_duplicates() {
+    // List returns 4 identical tuples -> upsert deletes them all and
+    // creates exactly one. Returns ("repaired", 3) — the 3 surplus
+    // tuples that were removed (the kept tuple is excluded from the
+    // count).
+    let read_server = MockServer::start().await;
+    let write_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/relation-tuples"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "relation_tuples": [
+                {"namespace": "Role", "object": "x", "relation": "members", "subject_id": "user:dup"},
+                {"namespace": "Role", "object": "x", "relation": "members", "subject_id": "user:dup"},
+                {"namespace": "Role", "object": "x", "relation": "members", "subject_id": "user:dup"},
+                {"namespace": "Role", "object": "x", "relation": "members", "subject_id": "user:dup"}
+            ],
+            "next_page_token": ""
+        })))
+        .mount(&read_server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/admin/relation-tuples"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&write_server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/admin/relation-tuples"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({})))
+        .mount(&write_server)
+        .await;
+
+    let script = format!(
+        r#"
+        local keto = require("assay.ory.keto")
+        local k = keto.client("{}", {{ write_url = "{}" }})
+        local action, dups = k.tuples:upsert({{
+          namespace = "Role",
+          object = "x",
+          relation = "members",
+          subject_id = "user:dup",
+        }})
+        assert.eq(action, "repaired")
+        assert.eq(dups, 3)
+        "#,
+        read_server.uri(),
+        write_server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_keto_tuples_upsert_requires_write_url() {
+    let read_server = MockServer::start().await;
+
+    let script = format!(
+        r#"
+        local keto = require("assay.ory.keto")
+        local k = keto.client("{}")
+        local ok, err = pcall(function()
+          k.tuples:upsert({{ namespace = "Role", object = "x", relation = "members", subject_id = "user:y" }})
+        end)
+        assert.eq(ok, false)
+        assert.contains(tostring(err), "write_url not configured")
+        "#,
+        read_server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}

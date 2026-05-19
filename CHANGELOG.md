@@ -2,6 +2,16 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.16.3 — 2026-05-19
+
+### Added
+
+- `c.tuples:upsert(tuple)` — idempotent ensure-exactly-one. Returns `"noop"` / `"created"` / `"repaired", N`. Use for seed scripts; `tuples:create` is non-idempotent.
+
+### Changed
+
+- `c.tuples:create` docstring flags non-idempotency, points at `upsert`.
+
 ## sysops 0.1.6 — 2026-05-18
 
 ### Added
