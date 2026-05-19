@@ -28,7 +28,11 @@
     container.appendChild(p);
   }
 
-  fetch('/auth/upstreams', { credentials: 'omit' })
+  // Same-origin fetch — must allow cookies so the browser attaches the
+  // Cloudflare Access cookie (or any perimeter cookie) when this page
+  // is loaded through such a gate. `credentials: 'omit'` would strip
+  // those and the upstream call gets bounced to the CF Access login.
+  fetch('/auth/upstreams', { credentials: 'same-origin' })
     .then(function (r) {
       if (!r.ok) throw new Error('http ' + r.status);
       return r.json();

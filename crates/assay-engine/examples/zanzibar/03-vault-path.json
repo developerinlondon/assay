@@ -1,0 +1,25 @@
+{
+  "name": "vault_path",
+  "definitions": {
+    "reader": {
+      "name": "reader",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    },
+    "writer": {
+      "name": "writer",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    }
+  }
+}

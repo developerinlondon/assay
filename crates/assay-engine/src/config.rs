@@ -149,6 +149,8 @@ pub struct AuthConfig {
     pub passkey: AuthPasskeyConfig,
     #[serde(default)]
     pub oidc_provider: AuthOidcProviderConfig,
+    #[serde(default)]
+    pub zanzibar: AuthZanzibarConfig,
     /// Admin API keys — comma-separated bearer tokens that grant access
     /// to `/admin/*` routes. Operators rotate these via the engine
     /// config. Per-token, no expiry; for fancier admin auth (Zanzibar
@@ -248,6 +250,44 @@ pub struct AuthOidcProviderConfig {
     ///           Recommended for shared / multi-tenant deployments.
     #[serde(default)]
     pub auto_provision: bool,
+}
+
+/// Zanzibar (ReBAC) knobs.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct AuthZanzibarConfig {
+    /// Directory the engine scans on boot for `*.json` namespace
+    /// schemas; each is upserted via the same path the admin POST
+    /// endpoint uses. Treats the directory as the authoritative
+    /// source for namespace shape (gitops-style). When unset, no
+    /// boot-time seeding happens.
+    pub namespace_seed_dir: Option<String>,
+    /// Email of the user who should be granted `system:main#admin`
+    /// on first boot when no such tuple yet exists. Bootstrap-only:
+    /// once the tuple is in place this field is a no-op. Set it,
+    /// boot once, then clear it.
+    pub bootstrap_admin_email: Option<String>,
+    /// Object id of the root `system` resource the bootstrap tuple
+    /// targets. Defaults to `"main"` — match the `system:<id>` you
+    /// reference in your namespace tuples.
+    #[serde(default = "default_system_object_id")]
+    pub system_object_id: String,
+}
+
+impl Default for AuthZanzibarConfig {
+    fn default() -> Self {
+        Self {
+            namespace_seed_dir: None,
+            bootstrap_admin_email: None,
+            system_object_id: default_system_object_id(),
+        }
+    }
+}
+
+fn default_system_object_id() -> String {
+    // Matches the codebase-canonical `auth:system` admin tuple that
+    // `gate::require_role_for("auth", "system", "admin")` checks.
+    "system".to_string()
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

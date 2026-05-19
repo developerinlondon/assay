@@ -1030,14 +1030,32 @@ pub async fn upstream_callback(
             let existing = if provider.auto_provision {
                 None
             } else {
-                match ctx.users.get_user_by_email(&info.email).await {
+                // Invite-only lookup keyed on email. The upstream MUST
+                // return one — without it the operator has no way to
+                // pre-invite this user. Reject with a clear message
+                // instead of creating an emailless orphan row.
+                let email = match info.email.as_deref() {
+                    Some(e) if !e.is_empty() => e,
+                    _ => {
+                        let mut response = error_html(
+                            StatusCode::FORBIDDEN,
+                            "upstream did not return an email claim; \
+                             cannot match against the access list.",
+                        );
+                        append_clear_binding_cookie(&mut response, &provider.public_url);
+                        return response;
+                    }
+                };
+                match ctx.users.get_user_by_email(email).await {
                     Ok(Some(u)) => Some(u),
                     Ok(None) => {
                         let mut response = error_html(
                             StatusCode::FORBIDDEN,
                             &format!(
-                                "{} is not on the access list. Ask an administrator to invite you.",
-                                info.email
+                                "You signed in as {email}, but that account is \
+                                 not yet authorised for this app. If you believe \
+                                 this is a mistake, ask an administrator to invite \
+                                 you."
                             ),
                         );
                         append_clear_binding_cookie(&mut response, &provider.public_url);
@@ -1225,8 +1243,97 @@ fn err_body(code: &str, desc: Option<String>) -> TokenErrorBody {
 /// Render a plain-text error page with the given status. Used for the
 /// non-redirect-safe authorize errors (bad client_id, bad redirect_uri).
 fn error_html(status: StatusCode, message: &str) -> Response {
-    let body = format!("<!doctype html><body><h1>Error</h1><pre>{message}</pre></body>");
+    let title = match status {
+        StatusCode::FORBIDDEN => "Access denied",
+        StatusCode::UNAUTHORIZED => "Sign-in required",
+        StatusCode::BAD_REQUEST => "Bad request",
+        StatusCode::INTERNAL_SERVER_ERROR => "Server error",
+        _ => "Error",
+    };
+    let body = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<style>
+:root {{
+  color-scheme: light dark;
+  --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8b949e;
+  --accent: #e6662a; --border: #30363d;
+}}
+@media (prefers-color-scheme: light) {{
+  :root {{
+    --bg: #f6f8fa; --card: #ffffff; --text: #1f2328; --muted: #59636e;
+    --accent: #cf5d27; --border: #d0d7de;
+  }}
+}}
+html, body {{ height: 100%; }}
+body {{
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem; box-sizing: border-box;
+}}
+.error-card {{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2.5rem 2.25rem;
+  width: 100%; max-width: 420px;
+  box-sizing: border-box;
+  box-shadow: 0 8px 24px rgba(0,0,0,.24);
+  text-align: center;
+}}
+h1 {{ margin: 0 0 1rem; font-size: 1.5rem; font-weight: 600; }}
+p {{ margin: 0 0 1.5rem; color: var(--muted); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }}
+.actions {{ display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; }}
+.button {{
+  display: inline-block;
+  padding: .65rem 1.15rem;
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); text-decoration: none;
+  font-weight: 500; font-size: .95rem;
+  transition: border-color 120ms, background-color 120ms;
+}}
+.button:hover {{ border-color: var(--accent); background: rgba(230,102,42,.06); }}
+</style>
+</head>
+<body>
+<main class="error-card">
+<h1>{title}</h1>
+<p>{message}</p>
+<div class="actions">
+  <a class="button" href="/auth/login">Try a different account</a>
+</div>
+</main>
+</body>
+</html>"#,
+        title = html_escape_simple(title),
+        message = html_escape_simple(message),
+    );
     (status, Html(body)).into_response()
+}
+
+/// Minimal HTML-escape for the strings interpolated into `error_html`.
+/// Sufficient because we only interpolate into element text bodies, not
+/// into attribute contexts, and the messages are operator-controlled.
+fn html_escape_simple(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 fn server_error_html(message: &str) -> Response {

@@ -1,0 +1,35 @@
+{
+  "name": "auth",
+  "definitions": {
+    "admin": {
+      "name": "admin",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    },
+    "user_admin": {
+      "name": "user_admin",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    },
+    "server_viewer": {
+      "name": "server_viewer",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    }
+  }
+}

@@ -14,6 +14,28 @@
   const VAULT_BASE = '/api/v1/vault';
   let adminToken = localStorage.getItem(ADMIN_TOKEN_KEY) || '';
   let currentView = 'sealing';
+  // Set asynchronously by probeSession(); when true the user has an
+  // assay_session cookie and the SPA hides the admin-token sidebar
+  // section.
+  let hasSession = false;
+
+  async function probeSession() {
+    try {
+      const r = await fetch('/api/v1/engine/auth/whoami', {
+        credentials: 'same-origin',
+        headers: { 'accept': 'application/json' },
+      });
+      hasSession = r.ok;
+    } catch (_) {
+      hasSession = false;
+    }
+    const section = document.querySelector('.sidebar-token');
+    if (section && hasSession) {
+      section.style.display = 'none';
+    }
+  }
+
+  probeSession();
 
   const tokenInput = document.getElementById('admin-token');
   const saveBtn = document.getElementById('admin-token-save');
@@ -41,7 +63,9 @@
   async function api(method, path, body) {
     const headers = { 'Content-Type': 'application/json' };
     if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken;
-    const init = { method, headers };
+    // Send assay_session cookie so vault backend can authenticate via
+    // session+zanzibar when no admin Bearer is present (post Phase C).
+    const init = { method, headers, credentials: 'same-origin' };
     if (body !== undefined) init.body = JSON.stringify(body);
     const r = await fetch(VAULT_BASE + path, init);
     if (r.status === 204) return null;

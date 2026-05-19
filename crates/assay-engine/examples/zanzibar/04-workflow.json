@@ -1,0 +1,25 @@
+{
+  "name": "workflow",
+  "definitions": {
+    "triggerer": {
+      "name": "triggerer",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    },
+    "viewer": {
+      "name": "viewer",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    }
+  }
+}

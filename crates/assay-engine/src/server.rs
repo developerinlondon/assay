@@ -149,7 +149,89 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         app = app.merge(assay_dashboard::vault_router());
     }
 
+    // SPA shells (auth / vault / workflow / engine console HTML pages)
+    // get a session check at the engine boundary. Without it the SPA
+    // shell HTML is fetchable by anyone with network access — the
+    // JS-side admin-token prompt is the only gate, which is too easy
+    // to fingerprint. When auth is on, redirect unauth visitors to
+    // /auth/login so they go through Google + assay-auth. Asset paths
+    // (.js / .css) and the OIDC spec endpoints under /auth are
+    // deliberately NOT gated — the login page itself needs to load.
+    if state.auth.is_some() {
+        app = app.layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            spa_session_gate_middleware::<S>,
+        ));
+    }
+
     app
+}
+
+/// Session gate for admin SPA shells. Redirects unauth visitors to
+/// `/auth/login`. Asset paths (`*.js`, `*.css`, components) and OIDC
+/// spec endpoints stay open so the login page can paint itself.
+async fn spa_session_gate_middleware<S: WorkflowStore + Clone + 'static>(
+    axum::extract::State(state): axum::extract::State<EngineState<S>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = request.uri().path();
+
+    // Match SPA shell paths only (exact match including trailing slash).
+    let is_spa_shell = matches!(
+        path,
+        "/auth/console"
+            | "/auth/console/"
+            | "/vault"
+            | "/vault/"
+            | "/workflow"
+            | "/workflow/"
+            | "/engine/console"
+            | "/engine/console/"
+    );
+    if !is_spa_shell {
+        return next.run(request).await;
+    }
+
+    let Some(auth) = state.auth.as_ref() else {
+        return next.run(request).await;
+    };
+
+    // Pull the session cookie off the request.
+    let session_id = request
+        .headers()
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|raw| {
+            raw.split(';').find_map(|kv| {
+                let kv = kv.trim();
+                kv.split_once('=').and_then(|(k, v)| {
+                    if k == assay_auth::session::SESSION_COOKIE {
+                        Some(v.to_string())
+                    } else {
+                        None
+                    }
+                })
+            })
+        });
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or_default();
+
+    let has_session = match session_id {
+        Some(sid) => matches!(auth.sessions.get(&sid).await, Ok(Some(s)) if s.expires_at > now),
+        None => false,
+    };
+
+    if has_session {
+        return next.run(request).await;
+    }
+
+    // Build a `?return_to=` so the user lands back here after login.
+    let return_to: String = url::form_urlencoded::byte_serialize(path.as_bytes()).collect();
+    axum::response::Redirect::to(&format!("/auth/login?return_to={return_to}")).into_response()
 }
 
 /// Workflow-API auth gate. The engine is the auth boundary for every

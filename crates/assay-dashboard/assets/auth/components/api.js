@@ -19,6 +19,11 @@
     const opts = {
       method: method,
       headers: authHeaders(),
+      // Send the assay_session cookie so the backend can match the
+      // caller against zanzibar (auth:system#admin etc.) when no
+      // admin bearer is present. Same-origin keeps it scoped to this
+      // host and prevents accidental cross-site cookie transmission.
+      credentials: 'same-origin',
     };
     if (body !== undefined && body !== null && method !== 'GET' && method !== 'DELETE') {
       opts.body = JSON.stringify(body);
@@ -105,6 +110,7 @@
       return fetch(url, {
         method: 'DELETE',
         headers: authHeaders(),
+        credentials: 'same-origin',
         body: JSON.stringify(body),
       }).then(async function (res) {
         if (res.status === 204) return null;

@@ -1,0 +1,15 @@
+{
+  "name": "workflow_step",
+  "definitions": {
+    "approver": {
+      "name": "approver",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    }
+  }
+}

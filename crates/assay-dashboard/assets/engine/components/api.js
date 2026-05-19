@@ -26,6 +26,9 @@
     const init = {
       method: method,
       headers: headers,
+      // Send assay_session cookie so the backend can authenticate
+      // via session+zanzibar when no admin Bearer is present.
+      credentials: 'same-origin',
     };
     if (body !== undefined && body !== null) init.body = JSON.stringify(body);
     const r = await fetch(path, init);
