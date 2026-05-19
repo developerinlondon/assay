@@ -12,6 +12,12 @@
   const ADMIN_TOKEN_KEY = 'assay-admin-token';
   let currentView = 'users';
   let adminToken = localStorage.getItem(ADMIN_TOKEN_KEY) || '';
+  // Set asynchronously by `probeSession()` at boot. When `true`, the
+  // user authenticated via Google + assay-auth and has an
+  // `assay_session` cookie that the engine accepts via Phase-C
+  // session+zanzibar gating — no admin token prompt needed.
+  let hasSession = false;
+  function canCall() { return Boolean(adminToken || hasSession); }
 
   // Tiny escapeHtml helper — the auth console fields are mostly
   // operator-controlled but admin-supplied display_names + emails can
@@ -143,10 +149,13 @@
     const text = document.getElementById('admin-text');
     if (adminToken) {
       dot.className = 'status-dot connected';
-      text.textContent = 'Admin authenticated';
+      text.textContent = 'Admin authenticated (token)';
+    } else if (hasSession) {
+      dot.className = 'status-dot connected';
+      text.textContent = 'Signed in';
     } else {
       dot.className = 'status-dot disconnected';
-      text.textContent = 'No admin token';
+      text.textContent = 'Not signed in';
     }
   }
 
@@ -217,8 +226,8 @@
       const link = e.target.closest('.nav-link[data-view]');
       if (!link) return;
       e.preventDefault();
-      if (!adminToken) {
-        toast('Set an admin token first', 'error');
+      if (!canCall()) {
+        toast('Sign in or set an admin token first', 'error');
         return;
       }
       switchView(link.dataset.view);
@@ -231,10 +240,30 @@
     updateStatusBar();
     loadVersion();
     loadHeaderIdentity();
-    if (adminToken) {
-      switchView('users');
-    } else {
-      renderTokenBanner();
+    // Probe the session cookie first. If valid, the admin token is
+    // optional — the SPA's API calls work via session+zanzibar.
+    probeSession().then(function () {
+      updateStatusBar();
+      if (canCall()) {
+        switchView('users');
+      } else {
+        renderTokenBanner();
+      }
+    });
+  }
+
+  // Check whether the assay_session cookie maps to a live user.
+  // Sets hasSession = true on 200. 401 leaves it false → SPA falls
+  // back to the admin-token prompt.
+  async function probeSession() {
+    try {
+      const r = await fetch('/api/v1/engine/auth/whoami', {
+        credentials: 'same-origin',
+        headers: { 'accept': 'application/json' },
+      });
+      hasSession = r.ok;
+    } catch (_) {
+      hasSession = false;
     }
   }
 

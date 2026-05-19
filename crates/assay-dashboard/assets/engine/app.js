@@ -13,6 +13,22 @@
   const ADMIN_TOKEN_KEY = 'assay-admin-token';
   let currentView = 'info';
   let adminToken = localStorage.getItem(ADMIN_TOKEN_KEY) || '';
+  // Asynchronously set by probeSession(); when true the user has an
+  // assay_session cookie that the backend accepts via session+zanzibar.
+  let hasSession = false;
+  function canCall() { return Boolean(adminToken || hasSession); }
+
+  async function probeSession() {
+    try {
+      const r = await fetch('/api/v1/engine/auth/whoami', {
+        credentials: 'same-origin',
+        headers: { 'accept': 'application/json' },
+      });
+      hasSession = r.ok;
+    } catch (_) {
+      hasSession = false;
+    }
+  }
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -115,7 +131,7 @@
     // The Info pane is public — every other pane needs the admin
     // token. Render the token banner inline when missing instead of
     // navigating away, so operators always know what to do next.
-    if (currentView !== 'info' && !adminToken) {
+    if (currentView !== 'info' && !canCall()) {
       renderTokenBanner();
       return;
     }
@@ -158,10 +174,13 @@
     if (!dot || !text) return;
     if (adminToken) {
       dot.className = 'status-dot connected';
-      text.textContent = 'Admin authenticated';
+      text.textContent = 'Admin authenticated (token)';
+    } else if (hasSession) {
+      dot.className = 'status-dot connected';
+      text.textContent = 'Signed in';
     } else {
       dot.className = 'status-dot disconnected';
-      text.textContent = 'No admin token';
+      text.textContent = 'Not signed in';
     }
   }
 
@@ -261,6 +280,10 @@
     loadVersion();
     loadHeaderIdentity();
     switchView('info');
+    // Probe the session cookie asynchronously. If a valid session is
+    // present, the SPA can call admin endpoints via session+zanzibar
+    // without a token prompt.
+    probeSession().then(updateStatusBar);
   }
 
   window.AssayEngineApp = {

@@ -156,6 +156,30 @@ pub struct Tuple {
     pub subject_rel: String,
 }
 
+/// Filter for listing tuples. Every field is optional; an empty filter
+/// matches every row. `limit` defaults to 100 and is clamped to 1000.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TupleFilter {
+    pub object_type: Option<String>,
+    pub object_id: Option<String>,
+    pub relation: Option<String>,
+    pub subject_type: Option<String>,
+    pub subject_id: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+impl TupleFilter {
+    /// Effective limit: caller-supplied (clamped to 1..=1000) or 100.
+    pub fn effective_limit(&self) -> i64 {
+        self.limit.map(|n| n.clamp(1, 1000)).unwrap_or(100)
+    }
+    /// Effective offset: caller-supplied (clamped to ≥0) or 0.
+    pub fn effective_offset(&self) -> i64 {
+        self.offset.map(|n| n.max(0)).unwrap_or(0)
+    }
+}
+
 impl Tuple {
     /// Direct grant — `user:alice` is `viewer` of `document:foo`.
     pub fn direct(

@@ -47,6 +47,7 @@ pub mod revoke;
 pub mod store;
 pub mod token;
 pub mod types;
+pub mod upstreams_public;
 pub mod userinfo;
 
 pub use store::{
@@ -98,6 +99,13 @@ pub struct OidcProviderConfig {
     pub consents: Arc<dyn OidcConsentStore>,
     pub upstream_states: Arc<dyn OidcUpstreamStateStore>,
     pub jwks_source: JwksSource,
+    /// When `true` (legacy default), `upstream_callback` creates an
+    /// `auth.users` row the first time it sees a new upstream subject.
+    /// When `false`, the callback looks up by `email` and rejects with
+    /// 403 if no row exists — the "invite-only" posture an operator
+    /// gets by pre-populating `auth.users` via the admin API / the
+    /// `/auth/users` sysops page.
+    pub auto_provision: bool,
 }
 
 impl OidcProviderConfig {
@@ -134,7 +142,19 @@ impl OidcProviderConfig {
             consents,
             upstream_states,
             jwks_source: JwksSource::Memory(Vec::new()),
+            // Default `true` to preserve historical library behaviour;
+            // engine deployments set `false` via engine.toml for
+            // invite-only posture.
+            auto_provision: true,
         }
+    }
+
+    /// Toggle invite-only vs auto-provision at the federation callback.
+    /// `false` → `auth.users` row must already exist (lookup by email).
+    /// `true`  → callback creates the row on first sign-in (legacy).
+    pub fn with_auto_provision(mut self, on: bool) -> Self {
+        self.auto_provision = on;
+        self
     }
 
     /// Replace the JWKS source. Engine boot calls this with the
@@ -232,6 +252,11 @@ where
             "/oidc/upstream/{slug}/callback",
             get(handlers::upstream_callback),
         )
+        // Public listing of enabled upstream IdPs — consumed by the
+        // login landing in `assay-dashboard` to render upstream buttons
+        // without an admin key. Returns only slug + display_name +
+        // icon_url; secrets and disabled rows are filtered server-side.
+        .route("/upstreams", get(upstreams_public::list_public))
 }
 
 /// OIDC admin router — operator-only CRUD for OIDC clients and

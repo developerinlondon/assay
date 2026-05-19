@@ -1,0 +1,62 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; zanzibar</div>
+    <h1 class="page-title">Define namespace</h1>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/auth/users">Users</a>
+  <a class="tab" href="/auth/sessions">Sessions</a>
+  <a class="tab" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab" href="/auth/upstreams">Upstreams</a>
+  <a class="tab" href="/auth/jwks">JWKS</a>
+  <a class="tab" href="/auth/biscuit">Biscuit</a>
+  <a class="tab" href="/auth/audit">Audit</a>
+  <a class="tab active" href="/zanzibar">Zanzibar</a>
+</div>
+
+<div class="tabs">
+  <a class="tab" href="/zanzibar">Namespaces</a>
+  <a class="tab active" href="/zanzibar/define">Define</a>
+  <a class="tab" href="/zanzibar/tuples">Tuples</a>
+  <a class="tab" href="/zanzibar/check">Check</a>
+  <a class="tab" href="/zanzibar/bootstrap">Bootstrap admin</a>
+</div>
+
+{% if saved_name %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Namespace <code>{{ saved_name }}</code> defined.</span>
+</div>
+{% endif %}
+
+{% if parse_err %}
+<div class="banner warn">
+  <span class="b-mark"></span>
+  <span>Could not parse the schema as JSON. Fix the syntax and resubmit.</span>
+</div>
+{% endif %}
+
+{% if submit_err %}
+<div class="banner warn">
+  <span class="b-mark"></span>
+  <span>Engine rejected the schema (HTTP {{ submit_err }}){% if submit_body %}: <code>{{ submit_body }}</code>{% endif %}.</span>
+</div>
+{% endif %}
+
+<div class="card">
+  <p class="muted" style="margin-top:0">
+    Paste a JSON schema. POSTed to <code>/admin/zanzibar/namespaces</code>; idempotent (replaces existing).
+    Browse the Namespaces tab for the shape of any namespace already defined.
+  </p>
+  <form method="post" action="/zanzibar/define">
+    <label for="schema" class="muted">Schema (JSON)</label>
+    <textarea class="input" id="schema" name="schema" rows="18" spellcheck="false"
+      style="font-family:var(--mono);font-size:13px;width:100%;box-sizing:border-box;"
+      placeholder='{&#10;  "name": "document",&#10;  "relations": { "viewer": {}, "editor": {} }&#10;}'>{{ schema_text }}</textarea>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button type="submit" class="btn btn-primary">Define</button>
+    </div>
+  </form>
+</div>

@@ -1,0 +1,192 @@
+/* Login landing — centred single-card layout. Self-contained so the
+   page renders before any other dashboard CSS loads. Reuses the same
+   accent + surface tokens as the workflow/auth consoles. */
+
+:root {
+  --login-bg: #0d1117;
+  --login-card: #161b22;
+  --login-text: #e6edf3;
+  --login-muted: #8b949e;
+  --login-accent: #e6662a;
+  --login-border: #30363d;
+  --login-button-hover-bg: rgba(230, 102, 42, 0.06);
+}
+
+[data-theme="light"] {
+  --login-bg: #f6f8fa;
+  --login-card: #ffffff;
+  --login-text: #1f2328;
+  --login-muted: #59636e;
+  --login-accent: #cf5d27;
+  --login-border: #d0d7de;
+  --login-button-hover-bg: rgba(207, 93, 39, 0.06);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--login-bg);
+  color: var(--login-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+.login-card {
+  background: var(--login-card);
+  border: 1px solid var(--login-border);
+  border-radius: 12px;
+  padding: 2.5rem 2.25rem;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  box-sizing: border-box;
+}
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1.75rem;
+}
+
+.login-mark {
+  width: 56px;
+  height: 56px;
+  background: var(--login-accent);
+  color: #fff;
+  font-size: 1.75rem;
+  font-weight: 700;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.login-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-height: 3rem;
+}
+
+.login-button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--login-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--login-text);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: border-color 120ms ease, background-color 120ms ease,
+              box-shadow 120ms ease, transform 80ms ease;
+}
+
+.login-button:hover,
+.login-button:focus-visible {
+  border-color: var(--login-accent);
+  background: var(--login-button-hover-bg);
+  outline: none;
+}
+
+.login-button:active {
+  transform: translateY(1px);
+}
+
+.login-button-icon {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--login-text);
+}
+
+.login-button-icon img,
+.login-button-icon svg {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
+}
+
+.login-button-label {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+/* Brand-tinted hover states for well-known providers. Border + faint
+   background only — we never paint the whole button in a brand colour
+   (too garish; clashes with theme). The icon keeps its own colours. */
+.login-button.is-google:hover,
+.login-button.is-google:focus-visible {
+  border-color: #4285F4;
+  background: rgba(66, 133, 244, 0.08);
+}
+.login-button.is-github:hover,
+.login-button.is-github:focus-visible {
+  border-color: var(--login-text);
+  background: rgba(110, 118, 129, 0.12);
+}
+.login-button.is-gitlab:hover,
+.login-button.is-gitlab:focus-visible {
+  border-color: #FC6D26;
+  background: rgba(252, 109, 38, 0.08);
+}
+.login-button.is-microsoft:hover,
+.login-button.is-microsoft:focus-visible {
+  border-color: #00A4EF;
+  background: rgba(0, 164, 239, 0.08);
+}
+.login-button.is-apple:hover,
+.login-button.is-apple:focus-visible {
+  border-color: var(--login-text);
+  background: rgba(110, 118, 129, 0.12);
+}
+.login-button.is-discord:hover,
+.login-button.is-discord:focus-visible {
+  border-color: #5865F2;
+  background: rgba(88, 101, 242, 0.08);
+}
+.login-button.is-slack:hover,
+.login-button.is-slack:focus-visible {
+  border-color: #4A154B;
+  background: rgba(74, 21, 75, 0.08);
+}
+
+.login-status {
+  margin: 0;
+  text-align: center;
+  color: var(--login-muted);
+  font-size: 0.9rem;
+}
+
+.login-status-error {
+  color: #f85149;
+}

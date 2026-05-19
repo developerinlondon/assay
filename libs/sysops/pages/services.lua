@@ -16,6 +16,34 @@ local function urlenc(s)
   end)
 end
 
+-- Cross-site request guard for the lifecycle POSTs (start/stop/restart).
+-- These mutate host systemd state, so a cross-origin form-submit would
+-- be a CSRF foothold. Compares the browser-supplied Origin (or, if
+-- absent, Referer) host against the request's Host header. Same-origin
+-- traffic from the dashboard's own pages always matches; anything else
+-- — including curl invocations that don't set Origin/Referer — is
+-- rejected. Operators driving these endpoints from a script should use
+-- a bearer-authenticated API surface instead.
+local function header(req, name)
+  local h = req and req.headers or {}
+  return h[name] or h[name:lower()]
+end
+
+local function url_host(raw)
+  if not raw or raw == "" then return nil end
+  return raw:match("^https?://([^/]+)") or nil
+end
+
+local function same_origin(req)
+  local host = header(req, "Host")
+  if not host or host == "" then return false end
+  local origin_host = url_host(header(req, "Origin"))
+  if origin_host then return origin_host == host end
+  local referer_host = url_host(header(req, "Referer"))
+  if referer_host then return referer_host == host end
+  return false
+end
+
 local function services_url(args)
   args = args or {}
   return "/services"
@@ -175,6 +203,13 @@ function M.page(req)
 end
 
 local function lifecycle(req, action)
+  if not same_origin(req) then
+    return {
+      status = 403,
+      headers = { ["Content-Type"] = "text/plain; charset=utf-8" },
+      body = "cross-site request blocked",
+    }
+  end
   local f = form.parse(req)
   local unit = f.unit or ""
   local state_filter = f.state or "all"

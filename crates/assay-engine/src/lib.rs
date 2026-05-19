@@ -110,18 +110,6 @@ async fn build_vault_ctx_pg(
             .with_folders(assay_vault::store::postgres::PgFolderStore::new(
                 pool.clone(),
             ));
-        // Plan §S4 — seed default Zanzibar namespaces (vault,
-        // collection, kv_path, team, family, org). Idempotent.
-        // Builds the same backing PG store assay-auth uses; the
-        // namespace rows live in `auth.zanzibar_namespaces` regardless
-        // of which crate writes them.
-        #[cfg(feature = "auth-zanzibar")]
-        {
-            let z = assay_auth::zanzibar::PostgresZanzibarStore::new(pool.clone());
-            assay_vault::zanzibar::seed_default_namespaces(&z)
-                .await
-                .map_err(|e| anyhow::anyhow!("seed vault zanzibar namespaces (pg): {e}"))?;
-        }
     }
     #[cfg(feature = "vault-share")]
     {
@@ -189,13 +177,6 @@ async fn build_vault_ctx_sqlite(
             .with_folders(assay_vault::store::sqlite::SqliteFolderStore::new(
                 pool.clone(),
             ));
-        #[cfg(feature = "auth-zanzibar")]
-        {
-            let z = assay_auth::zanzibar::SqliteZanzibarStore::new(pool.clone());
-            assay_vault::zanzibar::seed_default_namespaces(&z)
-                .await
-                .map_err(|e| anyhow::anyhow!("seed vault zanzibar namespaces (sqlite): {e}"))?;
-        }
     }
     #[cfg(feature = "vault-share")]
     {
@@ -281,7 +262,7 @@ async fn build_auth_ctx_pg(
     #[cfg(feature = "auth-oidc-provider")]
     if cfg.auth.oidc_provider.enabled {
         let issuer = oidc_issuer(cfg);
-        let public_url = parse_public_url(cfg)?;
+        let public_url = oidc_public_url(cfg)?;
         let provider = assay_auth::oidc_provider::OidcProviderConfig::new(
             issuer,
             public_url,
@@ -295,7 +276,8 @@ async fn build_auth_ctx_pg(
         )
         .with_jwks_source(assay_auth::oidc_provider::JwksSource::Postgres(
             pool.clone(),
-        ));
+        ))
+        .with_auto_provision(cfg.auth.oidc_provider.auto_provision);
         ctx = ctx.with_oidc_provider(provider);
 
         if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {
@@ -380,7 +362,7 @@ async fn build_auth_ctx_sqlite(
     #[cfg(feature = "auth-oidc-provider")]
     if cfg.auth.oidc_provider.enabled {
         let issuer = oidc_issuer(cfg);
-        let public_url = parse_public_url(cfg)?;
+        let public_url = oidc_public_url(cfg)?;
         let provider = assay_auth::oidc_provider::OidcProviderConfig::new(
             issuer,
             public_url,
@@ -392,7 +374,8 @@ async fn build_auth_ctx_sqlite(
             assay_auth::oidc_provider::SqliteOidcConsentStore::new(pool.clone()).into_dyn(),
             assay_auth::oidc_provider::SqliteOidcUpstreamStateStore::new(pool.clone()).into_dyn(),
         )
-        .with_jwks_source(assay_auth::oidc_provider::JwksSource::Sqlite(pool.clone()));
+        .with_jwks_source(assay_auth::oidc_provider::JwksSource::Sqlite(pool.clone()))
+        .with_auto_provision(cfg.auth.oidc_provider.auto_provision);
         ctx = ctx.with_oidc_provider(provider);
 
         if let (Some(registry), Some(provider)) = (&ctx.oidc, &ctx.oidc_provider) {
@@ -472,16 +455,29 @@ fn oidc_issuer(cfg: &EngineConfig) -> String {
         .unwrap_or_else(|| effective_issuer(cfg))
 }
 
-/// Parse `server.public_url` as a `url::Url`. Used by the OIDC provider
-/// to derive default redirect targets and by passkey RP setup.
+/// Parse `server.public_url` as a `url::Url`. Used by passkey RP setup
+/// (which wants the bare origin) — not by the OIDC provider, which
+/// needs the issuer URL (with `/auth`); see [`oidc_public_url`].
+#[cfg(feature = "auth-passkey")]
 fn parse_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
     url::Url::parse(&cfg.server.public_url)
         .map_err(|e| anyhow::anyhow!("server.public_url {:?}: {e}", cfg.server.public_url))
 }
 
+/// Base URL the OIDC provider exposes its endpoints at — same as
+/// [`oidc_issuer`] (which already accounts for the `/auth` mount
+/// prefix), parsed as a `url::Url`. Passed into `OidcProviderConfig`
+/// so `upstream_callback_url(...)` produces an absolute URI that
+/// matches the actual handler path.
+fn oidc_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
+    let issuer = oidc_issuer(cfg);
+    url::Url::parse(&issuer).map_err(|e| anyhow::anyhow!("oidc issuer {issuer:?}: {e}"))
+}
+
 /// Build a passkey manager from `auth.passkey` config. Returns `None`
 /// when the public_url isn't parseable as a URL with a host (passkeys
 /// require an origin) — we log + skip rather than fail boot.
+#[cfg(feature = "auth-passkey")]
 fn build_passkey_manager(
     cfg: &EngineConfig,
     users: Arc<dyn assay_auth::store::UserStore>,

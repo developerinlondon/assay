@@ -4,23 +4,20 @@
 
 use axum::Router;
 use axum::extract::{FromRef, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use serde::Deserialize;
 
-use assay_auth::state::AdminApiKeys;
-
 use crate::ctx::VaultCtx;
 use crate::error::VaultError;
 use crate::items::Parent;
-use crate::router::{check_admin, vault_err_to_response};
+use crate::router::vault_err_to_response;
 
 pub fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     Router::new()
         // ── Personal vault ────────────────────────────────────
@@ -95,19 +92,13 @@ struct EnsureVaultBody {
 
 async fn ensure_personal_vault<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(user_id): Path<String>,
     axum::Json(body): axum::Json<EnsureVaultBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.personal_vaults.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("personal_vaults"),
@@ -129,18 +120,12 @@ where
 
 async fn get_personal_vault<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(user_id): Path<String>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.personal_vaults.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("personal_vaults"),
@@ -166,19 +151,13 @@ struct CreateItemBody {
 
 async fn create_personal_item<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(user_id): Path<String>,
     axum::Json(body): axum::Json<CreateItemBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let pv = match vault.personal_vaults.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("personal_vaults"),
@@ -218,18 +197,12 @@ where
 
 async fn list_personal_items<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(user_id): Path<String>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let pv = match vault.personal_vaults.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("personal_vaults"),
@@ -262,18 +235,12 @@ struct CreateCollectionBody {
 
 async fn create_collection<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     axum::Json(body): axum::Json<CreateCollectionBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -295,18 +262,12 @@ struct ListCollectionsQuery {
 
 async fn list_collections<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Query(q): Query<ListCollectionsQuery>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -317,20 +278,11 @@ where
     }
 }
 
-async fn get_collection<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response
+async fn get_collection<S>(State(vault): State<VaultCtx>, Path(id): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -342,20 +294,11 @@ where
     }
 }
 
-async fn delete_collection<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response
+async fn delete_collection<S>(State(vault): State<VaultCtx>, Path(id): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -377,19 +320,13 @@ struct UpsertMemberBody {
 
 async fn upsert_member<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(id): Path<String>,
     axum::Json(body): axum::Json<UpsertMemberBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -415,20 +352,11 @@ where
     }
 }
 
-async fn list_members<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response
+async fn list_members<S>(State(vault): State<VaultCtx>, Path(id): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -441,18 +369,12 @@ where
 
 async fn remove_member<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path((id, user_id)): Path<(String, String)>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -470,19 +392,13 @@ where
 
 async fn create_collection_item<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(collection_id): Path<String>,
     axum::Json(body): axum::Json<CreateItemBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let items = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -511,18 +427,12 @@ where
 
 async fn list_collection_items<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(collection_id): Path<String>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let items = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -533,20 +443,11 @@ where
     }
 }
 
-async fn get_item<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response
+async fn get_item<S>(State(vault): State<VaultCtx>, Path(id): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -560,19 +461,13 @@ where
 
 async fn update_item<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(id): Path<String>,
     axum::Json(body): axum::Json<CreateItemBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -598,20 +493,11 @@ where
     }
 }
 
-async fn delete_item<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response
+async fn delete_item<S>(State(vault): State<VaultCtx>, Path(id): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -644,18 +530,12 @@ struct RenameFolderBody {
 
 async fn create_folder<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     axum::Json(body): axum::Json<CreateFolderBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.folders.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("folders"),
@@ -679,20 +559,11 @@ where
     }
 }
 
-async fn get_folder<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response
+async fn get_folder<S>(State(vault): State<VaultCtx>, Path(id): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.folders.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("folders"),
@@ -706,19 +577,13 @@ where
 
 async fn rename_folder<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(id): Path<String>,
     axum::Json(body): axum::Json<RenameFolderBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.folders.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("folders"),
@@ -730,20 +595,11 @@ where
     }
 }
 
-async fn delete_folder<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response
+async fn delete_folder<S>(State(vault): State<VaultCtx>, Path(id): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.folders.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("folders"),

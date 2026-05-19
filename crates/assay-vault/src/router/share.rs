@@ -6,23 +6,20 @@
 
 use axum::Router;
 use axum::extract::{FromRef, Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
-use assay_auth::state::AdminApiKeys;
-
 use crate::ctx::VaultCtx;
 use crate::error::VaultError;
-use crate::router::{check_admin, vault_err_to_response};
+use crate::router::vault_err_to_response;
 use crate::share::{ShareCaveats, ShareTarget};
 
 pub fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     Router::new()
         .route("/share", post(mint_share::<S>))
@@ -61,18 +58,12 @@ struct RevokeBody {
 
 async fn mint_share<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     axum::Json(body): axum::Json<MintBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.share.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("share"),
@@ -112,7 +103,6 @@ async fn redeem_share<S>(State(vault): State<VaultCtx>, Path(token): Path<String
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let svc = match vault.share.as_ref() {
         Some(s) => s.clone(),
@@ -137,18 +127,12 @@ where
 
 async fn revoke_share<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     axum::Json(body): axum::Json<RevokeBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.share.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("share"),

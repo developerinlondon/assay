@@ -13,22 +13,19 @@
 
 use axum::Router;
 use axum::extract::{FromRef, Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
-use assay_auth::state::AdminApiKeys;
-
 use crate::ctx::VaultCtx;
 use crate::error::VaultError;
-use crate::router::{check_admin, vault_err_to_response};
+use crate::router::vault_err_to_response;
 
 pub fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     Router::new()
         .route("/transit/keys/{name}", post(create_key::<S>))
@@ -71,19 +68,13 @@ struct RotateResponse {
 
 async fn create_key<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(name): Path<String>,
     body: Option<axum::Json<CreateKeyBody>>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
@@ -95,19 +86,11 @@ where
     }
 }
 
-async fn list_keys<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-) -> Response
+async fn list_keys<S>(State(vault): State<VaultCtx>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
@@ -118,20 +101,11 @@ where
     }
 }
 
-async fn rotate<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(name): Path<String>,
-) -> Response
+async fn rotate<S>(State(vault): State<VaultCtx>, Path(name): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
@@ -144,19 +118,13 @@ where
 
 async fn encrypt<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(name): Path<String>,
     axum::Json(body): axum::Json<EncryptBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
@@ -177,19 +145,13 @@ where
 
 async fn decrypt<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(name): Path<String>,
     axum::Json(body): axum::Json<DecryptBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
