@@ -70,15 +70,14 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
 
     let mut app = workflow_router.merge(healthz).merge(engine_api_router);
 
-    // Built-in operator SPAs (`dashboard` feature). When enabled the
-    // engine ships its own browser UI — auth console, vault console,
-    // workflow dashboard, engine console — so a stand-alone deployment
-    // (no sysops in front) is usable from a browser. SPAs prompt for
-    // an admin api-key and store it in localStorage, then call the
-    // engine API with that bearer. Deployments fronting the engine
-    // with sysops/gondor skip this whole asset bundle by building
-    // `--no-default-features --features "<…>"` (omit dashboard).
-    #[cfg(feature = "dashboard")]
+    // Built-in operator SPAs. The engine ships its own browser UI —
+    // auth console, vault console, workflow dashboard, engine console —
+    // so a stand-alone deployment (no sysops in front) is usable from
+    // a browser. SPAs prompt for an admin api-key and store it in
+    // localStorage, then call the engine API with that bearer.
+    // Deployments fronting the engine with sysops/gondor (or any
+    // other dashboard) toggle this off at runtime with
+    // `[dashboard] enabled = false` in engine.toml.
     if state.engine_config.dashboard.enabled {
         let dashboard_router =
             assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
@@ -115,13 +114,11 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
             assay_auth::engine_auth_router::<EngineState<S>>().with_state(state.clone());
         app = app.nest("/api/v1/engine/auth", engine_auth_router);
 
-        // Auth-console SPA + /auth/login. Browser-facing; gated on
-        // both the `dashboard` Cargo feature AND the runtime
-        // `[dashboard] enabled = true` config flag. Deployments
-        // without these lose /auth/login (and so cannot serve OIDC
-        // authorization-code redirects directly to a browser), which
-        // is the price of running engine as a pure API.
-        #[cfg(feature = "dashboard")]
+        // Auth-console SPA + /auth/login. Runtime-gated on
+        // `[dashboard] enabled = true`. Deployments that turn the
+        // dashboard off also lose /auth/login (so they can't serve
+        // OIDC authorization-code redirects directly to a browser),
+        // which is the price of running engine as a pure API.
         if state.engine_config.dashboard.enabled {
             let asset_router = assay_dashboard::auth_router();
             app = app.merge(asset_router);
