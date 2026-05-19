@@ -35,7 +35,7 @@ function M.client(read_url, opts)
   local function build_query(params)
     local parts = {}
     for k, v in pairs(params) do
-      if v ~= nil and v ~= "" then
+      if v ~= nil then
         parts[#parts + 1] = urlencode(k) .. "=" .. urlencode(v)
       end
     end
@@ -71,9 +71,9 @@ function M.client(read_url, opts)
       if type(subj) == "string" then
         params.subject_id = subj
       elseif type(subj) == "table" then
-        params.subject_set_namespace = subj.namespace
-        params.subject_set_object = subj.object
-        params.subject_set_relation = subj.relation
+        params["subject_set.namespace"] = subj.namespace
+        params["subject_set.object"] = subj.object
+        params["subject_set.relation"] = subj.relation
       end
     else
       params = {
@@ -84,9 +84,9 @@ function M.client(read_url, opts)
       if type(subject) == "string" then
         params.subject_id = subject
       elseif type(subject) == "table" then
-        params.subject_set_namespace = subject.namespace
-        params.subject_set_object = subject.object
-        params.subject_set_relation = subject.relation
+        params["subject_set.namespace"] = subject.namespace
+        params["subject_set.object"] = subject.object
+        params["subject_set.relation"] = subject.relation
       end
     end
     return params
@@ -101,8 +101,9 @@ function M.client(read_url, opts)
   c.tuples = {}
 
   -- List relation tuples.
-  -- Filters: namespace, object, relation, subject_id, subject_set_namespace,
-  -- subject_set_object, subject_set_relation, page_size, page_token
+  -- Filters: namespace, object, relation, subject_id, ["subject_set.namespace"],
+  -- ["subject_set.object"], ["subject_set.relation"], page_size, page_token.
+  -- Filter keys with a dot must be quoted as string literals.
   function c.tuples:list(filters)
     return read_get("/relation-tuples" .. build_query(filters or {}))
   end
@@ -147,9 +148,9 @@ function M.client(read_url, opts)
     if tuple.subject_id then
       filters.subject_id = tuple.subject_id
     elseif tuple.subject_set then
-      filters.subject_set_namespace = tuple.subject_set.namespace
-      filters.subject_set_object = tuple.subject_set.object
-      filters.subject_set_relation = tuple.subject_set.relation
+      filters["subject_set.namespace"] = tuple.subject_set.namespace
+      filters["subject_set.object"] = tuple.subject_set.object
+      filters["subject_set.relation"] = tuple.subject_set.relation
     end
     local existing = self:list(filters)
     local count = existing and #(existing.relation_tuples or {}) or 0
@@ -184,9 +185,9 @@ function M.client(read_url, opts)
     if tuple.subject_id then
       params.subject_id = tuple.subject_id
     elseif tuple.subject_set then
-      params.subject_set_namespace = tuple.subject_set.namespace
-      params.subject_set_object = tuple.subject_set.object
-      params.subject_set_relation = tuple.subject_set.relation
+      params["subject_set.namespace"] = tuple.subject_set.namespace
+      params["subject_set.object"] = tuple.subject_set.object
+      params["subject_set.relation"] = tuple.subject_set.relation
     end
     local resp = http.delete(write .. "/admin/relation-tuples" .. build_query(params))
     if resp.status ~= 204 and resp.status ~= 200 then
