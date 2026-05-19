@@ -145,6 +145,12 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         })
         .with_state(state.clone());
         app = app.nest("/api/v1/vault", vault);
+
+        // Vault console SPA at /vault, /vault/console, /vault/console/*.
+        // Runtime-gated on the dashboard flag, same as the other SPAs.
+        if state.engine_config.dashboard.enabled {
+            app = app.merge(assay_dashboard::vault_router());
+        }
     }
 
     // BW-compat shim (Phase 7). Stock BW mobile / browser / CLI
