@@ -375,6 +375,67 @@ async fn test_keto_tuples_upsert_repairs_duplicates() {
 }
 
 #[tokio::test]
+async fn test_keto_tuples_upsert_with_subject_set() {
+    // Keto's relation-tuple filters use dotted notation
+    // (subject_set.namespace), not underscored. This test asserts the
+    // client emits the correct query-param keys for subject_set tuples
+    // — Keto's DELETE endpoint rejects unknown keys with HTTP 400 and
+    // would break upsert's repair path on dup'd subject_set tuples
+    // (e.g. parent edges in HRBAC seeds).
+    let read_server = MockServer::start().await;
+    let write_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/relation-tuples"))
+        .and(query_param("namespace", "managementplane"))
+        .and(query_param("object", "na"))
+        .and(query_param("relation", "parent"))
+        .and(query_param("subject_set.namespace", "organization"))
+        .and(query_param("subject_set.object", "simons"))
+        .and(query_param("subject_set.relation", ""))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "relation_tuples": [
+                {"namespace": "managementplane", "object": "na", "relation": "parent",
+                 "subject_set": {"namespace": "organization", "object": "simons", "relation": ""}},
+                {"namespace": "managementplane", "object": "na", "relation": "parent",
+                 "subject_set": {"namespace": "organization", "object": "simons", "relation": ""}}
+            ],
+            "next_page_token": ""
+        })))
+        .mount(&read_server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/admin/relation-tuples"))
+        .and(query_param("subject_set.namespace", "organization"))
+        .and(query_param("subject_set.object", "simons"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&write_server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/admin/relation-tuples"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({})))
+        .mount(&write_server)
+        .await;
+
+    let script = format!(
+        r#"
+        local keto = require("assay.ory.keto")
+        local k = keto.client("{}", {{ write_url = "{}" }})
+        local action, dups = k.tuples:upsert({{
+          namespace = "managementplane",
+          object = "na",
+          relation = "parent",
+          subject_set = {{ namespace = "organization", object = "simons", relation = "" }},
+        }})
+        assert.eq(action, "repaired")
+        assert.eq(dups, 1)
+        "#,
+        read_server.uri(),
+        write_server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
 async fn test_keto_tuples_upsert_requires_write_url() {
     let read_server = MockServer::start().await;
 
