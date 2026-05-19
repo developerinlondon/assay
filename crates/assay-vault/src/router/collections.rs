@@ -14,7 +14,7 @@ use assay_auth::state::AdminApiKeys;
 use crate::ctx::VaultCtx;
 use crate::error::VaultError;
 use crate::items::Parent;
-use crate::router::{check_admin, vault_err_to_response};
+use crate::router::vault_err_to_response;
 
 pub fn router<S>() -> Router<S>
 where
@@ -105,9 +105,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.personal_vaults.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("personal_vaults"),
@@ -138,9 +135,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.personal_vaults.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("personal_vaults"),
@@ -176,9 +170,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let pv = match vault.personal_vaults.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("personal_vaults"),
@@ -227,9 +218,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let pv = match vault.personal_vaults.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("personal_vaults"),
@@ -271,9 +259,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -304,9 +289,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -328,9 +310,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -353,9 +332,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -387,9 +363,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -426,9 +399,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -450,9 +420,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.collections.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("collections"),
@@ -480,9 +447,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let items = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -520,9 +484,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let items = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -544,9 +505,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -570,9 +528,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -609,9 +564,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.items.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("items"),
@@ -653,9 +605,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.folders.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("folders"),
@@ -690,9 +639,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.folders.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("folders"),
@@ -716,9 +662,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.folders.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("folders"),
@@ -741,9 +684,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.folders.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("folders"),

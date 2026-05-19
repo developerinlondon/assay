@@ -15,7 +15,7 @@ use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::VaultCtx;
 use crate::error::VaultError;
-use crate::router::{check_admin, vault_err_to_response};
+use crate::router::vault_err_to_response;
 use crate::share::{ShareCaveats, ShareTarget};
 
 pub fn router<S>() -> Router<S>
@@ -70,9 +70,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.share.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("share"),
@@ -146,9 +143,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.share.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("share"),

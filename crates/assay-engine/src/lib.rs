@@ -526,8 +526,9 @@ async fn seed_zanzibar(cfg: &EngineConfig, ctx: &assay_auth::ctx::AuthCtx) -> an
                 let sys = cfg.auth.zanzibar.system_object_id.clone();
                 let tuples = [
                     ("auth", sys.as_str(), "admin"),
-                    ("workflow", "main", "access"),
                     ("engine", "core", "admin"),
+                    ("workflow", "main", "access"),
+                    ("vault", "main", "access"),
                 ];
                 for (object_type, object_id, relation) in tuples {
                     let tuple = assay_auth::zanzibar::Tuple {

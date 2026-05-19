@@ -28,6 +28,16 @@ const WORKFLOW_PUBLIC_PATHS: &[&str] = &[
     "/api/v1/engine/workflow/docs",
 ];
 
+/// Predicate: should the vault gate bypass this request? Biscuit share
+/// REDEEM (`GET /share/{token}`) carries its own auth via the
+/// biscuit token in the URL, so the admin gate doesn't apply. Mint
+/// (`POST /share`) and revoke (`POST /share/revoke`) still need admin
+/// — the gate sees them as everything-else-vault and enforces
+/// `vault:main#access`.
+fn vault_path_is_public(path: &str) -> bool {
+    path.starts_with("/api/v1/vault/share/") && path != "/api/v1/vault/share/revoke"
+}
+
 /// Compose the full `axum::Router` for the engine.
 ///
 /// The workflow crate returns a `Router` that already embeds its state,
@@ -126,6 +136,19 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     #[cfg(feature = "vault")]
     if state.vault.is_some() {
         let vault = assay_vault::router::vault_router::<EngineState<S>>().with_state(state.clone());
+        // Mirror the workflow-router gating pattern: when auth is on,
+        // wrap the whole vault router with a middleware that enforces
+        // `vault:main#access` via `assay_auth::gate::require_role_for`.
+        // Share-redeem (`GET /share/{token}`) bypasses this gate — the
+        // handler verifies the biscuit token itself.
+        let vault = if state.auth.is_some() {
+            vault.layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                vault_gate_middleware::<S>,
+            ))
+        } else {
+            vault
+        };
         app = app.nest("/api/v1/vault", vault);
     }
 
@@ -282,6 +305,45 @@ async fn workflow_gate_middleware<S: WorkflowStore + Clone + 'static>(
     if let Err(r) =
         assay_auth::gate::require_role_for(&headers, auth, &keys, "workflow", &namespace, "access")
             .await
+    {
+        return *r;
+    }
+
+    next.run(request).await
+}
+
+/// Vault-API auth gate. Mirror of `workflow_gate_middleware`: the
+/// engine is the auth boundary, the vault router carries no gate of
+/// its own. Bypasses biscuit-share-redeem paths; everything else
+/// goes through `assay_auth::gate::require_role_for` for
+/// `vault:main#access` — admin-key bearers (break-glass) AND
+/// session+zanzibar callers both pass.
+#[cfg(feature = "vault")]
+async fn vault_gate_middleware<S: WorkflowStore + Clone + 'static>(
+    axum::extract::State(state): axum::extract::State<EngineState<S>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = request.uri().path();
+    if vault_path_is_public(path) {
+        return next.run(request).await;
+    }
+
+    let Some(auth) = state.auth.as_ref() else {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "error": "service_unavailable",
+                "error_description": "auth not configured on this engine instance",
+            })),
+        )
+            .into_response();
+    };
+
+    let keys = crate::state::AdminApiKeys(Arc::clone(&state.admin_api_keys));
+    let headers = request.headers().clone();
+    if let Err(r) =
+        assay_auth::gate::require_role_for(&headers, auth, &keys, "vault", "main", "access").await
     {
         return *r;
     }

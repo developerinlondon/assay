@@ -1,0 +1,15 @@
+{
+  "name": "vault",
+  "definitions": {
+    "access": {
+      "name": "access",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    }
+  }
+}

@@ -16,7 +16,7 @@ use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::VaultCtx;
 use crate::error::VaultError;
-use crate::router::{check_admin, vault_err_to_response};
+use crate::router::vault_err_to_response;
 
 pub fn router<S>() -> Router<S>
 where
@@ -60,9 +60,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let store = match vault.seal_store.as_ref() {
         Some(s) => s.clone(),
         None => {
@@ -116,9 +113,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let st = vault.seal_state.status();
     axum::Json(SealStatusResponse {
         sealed: st.sealed,
@@ -141,9 +135,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     if let Err(e) = vault.seal_state.seal() {
         return vault_err_to_response(e);
     }
@@ -169,9 +160,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     #[cfg(feature = "vault-sealing-shamir")]
     {
         let share_bytes = match data_encoding::BASE64.decode(body.share_b64.as_bytes()) {

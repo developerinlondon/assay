@@ -77,33 +77,12 @@ where
     r
 }
 
-/// Top-of-handler admin-key check. Constant-time bytewise compare via
-/// [`AdminApiKeys::check`]. Returns `Err(Response)` (axum 401) if the
-/// token is absent or invalid; every handler propagates the response
-/// verbatim, so the size of the Err variant is intentional — boxing
-/// it would force every call site to dereference. Suppress the lint
-/// here at the API boundary.
-#[allow(clippy::result_large_err)]
-pub(crate) fn check_admin(
-    headers: &HeaderMap,
-    keys: &AdminApiKeys,
-) -> std::result::Result<(), Response> {
-    let token = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "));
-    if matches!(token, Some(t) if keys.check(t)) {
-        return Ok(());
-    }
-    Err((
-        StatusCode::UNAUTHORIZED,
-        axum::Json(serde_json::json!({
-            "error": "unauthorized",
-            "error_description": "missing or invalid Bearer token",
-        })),
-    )
-        .into_response())
-}
+// (previously: pub fn check_admin — per-handler admin-bearer gate)
+// Removed in favour of router-level vault_gate_middleware in
+// `assay-engine/src/server.rs`, which dispatches through
+// `assay_auth::gate::require_role_for("vault", "main", "access")`.
+// That accepts admin_api_keys (break-glass) AND session+zanzibar,
+// matching the workflow router's gate model.
 
 /// Map a [`crate::error::VaultError`] to an HTTP response. Centralised
 /// so KV and transit handlers stay terse.

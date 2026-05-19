@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::VaultCtx;
-use crate::router::{check_admin, vault_err_to_response};
+use crate::router::vault_err_to_response;
 
 pub fn router<S>() -> Router<S>
 where
@@ -55,9 +55,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.dynamic.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("dynamic"),
@@ -85,9 +82,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.dynamic.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("dynamic"),
@@ -109,9 +103,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.dynamic.as_ref() {
         Some(s) => s.clone(),
         None => return unavailable("dynamic"),

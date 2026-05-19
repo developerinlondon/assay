@@ -22,7 +22,7 @@ use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::VaultCtx;
 use crate::error::VaultError;
-use crate::router::{check_admin, vault_err_to_response};
+use crate::router::vault_err_to_response;
 
 pub fn router<S>() -> Router<S>
 where
@@ -81,9 +81,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
@@ -105,9 +102,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
@@ -129,9 +123,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
@@ -154,9 +145,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
@@ -187,9 +175,6 @@ where
     VaultCtx: FromRef<S>,
     AdminApiKeys: FromRef<S>,
 {
-    if let Err(r) = check_admin(&headers, &keys) {
-        return r;
-    }
     let svc = match vault.transit.as_ref() {
         Some(t) => t,
         None => return service_unavailable("transit"),
