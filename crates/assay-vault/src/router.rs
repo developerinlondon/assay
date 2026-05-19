@@ -1,14 +1,22 @@
 //! HTTP surface for the vault module — Phase 1 ships KV + transit.
 //!
 //! Plan 17 §S1 (KV v2) and §S2 (transit). Mounted by the engine under
-//! `/api/v1/vault/*`. Auth is enforced by the engine at the router
-//! boundary (`vault_gate_middleware` in `assay-engine/src/server.rs`)
-//! via `assay_auth::gate::require_role_for("vault", "main", "access")`,
-//! which accepts the admin-key bearer (break-glass) and session +
-//! zanzibar callers. Embedders consuming `vault_router` directly MUST
-//! supply an equivalent gate — this router carries no per-handler
-//! auth of its own. Share-redeem (`GET /share/{token}`) verifies the
-//! biscuit token in the handler and is the only public path.
+//! `/api/v1/vault/*`.
+//!
+//! Auth at the router boundary is **typechecked-mandatory**:
+//! [`vault_router`] takes a `gate: FnOnce(Router) -> Router` argument
+//! that the caller MUST supply. Failing to supply a gate is a compile
+//! error — you cannot construct an unauthenticated vault router.
+//!
+//! The engine's gate is admin-bearer + (optional) JWT-from-trusted-
+//! issuer via [`assay_auth::gate::require_admin_or_jwt`]. The handlers
+//! themselves carry no per-handler auth — the gate is the single
+//! enforcement point.
+//!
+//! Share-redeem (`GET /share/{token}`) verifies the biscuit token in
+//! the handler itself. Callers must either include a path-prefix
+//! bypass in their gate (the engine does this) OR accept that
+//! share-redeem also requires bearer auth in their deployment.
 
 use axum::Router;
 use axum::extract::FromRef;
@@ -37,10 +45,18 @@ mod transit;
 /// Compose the vault HTTP router. Generic over a parent state from
 /// which [`VaultCtx`] is extractable via `FromRef`. The engine binary's
 /// `EngineState<S>` satisfies this; tests can use a thin parent state.
-pub fn vault_router<S>() -> Router<S>
+///
+/// The `gate` argument is the wire-boundary auth layer; the embedder
+/// supplies it as a closure that wraps the composed router (typically
+/// `|r| r.layer(my_auth_middleware)`). The type signature makes the
+/// gate **non-optional** — you cannot construct an unauthenticated
+/// vault router. Tests that want no gating can pass a pass-through
+/// closure `|r| r`.
+pub fn vault_router<S, F>(gate: F) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
+    F: FnOnce(Router<S>) -> Router<S>,
 {
     let mut r = Router::new().merge(sys::router::<S>());
     // BW-compat shim mounts at /identity/* + /api/* (unprefixed); the
@@ -74,7 +90,7 @@ where
     {
         r = r.merge(dynamic::router::<S>());
     }
-    r
+    gate(r)
 }
 
 /// Map a [`crate::error::VaultError`] to an HTTP response. Centralised

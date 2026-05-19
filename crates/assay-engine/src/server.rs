@@ -42,13 +42,17 @@ use crate::state::EngineState;
 /// at `/auth/`) and the engine-internal auth router (mounted under
 /// `/api/v1/engine/auth/`) join the composition.
 pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> Router {
-    // Workflow router carries no auth of its own. The engine wraps it
-    // with the admin-bearer middleware — that's the entire engine-side
-    // authn surface. Per-user identity + policy live upstream in a
-    // dashboard / BFF that calls this engine with its own admin bearer.
-    let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow)).layer(
-        axum::middleware::from_fn_with_state(state.clone(), admin_bearer_middleware::<S>),
-    );
+    // Workflow router takes a non-optional gate closure (typechecked).
+    // We supply admin_bearer_middleware as the gate; the workflow
+    // crate applies it to only the authed portion of the router so
+    // /health, /version, /openapi.json, /docs stay public for probes.
+    let state_for_workflow = state.clone();
+    let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow), |r| {
+        r.layer(axum::middleware::from_fn_with_state(
+            state_for_workflow,
+            admin_bearer_middleware::<S>,
+        ))
+    });
 
     // `/healthz` is kept as a 1-line redirect to the new engine-core
     // health endpoint for backward-compatible k8s probes. The real
@@ -117,18 +121,18 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // BW-compat shim's per-user session auth.
     #[cfg(feature = "vault")]
     if state.vault.is_some() {
-        // Vault router carries no per-handler auth. Engine wraps it
-        // with admin-bearer middleware; share-redeem
-        // (`GET /share/{token}`) is the only public route — the handler
-        // verifies the biscuit token in the URL itself, so it must
-        // bypass admin-bearer. That bypass is implemented inside
-        // `admin_bearer_middleware` via the share-path predicate.
-        let vault = assay_vault::router::vault_router::<EngineState<S>>()
-            .layer(axum::middleware::from_fn_with_state(
-                state.clone(),
+        // Vault router requires a non-optional gate closure
+        // (typechecked). We supply admin_bearer_middleware, which has
+        // the share-redeem path bypass built in so /share/{token}
+        // stays public (biscuit verifies in the handler).
+        let state_for_vault = state.clone();
+        let vault = assay_vault::router::vault_router::<EngineState<S>, _>(|r| {
+            r.layer(axum::middleware::from_fn_with_state(
+                state_for_vault,
                 admin_bearer_middleware::<S>,
             ))
-            .with_state(state.clone());
+        })
+        .with_state(state.clone());
         app = app.nest("/api/v1/vault", vault);
     }
 
