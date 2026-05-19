@@ -50,9 +50,6 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         axum::middleware::from_fn_with_state(state.clone(), admin_bearer_middleware::<S>),
     );
 
-    let dashboard_router =
-        assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
-
     // `/healthz` is kept as a 1-line redirect to the new engine-core
     // health endpoint for backward-compatible k8s probes. The real
     // health response is served by the engine-core router under
@@ -62,22 +59,18 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         get(|| async { Redirect::permanent("/api/v1/engine/core/health") }),
     );
 
-    // Engine-core admin API + console SPA. Always present (engine-core
-    // is always running, regardless of which functional modules are
-    // enabled). The admin handlers require a configured api-key —
-    // when `admin_api_keys` is empty every admin route returns 401, so
-    // mounting unconditionally is safe for no-auth builds. The
-    // engine-core router carries `/api/v1/engine/core/info` (public),
-    // `/api/v1/engine/core/health`, `/api/v1/engine/core/active-modules`,
-    // and the admin endpoints.
+    // Engine-core admin API. The handlers require an admin api-key
+    // bearer; when `admin_api_keys` is empty every admin route returns
+    // 401, so mounting unconditionally is safe for no-auth builds.
     let engine_api_router = crate::engine_api::router::<S>().with_state(state.clone());
-    let engine_console_router = assay_dashboard::engine_router();
 
-    let mut app = workflow_router
-        .merge(dashboard_router)
-        .merge(healthz)
-        .merge(engine_api_router)
-        .merge(engine_console_router);
+    // Operator dashboards (vault / workflow / engine-core console SPAs)
+    // are NOT mounted by the engine — the decoupled-modules architecture
+    // puts operator UX in the sysops dashboard (gondor). The engine
+    // serves API only. /auth/login is the one browser-facing exception
+    // (mounted below) — it's a protocol requirement for OIDC
+    // authorization-code flow.
+    let mut app = workflow_router.merge(healthz).merge(engine_api_router);
 
     // Mount the auth routers when AuthCtx is present. We bind state to
     // each router *before* nesting so the merged tree remains
@@ -108,12 +101,13 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
             assay_auth::engine_auth_router::<EngineState<S>>().with_state(state.clone());
         app = app.nest("/api/v1/engine/auth", engine_auth_router);
 
-        // Mount the auth-console SPA assets at root (so the same
-        // `/auth/...` path namespace serves both the OIDC spec and the
-        // dashboard asset bundle — `/auth/console` for the SPA,
-        // `/api/v1/engine/auth/admin/*` for the admin JSON API).
-        let asset_router = assay_dashboard::auth_router();
-        app = app.merge(asset_router);
+        // `/auth/login` — protocol surface for OIDC authorization-code
+        // redirects. Browser-facing by design. The login pages and
+        // their assets are the ONLY dashboard assets the engine still
+        // hosts; everything else (operator SPAs, admin consoles) lives
+        // in sysops/gondor.
+        let login_router = assay_dashboard::auth_router();
+        app = app.merge(login_router);
     }
 
     // Vault module — plan 17 / v0.3.0. Mounted under /api/v1/vault when
@@ -148,14 +142,6 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         let bw =
             assay_vault::bitwarden_compat::router::<EngineState<S>>().with_state(state.clone());
         app = app.merge(bw);
-    }
-
-    // Vault console assets (plan 17 §S10). Always mounted when the
-    // vault feature is on; runtime visibility is gated by
-    // engine.modules.vault.enabled like every other console.
-    #[cfg(feature = "vault")]
-    {
-        app = app.merge(assay_dashboard::vault_router());
     }
 
     app
