@@ -1,6 +1,7 @@
 --! sysops.auth.zanzibar - Zanzibar relation-tuple SDK for assay-engine auth admin.
 --!
 --! Wraps: GET    /api/v1/engine/auth/admin/zanzibar/namespaces
+--!        POST   /api/v1/engine/auth/admin/zanzibar/namespaces  (define / replace schema)
 --!        GET    /api/v1/engine/auth/admin/zanzibar/tuples  (engine may 404/405; callers
 --!               should surface a "listing not shipped" banner on those statuses)
 --!        POST   /api/v1/engine/auth/admin/zanzibar/tuples  (write)
@@ -46,6 +47,11 @@ function M.new(engine)
 
   function self.namespaces()
     local resp = engine.get(BASE .. "/namespaces")
+    return result(resp)
+  end
+
+  function self.define_namespace(schema)
+    local resp = engine.post(BASE .. "/namespaces", schema)
     return result(resp)
   end
 

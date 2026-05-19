@@ -21,8 +21,10 @@
 
 <div class="tabs">
   <a class="tab{% if nav_active == 'zanzibar:index' %} active{% endif %}" href="/zanzibar">Namespaces</a>
+  <a class="tab{% if nav_active == 'zanzibar:define' %} active{% endif %}" href="/zanzibar/define">Define</a>
   <a class="tab{% if nav_active == 'zanzibar:tuples' %} active{% endif %}" href="/zanzibar/tuples">Tuples</a>
   <a class="tab{% if nav_active == 'zanzibar:check' %} active{% endif %}" href="/zanzibar/check">Check</a>
+  <a class="tab{% if nav_active == 'zanzibar:bootstrap' %} active{% endif %}" href="/zanzibar/bootstrap">Bootstrap admin</a>
 </div>
 
 {% if status == 0 %}

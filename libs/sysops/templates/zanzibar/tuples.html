@@ -23,8 +23,10 @@
 
 <div class="tabs">
   <a class="tab" href="/zanzibar">Namespaces</a>
+  <a class="tab" href="/zanzibar/define">Define</a>
   <a class="tab active" href="/zanzibar/tuples">Tuples</a>
   <a class="tab" href="/zanzibar/check">Check</a>
+  <a class="tab" href="/zanzibar/bootstrap">Bootstrap admin</a>
 </div>
 
 {% if saved %}<div class="banner"><span class="b-mark"></span><span>Tuple written.</span></div>{% endif %}
@@ -44,39 +46,7 @@
           onclick="document.getElementById('tuple-write-dialog').showModal()">+ Write tuple</button>
 </div>
 
-<div class="card" style="margin-bottom:16px">
-  <div class="card-head"><h3>Delete tuple</h3></div>
-  <div class="card-body">
-    <form method="post" action="/zanzibar/tuples/delete"
-          onsubmit="return confirm('Delete this tuple?');"
-          style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-      <input class="input" name="object_type"  type="text" placeholder="object_type"  style="min-width:160px" required />
-      <input class="input" name="object_id"    type="text" placeholder="object_id"    style="min-width:160px" required />
-      <input class="input" name="relation"     type="text" placeholder="relation"     style="min-width:140px" required />
-      <input class="input" name="subject_type" type="text" placeholder="subject_type" style="min-width:160px" required />
-      <input class="input" name="subject_id"   type="text" placeholder="subject_id"   style="min-width:160px" required />
-      <input class="input" name="subject_rel"  type="text" placeholder="subject_rel (optional)" style="min-width:140px" />
-      <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-    </form>
-  </div>
-</div>
-
-{% if unsupported %}
-<div class="banner">
-  <span class="b-mark"></span>
-  <span>The engine does not yet expose a <code>GET /api/v1/engine/auth/admin/zanzibar/tuples</code> list endpoint. The admin surface today only supports <code>POST</code> (write) and <code>DELETE</code> (delete). Listing lands in a later plan.</span>
-</div>
-<div class="card">
-  <table class="table">
-    <thead>
-      <tr><th>Subject</th><th>Relation</th><th>Object</th><th>Created</th></tr>
-    </thead>
-    <tbody>
-      <tr><td colspan="4" style="color:var(--fg-3);text-align:center;padding:18px">listing endpoint not shipped by engine</td></tr>
-    </tbody>
-  </table>
-</div>
-{% elif status == 0 %}
+{% if status == 0 %}
 <div class="banner">
   <span class="b-mark"></span>
   <span>Tuple listing is unavailable. Zanzibar may be disabled or admin auth missing.</span>
@@ -85,27 +55,39 @@
 <div class="card">
   <table class="table">
     <thead>
-      <tr><th>Subject</th><th>Relation</th><th>Object</th><th>Created</th></tr>
+      <tr><th>Subject</th><th>Relation</th><th>Object</th><th>Created</th><th></th></tr>
     </thead>
     <tbody>
       {% for t in tuples %}
       <tr>
-        <td class="muted">{{ t.subject_type }}:{{ t.subject_id }}{% if t.subject_rel and t.subject_rel != "" %}#{{ t.subject_rel }}{% endif %}</td>
+        <td class="muted">{{ t.subject_type }}:{{ t.subject_label }}{% if t.subject_rel and t.subject_rel != "" %}#{{ t.subject_rel }}{% endif %}</td>
         <td>{{ t.relation }}</td>
         <td class="name-cell">{{ t.object_type }}:{{ t.object_id }}</td>
         <td class="muted num">{{ t.created_at | default("—") }}</td>
+        <td>
+          <form method="post" action="/zanzibar/tuples/delete"
+                onsubmit="return confirm('Delete this tuple?');" style="margin:0">
+            <input type="hidden" name="object_type"  value="{{ t.object_type }}">
+            <input type="hidden" name="object_id"    value="{{ t.object_id }}">
+            <input type="hidden" name="relation"     value="{{ t.relation }}">
+            <input type="hidden" name="subject_type" value="{{ t.subject_type }}">
+            <input type="hidden" name="subject_id"   value="{{ t.subject_id }}">
+            <input type="hidden" name="subject_rel"  value="{{ t.subject_rel | default('') }}">
+            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
       {% if (tuples | length) == 0 %}
-      <tr><td colspan="4" style="color:var(--fg-3);text-align:center;padding:18px">no tuples match the current filter</td></tr>
+      <tr><td colspan="5" style="color:var(--fg-3);text-align:center;padding:18px">no tuples match the current filter</td></tr>
       {% endif %}
     </tbody>
   </table>
 </div>
 {% endif %}
 
-<dialog id="tuple-write-dialog" class="omc-dialog">
-  <form method="post" action="/zanzibar/tuples" class="omc-dialog-form">
+<dialog id="tuple-write-dialog" class="omc-dialog omc-dialog-wide">
+  <form method="post" action="/zanzibar/tuples" class="omc-dialog-form" id="tuple-write-form">
     <header class="omc-dialog-head">
       <h2 style="margin:0;font-size:18px">Write tuple</h2>
       <button type="button" class="omc-dialog-x" aria-label="close"
@@ -113,50 +95,103 @@
     </header>
 
     <div class="omc-dialog-body">
-      <label class="omc-field">
-        <span class="omc-field-label">Object type</span>
-        <input class="input" type="text" name="object_type" required placeholder="document"
-               value="{{ form_object_type | default('') }}">
-      </label>
+      <p class="omc-help">
+        Grant a permission. Reads as a sentence:
+        <em>&lt;subject&gt; has &lt;relation&gt; on &lt;object&gt;</em>.
+      </p>
 
-      <label class="omc-field">
-        <span class="omc-field-label">Object ID</span>
-        <input class="input" type="text" name="object_id" required placeholder="foo"
-               value="{{ form_object_id | default('') }}">
-      </label>
+      <fieldset class="zb-section">
+        <legend>Object — what the permission is on</legend>
+        <label class="omc-field">
+          <span class="omc-field-label">Type</span>
+          <select class="input" name="object_type" id="zw-object-type" required>
+            <option value="">— pick a namespace —</option>
+          </select>
+          <span class="omc-hint">Must be a defined namespace (Namespaces tab).</span>
+        </label>
+        <label class="omc-field">
+          <span class="omc-field-label">ID</span>
+          <input class="input" type="text" name="object_id" id="zw-object-id"
+                 list="zw-object-id-options" autocomplete="off" required
+                 value="{{ form_object_id | default('') }}"
+                 placeholder="which instance">
+          <datalist id="zw-object-id-options"></datalist>
+          <span class="omc-hint">
+            Identifies <strong>which</strong> of the chosen type. Today every canonical
+            namespace is a singleton: <code>auth:system</code>, <code>engine:core</code>,
+            <code>vault:main</code>, <code>workflow:main</code> — the ID is fixed per type.
+            When you pick a Type, the field auto-fills if there's only one known ID.
+            (Phase D will introduce real multi-instance use, e.g.
+            <code>vault:secret/prod/db</code>.)
+          </span>
+        </label>
+      </fieldset>
 
-      <label class="omc-field">
-        <span class="omc-field-label">Relation</span>
-        <input class="input" type="text" name="relation" required placeholder="viewer"
-               value="{{ form_relation | default('') }}">
-      </label>
+      <fieldset class="zb-section">
+        <legend>Relation — what permission</legend>
+        <label class="omc-field">
+          <span class="omc-field-label">Relation</span>
+          <select class="input" name="relation" id="zw-relation" required>
+            <option value="">— pick a relation —</option>
+          </select>
+          <span class="omc-hint">Must exist on the chosen namespace.</span>
+        </label>
+      </fieldset>
 
-      <label class="omc-field">
-        <span class="omc-field-label">Subject type</span>
-        <input class="input" type="text" name="subject_type" required placeholder="user"
-               value="{{ form_subject_type | default('') }}">
-      </label>
+      <fieldset class="zb-section">
+        <legend>Subject — who is being granted</legend>
+        <label class="omc-field">
+          <span class="omc-field-label">Type</span>
+          <select class="input" name="subject_type" id="zw-subject-type" required>
+            <option value="user">user</option>
+            <option value="group">group</option>
+          </select>
+        </label>
+        <label class="omc-field" id="zw-subject-user-wrap">
+          <span class="omc-field-label">User</span>
+          <select class="input" id="zw-subject-user" name="subject_id_user">
+            <option value="">— pick a user —</option>
+          </select>
+          <span class="omc-hint">Existing users (email shown for clarity; the user ID is what's stored).</span>
+        </label>
+        <label class="omc-field" id="zw-subject-other-wrap" style="display:none">
+          <span class="omc-field-label">ID</span>
+          <input class="input" type="text" id="zw-subject-other"
+                 list="zw-subject-other-options" autocomplete="off"
+                 name="subject_id_other"
+                 placeholder="e.g. engineers (for group)">
+          <datalist id="zw-subject-other-options"></datalist>
+          <span class="omc-hint">Existing IDs autocomplete; new IDs are fine.</span>
+        </label>
+        <input type="hidden" name="subject_id" id="zw-subject-id-final">
+        <label class="omc-field">
+          <span class="omc-field-label">Subject relation</span>
+          <input class="input" type="text" name="subject_rel" id="zw-subject-rel"
+                 value="{{ form_subject_rel | default('') }}" placeholder="e.g. member">
+          <span class="omc-hint">
+            Optional. Leave blank for a direct grant. Set to a relation name
+            (typically <code>member</code>) when the subject is a userset, e.g. all
+            members of a group.
+          </span>
+        </label>
+      </fieldset>
 
-      <label class="omc-field">
-        <span class="omc-field-label">Subject ID</span>
-        <input class="input" type="text" name="subject_id" required placeholder="alice"
-               value="{{ form_subject_id | default('') }}">
-      </label>
-
-      <label class="omc-field">
-        <span class="omc-field-label">Subject relation (optional)</span>
-        <input class="input" type="text" name="subject_rel" placeholder="member"
-               value="{{ form_subject_rel | default('') }}">
-      </label>
+      <div class="zb-preview" id="zw-preview">
+        <div class="zb-preview-head">Will write:</div>
+        <div class="zb-preview-tuple mono" id="zw-preview-tuple">—</div>
+        <div class="zb-preview-sentence" id="zw-preview-sentence"></div>
+      </div>
     </div>
 
     <footer class="omc-dialog-foot">
       <button type="button" class="btn-sm"
               onclick="document.getElementById('tuple-write-dialog').close()">Cancel</button>
-      <button type="submit" class="btn btn-primary">Write tuple</button>
+      <button type="submit" class="btn btn-primary" id="zw-submit" disabled>Write tuple</button>
     </footer>
   </form>
 </dialog>
+
+<script id="zb-data" type="application/json">{{ zb_data_json | safe }}</script>
 
 <style>
   .omc-dialog {
@@ -187,9 +222,173 @@
   }
   .omc-field { display: flex; flex-direction: column; gap: 4px; }
   .omc-field-label { font-size: 12px; color: var(--fg-3); }
+  .omc-help { margin: 0 0 6px 0; color: var(--fg-3); font-size: 13px; }
+  .omc-hint { font-size: 11px; color: var(--fg-3); line-height: 1.45; }
+  .omc-dialog-wide { max-width: 620px; }
+  .zb-section {
+    border: 1px solid var(--bg-3); border-radius: 8px; padding: 10px 14px 14px;
+    display: flex; flex-direction: column; gap: 10px; margin: 0;
+  }
+  .zb-section > legend {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--fg-3); padding: 0 6px;
+  }
+  .zb-preview {
+    border: 1px dashed var(--bg-3); border-radius: 8px; padding: 10px 14px;
+    background: var(--bg-2);
+  }
+  .zb-preview-head { font-size: 11px; text-transform: uppercase; color: var(--fg-3); }
+  .zb-preview-tuple { font-size: 13px; margin-top: 4px; word-break: break-all; }
+  .zb-preview-sentence { font-size: 12px; color: var(--fg-3); margin-top: 4px; }
 </style>
 <script>
   (function() {
+    var dataEl = document.getElementById('zb-data');
+    var ZB = {};
+    try { ZB = dataEl ? JSON.parse(dataEl.textContent || '{}') : {}; } catch (_e) { ZB = {}; }
+    ZB.namespaces = ZB.namespaces || [];
+    ZB.users      = ZB.users      || [];
+    ZB.object_ids = ZB.object_ids || {};
+    ZB.group_ids  = ZB.group_ids  || [];
+
+    var $ot   = document.getElementById('zw-object-type');
+    var $oid  = document.getElementById('zw-object-id');
+    var $oidL = document.getElementById('zw-object-id-options');
+    var $rel  = document.getElementById('zw-relation');
+    var $st   = document.getElementById('zw-subject-type');
+    var $suWrap    = document.getElementById('zw-subject-user-wrap');
+    var $suSelect  = document.getElementById('zw-subject-user');
+    var $soWrap    = document.getElementById('zw-subject-other-wrap');
+    var $soInput   = document.getElementById('zw-subject-other');
+    var $soList    = document.getElementById('zw-subject-other-options');
+    var $sidFinal  = document.getElementById('zw-subject-id-final');
+    var $srel = document.getElementById('zw-subject-rel');
+    var $previewTuple    = document.getElementById('zw-preview-tuple');
+    var $previewSentence = document.getElementById('zw-preview-sentence');
+    var $submit          = document.getElementById('zw-submit');
+
+    function nsByName(name) {
+      for (var i = 0; i < ZB.namespaces.length; i++) {
+        if (ZB.namespaces[i].name === name) return ZB.namespaces[i];
+      }
+      return null;
+    }
+
+    function populateNamespaces() {
+      var opts = '<option value="">— pick a namespace —</option>';
+      for (var i = 0; i < ZB.namespaces.length; i++) {
+        var n = ZB.namespaces[i].name;
+        opts += '<option value="' + n + '">' + n + '</option>';
+      }
+      $ot.innerHTML = opts;
+    }
+
+    function populateRelations() {
+      var ns = nsByName($ot.value);
+      var rels = ns ? (ns.relations || []) : [];
+      var opts = '<option value="">— pick a relation —</option>';
+      for (var i = 0; i < rels.length; i++) {
+        opts += '<option value="' + rels[i] + '">' + rels[i] + '</option>';
+      }
+      $rel.innerHTML = opts;
+    }
+
+    function populateObjectIds() {
+      var ids = ($ot.value && ZB.object_ids[$ot.value]) || [];
+      var html = '';
+      for (var i = 0; i < ids.length; i++) {
+        html += '<option value="' + ids[i] + '">';
+      }
+      $oidL.innerHTML = html;
+      // Auto-fill when the namespace is a singleton (only one known ID).
+      // Operator can still type to override.
+      if (ids.length === 1 && !$oid.value) {
+        $oid.value = ids[0];
+      }
+    }
+
+    function populateUsers() {
+      var opts = '<option value="">— pick a user —</option>';
+      for (var i = 0; i < ZB.users.length; i++) {
+        var u = ZB.users[i];
+        opts += '<option value="' + u.id + '">' + u.email + '</option>';
+      }
+      $suSelect.innerHTML = opts;
+    }
+
+    function populateGroups() {
+      var html = '';
+      for (var i = 0; i < ZB.group_ids.length; i++) {
+        html += '<option value="' + ZB.group_ids[i] + '">';
+      }
+      $soList.innerHTML = html;
+    }
+
+    function syncSubjectMode() {
+      if ($st.value === 'user') {
+        $suWrap.style.display = '';
+        $soWrap.style.display = 'none';
+      } else {
+        $suWrap.style.display = 'none';
+        $soWrap.style.display = '';
+      }
+      updateFinalSubjectAndPreview();
+    }
+
+    function updateFinalSubjectAndPreview() {
+      var sid = ($st.value === 'user') ? $suSelect.value : $soInput.value;
+      $sidFinal.value = sid || '';
+
+      var ot   = $ot.value;
+      var oid  = $oid.value;
+      var rel  = $rel.value;
+      var st   = $st.value;
+      var srel = $srel.value;
+
+      var ready = ot && oid && rel && st && sid;
+      $submit.disabled = !ready;
+
+      if (!ready) {
+        $previewTuple.textContent = '—';
+        $previewSentence.textContent = '';
+        return;
+      }
+
+      var subjectShown = sid;
+      if (st === 'user') {
+        for (var i = 0; i < ZB.users.length; i++) {
+          if (ZB.users[i].id === sid) { subjectShown = ZB.users[i].email; break; }
+        }
+      }
+      var subjPart = st + ':' + sid + (srel ? '#' + srel : '');
+      $previewTuple.textContent = subjPart + '  →  ' + rel + '  →  ' + ot + ':' + oid;
+      $previewSentence.textContent =
+        '"' + subjectShown + (srel ? ' (via ' + srel + ')' : '') +
+        ' will have ' + rel + ' on the \'' + oid + '\' ' + ot + '."';
+    }
+
+    function init() {
+      populateNamespaces();
+      populateUsers();
+      populateGroups();
+      $ot.addEventListener('change', function () {
+        populateRelations();
+        populateObjectIds();
+        updateFinalSubjectAndPreview();
+      });
+      $oid.addEventListener('input', updateFinalSubjectAndPreview);
+      $rel.addEventListener('change', updateFinalSubjectAndPreview);
+      $st.addEventListener('change', syncSubjectMode);
+      $suSelect.addEventListener('change', updateFinalSubjectAndPreview);
+      $soInput.addEventListener('input', updateFinalSubjectAndPreview);
+      $srel.addEventListener('input', updateFinalSubjectAndPreview);
+      syncSubjectMode();
+      updateFinalSubjectAndPreview();
+    }
+
+    init();
+
+    // Re-open the dialog if the page was redirected back with an error.
     var p = new URLSearchParams(window.location.search);
     if (p.has('write_err')) {
       var d = document.getElementById('tuple-write-dialog');

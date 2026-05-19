@@ -25,6 +25,7 @@
 //! - `GET    /admin/zanzibar/namespaces`
 //! - `POST   /admin/zanzibar/namespaces`           → define / replace schema
 //! - `GET    /admin/zanzibar/namespaces/{name}`
+//! - `GET    /admin/zanzibar/tuples`              → list (filter via query string)
 //! - `POST   /admin/zanzibar/tuples`              → write
 //! - `DELETE /admin/zanzibar/tuples`              → delete
 //! - `POST   /admin/zanzibar/check`               → permission check
@@ -84,29 +85,26 @@ where
         )
         .route(
             "/admin/zanzibar/tuples",
-            post(zanzibar_write_tuple).delete(zanzibar_delete_tuple),
+            get(zanzibar_list_tuples)
+                .post(zanzibar_write_tuple)
+                .delete(zanzibar_delete_tuple),
         )
         .route("/admin/zanzibar/check", post(zanzibar_check_handler))
         .route("/admin/zanzibar/expand", post(zanzibar_expand_handler))
         .route("/admin/audit", get(audit_list))
 }
 
-/// Auth + Zanzibar gate shared by every admin handler. Resolves a
-/// [`crate::gate::Caller`] from the request, then enforces the
-/// `auth#system#admin` role. Admin api-key callers are accepted as
-/// break-glass and bypass the Zanzibar lookup.
-///
-/// Returns the resolved caller on success — currently unused by these
-/// handlers but kept so future audit-log integration can reach for it.
-/// `Response` is ~272 bytes; the boxed error keeps the success path
-/// small (every admin handler calls this on the hot path). Callers
-/// unbox with `*r` before returning.
+/// Admin-bearer-only gate shared by every admin handler. Per the
+/// decoupled-modules architecture (assay-engine HTTP boundary accepts
+/// only the operator admin api-key), this is a strict bearer check
+/// with no session/JWT/zanzibar resolution at request time. Per-user
+/// authentication is the upstream consumer's responsibility.
 async fn require_admin(
     headers: &HeaderMap,
-    ctx: &AuthCtx,
+    _ctx: &AuthCtx,
     keys: &AdminApiKeys,
-) -> Result<crate::gate::Caller, Box<Response>> {
-    crate::gate::require_role_for(headers, ctx, keys, "auth", "system", "admin").await
+) -> Result<(), Box<Response>> {
+    crate::gate::require_admin_bearer(headers, keys)
 }
 
 // =====================================================================
@@ -661,6 +659,69 @@ pub struct TupleBody {
     pub subject_rel: String,
 }
 
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ListTuplesQuery {
+    pub object_type: Option<String>,
+    pub object_id: Option<String>,
+    pub relation: Option<String>,
+    pub subject_type: Option<String>,
+    pub subject_id: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ListTuplesResponse {
+    pub items: Vec<crate::zanzibar::Tuple>,
+    pub limit: i64,
+    pub offset: i64,
+}
+
+async fn zanzibar_list_tuples(
+    State(ctx): State<AuthCtx>,
+    State(keys): State<AdminApiKeys>,
+    headers: HeaderMap,
+    Query(q): Query<ListTuplesQuery>,
+) -> Response {
+    if let Err(r) = require_admin(&headers, &ctx, &keys).await {
+        return *r;
+    }
+    #[cfg(feature = "auth-zanzibar")]
+    {
+        let Some(store) = ctx.zanzibar.as_ref() else {
+            return svc_unavailable("zanzibar not enabled");
+        };
+        let filter = crate::zanzibar::TupleFilter {
+            object_type: q.object_type,
+            object_id: q.object_id,
+            relation: q.relation,
+            subject_type: q.subject_type,
+            subject_id: q.subject_id,
+            limit: q.limit,
+            offset: q.offset,
+        };
+        let limit = filter.effective_limit();
+        let offset = filter.effective_offset();
+        return match store.list_tuples(&filter).await {
+            Ok(items) => (
+                StatusCode::OK,
+                Json(ListTuplesResponse {
+                    items,
+                    limit,
+                    offset,
+                }),
+            )
+                .into_response(),
+            Err(e) => server_error(&format!("list tuples: {e}")),
+        };
+    }
+    #[cfg(not(feature = "auth-zanzibar"))]
+    {
+        let _ = (ctx, q);
+        svc_unavailable("zanzibar not compiled in")
+    }
+}
+
 async fn zanzibar_write_tuple(
     State(ctx): State<AuthCtx>,
     State(keys): State<AdminApiKeys>,
@@ -688,11 +749,40 @@ async fn zanzibar_write_tuple(
     }
 }
 
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct DeleteTupleQuery {
+    pub object_type: Option<String>,
+    pub object_id: Option<String>,
+    pub relation: Option<String>,
+    pub subject_type: Option<String>,
+    pub subject_id: Option<String>,
+    #[serde(default)]
+    pub subject_rel: Option<String>,
+}
+
+impl DeleteTupleQuery {
+    fn into_body(self) -> Option<TupleBody> {
+        Some(TupleBody {
+            object_type: self.object_type?,
+            object_id: self.object_id?,
+            relation: self.relation?,
+            subject_type: self.subject_type?,
+            subject_id: self.subject_id?,
+            subject_rel: self.subject_rel.unwrap_or_default(),
+        })
+    }
+}
+
+// DELETE accepts the tuple either as a query string (form-style clients)
+// or as a JSON body (SPA-style clients). DELETE-with-body is non-standard
+// for HTML forms, so the sysops Lua SDK sends a query string; the
+// auth-console SPA sends a JSON body. Both work.
 async fn zanzibar_delete_tuple(
     State(ctx): State<AuthCtx>,
     State(keys): State<AdminApiKeys>,
     headers: HeaderMap,
-    Json(body): Json<TupleBody>,
+    Query(q): Query<DeleteTupleQuery>,
+    body: axum::body::Bytes,
 ) -> Response {
     if let Err(r) = require_admin(&headers, &ctx, &keys).await {
         return *r;
@@ -702,7 +792,31 @@ async fn zanzibar_delete_tuple(
         let Some(store) = ctx.zanzibar.as_ref() else {
             return svc_unavailable("zanzibar not enabled");
         };
-        let tuple = body_to_tuple(body);
+        let tuple_body = match q.into_body() {
+            Some(b) => b,
+            None => {
+                if body.is_empty() {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({
+                            "error": "missing tuple — supply via query string or JSON body"
+                        })),
+                    )
+                        .into_response();
+                }
+                match serde_json::from_slice::<TupleBody>(&body) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"error": format!("invalid body: {e}")})),
+                        )
+                            .into_response();
+                    }
+                }
+            }
+        };
+        let tuple = body_to_tuple(tuple_body);
         return match store.delete_tuple(&tuple).await {
             Ok(true) => StatusCode::NO_CONTENT.into_response(),
             Ok(false) => (
@@ -715,7 +829,7 @@ async fn zanzibar_delete_tuple(
     }
     #[cfg(not(feature = "auth-zanzibar"))]
     {
-        let _ = (ctx, body);
+        let _ = (ctx, q, body);
         svc_unavailable("zanzibar not compiled in")
     }
 }

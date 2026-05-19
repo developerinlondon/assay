@@ -17,19 +17,29 @@ use axum::Router;
 use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
 
-/// Build the workflow HTTP API router. Auth is enforced at the engine
-/// layer (via [`assay_auth::gate`] in `assay_engine::server`); this
-/// router carries no gate of its own. `health`, `version`, `openapi.json`,
-/// and `docs` are always public so probes can reach them without a
-/// bearer token.
-pub fn router<S: WorkflowStore>(state: Arc<WorkflowCtx<S>>) -> Router {
+/// Build the workflow HTTP API router. The `gate` argument is the
+/// wire-boundary auth layer; the embedder supplies it as a closure
+/// that wraps the authed portion of the router (typically
+/// `|r| r.layer(my_auth_middleware)`). The type signature makes the
+/// gate **non-optional** — you cannot construct an unauthenticated
+/// workflow router.
+///
+/// The closure receives only the authed portion. `health`, `version`,
+/// `openapi.json`, and `docs` are merged outside the gate so probes
+/// can reach them without a bearer token.
+pub fn router<S, F>(state: Arc<WorkflowCtx<S>>, gate: F) -> Router
+where
+    S: WorkflowStore,
+    F: FnOnce(Router<Arc<WorkflowCtx<S>>>) -> Router<Arc<WorkflowCtx<S>>>,
+{
     let authed_api = Router::new()
         .nest("/api/v1/engine/workflow", api_v1_router::<S>())
         .nest("/api/v1/engine/workflow", events::router::<S>());
+    let gated = gate(authed_api);
 
     let public_api = Router::new().nest("/api/v1/engine/workflow", public::router::<S>());
 
-    let app = authed_api.merge(public_api).merge(openapi::router::<S>());
+    let app = gated.merge(public_api).merge(openapi::router::<S>());
 
     app.with_state(state)
 }

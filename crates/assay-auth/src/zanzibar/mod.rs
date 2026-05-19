@@ -30,7 +30,7 @@ pub use schema::{ParseError, parse_schema};
 pub use store::ZanzibarStore;
 pub use types::{
     CheckResult, Consistency, MAX_DEPTH, NamespaceSchema, ObjectRef, PermissionExpr, RelationDef,
-    RelationKind, SubjectRef, TreeOp, Tuple, TypeRef, UsersetTree,
+    RelationKind, SubjectRef, TreeOp, Tuple, TupleFilter, TypeRef, UsersetTree,
 };
 
 #[cfg(feature = "backend-postgres")]

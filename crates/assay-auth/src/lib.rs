@@ -93,6 +93,7 @@
 pub mod error;
 
 pub mod admin;
+pub mod authz;
 pub mod biscuit;
 pub mod ctx;
 pub mod gate;

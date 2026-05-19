@@ -1,6 +1,6 @@
 [package]
 name = "assay-vault"
-version = "0.3.0"
+version = "0.4.0"
 categories = ["cryptography", "asynchronous", "database"]
 edition = "2024"
 keywords = ["vault", "secrets", "kv", "transit", "biscuit"]
@@ -50,7 +50,11 @@ vault-audit-forwarding = ["dep:reqwest", "dep:syslog", "dep:hmac"]
 # BW-compat shim requires assay-auth's password + JWT surfaces — the
 # `/identity/connect/token` route delegates to assay-auth's password
 # verifier and JWT issuer.
-vault-bitwarden-compat = ["assay-auth/auth-password", "assay-auth/auth-jwt"]
+vault-bitwarden-compat = [
+  "dep:assay-auth",
+  "assay-auth/auth-password",
+  "assay-auth/auth-jwt",
+]
 vault-dynamic-postgres = []
 vault-dynamic-aws = ["dep:reqwest", "dep:hmac"]
 vault-dynamic-gcp = ["dep:reqwest", "dep:jsonwebtoken"]
@@ -60,7 +64,12 @@ backend-postgres = ["dep:sqlx", "sqlx/postgres"]
 backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 
 [dependencies]
-assay-auth = { path = "../assay-auth", version = "0.4" }
+# assay-auth is required ONLY by the optional vault-bitwarden-compat
+# feature (which delegates /identity/connect/token to assay-auth's
+# password + JWT primitives). When vault-bitwarden-compat is off, the
+# vault crate has no dependency on the auth crate — making vault
+# genuinely standalone for non-BW deployments.
+assay-auth = { path = "../assay-auth", version = "0.5", optional = true }
 assay-domain = { path = "../assay-domain", version = "0.2" }
 
 # Phase 0 holds the dep set deliberately small: just what the schema

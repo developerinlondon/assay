@@ -39,17 +39,16 @@ use super::auth_params;
 use super::issuer_validation;
 use super::types::{OidcClient, TokenAuthMethod, UpstreamProvider};
 
-/// Auth + Zanzibar gate shared by every OIDC admin handler. Resolves a
-/// [`crate::gate::Caller`] from the request, then enforces the
-/// `auth#system#admin` role (same role as the cross-cutting admin
-/// router — OIDC client/upstream CRUD is operator-level concern, not
-/// per-tenant). Admin api-key callers bypass as break-glass.
+/// Admin-bearer-only gate shared by every OIDC admin handler. Per
+/// the decoupled-modules architecture: the engine HTTP boundary
+/// accepts only the operator admin api-key. Upstream consumers
+/// (dashboard, BFF) intermediate per-user identity if needed.
 pub(crate) async fn require_admin(
     headers: &HeaderMap,
-    ctx: &AuthCtx,
+    _ctx: &AuthCtx,
     keys: &AdminApiKeys,
-) -> Result<crate::gate::Caller, Box<Response>> {
-    crate::gate::require_role_for(headers, ctx, keys, "auth", "system", "admin").await
+) -> Result<(), Box<Response>> {
+    crate::gate::require_admin_bearer(headers, keys)
 }
 
 // =====================================================================

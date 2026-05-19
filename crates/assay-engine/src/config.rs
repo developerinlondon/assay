@@ -239,13 +239,37 @@ pub struct AuthOidcProviderConfig {
     /// Override the issuer URL used by the OIDC provider. Defaults to
     /// the parent [`AuthConfig::issuer`] when unset.
     pub issuer_override: Option<String>,
+    /// `true`  → federation callback creates an `auth.users` row on
+    ///           first sign-in for a new upstream identity (open
+    ///           signup; legacy library default — kept as the default
+    ///           here so omitted config does not silently flip
+    ///           existing deployments into invite-only).
+    /// `false` → callback looks up by email (and requires the
+    ///           upstream `email_verified` claim); missing rows
+    ///           return 403. Operators pre-populate `auth.users` via
+    ///           the admin API or the sysops `/auth/users` page.
+    ///           Recommended for shared / multi-tenant deployments —
+    ///           must be set explicitly.
+    #[serde(default = "default_true")]
+    pub auto_provision: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct DashboardConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
+}
+
+impl Default for DashboardConfig {
+    fn default() -> Self {
+        // When the `[dashboard]` section is omitted entirely from
+        // engine.toml, serde calls Default::default() — and bool's
+        // derived default is `false`. We want `enabled: true` here so
+        // a fresh engine.toml without a [dashboard] section still
+        // mounts the SPAs out of the box.
+        Self { enabled: true }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -15,7 +15,7 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
     let state = Arc::new(WorkflowCtx::start(Arc::new(store)));
 
-    let app = assay_workflow::api::router(state);
+    let app = assay_workflow::api::router(state, |r| r);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let base_url = format!("http://127.0.0.1:{port}");

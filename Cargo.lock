@@ -239,7 +239,7 @@ dependencies = [
 
 [[package]]
 name = "assay-auth"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -279,7 +279,7 @@ dependencies = [
 
 [[package]]
 name = "assay-dashboard"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "assay-domain",
  "axum",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "assay-engine"
-version = "0.4.3"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "assay-auth",
@@ -393,7 +393,7 @@ dependencies = [
 
 [[package]]
 name = "assay-vault"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aes-gcm-siv",
  "anyhow",
@@ -425,7 +425,7 @@ dependencies = [
 
 [[package]]
 name = "assay-workflow"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "assay-domain",

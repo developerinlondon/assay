@@ -30,6 +30,9 @@
     const token = getAdminToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
     merged.headers = headers;
+    // Send assay_session cookie so the backend can authenticate via
+    // session+zanzibar when no admin Bearer is present.
+    if (!merged.credentials) merged.credentials = 'same-origin';
     return merged;
   }
   // Suppress hash-write side effects when we're applying state read

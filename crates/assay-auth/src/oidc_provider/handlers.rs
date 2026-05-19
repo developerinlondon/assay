@@ -952,7 +952,7 @@ pub async fn upstream_start(
         registry,
         &provider.upstream_states,
         &slug,
-        q.return_to,
+        validate_return_to(q.return_to, &provider.public_url),
     )
     .await
     {
@@ -1007,12 +1007,19 @@ pub async fn upstream_callback(
         Err(e) => {
             let mut response =
                 error_html(StatusCode::BAD_REQUEST, &format!("upstream complete: {e}"));
-            append_clear_binding_cookie(&mut response);
+            append_clear_binding_cookie(&mut response, &provider.public_url);
             return response;
         }
     };
 
-    // Look up or create the local user.
+    // Look up or create the local user. Two regimes:
+    //   auto_provision=true  → first sign-in for an upstream subject
+    //                          creates an `auth.users` row from the
+    //                          upstream claims (legacy / open-signup).
+    //   auto_provision=false → invite-only. Look up by email; if no
+    //                          row exists, return 403 — operators
+    //                          pre-populate `auth.users` via the admin
+    //                          API or the sysops `/auth/users` page.
     let user = match ctx
         .users
         .get_user_by_upstream(&info.provider_slug, &info.subject)
@@ -1020,38 +1027,95 @@ pub async fn upstream_callback(
     {
         Ok(Some(u)) => u,
         Ok(None) => {
-            // First time we've seen this upstream subject — create the
-            // user + the link.
-            let id = format!(
-                "usr_{}",
-                data_encoding::BASE64URL_NOPAD.encode(&random_bytes::<16>())
-            );
-            let user = crate::store::User {
-                id: id.clone(),
-                email: info.email.clone(),
-                email_verified: info.email_verified,
-                display_name: info.display_name.clone(),
-                created_at: now_secs(),
+            let existing = if provider.auto_provision {
+                None
+            } else {
+                // Invite-only lookup keyed on email. The upstream MUST
+                // return one AND mark it verified — an attacker who
+                // controls an upstream IdP that accepts unverified
+                // email could otherwise claim an invited address and
+                // link their upstream subject to the pre-created
+                // local user.
+                let email = match info.email.as_deref() {
+                    Some(e) if !e.is_empty() => e,
+                    _ => {
+                        let mut response = error_html(
+                            StatusCode::FORBIDDEN,
+                            "upstream did not return an email claim; \
+                             cannot match against the access list.",
+                        );
+                        append_clear_binding_cookie(&mut response, &provider.public_url);
+                        return response;
+                    }
+                };
+                if !info.email_verified {
+                    let mut response = error_html(
+                        StatusCode::FORBIDDEN,
+                        "upstream returned an unverified email; \
+                         cannot match against the access list. Verify \
+                         the address with the upstream provider first.",
+                    );
+                    append_clear_binding_cookie(&mut response, &provider.public_url);
+                    return response;
+                }
+                match ctx.users.get_user_by_email(email).await {
+                    Ok(Some(u)) => Some(u),
+                    Ok(None) => {
+                        let mut response = error_html(
+                            StatusCode::FORBIDDEN,
+                            &format!(
+                                "You signed in as {email}, but that account is \
+                                 not yet authorised for this app. If you believe \
+                                 this is a mistake, ask an administrator to invite \
+                                 you."
+                            ),
+                        );
+                        append_clear_binding_cookie(&mut response, &provider.public_url);
+                        return response;
+                    }
+                    Err(e) => {
+                        let mut response = server_error_html(&format!("user lookup by email: {e}"));
+                        append_clear_binding_cookie(&mut response, &provider.public_url);
+                        return response;
+                    }
+                }
             };
-            if let Err(e) = ctx.users.create_user(&user).await {
-                let mut response = server_error_html(&format!("create user: {e}"));
-                append_clear_binding_cookie(&mut response);
-                return response;
-            }
+            let user = if let Some(u) = existing {
+                // Invite-only: existing row, just link the upstream.
+                u
+            } else {
+                let id = format!(
+                    "usr_{}",
+                    data_encoding::BASE64URL_NOPAD.encode(&random_bytes::<16>())
+                );
+                let user = crate::store::User {
+                    id: id.clone(),
+                    email: info.email.clone(),
+                    email_verified: info.email_verified,
+                    display_name: info.display_name.clone(),
+                    created_at: now_secs(),
+                };
+                if let Err(e) = ctx.users.create_user(&user).await {
+                    let mut response = server_error_html(&format!("create user: {e}"));
+                    append_clear_binding_cookie(&mut response, &provider.public_url);
+                    return response;
+                }
+                user
+            };
             if let Err(e) = ctx
                 .users
-                .link_upstream(&id, &info.provider_slug, &info.subject)
+                .link_upstream(&user.id, &info.provider_slug, &info.subject)
                 .await
             {
                 let mut response = server_error_html(&format!("link upstream: {e}"));
-                append_clear_binding_cookie(&mut response);
+                append_clear_binding_cookie(&mut response, &provider.public_url);
                 return response;
             }
             user
         }
         Err(e) => {
             let mut response = server_error_html(&format!("upstream user lookup: {e}"));
-            append_clear_binding_cookie(&mut response);
+            append_clear_binding_cookie(&mut response, &provider.public_url);
             return response;
         }
     };
@@ -1062,7 +1126,7 @@ pub async fn upstream_callback(
         Ok(s) => s,
         Err(e) => {
             let mut response = server_error_html(&format!("create session: {e}"));
-            append_clear_binding_cookie(&mut response);
+            append_clear_binding_cookie(&mut response, &provider.public_url);
             return response;
         }
     };
@@ -1071,17 +1135,28 @@ pub async fn upstream_callback(
     if let Ok(value) = cookie.to_string().parse() {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
-    append_clear_binding_cookie(&mut response);
+    append_clear_binding_cookie(&mut response, &provider.public_url);
     response
 }
 
 /// Build the `Set-Cookie` value for the binding token. Omits `Secure`
 /// only when the public URL is `http` to a localhost host (dev rigs).
+/// Cookie `Path` for the binding cookie, derived from the OIDC public
+/// URL so it matches whatever mount prefix the engine nests the spec
+/// router under (typically `/auth`). Hardcoding `/oidc/upstream/` left
+/// the cookie unsent on callbacks when the spec router was nested at
+/// any prefix other than `/`.
+fn binding_cookie_path(public_url: &url::Url) -> String {
+    let base = public_url.path().trim_end_matches('/');
+    format!("{base}/oidc/upstream/")
+}
+
 fn build_binding_cookie(raw: &str, public_url: &url::Url) -> String {
     let secure = !is_plain_http(public_url);
     let secure_attr = if secure { "; Secure" } else { "" };
+    let path = binding_cookie_path(public_url);
     format!(
-        "{UPSTREAM_BINDING_COOKIE}={raw}; Path=/oidc/upstream/; HttpOnly; SameSite=Lax; \
+        "{UPSTREAM_BINDING_COOKIE}={raw}; Path={path}; HttpOnly; SameSite=Lax; \
          Max-Age=300{secure_attr}"
     )
 }
@@ -1089,10 +1164,10 @@ fn build_binding_cookie(raw: &str, public_url: &url::Url) -> String {
 /// Append a `Set-Cookie: …; Max-Age=0` header to clear the binding
 /// cookie. Called on every callback response — the cookie's job ended
 /// the moment the callback ran.
-fn append_clear_binding_cookie(response: &mut Response) {
-    let cleared = format!(
-        "{UPSTREAM_BINDING_COOKIE}=; Path=/oidc/upstream/; Max-Age=0; HttpOnly; SameSite=Lax"
-    );
+fn append_clear_binding_cookie(response: &mut Response, public_url: &url::Url) {
+    let path = binding_cookie_path(public_url);
+    let cleared =
+        format!("{UPSTREAM_BINDING_COOKIE}=; Path={path}; Max-Age=0; HttpOnly; SameSite=Lax");
     if let Ok(value) = cleared.parse() {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
@@ -1100,6 +1175,38 @@ fn append_clear_binding_cookie(response: &mut Response) {
 
 fn is_plain_http(url: &url::Url) -> bool {
     url.scheme() != "https"
+}
+
+/// Validate the `return_to` parameter passed to `/oidc/upstream/{slug}/start`.
+/// Without this check, an attacker can craft a link to the legitimate
+/// login surface that, after a successful upstream login, bounces the
+/// victim to an attacker-controlled URL (open-redirect).
+///
+/// Acceptance rules:
+///   - `None` / empty → `None`
+///   - Path-only same-origin URLs (`/foo`, `/`) → accepted as-is
+///   - Absolute URLs whose origin matches `public_url`'s origin → accepted
+///   - Everything else (protocol-relative `//evil`, cross-origin
+///     `https://evil`, schemes like `javascript:`) → `None`
+fn validate_return_to(raw: Option<String>, public_url: &url::Url) -> Option<String> {
+    let s = raw?;
+    if s.is_empty() {
+        return None;
+    }
+    // Reject protocol-relative URLs — `//evil/path` resolves to a
+    // cross-origin redirect when browsers see it as `<current-scheme>://evil/path`.
+    if s.starts_with("//") {
+        return None;
+    }
+    // Accept same-origin path-only redirects.
+    if s.starts_with('/') {
+        return Some(s);
+    }
+    // Accept absolute URLs only if their origin matches ours.
+    match url::Url::parse(&s) {
+        Ok(u) if u.origin() == public_url.origin() => Some(s),
+        _ => None,
+    }
 }
 
 // =====================================================================
@@ -1148,8 +1255,97 @@ fn err_body(code: &str, desc: Option<String>) -> TokenErrorBody {
 /// Render a plain-text error page with the given status. Used for the
 /// non-redirect-safe authorize errors (bad client_id, bad redirect_uri).
 fn error_html(status: StatusCode, message: &str) -> Response {
-    let body = format!("<!doctype html><body><h1>Error</h1><pre>{message}</pre></body>");
+    let title = match status {
+        StatusCode::FORBIDDEN => "Access denied",
+        StatusCode::UNAUTHORIZED => "Sign-in required",
+        StatusCode::BAD_REQUEST => "Bad request",
+        StatusCode::INTERNAL_SERVER_ERROR => "Server error",
+        _ => "Error",
+    };
+    let body = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<style>
+:root {{
+  color-scheme: light dark;
+  --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8b949e;
+  --accent: #e6662a; --border: #30363d;
+}}
+@media (prefers-color-scheme: light) {{
+  :root {{
+    --bg: #f6f8fa; --card: #ffffff; --text: #1f2328; --muted: #59636e;
+    --accent: #cf5d27; --border: #d0d7de;
+  }}
+}}
+html, body {{ height: 100%; }}
+body {{
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem; box-sizing: border-box;
+}}
+.error-card {{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2.5rem 2.25rem;
+  width: 100%; max-width: 420px;
+  box-sizing: border-box;
+  box-shadow: 0 8px 24px rgba(0,0,0,.24);
+  text-align: center;
+}}
+h1 {{ margin: 0 0 1rem; font-size: 1.5rem; font-weight: 600; }}
+p {{ margin: 0 0 1.5rem; color: var(--muted); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }}
+.actions {{ display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; }}
+.button {{
+  display: inline-block;
+  padding: .65rem 1.15rem;
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); text-decoration: none;
+  font-weight: 500; font-size: .95rem;
+  transition: border-color 120ms, background-color 120ms;
+}}
+.button:hover {{ border-color: var(--accent); background: rgba(230,102,42,.06); }}
+</style>
+</head>
+<body>
+<main class="error-card">
+<h1>{title}</h1>
+<p>{message}</p>
+<div class="actions">
+  <a class="button" href="/auth/login">Try a different account</a>
+</div>
+</main>
+</body>
+</html>"#,
+        title = html_escape_simple(title),
+        message = html_escape_simple(message),
+    );
     (status, Html(body)).into_response()
+}
+
+/// Minimal HTML-escape for the strings interpolated into `error_html`.
+/// Sufficient because we only interpolate into element text bodies, not
+/// into attribute contexts, and the messages are operator-controlled.
+fn html_escape_simple(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 fn server_error_html(message: &str) -> Response {
@@ -1244,5 +1440,75 @@ mod tests {
     fn url_encode_handles_reserved_bytes() {
         assert_eq!(url_encode("a b/c"), "a%20b%2Fc");
         assert_eq!(url_encode("Plain-Text_1.0~"), "Plain-Text_1.0~");
+    }
+
+    fn return_to_issuer() -> url::Url {
+        url::Url::parse("https://app.example.com/auth").unwrap()
+    }
+
+    #[test]
+    fn validate_return_to_accepts_relative_path() {
+        let u = return_to_issuer();
+        assert_eq!(validate_return_to(Some("/".into()), &u), Some("/".into()));
+        assert_eq!(
+            validate_return_to(Some("/dashboard".into()), &u),
+            Some("/dashboard".into())
+        );
+        assert_eq!(
+            validate_return_to(Some("/a?b=c#d".into()), &u),
+            Some("/a?b=c#d".into())
+        );
+    }
+
+    #[test]
+    fn validate_return_to_accepts_same_origin_absolute() {
+        let u = return_to_issuer();
+        let here = "https://app.example.com/some/path".to_string();
+        assert_eq!(validate_return_to(Some(here.clone()), &u), Some(here));
+    }
+
+    #[test]
+    fn validate_return_to_rejects_cross_origin() {
+        let u = return_to_issuer();
+        assert_eq!(
+            validate_return_to(Some("https://evil.com".into()), &u),
+            None
+        );
+        assert_eq!(
+            validate_return_to(Some("https://evil.com/path".into()), &u),
+            None
+        );
+        // Different subdomain — also cross-origin.
+        assert_eq!(
+            validate_return_to(Some("https://other.example.com/x".into()), &u),
+            None
+        );
+    }
+
+    #[test]
+    fn validate_return_to_rejects_protocol_relative() {
+        let u = return_to_issuer();
+        assert_eq!(validate_return_to(Some("//evil.com/x".into()), &u), None);
+        assert_eq!(validate_return_to(Some("//evil.com".into()), &u), None);
+    }
+
+    #[test]
+    fn validate_return_to_rejects_javascript_and_data_schemes() {
+        let u = return_to_issuer();
+        assert_eq!(
+            validate_return_to(Some("javascript:alert(1)".into()), &u),
+            None
+        );
+        assert_eq!(
+            validate_return_to(Some("data:text/html,<script>".into()), &u),
+            None
+        );
+    }
+
+    #[test]
+    fn validate_return_to_passes_through_none_and_empty() {
+        let u = return_to_issuer();
+        assert_eq!(validate_return_to(None, &u), None);
+        assert_eq!(validate_return_to(Some(String::new()), &u), None);
     }
 }

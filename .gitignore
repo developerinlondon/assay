@@ -44,3 +44,9 @@ assay-workflow.db-*
 
 # OMC session state in nested dirs
 **/.omc/
+/crates/assay-engine/tests-e2e/node_modules/
+/crates/assay-engine/tests-e2e/test-results/
+/crates/assay-engine/tests-e2e/playwright-report/
+/libs/sysops/tests-e2e/node_modules/
+/libs/sysops/tests-e2e/test-results/
+/libs/sysops/tests-e2e/playwright-report/

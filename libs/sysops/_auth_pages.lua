@@ -21,12 +21,16 @@ M.handlers = {
   auth_jwks              = require("pages.auth.jwks").page,
   auth_biscuit           = require("pages.auth.biscuit").page,
   auth_audit             = require("pages.auth.audit").page,
-  zanzibar_index         = require("pages.zanzibar.index").page,
-  zanzibar_tuples        = require("pages.zanzibar.tuples").page,
-  zanzibar_tuples_write  = require("pages.zanzibar.tuples").write,
-  zanzibar_tuples_delete = require("pages.zanzibar.tuples").delete,
-  zanzibar_check         = require("pages.zanzibar.check").page,
-  zanzibar_check_run     = require("pages.zanzibar.check").run,
+  zanzibar_index           = require("pages.zanzibar.index").page,
+  zanzibar_define          = require("pages.zanzibar.define").page,
+  zanzibar_define_submit   = require("pages.zanzibar.define").submit,
+  zanzibar_tuples          = require("pages.zanzibar.tuples").page,
+  zanzibar_tuples_write    = require("pages.zanzibar.tuples").write,
+  zanzibar_tuples_delete   = require("pages.zanzibar.tuples").delete,
+  zanzibar_check           = require("pages.zanzibar.check").page,
+  zanzibar_check_run       = require("pages.zanzibar.check").run,
+  zanzibar_bootstrap       = require("pages.zanzibar.bootstrap").page,
+  zanzibar_bootstrap_grant = require("pages.zanzibar.bootstrap").grant,
 }
 
 function M.register(routes, url)
@@ -74,11 +78,15 @@ function M.register(routes, url)
   routes.GET[url("/auth/biscuit")]             = h.auth_biscuit
   routes.GET[url("/auth/audit")]               = h.auth_audit
   routes.GET[url("/zanzibar")]                 = h.zanzibar_index
+  routes.GET[url("/zanzibar/define")]          = h.zanzibar_define
+  routes.POST[url("/zanzibar/define")]         = h.zanzibar_define_submit
   routes.GET[url("/zanzibar/tuples")]          = h.zanzibar_tuples
   routes.POST[url("/zanzibar/tuples")]         = h.zanzibar_tuples_write
   routes.POST[url("/zanzibar/tuples/delete")]  = h.zanzibar_tuples_delete
   routes.GET[url("/zanzibar/check")]           = h.zanzibar_check
   routes.POST[url("/zanzibar/check")]          = h.zanzibar_check_run
+  routes.GET[url("/zanzibar/bootstrap")]       = h.zanzibar_bootstrap
+  routes.POST[url("/zanzibar/bootstrap")]      = h.zanzibar_bootstrap_grant
 end
 
 return M

@@ -1,17 +1,27 @@
 //! HTTP surface for the vault module — Phase 1 ships KV + transit.
 //!
 //! Plan 17 §S1 (KV v2) and §S2 (transit). Mounted by the engine under
-//! `/api/v1/vault/*`. Auth gating in Phase 1 is admin-key-only — every
-//! route requires `Authorization: Bearer <admin-key>`. Phase 3+ adds
-//! biscuit-share for delegated access and Phase 7 adds the BW-protocol
-//! shim's per-user session auth.
+//! `/api/v1/vault/*`.
+//!
+//! Auth at the router boundary is **typechecked-mandatory**:
+//! [`vault_router`] takes a `gate: FnOnce(Router) -> Router` argument
+//! that the caller MUST supply. Failing to supply a gate is a compile
+//! error — you cannot construct an unauthenticated vault router.
+//!
+//! The engine's gate is admin-bearer + (optional) JWT-from-trusted-
+//! issuer via [`assay_auth::gate::require_admin_or_jwt`]. The handlers
+//! themselves carry no per-handler auth — the gate is the single
+//! enforcement point.
+//!
+//! Share-redeem (`GET /share/{token}`) verifies the biscuit token in
+//! the handler itself. Callers must either include a path-prefix
+//! bypass in their gate (the engine does this) OR accept that
+//! share-redeem also requires bearer auth in their deployment.
 
 use axum::Router;
 use axum::extract::FromRef;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-
-use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::VaultCtx;
 
@@ -32,15 +42,21 @@ mod sys;
 #[cfg(feature = "vault-transit")]
 mod transit;
 
-/// Compose the vault HTTP router. Generic over a parent state from which
-/// both [`VaultCtx`] and [`AdminApiKeys`] are extractable via `FromRef`.
-/// The engine binary's `EngineState<S>` satisfies both; tests can use a
-/// thin parent state — the auth crate's pattern.
-pub fn vault_router<S>() -> Router<S>
+/// Compose the vault HTTP router. Generic over a parent state from
+/// which [`VaultCtx`] is extractable via `FromRef`. The engine binary's
+/// `EngineState<S>` satisfies this; tests can use a thin parent state.
+///
+/// The `gate` argument is the wire-boundary auth layer; the embedder
+/// supplies it as a closure that wraps the composed router (typically
+/// `|r| r.layer(my_auth_middleware)`). The type signature makes the
+/// gate **non-optional** — you cannot construct an unauthenticated
+/// vault router. Tests that want no gating can pass a pass-through
+/// closure `|r| r`.
+pub fn vault_router<S, F>(gate: F) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
+    F: FnOnce(Router<S>) -> Router<S>,
 {
     let mut r = Router::new().merge(sys::router::<S>());
     // BW-compat shim mounts at /identity/* + /api/* (unprefixed); the
@@ -74,35 +90,7 @@ where
     {
         r = r.merge(dynamic::router::<S>());
     }
-    r
-}
-
-/// Top-of-handler admin-key check. Constant-time bytewise compare via
-/// [`AdminApiKeys::check`]. Returns `Err(Response)` (axum 401) if the
-/// token is absent or invalid; every handler propagates the response
-/// verbatim, so the size of the Err variant is intentional — boxing
-/// it would force every call site to dereference. Suppress the lint
-/// here at the API boundary.
-#[allow(clippy::result_large_err)]
-pub(crate) fn check_admin(
-    headers: &HeaderMap,
-    keys: &AdminApiKeys,
-) -> std::result::Result<(), Response> {
-    let token = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "));
-    if matches!(token, Some(t) if keys.check(t)) {
-        return Ok(());
-    }
-    Err((
-        StatusCode::UNAUTHORIZED,
-        axum::Json(serde_json::json!({
-            "error": "unauthorized",
-            "error_description": "missing or invalid Bearer token",
-        })),
-    )
-        .into_response())
+    gate(r)
 }
 
 /// Map a [`crate::error::VaultError`] to an HTTP response. Centralised

@@ -2,10 +2,23 @@
 //! routers into one axum `Router`. URL surface:
 //!
 //! - `/auth/*`                   OIDC spec (discovery, authorize, token, …)
-//! - `/api/v1/engine/core/*`     engine-core admin
-//! - `/api/v1/engine/workflow/*` workflow API (auth-gated below)
+//! - `/api/v1/engine/core/*`     engine-core admin (admin-bearer-gated)
+//! - `/api/v1/engine/workflow/*` workflow API (admin-bearer-gated)
 //! - `/api/v1/engine/auth/*`     engine-internal auth + admin
+//! - `/api/v1/vault/*`           vault module (admin-bearer-gated)
 //! - `/healthz`                  redirect to `/api/v1/engine/core/health`
+//!
+//! Per the decoupled-modules architecture: each module accepts ONLY
+//! an admin bearer token at its HTTP boundary. Per-user authentication
+//! and policy decisions live upstream of the engine — typically in a
+//! dashboard / BFF / API gateway that validates the user session, asks
+//! zanzibar if they're allowed, and then forwards the call to the
+//! engine using its own admin bearer. The engine itself does not
+//! resolve sessions or check zanzibar at request time.
+//!
+//! Share-redeem (`GET /api/v1/vault/share/{token}`) is the one route
+//! that bypasses admin bearer — the biscuit token in the URL is its
+//! own auth, verified inside the handler.
 
 use axum::Router;
 use axum::response::Redirect;
@@ -19,15 +32,6 @@ use assay_workflow::{WorkflowCtx, WorkflowStore};
 
 use crate::state::EngineState;
 
-/// Always-public paths under `/api/v1/engine/workflow/*` that bypass
-/// the engine's auth gate (k8s probes, version banners, OpenAPI docs).
-const WORKFLOW_PUBLIC_PATHS: &[&str] = &[
-    "/api/v1/engine/workflow/health",
-    "/api/v1/engine/workflow/version",
-    "/api/v1/engine/workflow/openapi.json",
-    "/api/v1/engine/workflow/docs",
-];
-
 /// Compose the full `axum::Router` for the engine.
 ///
 /// The workflow crate returns a `Router` that already embeds its state,
@@ -38,22 +42,17 @@ const WORKFLOW_PUBLIC_PATHS: &[&str] = &[
 /// at `/auth/`) and the engine-internal auth router (mounted under
 /// `/api/v1/engine/auth/`) join the composition.
 pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> Router {
-    // Workflow router carries no auth of its own — slice 2 lifted that
-    // to the engine layer. When `auth` is on AND an `AuthCtx` is
-    // composed, wrap the workflow router with the gate middleware that
-    // enforces `workflow:<namespace>#access` via `assay_auth::gate`.
-    let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow));
-    let workflow_router = if state.auth.is_some() {
-        workflow_router.layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            workflow_gate_middleware::<S>,
+    // Workflow router takes a non-optional gate closure (typechecked).
+    // We supply admin_bearer_middleware as the gate; the workflow
+    // crate applies it to only the authed portion of the router so
+    // /health, /version, /openapi.json, /docs stay public for probes.
+    let state_for_workflow = state.clone();
+    let workflow_router = assay_workflow::api::router(Arc::clone(&state.workflow), |r| {
+        r.layer(axum::middleware::from_fn_with_state(
+            state_for_workflow,
+            admin_bearer_middleware::<S>,
         ))
-    } else {
-        workflow_router
-    };
-
-    let dashboard_router =
-        assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
+    });
 
     // `/healthz` is kept as a 1-line redirect to the new engine-core
     // health endpoint for backward-compatible k8s probes. The real
@@ -64,22 +63,27 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         get(|| async { Redirect::permanent("/api/v1/engine/core/health") }),
     );
 
-    // Engine-core admin API + console SPA. Always present (engine-core
-    // is always running, regardless of which functional modules are
-    // enabled). The admin handlers require a configured api-key —
-    // when `admin_api_keys` is empty every admin route returns 401, so
-    // mounting unconditionally is safe for no-auth builds. The
-    // engine-core router carries `/api/v1/engine/core/info` (public),
-    // `/api/v1/engine/core/health`, `/api/v1/engine/core/active-modules`,
-    // and the admin endpoints.
+    // Engine-core admin API. The handlers require an admin api-key
+    // bearer; when `admin_api_keys` is empty every admin route returns
+    // 401, so mounting unconditionally is safe for no-auth builds.
     let engine_api_router = crate::engine_api::router::<S>().with_state(state.clone());
-    let engine_console_router = assay_dashboard::engine_router();
 
-    let mut app = workflow_router
-        .merge(dashboard_router)
-        .merge(healthz)
-        .merge(engine_api_router)
-        .merge(engine_console_router);
+    let mut app = workflow_router.merge(healthz).merge(engine_api_router);
+
+    // Built-in operator SPAs. The engine ships its own browser UI —
+    // auth console, vault console, workflow dashboard, engine console —
+    // so a stand-alone deployment (no sysops in front) is usable from
+    // a browser. SPAs prompt for an admin api-key and store it in
+    // localStorage, then call the engine API with that bearer.
+    // Deployments fronting the engine with sysops/gondor (or any
+    // other dashboard) toggle this off at runtime with
+    // `[dashboard] enabled = false` in engine.toml.
+    if state.engine_config.dashboard.enabled {
+        let dashboard_router =
+            assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
+        let engine_console_router = assay_dashboard::engine_router();
+        app = app.merge(dashboard_router).merge(engine_console_router);
+    }
 
     // Mount the auth routers when AuthCtx is present. We bind state to
     // each router *before* nesting so the merged tree remains
@@ -110,12 +114,15 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
             assay_auth::engine_auth_router::<EngineState<S>>().with_state(state.clone());
         app = app.nest("/api/v1/engine/auth", engine_auth_router);
 
-        // Mount the auth-console SPA assets at root (so the same
-        // `/auth/...` path namespace serves both the OIDC spec and the
-        // dashboard asset bundle — `/auth/console` for the SPA,
-        // `/api/v1/engine/auth/admin/*` for the admin JSON API).
-        let asset_router = assay_dashboard::auth_router();
-        app = app.merge(asset_router);
+        // Auth-console SPA + /auth/login. Runtime-gated on
+        // `[dashboard] enabled = true`. Deployments that turn the
+        // dashboard off also lose /auth/login (so they can't serve
+        // OIDC authorization-code redirects directly to a browser),
+        // which is the price of running engine as a pure API.
+        if state.engine_config.dashboard.enabled {
+            let asset_router = assay_dashboard::auth_router();
+            app = app.merge(asset_router);
+        }
     }
 
     // Vault module — plan 17 / v0.3.0. Mounted under /api/v1/vault when
@@ -125,8 +132,25 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // BW-compat shim's per-user session auth.
     #[cfg(feature = "vault")]
     if state.vault.is_some() {
-        let vault = assay_vault::router::vault_router::<EngineState<S>>().with_state(state.clone());
+        // Vault router requires a non-optional gate closure
+        // (typechecked). We supply admin_bearer_middleware, which has
+        // the share-redeem path bypass built in so /share/{token}
+        // stays public (biscuit verifies in the handler).
+        let state_for_vault = state.clone();
+        let vault = assay_vault::router::vault_router::<EngineState<S>, _>(|r| {
+            r.layer(axum::middleware::from_fn_with_state(
+                state_for_vault,
+                admin_bearer_middleware::<S>,
+            ))
+        })
+        .with_state(state.clone());
         app = app.nest("/api/v1/vault", vault);
+
+        // Vault console SPA at /vault, /vault/console, /vault/console/*.
+        // Runtime-gated on the dashboard flag, same as the other SPAs.
+        if state.engine_config.dashboard.enabled {
+            app = app.merge(assay_dashboard::vault_router());
+        }
     }
 
     // BW-compat shim (Phase 7). Stock BW mobile / browser / CLI
@@ -141,73 +165,47 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         app = app.merge(bw);
     }
 
-    // Vault console assets (plan 17 §S10). Always mounted when the
-    // vault feature is on; runtime visibility is gated by
-    // engine.modules.vault.enabled like every other console.
-    #[cfg(feature = "vault")]
-    {
-        app = app.merge(assay_dashboard::vault_router());
-    }
-
     app
 }
 
-/// Workflow-API auth gate. The engine is the auth boundary for every
-/// module — the workflow router carries no gate of its own.
-/// [`WORKFLOW_PUBLIC_PATHS`] bypass; everything else goes through
-/// [`assay_auth::gate::require_role_for`] keyed on the
-/// `?namespace=<X>` query param (default `main`).
-async fn workflow_gate_middleware<S: WorkflowStore + Clone + 'static>(
+/// Resource-server middleware applied to every engine module router.
+/// Accepts EITHER the operator admin api-key (service-to-service /
+/// break-glass) OR a JWT from a configured trusted issuer (per-user
+/// resource-server pattern). No session, no zanzibar — policy lives
+/// upstream.
+///
+/// The one bypass: vault share-redeem (`GET /share/{token}` —
+/// path-relative because this middleware runs INSIDE the nested
+/// `/api/v1/vault` router, after axum has stripped the prefix).
+/// `/share/revoke` is excluded — it's an admin operation that mints
+/// or revokes tokens. The biscuit token in the share-redeem URL is
+/// its own authentication.
+async fn admin_bearer_middleware<S: WorkflowStore + Clone + 'static>(
     axum::extract::State(state): axum::extract::State<EngineState<S>>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let path = request.uri().path();
-    if WORKFLOW_PUBLIC_PATHS
-        .iter()
-        .any(|p| path == *p || path.starts_with(&format!("{p}/")))
+    if (path.starts_with("/share/") && path != "/share/revoke")
+        || (path.starts_with("/api/v1/vault/share/") && path != "/api/v1/vault/share/revoke")
     {
         return next.run(request).await;
     }
-
-    // Auth is on but no `AuthCtx` was composed at boot — this can
-    // happen for tests that build a no-auth engine. Fail closed; the
-    // engine binary's boot path always composes an AuthCtx when the
-    // auth module is enabled.
-    let Some(auth) = state.auth.as_ref() else {
-        return (
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            axum::Json(serde_json::json!({
-                "error": "service_unavailable",
-                "error_description": "auth not configured on this engine instance",
-            })),
-        )
-            .into_response();
-    };
-
-    let namespace = request
-        .uri()
-        .query()
-        .and_then(|q| {
-            url::form_urlencoded::parse(q.as_bytes())
-                .find(|(k, _)| k == "namespace")
-                .map(|(_, v)| v.into_owned())
-        })
-        .unwrap_or_else(|| "main".to_string());
-
     let keys = crate::state::AdminApiKeys(Arc::clone(&state.admin_api_keys));
-    let headers = request.headers().clone();
-    if let Err(r) =
-        assay_auth::gate::require_role_for(&headers, auth, &keys, "workflow", &namespace, "access")
+    // If auth is configured, accept admin bearer OR trusted JWT.
+    // If auth is not configured at all (no AuthCtx), only the admin
+    // bearer path is available — fall back to the strict check.
+    let outcome = match state.auth.as_ref() {
+        Some(auth) => assay_auth::gate::require_admin_or_jwt(request.headers(), auth, &keys)
             .await
-    {
+            .map(|_| ()),
+        None => assay_auth::gate::require_admin_bearer(request.headers(), &keys),
+    };
+    if let Err(r) = outcome {
         return *r;
     }
-
     next.run(request).await
 }
-
-use axum::response::IntoResponse;
 
 /// Bind a TCP listener on `bind_addr` and serve the composed app.
 ///

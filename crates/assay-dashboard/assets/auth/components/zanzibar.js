@@ -1,4 +1,4 @@
-/* Zanzibar pane — namespace browser, tuple write/delete, check evaluator, expand viewer. */
+/* Zanzibar pane — namespace browser + define, tuple write/delete, check evaluator, expand viewer, bootstrap admin. */
 
 var AssayAuthZanzibar = (function () {
   'use strict';
@@ -16,9 +16,11 @@ var AssayAuthZanzibar = (function () {
       '</div>' +
       '<div class="auth-toolbar" style="border-bottom:1px solid var(--border); padding-bottom:8px;">' +
         '<button type="button" class="btn btn-small" data-tab="namespaces">Namespaces</button>' +
+        '<button type="button" class="btn btn-small" data-tab="define">Define namespace</button>' +
         '<button type="button" class="btn btn-small" data-tab="check">Check</button>' +
         '<button type="button" class="btn btn-small" data-tab="expand">Expand</button>' +
         '<button type="button" class="btn btn-small" data-tab="tuple">Write tuple</button>' +
+        '<button type="button" class="btn btn-small" data-tab="bootstrap">Bootstrap admin</button>' +
       '</div>' +
       '<div id="zb-wrap"></div>';
 
@@ -41,9 +43,11 @@ var AssayAuthZanzibar = (function () {
 
   function renderTab() {
     if (activeTab === 'namespaces') renderNamespaces();
+    else if (activeTab === 'define') renderDefineForm();
     else if (activeTab === 'check') renderCheckForm();
     else if (activeTab === 'expand') renderExpandForm();
     else if (activeTab === 'tuple') renderTupleForm();
+    else if (activeTab === 'bootstrap') renderBootstrapForm();
   }
 
   async function renderNamespaces() {
@@ -79,6 +83,55 @@ var AssayAuthZanzibar = (function () {
     } catch (err) {
       wrap.innerHTML = '<div class="auth-empty">Error: ' + ctx.escapeHtml(err.message) + '</div>';
     }
+  }
+
+  function renderDefineForm() {
+    const wrap = container.querySelector('#zb-wrap');
+    wrap.innerHTML = '<h3>Define / replace namespace</h3>' +
+      '<p class="auth-empty">Paste a JSON schema. POSTed to <code>/admin/zanzibar/namespaces</code>; idempotent (replaces existing). See the Namespaces tab for the current shape of any defined namespace.</p>' +
+      '<div class="auth-form">' +
+        '<label for="zd-json">Schema (JSON)</label>' +
+        '<textarea id="zd-json" rows="14" spellcheck="false" ' +
+          'style="font-family:var(--mono); font-size:13px; width:100%;" ' +
+          'placeholder=\'{\n  "name": "document",\n  "relations": { "viewer": {}, "editor": {} }\n}\'></textarea>' +
+        '<div class="auth-form-actions">' +
+          '<button type="button" class="btn btn-small" id="zd-validate">Validate JSON</button>' +
+          '<button type="button" class="btn btn-primary" id="zd-submit">Define</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="zd-result" style="margin-top:16px;"></div>';
+
+    function setResult(cls, msg) {
+      document.getElementById('zd-result').innerHTML =
+        '<p class="' + cls + '">' + ctx.escapeHtml(msg) + '</p>';
+    }
+    function parse() {
+      const raw = document.getElementById('zd-json').value.trim();
+      if (!raw) throw new Error('schema is empty');
+      try { return JSON.parse(raw); }
+      catch (e) { throw new Error('invalid JSON: ' + e.message); }
+    }
+    document.getElementById('zd-validate').addEventListener('click', function () {
+      try {
+        const parsed = parse();
+        const name = parsed && parsed.name;
+        setResult('auth-status-allowed',
+          name ? 'JSON OK; namespace name = "' + name + '"' : 'JSON OK; missing "name" field — server will reject');
+      } catch (err) {
+        setResult('auth-status-denied', err.message);
+      }
+    });
+    document.getElementById('zd-submit').addEventListener('click', async function () {
+      let body;
+      try { body = parse(); }
+      catch (err) { setResult('auth-status-denied', err.message); return; }
+      try {
+        await ctx.api.defineZanzibarNamespace(body);
+        setResult('auth-status-allowed', 'Namespace "' + (body.name || '?') + '" defined.');
+      } catch (err) {
+        setResult('auth-status-denied', 'Error: ' + err.message);
+      }
+    });
   }
 
   function renderCheckForm() {
@@ -187,6 +240,97 @@ var AssayAuthZanzibar = (function () {
       } catch (err) {
         document.getElementById('zt-result').innerHTML = '<p class="auth-status-denied">Error: ' + ctx.escapeHtml(err.message) + '</p>';
       }
+    });
+  }
+
+  const BOOTSTRAP_TUPLES = [
+    { object_type: 'auth',     object_id: 'system', relation: 'admin'  },
+    { object_type: 'engine',   object_id: 'core',   relation: 'admin'  },
+    { object_type: 'workflow', object_id: 'main',   relation: 'access' },
+    { object_type: 'vault',    object_id: 'main',   relation: 'access' },
+  ];
+
+  function renderBootstrapForm() {
+    const wrap = container.querySelector('#zb-wrap');
+    let tuplesList = '';
+    for (let i = 0; i < BOOTSTRAP_TUPLES.length; i++) {
+      const t = BOOTSTRAP_TUPLES[i];
+      tuplesList += '<li class="auth-mono">' +
+        ctx.escapeHtml(t.object_type) + ':' + ctx.escapeHtml(t.object_id) +
+        '#' + ctx.escapeHtml(t.relation) + '</li>';
+    }
+    wrap.innerHTML = '<h3>Bootstrap admin</h3>' +
+      '<p class="auth-empty">Grant the four canonical admin tuples to a user. Requires the canonical namespaces (<code>auth</code>, <code>engine</code>, <code>workflow</code>, <code>vault</code>) to already be defined.</p>' +
+      '<div class="auth-form">' +
+        '<label for="zba-user">User</label>' +
+        '<select id="zba-user"><option value="">Loading users…</option></select>' +
+        '<div>Will write:</div>' +
+        '<ul style="margin:4px 0 8px 18px;">' + tuplesList + '</ul>' +
+        '<div class="auth-form-actions">' +
+          '<button type="button" class="btn btn-primary" id="zba-go" disabled>Grant admin</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="zba-result" style="margin-top:16px;"></div>';
+
+    const sel = document.getElementById('zba-user');
+    const go = document.getElementById('zba-go');
+    function result(cls, msg) {
+      document.getElementById('zba-result').innerHTML = '<p class="' + cls + '">' + msg + '</p>';
+    }
+
+    ctx.api.listUsers({ limit: 200 }).then(function (data) {
+      const items = (data && data.items) || [];
+      if (!items.length) {
+        sel.innerHTML = '<option value="">— no users; create one in the Users tab first —</option>';
+        return;
+      }
+      let opts = '<option value="">— pick a user —</option>';
+      for (let i = 0; i < items.length; i++) {
+        const u = items[i];
+        const label = (u.email || u.id) + (u.display_name ? ' (' + u.display_name + ')' : '');
+        opts += '<option value="' + ctx.escapeHtml(u.id) + '">' + ctx.escapeHtml(label) + '</option>';
+      }
+      sel.innerHTML = opts;
+      sel.addEventListener('change', function () { go.disabled = !sel.value; });
+    }).catch(function (err) {
+      sel.innerHTML = '<option value="">error loading users</option>';
+      result('auth-status-denied', 'Could not list users: ' + ctx.escapeHtml(err.message));
+    });
+
+    go.addEventListener('click', async function () {
+      const userId = sel.value;
+      if (!userId) return;
+      go.disabled = true;
+      const written = [];
+      const failed = [];
+      for (let i = 0; i < BOOTSTRAP_TUPLES.length; i++) {
+        const t = BOOTSTRAP_TUPLES[i];
+        const tuple = Object.assign({}, t, {
+          subject_type: 'user',
+          subject_id: userId,
+          subject_rel: null,
+        });
+        try {
+          await ctx.api.writeZanzibarTuple(tuple);
+          written.push(t.object_type + ':' + t.object_id + '#' + t.relation);
+        } catch (err) {
+          failed.push(t.object_type + ':' + t.object_id + '#' + t.relation + ' — ' + err.message);
+        }
+      }
+      let html = '';
+      if (written.length) {
+        html += '<p class="auth-status-allowed">Wrote ' + written.length + ' tuple(s) for user ' + ctx.escapeHtml(userId) + '.</p>';
+        html += '<ul style="margin:4px 0 8px 18px;" class="auth-mono">';
+        for (let i = 0; i < written.length; i++) html += '<li>' + ctx.escapeHtml(written[i]) + '</li>';
+        html += '</ul>';
+      }
+      if (failed.length) {
+        html += '<p class="auth-status-denied">Failed ' + failed.length + ' tuple(s):</p><ul>';
+        for (let i = 0; i < failed.length; i++) html += '<li>' + ctx.escapeHtml(failed[i]) + '</li>';
+        html += '</ul>';
+      }
+      document.getElementById('zba-result').innerHTML = html;
+      go.disabled = false;
     });
   }
 
