@@ -52,7 +52,7 @@
      href="{{ type_all_url }}">All types</a>
 </div>
 
-<div class="card table-card services-table-card">
+<div class="card">
   <table class="table">
     <thead>
       <tr>
@@ -62,6 +62,7 @@
           <a class="sort-link {% if sort_key == 'memory' %}active{% endif %}"
              href="{{ memory_sort_url }}">Memory{% if sort_key == 'memory' %} <span>{% if sort_dir == 'desc' %}↓{% else %}↑{% endif %}</span>{% endif %}</a>
         </th>
+        <th>Tasks</th>
         <th>
           <a class="sort-link {% if sort_key == 'cpu' %}active{% endif %}"
              href="{{ cpu_sort_url }}">CPU{% if sort_key == 'cpu' %} <span>{% if sort_dir == 'desc' %}↓{% else %}↑{% endif %}</span>{% endif %}</a>
@@ -94,11 +95,12 @@
           {% endif %}
         </td>
         <td class="mono">{{ u.memory }}</td>
+        <td class="mono">{{ u.tasks_label }}</td>
         <td class="mono">{{ u.cpu_label }}</td>
       </tr>
       {% if u.has_details %}
       <tr class="service-detail-row" id="{{ u.dom_id }}" hidden>
-        <td colspan="4">
+        <td colspan="5">
           <div class="service-detail-panel">
             <div class="service-detail-grid">
               {% for d in u.details %}
