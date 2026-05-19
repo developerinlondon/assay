@@ -3,7 +3,8 @@
 --- @keywords keto, ory, authorization, authz, rbac, rebac, permissions, roles, relation-tuples, zanzibar, access-control, members, groups, opl, permits
 --- @quickref keto.client(read_url, opts?) -> client | Create a Keto client (read endpoint)
 --- @quickref c.tuples:list(opts) -> {relation_tuples, next_page_token} | List relation tuples matching filters
---- @quickref c.tuples:create(tuple) -> nil | Create a relation tuple (requires write_url)
+--- @quickref c.tuples:create(tuple) -> nil | Create a relation tuple (requires write_url; non-idempotent — see tuples:upsert)
+--- @quickref c.tuples:upsert(tuple) -> "noop" | "created" | "repaired", dups_removed | Ensure exactly one tuple exists for the (namespace, object, relation, subject) identity (requires write_url)
 --- @quickref c.tuples:delete(tuple) -> nil | Delete a relation tuple (requires write_url)
 --- @quickref c.tuples:delete_all(filters) -> nil | Delete all matching relation tuples (requires write_url)
 --- @quickref c.permissions:check(ns, obj, rel, subject) -> bool | Check if a subject has a relation (or OPL permit) on an object
@@ -108,12 +109,67 @@ function M.client(read_url, opts)
 
   -- Create a relation tuple (requires write_url).
   -- tuple: { namespace, object, relation, subject_id } or with subject_set
+  --
+  -- NOT idempotent. Keto's PUT /admin/relation-tuples endpoint is a
+  -- strict CREATE — calling this method twice with the same body stores
+  -- the tuple twice. For "ensure this tuple exists exactly once"
+  -- semantics, use c.tuples:upsert instead. This method is kept as the
+  -- 1:1 wrapper around the underlying HTTP verb for callers that need
+  -- the raw behaviour.
   function c.tuples:create(tuple)
     require_write()
     local resp = http.put(write .. "/admin/relation-tuples", tuple)
     if resp.status ~= 201 and resp.status ~= 200 then
       error("keto: create tuple HTTP " .. resp.status .. ": " .. resp.body)
     end
+  end
+
+  -- Ensure exactly one tuple exists for the given (namespace, object,
+  -- relation, subject) identity. Idempotent + self-repairing:
+  --
+  --   list count == 1   →  no-op, returns ("noop", 0)
+  --   list count == 0   →  create, returns ("created", 0)
+  --   list count >  1   →  delete-all-matching + create-one,
+  --                        returns ("repaired", N) where N is the
+  --                        number of duplicates that were removed
+  --                        (the kept tuple is excluded from the count)
+  --
+  -- This is the method seed/bootstrap scripts should call when they
+  -- want to assert membership. tuples:create is a footgun for that
+  -- intent because Keto's PUT verb is non-idempotent.
+  function c.tuples:upsert(tuple)
+    require_write()
+    local filters = {
+      namespace = tuple.namespace,
+      object = tuple.object,
+      relation = tuple.relation,
+    }
+    if tuple.subject_id then
+      filters.subject_id = tuple.subject_id
+    elseif tuple.subject_set then
+      filters.subject_set_namespace = tuple.subject_set.namespace
+      filters.subject_set_object = tuple.subject_set.object
+      filters.subject_set_relation = tuple.subject_set.relation
+    end
+    local existing = self:list(filters)
+    local count = existing and #(existing.relation_tuples or {}) or 0
+    if count == 1 then
+      return "noop", 0
+    end
+    if count > 1 then
+      -- DELETE /admin/relation-tuples is filter-based — removes every
+      -- matching tuple in one call, regardless of how many duplicates
+      -- accumulated.
+      self:delete(tuple)
+    end
+    local resp = http.put(write .. "/admin/relation-tuples", tuple)
+    if resp.status ~= 201 and resp.status ~= 200 then
+      error("keto: upsert tuple HTTP " .. resp.status .. ": " .. resp.body)
+    end
+    if count == 0 then
+      return "created", 0
+    end
+    return "repaired", count - 1
   end
 
   -- Delete a specific relation tuple (requires write_url).
