@@ -1,0 +1,15 @@
+{
+  "name": "engine",
+  "definitions": {
+    "admin": {
+      "name": "admin",
+      "kind": {
+        "kind": "direct",
+        "value": [
+          { "object_type": "user" },
+          { "object_type": "group", "relation": "member" }
+        ]
+      }
+    }
+  }
+}

@@ -520,12 +520,14 @@ async fn seed_zanzibar(cfg: &EngineConfig, ctx: &assay_auth::ctx::AuthCtx) -> an
                 //                 require_role_for("auth","system","admin")
                 //                 checks).
                 //   workflow:main — workflow_gate_middleware defaults
-                //                the namespace query param to "main"
-                //                when callers don't override.
+                //                the namespace query param to "main".
+                //   engine:core — engine_api::require_admin pins
+                //                ("engine","core","admin").
                 let sys = cfg.auth.zanzibar.system_object_id.clone();
                 let tuples = [
                     ("auth", sys.as_str(), "admin"),
                     ("workflow", "main", "access"),
+                    ("engine", "core", "admin"),
                 ];
                 for (object_type, object_id, relation) in tuples {
                     let tuple = assay_auth::zanzibar::Tuple {
