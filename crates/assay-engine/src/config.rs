@@ -254,11 +254,22 @@ pub struct AuthOidcProviderConfig {
     pub auto_provision: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct DashboardConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
+}
+
+impl Default for DashboardConfig {
+    fn default() -> Self {
+        // When the `[dashboard]` section is omitted entirely from
+        // engine.toml, serde calls Default::default() — and bool's
+        // derived default is `false`. We want `enabled: true` here so
+        // a fresh engine.toml without a [dashboard] section still
+        // mounts the SPAs out of the box.
+        Self { enabled: true }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
