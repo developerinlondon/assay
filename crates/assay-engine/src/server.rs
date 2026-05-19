@@ -79,7 +79,7 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // with sysops/gondor skip this whole asset bundle by building
     // `--no-default-features --features "<…>"` (omit dashboard).
     #[cfg(feature = "dashboard")]
-    {
+    if state.engine_config.dashboard.enabled {
         let dashboard_router =
             assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
         let engine_console_router = assay_dashboard::engine_router();
@@ -116,12 +116,13 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         app = app.nest("/api/v1/engine/auth", engine_auth_router);
 
         // Auth-console SPA + /auth/login. Browser-facing; gated on
-        // `dashboard`. Deployments without `dashboard` lose
-        // /auth/login (and so cannot serve OIDC authorization-code
-        // redirects directly to a browser), which is the price of
-        // running engine as a pure API.
+        // both the `dashboard` Cargo feature AND the runtime
+        // `[dashboard] enabled = true` config flag. Deployments
+        // without these lose /auth/login (and so cannot serve OIDC
+        // authorization-code redirects directly to a browser), which
+        // is the price of running engine as a pure API.
         #[cfg(feature = "dashboard")]
-        {
+        if state.engine_config.dashboard.enabled {
             let asset_router = assay_dashboard::auth_router();
             app = app.merge(asset_router);
         }
