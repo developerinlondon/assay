@@ -68,6 +68,12 @@ pub const AUTH_LOGIN_HTML: &str = include_str!("../assets/auth/login.html");
 pub const AUTH_LOGIN_CSS: &str = include_str!("../assets/auth/login.css");
 pub const AUTH_LOGIN_JS: &str = include_str!("../assets/auth/login.js");
 
+/// Provider-icon sprite (single SVG with `<symbol id="slug">` per
+/// well-known upstream IdP — Google, GitHub, GitLab, Microsoft, Apple,
+/// Discord, Slack, plus a generic fallback). Sourced from Simple Icons
+/// (CC0). Referenced by login.js via `<use href="/auth/icons.svg#slug"/>`.
+pub const AUTH_ICONS_SVG: &str = include_str!("../assets/auth/icons.svg");
+
 // =====================================================================
 //   Engine console assets (always present — engine-core is always on)
 // =====================================================================

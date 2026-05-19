@@ -17,9 +17,9 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 
 use crate::assets::{
-    AUTH_API_JS, AUTH_APP_JS, AUTH_AUDIT_JS, AUTH_INDEX_HTML, AUTH_KEYS_JS, AUTH_LOGIN_CSS,
-    AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_OIDC_CLIENTS_JS, AUTH_OIDC_UPSTREAM_JS, AUTH_SESSIONS_JS,
-    AUTH_STYLE_CSS, AUTH_USERS_JS, AUTH_ZANZIBAR_JS, FAVICON_SVG,
+    AUTH_API_JS, AUTH_APP_JS, AUTH_AUDIT_JS, AUTH_ICONS_SVG, AUTH_INDEX_HTML, AUTH_KEYS_JS,
+    AUTH_LOGIN_CSS, AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_OIDC_CLIENTS_JS, AUTH_OIDC_UPSTREAM_JS,
+    AUTH_SESSIONS_JS, AUTH_STYLE_CSS, AUTH_USERS_JS, AUTH_ZANZIBAR_JS, FAVICON_SVG,
 };
 
 /// Build the auth-console asset router. Stateless `Router<()>` ready
@@ -37,6 +37,7 @@ pub fn router() -> Router<()> {
         .route("/auth/login/", get(login_index))
         .route("/auth/login.js", get(login_js))
         .route("/auth/login.css", get(login_css))
+        .route("/auth/icons.svg", get(icons_svg))
         .route("/auth/favicon.svg", get(favicon))
 }
 
@@ -109,6 +110,10 @@ async fn audit_js() -> impl IntoResponse {
 }
 async fn favicon() -> impl IntoResponse {
     asset("image/svg+xml", FAVICON_SVG)
+}
+
+async fn icons_svg() -> impl IntoResponse {
+    asset("image/svg+xml", AUTH_ICONS_SVG)
 }
 
 async fn login_index() -> impl IntoResponse {
