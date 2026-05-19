@@ -126,6 +126,7 @@ where
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(not(feature = "vault-sealing-shamir"), allow(dead_code))]
 struct UnsealBody {
     /// Base64-encoded share bytes — exactly the shape returned by an
     /// init ceremony (each share is one entry from the
@@ -134,7 +135,9 @@ struct UnsealBody {
 }
 
 async fn unseal_op<S>(
-    State(vault): State<VaultCtx>,
+    #[cfg_attr(not(feature = "vault-sealing-shamir"), allow(unused_variables))] State(vault): State<
+        VaultCtx,
+    >,
     axum::Json(body): axum::Json<UnsealBody>,
 ) -> Response
 where
