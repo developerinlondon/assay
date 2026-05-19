@@ -147,10 +147,11 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     app
 }
 
-/// Admin-bearer-only middleware applied to every engine module router.
-/// Strict bearer check via [`assay_auth::gate::require_admin_bearer`].
-/// Per the decoupled-modules architecture, this is the entire engine-
-/// side authn surface. No session, no JWT, no zanzibar.
+/// Resource-server middleware applied to every engine module router.
+/// Accepts EITHER the operator admin api-key (service-to-service /
+/// break-glass) OR a JWT from a configured trusted issuer (per-user
+/// resource-server pattern). No session, no zanzibar — policy lives
+/// upstream.
 ///
 /// The one bypass: vault share-redeem (`GET /api/v1/vault/share/{token}`,
 /// excluding `/share/revoke`) — the biscuit token in the URL is its
@@ -165,7 +166,16 @@ async fn admin_bearer_middleware<S: WorkflowStore + Clone + 'static>(
         return next.run(request).await;
     }
     let keys = crate::state::AdminApiKeys(Arc::clone(&state.admin_api_keys));
-    if let Err(r) = assay_auth::gate::require_admin_bearer(request.headers(), &keys) {
+    // If auth is configured, accept admin bearer OR trusted JWT.
+    // If auth is not configured at all (no AuthCtx), only the admin
+    // bearer path is available — fall back to the strict check.
+    let outcome = match state.auth.as_ref() {
+        Some(auth) => assay_auth::gate::require_admin_or_jwt(request.headers(), auth, &keys)
+            .await
+            .map(|_| ()),
+        None => assay_auth::gate::require_admin_bearer(request.headers(), &keys),
+    };
+    if let Err(r) = outcome {
         return *r;
     }
     next.run(request).await

@@ -235,6 +235,63 @@ pub fn require_admin_bearer(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<
     Err(unauthorized("admin bearer token required"))
 }
 
+/// Resource-server check: accept either the operator admin api-key
+/// (service-to-service / break-glass) OR a JWT from a configured
+/// trusted issuer (per-user identity).
+///
+/// On success returns the resolved identity:
+///   * `Ok(None)` — admin api-key was used; no per-user identity.
+///   * `Ok(Some(sub))` — JWT was used; `sub` is the user identifier
+///     from the JWT's claims.
+///
+/// Used by engine module middleware to support both the service-to-
+/// service pattern (dashboard / BFF calls the engine with its bearer)
+/// AND the resource-server pattern (external client presents a JWT
+/// minted by any trusted IdP — assay-auth, Hydra, Auth0, …).
+///
+/// No zanzibar lookup. Policy still lives upstream — but per-user
+/// identity is available at the engine boundary when a JWT was used,
+/// for handlers that want it (audit, per-user features in Phase D).
+pub async fn require_admin_or_jwt(
+    headers: &HeaderMap,
+    #[cfg_attr(not(feature = "auth-jwt"), allow(unused_variables))] ctx: &AuthCtx,
+    keys: &AdminApiKeys,
+) -> Result<Option<String>, Box<Response>> {
+    // 1. Admin api-key — operator break-glass / service-to-service.
+    if let Some(token) = bearer_token(headers)
+        && keys.enabled()
+        && keys.check(token)
+    {
+        return Ok(None);
+    }
+
+    // 2. JWT bearer — per-user resource-server identity.
+    #[cfg(feature = "auth-jwt")]
+    if let Some(token) = bearer_token(headers) {
+        #[derive(serde::Deserialize)]
+        struct SubClaim {
+            sub: String,
+        }
+
+        // Internal issuer first (assay-auth's own JWTs) — fastest path.
+        if let Some(jwt) = ctx.jwt.as_ref()
+            && let Ok(td) = jwt.verify::<SubClaim>(token)
+        {
+            return Ok(Some(td.claims.sub));
+        }
+
+        // External trusted issuers (Hydra, Keycloak, Auth0, …).
+        if let Some(result) =
+            crate::external_jwt::verify_with_any::<SubClaim>(ctx.external_issuers(), token)
+            && let Ok(td) = result
+        {
+            return Ok(Some(td.claims.sub));
+        }
+    }
+
+    Err(unauthorized("admin bearer or trusted JWT required"))
+}
+
 // =====================================================================
 //   helpers
 // =====================================================================
