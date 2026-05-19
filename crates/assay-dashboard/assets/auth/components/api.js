@@ -103,6 +103,9 @@
     getZanzibarNamespace: function (name) {
       return call('GET', '/admin/zanzibar/namespaces/' + encodeURIComponent(name));
     },
+    defineZanzibarNamespace: function (body) {
+      return call('POST', '/admin/zanzibar/namespaces', body);
+    },
     writeZanzibarTuple: function (body) { return call('POST', '/admin/zanzibar/tuples', body); },
     deleteZanzibarTuple: function (body) {
       // DELETE with body is non-standard but supported here for tuple deletion

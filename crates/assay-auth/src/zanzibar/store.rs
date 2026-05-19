@@ -23,7 +23,8 @@
 //! Implementations live in [`super::postgres`] and [`super::sqlite`].
 
 use super::types::{
-    CheckResult, Consistency, NamespaceSchema, ObjectRef, SubjectRef, Tuple, UsersetTree,
+    CheckResult, Consistency, NamespaceSchema, ObjectRef, SubjectRef, Tuple, TupleFilter,
+    UsersetTree,
 };
 
 /// Async, object-safe Zanzibar storage trait. See module docs.
@@ -53,6 +54,11 @@ pub trait ZanzibarStore: Send + Sync + 'static {
     /// Delete one tuple by exact match. Returns `Ok(true)` iff a row
     /// was removed.
     async fn delete_tuple(&self, tuple: &Tuple) -> anyhow::Result<bool>;
+
+    /// List tuples matching `filter`, ordered by
+    /// (object_type, object_id, relation, subject_type, subject_id).
+    /// Pagination via `limit` (default 100, max 1000) and `offset`.
+    async fn list_tuples(&self, filter: &TupleFilter) -> anyhow::Result<Vec<Tuple>>;
 
     /// Permission check. Walks the tuple DAG from `resource` along
     /// every relation that resolves to `permission` per the namespace

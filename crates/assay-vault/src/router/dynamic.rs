@@ -6,12 +6,10 @@
 
 use axum::Router;
 use axum::extract::{FromRef, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
-
-use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::VaultCtx;
 use crate::router::vault_err_to_response;
@@ -20,7 +18,6 @@ pub fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     Router::new()
         .route("/dynamic/{provider}/{role}/lease", post(issue_lease::<S>))
@@ -45,15 +42,12 @@ struct ListLeasesQuery {
 
 async fn issue_lease<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path((provider, role)): Path<(String, String)>,
     body: Option<axum::Json<IssueBody>>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let svc = match vault.dynamic.as_ref() {
         Some(s) => s.clone(),
@@ -71,16 +65,10 @@ struct ListQuery {
     provider: Option<String>,
 }
 
-async fn list_leases<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Query(q): Query<ListQuery>,
-) -> Response
+async fn list_leases<S>(State(vault): State<VaultCtx>, Query(q): Query<ListQuery>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let svc = match vault.dynamic.as_ref() {
         Some(s) => s.clone(),
@@ -92,16 +80,10 @@ where
     }
 }
 
-async fn revoke_lease<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response
+async fn revoke_lease<S>(State(vault): State<VaultCtx>, Path(id): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let svc = match vault.dynamic.as_ref() {
         Some(s) => s.clone(),

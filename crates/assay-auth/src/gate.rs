@@ -1,23 +1,28 @@
-//! Unified authentication + authorization gate.
+//! Authentication gate for engine module HTTP boundaries.
 //!
-//! [`extract_caller`] resolves a [`Caller`] from the request headers in
-//! a fixed order: admin api-key (break-glass) → session cookie → JWT
-//! bearer. Failure returns a ready-to-send `401 Unauthorized` response.
+//! [`require_admin_bearer`] is the canonical wire-boundary check: each
+//! engine module (auth-admin, vault, workflow) accepts ONLY a configured
+//! admin api-key bearer token. Per-user authentication and policy live
+//! upstream of the engine — a dashboard, BFF, or API gateway intermediates
+//! session/JWT identity, decides if the user is allowed, and then calls
+//! the engine using its own admin bearer. The engine itself does not
+//! resolve sessions or check zanzibar at request time.
 //!
-//! [`require_role`] performs a coarse-grained Zanzibar role check on a
-//! resolved caller. `AdminApiKey` callers bypass — the api-key list is
-//! the operator's break-glass and is treated as carrying universal
-//! authority by definition.
-//!
-//! [`require_role_for`] composes the two for the common case where the
-//! caller doesn't need to be inspected separately.
+//! [`extract_caller`] / [`require_role`] / [`require_role_for`] remain
+//! available for callers that still need full session+JWT+zanzibar
+//! resolution — primarily the admin-zanzibar endpoints used BY the
+//! dashboard to make its own policy decisions. They are no longer used
+//! to gate engine routes.
 //!
 //! Used by:
 //!
-//! - [`crate::admin`] (`auth#system#admin`)
-//! - [`crate::oidc_provider::admin`] (`auth#system#admin`)
-//! - `assay_engine::engine_api` (`engine#core#admin`)
-//! - `assay_engine::server`'s workflow gate middleware (`workflow#<ns>#access`)
+//! - [`crate::admin`] — admin endpoints (`require_admin_bearer`)
+//! - [`crate::oidc_provider::admin`] — OIDC provider admin
+//!   (`require_admin_bearer`)
+//! - `assay_engine::engine_api` — engine-core admin
+//!   (`require_admin_bearer`)
+//! - `assay_engine::server` — module routers wrapped with
+//!   [`admin_bearer_layer`]-equivalent middleware
 
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
@@ -209,6 +214,25 @@ pub async fn require_role_for(
     let caller = extract_caller(headers, ctx, keys).await?;
     require_role(&caller, ctx, object_type, object_id, permission).await?;
     Ok(caller)
+}
+
+/// Strict admin-bearer-only check.
+///
+/// Each engine module accepts only a configured admin api-key at its
+/// HTTP boundary. Per-user authentication and policy are the upstream
+/// consumer's concern. No session, no JWT, no zanzibar lookup — just
+/// `Authorization: Bearer <admin-key>` against the configured key list.
+///
+/// Returns `Err(401)` on absence or mismatch. Sync (no DB or network
+/// round-trip).
+pub fn require_admin_bearer(headers: &HeaderMap, keys: &AdminApiKeys) -> Result<(), Box<Response>> {
+    if let Some(token) = bearer_token(headers)
+        && keys.enabled()
+        && keys.check(token)
+    {
+        return Ok(());
+    }
+    Err(unauthorized("admin bearer token required"))
 }
 
 // =====================================================================

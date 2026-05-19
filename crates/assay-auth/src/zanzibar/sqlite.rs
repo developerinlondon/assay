@@ -25,7 +25,7 @@ use super::resolve::resolve;
 use super::store::ZanzibarStore;
 use super::types::{
     CheckResult, Consistency, MAX_DEPTH, NamespaceSchema, ObjectRef, SubjectRef, TreeOp, Tuple,
-    UsersetTree,
+    TupleFilter, UsersetTree,
 };
 
 /// SQLite-backed Zanzibar store. Cheap to clone (the underlying pool
@@ -172,6 +172,51 @@ impl ZanzibarStore for SqliteZanzibarStore {
         .await
         .context("auth.zanzibar_tuples delete")?;
         Ok(res.rows_affected() > 0)
+    }
+
+    async fn list_tuples(&self, filter: &TupleFilter) -> Result<Vec<Tuple>> {
+        // Each filter field uses the `(? IS NULL OR col = ?)` idiom so a
+        // single static SQL string covers every filter combination.
+        // sqlx doesn't reuse `?N`-style placeholders across the two
+        // backends, so we bind the same Option twice per field.
+        let rows: Vec<(String, String, String, String, String, String)> = sqlx::query_as(
+            "SELECT object_type, object_id, relation,
+                    subject_type, subject_id, subject_rel
+             FROM auth.zanzibar_tuples
+             WHERE (? IS NULL OR object_type  = ?)
+               AND (? IS NULL OR object_id    = ?)
+               AND (? IS NULL OR relation     = ?)
+               AND (? IS NULL OR subject_type = ?)
+               AND (? IS NULL OR subject_id   = ?)
+             ORDER BY object_type, object_id, relation, subject_type, subject_id
+             LIMIT ? OFFSET ?",
+        )
+        .bind(&filter.object_type)
+        .bind(&filter.object_type)
+        .bind(&filter.object_id)
+        .bind(&filter.object_id)
+        .bind(&filter.relation)
+        .bind(&filter.relation)
+        .bind(&filter.subject_type)
+        .bind(&filter.subject_type)
+        .bind(&filter.subject_id)
+        .bind(&filter.subject_id)
+        .bind(filter.effective_limit())
+        .bind(filter.effective_offset())
+        .fetch_all(&self.pool)
+        .await
+        .context("auth.zanzibar_tuples list")?;
+        Ok(rows
+            .into_iter()
+            .map(|(ot, oid, rel, st, sid, srel)| Tuple {
+                object_type: ot,
+                object_id: oid,
+                relation: rel,
+                subject_type: st,
+                subject_id: sid,
+                subject_rel: srel,
+            })
+            .collect())
     }
 
     async fn check(

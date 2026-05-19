@@ -1,0 +1,72 @@
+<header class="page-header">
+  <div>
+    <div class="page-eyebrow"><a href="/auth/users">Auth</a> &middot; zanzibar</div>
+    <h1 class="page-title">Bootstrap admin</h1>
+  </div>
+</header>
+
+<div class="tabs">
+  <a class="tab" href="/auth/users">Users</a>
+  <a class="tab" href="/auth/sessions">Sessions</a>
+  <a class="tab" href="/auth/oidc-clients">OIDC clients</a>
+  <a class="tab" href="/auth/upstreams">Upstreams</a>
+  <a class="tab" href="/auth/jwks">JWKS</a>
+  <a class="tab" href="/auth/biscuit">Biscuit</a>
+  <a class="tab" href="/auth/audit">Audit</a>
+  <a class="tab active" href="/zanzibar">Zanzibar</a>
+</div>
+
+<div class="tabs">
+  <a class="tab" href="/zanzibar">Namespaces</a>
+  <a class="tab" href="/zanzibar/define">Define</a>
+  <a class="tab" href="/zanzibar/tuples">Tuples</a>
+  <a class="tab" href="/zanzibar/check">Check</a>
+  <a class="tab active" href="/zanzibar/bootstrap">Bootstrap admin</a>
+</div>
+
+{% if granted_for %}
+{% if (failed | default(0)) == 0 %}
+<div class="banner">
+  <span class="b-mark"></span>
+  <span>Wrote {{ written }} tuple(s) for user <code>{{ granted_for }}</code>.</span>
+</div>
+{% else %}
+<div class="banner warn">
+  <span class="b-mark"></span>
+  <span>Wrote {{ written }}, failed {{ failed }} for user <code>{{ granted_for }}</code>. Define the canonical namespaces first if any tuple failed.</span>
+</div>
+{% endif %}
+{% endif %}
+
+{% if users_err %}
+<div class="banner warn">
+  <span class="b-mark"></span>
+  <span>Could not list users (HTTP {{ users_err.status }}).</span>
+</div>
+{% endif %}
+
+<div class="card">
+  <p class="muted" style="margin-top:0">
+    Grant the four canonical admin tuples to a user. Requires the canonical namespaces
+    (<code>auth</code>, <code>engine</code>, <code>workflow</code>, <code>vault</code>) to already be defined.
+  </p>
+
+  <form method="post" action="/zanzibar/bootstrap">
+    <label for="user_id" class="muted">User</label>
+    <select class="input" id="user_id" name="user_id" style="width:100%;max-width:480px">
+      <option value="">— pick a user —</option>
+      {% for u in users %}
+      <option value="{{ u.id }}">{{ u.email | default(u.id) }}{% if u.display_name %} ({{ u.display_name }}){% endif %}</option>
+      {% endfor %}
+    </select>
+
+    <div class="muted" style="margin-top:12px">Will write:</div>
+    <ul class="mono" style="margin:4px 0 12px 18px">
+      {% for t in tuples %}
+      <li>{{ t.label }}</li>
+      {% endfor %}
+    </ul>
+
+    <button type="submit" class="btn btn-primary">Grant admin</button>
+  </form>
+</div>

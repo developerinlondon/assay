@@ -32,7 +32,7 @@ use super::resolve::resolve;
 use super::store::ZanzibarStore;
 use super::types::{
     CheckResult, Consistency, MAX_DEPTH, NamespaceSchema, ObjectRef, SubjectRef, TreeOp, Tuple,
-    UsersetTree,
+    TupleFilter, UsersetTree,
 };
 
 /// Postgres-backed Zanzibar store. Cheap to clone (the underlying
@@ -166,6 +166,42 @@ impl ZanzibarStore for PostgresZanzibarStore {
         .await
         .context("auth.zanzibar_tuples delete")?;
         Ok(res.rows_affected() > 0)
+    }
+
+    async fn list_tuples(&self, filter: &TupleFilter) -> Result<Vec<Tuple>> {
+        let rows: Vec<(String, String, String, String, String, String)> = sqlx::query_as(
+            "SELECT object_type, object_id, relation,
+                    subject_type, subject_id, subject_rel
+             FROM auth.zanzibar_tuples
+             WHERE ($1::text IS NULL OR object_type  = $1)
+               AND ($2::text IS NULL OR object_id    = $2)
+               AND ($3::text IS NULL OR relation     = $3)
+               AND ($4::text IS NULL OR subject_type = $4)
+               AND ($5::text IS NULL OR subject_id   = $5)
+             ORDER BY object_type, object_id, relation, subject_type, subject_id
+             LIMIT $6 OFFSET $7",
+        )
+        .bind(&filter.object_type)
+        .bind(&filter.object_id)
+        .bind(&filter.relation)
+        .bind(&filter.subject_type)
+        .bind(&filter.subject_id)
+        .bind(filter.effective_limit())
+        .bind(filter.effective_offset())
+        .fetch_all(&self.pool)
+        .await
+        .context("auth.zanzibar_tuples list")?;
+        Ok(rows
+            .into_iter()
+            .map(|(ot, oid, rel, st, sid, srel)| Tuple {
+                object_type: ot,
+                object_id: oid,
+                relation: rel,
+                subject_type: st,
+                subject_id: sid,
+                subject_rel: srel,
+            })
+            .collect())
     }
 
     async fn check(

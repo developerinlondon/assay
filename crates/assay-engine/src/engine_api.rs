@@ -470,34 +470,15 @@ fn redact_secrets(v: &mut Value) {
 //   helpers — admin auth
 // =====================================================================
 
-/// Engine-core admin gate.
-///
-/// Auth is mandatory so the engine always has an
-/// [`AuthCtx`]. Dispatch to [`assay_auth::gate::require_role_for`]
-/// for `engine#core#admin`. Admin api-key callers bypass as
-/// break-glass; session/JWT callers go through Zanzibar.
+/// Engine-core admin gate. Strict admin-bearer-only check; no
+/// session/JWT/zanzibar at the engine boundary per the decoupled-
+/// modules architecture.
 async fn require_admin<S: WorkflowStore + Clone + 'static>(
     headers: &HeaderMap,
     state: &EngineState<S>,
 ) -> Result<(), Box<Response>> {
-    let auth = state
-        .auth
-        .as_ref()
-        .ok_or_else(|| svc_unavailable_box("auth not configured on this engine instance"))?;
     let keys = crate::state::AdminApiKeys(std::sync::Arc::clone(&state.admin_api_keys));
-    assay_auth::gate::require_role_for(headers, auth, &keys, "engine", "core", "admin")
-        .await
-        .map(|_| ())
-}
-
-fn svc_unavailable_box(msg: &str) -> Box<Response> {
-    Box::new(
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"error": "service_unavailable", "error_description": msg})),
-        )
-            .into_response(),
-    )
+    assay_auth::gate::require_admin_bearer(headers, &keys)
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<String> {

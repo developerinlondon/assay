@@ -1031,9 +1031,11 @@ pub async fn upstream_callback(
                 None
             } else {
                 // Invite-only lookup keyed on email. The upstream MUST
-                // return one — without it the operator has no way to
-                // pre-invite this user. Reject with a clear message
-                // instead of creating an emailless orphan row.
+                // return one AND mark it verified — an attacker who
+                // controls an upstream IdP that accepts unverified
+                // email could otherwise claim an invited address and
+                // link their upstream subject to the pre-created
+                // local user.
                 let email = match info.email.as_deref() {
                     Some(e) if !e.is_empty() => e,
                     _ => {
@@ -1046,6 +1048,16 @@ pub async fn upstream_callback(
                         return response;
                     }
                 };
+                if !info.email_verified {
+                    let mut response = error_html(
+                        StatusCode::FORBIDDEN,
+                        "upstream returned an unverified email; \
+                         cannot match against the access list. Verify \
+                         the address with the upstream provider first.",
+                    );
+                    append_clear_binding_cookie(&mut response, &provider.public_url);
+                    return response;
+                }
                 match ctx.users.get_user_by_email(email).await {
                     Ok(Some(u)) => Some(u),
                     Ok(None) => {

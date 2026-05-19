@@ -10,9 +10,7 @@ local ALLOWED_ACTIONS = {
 }
 local INFO_FIELDS = {
   "memory_current",
-  "tasks_current",
   "cpu_usage_nsec",
-  "n_restarts",
   "unit_file_state",
   "fragment_path",
   "drop_in_paths",
@@ -20,20 +18,15 @@ local INFO_FIELDS = {
   "exec_main_pid",
   "exec_main_status",
   "exec_start",
-  "restart",
-  "restart_usec",
   "user",
   "group",
   "working_directory",
   "memory_accounting",
   "cpu_accounting",
-  "tasks_accounting",
 }
 local SHOW_PROPERTIES = {
   "MemoryCurrent",
-  "TasksCurrent",
   "CPUUsageNSec",
-  "NRestarts",
   "UnitFileState",
   "FragmentPath",
   "DropInPaths",
@@ -41,14 +34,11 @@ local SHOW_PROPERTIES = {
   "ExecMainPID",
   "ExecMainStatus",
   "ExecStart",
-  "Restart",
-  "RestartUSec",
   "User",
   "Group",
   "WorkingDirectory",
   "MemoryAccounting",
   "CPUAccounting",
-  "TasksAccounting",
 }
 
 local function trim(s)
@@ -98,8 +88,6 @@ end
 
 local function detail_rows(row, info)
   local details = {}
-  append_detail(details, "Active state", row.active)
-  append_detail(details, "Sub state", row.sub)
   append_detail(details, "Unit file", info.unit_file_state)
   append_detail(details, "Fragment path", info.fragment_path)
   append_detail(details, "Drop-ins", info.drop_in_paths)
@@ -109,11 +97,8 @@ local function detail_rows(row, info)
   append_detail(details, "Group", info.group)
   append_detail(details, "Working directory", info.working_directory)
   append_detail(details, "Exec start", info.exec_start)
-  append_detail(details, "Restart policy", info.restart)
-  append_detail(details, "Restart delay", info.restart_usec)
   append_detail(details, "Memory accounting", info.memory_accounting)
   append_detail(details, "CPU accounting", info.cpu_accounting)
-  append_detail(details, "Tasks accounting", info.tasks_accounting)
   return details
 end
 
@@ -152,9 +137,7 @@ local function stats_from_unit_status(unit)
   if not ok or type(status) ~= "table" then return {} end
   return {
     memory_current = pick(status, { "memory_current", "MemoryCurrent" }),
-    tasks_current = pick(status, { "tasks_current", "TasksCurrent" }),
     cpu_usage_nsec = pick(status, { "cpu_usage_nsec", "CPUUsageNSec" }),
-    n_restarts = pick(status, { "n_restarts", "NRestarts" }),
     unit_file_state = pick(status, { "unit_file_state", "UnitFileState" }),
     fragment_path = pick(status, { "fragment_path", "FragmentPath" }),
     drop_in_paths = pick(status, { "drop_in_paths", "DropInPaths" }),
@@ -162,14 +145,11 @@ local function stats_from_unit_status(unit)
     exec_main_pid = pick(status, { "exec_main_pid", "ExecMainPID" }),
     exec_main_status = pick(status, { "exec_main_status", "ExecMainStatus" }),
     exec_start = pick(status, { "exec_start", "ExecStart" }),
-    restart = pick(status, { "restart", "Restart" }),
-    restart_usec = pick(status, { "restart_usec", "RestartUSec" }),
     user = pick(status, { "user", "User" }),
     group = pick(status, { "group", "Group" }),
     working_directory = pick(status, { "working_directory", "WorkingDirectory" }),
     memory_accounting = pick(status, { "memory_accounting", "MemoryAccounting" }),
     cpu_accounting = pick(status, { "cpu_accounting", "CPUAccounting" }),
-    tasks_accounting = pick(status, { "tasks_accounting", "TasksAccounting" }),
   }
 end
 
@@ -191,9 +171,7 @@ local function stats_from_systemctl_show(unit)
   end
   return {
     memory_current = out.MemoryCurrent,
-    tasks_current = out.TasksCurrent,
     cpu_usage_nsec = out.CPUUsageNSec,
-    n_restarts = out.NRestarts,
     unit_file_state = out.UnitFileState,
     fragment_path = out.FragmentPath,
     drop_in_paths = out.DropInPaths,
@@ -201,20 +179,17 @@ local function stats_from_systemctl_show(unit)
     exec_main_pid = out.ExecMainPID,
     exec_main_status = out.ExecMainStatus,
     exec_start = out.ExecStart,
-    restart = out.Restart,
-    restart_usec = out.RestartUSec,
     user = out.User,
     group = out.Group,
     working_directory = out.WorkingDirectory,
     memory_accounting = out.MemoryAccounting,
     cpu_accounting = out.CPUAccounting,
-    tasks_accounting = out.TasksAccounting,
   }
 end
 
 local function merged_stats(unit)
   local primary = stats_from_unit_status(unit)
-  if primary.memory_current and primary.tasks_current and primary.cpu_usage_nsec then
+  if primary.memory_current and primary.cpu_usage_nsec then
     return primary
   end
 
@@ -320,13 +295,9 @@ local function decorate(row)
   local is_service = M.valid_service_name(unit)
   if not is_service then
     row.memory = "—"
-    row.tasks = nil
-    row.tasks_label = "—"
     row.cpu_usage = nil
     row.cpu_label = "—"
     row.cpu_sort = nil
-    row.restarts = nil
-    row.restarts_label = "—"
     row.restart_allowed = false
     row.action_allowed = false
     row.has_details = false
@@ -336,17 +307,15 @@ local function decorate(row)
 
   local stats = merged_stats(unit)
   local memory = number_value(stats.memory_current)
-  local tasks = number_value(stats.tasks_current)
-  local restarts = number_value(stats.n_restarts)
   local cpu_usage = row.cpu_usage
   row.memory = M.fmt_bytes(memory)
   row.memory_sort = memory
-  row.tasks = tasks
-  row.tasks_label = tasks and tostring(math.floor(tasks)) or "—"
+  row.tasks = nil
+  row.tasks_label = nil
   row.cpu_label = M.fmt_cpu_usage(cpu_usage)
   row.cpu_sort = cpu_usage
-  row.restarts = restarts
-  row.restarts_label = restarts and tostring(math.floor(restarts)) or "—"
+  row.restarts = nil
+  row.restarts_label = nil
   row.restart_allowed = true
   row.action_allowed = true
   row.dom_id = dom_id(unit)

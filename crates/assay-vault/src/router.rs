@@ -1,17 +1,19 @@
 //! HTTP surface for the vault module — Phase 1 ships KV + transit.
 //!
 //! Plan 17 §S1 (KV v2) and §S2 (transit). Mounted by the engine under
-//! `/api/v1/vault/*`. Auth gating in Phase 1 is admin-key-only — every
-//! route requires `Authorization: Bearer <admin-key>`. Phase 3+ adds
-//! biscuit-share for delegated access and Phase 7 adds the BW-protocol
-//! shim's per-user session auth.
+//! `/api/v1/vault/*`. Auth is enforced by the engine at the router
+//! boundary (`vault_gate_middleware` in `assay-engine/src/server.rs`)
+//! via `assay_auth::gate::require_role_for("vault", "main", "access")`,
+//! which accepts the admin-key bearer (break-glass) and session +
+//! zanzibar callers. Embedders consuming `vault_router` directly MUST
+//! supply an equivalent gate — this router carries no per-handler
+//! auth of its own. Share-redeem (`GET /share/{token}`) verifies the
+//! biscuit token in the handler and is the only public path.
 
 use axum::Router;
 use axum::extract::FromRef;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-
-use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::VaultCtx;
 
@@ -32,15 +34,13 @@ mod sys;
 #[cfg(feature = "vault-transit")]
 mod transit;
 
-/// Compose the vault HTTP router. Generic over a parent state from which
-/// both [`VaultCtx`] and [`AdminApiKeys`] are extractable via `FromRef`.
-/// The engine binary's `EngineState<S>` satisfies both; tests can use a
-/// thin parent state — the auth crate's pattern.
+/// Compose the vault HTTP router. Generic over a parent state from
+/// which [`VaultCtx`] is extractable via `FromRef`. The engine binary's
+/// `EngineState<S>` satisfies this; tests can use a thin parent state.
 pub fn vault_router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let mut r = Router::new().merge(sys::router::<S>());
     // BW-compat shim mounts at /identity/* + /api/* (unprefixed); the
@@ -76,13 +76,6 @@ where
     }
     r
 }
-
-// (previously: pub fn check_admin — per-handler admin-bearer gate)
-// Removed in favour of router-level vault_gate_middleware in
-// `assay-engine/src/server.rs`, which dispatches through
-// `assay_auth::gate::require_role_for("vault", "main", "access")`.
-// That accepts admin_api_keys (break-glass) AND session+zanzibar,
-// matching the workflow router's gate model.
 
 /// Map a [`crate::error::VaultError`] to an HTTP response. Centralised
 /// so KV and transit handlers stay terse.

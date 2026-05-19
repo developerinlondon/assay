@@ -21,13 +21,11 @@
 
 use axum::Router;
 use axum::extract::{FromRef, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-use assay_auth::state::AdminApiKeys;
 
 use crate::ctx::{DynKvStore, VaultCtx};
 use crate::error::VaultError;
@@ -37,7 +35,6 @@ pub fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     Router::new()
         .route(
@@ -87,15 +84,12 @@ struct VersionQuery {
 
 async fn put_kv<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(path): Path<String>,
     axum::Json(body): axum::Json<PutBody>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let kv = match vault.kv.as_ref() {
         Some(k) => k,
@@ -113,15 +107,12 @@ where
 
 async fn get_kv<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(path): Path<String>,
     Query(q): Query<VersionQuery>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let kv = match vault.kv.as_ref() {
         Some(k) => k,
@@ -152,15 +143,12 @@ where
 
 async fn delete_kv<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(path): Path<String>,
     Query(q): Query<VersionQuery>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let kv = match vault.kv.as_ref() {
         Some(k) => k,
@@ -182,15 +170,12 @@ where
 
 async fn destroy_kv<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(path): Path<String>,
     Query(q): Query<VersionQuery>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let kv = match vault.kv.as_ref() {
         Some(k) => k,
@@ -212,15 +197,12 @@ where
 
 async fn undelete_kv<S>(
     State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
     Path(path): Path<String>,
     Query(q): Query<VersionQuery>,
 ) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let kv = match vault.kv.as_ref() {
         Some(k) => k,
@@ -240,29 +222,18 @@ where
     }
 }
 
-async fn list_kv<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(prefix): Path<String>,
-) -> Response
+async fn list_kv<S>(State(vault): State<VaultCtx>, Path(prefix): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     list_impl(&vault, &prefix).await
 }
 
-async fn list_kv_root<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-) -> Response
+async fn list_kv_root<S>(State(vault): State<VaultCtx>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     list_impl(&vault, "").await
 }
@@ -278,16 +249,10 @@ async fn list_impl(vault: &VaultCtx, prefix: &str) -> Response {
     }
 }
 
-async fn meta_kv<S>(
-    State(vault): State<VaultCtx>,
-    State(keys): State<AdminApiKeys>,
-    headers: HeaderMap,
-    Path(path): Path<String>,
-) -> Response
+async fn meta_kv<S>(State(vault): State<VaultCtx>, Path(path): Path<String>) -> Response
 where
     S: Clone + Send + Sync + 'static,
     VaultCtx: FromRef<S>,
-    AdminApiKeys: FromRef<S>,
 {
     let kv = match vault.kv.as_ref() {
         Some(k) => k,
