@@ -97,9 +97,16 @@ local function register_routes(routes, url)
   -- /whoami intercept (specific path; beats /api/v1/engine/* wildcard).
   routes.GET[url("/api/v1/engine/auth/whoami")] = gateway.whoami
 
-  -- API proxy on every verb.
+  -- API proxy on every verb. Two separate roots:
+  --   /api/v1/engine/*  — workflow, engine-core, auth-admin (used by
+  --                       the workflow/engine/auth SPAs).
+  --   /api/v1/vault/*   — vault module's own surface (sys/seal-status,
+  --                       kv/*, transit/*, leases/*, share/*, me/*,
+  --                       collections/*). The vault SPA's VAULT_BASE
+  --                       is '/api/v1/vault', NOT '/api/v1/engine/vault'.
   for _, method in ipairs({ "GET", "POST", "PUT", "PATCH", "DELETE" }) do
     routes[method][url("/api/v1/engine/*")] = gateway.proxy
+    routes[method][url("/api/v1/vault/*")]  = gateway.proxy
   end
 
   -- Dashboard SPA + cross-console assets. The engine's HTML pulls in
