@@ -2,7 +2,6 @@ local render = require("pages.render")
 local ctx    = require("sysops.ctx")
 local form   = require("pages.form")
 local auth   = require("sysops.auth")
-local authz  = require("sysops.authz")
 
 local M = {}
 
@@ -16,10 +15,12 @@ local function urlenc(s)
   end)
 end
 
--- Canonical admin tuples come from sysops.authz so this manual
--- bootstrap path and the first-OIDC-user path (pages/auth/bootstrap.lua)
--- always grant the same five resources.
-local BOOTSTRAP_TUPLES = authz.CANONICAL_TUPLES
+local BOOTSTRAP_TUPLES = {
+  { object_type = "auth",     object_id = "system", relation = "admin"  },
+  { object_type = "engine",   object_id = "core",   relation = "admin"  },
+  { object_type = "workflow", object_id = "main",   relation = "access" },
+  { object_type = "vault",    object_id = "main",   relation = "access" },
+}
 
 local function tuple_label(t)
   return t.object_type .. ":" .. t.object_id .. "#" .. t.relation
@@ -62,7 +63,6 @@ function M.grant(req)
     }
   end
   local sdk     = auth.new(ctx.engine).zanzibar
-  authz.ensure_required_namespaces(sdk)
   local written = 0
   local failed  = 0
   for _, t in ipairs(BOOTSTRAP_TUPLES) do

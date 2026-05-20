@@ -7,7 +7,7 @@
 --!
 --!   routes.GET["/auth/users"] = require_session.wrap(users_pg.page)
 --!
---! If the request carries a valid session cookie (app_session
+--! If the request carries a valid session cookie (sysops_session
 --! HMAC-validated by ctx.session_signer), the inner handler runs and
 --! receives req.session_claims = { sub, email, ... }. Otherwise:
 --!
@@ -25,6 +25,8 @@ local render  = require("pages.render")
 
 local M = {}
 
+local html_escape = render.html_escape
+
 -- Prefix-safe URL builder. ctx.url is populated by mount.lua and
 -- prepends the configured mount prefix (e.g. /host) to every absolute
 -- path. Fall back to identity when no prefix is set (legacy / tests).
@@ -32,8 +34,6 @@ local function u(path)
   if ctx.url then return ctx.url(path) end
   return path
 end
-
-local html_escape = render.html_escape
 
 local function render_forbidden(claims, reason)
   return {

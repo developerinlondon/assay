@@ -2,7 +2,7 @@
 --
 -- Thin product-side wrapper around assay.nspawn.provision.
 --
--- Responsibilities (sysops-specific, not framework):
+-- Responsibilities (knowhere-specific, not framework):
 --   - Load a machine_templates/<id>.toml profile via the existing pkg.templates loader
 --   - Validate caller-supplied machine name
 --   - Emit audit events
@@ -27,7 +27,7 @@ local M = {}
 -- map by id. Mirrors the layered-loader pattern used by services.host.packages
 -- for the package catalog.
 local BUILTIN_TEMPLATES_DIR  = "machine_templates"
-local OPERATOR_TEMPLATES_DIR = "/etc/sysops/machine_templates.d"
+local OPERATOR_TEMPLATES_DIR = "/etc/knowhere/machine_templates.d"
 
 local function load_templates()
   local catalog = pkgs.catalog()

@@ -25,8 +25,8 @@ end
 local TYPE_WHITELIST = { all = true, service = true, timer = true, socket = true }
 
 -- The --machine transport requires host-root. priv.elevated_prefix is
--- "" when sysops runs as root and "sudo -n " otherwise (see
--- services/host/privilege.lua and deploy/sysops-machinectl.sudoers.example).
+-- "" when knowhere runs as root and "sudo -n " otherwise (see
+-- services/host/privilege.lua and deploy/knowhere-machinectl.sudoers.example).
 local function fetch_units(name, type_filter)
   if not valid_machine_name(name) then return {}, "invalid machine name" end
   if not TYPE_WHITELIST[type_filter] then return {}, "invalid type filter" end

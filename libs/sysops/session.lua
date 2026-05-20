@@ -6,7 +6,7 @@
 --!
 --! HS256-style. We don't use crypto.jwt_sign because that only supports
 --! RS256/384/512 (RSA PEM). HMAC-on-bytes via crypto.hmac is sufficient
---! and matches every OIDC BFF pattern (xandar-ui does the same).
+--! and matches the standard OIDC BFF (backend-for-frontend) pattern.
 --!
 --! Usage:
 --!   local session = require("sysops.session")

@@ -25,7 +25,7 @@ local function full_opts(overrides)
   base.session = overrides.session or {
     signing_key = "0123456789abcdef0123456789abcdef",
     ttl_seconds = 86400,
-    cookie_name = "app_session",
+    cookie_name = "sysops_session",
   }
   base.gateway = overrides.gateway or {
     engine_upstream = "http://127.0.0.1:8080",
@@ -92,7 +92,7 @@ do
   assert.not_nil(ctx.session_store,        "session_store built")
   assert.eq(ctx.engine_upstream_url, "http://127.0.0.1:8080", "engine_upstream_url set")
   assert.eq(ctx.gateway_admin_bearer, "TEST-ADMIN-BEARER", "admin_bearer set")
-  assert.eq(ctx.session_signer.cookie_name, "app_session", "cookie_name propagated")
+  assert.eq(ctx.session_signer.cookie_name, "sysops_session", "cookie_name propagated")
 
   reset_ctx()
   print("  ok opts.oidc opt-in wires every gateway route + ctx field")

@@ -2,7 +2,7 @@ const evt = new EventSource("/api/events");
 evt.addEventListener("refresh", () => {
   document.body.dispatchEvent(new CustomEvent("dashboard-refresh"));
 });
-evt.onerror = () => console.warn("sysops SSE: stream error, browser will auto-reconnect");
+evt.onerror = () => console.warn("knowhere SSE: stream error, browser will auto-reconnect");
 
 // v0.2.0-beta.1 — collapsible sidebar state persistence (plan 09 task 15)
 (function () {

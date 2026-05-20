@@ -1,20 +1,20 @@
 -- services/host/backup_schedule.lua
 --
--- Manage the systemd timer that runs `sysops backup-run host` daily.
--- Reads/writes /etc/systemd/system/sysops-backup-host.{service,timer}
+-- Manage the systemd timer that runs `knowhere backup-run host` daily.
+-- Reads/writes /etc/systemd/system/knowhere-backup-host.{service,timer}
 -- via shell.exec (sudo when not root). Idempotent.
 
 local M = {}
 
-local SERVICE_PATH = "/etc/systemd/system/sysops-backup-host.service"
-local TIMER_PATH   = "/etc/systemd/system/sysops-backup-host.timer"
-local TIMER_UNIT   = "sysops-backup-host.timer"
-local SERVICE_UNIT = "sysops-backup-host.service"
+local SERVICE_PATH = "/etc/systemd/system/knowhere-backup-host.service"
+local TIMER_PATH   = "/etc/systemd/system/knowhere-backup-host.timer"
+local TIMER_UNIT   = "knowhere-backup-host.timer"
+local SERVICE_UNIT = "knowhere-backup-host.service"
 
 local function service_body(binary_path, profile)
   return string.format([[
 [Unit]
-Description=sysops daily backup (profile %s)
+Description=knowhere daily backup (profile %s)
 After=network-online.target
 Wants=network-online.target
 
@@ -33,7 +33,7 @@ local function timer_body(hour, jitter_s, persistent)
   local minute = "00"
   return string.format([[
 [Unit]
-Description=sysops daily backup timer (profile host)
+Description=knowhere daily backup timer (profile host)
 
 [Timer]
 OnCalendar=*-*-* %02d:%s:00
@@ -52,7 +52,7 @@ local function detect_binary()
     local p = (r.stdout):gsub("[\r\n]+$", "")
     if p ~= "" then return p end
   end
-  return "/usr/local/bin/sysops"
+  return "/usr/local/bin/knowhere"
 end
 
 local function write_unit_file(path, body)

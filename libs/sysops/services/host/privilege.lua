@@ -1,10 +1,10 @@
--- Detect whether sysops is running as root, and expose a command
+-- Detect whether knowhere is running as root, and expose a command
 -- prefix for shell-outs that need host-root (e.g. `systemctl --machine`).
 --
 -- Two supported deploys:
 --   - root:           prefix = ""           (direct call)
 --   - low-priv user:  prefix = "sudo -n "   (NOPASSWD allowlist required;
---                                            see deploy/sysops-machinectl.sudoers.example)
+--                                            see deploy/knowhere-machinectl.sudoers.example)
 --
 -- Detection runs once at module load via /proc/self/status.
 

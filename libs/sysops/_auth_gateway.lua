@@ -128,7 +128,7 @@ end
 --- Routes that must stay unwrapped even after the gateway opt-in.
 --- Delegates to authz.rule_for_path so the bypass set has a single
 --- source of truth in authz.PATH_RULES (static assets, healthchecks,
---- /shared/*, per-SPA stylesheets, etc.) — adding a new bypass there
+--- per-SPA stylesheets, etc.) — adding a new bypass there
 --- automatically prevents require_session from wrapping it.
 local function is_public_path(path)
   if type(path) ~= "string" then return false end

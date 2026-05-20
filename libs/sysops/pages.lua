@@ -3,7 +3,7 @@
 --! Returns a flat slug → handler table that mount.lua maps to URL
 --! patterns. Each handler is a function `(req) → { status, body, ... }`.
 --!
---! The predecessor monolith used this layer to also
+--! The predecessor monolith (knowhere0426) used this layer to also
 --! collect routes for auth/vault/workflow/engine/zanzibar consoles.
 --! Those have moved out of sysops; only host-ops surfaces remain.
 

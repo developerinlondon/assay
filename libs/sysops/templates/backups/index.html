@@ -57,7 +57,7 @@
                  placeholder="https://b2v9.va.idrivee2-21.com" required>
           <label class="k" for="bucket">bucket</label>
           <input class="v" type="text" id="bucket" name="bucket"
-                 placeholder="sysops-backups" required>
+                 placeholder="knowhere-backups" required>
           <label class="k" for="prefix">path prefix</label>
           <input class="v" type="text" id="prefix" name="prefix" placeholder="host-01">
           <label class="k" for="region">region</label>
@@ -250,7 +250,7 @@
   <div class="section-head" style="padding:12px 16px 0"><h2>Schedule</h2></div>
   <div class="card-body">
     <div class="kvgrid">
-      <span class="k">unit</span><span class="v">sysops-backup-host.timer</span>
+      <span class="k">unit</span><span class="v">knowhere-backup-host.timer</span>
       <span class="k">cadence</span><span class="v">daily at {{ schedule_hour | default("02") }}:00 (±30m)</span>
       {% if last_run %}
       <span class="k">last fire</span><span class="v">{{ last_run.duration_s | default("?") }}s, exit {{ last_run.exit | default("?") }}</span>

@@ -5,26 +5,23 @@
 // the unattended CI job stays green.
 //
 // To run locally:
-//   - the live sysops-mounting service running on $SYSOPS_E2E_BASE (default 127.0.0.1:18790)
+//   - a sysops-wired consumer app running on $SYSOPS_E2E_BASE (default 127.0.0.1:18790)
 //   - SYSOPS_E2E_COOKIE = a valid sysops_session cookie value
 //   - bunx playwright test auth_gateway.spec.ts
 
 import { expect, test } from '@playwright/test';
 
-const BASE        = process.env.SYSOPS_E2E_BASE        || 'http://127.0.0.1:18790';
-const COOKIE      = process.env.SYSOPS_E2E_COOKIE      || '';
-// Deployments customize cookie_name via opts.session.cookie_name; the
-// library default is sysops_session, but consumers can pick anything.
-const COOKIE_NAME = process.env.SYSOPS_E2E_COOKIE_NAME || 'sysops_session';
+const BASE   = process.env.SYSOPS_E2E_BASE   || 'http://127.0.0.1:18790';
+const COOKIE = process.env.SYSOPS_E2E_COOKIE || '';
 
 test.skip(!COOKIE,
-  'auth-gateway live e2e — set SYSOPS_E2E_COOKIE to run against a deployed app');
+  'auth-gateway live e2e — set SYSOPS_E2E_COOKIE to run against a deployed consumer app');
 
 test.use({ baseURL: BASE });
 
 test.beforeEach(async ({ context }) => {
   await context.addCookies([{
-    name:     COOKIE_NAME,
+    name:     'sysops_session',
     value:    COOKIE,
     url:      BASE,
     httpOnly: true,
@@ -70,7 +67,7 @@ test('workflow SPA loads and version API returns 200 via proxy', async ({ page, 
   // workflow SPA has no token banner (it's silent — sends bearer if
   // available, falls back to cookies).
   const versionResp = await request.get(`${BASE}/api/v1/engine/workflow/version`, {
-    headers: { Cookie: `${COOKIE_NAME}=${COOKIE}` },
+    headers: { Cookie: `sysops_session=${COOKIE}` },
   });
   expect(versionResp.status()).toBe(200);
   const body = await versionResp.json();
@@ -79,7 +76,7 @@ test('workflow SPA loads and version API returns 200 via proxy', async ({ page, 
 
 test('/whoami intercept returns the session identity', async ({ request }) => {
   const r = await request.get(`${BASE}/api/v1/engine/auth/whoami`, {
-    headers: { Cookie: `${COOKIE_NAME}=${COOKIE}` },
+    headers: { Cookie: `sysops_session=${COOKIE}` },
   });
   expect(r.status()).toBe(200);
   const body = await r.json();
@@ -92,7 +89,7 @@ test('engine-admin API call is proxied with admin-bearer injection', async ({ re
   // engine side. With the session cookie we should reach it via the
   // proxy and get the engine version metadata.
   const r = await request.get(`${BASE}/api/v1/engine/core/info`, {
-    headers: { Cookie: `${COOKIE_NAME}=${COOKIE}` },
+    headers: { Cookie: `sysops_session=${COOKIE}` },
   });
   expect(r.status()).toBe(200);
   const body = await r.json();
@@ -112,5 +109,5 @@ test('unauthenticated visit to / 302s to /auth/login', async ({ page, context })
   // We allow either /auth/login or the IdP host (if the IdP doesn't have
   // a session of its own and we get redirected further).
   const url = response?.url() || page.url();
-  expect(url).toMatch(/\/auth\/(login|authorize|callback)|engine\.example/);
+  expect(url).toMatch(/\/auth\/(login|authorize|callback)/);
 });

@@ -4,9 +4,8 @@
 --!   LUA_PATH='libs/?.lua;libs/?/init.lua;libs/sysops/?.lua;libs/sysops/tests-lua/?.lua;;' \
 --!     assay libs/sysops/tests-lua/auth/bootstrap.test.lua
 
-local ctx                = require("sysops.ctx")
-local bootstrap          = require("pages.auth.bootstrap")
-local zanzibar_bootstrap = require("pages.zanzibar.bootstrap")
+local ctx       = require("sysops.ctx")
+local bootstrap = require("pages.auth.bootstrap")
 
 print("[sysops.auth.bootstrap]")
 
@@ -34,7 +33,6 @@ local function stub_engine(scripted)
 end
 
 local TUPLES_PATH = "/api/v1/engine/auth/admin/zanzibar/tuples"
-local NAMESPACES_PATH = "/api/v1/engine/auth/admin/zanzibar/namespaces"
 
 local function teardown()
   ctx.engine = nil
@@ -170,39 +168,6 @@ do
   assert.eq(audited.data.sub, "alice@example", "sub in audit data")
   teardown()
   print("  ok audit log written on grant")
-end
-
--- ---------------------------------------------------------------------
--- 7. Manual /zanzibar/bootstrap defines sysops-owned namespaces before
---    writing the canonical tuples.
--- ---------------------------------------------------------------------
-
-do
-  ctx.engine = stub_engine({
-    ["GET /api/v1/engine/auth/admin/users"] = function()
-      return { status = 200, body = json.encode({ items = {
-        { id = "alice@example", email = "alice@example" },
-      } }) }
-    end,
-    ["POST " .. NAMESPACES_PATH] = function() return { status = 200, body = "{}" } end,
-    ["POST " .. TUPLES_PATH] = function() return { status = 200, body = "{}" } end,
-  })
-  local r = zanzibar_bootstrap.grant({ body = "user_id=alice%40example" })
-  assert.eq(r.status, 303, "manual bootstrap redirects after grant")
-  local seen_namespace = false
-  local tuple_posts = 0
-  for _, c in ipairs(ctx.engine.calls) do
-    if c.method == "POST" and c.path == NAMESPACES_PATH and c.body.name == "host" then
-      seen_namespace = true
-    end
-    if c.method == "POST" and c.path == TUPLES_PATH then
-      tuple_posts = tuple_posts + 1
-    end
-  end
-  assert.eq(seen_namespace, true, "manual bootstrap defines host namespace")
-  assert.eq(tuple_posts, 5, "manual bootstrap writes all canonical tuples")
-  teardown()
-  print("  ok manual bootstrap defines required namespaces before tuple grant")
 end
 
 print("[sysops.auth.bootstrap] ok")

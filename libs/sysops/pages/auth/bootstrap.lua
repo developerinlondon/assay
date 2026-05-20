@@ -18,16 +18,25 @@
 --!   - at least one tuple already exists in (object=engine:core,
 --!     relation=admin) — admins are already configured.
 
-local ctx   = require("sysops.ctx")
-local auth  = require("sysops.auth")
-local authz = require("sysops.authz")
+local ctx  = require("sysops.ctx")
+local auth = require("sysops.auth")
 
 local M = {}
 
--- First OIDC user gets the full canonical set of admin tuples so they
--- have end-to-end access on a fresh install. The list lives in
--- sysops.authz so this path and /zanzibar/bootstrap can't drift.
-local FIRST_ADMIN_TUPLES = authz.CANONICAL_TUPLES
+-- The full set of canonical tuples the first user gets. Convention
+-- picked up from libs/sysops/pages/zanzibar/bootstrap.lua's seed list
+-- (the non-OIDC bootstrap page that PR #150 added). All four resources
+-- — auth, engine, workflow, vault — granted at once so the first OIDC
+-- user has end-to-end access on a fresh install. Subsequent users get
+-- nothing until an admin grants them specific tuples via the
+-- /zanzibar UI.
+local FIRST_ADMIN_TUPLES = {
+  { object_type = "host",     object_id = "local",  relation = "admin"  },
+  { object_type = "auth",     object_id = "system", relation = "admin"  },
+  { object_type = "engine",   object_id = "core",   relation = "admin"  },
+  { object_type = "workflow", object_id = "main",   relation = "access" },
+  { object_type = "vault",    object_id = "main",   relation = "access" },
+}
 
 -- The "any admin already exists?" probe checks the engine:core#admin
 -- tuple — that's the canonical "is this a fresh install" marker.
@@ -70,6 +79,32 @@ local function admins_exist(zanzibar)
   return true
 end
 
+-- Namespaces the gateway depends on. Some are auto-seeded by the
+-- engine modules (auth, engine, workflow, vault) but `host` is
+-- sysops-defined for the host-ops surface (audit/machines/services/…).
+-- ensure_namespaces() runs once before granting tuples so the engine's
+-- check() resolves them. Idempotent: existing definitions are no-ops.
+local REQUIRED_NAMESPACES = {
+  {
+    name = "host",
+    definitions = {
+      admin = {
+        name = "admin",
+        kind = { kind = "direct", value = {
+          { object_type = "user", relation = nil, wildcard = false },
+        } },
+      },
+    },
+  },
+}
+
+local function ensure_namespaces(zanzibar)
+  for _, schema in ipairs(REQUIRED_NAMESPACES) do
+    -- define_namespace returns existing-namespace 4xx; treat as no-op.
+    zanzibar.define_namespace(schema)
+  end
+end
+
 --- Grant claims.sub the full set of first-admin tuples (host, auth,
 --- engine, workflow, vault). Best-effort: writes all five; returns
 --- the first error if any. Idempotent — Zanzibar write is upsert-style.
@@ -78,7 +113,7 @@ end
 --- object_type, object_id) — the same shape libs/sysops/pages/zanzibar/
 --- bootstrap.lua uses successfully. NOT the combined "user:sub" form.
 local function grant_admin(zanzibar, sub)
-  authz.ensure_required_namespaces(zanzibar)
+  ensure_namespaces(zanzibar)
   local first_err
   for _, t in ipairs(FIRST_ADMIN_TUPLES) do
     local _, err = zanzibar.write_tuple({

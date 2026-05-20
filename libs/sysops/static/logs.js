@@ -10,7 +10,7 @@
   function buildUrl() {
     var params = [];
     var machineEl = document.getElementById("log-machine");
-    var machine = machineEl ? machineEl.value : (window.SYSOPS_LOG_MACHINE || "");
+    var machine = machineEl ? machineEl.value : (window.KNOWHERE_LOG_MACHINE || "");
     var unitEl  = document.getElementById("log-unit");
     var unit    = unitEl ? unitEl.value.trim() : "";
     if (machine)  params.push("machine=" + encodeURIComponent(machine));
@@ -123,7 +123,7 @@
     connect();
   }
 
-  function sysopsLogsInit() {
+  function knowhereLogsInit() {
     var pauseBtn = document.getElementById("log-pause");
     var clearBtn = document.getElementById("log-clear");
 
@@ -183,5 +183,5 @@
     connect();
   }
 
-  window.sysopsLogsInit = sysopsLogsInit;
+  window.knowhereLogsInit = knowhereLogsInit;
 })();

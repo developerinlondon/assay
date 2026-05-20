@@ -79,7 +79,7 @@ end
 -- Apply layout-wide defaults to `ctx` based on `req`. Sets every key the
 -- layout template needs (brand, title, nav_active, version, host,
 -- machines, actor, plugins_sidebar, active_modules) without overwriting
--- caller-supplied values. Called by `M.render` for sysops's bundled
+-- caller-supplied values. Called by `M.render` for knowhere's bundled
 -- templates and by `pages/plugins/dispatch.lua` for plugin templates so
 -- both paths produce identical layout context. Mutates and returns ctx.
 function M.layout_defaults(ctx, req, fallback_nav_active)
@@ -133,10 +133,10 @@ function M.layout_defaults(ctx, req, fallback_nav_active)
   return ctx
 end
 
--- Render `content_html` (already a string) inside sysops's layout.html
+-- Render `content_html` (already a string) inside knowhere's layout.html
 -- with full layout context. Used by callers that have to render their
 -- content template themselves (e.g. plugin pages whose templates live
--- outside sysops's bundled templates/ dir).
+-- outside knowhere's bundled templates/ dir).
 function M.wrap_layout(content_html, ctx, req)
   ctx = M.layout_defaults(ctx, req)
   local root = hctx.lib_root or "."

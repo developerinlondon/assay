@@ -4,7 +4,7 @@ A host-visibility dashboard packaged as an `assay` library. Mount it on a consum
 table to expose pages for nspawn containers, systemd services, cron timers, journal logs, network
 interfaces, tunnels, tailscale, and audit-log viewing — all from a single Lua require.
 
-This library replaces the standalone predecessor host monolith. See plan 21 in
+This library replaces the standalone `knowhere0426` host monolith. See plan 21 in
 `assay/.claude/plans/21-libs-folder-and-install.md` for the full design.
 
 ## Quick start
@@ -59,9 +59,9 @@ consumer apps can swap implementations without re-loading the library.
 local vault = require("sysops.vault")
 
 local secret = vault.secret_store({
-  app = "sysops",
-  admin_key_envs = { "SYSOPS_ADMIN_API_KEYS" },
-  kv_prefix = "sysops",
+  app = "knowhere",
+  admin_key_envs = { "KNOWHERE_ADMIN_API_KEYS" },
+  kv_prefix = "knowhere",
 })
 ```
 
@@ -108,7 +108,7 @@ consumers see no change.
 sysops.mount(routes, {
   -- … all existing opts …
   active_modules    = { "auth", "vault" },     -- enable both, or pick one
-  engine_admin_key  = env.get("SYSOPS_ADMIN_API_KEYS"),
+  engine_admin_key  = env.get("KNOWHERE_ADMIN_API_KEYS"),
 })
 ```
 

@@ -72,7 +72,7 @@ local function setup(opts)
   ctx.session_signer = session.new({
     signing_key = KEY,
     ttl_seconds = 3600,
-    cookie_name = "app_session",
+    cookie_name = "sysops_session",
   })
   ctx.session_store        = session.store_new()
   ctx.engine_upstream_url      = opts.engine_base_url or "http://127.0.0.1:8080"
@@ -106,7 +106,7 @@ do
   local r = gateway.proxy({
     method = "GET",
     path   = "/api/v1/engine/workflow/runs",
-    headers = { cookie = "app_session=" .. cookie },
+    headers = { cookie = "sysops_session=" .. cookie },
   })
 
   assert.eq(r.status, 200, "forwarded successfully")
@@ -176,7 +176,7 @@ do
     path      = "/api/v1/engine/auth/admin/users",
     raw_query = "limit=10",
     body      = '{"email":"bob@example"}',
-    headers   = { cookie = "app_session=" .. cookie },
+    headers   = { cookie = "sysops_session=" .. cookie },
   })
   assert.eq(r.status, 201, "passes through 201")
   assert.eq(calls[1].method, "post", "post dispatched")
@@ -216,7 +216,7 @@ do
   local r = gateway.proxy({
     method = "GET",
     path   = "/api/v1/engine/auth/admin/users",
-    headers = { cookie = "app_session=" .. cookie },
+    headers = { cookie = "sysops_session=" .. cookie },
   })
   assert.eq(r.status, 403, "no auth:system#admin tuple → 403")
   assert.not_nil(r.body:find("forbidden", 1, true), "body says forbidden")
@@ -243,7 +243,7 @@ do
     method = "GET",
     path   = "/api/v1/engine/workflow/runs",
     headers = {
-      cookie     = "app_session=" .. cookie,
+      cookie     = "sysops_session=" .. cookie,
       Connection = "keep-alive",
     },
   })
@@ -268,7 +268,7 @@ do
     method   = "GET",
     path     = "/api/v1/engine/workflow/runs",
     headers  = {
-      cookie        = "app_session=" .. cookie,
+      cookie        = "sysops_session=" .. cookie,
       authorization = "Bearer STALE-LOCALSTORAGE-TOKEN",
     },
   })

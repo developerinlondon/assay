@@ -28,8 +28,8 @@ local function valid_machine_name(s)
 end
 
 -- The --machine transport requires host-root. priv.elevated_prefix is
--- "" when sysops runs as root and "sudo -n " otherwise (see
--- services/host/privilege.lua and deploy/sysops-machinectl.sudoers.example).
+-- "" when knowhere runs as root and "sudo -n " otherwise (see
+-- services/host/privilege.lua and deploy/knowhere-machinectl.sudoers.example).
 local function fetch_timers(name)
   if not valid_machine_name(name) then return {}, "invalid machine name" end
   local cmd = priv.elevated_prefix .. "systemctl --machine=" .. name
