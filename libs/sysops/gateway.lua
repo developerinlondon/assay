@@ -131,6 +131,39 @@ local function forward(method, url_str, body, headers)
   }
 end
 
+-- SSE detection. The dashboard SPAs open one EventSource at boot:
+-- /api/v1/engine/workflow/events/stream. We pattern-match the suffix
+-- so any future /events/stream endpoint also streams transparently.
+-- Anything else falls through to the buffered forward.
+local function is_sse_path(path)
+  if type(path) ~= "string" then return false end
+  return path:find("/events/stream", 1, true) ~= nil
+end
+
+--- Build the SSE-response shape http.serve understands: a table with an
+--- `sse` function that drives `send(evt)` until upstream closes. We
+--- open the upstream stream via http.get + on_event callback, which
+--- the host's http builtin special-cases when the upstream
+--- Content-Type is text/event-stream.
+local function forward_sse(upstream_url, headers)
+  return {
+    status  = 200,
+    headers = {
+      ["Content-Type"]  = "text/event-stream",
+      ["Cache-Control"] = "no-cache",
+      ["Connection"]    = "keep-alive",
+    },
+    sse = function(send)
+      http.get(upstream_url, {
+        headers  = headers,
+        on_event = function(evt)
+          send(evt)
+        end,
+      })
+    end,
+  }
+end
+
 --- ANY /api/v1/engine/* (and /workflow, /vault, /engine/console, /shared)
 ---
 --- Resolution priority (deliberate — see commit history for the
@@ -177,6 +210,9 @@ function M.proxy(req)
     fwd.authorization        = "Bearer " .. ctx.gateway_admin_bearer
     fwd["X-Forwarded-User"]  = claims.sub
     fwd["X-User-Id"]         = claims.sub
+    if is_sse_path(req.path) then
+      return forward_sse(upstream, fwd)
+    end
     return forward(req.method or "GET", upstream, req.body, fwd)
   end
 
@@ -184,6 +220,9 @@ function M.proxy(req)
   local incoming_auth = headers.authorization or headers.Authorization
   if type(incoming_auth) == "string" and incoming_auth:match("^[Bb]earer ") then
     fwd.authorization = incoming_auth
+    if is_sse_path(req.path) then
+      return forward_sse(upstream, fwd)
+    end
     return forward(req.method or "GET", upstream, req.body, fwd)
   end
 
