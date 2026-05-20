@@ -64,4 +64,119 @@ function M.whoami(req)
   }
 end
 
+----------------------------------------------------------------------
+-- Dual-mode reverse proxy
+--
+-- Two paths depending on the caller's credentials:
+--
+--   1. Authorization: Bearer <…> incoming → forward as-is.
+--      Engine validates (admin bearer or trusted-issuer JWT). Preserves
+--      ssh+curl, CI scripts, the dashboard SPA's paste-a-token banner
+--      mode, and customer-IdP-JWT direct calls.
+--
+--   2. Valid session cookie, no Authorization → inject the gateway's
+--      configured admin bearer + X-User-Id. Optional Zanzibar role
+--      check (off by default in v1).
+--
+--   3. Otherwise → 401.
+----------------------------------------------------------------------
+
+-- RFC 7230 hop-by-hop headers + auth-sensitive ones we must NOT forward.
+local STRIP_HEADERS = {
+  ["connection"]          = true,
+  ["keep-alive"]          = true,
+  ["proxy-authenticate"]  = true,
+  ["proxy-authorization"] = true,
+  ["te"]                  = true,
+  ["trailer"]             = true,
+  ["transfer-encoding"]   = true,
+  ["upgrade"]             = true,
+  ["host"]                = true, -- http client sets this
+  ["cookie"]              = true, -- never leak sysops session to engine
+}
+
+local function clean_headers(headers)
+  local out = {}
+  for k, v in pairs(headers or {}) do
+    if not STRIP_HEADERS[tostring(k):lower()] then
+      out[k] = v
+    end
+  end
+  return out
+end
+
+local function build_upstream_url(base, path, raw_query)
+  base = (base or ""):gsub("/$", "")
+  path = path or "/"
+  if path:sub(1, 1) ~= "/" then path = "/" .. path end
+  local u = base .. path
+  if raw_query and raw_query ~= "" then u = u .. "?" .. raw_query end
+  return u
+end
+
+local function dispatch(method, url_str, body, headers)
+  method = (method or "GET"):lower()
+  if method == "get" or method == "delete" then
+    return http[method](url_str, { headers = headers })
+  end
+  return http[method](url_str, body, { headers = headers })
+end
+
+local function forward(method, url_str, body, headers)
+  local resp = dispatch(method, url_str, body, headers) or {}
+  return {
+    status  = resp.status or 502,
+    headers = clean_headers(resp.headers or {}),
+    body    = resp.body or "",
+  }
+end
+
+--- ANY /api/v1/engine/* (and /workflow, /vault, /engine/console, /shared)
+function M.proxy(req)
+  if not ctx.session_signer then
+    return { status = 503, body = '{"error":"auth gateway not configured"}' }
+  end
+  if not ctx.engine_base_url or not ctx.gateway_admin_bearer then
+    return { status = 503, body = '{"error":"gateway not configured"}' }
+  end
+
+  req = req or {}
+  local headers = req.headers or {}
+  local incoming_auth = headers.authorization or headers.Authorization
+  local upstream = build_upstream_url(ctx.engine_base_url, req.path, req.raw_query)
+  local fwd = clean_headers(headers)
+
+  if type(incoming_auth) == "string" and incoming_auth:match("^[Bb]earer ") then
+    -- Pass-through: caller has a bearer; trust them, let engine decide.
+    -- Preserve their Authorization header (clean_headers kept it).
+    fwd.authorization = incoming_auth
+    return forward(req.method or "GET", upstream, req.body, fwd)
+  end
+
+  -- Session-injection path.
+  local cookie_header = headers.cookie or headers.Cookie or ""
+  local cookie_val = session.parse_cookie_header(cookie_header, ctx.session_signer.cookie_name)
+  if not cookie_val then
+    return { status = 401, body = '{"error":"unauthenticated"}' }
+  end
+  local claims, verr = ctx.session_signer:verify(cookie_val)
+  if not claims then
+    return { status = 401, body = '{"error":"' .. tostring(verr or "unauthenticated") .. '"}' }
+  end
+
+  if ctx.authz_require_admin then
+    if type(ctx.zanzibar_check) ~= "function" then
+      return { status = 503, body = '{"error":"authz_require_admin set but no zanzibar_check"}' }
+    end
+    if not ctx.zanzibar_check(claims.sub) then
+      return { status = 403, body = '{"error":"forbidden"}' }
+    end
+  end
+
+  fwd.authorization        = "Bearer " .. ctx.gateway_admin_bearer
+  fwd["X-Forwarded-User"]  = claims.sub
+  fwd["X-User-Id"]         = claims.sub
+  return forward(req.method or "GET", upstream, req.body, fwd)
+end
+
 return M

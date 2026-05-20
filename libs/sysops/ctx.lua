@@ -59,9 +59,12 @@ return {
   engine_admin_key    = nil,
   -- Auth-gateway 0.2.0 (set by mount.lua when opts.oidc is provided).
   -- nil otherwise → backward-compat path skips auth routes.
-  oidc_client         = nil, -- sysops.oidc.new(opts.oidc)
-  session_signer      = nil, -- sysops.session.new(opts.session)
-  session_store       = nil, -- sysops.session.store_new()
+  oidc_client          = nil, -- sysops.oidc.new(opts.oidc)
+  session_signer       = nil, -- sysops.session.new(opts.session)
+  session_store        = nil, -- sysops.session.store_new()
   gateway_admin_bearer = nil, -- engine admin bearer the gateway injects
-  authz_require_admin = true, -- gate proxy on zanzibar admin tuple
+  authz_require_admin  = false, -- v1: cookie alone is enough; flip to true once
+                                -- a zanzibar_check is wired so /api/v1/engine/*
+                                -- requires user:<sub> to hold an admin tuple.
+  zanzibar_check       = nil, -- function(sub) -> bool (truthy = admin)
 }
