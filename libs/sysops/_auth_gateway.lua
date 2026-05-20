@@ -107,14 +107,47 @@ local function register_routes(routes, url)
   routes.GET[url("/shared/*")]            = gateway.proxy
 end
 
+--- Routes that must stay unwrapped even after the gateway opt-in:
+--- public assets and healthchecks. Everything else gets gated.
+local function is_public_path(path)
+  if path:match("^/static/") then return true end
+  if path:match("^/brand/") then return true end
+  if path == "/healthz" then return true end
+  if path == "/favicon.ico" then return true end
+  return false
+end
+
+--- Wrap every route already registered (sysops dashboard, machines,
+--- services, /auth/users, /vault/kv, /zanzibar/*, etc.) with
+--- require_session so the browser must sign in before reaching any of
+--- it. Called BEFORE register_routes adds the gateway's own routes —
+--- so /auth/login, /auth/callback, /whoami, the proxy paths etc.
+--- stay unwrapped.
+local function wrap_existing_routes(routes)
+  local require_session = require("sysops.middleware.require_session")
+  for _, method in ipairs({ "GET", "POST", "PUT", "PATCH", "DELETE" }) do
+    local tbl = routes[method]
+    if type(tbl) == "table" then
+      for path, handler in pairs(tbl) do
+        if not is_public_path(path) and type(handler) == "function" then
+          tbl[path] = require_session.wrap(handler)
+        end
+      end
+    end
+  end
+end
+
 --- Public entry — mount.lua calls this iff opts.oidc is set.
 function M.register(routes, url, opts)
   build_ctx(opts)
+  wrap_existing_routes(routes)
   register_routes(routes, url)
 end
 
 -- Internal helpers exposed for tests.
-M._build_ctx       = build_ctx
-M._register_routes = register_routes
+M._build_ctx            = build_ctx
+M._register_routes      = register_routes
+M._wrap_existing_routes = wrap_existing_routes
+M._is_public_path       = is_public_path
 
 return M

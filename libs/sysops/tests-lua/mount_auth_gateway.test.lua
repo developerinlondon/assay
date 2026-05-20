@@ -197,6 +197,60 @@ do
   print("  ok mount prefix prepended to gateway routes")
 end
 
+-- ---------------------------------------------------------------------
+-- 7. Existing sysops pages get gated; public paths stay open.
+-- ---------------------------------------------------------------------
+
+do
+  reset_ctx()
+  -- Install a discovery-capable http stub BEFORE sysops.mount runs so
+  -- the OIDC client's lazy-discover succeeds when /auth/login fires.
+  http = { get = function(_)
+    return {
+      status = 200,
+      body   = json.encode({
+        authorization_endpoint = "https://idp.test/auth/authorize",
+        token_endpoint         = "https://idp.test/auth/token",
+        jwks_uri               = "https://idp.test/auth/jwks",
+      }),
+    }
+  end }
+
+  local routes = { GET = {}, POST = {} }
+  -- Pre-register some routes BEFORE mount runs so we can verify the
+  -- wrap-existing-routes pass picks them up.
+  routes.GET["/"]                  = function() return { status = 200, body = "dashboard" } end
+  routes.GET["/static/styles.css"] = function() return { status = 200, body = "css" } end
+  routes.GET["/healthz"]           = function() return { status = 200, body = "ok" } end
+
+  sysops.mount(routes, full_opts())
+
+  -- Dashboard `/` should be wrapped → 302 without cookie.
+  local r1 = routes.GET["/"]({ path = "/" })
+  assert.eq(r1.status, 302, "/ wrapped: 302 to /auth/login when unauthenticated")
+  assert.not_nil(r1.headers.Location:find("/auth/login", 1, true),
+                 "Location is /auth/login?return_to=...")
+
+  -- Static asset stays open.
+  local r2 = routes.GET["/static/styles.css"]({ path = "/static/styles.css" })
+  assert.eq(r2.status, 200, "/static/* stays public")
+
+  -- /healthz stays open.
+  local r3 = routes.GET["/healthz"]({ path = "/healthz" })
+  assert.eq(r3.status, 200, "/healthz stays public")
+
+  -- Gateway's own /auth/login is NOT wrapped — it 302s to the IdP, not
+  -- back to itself (a wrapped login would loop).
+  local r4 = routes.GET["/auth/login"]({ params = { return_to = "/" } })
+  assert.eq(r4.status, 302, "/auth/login returns 302 to IdP (not wrapped)")
+  assert.not_nil(r4.headers.Location:find("idp.test/auth/authorize", 1, true),
+                 "/auth/login redirects to IdP, not back to /auth/login")
+  http = original_http
+
+  reset_ctx()
+  print("  ok existing routes wrapped; public paths stay open")
+end
+
 -- Restore real http for any later tests.
 http = original_http
 
