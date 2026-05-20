@@ -102,12 +102,22 @@ local function register_routes(routes, url)
     routes[method][url("/api/v1/engine/*")] = gateway.proxy
   end
 
-  -- Dashboard SPA assets — engine serves the HTML/JS; we proxy through.
-  routes.GET[url("/workflow")]            = gateway.proxy
-  routes.GET[url("/workflow/*")]          = gateway.proxy
-  routes.GET[url("/engine/console")]      = gateway.proxy
-  routes.GET[url("/engine/console/*")]    = gateway.proxy
-  routes.GET[url("/shared/*")]            = gateway.proxy
+  -- Dashboard SPA + cross-console assets. The engine's HTML pulls in
+  -- shared CSS/JS from /auth/, /vault/, /workflow/, /engine/, /shared/
+  -- (e.g. /engine/console pulls /auth/style.css + /workflow/theme.css
+  -- for cross-console nav). Register broad wildcards here; sysops's
+  -- own specific routes (/auth/users, /vault/kv, /auth/login, …) win
+  -- via http.serve's "exact-match beats longest-prefix-wildcard" rule.
+  --
+  -- This means: /auth/users  → sysops lua page (exact match)
+  --             /auth/style.css → proxy → engine (wildcard match)
+  --             /auth/login  → sysops login page (exact match)
+  routes.GET[url("/auth/*")]     = gateway.proxy
+  routes.GET[url("/vault/*")]    = gateway.proxy
+  routes.GET[url("/workflow")]   = gateway.proxy
+  routes.GET[url("/workflow/*")] = gateway.proxy
+  routes.GET[url("/engine/*")]   = gateway.proxy
+  routes.GET[url("/shared/*")]   = gateway.proxy
 end
 
 --- Routes that must stay unwrapped even after the gateway opt-in:
