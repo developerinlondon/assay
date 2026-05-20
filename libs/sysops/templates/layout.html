@@ -52,35 +52,62 @@
     <a href="/tunnels" class="{% if nav_active in ['tunnels','interfaces','tailscale'] %}active{% endif %}">Networks</a>
   </nav>
 
-  {# Single link to the consumer's whitelabeled engine SPA. Once inside
-     the engine the user navigates between auth / vault / workflow /
-     engine-core via the engine's own UI. Sysops doesn't try to mirror
-     those surfaces. #}
-  {% if engine_base_url %}
+  {# Engine link. When the auth gateway is wired (engine_upstream_url
+     set), point at /engine/console — same-origin proxied path so the
+     session cookie applies. Hide entirely when the signed-in user
+     doesn't hold engine:core#admin (can_access.engine). Without the
+     auth gateway fall back to the 0.1.x cross-origin engine_base_url
+     link. #}
+  {% if engine_upstream_url %}
+    {% if can_access and can_access.engine %}
+  <nav class="nav nav-flat">
+    <a href="/engine/console" target="_self">Engine</a>
+  </nav>
+    {% endif %}
+  {% elif engine_base_url %}
   <nav class="nav nav-flat">
     <a href="{{ engine_base_url }}/" target="_self">Engine</a>
   </nav>
   {% endif %}
 
+  {# Admin (audit log). Gated on host:local#admin when auth gateway
+     wired; always shown for legacy 0.1.x consumers. #}
+  {% if not can_access or can_access.host %}
   <nav class="nav nav-flat">
     <a href="/audit" class="{% if nav_active in ['audit'] %}active{% endif %}">Admin</a>
   </nav>
+  {% endif %}
 
-  {# Optional 0.1.5 Auth + Vault sections. Hidden unless the consumer
-     opts in via opts.active_modules = { "auth", "vault", … }. Existing
-     host-ops sidebar entries above are unchanged. Each section is a
-     flat link to its landing page; sub-navigation lives inside the page
-     as a tab strip (matches the knowhere-pkg layout). #}
-  {% if 'auth' in (active_modules | default([])) %}
+  {# Auth + Vault + Workflow sections.
+       0.2.0 (auth gateway wired): per-user visibility via can_access.
+       0.1.5 fallback: opts.active_modules. #}
+  {% if can_access %}
+    {% if can_access.auth %}
   <nav class="nav nav-flat">
     <a href="/auth/users" class="{% if 'auth:' in (nav_active or '') or 'zanzibar:' in (nav_active or '') %}active{% endif %}">Auth</a>
   </nav>
-  {% endif %}
-
-  {% if 'vault' in (active_modules | default([])) %}
+    {% endif %}
+    {% if can_access.vault %}
   <nav class="nav nav-flat">
     <a href="/vault" class="{% if 'vault:' in (nav_active or '') %}active{% endif %}">Vault</a>
   </nav>
+    {% endif %}
+    {% if can_access.workflow %}
+  <nav class="nav nav-flat">
+    <a href="/workflow" target="_self">Workflow</a>
+  </nav>
+    {% endif %}
+  {% else %}
+    {% if 'auth' in (active_modules | default([])) %}
+  <nav class="nav nav-flat">
+    <a href="/auth/users" class="{% if 'auth:' in (nav_active or '') or 'zanzibar:' in (nav_active or '') %}active{% endif %}">Auth</a>
+  </nav>
+    {% endif %}
+    {% if 'vault' in (active_modules | default([])) %}
+  <nav class="nav nav-flat">
+    <a href="/vault" class="{% if 'vault:' in (nav_active or '') %}active{% endif %}">Vault</a>
+  </nav>
+    {% endif %}
   {% endif %}
 
   {# Consumer-app links (mount opts.extra_sidebar_links). Each entry is

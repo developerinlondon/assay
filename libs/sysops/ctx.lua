@@ -40,21 +40,40 @@
 --!                       modules — page handlers don't read it directly.
 
 return {
-  prefix             = "/",
-  url                = function(p) return p end,
-  lib_root           = ".",
-  state              = nil,
-  audit              = nil,
-  jobs               = nil,
-  secret             = nil,
-  brand              = nil,
-  engine             = nil,
+  prefix              = "/",
+  url                 = function(p) return p end,
+  lib_root            = ".",
+  state               = nil,
+  audit               = nil,
+  jobs                = nil,
+  secret              = nil,
+  brand               = nil,
+  engine              = nil,
   catalog_paths       = nil,
   template_paths      = nil,
   desired_state_path  = nil,
   backup_profile_dir  = nil,
   engine_base_url     = nil,
+  engine_upstream_url = nil, -- 0.2.0 auth gateway: PRIVATE upstream the
+                              -- proxy forwards to. Distinct from
+                              -- engine_base_url which is the PUBLIC link
+                              -- target. Layout uses presence of this
+                              -- field to switch sidebar links to
+                              -- same-origin proxied paths.
   extra_sidebar_links = nil,
   active_modules      = {},
   engine_admin_key    = nil,
+  -- Auth-gateway 0.2.0 (set by mount.lua when opts.oidc is provided).
+  -- nil otherwise → backward-compat path skips auth routes.
+  oidc_client          = nil, -- sysops.oidc.new(opts.oidc)
+  session_signer       = nil, -- sysops.session.new(opts.session)
+  session_store        = nil, -- sysops.session.store_new()
+  gateway_admin_bearer = nil, -- engine admin bearer the gateway injects
+  authz_require_admin  = false, -- v1: cookie alone is enough; flip to true once
+                                -- a zanzibar_check is wired so /api/v1/engine/*
+                                -- requires user:<sub> to hold an admin tuple.
+  zanzibar_check       = nil, -- function(sub) -> bool (truthy = admin)
+  authz_bootstrap_first_admin = true, -- first OIDC login on a fresh
+                                       -- deployment auto-grants admin.
+                                       -- Set false to disable.
 }
