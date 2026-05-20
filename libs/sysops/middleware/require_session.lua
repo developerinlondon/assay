@@ -20,8 +20,30 @@
 
 local ctx     = require("sysops.ctx")
 local session = require("sysops.session")
+local authz   = require("sysops.authz")
 
 local M = {}
+
+local function render_forbidden(claims, reason)
+  return {
+    status = 403,
+    headers = { ["Content-Type"] = "text/html; charset=utf-8" },
+    body = table.concat({
+      "<!doctype html><html><head><title>Forbidden</title>",
+      "<link rel='stylesheet' href='/static/styles.css'></head><body>",
+      "<div style='max-width:560px;margin:6rem auto;padding:2rem;",
+      "font-family:system-ui;text-align:center'>",
+      "<h1 style='margin:0 0 1rem'>Access denied</h1>",
+      "<p>You're signed in as <code>", tostring(claims.email or claims.sub),
+      "</code>, but you don't have permission to view this page.</p>",
+      "<p style='color:var(--fg-2);font-size:0.9em'>Reason: ",
+      tostring(reason), "</p>",
+      "<p><a href='/'>← Back to dashboard</a> &nbsp;",
+      "<a href='/auth/logout'>Sign out</a></p>",
+      "</div></body></html>",
+    }),
+  }
+end
 
 local function urlencode(s)
   return (tostring(s or "/")):gsub("([^%w%-_%.~])", function(c)
@@ -51,6 +73,12 @@ function M.wrap(inner_handler)
         headers = { Location = "/auth/login?return_to=" .. urlencode(return_to) },
       }
     end
+
+    -- Per-resource authz: ask Zanzibar whether this user is allowed to
+    -- access req.path. Public-after-auth paths (/, /auth/login, …)
+    -- short-circuit inside authz.is_allowed without an engine call.
+    local ok, reason = authz.is_allowed(claims.sub, (req and req.path) or "")
+    if not ok then return render_forbidden(claims, reason) end
 
     -- Attach claims so inner handlers can read who's calling.
     req = req or {}

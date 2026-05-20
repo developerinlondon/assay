@@ -7,6 +7,7 @@
 local ctx              = require("sysops.ctx")
 local session          = require("sysops.session")
 local require_session  = require("sysops.middleware.require_session")
+local authz            = require("sysops.authz")
 
 print("[sysops.middleware.require_session]")
 
@@ -18,10 +19,21 @@ local function setup()
     ttl_seconds = 3600,
     cookie_name = "gondor_session",
   })
+  -- Authz allow-all so the middleware focus stays on session semantics.
+  -- authz.test.lua exercises the per-resource paths directly.
+  ctx.engine = {
+    get  = function(_)    return { status = 200, body = "{}" } end,
+    post = function(_, _) return {
+      status = 200, body = json.encode({ allowed = true }),
+    } end,
+  }
+  authz.invalidate()
 end
 
 local function teardown()
   ctx.session_signer = nil
+  ctx.engine = nil
+  authz.invalidate()
 end
 
 local function counting_inner()

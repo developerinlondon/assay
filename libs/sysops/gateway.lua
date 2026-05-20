@@ -17,6 +17,7 @@
 
 local ctx     = require("sysops.ctx")
 local session = require("sysops.session")
+local authz   = require("sysops.authz")
 
 local M = {}
 
@@ -199,14 +200,19 @@ function M.proxy(req)
   end
 
   if claims then
-    if ctx.authz_require_admin then
-      if type(ctx.zanzibar_check) ~= "function" then
-        return { status = 503, body = '{"error":"authz_require_admin set but no zanzibar_check"}' }
-      end
-      if not ctx.zanzibar_check(claims.sub) then
-        return { status = 403, body = '{"error":"forbidden"}' }
-      end
+    -- Per-resource authz. authz.is_allowed maps the path to a
+    -- (resource, relation) and asks Zanzibar whether claims.sub holds
+    -- it (cached per-tuple for 30s). Public-after-auth paths pass
+    -- through without an engine call.
+    local ok, reason = authz.is_allowed(claims.sub, req.path)
+    if not ok then
+      return {
+        status  = 403,
+        headers = { ["Content-Type"] = "application/json" },
+        body    = '{"error":"forbidden","reason":"' .. tostring(reason) .. '"}',
+      }
     end
+
     fwd.authorization        = "Bearer " .. ctx.gateway_admin_bearer
     fwd["X-Forwarded-User"]  = claims.sub
     fwd["X-User-Id"]         = claims.sub

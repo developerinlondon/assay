@@ -7,6 +7,23 @@
 local ctx     = require("sysops.ctx")
 local session = require("sysops.session")
 local gateway = require("sysops.gateway")
+local authz   = require("sysops.authz")
+
+-- The gateway tests focus on session/bearer/proxy semantics; the
+-- per-resource authz checks are exercised in authz.test.lua. Stub
+-- ctx.engine to allow everything so authz.is_allowed always returns
+-- true here.
+local function authz_allow_all()
+  ctx.engine = {
+    get  = function(_) return { status = 200, body = "{}" } end,
+    post = function(_, _) return {
+      status = 200, body = json.encode({ allowed = true }),
+    } end,
+    put    = function(_, _) return { status = 200, body = "{}" } end,
+    delete = function(_)    return { status = 200, body = "{}" } end,
+  }
+  authz.invalidate()
+end
 
 print("[sysops.gateway.proxy]")
 
@@ -62,6 +79,9 @@ local function setup(opts)
   ctx.gateway_admin_bearer = opts.admin_bearer or "ADMIN-BEARER-TOKEN"
   ctx.authz_require_admin  = opts.authz_require_admin or false
   ctx.zanzibar_check       = opts.zanzibar_check
+  if opts.skip_authz_stub ~= true then
+    authz_allow_all()
+  end
 end
 
 local function teardown()
@@ -71,6 +91,8 @@ local function teardown()
   ctx.gateway_admin_bearer = nil
   ctx.authz_require_admin  = false
   ctx.zanzibar_check       = nil
+  ctx.engine               = nil
+  authz.invalidate()
   restore_http()
 end
 
@@ -171,15 +193,27 @@ do
 end
 
 -- ---------------------------------------------------------------------
--- 5. Zanzibar gate: configured + check returns false → 403.
+-- 5. authz integration — request denied when ctx.engine's Zanzibar
+--    says the user lacks the required tuple for the path. (The full
+--    matrix of authz cases lives in authz.test.lua; this test just
+--    confirms the gateway WIRES authz correctly.)
 -- ---------------------------------------------------------------------
 
 do
-  local seen_sub
-  setup({
-    authz_require_admin = true,
-    zanzibar_check = function(sub) seen_sub = sub; return false end,
-  })
+  setup({ skip_authz_stub = true })
+  -- Stub engine to return allowed=false for any zanzibar.check.
+  ctx.engine = {
+    get  = function(_) return { status = 200, body = "{}" } end,
+    post = function(p, _)
+      if p:match("/zanzibar/check") then
+        return { status = 200, body = json.encode({ allowed = false }) }
+      end
+      return { status = 200, body = "{}" }
+    end,
+    put    = function(_, _) return { status = 200, body = "{}" } end,
+    delete = function(_)    return { status = 200, body = "{}" } end,
+  }
+  authz.invalidate()
   install_http(function() return { status = 200, body = "should not reach engine" } end)
 
   local cookie = ctx.session_signer:issue({ sub = "bob@example" })
@@ -188,53 +222,10 @@ do
     path   = "/api/v1/engine/auth/admin/users",
     headers = { cookie = "gondor_session=" .. cookie },
   })
-  assert.eq(r.status, 403, "non-admin → 403")
-  assert.eq(seen_sub, "bob@example", "zanzibar_check called with the sub")
+  assert.eq(r.status, 403, "no auth:system#admin tuple → 403")
+  assert.not_nil(r.body:find("forbidden", 1, true), "body says forbidden")
   teardown()
-  print("  ok zanzibar denies non-admin")
-end
-
--- ---------------------------------------------------------------------
--- 6. Zanzibar gate: check returns true → request proxied.
--- ---------------------------------------------------------------------
-
-do
-  setup({
-    authz_require_admin = true,
-    zanzibar_check = function(_) return true end,
-  })
-  local calls = install_http(function() return { status = 200, body = "{}" } end)
-
-  local cookie = ctx.session_signer:issue({ sub = "alice@example" })
-  local r = gateway.proxy({
-    method = "GET",
-    path   = "/api/v1/engine/auth/admin/users",
-    headers = { cookie = "gondor_session=" .. cookie },
-  })
-  assert.eq(r.status, 200, "admin succeeds")
-  assert.eq(#calls, 1, "request reached engine")
-  teardown()
-  print("  ok zanzibar admins are allowed through")
-end
-
--- ---------------------------------------------------------------------
--- 7. Zanzibar gate misconfigured (require_admin=true, no check fn) → 503.
--- ---------------------------------------------------------------------
-
-do
-  setup({ authz_require_admin = true })
-  install_http(function() return { status = 200, body = "{}" } end)
-
-  local cookie = ctx.session_signer:issue({ sub = "alice@example" })
-  local r = gateway.proxy({
-    method = "GET",
-    path   = "/api/v1/engine/auth/admin/users",
-    headers = { cookie = "gondor_session=" .. cookie },
-  })
-  assert.eq(r.status, 503, "misconfig → 503")
-  assert.not_nil(r.body:find("zanzibar_check", 1, true), "error message names the missing wiring")
-  teardown()
-  print("  ok misconfigured authz fails closed (503)")
+  print("  ok authz denies when caller lacks the resource tuple")
 end
 
 -- ---------------------------------------------------------------------

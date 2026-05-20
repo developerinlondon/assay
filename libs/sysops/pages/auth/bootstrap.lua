@@ -23,10 +23,22 @@ local auth = require("sysops.auth")
 
 local M = {}
 
--- The canonical tuple this module writes / inspects. Convention picked
--- up from libs/sysops/pages/zanzibar/bootstrap.lua's seed list (the
--- non-OIDC bootstrap page that PR #150 added). Keeping the two in
--- sync means both bootstrap paths agree on what "admin" means.
+-- The full set of canonical tuples the first user gets. Convention
+-- picked up from libs/sysops/pages/zanzibar/bootstrap.lua's seed list
+-- (the non-OIDC bootstrap page that PR #150 added). All four resources
+-- — auth, engine, workflow, vault — granted at once so the first OIDC
+-- user has end-to-end access on a fresh install. Subsequent users get
+-- nothing until an admin grants them specific tuples via the
+-- /zanzibar UI.
+local FIRST_ADMIN_TUPLES = {
+  { object_type = "auth",     object_id = "system", relation = "admin"  },
+  { object_type = "engine",   object_id = "core",   relation = "admin"  },
+  { object_type = "workflow", object_id = "main",   relation = "access" },
+  { object_type = "vault",    object_id = "main",   relation = "access" },
+}
+
+-- The "any admin already exists?" probe checks the engine:core#admin
+-- tuple — that's the canonical "is this a fresh install" marker.
 local ADMIN_OBJECT_TYPE = "engine"
 local ADMIN_OBJECT_ID   = "core"
 local ADMIN_RELATION    = "admin"
@@ -66,14 +78,28 @@ local function admins_exist(zanzibar)
   return true
 end
 
---- Grant claims.sub the admin tuple, idempotently. Returns (ok, err).
+--- Grant claims.sub the full set of first-admin tuples (auth, engine,
+--- workflow, vault). Best-effort: writes all four; returns the first
+--- error if any. Idempotent — Zanzibar write is upsert-style.
+---
+--- The engine wants split (subject_type, subject_id, relation,
+--- object_type, object_id) — the same shape libs/sysops/pages/zanzibar/
+--- bootstrap.lua uses successfully. NOT the combined "user:sub" form.
 local function grant_admin(zanzibar, sub)
-  return zanzibar.write_tuple({
-    subject     = "user:" .. sub,
-    relation    = ADMIN_RELATION,
-    object_type = ADMIN_OBJECT_TYPE,
-    object_id   = ADMIN_OBJECT_ID,
-  })
+  local first_err
+  for _, t in ipairs(FIRST_ADMIN_TUPLES) do
+    local _, err = zanzibar.write_tuple({
+      subject_type = "user",
+      subject_id   = sub,
+      subject_rel  = "",
+      relation     = t.relation,
+      object_type  = t.object_type,
+      object_id    = t.object_id,
+    })
+    if err and not first_err then first_err = err end
+  end
+  if first_err then return nil, first_err end
+  return true
 end
 
 --- The public entry point — called from callback.lua. Returns nil

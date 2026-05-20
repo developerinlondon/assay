@@ -50,20 +50,30 @@ do
     ["POST " .. TUPLES_PATH] = function() return { status = 200, body = "{}" } end,
   })
   local r = bootstrap.maybe_grant_first_admin({ sub = "alice@example" })
-  assert.eq(r, "granted", "returns 'granted' when it writes the tuple")
+  assert.eq(r, "granted", "returns 'granted' when it writes the tuples")
 
-  -- Confirm POST happened with the right body.
-  local saw_post
+  -- First-admin grants the FULL set of four canonical tuples so the
+  -- single user on a fresh install can reach every pane (auth, engine,
+  -- workflow, vault) without further setup.
+  local posts = {}
   for _, c in ipairs(ctx.engine.calls) do
-    if c.method == "POST" and c.path:find(TUPLES_PATH, 1, true) then saw_post = c end
+    if c.method == "POST" and c.path:find(TUPLES_PATH, 1, true) then
+      posts[#posts + 1] = c.body
+    end
   end
-  assert.not_nil(saw_post, "POST /tuples was called")
-  assert.eq(saw_post.body.subject, "user:alice@example", "subject set")
-  assert.eq(saw_post.body.relation, "admin", "relation set")
-  assert.eq(saw_post.body.object_type, "engine", "object_type set")
-  assert.eq(saw_post.body.object_id, "core", "object_id set")
+  assert.eq(#posts, 4, "exactly four POST /tuples calls (one per canonical resource)")
+  local seen = {}
+  for _, b in ipairs(posts) do
+    assert.eq(b.subject_type, "user", "subject_type=user")
+    assert.eq(b.subject_id, "alice@example", "subject_id correct")
+    seen[b.object_type .. ":" .. b.object_id .. "#" .. b.relation] = true
+  end
+  assert.eq(seen["auth:system#admin"], true,     "auth:system#admin granted")
+  assert.eq(seen["engine:core#admin"], true,     "engine:core#admin granted")
+  assert.eq(seen["workflow:main#access"], true,  "workflow:main#access granted")
+  assert.eq(seen["vault:main#access"], true,     "vault:main#access granted")
   teardown()
-  print("  ok grants admin tuple when none exist")
+  print("  ok grants the full set of canonical tuples when none exist")
 end
 
 -- ---------------------------------------------------------------------

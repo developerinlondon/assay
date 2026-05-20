@@ -72,18 +72,21 @@ do
   -- /whoami intercept (specific path).
   assert.not_nil(routes.GET["/api/v1/engine/auth/whoami"], "/whoami intercept registered")
 
-  -- API proxy on every verb.
+  -- API proxy on every verb — two roots (engine + vault).
   for _, method in ipairs({ "GET", "POST", "PUT", "PATCH", "DELETE" }) do
     assert.not_nil(routes[method]["/api/v1/engine/*"],
                    method .. " /api/v1/engine/* registered")
+    assert.not_nil(routes[method]["/api/v1/vault/*"],
+                   method .. " /api/v1/vault/* registered")
   end
 
-  -- Dashboard SPA assets.
-  assert.not_nil(routes.GET["/workflow"],         "/workflow registered")
-  assert.not_nil(routes.GET["/workflow/*"],       "/workflow/* registered")
-  assert.not_nil(routes.GET["/engine/console"],   "/engine/console registered")
-  assert.not_nil(routes.GET["/engine/console/*"], "/engine/console/* registered")
-  assert.not_nil(routes.GET["/shared/*"],         "/shared/* registered")
+  -- Dashboard SPA + cross-console asset wildcards.
+  assert.not_nil(routes.GET["/auth/*"],     "/auth/* registered (proxy fallback)")
+  assert.not_nil(routes.GET["/vault/*"],    "/vault/* registered")
+  assert.not_nil(routes.GET["/workflow"],   "/workflow registered")
+  assert.not_nil(routes.GET["/workflow/*"], "/workflow/* registered")
+  assert.not_nil(routes.GET["/engine/*"],   "/engine/* registered")
+  assert.not_nil(routes.GET["/shared/*"],   "/shared/* registered")
 
   -- ctx fields populated.
   assert.not_nil(ctx.oidc_client,          "oidc_client built")
