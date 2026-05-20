@@ -25,8 +25,13 @@
 --! client object after the first hit. Same for the JWKS used by
 --! verify_id_token. Callers don't need to reinit.
 
-local url = require("assay.url")
-local M = {}
+local url   = require("assay.url")
+local codec = require("sysops.codec")
+local M     = {}
+
+local b64url       = codec.b64url
+local hex_to_bytes = codec.hex_to_bytes
+local must         = codec.must
 
 ----------------------------------------------------------------------
 -- Helpers
@@ -35,46 +40,6 @@ local M = {}
 local function rstrip_slash(s)
   if s and #s > 1 and s:sub(-1) == "/" then return s:sub(1, -2) end
   return s
-end
-
-local function hex_to_bytes(hex)
-  return (hex:gsub("..", function(b) return string.char(tonumber(b, 16)) end))
-end
-
--- URL-safe base64 (RFC 7636 PKCE / RFC 7515 JWT compact form). Implemented
--- in pure lua because the host's base64.encode binding enforces UTF-8 on
--- its String input — raw SHA-256 bytes don't satisfy that.
-local B64U_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-local function b64url(bytes)
-  local out = {}
-  local i = 1
-  local len = #bytes
-  while i <= len do
-    local b1 = string.byte(bytes, i)
-    local b2 = string.byte(bytes, i + 1) or 0
-    local b3 = string.byte(bytes, i + 2) or 0
-    local n = b1 * 65536 + b2 * 256 + b3
-    out[#out + 1] = B64U_CHARS:sub(((n // 262144) % 64) + 1, ((n // 262144) % 64) + 1)
-    out[#out + 1] = B64U_CHARS:sub(((n // 4096) % 64) + 1, ((n // 4096) % 64) + 1)
-    if i + 1 <= len then
-      out[#out + 1] = B64U_CHARS:sub(((n // 64) % 64) + 1, ((n // 64) % 64) + 1)
-    end
-    if i + 2 <= len then
-      out[#out + 1] = B64U_CHARS:sub((n % 64) + 1, (n % 64) + 1)
-    end
-    i = i + 3
-  end
-  return table.concat(out)
-end
-
--- assay-lua overrides the builtin `assert` global with a table
--- (assert.eq, assert.not_nil, ...). Provide a local "unwrap or error"
--- helper for the (value, err) → value pattern used throughout.
-local function must(v, err)
-  if not v then
-    error(err or "assertion failed", 2)
-  end
-  return v
 end
 
 local function ok2xx(status)
