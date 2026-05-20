@@ -17,7 +17,7 @@ local function setup()
   ctx.session_signer = session.new({
     signing_key = KEY,
     ttl_seconds = 3600,
-    cookie_name = "gondor_session",
+    cookie_name = "sysops_session",
   })
   -- Authz allow-all so the middleware focus stays on session semantics.
   -- authz.test.lua exercises the per-resource paths directly.
@@ -72,7 +72,7 @@ do
   local wrapped = require_session.wrap(inner)
   local r = wrapped({
     path    = "/auth/users",
-    headers = { cookie = "gondor_session=" .. cookie },
+    headers = { cookie = "sysops_session=" .. cookie },
   })
   assert.eq(r.status, 200, "inner response passed through")
   assert.eq(r.body, "inner-ran", "inner ran")
@@ -94,7 +94,7 @@ do
   local wrapped = require_session.wrap(inner)
   local r = wrapped({
     path    = "/auth/users",
-    headers = { cookie = "gondor_session=" .. cookie },
+    headers = { cookie = "sysops_session=" .. cookie },
   })
   assert.eq(r.status, 302, "expired → 302")
   assert.eq(last(), nil, "inner NOT called")
@@ -108,13 +108,13 @@ end
 
 do
   setup()
-  local other = session.new({ signing_key = string.rep("z", 32), cookie_name = "gondor_session" })
+  local other = session.new({ signing_key = string.rep("z", 32), cookie_name = "sysops_session" })
   local cookie = other:issue({ sub = "mallory" })
   local inner, last = counting_inner()
   local wrapped = require_session.wrap(inner)
   local r = wrapped({
     path    = "/auth/users",
-    headers = { cookie = "gondor_session=" .. cookie },
+    headers = { cookie = "sysops_session=" .. cookie },
   })
   assert.eq(r.status, 302, "bad sig → 302")
   assert.eq(last(), nil, "inner NOT called")

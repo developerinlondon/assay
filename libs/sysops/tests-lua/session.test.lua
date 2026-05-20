@@ -127,6 +127,40 @@ do
 end
 
 -- ---------------------------------------------------------------------
+-- 7b. safe_return_to clamps open-redirect attempts.
+-- ---------------------------------------------------------------------
+
+do
+  -- Same-origin relative paths pass through verbatim.
+  assert.eq(session.safe_return_to("/"), "/", "/ kept")
+  assert.eq(session.safe_return_to("/dashboard"), "/dashboard", "/dashboard kept")
+  assert.eq(session.safe_return_to("/auth/users?search=alice"), "/auth/users?search=alice",
+            "query string preserved")
+
+  -- Everything cross-origin / shenanigans clamps to /.
+  for _, hostile in ipairs({
+    "https://evil.com",            -- absolute http
+    "http://evil.com/foo",
+    "//evil.com",                  -- protocol-relative
+    "/\\evil.com",                 -- backslash-bypass
+    "javascript://alert(1)",
+    "data://text/html,<script>",
+    "evil.com",                    -- no leading slash
+    "",                            -- empty
+    nil,                           -- nil
+  }) do
+    assert.eq(session.safe_return_to(hostile), "/",
+              "hostile input " .. tostring(hostile) .. " clamped to /")
+  end
+
+  -- CR/LF header smuggling.
+  assert.eq(session.safe_return_to("/foo\r\nLocation: evil"), "/",
+            "CRLF rejected")
+
+  print("  ok safe_return_to rejects open-redirect attempts")
+end
+
+-- ---------------------------------------------------------------------
 -- 8. Refresh-token store: put / get / revoke.
 -- ---------------------------------------------------------------------
 

@@ -4,7 +4,8 @@
 --! ctx.session_store under the state token (one-shot, GC'd after 5 min),
 --! and 302s the browser to the IdP's authorize endpoint.
 
-local ctx = require("sysops.ctx")
+local ctx     = require("sysops.ctx")
+local session = require("sysops.session")
 
 local M = {}
 
@@ -14,7 +15,9 @@ function M.page(req)
   end
 
   local q = (req and req.params) or {}
-  local return_to = q.return_to or "/"
+  -- Clamp return_to to a same-origin relative path. Anything cross-origin,
+  -- protocol-relative, or slash-bypassed becomes "/".
+  local return_to = session.safe_return_to(q.return_to)
 
   local state = crypto.random(32)
   local verifier = crypto.random(64)

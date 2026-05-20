@@ -21,6 +21,7 @@ local oidc    = require("sysops.oidc")
 local session = require("sysops.session")
 local gateway = require("sysops.gateway")
 local ctx     = require("sysops.ctx")
+local authz   = require("sysops.authz")
 
 local login_pg    = require("pages.auth.login")
 local callback_pg = require("pages.auth.callback")
@@ -67,16 +68,13 @@ local function build_ctx(opts)
   ctx.engine_upstream_url  = g.engine_upstream
   ctx.gateway_admin_bearer = g.admin_bearer
 
-  -- Authz
+  -- Authz. Per-resource Zanzibar tuple checks happen on every request
+  -- via sysops.authz; the only mount-opt today is whether the first
+  -- OIDC login auto-grants the canonical admin tuples.
   local a = opts.authz or {}
-  if a.require_zanzibar_admin ~= nil then
-    ctx.authz_require_admin = a.require_zanzibar_admin
-  end
   if a.bootstrap_first_admin ~= nil then
     ctx.authz_bootstrap_first_admin = a.bootstrap_first_admin
   end
-  -- ctx.zanzibar_check is left for the consumer or mount-time wiring
-  -- to fill in if they want per-request role enforcement.
 end
 
 --- Register all the auth-gateway routes on the consumer's `routes`
@@ -127,14 +125,15 @@ local function register_routes(routes, url)
   routes.GET[url("/shared/*")]   = gateway.proxy
 end
 
---- Routes that must stay unwrapped even after the gateway opt-in:
---- public assets and healthchecks. Everything else gets gated.
+--- Routes that must stay unwrapped even after the gateway opt-in.
+--- Delegates to authz.rule_for_path so the bypass set has a single
+--- source of truth in authz.PATH_RULES (static assets, healthchecks,
+--- per-SPA stylesheets, etc.) — adding a new bypass there
+--- automatically prevents require_session from wrapping it.
 local function is_public_path(path)
-  if path:match("^/static/") then return true end
-  if path:match("^/brand/") then return true end
-  if path == "/healthz" then return true end
-  if path == "/favicon.ico" then return true end
-  return false
+  if type(path) ~= "string" then return false end
+  local rule = authz.rule_for_path(path)
+  return rule ~= nil and rule.bypass == true
 end
 
 --- Wrap every route already registered (sysops dashboard, machines,

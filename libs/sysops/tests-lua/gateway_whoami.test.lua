@@ -96,10 +96,10 @@ end
 -- ---------------------------------------------------------------------
 
 do
-  setup("gondor_session")
+  setup("app_session")
   local cookie = ctx.session_signer:issue({ sub = "alice@example" })
   -- Send under the right name → 200
-  local r1 = gateway.whoami({ headers = { cookie = "gondor_session=" .. cookie } })
+  local r1 = gateway.whoami({ headers = { cookie = "app_session=" .. cookie } })
   assert.eq(r1.status, 200, "custom name accepted")
   -- Send under the WRONG name → 401
   local r2 = gateway.whoami({ headers = { cookie = "sysops_session=" .. cookie } })

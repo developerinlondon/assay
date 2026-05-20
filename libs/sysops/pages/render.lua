@@ -1,6 +1,18 @@
 local hctx = require("sysops.ctx")
 local M = {}
 
+-- Shared HTML escaper. Use this for any user-influenced value that ends
+-- up inside an HTML response — claims, error reasons, URLs, breadcrumb
+-- labels, etc. Lives here so callers can reuse without re-deriving.
+function M.html_escape(value)
+  return (tostring(value or ""))
+    :gsub("&", "&amp;")
+    :gsub("<", "&lt;")
+    :gsub(">", "&gt;")
+    :gsub('"', "&quot;")
+    :gsub("'", "&#39;")
+end
+
 -- Sidebar version. The lib's VERSION file is the canonical source of
 -- truth (release tag matches it byte-for-byte). Resolved lazily so the
 -- read happens after mount() has populated ctx.lib_root, and falls back
@@ -56,9 +68,9 @@ function M.breadcrumb(entries)
     end
     if href and i < #entries then
       table.insert(parts,
-        '<a href="' .. tostring(href) .. '">' .. tostring(label) .. '</a>')
+        '<a href="' .. M.html_escape(href) .. '">' .. M.html_escape(label) .. '</a>')
     else
-      table.insert(parts, tostring(label))
+      table.insert(parts, M.html_escape(label))
     end
   end
   return table.concat(parts, ' &middot; ')

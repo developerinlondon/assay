@@ -6,14 +6,14 @@
 --!
 --! HS256-style. We don't use crypto.jwt_sign because that only supports
 --! RS256/384/512 (RSA PEM). HMAC-on-bytes via crypto.hmac is sufficient
---! and matches every OIDC BFF pattern (xandar-ui does the same).
+--! and matches the standard OIDC BFF (backend-for-frontend) pattern.
 --!
 --! Usage:
 --!   local session = require("sysops.session")
 --!   local s = session.new({
 --!     signing_key = "<32+ byte secret>",
 --!     ttl_seconds = 86400,
---!     cookie_name = "gondor_session",   -- default "sysops_session"
+--!     cookie_name = "app_session",   -- default "sysops_session"
 --!   })
 --!   local cookie = s:issue({ sub = "alice@example", email = "alice@example" })
 --!   local claims, err = s:verify(cookie)
@@ -144,6 +144,33 @@ function M.store_new()
   end
 
   return store
+end
+
+----------------------------------------------------------------------
+-- Safe-return helper. Open-redirect mitigation for /auth/login's
+-- return_to param and /auth/callback's resume target. Accepts only
+-- relative paths anchored at /; anything that looks like an
+-- absolute URL, protocol-relative ("//evil"), backslash-mixed
+-- ("/\evil"), or contains CR/LF gets clamped to "/".
+----------------------------------------------------------------------
+
+function M.safe_return_to(s)
+  if type(s) ~= "string" or s == "" then return "/" end
+  -- Defence in depth: validate the literal string AND a percent-decoded
+  -- copy. Most frameworks decode req.params already, but a future
+  -- handler that reads raw query strings would otherwise let
+  -- "%2f%2fevil" slip past the literal "//" check.
+  local decoded = s:gsub("%%(%x%x)", function(h)
+    return string.char(tonumber(h, 16))
+  end)
+  for _, v in ipairs({ s, decoded }) do
+    if v:find("[\r\n%z]") then return "/" end            -- header smuggling
+    if v:find("://", 1, true) then return "/" end         -- http://evil, javascript://
+    if v:sub(1, 1) ~= "/" then return "/" end             -- must be absolute path
+    if v:sub(1, 2) == "//" then return "/" end            -- protocol-relative
+    if v:sub(2, 2) == "\\" then return "/" end            -- "/\evil"
+  end
+  return s
 end
 
 ----------------------------------------------------------------------

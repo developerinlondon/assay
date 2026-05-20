@@ -5,6 +5,10 @@ local auth   = require("sysops.auth")
 
 local M = {}
 
+local function url(p)
+  return (ctx.url and ctx.url(p)) or p
+end
+
 local function urlenc(s)
   return (tostring(s or "")):gsub("([^%w%-_%.~])", function(c)
     return string.format("%%%02X", string.byte(c))
@@ -149,6 +153,16 @@ function M.page(req)
   }, req)
 end
 
+-- Invalidate sysops.authz's per-(sub, tuple) cache whenever a tuple is
+-- written or deleted, so the next request through gateway.proxy /
+-- require_session sees the new permissions without waiting for the
+-- 30s TTL. Best-effort: pcall so a load failure (auth gateway not
+-- wired) doesn't kill the mutation path.
+local function invalidate_authz_cache()
+  local ok, authz = pcall(require, "sysops.authz")
+  if ok and authz and authz.invalidate then authz.invalidate() end
+end
+
 function M.write(req)
   local f   = form.parse(req)
   local sdk = auth.new(ctx.engine).zanzibar
@@ -157,7 +171,7 @@ function M.write(req)
     return {
       status  = 303,
       headers = {
-        Location = "/zanzibar/tuples"
+        Location = url("/zanzibar/tuples")
           .. "?write_err=" .. tostring(err.status)
           .. "&form_object_type=" .. urlenc(f.object_type or "")
           .. "&form_object_id=" .. urlenc(f.object_id or "")
@@ -168,7 +182,8 @@ function M.write(req)
       },
     }
   end
-  return { status = 303, headers = { Location = "/zanzibar/tuples?saved=1" } }
+  invalidate_authz_cache()
+  return { status = 303, headers = { Location = url("/zanzibar/tuples") .. "?saved=1" } }
 end
 
 function M.delete(req)
@@ -176,9 +191,13 @@ function M.delete(req)
   local sdk = auth.new(ctx.engine).zanzibar
   local _, err = sdk.delete_tuple(tuple_body(f))
   if err then
-    return { status = 303, headers = { Location = "/zanzibar/tuples?delete_err=" .. tostring(err.status) } }
+    return {
+      status  = 303,
+      headers = { Location = url("/zanzibar/tuples") .. "?delete_err=" .. tostring(err.status) },
+    }
   end
-  return { status = 303, headers = { Location = "/zanzibar/tuples?deleted=1" } }
+  invalidate_authz_cache()
+  return { status = 303, headers = { Location = url("/zanzibar/tuples") .. "?deleted=1" } }
 end
 
 return M

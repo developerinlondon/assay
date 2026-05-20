@@ -104,7 +104,7 @@ do
   local client = oidc.new({
     issuer       = "https://idp.test",
     client_id    = "sysops",
-    redirect_uri = "https://gondor.fcar.ai/auth/callback",
+    redirect_uri = "https://app.example/auth/callback",
     scopes       = { "openid", "email", "profile" },
     http         = http_stub,
   })
@@ -160,7 +160,7 @@ do
     issuer        = "https://idp.test",
     client_id     = "sysops",
     client_secret = "shh",
-    redirect_uri  = "https://gondor.fcar.ai/auth/callback",
+    redirect_uri  = "https://app.example/auth/callback",
     http          = http_stub,
   })
   local tokens, err = client:exchange_code("the-code", "the-verifier")
