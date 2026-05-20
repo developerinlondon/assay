@@ -61,13 +61,14 @@ do
       posts[#posts + 1] = c.body
     end
   end
-  assert.eq(#posts, 4, "exactly four POST /tuples calls (one per canonical resource)")
+  assert.eq(#posts, 5, "exactly five POST /tuples calls (one per canonical resource)")
   local seen = {}
   for _, b in ipairs(posts) do
     assert.eq(b.subject_type, "user", "subject_type=user")
     assert.eq(b.subject_id, "alice@example", "subject_id correct")
     seen[b.object_type .. ":" .. b.object_id .. "#" .. b.relation] = true
   end
+  assert.eq(seen["host:local#admin"], true,      "host:local#admin granted")
   assert.eq(seen["auth:system#admin"], true,     "auth:system#admin granted")
   assert.eq(seen["engine:core#admin"], true,     "engine:core#admin granted")
   assert.eq(seen["workflow:main#access"], true,  "workflow:main#access granted")

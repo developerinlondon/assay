@@ -102,6 +102,22 @@ function M.layout_defaults(ctx, req, fallback_nav_active)
   ctx.engine_upstream_url = ctx.engine_upstream_url or hctx.engine_upstream_url
   -- Consumer-app sidebar links (set via mount opts.extra_sidebar_links).
   ctx.extra_sidebar_links = ctx.extra_sidebar_links or hctx.extra_sidebar_links
+
+  -- 0.2.0: per-user pane visibility. When the auth gateway is wired and
+  -- the request carries session_claims (populated by require_session
+  -- middleware), compute can_access for each canonical pane. The
+  -- layout template renders sidebar links only for the panes the user
+  -- can actually reach — so users with `vault:main#access` but no
+  -- engine tuple don't even see the Engine link.
+  --
+  -- When the auth gateway is NOT wired, can_access stays nil and the
+  -- layout falls back to the 0.1.x active_modules behaviour.
+  if hctx.engine_upstream_url and req and req.session_claims then
+    local ok, authz = pcall(require, "sysops.authz")
+    if ok and authz and authz.can_access then
+      ctx.can_access = authz.can_access(req.session_claims.sub)
+    end
+  end
   return ctx
 end
 

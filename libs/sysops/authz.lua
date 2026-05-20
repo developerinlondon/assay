@@ -39,6 +39,26 @@ local PATH_RULES = {
   { prefix = "/healthz",                   bypass = true },
   { prefix = "/favicon.ico",               bypass = true },
 
+  -- ── host-ops pages — require host:local#admin ────────────────
+  -- Sysops's own dashboard surfaces (audit log, machines, services,
+  -- backups, cron, networking, journal, shell). NOT publicly visible
+  -- to every signed-in user — operators only.
+  { prefix = "/audit",        object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/machines",     object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/services",     object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/backups",      object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/cron",         object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/interfaces",   object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/logs",         object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/tunnels",      object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/tailscale",    object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/shell",        object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/api/events",   object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/api/overview", object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/api/machines", object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/api/logs",     object_type = "host", object_id = "local", relation = "admin" },
+  { prefix = "/api/audit",    object_type = "host", object_id = "local", relation = "admin" },
+
   -- ── /api/v1/engine/auth/admin/* — full auth admin ────────────
   { prefix = "/api/v1/engine/auth",        object_type = "auth", object_id = "system",
                                             relation = "admin" },
@@ -186,6 +206,24 @@ function M.is_allowed(sub, path)
   local allowed = type(body) == "table" and body.allowed == true
   cache_put(key, allowed)
   return allowed, allowed and "granted" or "missing-tuple"
+end
+
+--- Convenience for the layout sidebar: returns a table of bools for
+--- each of the four canonical panes. Each entry is the result of
+--- is_allowed on the canonical URL for that pane. The per-tuple cache
+--- means this is one engine RTT per pane on first render, then ~0 for
+--- subsequent renders within AUTHZ_CACHE_TTL.
+function M.can_access(sub)
+  if type(sub) ~= "string" or sub == "" then
+    return { auth = false, engine = false, workflow = false, vault = false, host = false }
+  end
+  return {
+    auth     = (M.is_allowed(sub, "/auth/users")),
+    engine   = (M.is_allowed(sub, "/engine/console")),
+    workflow = (M.is_allowed(sub, "/workflow")),
+    vault    = (M.is_allowed(sub, "/vault/console")),
+    host     = (M.is_allowed(sub, "/audit")),
+  }
 end
 
 return M

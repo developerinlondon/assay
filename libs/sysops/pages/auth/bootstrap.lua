@@ -31,6 +31,7 @@ local M = {}
 -- nothing until an admin grants them specific tuples via the
 -- /zanzibar UI.
 local FIRST_ADMIN_TUPLES = {
+  { object_type = "host",     object_id = "local",  relation = "admin"  },
   { object_type = "auth",     object_id = "system", relation = "admin"  },
   { object_type = "engine",   object_id = "core",   relation = "admin"  },
   { object_type = "workflow", object_id = "main",   relation = "access" },
@@ -78,14 +79,41 @@ local function admins_exist(zanzibar)
   return true
 end
 
---- Grant claims.sub the full set of first-admin tuples (auth, engine,
---- workflow, vault). Best-effort: writes all four; returns the first
---- error if any. Idempotent — Zanzibar write is upsert-style.
+-- Namespaces the gateway depends on. Some are auto-seeded by the
+-- engine modules (auth, engine, workflow, vault) but `host` is
+-- sysops-defined for the host-ops surface (audit/machines/services/…).
+-- ensure_namespaces() runs once before granting tuples so the engine's
+-- check() resolves them. Idempotent: existing definitions are no-ops.
+local REQUIRED_NAMESPACES = {
+  {
+    name = "host",
+    definitions = {
+      admin = {
+        name = "admin",
+        kind = { kind = "direct", value = {
+          { object_type = "user", relation = nil, wildcard = false },
+        } },
+      },
+    },
+  },
+}
+
+local function ensure_namespaces(zanzibar)
+  for _, schema in ipairs(REQUIRED_NAMESPACES) do
+    -- define_namespace returns existing-namespace 4xx; treat as no-op.
+    zanzibar.define_namespace(schema)
+  end
+end
+
+--- Grant claims.sub the full set of first-admin tuples (host, auth,
+--- engine, workflow, vault). Best-effort: writes all five; returns
+--- the first error if any. Idempotent — Zanzibar write is upsert-style.
 ---
 --- The engine wants split (subject_type, subject_id, relation,
 --- object_type, object_id) — the same shape libs/sysops/pages/zanzibar/
 --- bootstrap.lua uses successfully. NOT the combined "user:sub" form.
 local function grant_admin(zanzibar, sub)
+  ensure_namespaces(zanzibar)
   local first_err
   for _, t in ipairs(FIRST_ADMIN_TUPLES) do
     local _, err = zanzibar.write_tuple({
