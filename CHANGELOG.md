@@ -6,13 +6,17 @@ All notable changes to Assay are documented here.
 
 ### Fixed
 
-- `assay.ory.keto` filter keys for `subject_set` now use dotted notation (`subject_set.namespace`, …) to match Keto's API. The previous underscored keys (`subject_set_namespace`, …) were silently ignored on GET and rejected with HTTP 400 on DELETE, breaking `tuples:upsert` for any subject_set tuples (e.g. parent edges in HRBAC seeds).
+- `assay.ory.keto` filter keys for `subject_set` now use dotted notation (`subject_set.namespace`,
+  …) to match Keto's API. The previous underscored keys (`subject_set_namespace`, …) were silently
+  ignored on GET and rejected with HTTP 400 on DELETE, breaking `tuples:upsert` for any subject_set
+  tuples (e.g. parent edges in HRBAC seeds).
 
 ## assay 0.16.3 — 2026-05-19
 
 ### Added
 
-- `c.tuples:upsert(tuple)` — idempotent ensure-exactly-one. Returns `"noop"` / `"created"` / `"repaired", N`. Use for seed scripts; `tuples:create` is non-idempotent.
+- `c.tuples:upsert(tuple)` — idempotent ensure-exactly-one. Returns `"noop"` / `"created"` /
+  `"repaired", N`. Use for seed scripts; `tuples:create` is non-idempotent.
 
 ### Changed
 
