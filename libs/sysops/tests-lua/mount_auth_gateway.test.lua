@@ -41,6 +41,7 @@ local function reset_ctx()
   ctx.session_signer             = nil
   ctx.session_store              = nil
   ctx.engine_base_url            = nil
+  ctx.engine_upstream_url        = nil
   ctx.gateway_admin_bearer       = nil
   ctx.authz_require_admin        = false
   ctx.authz_bootstrap_first_admin = true
@@ -88,7 +89,7 @@ do
   assert.not_nil(ctx.oidc_client,          "oidc_client built")
   assert.not_nil(ctx.session_signer,       "session_signer built")
   assert.not_nil(ctx.session_store,        "session_store built")
-  assert.eq(ctx.engine_base_url, "http://127.0.0.1:8080", "engine_base_url set")
+  assert.eq(ctx.engine_upstream_url, "http://127.0.0.1:8080", "engine_upstream_url set")
   assert.eq(ctx.gateway_admin_bearer, "TEST-ADMIN-BEARER", "admin_bearer set")
   assert.eq(ctx.session_signer.cookie_name, "gondor_session", "cookie_name propagated")
 

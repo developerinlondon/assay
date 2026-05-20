@@ -54,6 +54,12 @@ return {
   desired_state_path  = nil,
   backup_profile_dir  = nil,
   engine_base_url     = nil,
+  engine_upstream_url = nil, -- 0.2.0 auth gateway: PRIVATE upstream the
+                              -- proxy forwards to. Distinct from
+                              -- engine_base_url which is the PUBLIC link
+                              -- target. Layout uses presence of this
+                              -- field to switch sidebar links to
+                              -- same-origin proxied paths.
   extra_sidebar_links = nil,
   active_modules      = {},
   engine_admin_key    = nil,

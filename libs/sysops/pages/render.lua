@@ -95,7 +95,11 @@ function M.layout_defaults(ctx, req, fallback_nav_active)
   -- Engine sidecar URL (set via mount opts.engine_base_url). Layout
   -- conditionally renders /auth/console, /vault/console, /engine/console,
   -- /workflow/ sidebar links when present.
-  ctx.engine_base_url = ctx.engine_base_url or hctx.engine_base_url
+  ctx.engine_base_url     = ctx.engine_base_url     or hctx.engine_base_url
+  -- 0.2.0: when the auth gateway is wired the layout uses
+  -- engine_upstream_url's presence to switch sidebar / link targets
+  -- from cross-origin (engine_base_url) to same-origin proxied paths.
+  ctx.engine_upstream_url = ctx.engine_upstream_url or hctx.engine_upstream_url
   -- Consumer-app sidebar links (set via mount opts.extra_sidebar_links).
   ctx.extra_sidebar_links = ctx.extra_sidebar_links or hctx.extra_sidebar_links
   return ctx

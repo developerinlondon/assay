@@ -61,7 +61,10 @@ local function build_ctx(opts)
   if type(g.admin_bearer) ~= "string" then
     error("sysops.mount: opts.gateway.admin_bearer required", 3)
   end
-  ctx.engine_base_url      = g.engine_upstream
+  -- ctx.engine_upstream_url is the PRIVATE address the proxy hits
+  -- (e.g. http://127.0.0.1:8082). Distinct from ctx.engine_base_url,
+  -- which is the PUBLIC URL the sidebar's "Engine" link points at.
+  ctx.engine_upstream_url  = g.engine_upstream
   ctx.gateway_admin_bearer = g.admin_bearer
 
   -- Authz

@@ -148,13 +148,13 @@ function M.proxy(req)
   if not ctx.session_signer then
     return { status = 503, body = '{"error":"auth gateway not configured"}' }
   end
-  if not ctx.engine_base_url or not ctx.gateway_admin_bearer then
+  if not ctx.engine_upstream_url or not ctx.gateway_admin_bearer then
     return { status = 503, body = '{"error":"gateway not configured"}' }
   end
 
   req = req or {}
   local headers = req.headers or {}
-  local upstream = build_upstream_url(ctx.engine_base_url, req.path, req.raw_query)
+  local upstream = build_upstream_url(ctx.engine_upstream_url, req.path, req.raw_query)
   local fwd = clean_headers(headers)
 
   -- Try session-injection first.

@@ -58,7 +58,7 @@ local function setup(opts)
     cookie_name = "gondor_session",
   })
   ctx.session_store        = session.store_new()
-  ctx.engine_base_url      = opts.engine_base_url or "http://127.0.0.1:8080"
+  ctx.engine_upstream_url      = opts.engine_base_url or "http://127.0.0.1:8080"
   ctx.gateway_admin_bearer = opts.admin_bearer or "ADMIN-BEARER-TOKEN"
   ctx.authz_require_admin  = opts.authz_require_admin or false
   ctx.zanzibar_check       = opts.zanzibar_check
@@ -67,7 +67,7 @@ end
 local function teardown()
   ctx.session_signer       = nil
   ctx.session_store        = nil
-  ctx.engine_base_url      = nil
+  ctx.engine_upstream_url      = nil
   ctx.gateway_admin_bearer = nil
   ctx.authz_require_admin  = false
   ctx.zanzibar_check       = nil
