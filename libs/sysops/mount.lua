@@ -318,6 +318,13 @@ function M.mount(routes, opts)
     require("sysops._vault_pages").register(routes, ctx.url)
   end
 
+  -- 0.2.0 auth gateway: opt-in by passing opts.oidc. Wires the OIDC
+  -- client + session signer + reverse proxy + /whoami intercept so
+  -- the bundled dashboard SPAs work without an admin-token prompt.
+  if opts.oidc ~= nil then
+    require("sysops._auth_gateway").register(routes, ctx.url, opts)
+  end
+
   return ctx
 end
 

@@ -146,6 +146,63 @@ registers GET/POST routes for:
 All pages call the engine via the HTTP client passed as `opts.engine`. Admin-scoped endpoints
 (users / sessions / sealing / transit / zanzibar) require `engine_admin_key`.
 
+## Auth gateway (0.2.0)
+
+Opt in to a full OIDC BFF: sysops terminates the OIDC dance, holds the engine's admin bearer
+server-side, and injects it into proxied requests. The browser only ever sees an HttpOnly session
+cookie. Engine binary unchanged — still admin-bearer-only at its boundary.
+
+```lua
+sysops.mount(routes, {
+  -- … existing 0.1.x opts (state, audit, jobs, secret, brand, engine, …) …
+
+  oidc = {
+    issuer       = "https://gondor.fcar.ai/auth",  -- assay-auth IdP or external
+    client_id    = "sysops",
+    redirect_uri = "https://gondor.fcar.ai/auth/callback",
+    scopes       = { "openid", "profile", "email" },  -- optional
+  },
+  session = {
+    signing_key = secret_store.read("sysops_session_key"), -- ≥32 bytes
+    ttl_seconds = 86400,
+    cookie_name = "gondor_session",
+  },
+  gateway = {
+    engine_upstream = "http://127.0.0.1:8080",   -- bind engine to localhost
+    admin_bearer    = secret_store.read("engine_admin_bearer"),
+  },
+  authz = {
+    require_zanzibar_admin = false,  -- flip to true once tuples are seeded
+    bootstrap_first_admin  = true,   -- first OIDC login → admin tuple
+  },
+})
+```
+
+When `opts.oidc` is set, sysops registers:
+
+| Path                              | Behaviour                                                    |
+| --------------------------------- | ------------------------------------------------------------ |
+| `GET /auth/login`                 | 302 → IdP `authorize` (PKCE state planted in session_store)  |
+| `GET /auth/callback`              | code → tokens → id_token verify → set HttpOnly cookie        |
+| `GET /auth/logout`                | revoke server-side refresh + clear cookie                    |
+| `GET /api/v1/engine/auth/whoami`  | **intercept** — answers locally from session, never forwards |
+| `ANY /api/v1/engine/*`            | dual-mode proxy: bearer pass-through OR inject admin bearer  |
+| `GET /workflow`, `/workflow/*`    | proxy to engine (dashboard SPA assets + API)                 |
+| `GET /engine/console{,/*}`        | proxy to engine                                              |
+| `GET /shared/*`                   | proxy to engine                                              |
+
+The proxy's dual-mode behaviour preserves every existing access pattern:
+
+- **Browser + OIDC session** → sysops injects the admin bearer it holds.
+- **Bearer caller (curl, CI, SPA paste-a-token, customer-IdP JWT)** → passed through unchanged.
+- **No bearer + no session** → 401.
+
+`/whoami` intercept defuses the dashboard auth + engine SPAs' "admin token required" banner without
+modifying any SPA code: each SPA calls `/api/v1/engine/auth/whoami` at boot and skips the banner
+on a 200 response.
+
+Without `opts.oidc`, none of the above is wired and sysops behaves exactly like 0.1.x.
+
 ## SDK (0.1.5)
 
 Pure-Lua HTTP wrappers around the engine vault + auth API. Useful from plugins and other lib code
