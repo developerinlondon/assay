@@ -67,4 +67,7 @@ return {
                                 -- a zanzibar_check is wired so /api/v1/engine/*
                                 -- requires user:<sub> to hold an admin tuple.
   zanzibar_check       = nil, -- function(sub) -> bool (truthy = admin)
+  authz_bootstrap_first_admin = true, -- first OIDC login on a fresh
+                                       -- deployment auto-grants admin.
+                                       -- Set false to disable.
 }

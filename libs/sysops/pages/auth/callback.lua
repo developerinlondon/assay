@@ -6,8 +6,9 @@
 --! stashes the refresh_token server-side (keyed on sub), and sets the
 --! session cookie. 302s back to the original return_to.
 
-local ctx     = require("sysops.ctx")
-local session = require("sysops.session")
+local ctx       = require("sysops.ctx")
+local session   = require("sysops.session")
+local bootstrap = require("pages.auth.bootstrap")
 
 local M = {}
 
@@ -62,6 +63,10 @@ function M.page(req)
     local exp_at = tokens.expires_in and (os.time() + tokens.expires_in) or nil
     ctx.session_store:put_refresh(claims.sub, tokens.refresh_token, exp_at)
   end
+
+  -- First-user-wins bootstrap: if no Zanzibar admins exist yet, the
+  -- person currently signing in becomes admin. No-op once admins exist.
+  bootstrap.maybe_grant_first_admin(claims)
 
   local cookie_val = ctx.session_signer:issue({
     sub   = claims.sub,
