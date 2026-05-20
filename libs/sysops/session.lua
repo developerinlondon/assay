@@ -146,4 +146,25 @@ function M.store_new()
   return store
 end
 
+----------------------------------------------------------------------
+-- Cookie-header parsing helper. Sysops handlers see a single
+-- `Cookie:` header (or `cookie:`); pulling out one named cookie value
+-- belongs here because session.lua owns the cookie domain.
+----------------------------------------------------------------------
+
+--- Extract a named cookie value from a Cookie header. Returns nil if
+--- the header is empty or the cookie isn't present.
+function M.parse_cookie_header(header, name)
+  if type(header) ~= "string" or header == "" or type(name) ~= "string" then
+    return nil
+  end
+  for kv in header:gmatch("([^;]+)") do
+    local k, v = kv:match("^%s*([^=]+)%s*=%s*(.*)%s*$")
+    if k == name then
+      return v
+    end
+  end
+  return nil
+end
+
 return M

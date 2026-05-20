@@ -40,15 +40,15 @@
 --!                       modules — page handlers don't read it directly.
 
 return {
-  prefix             = "/",
-  url                = function(p) return p end,
-  lib_root           = ".",
-  state              = nil,
-  audit              = nil,
-  jobs               = nil,
-  secret             = nil,
-  brand              = nil,
-  engine             = nil,
+  prefix              = "/",
+  url                 = function(p) return p end,
+  lib_root            = ".",
+  state               = nil,
+  audit               = nil,
+  jobs                = nil,
+  secret              = nil,
+  brand               = nil,
+  engine              = nil,
   catalog_paths       = nil,
   template_paths      = nil,
   desired_state_path  = nil,
@@ -57,4 +57,11 @@ return {
   extra_sidebar_links = nil,
   active_modules      = {},
   engine_admin_key    = nil,
+  -- Auth-gateway 0.2.0 (set by mount.lua when opts.oidc is provided).
+  -- nil otherwise → backward-compat path skips auth routes.
+  oidc_client         = nil, -- sysops.oidc.new(opts.oidc)
+  session_signer      = nil, -- sysops.session.new(opts.session)
+  session_store       = nil, -- sysops.session.store_new()
+  gateway_admin_bearer = nil, -- engine admin bearer the gateway injects
+  authz_require_admin = true, -- gate proxy on zanzibar admin tuple
 }
