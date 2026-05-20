@@ -5,6 +5,10 @@ local auth   = require("sysops.auth")
 
 local M = {}
 
+local function url(p)
+  return (ctx.url and ctx.url(p)) or p
+end
+
 local function urlenc(s)
   return (tostring(s or "")):gsub("([^%w%-_%.~])", function(c)
     return string.format("%%%02X", string.byte(c))
@@ -53,7 +57,10 @@ function M.grant(req)
   local f       = form.parse(req)
   local user_id = f.user_id or ""
   if user_id == "" then
-    return { status = 303, headers = { Location = "/zanzibar/bootstrap?written=0&failed=0" } }
+    return {
+      status  = 303,
+      headers = { Location = url("/zanzibar/bootstrap") .. "?written=0&failed=0" },
+    }
   end
   local sdk     = auth.new(ctx.engine).zanzibar
   local written = 0
@@ -74,10 +81,17 @@ function M.grant(req)
       written = written + 1
     end
   end
+  -- Invalidate sysops.authz's per-(sub, tuple) cache so the granted
+  -- user's new permissions take effect immediately (not after the 30s
+  -- TTL). pcall keeps the path safe when the auth gateway isn't wired.
+  if written > 0 then
+    local ok, authz = pcall(require, "sysops.authz")
+    if ok and authz and authz.invalidate then authz.invalidate() end
+  end
   return {
     status  = 303,
     headers = {
-      Location = "/zanzibar/bootstrap?granted_for=" .. urlenc(user_id)
+      Location = url("/zanzibar/bootstrap") .. "?granted_for=" .. urlenc(user_id)
         .. "&written=" .. tostring(written)
         .. "&failed=" .. tostring(failed),
     },

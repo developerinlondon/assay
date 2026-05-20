@@ -157,23 +157,23 @@ sysops.mount(routes, {
   -- … existing 0.1.x opts (state, audit, jobs, secret, brand, engine, …) …
 
   oidc = {
-    issuer       = "https://gondor.fcar.ai/auth",  -- assay-auth IdP or external
+    issuer       = "https://app.example/auth",  -- assay-auth IdP or external
     client_id    = "sysops",
-    redirect_uri = "https://gondor.fcar.ai/auth/callback",
+    redirect_uri = "https://app.example/auth/callback",
     scopes       = { "openid", "profile", "email" },  -- optional
   },
   session = {
     signing_key = secret_store.read("sysops_session_key"), -- ≥32 bytes
     ttl_seconds = 86400,
-    cookie_name = "gondor_session",
+    cookie_name = "app_session",
   },
   gateway = {
     engine_upstream = "http://127.0.0.1:8080",   -- bind engine to localhost
     admin_bearer    = secret_store.read("engine_admin_bearer"),
   },
   authz = {
-    require_zanzibar_admin = false,  -- flip to true once tuples are seeded
-    bootstrap_first_admin  = true,   -- first OIDC login → admin tuple
+    bootstrap_first_admin = true,    -- first OIDC login → grant all
+                                     -- canonical admin tuples
   },
 })
 ```

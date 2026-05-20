@@ -217,4 +217,43 @@ do
   print("  ok invalidate() clears cache so newly-granted tuples take effect")
 end
 
+-- ---------------------------------------------------------------------
+-- Strict-prefix fail-closed: unmapped /api/v1/* etc. MUST be denied.
+-- ---------------------------------------------------------------------
+
+do
+  reset()
+  ctx.engine = stub_engine({})
+  -- A path under /api/v1/ that no rule matches. Must NOT be no-rule allow.
+  local ok, reason = authz.is_allowed("alice@example", "/api/v1/engine/some-future-endpoint/x")
+  assert.eq(ok, false, "unmapped /api/v1/* → denied")
+  assert.eq(reason, "no-rule-strict", "reason flags strict fail-closed")
+  -- A path that legitimately has no rule (consumer-added) stays open.
+  local ok2 = authz.is_allowed("alice@example", "/skip-trace")
+  assert.eq(ok2, true, "unmapped non-sensitive path stays no-rule open")
+  reset()
+  print("  ok unmapped /api/v1/* fails closed; unmapped /skip-trace stays open")
+end
+
+-- ---------------------------------------------------------------------
+-- Mount-prefix awareness: /host/auth/users matches the /auth/users rule
+-- when ctx.prefix is /host.
+-- ---------------------------------------------------------------------
+
+do
+  reset()
+  ctx.engine = stub_engine({
+    ["user:alice@example|auth:system#admin"] = true,
+  })
+  ctx.prefix = "/host"
+  assert.eq(authz.is_allowed("alice@example", "/host/auth/users"), true,
+            "/host/auth/users routes to /auth/users rule when prefix=/host")
+  assert.eq(authz.is_allowed("alice@example", "/host/api/v1/engine/auth/admin/users"),
+            true,
+            "prefix-stripped /api/v1/* path also resolves")
+  ctx.prefix = nil
+  reset()
+  print("  ok mount prefix is stripped before rule matching")
+end
+
 print("[sysops.authz] ok")

@@ -69,10 +69,6 @@ return {
   session_signer       = nil, -- sysops.session.new(opts.session)
   session_store        = nil, -- sysops.session.store_new()
   gateway_admin_bearer = nil, -- engine admin bearer the gateway injects
-  authz_require_admin  = false, -- v1: cookie alone is enough; flip to true once
-                                -- a zanzibar_check is wired so /api/v1/engine/*
-                                -- requires user:<sub> to hold an admin tuple.
-  zanzibar_check       = nil, -- function(sub) -> bool (truthy = admin)
   authz_bootstrap_first_admin = true, -- first OIDC login on a fresh
                                        -- deployment auto-grants admin.
                                        -- Set false to disable.
