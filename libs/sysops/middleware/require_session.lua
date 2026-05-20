@@ -24,13 +24,21 @@ local authz   = require("sysops.authz")
 
 local M = {}
 
+-- Prefix-safe URL builder. ctx.url is populated by mount.lua and
+-- prepends the configured mount prefix (e.g. /host) to every absolute
+-- path. Fall back to identity when no prefix is set (legacy / tests).
+local function u(path)
+  if ctx.url then return ctx.url(path) end
+  return path
+end
+
 local function render_forbidden(claims, reason)
   return {
     status = 403,
     headers = { ["Content-Type"] = "text/html; charset=utf-8" },
     body = table.concat({
       "<!doctype html><html><head><title>Forbidden</title>",
-      "<link rel='stylesheet' href='/static/styles.css'></head><body>",
+      "<link rel='stylesheet' href='", u("/static/styles.css"), "'></head><body>",
       "<div style='max-width:560px;margin:6rem auto;padding:2rem;",
       "font-family:system-ui;text-align:center'>",
       "<h1 style='margin:0 0 1rem'>Access denied</h1>",
@@ -38,8 +46,8 @@ local function render_forbidden(claims, reason)
       "</code>, but you don't have permission to view this page.</p>",
       "<p style='color:var(--fg-2);font-size:0.9em'>Reason: ",
       tostring(reason), "</p>",
-      "<p><a href='/'>← Back to dashboard</a> &nbsp;",
-      "<a href='/auth/logout'>Sign out</a></p>",
+      "<p><a href='", u("/"), "'>← Back to dashboard</a> &nbsp;",
+      "<a href='", u("/auth/logout"), "'>Sign out</a></p>",
       "</div></body></html>",
     }),
   }
@@ -70,7 +78,7 @@ function M.wrap(inner_handler)
       local return_to = (req and req.path) or "/"
       return {
         status  = 302,
-        headers = { Location = "/auth/login?return_to=" .. urlencode(return_to) },
+        headers = { Location = u("/auth/login") .. "?return_to=" .. urlencode(return_to) },
       }
     end
 

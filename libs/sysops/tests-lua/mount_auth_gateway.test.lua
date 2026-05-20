@@ -134,12 +134,8 @@ do
   reset_ctx()
   local routes = { GET = {}, POST = {} }
   sysops.mount(routes, full_opts({
-    authz = {
-      require_zanzibar_admin = true,
-      bootstrap_first_admin  = false,
-    },
+    authz = { bootstrap_first_admin = false },
   }))
-  assert.eq(ctx.authz_require_admin, true, "require_zanzibar_admin propagated")
   assert.eq(ctx.authz_bootstrap_first_admin, false, "bootstrap_first_admin propagated")
   reset_ctx()
   print("  ok opts.authz overrides flow into ctx")

@@ -149,6 +149,16 @@ function M.page(req)
   }, req)
 end
 
+-- Invalidate sysops.authz's per-(sub, tuple) cache whenever a tuple is
+-- written or deleted, so the next request through gateway.proxy /
+-- require_session sees the new permissions without waiting for the
+-- 30s TTL. Best-effort: pcall so a load failure (auth gateway not
+-- wired) doesn't kill the mutation path.
+local function invalidate_authz_cache()
+  local ok, authz = pcall(require, "sysops.authz")
+  if ok and authz and authz.invalidate then authz.invalidate() end
+end
+
 function M.write(req)
   local f   = form.parse(req)
   local sdk = auth.new(ctx.engine).zanzibar
@@ -168,6 +178,7 @@ function M.write(req)
       },
     }
   end
+  invalidate_authz_cache()
   return { status = 303, headers = { Location = "/zanzibar/tuples?saved=1" } }
 end
 
@@ -178,6 +189,7 @@ function M.delete(req)
   if err then
     return { status = 303, headers = { Location = "/zanzibar/tuples?delete_err=" .. tostring(err.status) } }
   end
+  invalidate_authz_cache()
   return { status = 303, headers = { Location = "/zanzibar/tuples?deleted=1" } }
 end
 

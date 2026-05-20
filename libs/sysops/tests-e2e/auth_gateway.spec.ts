@@ -1,19 +1,21 @@
-// End-to-end test against the live gondor server on :18790, exercising
-// the 0.2.0 sysops auth gateway. Assumes:
-//   - gondor.service is running locally (see /etc/systemd/system/gondor.service)
-//   - GONDOR_E2E_COOKIE is a valid gondor_session cookie value
-//   - GONDOR_E2E_BASE is http://127.0.0.1:18790 (or override via env)
+// End-to-end test against a LIVE auth-gateway-wired sysops deployment.
+// This is an opt-in integration suite, not part of the standard
+// sysops-e2e CI run (which boots an in-repo stub server with no OIDC
+// session). The whole suite skips when GONDOR_E2E_COOKIE is unset so
+// the unattended CI job stays green.
 //
-// Cookie is injected via an env var so the spec doesn't have to know how
-// to mint one. Use the run-it-now harness (scripts/run-auth-gateway-e2e.sh)
-// to set this up.
+// To run locally:
+//   - gondor.service running on $GONDOR_E2E_BASE (default 127.0.0.1:18790)
+//   - GONDOR_E2E_COOKIE = a valid gondor_session cookie value
+//   - bunx playwright test auth_gateway.spec.ts
 
 import { expect, test } from '@playwright/test';
 
 const BASE   = process.env.GONDOR_E2E_BASE   || 'http://127.0.0.1:18790';
 const COOKIE = process.env.GONDOR_E2E_COOKIE || '';
 
-if (!COOKIE) throw new Error('GONDOR_E2E_COOKIE env var required');
+test.skip(!COOKIE,
+  'auth-gateway live e2e — set GONDOR_E2E_COOKIE to run against a deployed gondor');
 
 test.use({ baseURL: BASE });
 

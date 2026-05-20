@@ -76,7 +76,10 @@ function M.page(req)
   return {
     status  = 302,
     headers = {
-      Location     = pending.return_to or "/",
+      -- Defense in depth: login.lua already clamps return_to to a
+      -- same-origin path before stashing in the pending store, but
+      -- re-clamp here so a stash-poisoning bug can't open-redirect.
+      Location     = session.safe_return_to(pending.return_to),
       ["Set-Cookie"] = cookie_attrs(
         ctx.session_signer.cookie_name,
         cookie_val,

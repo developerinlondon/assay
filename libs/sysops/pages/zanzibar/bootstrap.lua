@@ -74,6 +74,13 @@ function M.grant(req)
       written = written + 1
     end
   end
+  -- Invalidate sysops.authz's per-(sub, tuple) cache so the granted
+  -- user's new permissions take effect immediately (not after the 30s
+  -- TTL). pcall keeps the path safe when the auth gateway isn't wired.
+  if written > 0 then
+    local ok, authz = pcall(require, "sysops.authz")
+    if ok and authz and authz.invalidate then authz.invalidate() end
+  end
   return {
     status  = 303,
     headers = {

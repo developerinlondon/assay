@@ -172,8 +172,8 @@ sysops.mount(routes, {
     admin_bearer    = secret_store.read("engine_admin_bearer"),
   },
   authz = {
-    require_zanzibar_admin = false,  -- flip to true once tuples are seeded
-    bootstrap_first_admin  = true,   -- first OIDC login → admin tuple
+    bootstrap_first_admin = true,    -- first OIDC login → grant all
+                                     -- canonical admin tuples
   },
 })
 ```

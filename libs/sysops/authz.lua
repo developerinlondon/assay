@@ -112,14 +112,36 @@ local PATH_RULES = {
                                             relation = "access" },
 }
 
+--- Strip the mount prefix from `path` so PATH_RULES (which list
+--- unprefixed paths like /auth/login) match a request to /host/auth/login
+--- when sysops is mounted at /host. Falls through cleanly when prefix
+--- is empty / root.
+local function strip_mount_prefix(path)
+  local prefix = ctx.prefix
+  if type(prefix) ~= "string" or prefix == "" or prefix == "/" then
+    return path
+  end
+  -- ctx.prefix is normalized to drop a trailing slash by mount.lua, so
+  -- it looks like "/host". Strip it iff path starts with prefix + "/" or
+  -- equals prefix exactly.
+  if path == prefix then return "/" end
+  if path:sub(1, #prefix + 1) == prefix .. "/" then
+    return path:sub(#prefix + 1)
+  end
+  return path
+end
+
 --- Look up the permission rule for `path`. Returns one of:
 ---   { bypass = true }              — no check needed (signed-in is enough)
 ---   { object_type, object_id, relation }  — required tuple
----   nil                            — no rule matched (defaults to bypass)
+---   nil                            — no rule matched (defaults to bypass
+---                                    UNLESS the path falls under a
+---                                    sensitive prefix; see is_allowed)
 function M.rule_for_path(path)
   if type(path) ~= "string" then return nil end
+  local p = strip_mount_prefix(path)
   for _, rule in ipairs(PATH_RULES) do
-    if path == rule.prefix or path:sub(1, #rule.prefix) == rule.prefix then
+    if p == rule.prefix or p:sub(1, #rule.prefix) == rule.prefix then
       return rule
     end
   end
@@ -158,14 +180,46 @@ end
 -- The permission check itself
 ----------------------------------------------------------------------
 
+-- Path prefixes that MUST have an explicit rule. If a request under one
+-- of these prefixes doesn't match a rule in PATH_RULES, fail closed —
+-- gateway.proxy injects the admin bearer on session-authenticated
+-- proxied requests, so an unmapped path would otherwise grant any
+-- signed-in user full engine-admin power. Sensitive prefixes:
+local STRICT_PREFIXES = {
+  "/api/v1/",
+  "/auth/",
+  "/vault/",
+  "/engine/",
+  "/workflow",
+  "/zanzibar",
+}
+
+local function in_strict_prefix(path)
+  for _, p in ipairs(STRICT_PREFIXES) do
+    if path == p or path:sub(1, #p) == p then return true end
+  end
+  return false
+end
+
 --- Returns (allow, reason). `allow` is a boolean; `reason` is a short
 --- string describing why (cache-hit, granted, missing-tuple, etc.) —
 --- useful for audit logging and tests.
 function M.is_allowed(sub, path)
   if type(sub) ~= "string" or sub == "" then return false, "no-sub" end
+  if type(path) ~= "string"         then return false, "no-path" end
 
-  local rule = M.rule_for_path(path)
-  if rule == nil then return true, "no-rule" end       -- default open
+  -- Strip the mount prefix once so both the rule lookup and the
+  -- sensitive-prefix check operate on the same unprefixed path.
+  -- rule_for_path also strips internally for the public-API use case,
+  -- but doing it here lets us share the result.
+  local stripped = strip_mount_prefix(path)
+  local rule = M.rule_for_path(stripped)
+  if rule == nil then
+    -- Fail-closed on sensitive prefixes; everything else (root,
+    -- consumer-added routes like /skip-trace, etc.) stays open.
+    if in_strict_prefix(stripped) then return false, "no-rule-strict" end
+    return true, "no-rule"
+  end
   if rule.bypass then return true, "bypass" end
 
   local key = cache_key(sub, rule.object_type, rule.object_id, rule.relation)

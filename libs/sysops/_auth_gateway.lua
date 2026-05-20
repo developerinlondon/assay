@@ -67,16 +67,13 @@ local function build_ctx(opts)
   ctx.engine_upstream_url  = g.engine_upstream
   ctx.gateway_admin_bearer = g.admin_bearer
 
-  -- Authz
+  -- Authz. Per-resource Zanzibar tuple checks happen on every request
+  -- via sysops.authz; the only mount-opt today is whether the first
+  -- OIDC login auto-grants the canonical admin tuples.
   local a = opts.authz or {}
-  if a.require_zanzibar_admin ~= nil then
-    ctx.authz_require_admin = a.require_zanzibar_admin
-  end
   if a.bootstrap_first_admin ~= nil then
     ctx.authz_bootstrap_first_admin = a.bootstrap_first_admin
   end
-  -- ctx.zanzibar_check is left for the consumer or mount-time wiring
-  -- to fill in if they want per-request role enforcement.
 end
 
 --- Register all the auth-gateway routes on the consumer's `routes`

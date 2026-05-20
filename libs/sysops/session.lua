@@ -147,6 +147,24 @@ function M.store_new()
 end
 
 ----------------------------------------------------------------------
+-- Safe-return helper. Open-redirect mitigation for /auth/login's
+-- return_to param and /auth/callback's resume target. Accepts only
+-- relative paths anchored at /; anything that looks like an
+-- absolute URL, protocol-relative ("//evil"), backslash-mixed
+-- ("/\evil"), or contains CR/LF gets clamped to "/".
+----------------------------------------------------------------------
+
+function M.safe_return_to(s)
+  if type(s) ~= "string" or s == "" then return "/" end
+  if s:find("[\r\n%z]") then return "/" end             -- header smuggling
+  if s:find("://", 1, true) then return "/" end          -- http://evil, javascript://
+  if s:sub(1, 1) ~= "/" then return "/" end              -- must be absolute path
+  if s:sub(1, 2) == "//" then return "/" end             -- protocol-relative
+  if s:sub(2, 2) == "\\" then return "/" end             -- "/\evil"
+  return s
+end
+
+----------------------------------------------------------------------
 -- Cookie-header parsing helper. Sysops handlers see a single
 -- `Cookie:` header (or `cookie:`); pulling out one named cookie value
 -- belongs here because session.lua owns the cookie domain.
