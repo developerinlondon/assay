@@ -268,6 +268,31 @@ do
 end
 
 -- ---------------------------------------------------------------------
+-- 9b. Session present + stale bearer in Authorization → cookie wins.
+--     Regression for the dashboard SPA case where localStorage holds
+--     an `assay-admin-token` that long predates the OIDC flow.
+-- ---------------------------------------------------------------------
+
+do
+  setup()
+  local calls = install_http(function() return { status = 200, body = '{}' } end)
+  local cookie = ctx.session_signer:issue({ sub = "alice@example", email = "alice@example" })
+  local r = gateway.proxy({
+    method   = "GET",
+    path     = "/api/v1/engine/workflow/runs",
+    headers  = {
+      cookie        = "gondor_session=" .. cookie,
+      authorization = "Bearer STALE-LOCALSTORAGE-TOKEN",
+    },
+  })
+  assert.eq(r.status, 200, "valid session beats stale bearer")
+  assert.eq(calls[1].headers.authorization, "Bearer ADMIN-BEARER-TOKEN",
+            "session-injected admin bearer used; stale token discarded")
+  teardown()
+  print("  ok valid session overrides a stale Authorization header")
+end
+
+-- ---------------------------------------------------------------------
 -- 9. Not configured → 503.
 -- ---------------------------------------------------------------------
 

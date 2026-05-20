@@ -132,6 +132,18 @@ local function forward(method, url_str, body, headers)
 end
 
 --- ANY /api/v1/engine/* (and /workflow, /vault, /engine/console, /shared)
+---
+--- Resolution priority (deliberate — see commit history for the
+--- session-first switch):
+---
+---   1. Valid session cookie  → inject the gateway's admin bearer.
+---      Ignores any Authorization header from the caller — dashboard
+---      SPAs ship a stale `assay-admin-token` from localStorage and
+---      forwarding it 401s the browser flow.
+---   2. No (or invalid) session, but caller has a bearer
+---      → pass through unchanged. Lets CI / curl / customer-IdP-JWT
+---      paths reach the engine without a sysops session.
+---   3. Otherwise → 401.
 function M.proxy(req)
   if not ctx.session_signer then
     return { status = 503, body = '{"error":"auth gateway not configured"}' }
@@ -142,41 +154,40 @@ function M.proxy(req)
 
   req = req or {}
   local headers = req.headers or {}
-  local incoming_auth = headers.authorization or headers.Authorization
   local upstream = build_upstream_url(ctx.engine_base_url, req.path, req.raw_query)
   local fwd = clean_headers(headers)
 
+  -- Try session-injection first.
+  local cookie_header = headers.cookie or headers.Cookie or ""
+  local cookie_val = session.parse_cookie_header(cookie_header, ctx.session_signer.cookie_name)
+  local claims = nil
+  if cookie_val then
+    claims = (ctx.session_signer:verify(cookie_val))
+  end
+
+  if claims then
+    if ctx.authz_require_admin then
+      if type(ctx.zanzibar_check) ~= "function" then
+        return { status = 503, body = '{"error":"authz_require_admin set but no zanzibar_check"}' }
+      end
+      if not ctx.zanzibar_check(claims.sub) then
+        return { status = 403, body = '{"error":"forbidden"}' }
+      end
+    end
+    fwd.authorization        = "Bearer " .. ctx.gateway_admin_bearer
+    fwd["X-Forwarded-User"]  = claims.sub
+    fwd["X-User-Id"]         = claims.sub
+    return forward(req.method or "GET", upstream, req.body, fwd)
+  end
+
+  -- No valid session — fall back to bearer pass-through if caller has one.
+  local incoming_auth = headers.authorization or headers.Authorization
   if type(incoming_auth) == "string" and incoming_auth:match("^[Bb]earer ") then
-    -- Pass-through: caller has a bearer; trust them, let engine decide.
-    -- Preserve their Authorization header (clean_headers kept it).
     fwd.authorization = incoming_auth
     return forward(req.method or "GET", upstream, req.body, fwd)
   end
 
-  -- Session-injection path.
-  local cookie_header = headers.cookie or headers.Cookie or ""
-  local cookie_val = session.parse_cookie_header(cookie_header, ctx.session_signer.cookie_name)
-  if not cookie_val then
-    return { status = 401, body = '{"error":"unauthenticated"}' }
-  end
-  local claims, verr = ctx.session_signer:verify(cookie_val)
-  if not claims then
-    return { status = 401, body = '{"error":"' .. tostring(verr or "unauthenticated") .. '"}' }
-  end
-
-  if ctx.authz_require_admin then
-    if type(ctx.zanzibar_check) ~= "function" then
-      return { status = 503, body = '{"error":"authz_require_admin set but no zanzibar_check"}' }
-    end
-    if not ctx.zanzibar_check(claims.sub) then
-      return { status = 403, body = '{"error":"forbidden"}' }
-    end
-  end
-
-  fwd.authorization        = "Bearer " .. ctx.gateway_admin_bearer
-  fwd["X-Forwarded-User"]  = claims.sub
-  fwd["X-User-Id"]         = claims.sub
-  return forward(req.method or "GET", upstream, req.body, fwd)
+  return { status = 401, body = '{"error":"unauthenticated"}' }
 end
 
 return M
