@@ -46,7 +46,7 @@ function M.detail(req)
     snapshot_id_short = id:sub(1, 12),
     detail = detail,
     -- Default destination prefilled in the wizard
-    default_dest = "/var/lib/knowhere/restore/" .. os.date("!%Y-%m-%dT%H-%M-%S"),
+    default_dest = "/var/lib/sysops/restore/" .. os.date("!%Y-%m-%dT%H-%M-%S"),
   }, req)
 end
 
@@ -63,7 +63,7 @@ function M.restore(req)
   end
   if dest_mode == "alt" then
     if not dest or dest == "" then
-      dest = "/var/lib/knowhere/restore/" .. os.date("!%Y-%m-%dT%H-%M-%S")
+      dest = "/var/lib/sysops/restore/" .. os.date("!%Y-%m-%dT%H-%M-%S")
     end
   end
 

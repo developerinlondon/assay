@@ -1,12 +1,12 @@
 -- /machines/<name>/logs — full journal stream for the container.
 -- Reuses the host journal binding with `machine = name`. journalctl's
 -- `--machine=` switch requires host-root, so we pass `elevate = true`
--- when knowhere runs unprivileged — the assay binding wraps the
+-- when sysops runs unprivileged — the assay binding wraps the
 -- subprocess in `sudo -n` and the NOPASSWD allowlist
--- (deploy/knowhere-machinectl.sudoers.template) covers
+-- (deploy/sysops-machinectl.sudoers.template) covers
 -- `journalctl --machine=*`. The SSE stream at /api/logs/stream
 -- already accepts ?machine=<name>; the template plumbs the machine via
--- window.KNOWHERE_LOG_MACHINE.
+-- window.SYSOPS_LOG_MACHINE.
 
 local render = require("pages.render")
 local priv   = require("services.host.privilege")

@@ -20,12 +20,12 @@ local function full_opts(overrides)
   base.oidc = overrides.oidc or {
     issuer       = "https://idp.test",
     client_id    = "sysops",
-    redirect_uri = "https://gondor.fcar.ai/auth/callback",
+    redirect_uri = "https://app.example/auth/callback",
   }
   base.session = overrides.session or {
     signing_key = "0123456789abcdef0123456789abcdef",
     ttl_seconds = 86400,
-    cookie_name = "gondor_session",
+    cookie_name = "app_session",
   }
   base.gateway = overrides.gateway or {
     engine_upstream = "http://127.0.0.1:8080",
@@ -43,9 +43,7 @@ local function reset_ctx()
   ctx.engine_base_url            = nil
   ctx.engine_upstream_url        = nil
   ctx.gateway_admin_bearer       = nil
-  ctx.authz_require_admin        = false
   ctx.authz_bootstrap_first_admin = true
-  ctx.zanzibar_check             = nil
 end
 
 -- Stub http so the OIDC client doesn't actually do discovery during
@@ -94,7 +92,7 @@ do
   assert.not_nil(ctx.session_store,        "session_store built")
   assert.eq(ctx.engine_upstream_url, "http://127.0.0.1:8080", "engine_upstream_url set")
   assert.eq(ctx.gateway_admin_bearer, "TEST-ADMIN-BEARER", "admin_bearer set")
-  assert.eq(ctx.session_signer.cookie_name, "gondor_session", "cookie_name propagated")
+  assert.eq(ctx.session_signer.cookie_name, "app_session", "cookie_name propagated")
 
   reset_ctx()
   print("  ok opts.oidc opt-in wires every gateway route + ctx field")

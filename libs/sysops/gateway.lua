@@ -31,7 +31,7 @@ local M = {}
 --- as JSON. The dashboard SPAs use this exact endpoint to detect a
 --- live session at boot; we answer it here instead of forwarding to
 --- the engine (whose own /whoami requires `assay_session`, a different
---- cookie name the engine sets — gondor never sees that cookie).
+--- cookie name the engine sets — the consumer app never sees that cookie).
 function M.whoami(req)
   if not ctx.session_signer then
     return { status = 503, body = '{"error":"auth gateway not configured"}' }
@@ -51,7 +51,7 @@ function M.whoami(req)
     return {
       status  = 401,
       headers = { ["Content-Type"] = "application/json" },
-      body    = '{"error":"' .. tostring(err) .. '"}',
+      body    = json.encode({ error = tostring(err) }),
     }
   end
   return {
@@ -209,7 +209,7 @@ function M.proxy(req)
       return {
         status  = 403,
         headers = { ["Content-Type"] = "application/json" },
-        body    = '{"error":"forbidden","reason":"' .. tostring(reason) .. '"}',
+        body    = json.encode({ error = "forbidden", reason = tostring(reason) }),
       }
     end
 

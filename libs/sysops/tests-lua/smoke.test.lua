@@ -14,7 +14,7 @@ local function ok(label) print("  ✓ " .. label) end
 print("[sysops.smoke]")
 
 -- Pick a high port that's unlikely to be claimed by anything else on the
--- host. 18786 collides with the predecessor knowhere daemon.
+-- host. 18786 collides with the predecessor daemon.
 local PORT = 47917
 local opts = stubs.opts({
   extra_sidebar_links = {

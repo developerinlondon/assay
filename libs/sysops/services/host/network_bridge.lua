@@ -63,7 +63,7 @@ end
 -- accidentally pulled apex/agentx into nsbr0 because their ve-* veths
 -- matched). Keeping the 41-* file out entirely sidesteps the issue.
 
--- Read an absolute filesystem path. fs.read goes through knowhere's
+-- Read an absolute filesystem path. fs.read goes through sysops's
 -- LayeredFs which only knows about the embedded VFS + brand/plugins
 -- overlays — it doesn't resolve /etc/. Use io.open for the real-disk
 -- read against absolute paths.
@@ -81,7 +81,7 @@ local function write_if_changed(path, content)
   local current = read_disk(path)
   if current == content then return false end
   -- Stage in a tmp the user owns, then sudo install into /etc.
-  local tmp = "/tmp/knowhere-network-" .. os.time() .. "-" .. math.random(0, 0xffff) .. ".tmp"
+  local tmp = "/tmp/sysops-network-" .. os.time() .. "-" .. math.random(0, 0xffff) .. ".tmp"
   fs.write(tmp, content)
   local r = shell.exec(("sudo -n install -D -m 0644 -o root -g root %q %q"):format(tmp, path), {})
   fs.remove(tmp)
@@ -237,7 +237,7 @@ end
 local LEASES_FILE = (function()
   -- assay sandbox doesn't expose os.getenv at module-load; use env.get
   -- which is the assay-provided builtin.
-  local data_dir = (env and env.get and env.get("KNOWHERE_DATA_DIR")) or "/var/lib/knowhere"
+  local data_dir = (env and env.get and env.get("SYSOPS_DATA_DIR")) or "/var/lib/sysops"
   return data_dir .. "/network/leases.toml"
 end)()
 
@@ -256,7 +256,7 @@ local function read_leases_disk(path)
 end
 
 local function write_leases_disk(state)
-  local body = "# Managed by knowhere; static-IP allocations on nsbr0.\n"
+  local body = "# Managed by sysops; static-IP allocations on nsbr0.\n"
   -- Stable key order for deterministic file content.
   local names = {}
   for n, _ in pairs(state.leases or {}) do names[#names+1] = n end
@@ -318,7 +318,7 @@ function M.write_container_static_config(name)
   local ip, err = M.allocate_ip(name)
   if not ip then return nil, err end
 
-  local body = ([[# Static IP for nspawn host0 — allocated by knowhere
+  local body = ([[# Static IP for nspawn host0 — allocated by sysops
 # (see services/host/network_bridge.lua). nsbr0's built-in DHCP server
 # doesn't reliably issue leases on this host; static avoids the dependency.
 [Match]
@@ -336,7 +336,7 @@ RequiredForOnline=routable
 
   local rootfs_dir = "/var/lib/machines/" .. name .. "/etc/systemd/network"
   local dst = rootfs_dir .. "/10-host0-static.network"
-  local tmp = "/tmp/knowhere-host0-" .. name .. "." .. tostring(os.time())
+  local tmp = "/tmp/sysops-host0-" .. name .. "." .. tostring(os.time())
   fs.write(tmp, body)
   local cmd = ("sudo -n install -D -m 0644 -o root -g root %q %q"):format(tmp, dst)
   local r = shell.exec(cmd, {})

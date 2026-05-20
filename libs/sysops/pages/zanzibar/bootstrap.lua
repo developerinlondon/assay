@@ -2,8 +2,13 @@ local render = require("pages.render")
 local ctx    = require("sysops.ctx")
 local form   = require("pages.form")
 local auth   = require("sysops.auth")
+local authz  = require("sysops.authz")
 
 local M = {}
+
+local function url(p)
+  return (ctx.url and ctx.url(p)) or p
+end
 
 local function urlenc(s)
   return (tostring(s or "")):gsub("([^%w%-_%.~])", function(c)
@@ -11,12 +16,10 @@ local function urlenc(s)
   end)
 end
 
-local BOOTSTRAP_TUPLES = {
-  { object_type = "auth",     object_id = "system", relation = "admin"  },
-  { object_type = "engine",   object_id = "core",   relation = "admin"  },
-  { object_type = "workflow", object_id = "main",   relation = "access" },
-  { object_type = "vault",    object_id = "main",   relation = "access" },
-}
+-- Canonical admin tuples come from sysops.authz so this manual
+-- bootstrap path and the first-OIDC-user path (pages/auth/bootstrap.lua)
+-- always grant the same five resources.
+local BOOTSTRAP_TUPLES = authz.CANONICAL_TUPLES
 
 local function tuple_label(t)
   return t.object_type .. ":" .. t.object_id .. "#" .. t.relation
@@ -53,9 +56,13 @@ function M.grant(req)
   local f       = form.parse(req)
   local user_id = f.user_id or ""
   if user_id == "" then
-    return { status = 303, headers = { Location = "/zanzibar/bootstrap?written=0&failed=0" } }
+    return {
+      status  = 303,
+      headers = { Location = url("/zanzibar/bootstrap") .. "?written=0&failed=0" },
+    }
   end
   local sdk     = auth.new(ctx.engine).zanzibar
+  authz.ensure_required_namespaces(sdk)
   local written = 0
   local failed  = 0
   for _, t in ipairs(BOOTSTRAP_TUPLES) do
@@ -84,7 +91,7 @@ function M.grant(req)
   return {
     status  = 303,
     headers = {
-      Location = "/zanzibar/bootstrap?granted_for=" .. urlenc(user_id)
+      Location = url("/zanzibar/bootstrap") .. "?granted_for=" .. urlenc(user_id)
         .. "&written=" .. tostring(written)
         .. "&failed=" .. tostring(failed),
     },

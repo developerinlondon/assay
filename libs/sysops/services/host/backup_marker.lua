@@ -1,7 +1,7 @@
 -- services/host/backup_marker.lua
 --
--- Read/write `/var/lib/knowhere/backups/<profile>.last` — a simple
--- key=value file the timer-launched `knowhere backup-run` writes after
+-- Read/write `/var/lib/sysops/backups/<profile>.last` — a simple
+-- key=value file the timer-launched `sysops backup-run` writes after
 -- every run. Lets the dashboard surface "last run" status without
 -- having to grep journalctl or query rustic.
 --
@@ -15,7 +15,7 @@
 
 local M = {}
 
-local STATE_DIR = "/var/lib/knowhere/backups"
+local STATE_DIR = "/var/lib/sysops/backups"
 
 local function path_for(profile)
   return STATE_DIR .. "/" .. profile .. ".last"

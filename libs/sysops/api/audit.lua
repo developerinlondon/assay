@@ -16,7 +16,7 @@ function M.export(req)
     body   = body,
     headers = {
       ["Content-Type"]        = "application/x-ndjson",
-      ["Content-Disposition"] = 'attachment; filename="knowhere-audit.ndjson"',
+      ["Content-Disposition"] = 'attachment; filename="sysops-audit.ndjson"',
     },
   }
 end

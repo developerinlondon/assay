@@ -72,13 +72,11 @@ local function setup(opts)
   ctx.session_signer = session.new({
     signing_key = KEY,
     ttl_seconds = 3600,
-    cookie_name = "gondor_session",
+    cookie_name = "app_session",
   })
   ctx.session_store        = session.store_new()
   ctx.engine_upstream_url      = opts.engine_base_url or "http://127.0.0.1:8080"
   ctx.gateway_admin_bearer = opts.admin_bearer or "ADMIN-BEARER-TOKEN"
-  ctx.authz_require_admin  = opts.authz_require_admin or false
-  ctx.zanzibar_check       = opts.zanzibar_check
   if opts.skip_authz_stub ~= true then
     authz_allow_all()
   end
@@ -89,8 +87,6 @@ local function teardown()
   ctx.session_store        = nil
   ctx.engine_upstream_url      = nil
   ctx.gateway_admin_bearer = nil
-  ctx.authz_require_admin  = false
-  ctx.zanzibar_check       = nil
   ctx.engine               = nil
   authz.invalidate()
   restore_http()
@@ -110,7 +106,7 @@ do
   local r = gateway.proxy({
     method = "GET",
     path   = "/api/v1/engine/workflow/runs",
-    headers = { cookie = "gondor_session=" .. cookie },
+    headers = { cookie = "app_session=" .. cookie },
   })
 
   assert.eq(r.status, 200, "forwarded successfully")
@@ -180,7 +176,7 @@ do
     path      = "/api/v1/engine/auth/admin/users",
     raw_query = "limit=10",
     body      = '{"email":"bob@example"}',
-    headers   = { cookie = "gondor_session=" .. cookie },
+    headers   = { cookie = "app_session=" .. cookie },
   })
   assert.eq(r.status, 201, "passes through 201")
   assert.eq(calls[1].method, "post", "post dispatched")
@@ -220,7 +216,7 @@ do
   local r = gateway.proxy({
     method = "GET",
     path   = "/api/v1/engine/auth/admin/users",
-    headers = { cookie = "gondor_session=" .. cookie },
+    headers = { cookie = "app_session=" .. cookie },
   })
   assert.eq(r.status, 403, "no auth:system#admin tuple → 403")
   assert.not_nil(r.body:find("forbidden", 1, true), "body says forbidden")
@@ -247,7 +243,7 @@ do
     method = "GET",
     path   = "/api/v1/engine/workflow/runs",
     headers = {
-      cookie     = "gondor_session=" .. cookie,
+      cookie     = "app_session=" .. cookie,
       Connection = "keep-alive",
     },
   })
@@ -272,7 +268,7 @@ do
     method   = "GET",
     path     = "/api/v1/engine/workflow/runs",
     headers  = {
-      cookie        = "gondor_session=" .. cookie,
+      cookie        = "app_session=" .. cookie,
       authorization = "Bearer STALE-LOCALSTORAGE-TOKEN",
     },
   })

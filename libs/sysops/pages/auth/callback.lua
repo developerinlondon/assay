@@ -27,9 +27,15 @@ function M.page(req)
   local q = (req and req.params) or {}
 
   -- IdP-side errors (user denied, invalid client, …) arrive as ?error=…
+  -- text/plain explicitly so the IdP-supplied error_description (which we
+  -- reflect verbatim) can't be interpreted as HTML by the browser.
   if q.error then
     local desc = q.error_description or ""
-    return { status = 400, body = "OIDC error: " .. q.error .. " " .. desc }
+    return {
+      status  = 400,
+      headers = { ["Content-Type"] = "text/plain; charset=utf-8" },
+      body    = "OIDC error: " .. tostring(q.error) .. " " .. tostring(desc),
+    }
   end
   if type(q.code) ~= "string" or type(q.state) ~= "string" then
     return { status = 400, body = "missing code or state" }

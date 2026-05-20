@@ -4,7 +4,7 @@ A host-visibility dashboard packaged as an `assay` library. Mount it on a consum
 table to expose pages for nspawn containers, systemd services, cron timers, journal logs, network
 interfaces, tunnels, tailscale, and audit-log viewing — all from a single Lua require.
 
-This library replaces the standalone `knowhere0426` host monolith. See plan 21 in
+This library replaces the standalone predecessor host monolith. See plan 21 in
 `assay/.claude/plans/21-libs-folder-and-install.md` for the full design.
 
 ## Quick start
@@ -59,9 +59,9 @@ consumer apps can swap implementations without re-loading the library.
 local vault = require("sysops.vault")
 
 local secret = vault.secret_store({
-  app = "knowhere",
-  admin_key_envs = { "KNOWHERE_ADMIN_API_KEYS" },
-  kv_prefix = "knowhere",
+  app = "sysops",
+  admin_key_envs = { "SYSOPS_ADMIN_API_KEYS" },
+  kv_prefix = "sysops",
 })
 ```
 
@@ -108,7 +108,7 @@ consumers see no change.
 sysops.mount(routes, {
   -- … all existing opts …
   active_modules    = { "auth", "vault" },     -- enable both, or pick one
-  engine_admin_key  = env.get("KNOWHERE_ADMIN_API_KEYS"),
+  engine_admin_key  = env.get("SYSOPS_ADMIN_API_KEYS"),
 })
 ```
 
@@ -157,15 +157,15 @@ sysops.mount(routes, {
   -- … existing 0.1.x opts (state, audit, jobs, secret, brand, engine, …) …
 
   oidc = {
-    issuer       = "https://gondor.fcar.ai/auth",  -- assay-auth IdP or external
+    issuer       = "https://app.example/auth",  -- assay-auth IdP or external
     client_id    = "sysops",
-    redirect_uri = "https://gondor.fcar.ai/auth/callback",
+    redirect_uri = "https://app.example/auth/callback",
     scopes       = { "openid", "profile", "email" },  -- optional
   },
   session = {
     signing_key = secret_store.read("sysops_session_key"), -- ≥32 bytes
     ttl_seconds = 86400,
-    cookie_name = "gondor_session",
+    cookie_name = "app_session",
   },
   gateway = {
     engine_upstream = "http://127.0.0.1:8080",   -- bind engine to localhost

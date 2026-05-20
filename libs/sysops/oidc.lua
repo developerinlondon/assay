@@ -7,10 +7,10 @@
 --! Usage:
 --!   local oidc = require("sysops.oidc")
 --!   local client = oidc.new({
---!     issuer        = "https://gondor.fcar.ai/auth",
+--!     issuer        = "https://app.example/auth",
 --!     client_id     = "sysops",
 --!     client_secret = "...",         -- optional for public clients
---!     redirect_uri  = "https://gondor.fcar.ai/auth/callback",
+--!     redirect_uri  = "https://app.example/auth/callback",
 --!     scopes        = { "openid", "profile", "email" },  -- optional
 --!   })
 --!   local state = crypto.random(32)

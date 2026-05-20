@@ -21,6 +21,7 @@ local oidc    = require("sysops.oidc")
 local session = require("sysops.session")
 local gateway = require("sysops.gateway")
 local ctx     = require("sysops.ctx")
+local authz   = require("sysops.authz")
 
 local login_pg    = require("pages.auth.login")
 local callback_pg = require("pages.auth.callback")
@@ -124,14 +125,15 @@ local function register_routes(routes, url)
   routes.GET[url("/shared/*")]   = gateway.proxy
 end
 
---- Routes that must stay unwrapped even after the gateway opt-in:
---- public assets and healthchecks. Everything else gets gated.
+--- Routes that must stay unwrapped even after the gateway opt-in.
+--- Delegates to authz.rule_for_path so the bypass set has a single
+--- source of truth in authz.PATH_RULES (static assets, healthchecks,
+--- /shared/*, per-SPA stylesheets, etc.) — adding a new bypass there
+--- automatically prevents require_session from wrapping it.
 local function is_public_path(path)
-  if path:match("^/static/") then return true end
-  if path:match("^/brand/") then return true end
-  if path == "/healthz" then return true end
-  if path == "/favicon.ico" then return true end
-  return false
+  if type(path) ~= "string" then return false end
+  local rule = authz.rule_for_path(path)
+  return rule ~= nil and rule.bypass == true
 end
 
 --- Wrap every route already registered (sysops dashboard, machines,

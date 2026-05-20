@@ -23,21 +23,58 @@ local M = {}
 
 local AUTHZ_CACHE_TTL = 30 -- seconds
 
+-- Canonical admin tuples — the full set granted to the first OIDC
+-- user, and the rows the manual /zanzibar/bootstrap page seeds.
+-- Single source of truth so the two bootstrap entry points can't
+-- drift. Matches the resources gated by PATH_RULES below.
+M.CANONICAL_TUPLES = {
+  { object_type = "host",     object_id = "local",  relation = "admin"  },
+  { object_type = "auth",     object_id = "system", relation = "admin"  },
+  { object_type = "engine",   object_id = "core",   relation = "admin"  },
+  { object_type = "workflow", object_id = "main",   relation = "access" },
+  { object_type = "vault",    object_id = "main",   relation = "access" },
+}
+
+-- Namespaces the gateway depends on but the engine modules do not own.
+-- Call before seeding CANONICAL_TUPLES so host:local#admin can be stored
+-- and checked on a fresh install.
+M.REQUIRED_NAMESPACES = {
+  {
+    name = "host",
+    definitions = {
+      admin = {
+        name = "admin",
+        kind = { kind = "direct", value = {
+          { object_type = "user", relation = nil, wildcard = false },
+        } },
+      },
+    },
+  },
+}
+
+function M.ensure_required_namespaces(zanzibar)
+  if type(zanzibar) ~= "table" then return end
+  for _, schema in ipairs(M.REQUIRED_NAMESPACES) do
+    -- Existing namespace errors are harmless for bootstrap callers; the
+    -- tuple writes below are the authoritative success/failure signal.
+    zanzibar.define_namespace(schema)
+  end
+end
+
 -- Path → required tuple. ORDER MATTERS: first matching prefix wins.
 -- More specific paths must come before broader ones (e.g.
 -- /api/v1/engine/auth/whoami BEFORE /api/v1/engine/auth).
 local PATH_RULES = {
   -- ── public-after-auth (no resource check) ────────────────────
-  { prefix = "/auth/login",                bypass = true },
-  { prefix = "/auth/callback",             bypass = true },
-  { prefix = "/auth/logout",               bypass = true },
-  { prefix = "/auth/bootstrap",            bypass = true }, -- first-admin claim
-  { prefix = "/api/v1/engine/auth/whoami", bypass = true },
+  { prefix = "/auth/login",                bypass = true, exact = true },
+  { prefix = "/auth/callback",             bypass = true, exact = true },
+  { prefix = "/auth/logout",               bypass = true, exact = true },
+  { prefix = "/api/v1/engine/auth/whoami", bypass = true, exact = true },
   { prefix = "/static/",                   bypass = true },
   { prefix = "/brand/",                    bypass = true },
   { prefix = "/shared/",                   bypass = true }, -- cross-nav assets
-  { prefix = "/healthz",                   bypass = true },
-  { prefix = "/favicon.ico",               bypass = true },
+  { prefix = "/healthz",                   bypass = true, exact = true },
+  { prefix = "/favicon.ico",               bypass = true, exact = true },
 
   -- ── host-ops pages — require host:local#admin ────────────────
   -- Sysops's own dashboard surfaces (audit log, machines, services,
@@ -79,8 +116,8 @@ local PATH_RULES = {
   -- /auth/* (sysops users/sessions/oidc/jwks + dashboard /auth/console)
   { prefix = "/auth/console",              object_type = "auth", object_id = "system",
                                             relation = "admin" },
-  { prefix = "/auth/style.css",            bypass = true }, -- shared asset across SPAs
-  { prefix = "/auth/app.js",               bypass = true },
+  { prefix = "/auth/style.css",            bypass = true, exact = true }, -- shared asset across SPAs
+  { prefix = "/auth/app.js",               bypass = true, exact = true },
   { prefix = "/auth/components/",          bypass = true },
   { prefix = "/auth/",                     object_type = "auth", object_id = "system",
                                             relation = "admin" },
@@ -90,23 +127,23 @@ local PATH_RULES = {
                                             relation = "admin" },
 
   -- /engine/* (dashboard SPA + its assets)
-  { prefix = "/engine/style.css",          bypass = true },
-  { prefix = "/engine/app.js",             bypass = true },
+  { prefix = "/engine/style.css",          bypass = true, exact = true },
+  { prefix = "/engine/app.js",             bypass = true, exact = true },
   { prefix = "/engine/components/",        bypass = true },
   { prefix = "/engine/",                   object_type = "engine", object_id = "core",
                                             relation = "admin" },
 
   -- /workflow* — dashboard SPA assets
-  { prefix = "/workflow/style.css",        bypass = true },
-  { prefix = "/workflow/theme.css",        bypass = true },
-  { prefix = "/workflow/app.js",           bypass = true },
+  { prefix = "/workflow/style.css",        bypass = true, exact = true },
+  { prefix = "/workflow/theme.css",        bypass = true, exact = true },
+  { prefix = "/workflow/app.js",           bypass = true, exact = true },
   { prefix = "/workflow/components/",      bypass = true },
   { prefix = "/workflow",                  object_type = "workflow", object_id = "main",
                                             relation = "access" },
 
   -- /vault/* (sysops's own pages + dashboard /vault/console)
-  { prefix = "/vault/style.css",           bypass = true },
-  { prefix = "/vault/app.js",              bypass = true },
+  { prefix = "/vault/style.css",           bypass = true, exact = true },
+  { prefix = "/vault/app.js",              bypass = true, exact = true },
   { prefix = "/vault/components/",         bypass = true },
   { prefix = "/vault",                     object_type = "vault", object_id = "main",
                                             relation = "access" },
@@ -121,9 +158,13 @@ local function strip_mount_prefix(path)
   if type(prefix) ~= "string" or prefix == "" or prefix == "/" then
     return path
   end
-  -- ctx.prefix is normalized to drop a trailing slash by mount.lua, so
-  -- it looks like "/host". Strip it iff path starts with prefix + "/" or
-  -- equals prefix exactly.
+  -- mount.lua normalizes prefix to canonical form ("/host", no trailing
+  -- slash) but defend against a caller writing "/host/" directly to ctx
+  -- — otherwise the trailing-slash form would silently disable
+  -- prefix-stripping (and the strict-prefix fail-closed check) for
+  -- every request.
+  if prefix:sub(-1) == "/" then prefix = prefix:sub(1, -2) end
+  if prefix == "" then return path end
   if path == prefix then return "/" end
   if path:sub(1, #prefix + 1) == prefix .. "/" then
     return path:sub(#prefix + 1)
@@ -137,15 +178,35 @@ end
 ---   nil                            — no rule matched (defaults to bypass
 ---                                    UNLESS the path falls under a
 ---                                    sensitive prefix; see is_allowed)
-function M.rule_for_path(path)
-  if type(path) ~= "string" then return nil end
-  local p = strip_mount_prefix(path)
+--- Path-boundary aware prefix test. A rule with prefix "/auth/login"
+--- matches "/auth/login" and "/auth/login/foo" but NOT "/auth/login-x"
+--- (path-segment boundary enforced). Rules already ending in "/" pass
+--- through naturally.
+local function prefix_matches(path, rule_prefix)
+  if path == rule_prefix then return true end
+  if rule_prefix:sub(-1) == "/" then
+    return path:sub(1, #rule_prefix) == rule_prefix
+  end
+  return path:sub(1, #rule_prefix + 1) == rule_prefix .. "/"
+end
+
+local function rule_matches(path, rule)
+  if rule.exact then return path == rule.prefix end
+  return prefix_matches(path, rule.prefix)
+end
+
+-- Inner lookup that assumes `p` has already been mount-prefix-stripped.
+-- Used by is_allowed so the strip happens exactly once per request.
+local function rule_for_stripped(p)
   for _, rule in ipairs(PATH_RULES) do
-    if p == rule.prefix or p:sub(1, #rule.prefix) == rule.prefix then
-      return rule
-    end
+    if rule_matches(p, rule) then return rule end
   end
   return nil
+end
+
+function M.rule_for_path(path)
+  if type(path) ~= "string" then return nil end
+  return rule_for_stripped(strip_mount_prefix(path))
 end
 
 ----------------------------------------------------------------------
@@ -184,7 +245,10 @@ end
 -- of these prefixes doesn't match a rule in PATH_RULES, fail closed —
 -- gateway.proxy injects the admin bearer on session-authenticated
 -- proxied requests, so an unmapped path would otherwise grant any
--- signed-in user full engine-admin power. Sensitive prefixes:
+-- signed-in user full engine-admin power. Trailing-slash variance is
+-- intentional: /workflow and /zanzibar are themselves valid mapped
+-- paths, so prefix_matches' path-boundary check is what we want
+-- (matches /workflow, /workflow/foo; not /workflow-evil).
 local STRICT_PREFIXES = {
   "/api/v1/",
   "/auth/",
@@ -196,7 +260,7 @@ local STRICT_PREFIXES = {
 
 local function in_strict_prefix(path)
   for _, p in ipairs(STRICT_PREFIXES) do
-    if path == p or path:sub(1, #p) == p then return true end
+    if prefix_matches(path, p) then return true end
   end
   return false
 end
@@ -210,10 +274,8 @@ function M.is_allowed(sub, path)
 
   -- Strip the mount prefix once so both the rule lookup and the
   -- sensitive-prefix check operate on the same unprefixed path.
-  -- rule_for_path also strips internally for the public-API use case,
-  -- but doing it here lets us share the result.
   local stripped = strip_mount_prefix(path)
-  local rule = M.rule_for_path(stripped)
+  local rule = rule_for_stripped(stripped)
   if rule == nil then
     -- Fail-closed on sensitive prefixes; everything else (root,
     -- consumer-added routes like /skip-trace, etc.) stays open.

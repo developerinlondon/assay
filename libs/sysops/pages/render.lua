@@ -1,6 +1,18 @@
 local hctx = require("sysops.ctx")
 local M = {}
 
+-- Shared HTML escaper. Use this for any user-influenced value that ends
+-- up inside an HTML response — claims, error reasons, URLs, breadcrumb
+-- labels, etc. Lives here so callers can reuse without re-deriving.
+function M.html_escape(value)
+  return (tostring(value or ""))
+    :gsub("&", "&amp;")
+    :gsub("<", "&lt;")
+    :gsub(">", "&gt;")
+    :gsub('"', "&quot;")
+    :gsub("'", "&#39;")
+end
+
 -- Sidebar version. The lib's VERSION file is the canonical source of
 -- truth (release tag matches it byte-for-byte). Resolved lazily so the
 -- read happens after mount() has populated ctx.lib_root, and falls back
@@ -56,9 +68,9 @@ function M.breadcrumb(entries)
     end
     if href and i < #entries then
       table.insert(parts,
-        '<a href="' .. tostring(href) .. '">' .. tostring(label) .. '</a>')
+        '<a href="' .. M.html_escape(href) .. '">' .. M.html_escape(label) .. '</a>')
     else
-      table.insert(parts, tostring(label))
+      table.insert(parts, M.html_escape(label))
     end
   end
   return table.concat(parts, ' &middot; ')
@@ -67,7 +79,7 @@ end
 -- Apply layout-wide defaults to `ctx` based on `req`. Sets every key the
 -- layout template needs (brand, title, nav_active, version, host,
 -- machines, actor, plugins_sidebar, active_modules) without overwriting
--- caller-supplied values. Called by `M.render` for knowhere's bundled
+-- caller-supplied values. Called by `M.render` for sysops's bundled
 -- templates and by `pages/plugins/dispatch.lua` for plugin templates so
 -- both paths produce identical layout context. Mutates and returns ctx.
 function M.layout_defaults(ctx, req, fallback_nav_active)
@@ -121,10 +133,10 @@ function M.layout_defaults(ctx, req, fallback_nav_active)
   return ctx
 end
 
--- Render `content_html` (already a string) inside knowhere's layout.html
+-- Render `content_html` (already a string) inside sysops's layout.html
 -- with full layout context. Used by callers that have to render their
 -- content template themselves (e.g. plugin pages whose templates live
--- outside knowhere's bundled templates/ dir).
+-- outside sysops's bundled templates/ dir).
 function M.wrap_layout(content_html, ctx, req)
   ctx = M.layout_defaults(ctx, req)
   local root = hctx.lib_root or "."

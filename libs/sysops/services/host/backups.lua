@@ -69,10 +69,10 @@ local DEFAULT_SOURCES = {
   "/var/lib/machines",
 }
 
-local function default_tags() return { "host", "knowhere", "daily" } end
+local function default_tags() return { "host", "sysops", "daily" } end
 
 local function render_profile(repo)
-  -- Render a knowhere-managed TOML profile. Format is owned by us
+  -- Render a sysops-managed TOML profile. Format is owned by us
   -- (rustic_core doesn't read this file — backup_run does).
   local sources_lines = {}
   for _, s in ipairs(repo.sources or DEFAULT_SOURCES) do
@@ -84,7 +84,7 @@ local function render_profile(repo)
   end
 
   return string.format([[
-# knowhere-managed backup profile. Edit via /backups in the dashboard.
+# sysops-managed backup profile. Edit via /backups in the dashboard.
 
 [repository]
 url    = "%s"

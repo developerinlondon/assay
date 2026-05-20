@@ -7,7 +7,7 @@
 --!
 --!   routes.GET["/auth/users"] = require_session.wrap(users_pg.page)
 --!
---! If the request carries a valid session cookie (gondor_session
+--! If the request carries a valid session cookie (app_session
 --! HMAC-validated by ctx.session_signer), the inner handler runs and
 --! receives req.session_claims = { sub, email, ... }. Otherwise:
 --!
@@ -21,6 +21,7 @@
 local ctx     = require("sysops.ctx")
 local session = require("sysops.session")
 local authz   = require("sysops.authz")
+local render  = require("pages.render")
 
 local M = {}
 
@@ -32,6 +33,8 @@ local function u(path)
   return path
 end
 
+local html_escape = render.html_escape
+
 local function render_forbidden(claims, reason)
   return {
     status = 403,
@@ -42,10 +45,10 @@ local function render_forbidden(claims, reason)
       "<div style='max-width:560px;margin:6rem auto;padding:2rem;",
       "font-family:system-ui;text-align:center'>",
       "<h1 style='margin:0 0 1rem'>Access denied</h1>",
-      "<p>You're signed in as <code>", tostring(claims.email or claims.sub),
+      "<p>You're signed in as <code>", html_escape(claims.email or claims.sub),
       "</code>, but you don't have permission to view this page.</p>",
       "<p style='color:var(--fg-2);font-size:0.9em'>Reason: ",
-      tostring(reason), "</p>",
+      html_escape(reason), "</p>",
       "<p><a href='", u("/"), "'>← Back to dashboard</a> &nbsp;",
       "<a href='", u("/auth/logout"), "'>Sign out</a></p>",
       "</div></body></html>",

@@ -49,7 +49,7 @@
 --!    `brand`, `engine` arrive via opts. The library never `require`s
 --!    them at top level.
 --! 3. **Engine over HTTP.** `engine` wraps `http.request` against
---!    `ENGINE_URL`, replacing the in-process `knowhere.engine.api_call`
+--!    `ENGINE_URL`, replacing the predecessor's in-process engine API call
 --!    used by the predecessor monolith.
 
 local ctx   = require("sysops.ctx")
@@ -57,14 +57,21 @@ local pages = require("sysops.pages")
 
 local M = {}
 
---- Build a prefix-safe URL helper for routes mounted at `prefix`.
-local function build_url(prefix)
+--- Canonical mount-prefix form: empty string for root, "/host" for
+--- nested (no trailing slash). Every other consumer (build_url, authz,
+--- middleware) should read ctx.prefix in this normalized form.
+local function normalize_prefix(prefix)
   prefix = prefix or "/"
   if prefix ~= "/" and prefix:sub(-1) == "/" then
     prefix = prefix:sub(1, -2)
   end
   if prefix == "/" then prefix = "" end
+  return prefix
+end
 
+--- Build a prefix-safe URL helper for routes mounted at `prefix`.
+local function build_url(prefix)
+  prefix = normalize_prefix(prefix)
   return function(path)
     path = path or "/"
     if path:sub(1, 1) ~= "/" then path = "/" .. path end
@@ -244,7 +251,9 @@ function M.mount(routes, opts)
     error("sysops.mount(routes, opts): opts must be a table", 2)
   end
 
-  ctx.prefix = opts.prefix or "/"
+  -- ctx.prefix is the canonical form ("" for root, "/host" otherwise) —
+  -- callers like sysops.authz rely on it being trailing-slash-free.
+  ctx.prefix = normalize_prefix(opts.prefix)
   ctx.url    = build_url(ctx.prefix)
   ctx.state  = require_table(opts, "state")
   ctx.audit  = require_table(opts, "audit")
@@ -262,7 +271,7 @@ function M.mount(routes, opts)
   ctx.backup_profile_dir = opts.backup_profile_dir
 
   -- Base URL of the consumer's engine sidecar (e.g.
-  -- "https://knowhere2-engine.agenteda.com"). When set, the sidebar
+  -- "https://engine.example"). When set, the sidebar
   -- exposes links to the engine's whitelabeled SPA at /auth/console,
   -- /vault/console, /engine/console, /workflow/. Nil = links hidden.
   ctx.engine_base_url = opts.engine_base_url

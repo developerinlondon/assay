@@ -1,27 +1,30 @@
 // End-to-end test against a LIVE auth-gateway-wired sysops deployment.
 // This is an opt-in integration suite, not part of the standard
 // sysops-e2e CI run (which boots an in-repo stub server with no OIDC
-// session). The whole suite skips when GONDOR_E2E_COOKIE is unset so
+// session). The whole suite skips when SYSOPS_E2E_COOKIE is unset so
 // the unattended CI job stays green.
 //
 // To run locally:
-//   - gondor.service running on $GONDOR_E2E_BASE (default 127.0.0.1:18790)
-//   - GONDOR_E2E_COOKIE = a valid gondor_session cookie value
+//   - the live sysops-mounting service running on $SYSOPS_E2E_BASE (default 127.0.0.1:18790)
+//   - SYSOPS_E2E_COOKIE = a valid sysops_session cookie value
 //   - bunx playwright test auth_gateway.spec.ts
 
 import { expect, test } from '@playwright/test';
 
-const BASE   = process.env.GONDOR_E2E_BASE   || 'http://127.0.0.1:18790';
-const COOKIE = process.env.GONDOR_E2E_COOKIE || '';
+const BASE        = process.env.SYSOPS_E2E_BASE        || 'http://127.0.0.1:18790';
+const COOKIE      = process.env.SYSOPS_E2E_COOKIE      || '';
+// Deployments customize cookie_name via opts.session.cookie_name; the
+// library default is sysops_session, but consumers can pick anything.
+const COOKIE_NAME = process.env.SYSOPS_E2E_COOKIE_NAME || 'sysops_session';
 
 test.skip(!COOKIE,
-  'auth-gateway live e2e — set GONDOR_E2E_COOKIE to run against a deployed gondor');
+  'auth-gateway live e2e — set SYSOPS_E2E_COOKIE to run against a deployed app');
 
 test.use({ baseURL: BASE });
 
 test.beforeEach(async ({ context }) => {
   await context.addCookies([{
-    name:     'gondor_session',
+    name:     COOKIE_NAME,
     value:    COOKIE,
     url:      BASE,
     httpOnly: true,
@@ -67,7 +70,7 @@ test('workflow SPA loads and version API returns 200 via proxy', async ({ page, 
   // workflow SPA has no token banner (it's silent — sends bearer if
   // available, falls back to cookies).
   const versionResp = await request.get(`${BASE}/api/v1/engine/workflow/version`, {
-    headers: { Cookie: `gondor_session=${COOKIE}` },
+    headers: { Cookie: `${COOKIE_NAME}=${COOKIE}` },
   });
   expect(versionResp.status()).toBe(200);
   const body = await versionResp.json();
@@ -76,7 +79,7 @@ test('workflow SPA loads and version API returns 200 via proxy', async ({ page, 
 
 test('/whoami intercept returns the session identity', async ({ request }) => {
   const r = await request.get(`${BASE}/api/v1/engine/auth/whoami`, {
-    headers: { Cookie: `gondor_session=${COOKIE}` },
+    headers: { Cookie: `${COOKIE_NAME}=${COOKIE}` },
   });
   expect(r.status()).toBe(200);
   const body = await r.json();
@@ -89,7 +92,7 @@ test('engine-admin API call is proxied with admin-bearer injection', async ({ re
   // engine side. With the session cookie we should reach it via the
   // proxy and get the engine version metadata.
   const r = await request.get(`${BASE}/api/v1/engine/core/info`, {
-    headers: { Cookie: `gondor_session=${COOKIE}` },
+    headers: { Cookie: `${COOKIE_NAME}=${COOKIE}` },
   });
   expect(r.status()).toBe(200);
   const body = await r.json();
@@ -109,5 +112,5 @@ test('unauthenticated visit to / 302s to /auth/login', async ({ page, context })
   // We allow either /auth/login or the IdP host (if the IdP doesn't have
   // a session of its own and we get redirected further).
   const url = response?.url() || page.url();
-  expect(url).toMatch(/\/auth\/(login|authorize|callback)|gondor-engine/);
+  expect(url).toMatch(/\/auth\/(login|authorize|callback)|engine\.example/);
 });

@@ -13,7 +13,7 @@
 --!   local s = session.new({
 --!     signing_key = "<32+ byte secret>",
 --!     ttl_seconds = 86400,
---!     cookie_name = "gondor_session",   -- default "sysops_session"
+--!     cookie_name = "app_session",   -- default "sysops_session"
 --!   })
 --!   local cookie = s:issue({ sub = "alice@example", email = "alice@example" })
 --!   local claims, err = s:verify(cookie)
@@ -156,11 +156,20 @@ end
 
 function M.safe_return_to(s)
   if type(s) ~= "string" or s == "" then return "/" end
-  if s:find("[\r\n%z]") then return "/" end             -- header smuggling
-  if s:find("://", 1, true) then return "/" end          -- http://evil, javascript://
-  if s:sub(1, 1) ~= "/" then return "/" end              -- must be absolute path
-  if s:sub(1, 2) == "//" then return "/" end             -- protocol-relative
-  if s:sub(2, 2) == "\\" then return "/" end             -- "/\evil"
+  -- Defence in depth: validate the literal string AND a percent-decoded
+  -- copy. Most frameworks decode req.params already, but a future
+  -- handler that reads raw query strings would otherwise let
+  -- "%2f%2fevil" slip past the literal "//" check.
+  local decoded = s:gsub("%%(%x%x)", function(h)
+    return string.char(tonumber(h, 16))
+  end)
+  for _, v in ipairs({ s, decoded }) do
+    if v:find("[\r\n%z]") then return "/" end            -- header smuggling
+    if v:find("://", 1, true) then return "/" end         -- http://evil, javascript://
+    if v:sub(1, 1) ~= "/" then return "/" end             -- must be absolute path
+    if v:sub(1, 2) == "//" then return "/" end            -- protocol-relative
+    if v:sub(2, 2) == "\\" then return "/" end            -- "/\evil"
+  end
   return s
 end
 
