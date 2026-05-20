@@ -2,6 +2,38 @@
 
 All notable changes to Assay are documented here.
 
+## sysops 0.2.0 — 2026-05-20
+
+### Added
+
+- **Auth gateway** — sysops can now front the engine as a BFF that terminates OIDC, holds the admin
+  bearer server-side, and injects it into proxied requests. Opt in via four new `mount` opts: `oidc`
+  (issuer, client_id, redirect_uri, scopes), `session` (signing_key, ttl_seconds, cookie_name),
+  `gateway` (engine_upstream, admin_bearer), and `authz` (require_zanzibar_admin,
+  bootstrap_first_admin). Consumers that don't pass `oidc` are bit-for-bit unchanged.
+- New page handlers: `/auth/login`, `/auth/callback`, `/auth/logout` (OIDC Authorization Code +
+  PKCE; HttpOnly session cookie; ephemeral in-process store for refresh tokens).
+- `gateway.whoami` intercepts `GET /api/v1/engine/auth/whoami` and answers from the session cookie —
+  defuses the assay-dashboard auth/engine SPA token banners without modifying SPA code.
+- `gateway.proxy` is a dual-mode reverse proxy on `/api/v1/engine/*` + dashboard SPA asset paths.
+  Caller's `Authorization: Bearer` is passed through unchanged (preserves SSH+curl, CI scripts,
+  customer-IdP JWT direct calls); session-only callers get the configured admin bearer + X-User-Id
+  injected. Hop-by-hop headers (Connection, Transfer-Encoding, Cookie, …) stripped both directions.
+- First-user-wins admin bootstrap: the first OIDC login on a fresh deployment auto-grants the
+  `engine:core#admin` Zanzibar tuple if no admins exist. Opt out via
+  `authz.bootstrap_first_admin = false`.
+- `require_session` middleware for gating sysops's own `/auth/*` and `/vault/*` pages on the OIDC
+  session cookie. No-op pass-through when the auth gateway isn't wired.
+- `libs/sysops/codec.lua` — shared `b64url`/`hex_to_bytes`/`must`/`consteq` helpers.
+- `libs/sysops/session.lua` — HMAC-SHA256-signed cookies (compact JWT-like format, since
+  `crypto.jwt_sign` is RSA-only) + in-memory session store with one-shot pending-state GC.
+
+### Changed
+
+- `ctx.lua` extended with `oidc_client`, `session_signer`, `session_store`, `gateway_admin_bearer`,
+  `authz_require_admin`, `authz_bootstrap_first_admin`, `zanzibar_check`. All nil-defaulted;
+  backward-compatible.
+
 ## assay 0.16.4 — 2026-05-19
 
 ### Fixed
