@@ -167,7 +167,7 @@ function M.client(opts)
   function c.passkey:start_auth(user_id, passkeys)
     return post(AUTH .. "/passkey/auth/start", {
       user_id = user_id,
-      passkeys = passkeys or {},
+      passkeys = json.array(passkeys or {}),
     })
   end
 

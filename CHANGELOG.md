@@ -34,6 +34,14 @@ All notable changes to Assay are documented here.
   `authz_require_admin`, `authz_bootstrap_first_admin`, `zanzibar_check`. All nil-defaulted;
   backward-compatible.
 
+## assay 0.16.5 — 2026-05-21
+
+### Fixed
+
+- Empty-array defaults in SDK payloads now serialise as `[]` (were `{}`, which upstreams reject as
+  type mismatch). Wrapped in `json.array()`: `ory.hydra` `consent:accept` `grant_access_token_audience`,
+  `tailscale` `mint_key` `tags`, `engine.auth` `passkey:start_auth` `passkeys`.
+
 ## assay 0.16.4 — 2026-05-19
 
 ### Fixed

@@ -243,9 +243,13 @@ function M.client(opts)
   --         session={id_token=table, access_token=table} }
   function c.consent:accept(challenge, opts)
     opts = opts or {}
+    -- json.array() wrap forces [] over {} on empty input, so Hydra
+    -- doesn't reject the payload with `cannot unmarshal object into
+    -- Go struct field AcceptOAuth2ConsentRequest.grant_access_token_audience
+    -- of type sqlxx.StringSliceJSONFormat`.
     local payload = {
-      grant_scope = opts.grant_scope or { "openid", "profile", "email" },
-      grant_access_token_audience = opts.grant_access_token_audience or {},
+      grant_scope = json.array(opts.grant_scope or { "openid", "profile", "email" }),
+      grant_access_token_audience = json.array(opts.grant_access_token_audience or {}),
       remember = opts.remember,
       remember_for = opts.remember_for,
       session = opts.session,

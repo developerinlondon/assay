@@ -115,7 +115,7 @@ function M.client(opts)
           reusable = mint_opts.reusable and true or false,
           ephemeral = mint_opts.ephemeral and true or false,
           preauthorized = mint_opts.preauthorized and true or false,
-          tags = mint_opts.tags or {},
+          tags = json.array(mint_opts.tags or {}),
         },
       },
     }

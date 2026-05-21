@@ -182,6 +182,41 @@ async fn test_hydra_consent_accept_with_claims() {
     run_lua(&script).await.unwrap();
 }
 
+// Regression: when the caller doesn't pass grant_access_token_audience,
+// the Lua default of `or {}` used to serialise as `{}` (JSON object),
+// which Hydra rejects with `cannot unmarshal object into Go struct field
+// AcceptOAuth2ConsentRequest.grant_access_token_audience of type
+// sqlxx.StringSliceJSONFormat`. Wrap default in json.array() so it
+// serialises as `[]`.
+#[tokio::test]
+async fn test_hydra_consent_accept_empty_audience_is_json_array() {
+    let admin = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/admin/oauth2/auth/requests/consent/accept"))
+        .and(query_param("consent_challenge", "xyz789"))
+        .and(body_string_contains("\"grant_access_token_audience\":[]"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "redirect_to": "https://app.example.com/auth/callback?code=..."
+        })))
+        .mount(&admin)
+        .await;
+
+    let script = format!(
+        r#"
+        local hydra = require("assay.ory.hydra")
+        local h = hydra.client({{ admin_url = "{}" }})
+        -- No grant_access_token_audience passed → must serialise as [].
+        local result = h.consent:accept("xyz789", {{
+          grant_scope = {{"openid"}},
+          session = {{ id_token = {{ sub = "user:alice" }} }},
+        }})
+        assert.contains(result.redirect_to, "app.example.com")
+        "#,
+        admin.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
 #[tokio::test]
 async fn test_hydra_logout_get() {
     let admin = MockServer::start().await;
