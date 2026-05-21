@@ -15,8 +15,8 @@
 --!   - ctx.engine isn't wired (the consumer didn't provide an engine
 --!     HTTP client, so we can't talk to Zanzibar at all)
 --!   - ctx.authz_bootstrap_first_admin is false (operator opted out)
---!   - at least one tuple already exists in (object=engine:core,
---!     relation=admin) — admins are already configured.
+--!   - at least one user already has the engine:core#admin relation,
+--!     either directly or through a non-empty userset.
 
 local ctx  = require("sysops.ctx")
 local auth = require("sysops.auth")
@@ -48,7 +48,70 @@ local function admin_object_str()
   return ADMIN_OBJECT_TYPE .. ":" .. ADMIN_OBJECT_ID
 end
 
---- Returns true if at least one (engine:core#admin) tuple exists.
+local function tuple_items(body)
+  local tuples = body
+  if type(body) == "string" then
+    local ok, decoded = pcall(json.parse, body)
+    if not ok then return nil end
+    tuples = decoded
+  end
+  if type(tuples) ~= "table" then return nil end
+  if type(tuples.items) == "table" then return tuples.items end
+  return tuples
+end
+
+local function direct_user_tuple(t)
+  if type(t) ~= "table" then return false end
+  if t.subject_type == "user" and (t.subject_rel == nil or t.subject_rel == "") then
+    return true
+  end
+  if type(t.subject) == "string" then
+    return t.subject:match("^user:[^#]+$") ~= nil
+  end
+  return false
+end
+
+local function userset_filter(t)
+  if type(t) ~= "table" then return nil end
+  if type(t.subject_type) == "string"
+      and type(t.subject_id) == "string"
+      and type(t.subject_rel) == "string"
+      and t.subject_rel ~= "" then
+    return {
+      object_type = t.subject_type,
+      object_id   = t.subject_id,
+      relation    = t.subject_rel,
+      subject_type = "user",
+    }
+  end
+  if type(t.subject) == "string" then
+    local object_type, object_id, relation = t.subject:match("^([^:]+):([^#]+)#(.+)$")
+    if object_type and object_id and relation then
+      return {
+        object_type = object_type,
+        object_id   = object_id,
+        relation    = relation,
+        subject_type = "user",
+      }
+    end
+  end
+  return nil
+end
+
+local function userset_has_direct_user_member(zanzibar, t)
+  local filter = userset_filter(t)
+  if not filter then return false end
+  local body, err = zanzibar.tuples(filter)
+  if err then return true end
+  local items = tuple_items(body)
+  if not items then return true end
+  for _, item in ipairs(items) do
+    if direct_user_tuple(item) then return true end
+  end
+  return false
+end
+
+--- Returns true if at least one user already has engine:core#admin.
 local function admins_exist(zanzibar)
   local body, err = zanzibar.tuples({
     object_type = ADMIN_OBJECT_TYPE,
@@ -61,22 +124,14 @@ local function admins_exist(zanzibar)
     -- treat as "admins exist" so we don't accidentally grant.
     return true
   end
-  -- The auth SDK returns resp.body verbatim. Real consumer-app engine
-  -- wrappers parse JSON to a table; bare stubs may pass a string. Cope
-  -- with both, matching the vault SDK's defensive pattern.
-  local tuples = body
-  if type(body) == "string" then
-    local ok, decoded = pcall(json.parse, body)
-    if not ok then return true end
-    tuples = decoded
-  end
-  if type(tuples) == "table" then
-    if tuples.items and type(tuples.items) == "table" then
-      return #tuples.items > 0
+  local items = tuple_items(body)
+  if not items then return true end
+  for _, t in ipairs(items) do
+    if direct_user_tuple(t) or userset_has_direct_user_member(zanzibar, t) then
+      return true
     end
-    return #tuples > 0
   end
-  return true
+  return false
 end
 
 -- Namespaces the gateway depends on. Some are auto-seeded by the

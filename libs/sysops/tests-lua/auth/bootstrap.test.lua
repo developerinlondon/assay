@@ -108,6 +108,40 @@ end
 
 do
   ctx.engine = stub_engine({
+    ["GET " .. TUPLES_PATH] = function(path)
+      if path:find("object_type=engine", 1, true) then
+        return { status = 200, body = json.encode({
+          items = {
+            {
+              object_type = "engine",
+              object_id = "core",
+              relation = "admin",
+              subject_type = "role",
+              subject_id = "admin",
+              subject_rel = "member",
+            },
+          },
+        }) }
+      end
+      if path:find("object_type=role", 1, true) then
+        return { status = 200, body = json.encode({ items = {} }) }
+      end
+      return { status = 200, body = json.encode({ items = {} }) }
+    end,
+    ["POST " .. TUPLES_PATH] = function() return { status = 200, body = "{}" } end,
+  })
+  local r = bootstrap.maybe_grant_first_admin({ sub = "alice@example" })
+  assert.eq(r, "granted", "empty role grants do not count as an existing admin user")
+  teardown()
+  print("  ok empty role grants don't block first-admin bootstrap")
+end
+
+-- ---------------------------------------------------------------------
+-- 4. opt-out via authz_bootstrap_first_admin=false.
+-- ---------------------------------------------------------------------
+
+do
+  ctx.engine = stub_engine({
     ["GET " .. TUPLES_PATH] = function() return { status = 200, body = json.encode({}) } end,
   })
   ctx.authz_bootstrap_first_admin = false
@@ -119,7 +153,7 @@ do
 end
 
 -- ---------------------------------------------------------------------
--- 4. No engine wired → no-op (safe).
+-- 5. No engine wired → no-op (safe).
 -- ---------------------------------------------------------------------
 
 do
@@ -131,7 +165,7 @@ do
 end
 
 -- ---------------------------------------------------------------------
--- 5. Engine tuple-list errors → fail closed (treat as admins exist).
+-- 6. Engine tuple-list errors → fail closed (treat as admins exist).
 -- ---------------------------------------------------------------------
 
 do
@@ -151,7 +185,7 @@ do
 end
 
 -- ---------------------------------------------------------------------
--- 6. Audit logger is invoked on grant.
+-- 7. Audit logger is invoked on grant.
 -- ---------------------------------------------------------------------
 
 do

@@ -2,6 +2,17 @@
 
 All notable changes to Assay are documented here.
 
+## sysops 0.2.2 — 2026-05-21
+
+### Fixed
+
+- Auth gateway consumers can now provide `authz.rules` to gate app-owned routes with Zanzibar
+  resources. Consumer rules are checked before sysops' built-in path rules so apps can intentionally
+  claim collisions such as `/api/events`.
+- First-admin bootstrap now ignores empty role scaffolding. A userset tuple such as
+  `engine:core#admin <- role:admin#member` no longer blocks the first OIDC user unless that role has
+  at least one direct user member.
+
 ## sysops 0.2.0 — 2026-05-20
 
 ### Added

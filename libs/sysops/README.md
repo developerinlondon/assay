@@ -174,6 +174,9 @@ sysops.mount(routes, {
   authz = {
     bootstrap_first_admin = true,    -- first OIDC login → grant all
                                      -- canonical admin tuples
+    rules = {
+      { prefix = "/reports", object_type = "workflow", object_id = "main", relation = "access" },
+    },
   },
 })
 ```
@@ -200,6 +203,10 @@ The proxy's dual-mode behaviour preserves every existing access pattern:
 `/whoami` intercept defuses the dashboard auth + engine SPAs' "admin token required" banner without
 modifying any SPA code: each SPA calls `/api/v1/engine/auth/whoami` at boot and skips the banner
 on a 200 response.
+
+`authz.rules` lets a consumer app map its own routes to Zanzibar resources. Rules are prefix-based
+and are checked before sysops' built-in path rules, so a consumer can claim a colliding path such as
+`/api/events` and require `workflow:<id>#access` instead of sysops' host-level rule.
 
 Without `opts.oidc`, none of the above is wired and sysops behaves exactly like 0.1.x.
 

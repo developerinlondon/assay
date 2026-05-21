@@ -139,13 +139,17 @@ end
 ---                                    sensitive prefix; see is_allowed)
 -- Inner lookup that assumes `p` has already been mount-prefix-stripped.
 -- Used by is_allowed so the strip happens exactly once per request.
-local function rule_for_stripped(p)
-  for _, rule in ipairs(PATH_RULES) do
+local function find_rule(p, rules)
+  for _, rule in ipairs(rules or {}) do
     if p == rule.prefix or p:sub(1, #rule.prefix) == rule.prefix then
       return rule
     end
   end
   return nil
+end
+
+local function rule_for_stripped(p)
+  return find_rule(p, ctx.authz_rules) or find_rule(p, PATH_RULES)
 end
 
 function M.rule_for_path(path)

@@ -43,6 +43,7 @@ local function reset_ctx()
   ctx.engine_base_url            = nil
   ctx.engine_upstream_url        = nil
   ctx.gateway_admin_bearer       = nil
+  ctx.authz_rules                = nil
   ctx.authz_bootstrap_first_admin = true
 end
 
@@ -132,9 +133,15 @@ do
   reset_ctx()
   local routes = { GET = {}, POST = {} }
   sysops.mount(routes, full_opts({
-    authz = { bootstrap_first_admin = false },
+    authz = {
+      bootstrap_first_admin = false,
+      rules = {
+        { prefix = "/reports", object_type = "workflow", object_id = "main", relation = "access" },
+      },
+    },
   }))
   assert.eq(ctx.authz_bootstrap_first_admin, false, "bootstrap_first_admin propagated")
+  assert.eq(ctx.authz_rules[1].prefix, "/reports", "consumer authz rules propagated")
   reset_ctx()
   print("  ok opts.authz overrides flow into ctx")
 end

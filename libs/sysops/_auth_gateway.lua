@@ -69,9 +69,13 @@ local function build_ctx(opts)
   ctx.gateway_admin_bearer = g.admin_bearer
 
   -- Authz. Per-resource Zanzibar tuple checks happen on every request
-  -- via sysops.authz; the only mount-opt today is whether the first
-  -- OIDC login auto-grants the canonical admin tuples.
+  -- via sysops.authz. Consumer route rules are checked before sysops
+  -- built-ins so app-owned paths can intentionally override collisions.
   local a = opts.authz or {}
+  if a.rules ~= nil and type(a.rules) ~= "table" then
+    error("sysops.mount: opts.authz.rules must be a table", 3)
+  end
+  ctx.authz_rules = a.rules
   if a.bootstrap_first_admin ~= nil then
     ctx.authz_bootstrap_first_admin = a.bootstrap_first_admin
   end

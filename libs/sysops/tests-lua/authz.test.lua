@@ -96,6 +96,7 @@ end
 
 local function reset()
   ctx.engine = nil
+  ctx.authz_rules = nil
   authz.invalidate()
 end
 
@@ -233,6 +234,44 @@ do
   assert.eq(ok2, true, "unmapped non-sensitive path stays no-rule open")
   reset()
   print("  ok unmapped /api/v1/* fails closed; unmapped /skip-trace stays open")
+end
+
+do
+  reset()
+  ctx.authz_rules = {
+    { prefix = "/reports", object_type = "workflow", object_id = "main", relation = "access" },
+  }
+  local r = authz.rule_for_path("/reports/daily")
+  assert.eq(r.object_type, "workflow", "consumer route maps to configured resource")
+  assert.eq(r.object_id, "main", "consumer route object_id")
+  assert.eq(r.relation, "access", "consumer route relation")
+
+  ctx.engine = stub_engine({})
+  local ok, reason = authz.is_allowed("alice@example", "/reports/daily")
+  assert.eq(ok, false, "consumer route denies without configured tuple")
+  assert.eq(reason, "missing-tuple", "consumer route missing tuple reason")
+
+  authz.invalidate()
+  ctx.engine = stub_engine({
+    ["user:alice@example|workflow:main#access"] = true,
+  })
+  ok, reason = authz.is_allowed("alice@example", "/reports/daily")
+  assert.eq(ok, true, "consumer route allows with configured tuple")
+  assert.eq(reason, "granted", "consumer route grant reason")
+  reset()
+  print("  ok consumer-defined route rules gate app routes")
+end
+
+do
+  reset()
+  ctx.authz_rules = {
+    { prefix = "/api/events", object_type = "workflow", object_id = "main", relation = "access" },
+  }
+  local r = authz.rule_for_path("/api/events")
+  assert.eq(r.object_type, "workflow", "consumer route can override a sysops default")
+  assert.eq(r.relation, "access", "consumer override relation")
+  reset()
+  print("  ok consumer route rules can override owned path collisions")
 end
 
 -- ---------------------------------------------------------------------

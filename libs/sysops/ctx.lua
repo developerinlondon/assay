@@ -69,6 +69,8 @@ return {
   session_signer       = nil, -- sysops.session.new(opts.session)
   session_store        = nil, -- sysops.session.store_new()
   gateway_admin_bearer = nil, -- engine admin bearer the gateway injects
+  authz_rules           = nil, -- consumer path rules checked before sysops
+                                -- built-ins by sysops.authz.
   authz_bootstrap_first_admin = true, -- first OIDC login on a fresh
                                        -- deployment auto-grants admin.
                                        -- Set false to disable.
