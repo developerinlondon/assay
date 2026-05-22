@@ -13,9 +13,24 @@
 
 local M = {}
 
+-- Percent-encode every character outside the URI userinfo unreserved set
+-- (RFC 3986 §3.2.1). Without this, passwords containing "?", "/", "#",
+-- "@" — common in generated AWS RDS masteradmin secrets — break sqlx's
+-- URL parser (most visibly with "invalid port number" because the "?"
+-- gets read as the start of a query string).
+local function urlencode(s)
+  return (tostring(s):gsub("([^%w%-%.%_%~])", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end))
+end
+
+function M._build_dsn(host, port, username, password, database)
+  return "postgres://" .. urlencode(username) .. ":" .. urlencode(password)
+    .. "@" .. host .. ":" .. tostring(port) .. "/" .. (database or "postgres")
+end
+
 function M.client(host, port, username, password, database)
-  local dsn = "postgres://" .. username .. ":" .. password .. "@" .. host .. ":" .. tostring(port) .. "/" .. (database or "postgres")
-  local pool = db.connect(dsn)
+  local pool = db.connect(M._build_dsn(host, port, username, password, database))
 
   -- ===== Client =====
 
