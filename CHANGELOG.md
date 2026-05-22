@@ -39,8 +39,9 @@ All notable changes to Assay are documented here.
 ### Fixed
 
 - Empty-array defaults in SDK payloads now serialise as `[]` (were `{}`, which upstreams reject as
-  type mismatch). Wrapped in `json.array()`: `ory.hydra` `consent:accept` `grant_access_token_audience`,
-  `tailscale` `mint_key` `tags`, `engine.auth` `passkey:start_auth` `passkeys`.
+  type mismatch). Wrapped in `json.array()`: `ory.hydra` `consent:accept`
+  `grant_access_token_audience`, `tailscale` `mint_key` `tags`, `engine.auth` `passkey:start_auth`
+  `passkeys`.
 
 ## assay 0.16.4 — 2026-05-19
 

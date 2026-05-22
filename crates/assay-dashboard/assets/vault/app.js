@@ -85,6 +85,28 @@
     return '<div class="error-banner">' + escapeHtml(msg) + '</div>';
   }
 
+  // Header-bar identity strip — version, leader dot, instance id.
+  // Same public loader used by workflow/auth/engine consoles.
+  async function loadHeaderIdentity() {
+    try {
+      const r = await fetch('/api/v1/engine/core/info', { headers: { 'accept': 'application/json' } });
+      if (!r.ok) return;
+      const info = await r.json();
+      const v = document.getElementById('cross-nav-version');
+      if (v && info.version) v.textContent = 'v' + info.version;
+      const dot = document.getElementById('cross-nav-leader-dot');
+      const txt = document.getElementById('cross-nav-leader-text');
+      if (dot) dot.classList.toggle('leader', !!info.leader);
+      if (txt) txt.textContent = info.leader ? 'leader' : 'follower';
+      const inst = document.getElementById('cross-nav-instance');
+      if (inst && info.instance_id) {
+        const id = info.instance_id;
+        inst.textContent = 'instance:' + id.slice(0, 6) + '…' + id.slice(-4);
+        inst.title = 'instance ' + id;
+      }
+    } catch (_) { /* leave placeholders */ }
+  }
+
   function statusCard(title, value, pillClass) {
     const v = pillClass
       ? '<span class="pill ' + pillClass + '">' + escapeHtml(value) + '</span>'
@@ -614,6 +636,7 @@
   if (window.AssayCrossNav) {
     window.AssayCrossNav.render({ active: 'vault' });
   }
+  loadHeaderIdentity();
 
   // Theme toggle wiring — pre-paint script in <head> already set
   // data-theme; this just bridges the toggle button to localStorage.
