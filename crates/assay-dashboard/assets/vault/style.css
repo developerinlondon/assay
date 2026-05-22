@@ -4,16 +4,15 @@
  */
 
 .layout {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: var(--gap-md, 1rem);
-  padding: var(--gap-md, 1rem);
-  min-height: calc(100vh - 56px);
+  display: flex;
+  gap: 0;
+  min-height: 0;
+  padding: var(--cross-nav-h) 0 0;
 }
 
 .sidebar {
   border-right: 1px solid var(--border, #2a2a2a);
-  padding-right: 1rem;
+  padding-right: 0;
 }
 
 .sidebar h2 {
@@ -55,10 +54,10 @@
   width: 100%;
   padding: 0.4rem;
   margin-bottom: 0.4rem;
-  background: var(--bg-elev, #1a1a1a);
+  background: var(--bg, #fff);
   border: 1px solid var(--border, #2a2a2a);
   color: inherit;
-  border-radius: 4px;
+  border-radius: 6px;
   font-family: ui-monospace, monospace;
   font-size: 0.85rem;
 }
@@ -74,11 +73,11 @@
   font-weight: 500;
 }
 
-.content {
+.main-content {
   min-width: 0;
 }
 
-.content h1 {
+.main-content h1 {
   margin-top: 0;
 }
 
@@ -90,10 +89,10 @@
 }
 
 .pane-status .card {
-  background: var(--bg-elev, #1a1a1a);
+  background: var(--surface, #fff);
   border: 1px solid var(--border, #2a2a2a);
   padding: 1rem;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .pane-status .card h3 {
@@ -119,8 +118,8 @@
 }
 
 .pill-sealed { background: #872; color: #fff; }
-.pill-unsealed { background: #181; color: #fff; }
-.pill-error { background: #c33; color: #fff; }
+.pill-unsealed { background: var(--green, #1a7f37); color: #fff; }
+.pill-error { background: var(--red, #cf222e); color: #fff; }
 
 table.data {
   width: 100%;
@@ -146,16 +145,16 @@ table.data th {
   display: inline-block;
   padding: 0.4rem 0.9rem;
   margin-right: 0.4rem;
-  background: var(--bg-elev, #1a1a1a);
+  background: var(--surface, #fff);
   border: 1px solid var(--border, #2a2a2a);
   color: inherit;
-  border-radius: 4px;
+  border-radius: 6px;
   text-decoration: none;
   cursor: pointer;
   font-size: 0.9rem;
 }
 
-.btn:hover { background: var(--bg-hover, #222); }
+.btn:hover { background: var(--surface-hover, #eef1f4); }
 
 .btn-primary {
   background: var(--accent, #6cf);
@@ -164,8 +163,8 @@ table.data th {
 }
 
 .btn-danger {
-  background: #c33;
-  border-color: #c33;
+  background: var(--red, #cf222e);
+  border-color: var(--red, #cf222e);
   color: #fff;
 }
 
@@ -185,7 +184,7 @@ table.data th {
   flex: 1;
   min-width: 200px;
   padding: 0.4rem;
-  background: var(--bg-elev, #1a1a1a);
+  background: var(--surface, #fff);
   border: 1px solid var(--border, #2a2a2a);
   color: inherit;
   border-radius: 4px;
@@ -193,7 +192,7 @@ table.data th {
 }
 
 pre.json {
-  background: var(--bg-elev, #1a1a1a);
+  background: var(--surface, #fff);
   border: 1px solid var(--border, #2a2a2a);
   padding: 0.75rem;
   border-radius: 4px;
@@ -202,10 +201,10 @@ pre.json {
 }
 
 .error-banner {
-  background: #4a1818;
-  border: 1px solid #c33;
-  color: #fbb;
+  background: color-mix(in srgb, var(--red, #cf222e) 12%, transparent);
+  border: 1px solid var(--red, #cf222e);
+  color: var(--text);
   padding: 0.6rem 0.9rem;
-  border-radius: 4px;
+  border-radius: 6px;
   margin-bottom: 1rem;
 }
