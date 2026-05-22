@@ -34,6 +34,12 @@ All notable changes to Assay are documented here.
   `authz_require_admin`, `authz_bootstrap_first_admin`, `zanzibar_check`. All nil-defaulted;
   backward-compatible.
 
+## assay 0.16.6 — 2026-05-22
+
+### Fixed
+
+- `assay.postgres.client` percent-encodes username + password in the DSN. Passwords with `?`/`/`/`#`/`@` used to break sqlx URL parsing.
+
 ## assay 0.16.5 — 2026-05-21
 
 ### Fixed

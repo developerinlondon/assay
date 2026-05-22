@@ -11,8 +11,74 @@ async fn test_require_postgres() {
         assert.not_nil(pg.client_from_vault, "postgres.client_from_vault should exist")
         assert.not_nil(pg._quote_ident, "postgres._quote_ident should exist")
         assert.not_nil(pg._quote_literal, "postgres._quote_literal should exist")
+        assert.not_nil(pg._build_dsn, "postgres._build_dsn should exist")
     "#;
     run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_postgres_build_dsn_plain() {
+    let result: String = eval_lua(
+        r#"
+        local pg = require("assay.postgres")
+        return pg._build_dsn("localhost", 5432, "alice", "s3cret", "mydb")
+    "#,
+    )
+    .await;
+    assert_eq!(result, "postgres://alice:s3cret@localhost:5432/mydb");
+}
+
+// Regression: AWS RDS generated passwords routinely contain "?", "/",
+// "#", "@" — the URI sub-delim/gen-delim set. Concatenating raw used
+// to break sqlx's URL parser ("invalid port number" because "?" was
+// read as the query-string boundary).
+#[tokio::test]
+async fn test_postgres_build_dsn_password_with_url_specials() {
+    let result: String = eval_lua(
+        r#"
+        local pg = require("assay.postgres")
+        return pg._build_dsn("host", 5432, "user", "di_)XJp0NTl[P|?)a7b@k9", "postgres")
+    "#,
+    )
+    .await;
+    assert!(
+        !result.contains("|?"),
+        "raw '?' must not appear in the DSN authority — got {result}"
+    );
+    assert!(
+        result.contains("%3F"),
+        "'?' must be percent-encoded to %3F — got {result}"
+    );
+    // Confirms the URL parses as expected: port 5432 visible in the right slot.
+    assert!(
+        result.contains("@host:5432/postgres"),
+        "host/port must be after the encoded password — got {result}"
+    );
+}
+
+#[tokio::test]
+async fn test_postgres_build_dsn_password_with_at_sign() {
+    let result: String = eval_lua(
+        r#"
+        local pg = require("assay.postgres")
+        return pg._build_dsn("host", 5432, "user", "a@b", "postgres")
+    "#,
+    )
+    .await;
+    assert!(result.contains("a%40b"));
+    assert!(result.ends_with("@host:5432/postgres"));
+}
+
+#[tokio::test]
+async fn test_postgres_build_dsn_username_encoded() {
+    let result: String = eval_lua(
+        r#"
+        local pg = require("assay.postgres")
+        return pg._build_dsn("host", 5432, "us er", "pw", "db")
+    "#,
+    )
+    .await;
+    assert!(result.contains("us%20er:pw"));
 }
 
 #[tokio::test]
