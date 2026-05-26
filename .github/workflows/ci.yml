@@ -178,11 +178,20 @@ jobs:
       # On self-hosted, ~/.cargo/bin contains rustup but isn't on the
       # default GH Actions step PATH. The hosted runners have it because
       # Swatinem/rust-cache@v2 implicitly installs rustup and prepends
-      # ~/.cargo/bin; we skip that action on self-hosted (target/ is
-      # already warm locally) so we have to add it ourselves.
+      # ~/.cargo/bin; we skip that action on self-hosted, so we have to
+      # add it ourselves.
       - name: Add ~/.cargo/bin to PATH (self-hosted)
         if: steps.targets.outputs.run_checks == 'true' && runner.environment == 'self-hosted'
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # Keep self-hosted Cargo output off the runner checkout volume. On
+      # assay-runner-eda, /var/cache/runner-work is mounted from the
+      # dedicated cargo-targets LV and is owned by the runner user.
+      - name: Use dedicated Cargo target dir (self-hosted)
+        if: steps.targets.outputs.run_checks == 'true' && runner.environment == 'self-hosted'
+        run: |
+          mkdir -p /var/cache/runner-work/assay-target
+          echo "CARGO_TARGET_DIR=/var/cache/runner-work/assay-target" >> "$GITHUB_ENV"
 
       # mise's rust plugin defaults to the `minimal` profile (no clippy).
       - name: Install clippy component
@@ -201,11 +210,11 @@ jobs:
       # build-script outputs round-trip rather than rebuild. Heavy
       # build crates dominate cold-restore time on this workspace.
       #
-      # Skipped on self-hosted: the assay-runner container has a
-      # locally-persistent target/ (warmer than any GH cache hit) and
-      # the post-step's ~250MB upload over the home internet wipes
-      # out half the speedup. Github-hosted (macOS, Dependabot) still
-      # needs the cache.
+      # Skipped on self-hosted: the assay-runner container writes
+      # CARGO_TARGET_DIR to a locally-persistent dedicated LV, and the
+      # post-step's ~250MB upload over the home internet wipes out half
+      # the speedup. Github-hosted (macOS, Dependabot) still needs the
+      # cache.
       - uses: Swatinem/rust-cache@v2
         if: steps.targets.outputs.run_checks == 'true' && runner.environment == 'github-hosted'
         with:
