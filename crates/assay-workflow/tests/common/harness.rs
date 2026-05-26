@@ -487,12 +487,11 @@ impl Drop for TestPostgresDatabase {
     fn drop(&mut self) {
         let db_name = self.db_name.clone();
         let admin_opts = self.admin_opts.clone();
-        let pool = self.pool.clone();
         let cleanup = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
-            runtime.block_on(drop_test_postgres_database(admin_opts, db_name, pool))
+            runtime.block_on(drop_test_postgres_database(admin_opts, db_name))
         })
         .join();
 
@@ -508,15 +507,15 @@ impl Drop for TestPostgresDatabase {
 async fn drop_test_postgres_database(
     admin_opts: sqlx::postgres::PgConnectOptions,
     db_name: String,
-    pool: sqlx::PgPool,
 ) -> anyhow::Result<()> {
-    pool.close().await;
     let admin_pool = sqlx::PgPool::connect_with(admin_opts).await?;
-    sqlx::query(&format!(
-        r#"DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)"#
-    ))
-    .execute(&admin_pool)
-    .await?;
+    sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1")
+        .bind(&db_name)
+        .execute(&admin_pool)
+        .await?;
+    sqlx::query(&format!(r#"DROP DATABASE IF EXISTS "{db_name}""#))
+        .execute(&admin_pool)
+        .await?;
     admin_pool.close().await;
     Ok(())
 }
