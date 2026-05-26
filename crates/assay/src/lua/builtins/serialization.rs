@@ -1,5 +1,6 @@
 use super::json::{json_value_to_lua, lua_value_to_json};
 use mlua::{Lua, Value};
+use serde::Deserialize;
 
 pub fn register_yaml(lua: &Lua) -> mlua::Result<()> {
     let yaml_table = lua.create_table()?;
@@ -10,6 +11,21 @@ pub fn register_yaml(lua: &Lua) -> mlua::Result<()> {
         json_value_to_lua(lua, &json_val)
     })?;
     yaml_table.set("parse", parse_fn)?;
+
+    let parse_all_fn = lua.create_function(|lua, s: String| {
+        let docs = lua.create_table()?;
+        let mut index = 1;
+        for doc in serde_yml::Deserializer::from_str(&s) {
+            let json_val = serde_json::Value::deserialize(doc)
+                .map_err(|e| mlua::Error::runtime(format!("yaml.parse_all: {e}")))?;
+            if !json_val.is_null() {
+                docs.set(index, json_value_to_lua(lua, &json_val)?)?;
+                index += 1;
+            }
+        }
+        Ok(Value::Table(docs))
+    })?;
+    yaml_table.set("parse_all", parse_all_fn)?;
 
     let encode_fn = lua.create_function(|_, val: Value| {
         let json_val = lua_value_to_json(&val)?;
