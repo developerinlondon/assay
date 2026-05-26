@@ -24,9 +24,9 @@ pub use assay_domain::types::{SchedulePatch, WorkflowSchedule, WorkflowSnapshot,
 pub enum Harness {
     #[cfg(feature = "backend-postgres")]
     Postgres {
+        store: assay_workflow::PostgresStore,
         // Owns the per-test database and drops it when the harness leaves scope.
         database: TestPostgresDatabase,
-        store: assay_workflow::PostgresStore,
     },
     #[cfg(feature = "backend-sqlite")]
     Sqlite {
@@ -438,7 +438,7 @@ async fn postgres_harness() -> anyhow::Result<Harness> {
     let server = TestPostgresServer::from_env_or_container().await?;
     let database = TestPostgresDatabase::create(server).await?;
     let store = assay_workflow::PostgresStore::from_pool(database.pool().clone()).await?;
-    Ok(Harness::Postgres { database, store })
+    Ok(Harness::Postgres { store, database })
 }
 
 #[cfg(feature = "backend-postgres")]

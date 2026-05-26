@@ -53,8 +53,8 @@ async fn database_exists(db_name: &str) -> anyhow::Result<bool> {
 }
 
 struct TestStore {
-    database: TestPostgresDatabase,
     store: PostgresStore,
+    database: TestPostgresDatabase,
 }
 
 impl TestStore {
