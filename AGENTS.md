@@ -18,6 +18,14 @@ Use the main checkout for active work. Do not create extra git worktrees for thi
 human operator explicitly asks for parallel checkouts; one workstream in the main worktree is
 enough.
 
+## Self-hosted CI runner
+
+The GitHub Actions runner named `assay-runner-eda` runs inside the `assay-runner` systemd-nspawn
+machine on the EDA server. Treat its services as persistent, not ephemeral. In particular, its
+Postgres service is a long-lived system service used by Linux CI via `TEST_DATABASE_URL`; tests must
+drop any `assay_test_*` databases they create, and CI should keep an `always()` cleanup guard for
+that prefix.
+
 ## Library hygiene: no application-domain leakage
 
 **Assay is a general-purpose library. It must have zero knowledge of any specific application that

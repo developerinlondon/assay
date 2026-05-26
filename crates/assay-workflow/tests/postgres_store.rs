@@ -14,59 +14,61 @@ mod common;
 use assay_workflow::store::WorkflowStore;
 use assay_workflow::store::postgres::PostgresStore;
 use assay_workflow::types::*;
-
-fn docker_available() -> bool {
-    std::process::Command::new("docker")
-        .arg("info")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
+use common::harness::TestPostgresDatabase;
+use common::harness::TestPostgresServer;
+use std::ops::Deref;
 
 /// Returns a fresh `PostgresStore` for this test — its own database on the
 /// shared server. `None` signals skip when Docker is unavailable and no
 /// shared URL is configured.
-async fn create_store() -> Option<PostgresStore> {
-    let admin_url = match std::env::var("TEST_DATABASE_URL") {
-        Ok(url) if !url.is_empty() => url,
-        _ => {
-            if !docker_available() {
-                eprintln!("Skipping: Docker not available and TEST_DATABASE_URL unset");
-                return None;
-            }
-            common::harness::shared_local_pg_url().await.ok()?
+async fn create_store() -> Option<TestStore> {
+    let server = match TestPostgresServer::from_env_or_container().await {
+        Ok(server) => server,
+        Err(err) => {
+            eprintln!("Skipping: Postgres unavailable: {err:#}");
+            return None;
         }
     };
-
-    use sqlx::postgres::{PgConnectOptions, PgPool};
-    use std::str::FromStr;
-    let admin_opts = PgConnectOptions::from_str(&admin_url).unwrap();
-    let admin_pool = PgPool::connect_with(admin_opts.clone()).await.unwrap();
-    let db_name = unique_db_name();
-    sqlx::query(&format!(r#"CREATE DATABASE "{db_name}""#))
-        .execute(&admin_pool)
+    let database = TestPostgresDatabase::create(server).await.unwrap();
+    let store = PostgresStore::from_pool(database.pool().clone())
         .await
         .unwrap();
-    admin_pool.close().await;
-    let pool = PgPool::connect_with(admin_opts.database(&db_name))
-        .await
-        .unwrap();
-    let store = PostgresStore::from_pool(pool).await.unwrap();
-    Some(store)
+    Some(TestStore { database, store })
 }
 
-fn unique_db_name() -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let t = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let n = SEQ.fetch_add(1, Ordering::Relaxed);
-    format!("assay_test_{t}_{n}")
+async fn database_exists(db_name: &str) -> anyhow::Result<bool> {
+    use sqlx::postgres::{PgConnectOptions, PgPool};
+    use std::str::FromStr;
+    let admin_url = std::env::var("TEST_DATABASE_URL")?;
+    let admin_opts = PgConnectOptions::from_str(&admin_url).unwrap();
+    let admin_pool = PgPool::connect_with(admin_opts).await?;
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)",
+    )
+    .bind(db_name)
+    .fetch_one(&admin_pool)
+    .await?;
+    admin_pool.close().await;
+    Ok(exists)
+}
+
+struct TestStore {
+    store: PostgresStore,
+    database: TestPostgresDatabase,
+}
+
+impl TestStore {
+    fn db_name(&self) -> &str {
+        self.database.db_name()
+    }
+}
+
+impl Deref for TestStore {
+    type Target = PostgresStore;
+
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
 }
 
 /// Macro to skip tests when no Postgres is available. The second argument
@@ -123,6 +125,31 @@ async fn pg_workflow_create_and_get() {
     assert_eq!(fetched.namespace, "main");
     assert_eq!(fetched.workflow_type, "IngestData");
     assert_eq!(fetched.status, "PENDING");
+}
+
+#[tokio::test]
+async fn pg_test_database_is_dropped_after_store_goes_out_of_scope() {
+    if std::env::var("TEST_DATABASE_URL")
+        .ok()
+        .filter(|url| !url.is_empty())
+        .is_none()
+    {
+        return;
+    }
+
+    let db_name = {
+        let Some(store) = create_store().await else {
+            return;
+        };
+        let db_name = store.db_name().to_string();
+        store.create_namespace("cleanup-probe").await.unwrap();
+        db_name
+    };
+
+    assert!(
+        !database_exists(&db_name).await.unwrap(),
+        "test database {db_name} should be dropped when its store is dropped"
+    );
 }
 
 #[tokio::test]
