@@ -38,7 +38,8 @@ All notable changes to Assay are documented here.
 
 ### Fixed
 
-- `assay.postgres.client` percent-encodes username + password in the DSN. Passwords with `?`/`/`/`#`/`@` used to break sqlx URL parsing.
+- `assay.postgres.client` percent-encodes username + password in the DSN. Passwords with
+  `?`/`/`/`#`/`@` used to break sqlx URL parsing.
 
 ## assay 0.16.5 — 2026-05-21
 
