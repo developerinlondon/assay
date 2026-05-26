@@ -2,6 +2,13 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.16.7 — 2026-05-26
+
+### Added
+
+- `yaml.parse_all(str)` parses multi-document YAML streams into a Lua array, skipping empty
+  documents. This removes per-script YAML stream splitting for Helm/Kubernetes render checks.
+
 ## sysops 0.2.0 — 2026-05-20
 
 ### Added
@@ -38,7 +45,8 @@ All notable changes to Assay are documented here.
 
 ### Fixed
 
-- `assay.postgres.client` percent-encodes username + password in the DSN. Passwords with `?`/`/`/`#`/`@` used to break sqlx URL parsing.
+- `assay.postgres.client` percent-encodes username + password in the DSN. Passwords with
+  `?`/`/`/`#`/`@` used to break sqlx URL parsing.
 
 ## assay 0.16.5 — 2026-05-21
 

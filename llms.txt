@@ -17,7 +17,7 @@
 
 ## Builtins (no require needed)
 - [http](https://assay.rs/modules/http.html): HTTP client, server, SSE streaming — http.get/post/put/patch/delete/serve
-- [json, yaml, toml](https://assay.rs/modules/serialization.html): JSON/YAML/TOML parse and encode
+- [json, yaml, toml](https://assay.rs/modules/serialization.html): JSON/YAML/TOML parse, parse-all, and encode
 - [fs](https://assay.rs/modules/fs.html): Filesystem — fs.read/write, fs.lines (streaming line iterator), fs.sub_in_file (sed -i equivalent using Lua patterns)
 - [crypto, base64](https://assay.rs/modules/crypto.html): JWT signing/verification/decoding (PEM or JWKS), HMAC, hashing, random, base64
 - [regex](https://assay.rs/modules/regex.html): Regex match, find, replace

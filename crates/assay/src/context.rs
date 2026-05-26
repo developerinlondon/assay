@@ -58,7 +58,9 @@ pub fn format_context(entries: &[ModuleContextEntry]) -> String {
     output.push_str("## Built-in Functions (always available, no require needed)\n");
     output.push_str("http.get(url, opts?) -> {status, body, headers}\n");
     output.push_str("json.parse(str) -> table | json.encode(tbl) -> str\n");
-    output.push_str("yaml.parse(str) -> table | yaml.encode(tbl) -> str\n");
+    output.push_str(
+        "yaml.parse(str) -> table | yaml.parse_all(str) -> [table] | yaml.encode(tbl) -> str\n",
+    );
     output.push_str("toml.parse(str) -> table | toml.encode(tbl) -> str\n");
     output.push_str("base64.encode(str) -> str | base64.decode(str) -> str\n");
     output.push_str("crypto.jwt_sign(claims, key, alg) -> token\n");
