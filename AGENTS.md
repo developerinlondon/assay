@@ -24,7 +24,9 @@ The GitHub Actions runner named `assay-runner-eda` runs inside the `assay-runner
 machine on the EDA server. Treat its services as persistent, not ephemeral. In particular, its
 Postgres service is a long-lived system service used by Linux CI via `TEST_DATABASE_URL`; tests must
 drop any `assay_test_*` databases they create, and CI should keep an `always()` cleanup guard for
-that prefix.
+that prefix. Keep Cargo build output on the runner cache mount by setting `CARGO_TARGET_DIR` to
+`/var/cache/runner-work/assay-target` for self-hosted CI; do not put recurring build artifacts under
+`/home/runner/actions-runner/_work/.../target`.
 
 ## Library hygiene: no application-domain leakage
 
