@@ -24,6 +24,30 @@ async fn test_yaml_parse_array() {
 }
 
 #[tokio::test]
+async fn test_yaml_parse_all_documents() {
+    let script = r#"
+        local docs = yaml.parse_all("kind: Service\nmetadata:\n  name: api\n---\nkind: Deployment\nmetadata:\n  name: worker\n")
+        assert.eq(#docs, 2)
+        assert.eq(docs[1].kind, "Service")
+        assert.eq(docs[1].metadata.name, "api")
+        assert.eq(docs[2].kind, "Deployment")
+        assert.eq(docs[2].metadata.name, "worker")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_yaml_parse_all_skips_empty_documents() {
+    let script = r#"
+        local docs = yaml.parse_all("---\nkind: ConfigMap\n---\n---\nkind: Secret\n")
+        assert.eq(#docs, 2)
+        assert.eq(docs[1].kind, "ConfigMap")
+        assert.eq(docs[2].kind, "Secret")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
 async fn test_yaml_parse_nested() {
     let script = r#"
         local data = yaml.parse("server:\n  host: localhost\n  port: 8080\n")

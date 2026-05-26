@@ -35,6 +35,7 @@ anything else as objects. The helpers only matter when you need to override that
 YAML serialization. No `require()` needed.
 
 - `yaml.parse(str)` → table — Parse YAML string to Lua table
+- `yaml.parse_all(str)` → table[] — Parse a YAML stream into a Lua array, skipping empty documents
 - `yaml.encode(table)` → string — Encode Lua table to YAML string
 
 ## toml

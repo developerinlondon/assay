@@ -202,7 +202,7 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 | Function                                    | Description |
 | ------------------------------------------- | ----------- |
 | `json.parse(str)` / `json.encode(tbl)`      | JSON        |
-| `yaml.parse(str)` / `yaml.encode(tbl)`      | YAML        |
+| `yaml.parse(str)` / `yaml.parse_all(str)` / `yaml.encode(tbl)` | YAML stream/documents |
 | `toml.parse(str)` / `toml.encode(tbl)`      | TOML        |
 | `base64.encode(str)` / `base64.decode(str)` | Base64      |
 
