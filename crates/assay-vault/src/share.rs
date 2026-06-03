@@ -246,10 +246,18 @@ mod biscuit_impl {
                 .map_err(|_| VaultError::Forbidden)?;
 
             // Pull the target back out of the authority facts.
-            let facts: Vec<(String, String)> =
-                authorizer
-                    .query("data($k, $i) <- target($k, $i)")
-                    .map_err(|e| VaultError::Crypto(format!("biscuit query: {e:?}")))?;
+            // Same 1ms-default trap as authorize above: the query runs datalog
+            // too, so bound it with the same 10s wall-clock backstop or a loaded
+            // runner intermittently times out (RunLimit(Timeout)).
+            let facts: Vec<(String, String)> = authorizer
+                .query_with_limits(
+                    "data($k, $i) <- target($k, $i)",
+                    biscuit_auth::AuthorizerLimits {
+                        max_time: std::time::Duration::from_secs(10),
+                        ..Default::default()
+                    },
+                )
+                .map_err(|e| VaultError::Crypto(format!("biscuit query: {e:?}")))?;
             let (kind, id) = facts
                 .into_iter()
                 .next()

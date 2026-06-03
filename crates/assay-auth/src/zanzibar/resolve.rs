@@ -75,23 +75,32 @@ fn walk_name(
     out: &mut Resolved,
     seen: &mut BTreeSet<String>,
 ) -> bool {
+    // `seen` is the *current resolution path*, not every name ever visited.
+    // A name reachable via two union branches (a DAG diamond, e.g.
+    // `view = up + down` where both include `account`) is legitimate; only a
+    // name reached while still on its own stack is a self-referential schema
+    // cycle. So insert on entry and pop on exit.
     if !seen.insert(name.to_string()) {
         return false;
     }
-    let Some(def) = schema.definitions.get(name) else {
+    let ok = match schema.definitions.get(name) {
         // An undefined name — treat as a direct relation (matches
         // SpiceDB's lenient resolution; the tuple table just won't
         // have rows for it and the walk denies cleanly).
-        out.union_relations.insert(name.to_string());
-        return true;
-    };
-    match &def.kind {
-        RelationKind::Direct(_) => {
+        None => {
             out.union_relations.insert(name.to_string());
             true
         }
-        RelationKind::Permission(expr) => walk_expr(schema, expr, out, seen),
-    }
+        Some(def) => match &def.kind {
+            RelationKind::Direct(_) => {
+                out.union_relations.insert(name.to_string());
+                true
+            }
+            RelationKind::Permission(expr) => walk_expr(schema, expr, out, seen),
+        },
+    };
+    seen.remove(name);
+    ok
 }
 
 fn walk_expr(
@@ -226,5 +235,59 @@ mod tests {
         assert!(r.needs_post_filter);
         assert!(r.union_relations.contains("a"));
         assert!(r.union_relations.contains("b"));
+    }
+
+    #[test]
+    fn diamond_via_two_permissions_is_not_a_cycle() {
+        // `view = up + down`; both `up` and `down` include `account`, so
+        // resolving `view` reaches `account` along two distinct union
+        // branches (a DAG diamond, NOT a cycle). The path-based cycle guard
+        // must not mistake the second visit for a self-reference.
+        let mut s = NamespaceSchema::new("node");
+        s.definitions.insert(
+            "account".into(),
+            RelationDef::relation("account", vec![TypeRef::direct("user")]),
+        );
+        s.definitions.insert(
+            "parent".into(),
+            RelationDef::relation("parent", vec![TypeRef::direct("node")]),
+        );
+        s.definitions.insert(
+            "child".into(),
+            RelationDef::relation("child", vec![TypeRef::direct("node")]),
+        );
+        s.definitions.insert(
+            "up".into(),
+            RelationDef::permission(
+                "up",
+                PermissionExpr::union(
+                    PermissionExpr::direct("account"),
+                    PermissionExpr::arrow("parent", "up"),
+                ),
+            ),
+        );
+        s.definitions.insert(
+            "down".into(),
+            RelationDef::permission(
+                "down",
+                PermissionExpr::union(
+                    PermissionExpr::direct("account"),
+                    PermissionExpr::arrow("child", "down"),
+                ),
+            ),
+        );
+        s.definitions.insert(
+            "view".into(),
+            RelationDef::permission(
+                "view",
+                PermissionExpr::union(PermissionExpr::direct("up"), PermissionExpr::direct("down")),
+            ),
+        );
+
+        let r = resolve(&s, "view").expect("diamond must resolve, not register as a cycle");
+        assert!(r.union_relations.contains("account"));
+        assert!(r.union_relations.contains("parent"));
+        assert!(r.union_relations.contains("child"));
+        assert!(r.needs_post_filter, "arrows present → post-filter");
     }
 }

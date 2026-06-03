@@ -252,6 +252,117 @@ mod sqlite_tests {
         );
     }
 
+    // A permission composed of OTHER permissions that share a relation — a
+    // diamond `view = up + down`, both including `account` — must resolve.
+    // Pre-fix the resolver's cumulative visited-set mistook the shared
+    // `account` for a schema cycle and `check` silently denied. Behavioural
+    // regression guard for that bug.
+    #[tokio::test]
+    async fn composed_permission_diamond_resolves() {
+        let store = setup_sqlite().await;
+        store
+            .define_namespace(&NamespaceSchema::new("user"))
+            .await
+            .expect("ns user");
+        store
+            .define_namespace(
+                &NamespaceSchema::new("node")
+                    .with_relation(
+                        "account",
+                        RelationDef::relation("account", vec![TypeRef::direct("user")]),
+                    )
+                    .with_relation(
+                        "parent",
+                        RelationDef::relation("parent", vec![TypeRef::direct("node")]),
+                    )
+                    .with_relation(
+                        "child",
+                        RelationDef::relation("child", vec![TypeRef::direct("node")]),
+                    )
+                    .with_relation(
+                        "up",
+                        RelationDef::permission(
+                            "up",
+                            PermissionExpr::union(
+                                PermissionExpr::direct("account"),
+                                PermissionExpr::arrow("parent", "up"),
+                            ),
+                        ),
+                    )
+                    .with_relation(
+                        "down",
+                        RelationDef::permission(
+                            "down",
+                            PermissionExpr::union(
+                                PermissionExpr::direct("account"),
+                                PermissionExpr::arrow("child", "down"),
+                            ),
+                        ),
+                    )
+                    .with_relation(
+                        "view",
+                        RelationDef::permission(
+                            "view",
+                            PermissionExpr::union(
+                                PermissionExpr::direct("up"),
+                                PermissionExpr::direct("down"),
+                            ),
+                        ),
+                    ),
+            )
+            .await
+            .expect("ns node");
+
+        // c.parent = b, b.parent = a; ua is the account on a (c's grandparent).
+        store
+            .write_tuples(&[
+                Tuple::direct(
+                    ObjectRef::new("node", "a"),
+                    "account",
+                    SubjectRef::direct("user", "ua"),
+                ),
+                Tuple::direct(
+                    ObjectRef::new("node", "b"),
+                    "parent",
+                    SubjectRef::direct("node", "a"),
+                ),
+                Tuple::direct(
+                    ObjectRef::new("node", "c"),
+                    "parent",
+                    SubjectRef::direct("node", "b"),
+                ),
+            ])
+            .await
+            .expect("seed");
+
+        // view(c, ua) resolves via `up` (c->b->a, account at a).
+        let r = store
+            .check(
+                &ObjectRef::new("node", "c"),
+                "view",
+                &SubjectRef::direct("user", "ua"),
+                Consistency::Minimum,
+            )
+            .await
+            .expect("check ua");
+        assert!(
+            matches!(r, CheckResult::Allowed { .. }),
+            "composed view must resolve via up: {r:?}"
+        );
+
+        // An unrelated user is denied.
+        let r = store
+            .check(
+                &ObjectRef::new("node", "c"),
+                "view",
+                &SubjectRef::direct("user", "nobody"),
+                Consistency::Minimum,
+            )
+            .await
+            .expect("check nobody");
+        assert_eq!(r, CheckResult::Denied);
+    }
+
     #[tokio::test]
     async fn indirect_via_userset() {
         let store = setup_sqlite().await;
