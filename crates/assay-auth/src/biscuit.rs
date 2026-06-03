@@ -196,7 +196,15 @@ impl BiscuitConfig {
             .build(&parsed)
             .map_err(|e| Error::Backend(anyhow::anyhow!("biscuit authorizer attach: {e}")))?;
         authorizer
-            .authorize()
+            // biscuit's default authorize max_time is 1ms — far too tight under
+            // load: a busy server (or a shared CI runner) intermittently exceeds it
+            // and rejects a perfectly valid token with a datalog-limit error. The
+            // fact/iteration caps still bound the work; this is just a sane
+            // wall-clock backstop.
+            .authorize_with_limits(biscuit_auth::AuthorizerLimits {
+                max_time: std::time::Duration::from_secs(10),
+                ..Default::default()
+            })
             .map_err(|e| Error::Backend(anyhow::anyhow!("biscuit authorize: {e}")))?;
         Ok(())
     }

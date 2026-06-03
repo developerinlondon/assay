@@ -234,7 +234,16 @@ mod biscuit_impl {
             let mut authorizer = authorizer
                 .build(&biscuit)
                 .map_err(|e| VaultError::Crypto(format!("biscuit authorizer: {e:?}")))?;
-            authorizer.authorize().map_err(|_| VaultError::Forbidden)?;
+            // biscuit's default authorize max_time is 1ms — too tight under load,
+            // so a valid token intermittently times out. The fact/iteration caps
+            // still bound the work; this is a sane wall-clock backstop. (Without
+            // it, the timeout surfaced here as a misleading `Forbidden`.)
+            authorizer
+                .authorize_with_limits(biscuit_auth::AuthorizerLimits {
+                    max_time: std::time::Duration::from_secs(10),
+                    ..Default::default()
+                })
+                .map_err(|_| VaultError::Forbidden)?;
 
             // Pull the target back out of the authority facts.
             let facts: Vec<(String, String)> =
