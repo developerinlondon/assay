@@ -4,6 +4,7 @@
 --- @quickref c.queries:query(sql, params?) -> [row] | Execute SQL query, return rows
 --- @quickref c.queries:execute(sql, params?) -> number | Execute SQL statement, return affected count
 --- @quickref c:close() -> nil | Close database connection
+--- @quickref M.client_url(url) -> client | Create from a full PostgreSQL connection URL
 --- @quickref c.users:exists(username) -> bool | Check if PostgreSQL user exists
 --- @quickref c.users:ensure(username, password, opts?) -> bool | Create user if not exists
 --- @quickref c.databases:exists(dbname) -> bool | Check if database exists
@@ -29,9 +30,7 @@ function M._build_dsn(host, port, username, password, database)
     .. "@" .. host .. ":" .. tostring(port) .. "/" .. (database or "postgres")
 end
 
-function M.client(host, port, username, password, database)
-  local pool = db.connect(M._build_dsn(host, port, username, password, database))
-
+local function client_from_pool(pool)
   -- ===== Client =====
 
   local c = {}
@@ -114,6 +113,14 @@ function M.client(host, port, username, password, database)
   end
 
   return c
+end
+
+function M.client_url(url)
+  return client_from_pool(db.connect(url))
+end
+
+function M.client(host, port, username, password, database)
+  return M.client_url(M._build_dsn(host, port, username, password, database))
 end
 
 function M.client_from_vault(vault_client, vault_path, host, port)

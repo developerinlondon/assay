@@ -14,6 +14,17 @@ All notable changes to Assay are documented here.
 - Biscuit authorizer `max_time` 1 ms → 10 s — token checks no longer abort with "Reached Datalog
   execution limits" under load (a spurious `Forbidden`).
 
+## assay 0.16.8 — 2026-06-03
+
+### Added
+
+- `assay.postgres.client_url(url)` creates a stdlib Postgres client from a full connection URL.
+
+### Fixed
+
+- `db.query()` now decodes Postgres `numeric`/`decimal` values as exact Lua strings instead of
+  failing through sqlx's `Any` driver.
+
 ## assay 0.16.7 — 2026-05-26
 
 ### Added
