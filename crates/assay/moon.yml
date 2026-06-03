@@ -10,20 +10,16 @@ layer: "application"
 stack: "systems"
 
 fileGroups:
-  # The build / build-runtime / lint / test tasks here compile and exercise the
-  # ENTIRE workspace (the release binary links every crate; `cargo test
-  # --workspace` runs every crate's tests). So affected-detection must invalidate
-  # on ANY crate's sources — not just this crate's. `dependsOn` below only
-  # propagates *project*-affected, not task-*input*-affected, so with crate-local
-  # inputs a change in e.g. assay-auth would skip build-runtime and leave
-  # `target/release/assay` unbuilt for the lua tests → CI exit 127. Moon rejects
-  # `..` traversal but accepts `/`-prefixed workspace-relative paths.
+  # Paths resolve relative to this file (crates/assay/moon.yml). Moon no
+  # longer accepts `..` parent-directory traversal, so cross-crate
+  # invalidation is expressed via `dependsOn` below (moon's
+  # affected-graph picks up changes in dependent projects
+  # automatically). Workspace-wide `cargo test --workspace` still
+  # exercises every crate regardless.
   rust-sources:
-    - "/crates/*/src/**/*"
-    - "/crates/*/Cargo.toml"
-    - "/Cargo.toml"
-    - "/Cargo.lock"
+    - "src/**/*"
     - "stdlib/**/*"
+    - "Cargo.toml"
 
 dependsOn:
   - "assay-domain"

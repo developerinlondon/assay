@@ -192,6 +192,14 @@ jobs:
         run: |
           mkdir -p /var/cache/runner-work/assay-target
           echo "CARGO_TARGET_DIR=/var/cache/runner-work/assay-target" >> "$GITHUB_ENV"
+          # The lua-test moon tasks invoke the built CLI via the conventional
+          # `target/release/assay` path. With CARGO_TARGET_DIR redirected to the
+          # dedicated LV that path is otherwise empty, so engine-lua:test (and
+          # the sysops/site/workflow-e2e lua tasks) fail with exit 127. Point
+          # `target` at the LV so the conventional path resolves to where cargo
+          # actually writes.
+          rm -rf target
+          ln -s /var/cache/runner-work/assay-target target
 
       # mise's rust plugin defaults to the `minimal` profile (no clippy).
       - name: Install clippy component
