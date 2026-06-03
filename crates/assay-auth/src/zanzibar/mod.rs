@@ -17,6 +17,7 @@
 //! callers expect. Compile-time `auth-zanzibar` feature still gates
 //! the entire tree.
 
+pub mod eval;
 #[cfg(feature = "backend-postgres")]
 pub mod postgres;
 pub mod resolve;

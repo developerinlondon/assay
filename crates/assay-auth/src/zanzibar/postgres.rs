@@ -28,12 +28,15 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use sqlx::{PgPool, Row};
 
+use super::eval::{LeafCheck, Verdict, evaluate};
 use super::resolve::resolve;
 use super::store::ZanzibarStore;
 use super::types::{
     CheckResult, Consistency, MAX_DEPTH, NamespaceSchema, ObjectRef, SubjectRef, TreeOp, Tuple,
     TupleFilter, UsersetTree,
 };
+use std::future::Future;
+use std::pin::Pin;
 
 /// Postgres-backed Zanzibar store. Cheap to clone (the underlying
 /// `PgPool` is `Arc` internally).
@@ -211,79 +214,16 @@ impl ZanzibarStore for PostgresZanzibarStore {
         subject: &SubjectRef,
         _consistency: Consistency,
     ) -> Result<CheckResult> {
-        // 1) Resolve the permission to its candidate relation set.
-        //    No namespace defined → deny (the safe default).
+        // No namespace defined → deny (the safe default). The full
+        // permission algebra (union / intersect / exclude / arrow) is
+        // composed by the backend-agnostic evaluator over the two
+        // primitives this backend exposes (`check_relation_set` +
+        // `arrow_targets`); a permission that flattens to a pure union
+        // of relations still hits the single-CTE fast path inside it.
         let Some(schema) = self.get_namespace(&resource.object_type).await? else {
             return Ok(CheckResult::Denied);
         };
-        let Some(resolved) = resolve(&schema, permission) else {
-            // Schema cycle. Surface as `CycleDetected` so callers/UI
-            // can flag the bad schema; this is *not* an error.
-            return Ok(CheckResult::CycleDetected);
-        };
-        if resolved.union_relations.is_empty() {
-            return Ok(CheckResult::Denied);
-        }
-        let relation_list: Vec<String> = resolved.union_relations.into_iter().collect();
-
-        // 2) Run the recursive walk. subject_rel is NOT NULL — '' for
-        //    direct subjects (the terminal kind `check` answers) and a
-        //    relation name for usersets the CTE walks through. Cycle
-        //    guard via the in-CTE `path` array — if the next subject is
-        //    already on the path, the join produces zero rows.
-        let row: Option<(i32,)> = sqlx::query_as(
-            r#"
-            WITH RECURSIVE walk(subject_type, subject_id, subject_rel, depth, path) AS (
-                SELECT t.subject_type,
-                       t.subject_id,
-                       t.subject_rel,
-                       1 AS depth,
-                       ARRAY[t.subject_type || ':' || t.subject_id] AS path
-                FROM auth.zanzibar_tuples t
-                WHERE t.object_type = $1 AND t.object_id = $2 AND t.relation = ANY($3)
-                UNION ALL
-                SELECT t.subject_type,
-                       t.subject_id,
-                       t.subject_rel,
-                       w.depth + 1,
-                       w.path || (t.subject_type || ':' || t.subject_id)
-                FROM auth.zanzibar_tuples t
-                JOIN walk w
-                  ON t.object_type = w.subject_type
-                 AND t.object_id   = w.subject_id
-                 AND w.subject_rel <> ''
-                 AND t.relation = w.subject_rel
-                WHERE w.depth < $4
-                  AND NOT (t.subject_type || ':' || t.subject_id) = ANY(w.path)
-            )
-            SELECT CASE
-                WHEN EXISTS (
-                    SELECT 1 FROM walk
-                    WHERE subject_type = $5 AND subject_id = $6 AND subject_rel = ''
-                ) THEN 1
-                WHEN EXISTS (SELECT 1 FROM walk WHERE depth >= $4) THEN 2
-                ELSE 0
-            END AS verdict
-            "#,
-        )
-        .bind(&resource.object_type)
-        .bind(&resource.object_id)
-        .bind(&relation_list)
-        .bind(MAX_DEPTH as i32)
-        .bind(&subject.subject_type)
-        .bind(&subject.subject_id)
-        .fetch_optional(&self.pool)
-        .await
-        .context("auth.zanzibar check CTE")?;
-
-        let verdict = row.map(|(v,)| v).unwrap_or(0);
-        Ok(match verdict {
-            1 => CheckResult::Allowed {
-                resolved_via: Vec::new(),
-            },
-            2 => CheckResult::DepthExceeded,
-            _ => CheckResult::Denied,
-        })
+        evaluate(self, &schema, resource, permission, subject).await
     }
 
     async fn expand(
@@ -414,6 +354,116 @@ impl ZanzibarStore for PostgresZanzibarStore {
                 )
             })
             .collect())
+    }
+}
+
+impl LeafCheck for PostgresZanzibarStore {
+    fn check_relation_set<'a>(
+        &'a self,
+        object: &'a ObjectRef,
+        relations: &'a [String],
+        subject: &'a SubjectRef,
+    ) -> Pin<Box<dyn Future<Output = Result<Verdict>> + Send + 'a>> {
+        Box::pin(async move {
+            if relations.is_empty() {
+                return Ok(Verdict::Denied);
+            }
+            // subject_rel is NOT NULL — '' for direct subjects (the
+            // terminal kind the leaf answers) and a relation name for
+            // usersets the CTE walks through. Cycle guard via the in-CTE
+            // `path` array — if the next subject is already on the path,
+            // the join produces zero rows.
+            let row: Option<(i32,)> = sqlx::query_as(
+                r#"
+                WITH RECURSIVE walk(subject_type, subject_id, subject_rel, depth, path) AS (
+                    SELECT t.subject_type,
+                           t.subject_id,
+                           t.subject_rel,
+                           1 AS depth,
+                           ARRAY[t.subject_type || ':' || t.subject_id] AS path
+                    FROM auth.zanzibar_tuples t
+                    WHERE t.object_type = $1 AND t.object_id = $2 AND t.relation = ANY($3)
+                    UNION ALL
+                    SELECT t.subject_type,
+                           t.subject_id,
+                           t.subject_rel,
+                           w.depth + 1,
+                           w.path || (t.subject_type || ':' || t.subject_id)
+                    FROM auth.zanzibar_tuples t
+                    JOIN walk w
+                      ON t.object_type = w.subject_type
+                     AND t.object_id   = w.subject_id
+                     AND w.subject_rel <> ''
+                     AND t.relation = w.subject_rel
+                    WHERE w.depth < $4
+                      AND NOT (t.subject_type || ':' || t.subject_id) = ANY(w.path)
+                )
+                SELECT CASE
+                    WHEN EXISTS (
+                        SELECT 1 FROM walk
+                        WHERE subject_type = $5 AND subject_id = $6 AND subject_rel = ''
+                    ) THEN 1
+                    WHEN EXISTS (SELECT 1 FROM walk WHERE depth >= $4) THEN 2
+                    ELSE 0
+                END AS verdict
+                "#,
+            )
+            .bind(&object.object_type)
+            .bind(&object.object_id)
+            .bind(relations)
+            .bind(MAX_DEPTH as i32)
+            .bind(&subject.subject_type)
+            .bind(&subject.subject_id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("auth.zanzibar check CTE")?;
+
+            Ok(match row.map(|(v,)| v).unwrap_or(0) {
+                1 => Verdict::Allowed,
+                2 => Verdict::DepthExceeded,
+                _ => Verdict::Denied,
+            })
+        })
+    }
+
+    fn arrow_targets<'a>(
+        &'a self,
+        object: &'a ObjectRef,
+        relation: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<ObjectRef>>> + Send + 'a>> {
+        Box::pin(async move {
+            // Only object-reference subjects (`subject_rel = ''`) are
+            // the left edge of an arrow hop — a userset subject on the
+            // tupleset relation has no object to re-evaluate against.
+            let rows = sqlx::query(
+                "SELECT subject_type, subject_id
+                 FROM auth.zanzibar_tuples
+                 WHERE object_type = $1 AND object_id = $2 AND relation = $3
+                   AND subject_rel = ''",
+            )
+            .bind(&object.object_type)
+            .bind(&object.object_id)
+            .bind(relation)
+            .fetch_all(&self.pool)
+            .await
+            .context("auth.zanzibar arrow targets")?;
+            Ok(rows
+                .into_iter()
+                .map(|row| {
+                    ObjectRef::new(
+                        row.get::<String, _>("subject_type"),
+                        row.get::<String, _>("subject_id"),
+                    )
+                })
+                .collect())
+        })
+    }
+
+    fn schema_for<'a>(
+        &'a self,
+        object_type: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NamespaceSchema>>> + Send + 'a>> {
+        Box::pin(async move { self.get_namespace(object_type).await })
     }
 }
 

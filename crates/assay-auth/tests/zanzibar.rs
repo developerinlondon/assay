@@ -135,6 +135,123 @@ mod sqlite_tests {
         assert_eq!(res, CheckResult::Denied);
     }
 
+    // A computed-userset arrow (`parent->up`) must resolve a hierarchy of
+    // DIRECT object references, re-evaluating the target permission at each
+    // hop — the standard Zanzibar arrow. Nodes may carry their own account
+    // *and* a parent at every level (the case a hand-threaded userset chain
+    // cannot express).
+    #[tokio::test]
+    async fn computed_userset_arrow_resolves_hierarchy() {
+        let store = setup_sqlite().await;
+        store
+            .define_namespace(&NamespaceSchema::new("user"))
+            .await
+            .expect("ns user");
+        store
+            .define_namespace(
+                &NamespaceSchema::new("node")
+                    .with_relation(
+                        "account",
+                        RelationDef::relation("account", vec![TypeRef::direct("user")]),
+                    )
+                    .with_relation(
+                        "parent",
+                        RelationDef::relation("parent", vec![TypeRef::direct("node")]),
+                    )
+                    .with_relation(
+                        "up",
+                        RelationDef::permission(
+                            "up",
+                            PermissionExpr::union(
+                                PermissionExpr::direct("account"),
+                                PermissionExpr::arrow("parent", "up"),
+                            ),
+                        ),
+                    ),
+            )
+            .await
+            .expect("ns node");
+
+        // c.parent = b, b.parent = a. Every level has its own account.
+        // One DIRECT object tuple per parent edge (no hand-threaded usersets).
+        store
+            .write_tuples(&[
+                Tuple::direct(
+                    ObjectRef::new("node", "a"),
+                    "account",
+                    SubjectRef::direct("user", "ua"),
+                ),
+                Tuple::direct(
+                    ObjectRef::new("node", "b"),
+                    "account",
+                    SubjectRef::direct("user", "ub"),
+                ),
+                Tuple::direct(
+                    ObjectRef::new("node", "c"),
+                    "account",
+                    SubjectRef::direct("user", "uc"),
+                ),
+                Tuple::direct(
+                    ObjectRef::new("node", "b"),
+                    "parent",
+                    SubjectRef::direct("node", "a"),
+                ),
+                Tuple::direct(
+                    ObjectRef::new("node", "c"),
+                    "parent",
+                    SubjectRef::direct("node", "b"),
+                ),
+            ])
+            .await
+            .expect("seed");
+
+        // ua is the account on `a`, c's grandparent: up(c) must include ua via c->b->a.
+        let r_grand = store
+            .check(
+                &ObjectRef::new("node", "c"),
+                "up",
+                &SubjectRef::direct("user", "ua"),
+                Consistency::Minimum,
+            )
+            .await
+            .expect("check ua");
+        assert!(
+            matches!(r_grand, CheckResult::Allowed { .. }),
+            "ua (grandparent) must be in up(c): {r_grand:?}"
+        );
+
+        // ub is the account on `b` — a node with BOTH an account and a parent.
+        let r_mid = store
+            .check(
+                &ObjectRef::new("node", "c"),
+                "up",
+                &SubjectRef::direct("user", "ub"),
+                Consistency::Minimum,
+            )
+            .await
+            .expect("check ub");
+        assert!(
+            matches!(r_mid, CheckResult::Allowed { .. }),
+            "ub (parent, has account) must be in up(c): {r_mid:?}"
+        );
+
+        // An unrelated user is denied.
+        let r_no = store
+            .check(
+                &ObjectRef::new("node", "c"),
+                "up",
+                &SubjectRef::direct("user", "nobody"),
+                Consistency::Minimum,
+            )
+            .await
+            .expect("check nobody");
+        assert_eq!(
+            r_no,
+            CheckResult::Denied,
+            "unrelated user must be denied: {r_no:?}"
+        );
+    }
+
     #[tokio::test]
     async fn indirect_via_userset() {
         let store = setup_sqlite().await;
