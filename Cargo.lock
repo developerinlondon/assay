@@ -239,7 +239,7 @@ dependencies = [
 
 [[package]]
 name = "assay-auth"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "assay-engine"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "assay-auth",
