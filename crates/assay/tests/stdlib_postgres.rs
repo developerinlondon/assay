@@ -1,6 +1,6 @@
 mod common;
 
-use common::{eval_lua, run_lua, run_lua_local};
+use common::{create_vm, eval_lua, run_lua, run_lua_local};
 
 #[tokio::test]
 async fn test_require_postgres() {
@@ -8,6 +8,7 @@ async fn test_require_postgres() {
         local pg = require("assay.postgres")
         assert.not_nil(pg, "postgres module should load")
         assert.not_nil(pg.client, "postgres.client should exist")
+        assert.not_nil(pg.client_url, "postgres.client_url should exist")
         assert.not_nil(pg.client_from_vault, "postgres.client_from_vault should exist")
         assert.not_nil(pg._quote_ident, "postgres._quote_ident should exist")
         assert.not_nil(pg._quote_literal, "postgres._quote_literal should exist")
@@ -160,4 +161,29 @@ async fn test_postgres_client_from_vault_missing_secret() {
     );
 
     run_lua_local(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_postgres_client_url_numeric_decodes_as_string() {
+    let Ok(url) = std::env::var("ASSAY_TEST_POSTGRES_URL") else {
+        return;
+    };
+    let vm = create_vm();
+    vm.globals().set("postgres_url", url).unwrap();
+    let script = assay::lua::async_bridge::strip_shebang(
+        r#"
+        local pg = require("assay.postgres")
+        local c = pg.client_url(postgres_url)
+        local rows = c.queries:query("SELECT 12345.6789::numeric AS amount")
+        assert.eq(#rows, 1)
+        assert.eq(type(rows[1].amount), "string")
+        assert.eq(rows[1].amount, "12345.6789")
+        c:close()
+    "#,
+    );
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async { vm.load(script).exec_async().await })
+        .await
+        .unwrap();
 }

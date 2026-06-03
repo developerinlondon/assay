@@ -1,6 +1,6 @@
 mod common;
 
-use common::run_lua_local;
+use common::{create_vm, run_lua_local};
 
 #[tokio::test]
 async fn test_db_sqlite_create_and_insert() {
@@ -187,4 +187,28 @@ async fn test_db_sqlite_close() {
     )
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn test_db_postgres_numeric_decodes_as_string() {
+    let Ok(url) = std::env::var("ASSAY_TEST_POSTGRES_URL") else {
+        return;
+    };
+    let vm = create_vm();
+    vm.globals().set("postgres_url", url).unwrap();
+    let script = assay::lua::async_bridge::strip_shebang(
+        r#"
+        local conn = db.connect(postgres_url)
+        local rows = db.query(conn, "SELECT 12345.6789::numeric AS amount")
+        assert.eq(#rows, 1)
+        assert.eq(type(rows[1].amount), "string")
+        assert.eq(rows[1].amount, "12345.6789")
+        db.close(conn)
+    "#,
+    );
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async { vm.load(script).exec_async().await })
+        .await
+        .unwrap();
 }
