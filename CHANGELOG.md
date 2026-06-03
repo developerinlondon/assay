@@ -10,6 +10,8 @@ All notable changes to Assay are documented here.
   relation via two union branches (e.g. `view = up + down` where both include `account`) — as a
   schema cycle. Such permissions previously resolved to `CycleDetected` and silently denied; they
   now evaluate correctly. (Carries `assay-auth 0.5.1`.)
+- Biscuit share-link verify no longer intermittently times out under load — the datalog `query` now
+  uses the same 10s `max_time` backstop as `authorize`. (Carries `assay-vault 0.4.1`.)
 
 ## assay-auth 0.5.1 — 2026-06-03
 
@@ -18,6 +20,13 @@ All notable changes to Assay are documented here.
 - `zanzibar::resolve` tracks the current resolution _path_ for cycle detection instead of a
   cumulative visited-set, so a relation reachable via two union branches is no longer a false
   positive. Genuine self-referential schema cycles are still rejected.
+
+## assay-vault 0.4.1 — 2026-06-03
+
+### Fixed
+
+- Share-link `verify` bounds the biscuit datalog `query` with a 10s `max_time` (was biscuit's 1ms
+  default), matching the `authorize` backstop — a loaded host no longer hits `RunLimit(Timeout)`.
 
 ## assay-engine 0.5.1 — 2026-06-03
 
