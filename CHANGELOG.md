@@ -2,6 +2,18 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.1 — 2026-06-03
+
+### Added
+
+- Zanzibar `/check` resolves computed-userset arrows (`relation->permission`) plus `intersect` /
+  `exclude` operators via a recursive evaluator (MAX_DEPTH 50, cycle-safe). Previously stubbed.
+
+### Fixed
+
+- Biscuit authorizer `max_time` 1 ms → 10 s — token checks no longer abort with "Reached Datalog
+  execution limits" under load (a spurious `Forbidden`).
+
 ## assay 0.16.8 — 2026-06-03
 
 ### Added
