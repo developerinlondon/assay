@@ -31,12 +31,24 @@ function M.make(workflow_id, history)
   local signal_seqs_by_name = {}
   local timer_fired_seqs = {}
   local cancel_requested = false
+  -- Recorded "scheduled" commands, indexed by their per-type seq. These are
+  -- the source of truth for non-determinism detection: on replay every
+  -- ctx:* call that would yield a command first checks the command it is
+  -- about to (re)issue against the one history already recorded at the same
+  -- seq. A mismatch means the workflow code took a different path than the
+  -- one whose effects are durably recorded — Temporal's "non-determinism
+  -- error". We fail the workflow task loudly rather than silently replaying
+  -- against the wrong history slot (which would corrupt state).
+  local scheduled_activities = {} -- activity_seq -> { name, input }
+  local recorded_side_effects = {} -- side_effect_seq -> { name }
   for _, event in ipairs(history) do
     local p = event.payload
     if event.event_type == "ActivityCompleted" and p and p.activity_seq then
       activity_results[p.activity_seq] = { ok = true, value = p.result }
     elseif event.event_type == "ActivityFailed" and p and p.activity_seq then
       activity_results[p.activity_seq] = { ok = false, err = p.error }
+    elseif event.event_type == "ActivityScheduled" and p and p.activity_seq then
+      scheduled_activities[p.activity_seq] = { name = p.name, input = p.input }
     elseif event.event_type == "TimerFired" and p and p.timer_seq then
       fired_timers[p.timer_seq] = true
       timer_fired_seqs[p.timer_seq] = event.seq
@@ -47,6 +59,7 @@ function M.make(workflow_id, history)
       table.insert(signal_seqs_by_name[p.signal], event.seq)
     elseif event.event_type == "SideEffectRecorded" and p and p.side_effect_seq then
       side_effects[p.side_effect_seq] = p.value
+      recorded_side_effects[p.side_effect_seq] = { name = p.name }
     elseif event.event_type == "ChildWorkflowCompleted" and p and p.child_workflow_id then
       child_results[p.child_workflow_id] = { ok = true, value = p.result }
     elseif event.event_type == "ChildWorkflowFailed" and p and p.child_workflow_id then
@@ -64,10 +77,96 @@ function M.make(workflow_id, history)
     if cancel_requested then error("__ASSAY_WORKFLOW_CANCELLED__") end
   end
 
+  -- Canonical JSON encode with sorted object keys, used only to compare a
+  -- replayed command's args against the recorded ones. `json.encode` does
+  -- not guarantee key order, so a naive string compare would false-positive
+  -- on semantically-identical tables. Numbers/strings/bools/nil are encoded
+  -- directly; tables are encoded as arrays (1..#t contiguous) or objects
+  -- (sorted keys). Good enough for activity-arg equality — it is a cheap
+  -- divergence signal, not a cryptographic digest.
+  local function canon(v)
+    local t = type(v)
+    if t == "nil" then return "null" end
+    if t == "number" or t == "boolean" then return tostring(v) end
+    if t == "string" then return string.format("%q", v) end
+    if t == "table" then
+      local n = #v
+      local is_array = n > 0
+      if is_array then
+        for k in pairs(v) do
+          if type(k) ~= "number" then is_array = false break end
+        end
+      end
+      if is_array then
+        local parts = {}
+        for i = 1, n do parts[i] = canon(v[i]) end
+        return "[" .. table.concat(parts, ",") .. "]"
+      end
+      local keys = {}
+      for k in pairs(v) do keys[#keys + 1] = tostring(k) end
+      table.sort(keys)
+      local parts = {}
+      for _, k in ipairs(keys) do
+        parts[#parts + 1] = string.format("%q", k) .. ":" .. canon(v[k])
+      end
+      return "{" .. table.concat(parts, ",") .. "}"
+    end
+    -- functions / userdata are not durable workflow state; treat as opaque.
+    return "<" .. t .. ">"
+  end
+
+  -- Raise a non-determinism error when a replayed command diverges from the
+  -- one recorded in history at the same seq position. Mirrors Temporal: the
+  -- workflow TASK fails (worker.lua converts a raised error into a
+  -- FailWorkflow command) rather than silently mis-replaying against the
+  -- wrong slot. The sentinel prefix lets callers/log scrapers grep for it.
+  local function nondeterminism_error(kind, seq, expected, got)
+    error(string.format(
+      "NonDeterminismError: %s mismatch at seq %d during replay — " ..
+      "history recorded %s but workflow code requested %s. " ..
+      "The workflow definition changed in a way that is incompatible with " ..
+      "in-flight runs (reordered/renamed/changed-args commands). " ..
+      "Use a versioning guard for incompatible changes.",
+      kind, seq, expected, got
+    ))
+  end
+
+  -- Assert a replayed activity matches what history scheduled at this seq.
+  local function assert_activity_matches(seq, name, input)
+    local rec = scheduled_activities[seq]
+    if not rec then return end -- not yet scheduled in history → first issue, nothing to compare
+    if rec.name ~= name then
+      nondeterminism_error("activity name", seq,
+        "activity '" .. tostring(rec.name) .. "'",
+        "activity '" .. tostring(name) .. "'")
+    end
+    -- Args check is best-effort: only compare when history carries the input.
+    -- The engine records the activity input as the raw JSON *string* it was
+    -- scheduled with (see activities.rs schedule_activity), so decode it back
+    -- to a value before the canonical compare. If it doesn't parse (older
+    -- history, non-JSON), skip the args check rather than false-positive.
+    if rec.input ~= nil then
+      local recorded = rec.input
+      if type(recorded) == "string" then
+        local ok, decoded = pcall(json.parse, recorded)
+        if not ok then return end
+        recorded = decoded
+      end
+      local want, have = canon(recorded), canon(input)
+      if want ~= have then
+        nondeterminism_error("activity args", seq,
+          "args " .. want, "args " .. have)
+      end
+    end
+  end
+
   --- Schedule an activity and (synchronously, for the workflow author)
   --- return its result.
   function ctx:execute_activity(name, input, opts)
     activity_seq = activity_seq + 1
+    -- Fail loud if the workflow code requests a different activity (or
+    -- different args) than history recorded at this position.
+    assert_activity_matches(activity_seq, name, input)
     local r = activity_results[activity_seq]
     if r then
       if r.ok then return r.value end
@@ -101,6 +200,7 @@ function M.make(workflow_id, history)
     for i, a in ipairs(activities) do
       activity_seq = activity_seq + 1
       seqs[i] = activity_seq
+      assert_activity_matches(activity_seq, a.name, a.input)
       local r = activity_results[activity_seq]
       if r then
         if r.ok then
@@ -148,6 +248,14 @@ function M.make(workflow_id, history)
   --- result so all subsequent replays return it from cache.
   function ctx:side_effect(name, fn)
     side_effect_seq = side_effect_seq + 1
+    -- Fail loud if a side_effect with a different name was recorded at this
+    -- position — the deterministic ordering of side_effects changed.
+    local rec = recorded_side_effects[side_effect_seq]
+    if rec and rec.name ~= nil and rec.name ~= name then
+      nondeterminism_error("side_effect name", side_effect_seq,
+        "side_effect '" .. tostring(rec.name) .. "'",
+        "side_effect '" .. tostring(name) .. "'")
+    end
     local cached = side_effects[side_effect_seq]
     if cached ~= nil then return cached end
     check_cancel()
