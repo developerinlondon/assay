@@ -12,14 +12,15 @@ From `crates/assay-engine/tests-e2e/`:
 npm install                                  # one-time
 npx playwright install --with-deps chromium  # one-time
 
-# Build the engine binary first (the seed-sample subcommand needs it):
-cargo build --release -p assay-engine --features backend-sqlite,auth,server
+# Build the engine binary first (server-release profile: panic=unwind for
+# the long-running server; see workspace Cargo.toml [profile.server-release]):
+cargo build --profile server-release -p assay-engine
 
 # Run everything (boots engine + seeds + tests + tears down):
 bash run.sh
 
 # Or run pieces separately if you want a long-running engine:
-ASSAY_ENGINE_BIN=../../../target/release/assay-engine bash fixtures/seed.sh
+ASSAY_ENGINE_BIN=../../../target/server-release/assay-engine bash fixtures/seed.sh
 npx playwright test
 npx playwright test --headed
 npx playwright show-report

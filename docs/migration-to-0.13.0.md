@@ -160,8 +160,8 @@ cargo build --release           # built the `assay` binary
 That still works — it builds every crate in the workspace. To get just one binary:
 
 ```bash
-cargo build --release -p assay-lua --bin assay           # runtime
-cargo build --release -p assay-engine --bin assay-engine # engine
+cargo build --release -p assay-lua --bin assay                        # runtime (size-optimised)
+cargo build --profile server-release -p assay-engine --bin assay-engine # engine (panic=unwind)
 ```
 
 The `assay` binary (`assay-lua` crate) is smaller in 0.13.0 (~11 MB stripped vs ~14 MB in 0.12)

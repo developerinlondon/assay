@@ -15,7 +15,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
-ENGINE_BIN="${ASSAY_ENGINE_BIN:-$REPO_ROOT/target/release/assay-engine}"
+ENGINE_BIN="${ASSAY_ENGINE_BIN:-$REPO_ROOT/target/server-release/assay-engine}"
 DATA_DIR="${ASSAY_E2E_DATA_DIR:-/tmp/assay-engine-e2e-data}"
 LOG_FILE="${ASSAY_E2E_ENGINE_LOG:-/tmp/assay-engine-e2e.log}"
 CONFIG="$HERE/fixtures/engine.toml"
@@ -25,7 +25,7 @@ ADMIN_KEY="${ASSAY_E2E_ADMIN_KEY:-dev-admin-key-change-me}"
 say() { printf "[e2e] %s\n" "$*"; }
 
 if [[ ! -x "$ENGINE_BIN" ]]; then
-  echo "[e2e] $ENGINE_BIN not found — run \`cargo build --release -p assay-engine --features auth\` first" >&2
+  echo "[e2e] $ENGINE_BIN not found — run \`cargo build --profile server-release -p assay-engine\` first" >&2
   exit 1
 fi
 

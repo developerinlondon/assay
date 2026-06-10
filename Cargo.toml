@@ -15,9 +15,21 @@ edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/developerinlondon/assay"
 
+# CLI release profile: size-optimised for distribution (assay binary).
+# panic=abort is intentional here — the CLI is a short-lived process and
+# the smaller binary size outweighs stack-unwinding cost.
 [profile.release]
 opt-level = "z" # Optimize for size
 lto = true # Link-time optimization
 codegen-units = 1 # Single codegen unit for better optimization
 strip = true # Strip debug symbols
-panic = "abort" # Abort on panic (smaller binary)
+panic = "abort" # Abort on panic (smaller binary, CLI only)
+
+# Server release profile: identical to release but with panic=unwind so
+# that a panic in a request handler is caught by the async runtime's
+# task boundary rather than aborting the whole process.  Used by
+# assay-engine's release build and Dockerfile.
+# Build: cargo build --profile server-release -p assay-engine --bin assay-engine
+[profile.server-release]
+inherits = "release"
+panic = "unwind" # Long-running server: survive per-request panics
