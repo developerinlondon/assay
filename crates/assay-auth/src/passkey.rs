@@ -206,46 +206,25 @@ impl PasskeyManager {
     }
 
     /// Step 2 of authentication. Verifies the browser's
-    /// [`PublicKeyCredential`] and returns the
-    /// [`AuthenticatedPasskey`] result the caller persists (sign-count
-    /// bump, backup-state changes, etc.) via the user store.
+    /// [`PublicKeyCredential`] against the in-progress state and returns
+    /// the library's [`AuthenticationResult`].
+    ///
+    /// The library enforces the sign-counter here: because
+    /// [`PasskeyManager::start_authentication_with`] is fed the stored
+    /// [`Passkey`] carrying its persisted counter, a regression (clone /
+    /// replay) surfaces as a `CredentialPossibleCompromise` error from
+    /// the library and this call fails closed. On success the caller
+    /// persists the bumped counter — see [`apply_auth_update`] +
+    /// [`crate::store::UserStore::update_passkey_counter`].
     pub fn finish_authentication(
         &self,
         state: &PasskeyAuthentication,
         response: &PublicKeyCredential,
-    ) -> Result<AuthenticatedPasskey> {
-        let result = self
-            .webauthn
+    ) -> Result<webauthn_rs::prelude::AuthenticationResult> {
+        self.webauthn
             .finish_passkey_authentication(response, state)
-            .map_err(|e| Error::Passkey(format!("finish_passkey_authentication: {e}")))?;
-        Ok(AuthenticatedPasskey {
-            credential_id: result.cred_id().as_ref().to_vec(),
-            sign_count: result.counter(),
-            user_verified: result.user_verified(),
-            needs_update: result.needs_update(),
-        })
+            .map_err(|e| Error::Passkey(format!("finish_passkey_authentication: {e}")))
     }
-}
-
-/// Successful authentication result — carries the credential id the
-/// caller looks up in `auth.passkeys`, plus the new sign-count the
-/// caller persists (cheap UPDATE keyed on credential_id).
-#[derive(Clone, Debug)]
-pub struct AuthenticatedPasskey {
-    /// Raw bytes of the verified credential id. Matches the
-    /// `auth.passkeys.credential_id` primary key.
-    pub credential_id: Vec<u8>,
-    /// New sign-count from the authenticator. Spec requires the server
-    /// to assert this is greater than the stored value — when it isn't,
-    /// the caller MAY treat the credential as cloned and revoke it.
-    pub sign_count: u32,
-    /// Whether the user verified themselves on this authentication
-    /// (PIN, biometric, …). Useful for step-up flows.
-    pub user_verified: bool,
-    /// `webauthn-rs` thinks the stored Passkey blob is out-of-date with
-    /// respect to the new `AuthenticationResult` (counter or backup
-    /// state changed). Re-persist via the user store when true.
-    pub needs_update: bool,
 }
 
 /// Project a [`webauthn_rs::prelude::Passkey`] into a
@@ -266,7 +245,46 @@ pub fn passkey_to_cred(passkey: &Passkey, created_at: f64) -> crate::store::Pass
         sign_count: 0,
         transports: Vec::new(),
         created_at,
+        // Authoritative re-verification material: the full serialised
+        // Passkey. The authentication ceremony deserialises this so
+        // webauthn-rs sees the persisted sign-count and can enforce
+        // counter / clone detection.
+        passkey_json: serde_json::to_string(passkey).ok(),
     }
+}
+
+/// Reconstruct a [`webauthn_rs::prelude::Passkey`] from a stored
+/// [`crate::store::PasskeyCred`]. Returns [`Error::Passkey`] when the row
+/// predates the `passkey_json` column (legacy credential that can no
+/// longer drive a login and must be re-registered) or the blob fails to
+/// deserialise.
+pub fn cred_to_passkey(cred: &crate::store::PasskeyCred) -> Result<Passkey> {
+    let blob = cred.passkey_json.as_deref().ok_or_else(|| {
+        Error::Passkey(
+            "stored credential has no serialised Passkey blob (legacy row); re-register the passkey"
+                .to_string(),
+        )
+    })?;
+    serde_json::from_str(blob)
+        .map_err(|e| Error::Passkey(format!("decode stored Passkey blob: {e}")))
+}
+
+/// Apply a successful [`AuthenticationResult`] back onto the stored
+/// [`webauthn_rs::prelude::Passkey`] (bumping its sign-count + backup
+/// state) and return the re-serialised blob the caller persists via
+/// [`UserStore::update_passkey_counter`]. Errors if the credential id
+/// doesn't match the result.
+pub fn apply_auth_update(
+    passkey: &mut Passkey,
+    result: &webauthn_rs::prelude::AuthenticationResult,
+) -> Result<String> {
+    if passkey.update_credential(result).is_none() {
+        return Err(Error::Passkey(
+            "authentication result credential id does not match stored passkey".to_string(),
+        ));
+    }
+    serde_json::to_string(passkey)
+        .map_err(|e| Error::Passkey(format!("re-serialise updated Passkey: {e}")))
 }
 
 #[cfg(test)]
@@ -321,6 +339,34 @@ mod tests {
         }
         async fn remove_passkey(&self, _credential_id: &[u8]) -> anyhow::Result<bool> {
             Ok(true)
+        }
+        async fn get_passkey(
+            &self,
+            credential_id: &[u8],
+        ) -> anyhow::Result<Option<(String, PasskeyCred)>> {
+            let guard = self.0.lock().unwrap();
+            for (uid, creds) in guard.iter() {
+                if let Some(c) = creds.iter().find(|c| c.credential_id == credential_id) {
+                    return Ok(Some((uid.clone(), c.clone())));
+                }
+            }
+            Ok(None)
+        }
+        async fn update_passkey_counter(
+            &self,
+            credential_id: &[u8],
+            sign_count: u32,
+            passkey_json: &str,
+        ) -> anyhow::Result<bool> {
+            let mut guard = self.0.lock().unwrap();
+            for creds in guard.values_mut() {
+                if let Some(c) = creds.iter_mut().find(|c| c.credential_id == credential_id) {
+                    c.sign_count = sign_count;
+                    c.passkey_json = Some(passkey_json.to_string());
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         }
         async fn link_upstream(
             &self,

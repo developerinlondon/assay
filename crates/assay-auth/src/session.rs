@@ -265,8 +265,20 @@ async fn login_post(State(ctx): State<AuthCtx>, Json(body): Json<LoginBody>) -> 
     if !ok {
         return unauthorized("invalid credentials");
     }
+    mint_session_response(&ctx, &user.id, user.email.clone()).await
+}
+
+/// Mint an authenticated session for `user_id`, set the session + CSRF
+/// cookies, and return the `200 OK` body. Shared by every successful
+/// authentication path (password + passkey) so they log the user in
+/// identically — same store, same cookies, same attributes.
+async fn mint_session_response(
+    ctx: &AuthCtx,
+    user_id: &str,
+    email: Option<String>,
+) -> Response {
     let mgr = SessionManager::with_default_duration(ctx.sessions.clone());
-    let session = match mgr.create(&user.id).await {
+    let session = match mgr.create(user_id).await {
         Ok(s) => s,
         Err(e) => return server_error(&format!("create session: {e}")),
     };
@@ -280,8 +292,8 @@ async fn login_post(State(ctx): State<AuthCtx>, Json(body): Json<LoginBody>) -> 
     let mut response = (
         StatusCode::OK,
         Json(json!({
-            "user_id": user.id,
-            "email": user.email,
+            "user_id": user_id,
+            "email": email,
             "csrf_token": session.csrf_token,
         })),
     )
@@ -415,12 +427,13 @@ async fn passkey_register_finish(
 
 #[derive(Deserialize)]
 struct PasskeyAuthStartBody {
+    /// The user the client claims to be authenticating. We use it ONLY
+    /// to look the user's registered credentials up in the server's
+    /// store — the credential list itself is NEVER taken from the
+    /// client. (A future discoverable-credential / userless flow can
+    /// drop this field once `webauthn-rs` resident-key support is wired;
+    /// until then the allowed-credentials list is server-resolved.)
     user_id: String,
-    /// Optional pre-decoded passkeys (for tests + advanced clients).
-    /// In production we'd load these out of `auth.passkeys`;
-    /// has no `passkey_json` column so we accept them as a body field.
-    #[serde(default)]
-    passkeys: Vec<serde_json::Value>,
 }
 
 async fn passkey_auth_start(
@@ -430,16 +443,25 @@ async fn passkey_auth_start(
     let Some(mgr) = ctx.passkeys.as_ref() else {
         return svc_unavailable("passkey manager not configured");
     };
-    let _ = body.user_id;
-    let mut creds: Vec<webauthn_rs::prelude::Passkey> = Vec::with_capacity(body.passkeys.len());
-    for v in body.passkeys {
-        match serde_json::from_value(v) {
-            Ok(p) => creds.push(p),
-            Err(e) => return bad_request(&format!("decode passkey: {e}")),
-        }
+    // Resolve the user's allowed credentials SERVER-SIDE from the store.
+    // We never trust a client-supplied credential / passkey list — doing
+    // so would let an attacker present a credential they control and
+    // impersonate any account.
+    let stored = match ctx.users.list_passkeys(&body.user_id).await {
+        Ok(v) => v,
+        Err(e) => return server_error(&format!("list passkeys: {e}")),
+    };
+    if stored.is_empty() {
+        // Mirror the unauthorized shape so the endpoint doesn't leak
+        // whether the user exists vs. simply has no passkeys.
+        return unauthorized("no passkeys registered");
     }
-    if creds.is_empty() {
-        return bad_request("passkeys list is empty");
+    let mut creds: Vec<webauthn_rs::prelude::Passkey> = Vec::with_capacity(stored.len());
+    for cred in &stored {
+        match crate::passkey::cred_to_passkey(cred) {
+            Ok(p) => creds.push(p),
+            Err(e) => return server_error(&format!("rebuild stored passkey: {e}")),
+        }
     }
     match mgr.start_authentication_with(&creds) {
         Ok((challenge, state)) => (
@@ -477,18 +499,53 @@ async fn passkey_auth_finish(
             Ok(r) => r,
             Err(e) => return bad_request(&format!("decode response: {e}")),
         };
-    match mgr.finish_authentication(&state, &response) {
-        Ok(result) => (
-            StatusCode::OK,
-            Json(json!({
-                "credential_id": data_encoding::BASE64URL_NOPAD.encode(&result.credential_id),
-                "sign_count": result.sign_count,
-                "user_verified": result.user_verified,
-            })),
-        )
-            .into_response(),
-        Err(e) => unauthorized(&format!("finish_authentication: {e}")),
+    // Verify the assertion. The library enforces the sign-counter here:
+    // the in-progress `state` was built from the server-resolved stored
+    // `Passkey` carrying its persisted counter, so a regression (clone /
+    // replay) surfaces as an error and this fails closed.
+    let result = match mgr.finish_authentication(&state, &response) {
+        Ok(r) => r,
+        Err(e) => return unauthorized(&format!("finish_authentication: {e}")),
+    };
+
+    // Resolve the owning user from the credential the authenticator
+    // asserted — server-side, never from the client.
+    let cred_id = result.cred_id().as_ref().to_vec();
+    let (user_id, stored_cred) = match ctx.users.get_passkey(&cred_id).await {
+        Ok(Some(pair)) => pair,
+        Ok(None) => return unauthorized("unknown credential"),
+        Err(e) => return server_error(&format!("get passkey: {e}")),
+    };
+
+    // Persist the sign-counter bump (+ backup-state) so the NEXT
+    // authentication enforces against the new value. `update_credential`
+    // returns the re-serialised blob; only write when it actually moved.
+    let mut passkey = match crate::passkey::cred_to_passkey(&stored_cred) {
+        Ok(p) => p,
+        Err(e) => return server_error(&format!("rebuild stored passkey: {e}")),
+    };
+    if result.needs_update() {
+        match crate::passkey::apply_auth_update(&mut passkey, &result) {
+            Ok(blob) => {
+                if let Err(e) = ctx
+                    .users
+                    .update_passkey_counter(&cred_id, result.counter(), &blob)
+                    .await
+                {
+                    return server_error(&format!("persist sign counter: {e}"));
+                }
+            }
+            Err(e) => return server_error(&format!("apply auth update: {e}")),
+        }
     }
+
+    // Mint a real authenticated session — identical to the password
+    // login path. This is what actually logs the user in.
+    let email = match ctx.users.get_user_by_id(&user_id).await {
+        Ok(Some(u)) => u.email,
+        _ => None,
+    };
+    mint_session_response(&ctx, &user_id, email).await
 }
 
 fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -740,5 +797,318 @@ mod tests {
         let cookie = cookie_for(&session, &url);
         // Local-dev HTTP must not set Secure or the browser drops the cookie.
         assert_eq!(cookie.secure(), Some(false));
+    }
+
+    // ---- Passkey login security regressions (audit: session.rs) -------
+    //
+    // The three defects these cover:
+    //   (a) trusted a client-supplied credential list
+    //   (b) never enforced / persisted the sign counter
+    //   (c) never minted a session on success
+    //
+    // A full browser ceremony needs an authenticator simulator; these
+    // target the layers we own (request shape, store round-trip, session
+    // minting + the server-side credential resolution path).
+
+    use crate::ctx::AuthCtx;
+    use crate::passkey::{PasskeyConfig, PasskeyManager};
+    use crate::store::types::{PasskeyCred, User};
+    use crate::store::UserStore;
+
+    /// Minimal in-memory user store for the handler tests. Keyed by
+    /// user_id; carries passkeys + a tiny user table.
+    #[derive(Default)]
+    struct MemUserStore {
+        users: Mutex<HashMap<String, User>>,
+        passkeys: Mutex<HashMap<String, Vec<PasskeyCred>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl UserStore for MemUserStore {
+        async fn create_user(&self, user: &User) -> anyhow::Result<()> {
+            self.users
+                .lock()
+                .unwrap()
+                .insert(user.id.clone(), user.clone());
+            Ok(())
+        }
+        async fn get_user_by_id(&self, id: &str) -> anyhow::Result<Option<User>> {
+            Ok(self.users.lock().unwrap().get(id).cloned())
+        }
+        async fn get_user_by_email(&self, email: &str) -> anyhow::Result<Option<User>> {
+            Ok(self
+                .users
+                .lock()
+                .unwrap()
+                .values()
+                .find(|u| u.email.as_deref() == Some(email))
+                .cloned())
+        }
+        async fn update_user(&self, _user: &User) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn list_users(
+            &self,
+            _limit: i64,
+            _offset: i64,
+            _search: Option<&str>,
+        ) -> anyhow::Result<Vec<User>> {
+            Ok(vec![])
+        }
+        async fn count_users(&self, _search: Option<&str>) -> anyhow::Result<i64> {
+            Ok(0)
+        }
+        async fn delete_user(&self, _id: &str) -> anyhow::Result<bool> {
+            Ok(false)
+        }
+        async fn set_password_hash(&self, _user_id: &str, _hash: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn get_password_hash(&self, _user_id: &str) -> anyhow::Result<Option<String>> {
+            Ok(None)
+        }
+        async fn list_passkeys(&self, user_id: &str) -> anyhow::Result<Vec<PasskeyCred>> {
+            Ok(self
+                .passkeys
+                .lock()
+                .unwrap()
+                .get(user_id)
+                .cloned()
+                .unwrap_or_default())
+        }
+        async fn add_passkey(&self, user_id: &str, cred: &PasskeyCred) -> anyhow::Result<()> {
+            self.passkeys
+                .lock()
+                .unwrap()
+                .entry(user_id.to_string())
+                .or_default()
+                .push(cred.clone());
+            Ok(())
+        }
+        async fn remove_passkey(&self, _credential_id: &[u8]) -> anyhow::Result<bool> {
+            Ok(true)
+        }
+        async fn get_passkey(
+            &self,
+            credential_id: &[u8],
+        ) -> anyhow::Result<Option<(String, PasskeyCred)>> {
+            let guard = self.passkeys.lock().unwrap();
+            for (uid, creds) in guard.iter() {
+                if let Some(c) = creds.iter().find(|c| c.credential_id == credential_id) {
+                    return Ok(Some((uid.clone(), c.clone())));
+                }
+            }
+            Ok(None)
+        }
+        async fn update_passkey_counter(
+            &self,
+            credential_id: &[u8],
+            sign_count: u32,
+            passkey_json: &str,
+        ) -> anyhow::Result<bool> {
+            let mut guard = self.passkeys.lock().unwrap();
+            for creds in guard.values_mut() {
+                if let Some(c) = creds.iter_mut().find(|c| c.credential_id == credential_id) {
+                    c.sign_count = sign_count;
+                    c.passkey_json = Some(passkey_json.to_string());
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        async fn link_upstream(
+            &self,
+            _user_id: &str,
+            _provider: &str,
+            _subject: &str,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn get_user_by_upstream(
+            &self,
+            _provider: &str,
+            _subject: &str,
+        ) -> anyhow::Result<Option<User>> {
+            Ok(None)
+        }
+        async fn list_upstream_for_user(
+            &self,
+            _user_id: &str,
+        ) -> anyhow::Result<Vec<(String, String)>> {
+            Ok(vec![])
+        }
+    }
+
+    fn test_passkey_manager(users: Arc<dyn UserStore>) -> PasskeyManager {
+        let cfg = PasskeyConfig {
+            rp_id: "localhost".to_string(),
+            rp_name: "Assay Test".to_string(),
+            origin: Url::parse("http://localhost:3000").unwrap(),
+        };
+        PasskeyManager::new(cfg, users).unwrap()
+    }
+
+    async fn body_json(resp: Response) -> serde_json::Value {
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
+    }
+
+    fn set_cookie_values(resp: &Response) -> Vec<String> {
+        resp.headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok().map(|s| s.to_string()))
+            .collect()
+    }
+
+    /// Defect (a): the request shape no longer carries a client-supplied
+    /// credential list — a stray `passkeys` array is silently ignored, so
+    /// a client can never inject the credential set the server matches
+    /// against. (The allowed list is resolved server-side from the store.)
+    #[test]
+    fn auth_start_body_ignores_client_supplied_credential_list() {
+        // Old attack shape: client tries to smuggle its own credentials.
+        let raw = serde_json::json!({
+            "user_id": "user_victim",
+            "passkeys": [{"attacker": "controlled-credential"}]
+        });
+        let body: PasskeyAuthStartBody =
+            serde_json::from_value(raw).expect("user_id-only body deserialises");
+        assert_eq!(body.user_id, "user_victim");
+        // The struct has exactly one field — there is nowhere for a
+        // client credential list to land. This is enforced at the type
+        // level: if someone re-adds a `passkeys` field this test's
+        // companion (the handler test below) still proves the store is
+        // the only credential source.
+    }
+
+    /// Defect (a), behavioural: `passkey_auth_start` resolves allowed
+    /// credentials SERVER-SIDE. A user with no stored passkeys gets an
+    /// unauthorized response — there is no client-supplied list that
+    /// could substitute for the empty server store.
+    #[tokio::test]
+    async fn auth_start_uses_server_store_not_client_input() {
+        let users: Arc<dyn UserStore> = Arc::new(MemUserStore::default());
+        let sessions: Arc<dyn SessionStore> = Arc::new(MemSessionStore::new());
+        let ctx = AuthCtx::new(users.clone(), sessions)
+            .with_passkeys(test_passkey_manager(users));
+
+        let resp = passkey_auth_start(
+            State(ctx),
+            Json(PasskeyAuthStartBody {
+                user_id: "user_with_no_keys".to_string(),
+            }),
+        )
+        .await;
+        // No server-side credentials → fail closed, regardless of what a
+        // client might have wanted to present.
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Defect (b): the sign counter round-trips through the store. The
+    /// stored `PasskeyCred` carries both the persisted `sign_count` and
+    /// the serialised `Passkey` blob; `update_passkey_counter` bumps both
+    /// and a re-read observes the new value. This is the persistence half
+    /// of clone detection — without it the library could never compare
+    /// against a moving counter.
+    #[tokio::test]
+    async fn sign_counter_persists_through_store_round_trip() {
+        let users: Arc<dyn UserStore> = Arc::new(MemUserStore::default());
+        let cred_id = vec![1u8, 2, 3, 4];
+        let cred = PasskeyCred {
+            credential_id: cred_id.clone(),
+            public_key: vec![9, 9, 9],
+            sign_count: 5,
+            transports: vec![],
+            created_at: now_secs(),
+            passkey_json: Some("{\"blob\":\"v5\"}".to_string()),
+        };
+        users.add_passkey("user_a", &cred).await.unwrap();
+
+        // Owner + blob resolve from the credential id alone (no client
+        // identity trusted).
+        let (owner, fetched) = users.get_passkey(&cred_id).await.unwrap().unwrap();
+        assert_eq!(owner, "user_a");
+        assert_eq!(fetched.sign_count, 5);
+        assert!(fetched.passkey_json.is_some());
+
+        // Persist a counter bump (what the finish handler does on a
+        // legitimate, advancing authentication).
+        let updated = users
+            .update_passkey_counter(&cred_id, 6, "{\"blob\":\"v6\"}")
+            .await
+            .unwrap();
+        assert!(updated);
+        let (_, after) = users.get_passkey(&cred_id).await.unwrap().unwrap();
+        assert_eq!(after.sign_count, 6);
+        assert_eq!(after.passkey_json.as_deref(), Some("{\"blob\":\"v6\"}"));
+    }
+
+    /// Defect (b), library policy: a stored credential whose blob is
+    /// missing (legacy row) fails closed on reconstruction rather than
+    /// silently authenticating with a zero counter.
+    #[test]
+    fn legacy_credential_without_blob_fails_closed() {
+        let legacy = PasskeyCred {
+            credential_id: vec![7, 7],
+            public_key: vec![1],
+            sign_count: 0,
+            transports: vec![],
+            created_at: now_secs(),
+            passkey_json: None,
+        };
+        let err = crate::passkey::cred_to_passkey(&legacy);
+        assert!(err.is_err(), "legacy row must not yield a usable Passkey");
+    }
+
+    /// Defect (c): a successful authentication mints a REAL session —
+    /// same store, same cookie pair, same attributes as the password
+    /// path. We drive the shared minting helper the passkey finish
+    /// handler uses and assert the session is resolvable and the cookies
+    /// are set.
+    #[tokio::test]
+    async fn successful_auth_mints_a_real_resolvable_session() {
+        let users: Arc<dyn UserStore> = Arc::new(MemUserStore::default());
+        let store = Arc::new(MemSessionStore::new());
+        let sessions: Arc<dyn SessionStore> = store.clone();
+        users
+            .create_user(&User {
+                id: "user_real".to_string(),
+                email: Some("real@example.com".to_string()),
+                email_verified: true,
+                display_name: None,
+                created_at: now_secs(),
+            })
+            .await
+            .unwrap();
+        let ctx = AuthCtx::new(users, sessions.clone());
+
+        let resp =
+            mint_session_response(&ctx, "user_real", Some("real@example.com".to_string())).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Both cookies (session + CSRF) must be set.
+        let cookies = set_cookie_values(&resp);
+        assert!(
+            cookies.iter().any(|c| c.starts_with(SESSION_COOKIE)),
+            "session cookie missing: {cookies:?}"
+        );
+        assert!(
+            cookies.iter().any(|c| c.starts_with(CSRF_COOKIE)),
+            "csrf cookie missing: {cookies:?}"
+        );
+
+        // The session is actually persisted + resolvable for the user.
+        let body = body_json(resp).await;
+        assert_eq!(body["user_id"], "user_real");
+        let listed = sessions.list_for_user("user_real").await.unwrap();
+        assert_eq!(listed.len(), 1, "exactly one session minted");
+        let mgr = SessionManager::with_default_duration(sessions);
+        assert!(
+            mgr.resolve(&listed[0].id).await.unwrap().is_some(),
+            "minted session resolves"
+        );
     }
 }

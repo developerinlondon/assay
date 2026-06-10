@@ -100,7 +100,12 @@ CREATE TABLE IF NOT EXISTS auth.passkeys (
     public_key      BYTEA NOT NULL,
     sign_count      INTEGER NOT NULL DEFAULT 0,
     transports      TEXT NOT NULL,
-    created_at      DOUBLE PRECISION NOT NULL
+    created_at      DOUBLE PRECISION NOT NULL,
+    -- Full serialised webauthn-rs Passkey blob. Authoritative
+    -- re-verification material carrying the persisted sign-count so the
+    -- authentication ceremony can enforce counter / clone detection.
+    -- Nullable for forward-compat with rows written before this column.
+    passkey_json    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_auth_passkeys_user
     ON auth.passkeys (user_id);
@@ -368,7 +373,8 @@ pub const SQLITE_DDL_V1: &[(&str, &str)] = &[
             public_key      BLOB NOT NULL,
             sign_count      INTEGER NOT NULL DEFAULT 0,
             transports      TEXT NOT NULL,
-            created_at      REAL NOT NULL
+            created_at      REAL NOT NULL,
+            passkey_json    TEXT
         )",
     ),
     (
