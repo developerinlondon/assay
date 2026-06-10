@@ -1,7 +1,7 @@
 -- approval-pipeline — pause between activities for human approval.
 -- Run: assay run worker.lua  (with `assay serve` running on :8080)
 
-local workflow = require("assay.workflow")
+local workflow = require("assay.engine.workflow")
 workflow.connect(env.get("ASSAY_ENGINE_URL") or "http://localhost:8080")
 
 workflow.define("ApproveAndDeploy", function(ctx, input)

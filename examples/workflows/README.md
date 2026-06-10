@@ -1,6 +1,6 @@
 # Workflow examples
 
-Runnable examples of the `assay serve` workflow engine + the `assay.workflow` Lua client. Each
+Runnable examples of the `assay serve` workflow engine + the `assay.engine.workflow` Lua client. Each
 subdirectory is self-contained: a worker script, a README explaining what it does, and the exact
 commands to run it against a local engine.
 

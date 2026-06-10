@@ -157,19 +157,29 @@ pub(crate) fn timestamp_now() -> f64 {
         .as_secs_f64()
 }
 
-/// WorkflowCtx version (the binary version pulled from Cargo at build time).
-/// Stamped into every workflow's search_attributes at start so operators
-/// can correlate runs to the engine release that executed them.
+/// Fallback version string when no binary version has been injected via
+/// [`WorkflowCtx::with_binary_version`]. This is this crate's own Cargo
+/// version; in practice the engine binary always calls `with_binary_version`
+/// so this constant is only reached in isolated unit tests.
 pub(crate) const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Auto-stamp `assay_engine_version` into a workflow's search attributes.
 /// Returns `Some` JSON string for the caller to store in the record.
 ///
+/// `binary_version` should be the value from
+/// [`WorkflowCtx::binary_version`] — the version of the containing binary
+/// (e.g. `assay-engine 0.5.2`), not this crate's own Cargo version.
+/// Falls back to [`ENGINE_VERSION`] (this crate's version) when `None`.
+///
 /// If the caller already supplied `assay_engine_version` in their patch,
 /// we leave their value alone (explicit override wins). Otherwise we
 /// backfill the running engine's version. Callers who supply no
 /// attributes at all get a single-key object with just the version.
-pub(crate) fn inject_engine_version(caller_attrs: Option<&str>) -> Option<String> {
+pub(crate) fn inject_engine_version(
+    caller_attrs: Option<&str>,
+    binary_version: Option<&'static str>,
+) -> Option<String> {
+    let version = binary_version.unwrap_or(ENGINE_VERSION);
     let mut obj: serde_json::Map<String, serde_json::Value> = match caller_attrs {
         Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
             Ok(serde_json::Value::Object(m)) => m,
@@ -179,7 +189,7 @@ pub(crate) fn inject_engine_version(caller_attrs: Option<&str>) -> Option<String
         None => serde_json::Map::new(),
     };
     obj.entry("assay_engine_version".to_string())
-        .or_insert_with(|| serde_json::Value::String(ENGINE_VERSION.to_string()));
+        .or_insert_with(|| serde_json::Value::String(version.to_string()));
     Some(serde_json::Value::Object(obj).to_string())
 }
 
@@ -189,7 +199,7 @@ mod engine_version_stamp_tests {
 
     #[test]
     fn no_attrs_produces_single_key_object() {
-        let out = inject_engine_version(None).unwrap();
+        let out = inject_engine_version(None, None).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["assay_engine_version"], ENGINE_VERSION);
         assert_eq!(v.as_object().unwrap().len(), 1);
@@ -197,7 +207,8 @@ mod engine_version_stamp_tests {
 
     #[test]
     fn existing_attrs_gain_the_version_field() {
-        let out = inject_engine_version(Some(r#"{"env":"prod","tenant":"acme"}"#)).unwrap();
+        let out =
+            inject_engine_version(Some(r#"{"env":"prod","tenant":"acme"}"#), None).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["env"], "prod");
         assert_eq!(v["tenant"], "acme");
@@ -206,20 +217,29 @@ mod engine_version_stamp_tests {
 
     #[test]
     fn caller_supplied_version_wins_on_conflict() {
-        let out = inject_engine_version(Some(r#"{"assay_engine_version":"0.0.1-test"}"#)).unwrap();
+        let out =
+            inject_engine_version(Some(r#"{"assay_engine_version":"0.0.1-test"}"#), None)
+                .unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["assay_engine_version"], "0.0.1-test");
     }
 
     #[test]
+    fn binary_version_overrides_crate_version() {
+        let out = inject_engine_version(None, Some("0.5.2")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["assay_engine_version"], "0.5.2");
+    }
+
+    #[test]
     fn non_object_json_is_preserved_unchanged() {
-        let out = inject_engine_version(Some("[1, 2, 3]")).unwrap();
+        let out = inject_engine_version(Some("[1, 2, 3]"), None).unwrap();
         assert_eq!(out, "[1,2,3]");
     }
 
     #[test]
     fn unparsable_json_is_preserved_unchanged() {
-        let out = inject_engine_version(Some("not json")).unwrap();
+        let out = inject_engine_version(Some("not json"), None).unwrap();
         assert_eq!(out, "not json");
     }
 }

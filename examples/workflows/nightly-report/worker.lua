@@ -1,7 +1,7 @@
 -- nightly-report — cron + side_effect + child workflows in one file.
 -- Run: assay run worker.lua  (with `assay serve` running on :8080)
 
-local workflow = require("assay.workflow")
+local workflow = require("assay.engine.workflow")
 workflow.connect(env.get("ASSAY_ENGINE_URL") or "http://localhost:8080")
 
 -- The parent workflow: kicked off by the cron schedule.

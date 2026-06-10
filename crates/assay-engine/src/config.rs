@@ -330,12 +330,57 @@ impl EngineConfig {
 /// - `${...}` whose contents aren't a valid identifier are passed
 ///   through verbatim — keeps non-substitution `${...}` literals usable
 ///   in odd field values without false positives.
+/// - TOML line comments (`# …` through end of line) are passed through
+///   verbatim so `${VAR}` inside a comment does not trigger a resolution
+///   error when `VAR` is unset.
 fn expand_env_vars<F>(raw: &str, lookup: F) -> anyhow::Result<String>
 where
     F: Fn(&str) -> Option<String>,
 {
     let mut out = String::with_capacity(raw.len());
-    let mut rest = raw;
+    // Process the input line-by-line so TOML comments can be skipped.
+    // A TOML comment begins with `#` outside of a quoted string; we use
+    // a conservative heuristic: if a `#` appears before any `${` on the
+    // same line, the rest of that line is a comment and is copied verbatim.
+    for line in raw.split_inclusive('\n') {
+        // Find the first `#` and the first `${` on this line.
+        let first_hash = line.find('#');
+        let first_expand = line.find("${");
+        match (first_hash, first_expand) {
+            // No expansion markers on this line — copy verbatim.
+            (_, None) => {
+                out.push_str(line);
+            }
+            // Expansion marker exists and either there's no `#` or the
+            // `#` comes *after* the `${` — expand the whole line.
+            (None, Some(_)) | (Some(_), Some(_))
+                if first_hash.unwrap_or(usize::MAX) > first_expand.unwrap() =>
+            {
+                // Expand only the portion before the first `#` (if any),
+                // then append the comment tail verbatim.
+                let (value_part, comment_tail) = match first_hash {
+                    Some(h) if h > first_expand.unwrap() => (&line[..h], &line[h..]),
+                    _ => (line, ""),
+                };
+                expand_env_vars_segment(value_part, &lookup, &mut out)?;
+                out.push_str(comment_tail);
+            }
+            // `#` comes before any `${` — the whole expansion marker is
+            // inside a comment; copy the line verbatim.
+            _ => {
+                out.push_str(line);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Expand `${...}` references within a single non-comment segment.
+fn expand_env_vars_segment<F>(segment: &str, lookup: &F, out: &mut String) -> anyhow::Result<()>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let mut rest = segment;
     while let Some(idx) = rest.find("${") {
         out.push_str(&rest[..idx]);
         let after_open = &rest[idx + 2..];
@@ -369,7 +414,7 @@ where
         rest = &after_open[close_idx + 1..];
     }
     out.push_str(rest);
-    Ok(out)
+    Ok(())
 }
 
 fn is_valid_var_name(s: &str) -> bool {
@@ -471,6 +516,45 @@ url = "${DB}"
         let expanded =
             expand_env_vars(toml_input, lookup_from(&[("DB", "postgres://u:p@h/d")])).unwrap();
         assert!(expanded.contains(r#"url = "postgres://u:p@h/d""#));
+    }
+
+    #[test]
+    fn comment_lines_with_unset_var_do_not_error() {
+        // `${VAR}` inside a TOML comment must not trigger an "unset" error.
+        let toml_input = "# env-var substitution (`${VAR}` / `${VAR:-default}`) is supported\ndata_dir = \"./data\"\n";
+        let out = expand_env_vars(toml_input, lookup_from(&[])).unwrap();
+        // Comment line is preserved verbatim; value line is unchanged.
+        assert!(out.contains("${VAR}"));
+        assert!(out.contains("data_dir = \"./data\""));
+    }
+
+    #[test]
+    fn comment_after_value_on_same_line_is_preserved_verbatim() {
+        // Inline comment: value part is expanded, comment tail is kept as-is.
+        let toml_input = "url = \"${DB}\" # use ${SECRET} here if needed\n";
+        let out = expand_env_vars(toml_input, lookup_from(&[("DB", "postgres://h/d")])).unwrap();
+        assert!(out.contains("postgres://h/d"));
+        assert!(out.contains("# use ${SECRET} here if needed"));
+    }
+
+    #[test]
+    fn sqlite_toml_example_parses_without_data_dir_set() {
+        // Regression: the shipped sqlite.toml example has `${VAR}` inside a
+        // comment. With DATA_DIR unset the expander must still succeed.
+        let toml_input = r#"# env-var substitution (`${VAR}` / `${VAR:-default}`) is supported
+# in any string field — `data_dir = "${DATA_DIR:-./data}"`
+
+[server]
+bind_addr = "127.0.0.1:3000"
+
+[backend]
+type = "sqlite"
+data_dir = "${DATA_DIR:-./data}"
+"#;
+        let out = expand_env_vars(toml_input, lookup_from(&[])).unwrap();
+        // Comment preserved verbatim; the real value falls back to ./data.
+        assert!(out.contains("${VAR}"));
+        assert!(out.contains("data_dir = \"./data\""));
     }
 
     #[test]
