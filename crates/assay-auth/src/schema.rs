@@ -59,7 +59,16 @@ pub const MODULE_NAME: &str = "auth";
 ///               and `auth.oidc_upstream_states` with `binding_hash`
 ///               (cookie-bound CSRF binding token hash) — the
 ///               provider-agnostic federation hardening pack.
-pub const MIGRATION_VERSION: i32 = 5;
+/// V6: adds `auth.passkeys.passkey_json TEXT` — the full serialised
+///               `webauthn_rs::prelude::Passkey` blob. Without it the
+///               authentication ceremony cannot enforce sign-counter /
+///               clone detection because webauthn-rs needs the stored
+///               counter inside the `Passkey` struct, not just an
+///               integer column. PG uses `ADD COLUMN IF NOT EXISTS`;
+///               SQLite uses `ADD COLUMN` with duplicate-column
+///               tolerance (same pattern as V5). Already present in the
+///               V1 `CREATE TABLE` for fresh deployments.
+pub const MIGRATION_VERSION: i32 = 6;
 
 /// Postgres DDL for the auth schema, version 1.
 ///
@@ -598,6 +607,19 @@ pub const SQLITE_DDL_V4: &[(&str, &str)] = &[
     ),
 ];
 
+/// Postgres DDL for the auth schema, version 6 — passkey blob column.
+///
+/// Adds `passkey_json TEXT` to `auth.passkeys` so the authentication
+/// ceremony can feed the stored `webauthn_rs::prelude::Passkey` (with
+/// its persisted sign-count) back to the library, enabling sign-counter
+/// / clone-detection enforcement. `ADD COLUMN IF NOT EXISTS` makes this
+/// idempotent on PG. Already present in the V1 `CREATE TABLE IF NOT
+/// EXISTS` for fresh deployments; this pack upgrades existing tables.
+pub const PG_DDL_V6: &str = r#"
+ALTER TABLE auth.passkeys
+    ADD COLUMN IF NOT EXISTS passkey_json TEXT;
+"#;
+
 /// SQLite DDL for the auth schema, version 5 — provider-agnostic
 /// upstream federation columns.
 ///
@@ -623,17 +645,29 @@ pub const SQLITE_DDL_V5: &[(&str, &str)] = &[
     ),
 ];
 
+/// SQLite DDL for the auth schema, version 6 — passkey blob column.
+///
+/// Mirrors [`PG_DDL_V6`]: adds `passkey_json TEXT` to `auth.passkeys`
+/// for sign-counter enforcement. SQLite has no `ADD COLUMN IF NOT
+/// EXISTS`; the runner tolerates the "duplicate column name" error
+/// exactly as it does for V5. Already in the V1 `CREATE TABLE` for
+/// fresh deployments.
+pub const SQLITE_DDL_V6: &[(&str, &str)] = &[(
+    "passkeys.passkey_json",
+    "ALTER TABLE auth.passkeys ADD COLUMN passkey_json TEXT",
+)];
+
 /// Postgres migration runner.
 ///
-/// Applies every DDL pack up to and including the current
-/// [`MIGRATION_VERSION`] (V1 then V2 today). Splits each pack into
+/// Applies every DDL pack V1–V6 in order. Splits each pack into
 /// individual statements (sqlx requires one statement per `query`),
 /// executes each, then records `(MODULE_NAME, MIGRATION_VERSION)` into
-/// `engine.migrations`. Idempotent — every CREATE uses `IF NOT EXISTS`.
+/// `engine.migrations`. Idempotent: every CREATE uses `IF NOT EXISTS`
+/// and every ALTER uses `ADD COLUMN IF NOT EXISTS`.
 #[cfg(feature = "backend-postgres")]
 pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     use anyhow::Context;
-    for ddl in [PG_DDL_V1, PG_DDL_V2, PG_DDL_V3, PG_DDL_V4, PG_DDL_V5] {
+    for ddl in [PG_DDL_V1, PG_DDL_V2, PG_DDL_V3, PG_DDL_V4, PG_DDL_V5, PG_DDL_V6] {
         for stmt in split_pg_statements(ddl) {
             sqlx::query(&stmt)
                 .execute(pool)
@@ -656,10 +690,12 @@ pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
 /// SQLite migration runner.
 ///
 /// Caller must have ATTACHed the auth database as `auth` before
-/// calling. Applies every DDL pack up to and including
-/// [`MIGRATION_VERSION`] (V1 then V2 today). Each DDL chunk is
+/// calling. Applies every DDL pack V1–V6 in order. Each DDL chunk is
 /// executed as its own statement; the per-table failure context names
-/// the table that broke so engine boot logs are actionable.
+/// the table that broke so engine boot logs are actionable. Idempotent:
+/// CREATEs use `IF NOT EXISTS`; `ALTER TABLE … ADD COLUMN` statements
+/// (V5, V6) tolerate the "duplicate column name" error SQLite emits on
+/// re-run — equivalent to `IF NOT EXISTS` for column additions.
 #[cfg(feature = "backend-sqlite")]
 pub async fn migrate_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     use anyhow::Context;
@@ -671,11 +707,11 @@ pub async fn migrate_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
                 .with_context(|| format!("auth sqlite migrate: {label}"))?;
         }
     }
-    for (label, stmt) in SQLITE_DDL_V5 {
+    // V5 and V6 use ALTER TABLE ADD COLUMN which SQLite does not support
+    // with IF NOT EXISTS — tolerate duplicate-column errors so re-running
+    // on an already-migrated DB is a no-op.
+    for (label, stmt) in SQLITE_DDL_V5.iter().chain(SQLITE_DDL_V6) {
         if let Err(e) = sqlx::query(stmt).execute(pool).await {
-            // SQLite's `ALTER TABLE … ADD COLUMN` is not idempotent;
-            // tolerate the duplicate-column error so re-running the
-            // migration on an already-V5 DB is a no-op.
             let msg = format!("{e}");
             if msg.contains("duplicate column name") {
                 continue;
@@ -750,5 +786,196 @@ mod tests {
         assert!(stmts.iter().any(|s| s.contains("auth.users")));
         assert!(stmts.iter().any(|s| s.contains("auth.sessions")));
         assert!(stmts.iter().any(|s| s.contains("auth.jwks_keys")));
+    }
+
+    /// V6 upgrade test: simulate a pre-V6 deployment (auth.passkeys table
+    /// exists but lacks `passkey_json`), run `migrate_sqlite`, then verify
+    /// that `add_passkey` (INSERT) and `get_passkey` (SELECT) work — i.e.
+    /// the column is present and readable after the migration. This is the
+    /// scenario real existing deployments face on the first boot after V6.
+    #[cfg(feature = "backend-sqlite")]
+    #[tokio::test]
+    async fn sqlite_v6_upgrade_adds_passkey_json_to_existing_table() {
+        use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+        use sqlx::Executor;
+        use std::str::FromStr;
+
+        // Each test gets its own named in-memory DB so parallel runs
+        // never collide (mirrors the oidc_provider.rs harness pattern).
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        let engine_uri = format!("file:assay_v6_eng_{suffix}?mode=memory&cache=shared");
+        let auth_uri = format!("file:assay_v6_auth_{suffix}?mode=memory&cache=shared");
+
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:").unwrap();
+        let pool: SqlitePool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .after_connect(move |conn, _| {
+                let engine_uri = engine_uri.clone();
+                let auth_uri = auth_uri.clone();
+                Box::pin(async move {
+                    conn.execute(
+                        format!("ATTACH DATABASE '{engine_uri}' AS engine").as_str(),
+                    )
+                    .await?;
+                    conn.execute(
+                        format!("ATTACH DATABASE '{auth_uri}' AS auth").as_str(),
+                    )
+                    .await?;
+                    Ok(())
+                })
+            })
+            .connect_with(opts)
+            .await
+            .expect("connect sqlite");
+
+        // Ensure the engine.migrations table exists (migrate_sqlite writes to it).
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS engine.migrations (
+                module TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                PRIMARY KEY (module, version)
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create engine.migrations");
+
+        // Pre-condition: create auth.passkeys WITHOUT passkey_json,
+        // simulating a database that was last migrated at V1–V5.
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS auth.users (
+                id TEXT PRIMARY KEY,
+                email TEXT,
+                email_verified INTEGER NOT NULL DEFAULT 0,
+                display_name TEXT,
+                password_hash TEXT,
+                created_at REAL NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create auth.users");
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS auth.passkeys (
+                credential_id BLOB PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                public_key BLOB NOT NULL,
+                sign_count INTEGER NOT NULL DEFAULT 0,
+                transports TEXT NOT NULL,
+                created_at REAL NOT NULL
+                -- passkey_json column intentionally absent: pre-V6 state
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create pre-V6 auth.passkeys");
+
+        // Insert a user row so FK constraints don't block add_passkey.
+        sqlx::query(
+            "INSERT INTO auth.users (id, created_at) VALUES ('user_upgrade', 0.0)",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert test user");
+
+        // Run the migration — V6 ALTER TABLE ADD COLUMN must succeed.
+        crate::schema::migrate_sqlite(&pool)
+            .await
+            .expect("migrate_sqlite V6");
+
+        // Verify the column is present and usable via the store layer.
+        use crate::store::UserStore as _;
+        let store =
+            crate::store::sqlite::SqliteUserStore::new(pool.clone());
+
+        let cred = crate::store::PasskeyCred {
+            credential_id: vec![0xAB, 0xCD],
+            public_key: vec![1, 2, 3],
+            sign_count: 0,
+            transports: vec![],
+            created_at: 0.0,
+            passkey_json: Some("{\"upgraded\":true}".to_string()),
+        };
+        store
+            .add_passkey("user_upgrade", &cred)
+            .await
+            .expect("add_passkey after V6 upgrade");
+
+        let (owner, fetched) = store
+            .get_passkey(&[0xAB, 0xCD])
+            .await
+            .expect("get_passkey after V6 upgrade")
+            .expect("row must exist");
+        assert_eq!(owner, "user_upgrade");
+        assert_eq!(
+            fetched.passkey_json.as_deref(),
+            Some("{\"upgraded\":true}"),
+            "passkey_json must round-trip through the upgraded column"
+        );
+    }
+
+    /// Running migrate_sqlite a second time on an already-V6 DB must be
+    /// a no-op (duplicate column name is tolerated, not an error).
+    #[cfg(feature = "backend-sqlite")]
+    #[tokio::test]
+    async fn sqlite_v6_migration_is_idempotent() {
+        use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+        use sqlx::Executor;
+        use std::str::FromStr;
+
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos()
+            .wrapping_add(1); // distinct from the upgrade test
+        let engine_uri = format!("file:assay_v6_idem_eng_{suffix}?mode=memory&cache=shared");
+        let auth_uri = format!("file:assay_v6_idem_{suffix}?mode=memory&cache=shared");
+
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:").unwrap();
+        let pool: SqlitePool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .after_connect(move |conn, _| {
+                let engine_uri = engine_uri.clone();
+                let auth_uri = auth_uri.clone();
+                Box::pin(async move {
+                    conn.execute(
+                        format!("ATTACH DATABASE '{engine_uri}' AS engine").as_str(),
+                    )
+                    .await?;
+                    conn.execute(
+                        format!("ATTACH DATABASE '{auth_uri}' AS auth").as_str(),
+                    )
+                    .await?;
+                    Ok(())
+                })
+            })
+            .connect_with(opts)
+            .await
+            .expect("connect sqlite");
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS engine.migrations (
+                module TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                PRIMARY KEY (module, version)
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create engine.migrations");
+
+        // First run — full fresh migration.
+        crate::schema::migrate_sqlite(&pool)
+            .await
+            .expect("first migrate_sqlite");
+
+        // Second run — must not error (idempotency).
+        crate::schema::migrate_sqlite(&pool)
+            .await
+            .expect("second migrate_sqlite must be idempotent");
     }
 }

@@ -414,7 +414,10 @@ async fn passkey_register_finish(
         Ok(p) => p,
         Err(e) => return bad_request(&format!("finish_registration: {e}")),
     };
-    let cred = crate::passkey::passkey_to_cred(&passkey, now_secs());
+    let cred = match crate::passkey::passkey_to_cred(&passkey, now_secs()) {
+        Ok(c) => c,
+        Err(e) => return server_error(&format!("serialise passkey: {e}")),
+    };
     if let Err(e) = ctx.users.add_passkey(&body.user_id, &cred).await {
         return server_error(&format!("persist passkey: {e}"));
     }
@@ -520,6 +523,14 @@ async fn passkey_auth_finish(
     // Persist the sign-counter bump (+ backup-state) so the NEXT
     // authentication enforces against the new value. `update_credential`
     // returns the re-serialised blob; only write when it actually moved.
+    //
+    // Invariant: webauthn-rs sets `needs_update()` whenever the sign
+    // counter advanced OR backup-eligible/backup-state flags changed.
+    // Most platform passkeys use a zero counter (they sync, not clone),
+    // so `needs_update()` will be false on those authenticators and we
+    // skip the write — the stored blob stays valid for the next check.
+    // Hardware keys that increment the counter will always trigger the
+    // write, which is exactly when clone detection depends on it.
     let mut passkey = match crate::passkey::cred_to_passkey(&stored_cred) {
         Ok(p) => p,
         Err(e) => return server_error(&format!("rebuild stored passkey: {e}")),

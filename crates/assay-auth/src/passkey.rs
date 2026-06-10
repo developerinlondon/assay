@@ -234,8 +234,19 @@ impl PasskeyManager {
 /// lossy — re-authentication needs a future column to round-trip the
 /// blob. Tests and admin tooling that just want to enumerate stored
 /// credentials are fine with the projection.
-pub fn passkey_to_cred(passkey: &Passkey, created_at: f64) -> crate::store::PasskeyCred {
-    crate::store::PasskeyCred {
+/// Project a freshly-registered [`Passkey`] into a
+/// [`crate::store::PasskeyCred`] for persistence in `auth.passkeys`.
+///
+/// Returns [`Error::Passkey`] if the Passkey cannot be serialised —
+/// this must fail loudly at registration time rather than persisting a
+/// credential that can never drive a login (a `NULL` `passkey_json`
+/// blob means `cred_to_passkey` fails closed at authentication).
+pub fn passkey_to_cred(passkey: &Passkey, created_at: f64) -> Result<crate::store::PasskeyCred> {
+    // Serialise the full Passkey blob first — if this fails we must
+    // not return a partially-built cred.
+    let passkey_json = serde_json::to_string(passkey)
+        .map_err(|e| Error::Passkey(format!("serialise Passkey for storage: {e}")))?;
+    Ok(crate::store::PasskeyCred {
         credential_id: passkey.cred_id().as_ref().to_vec(),
         // Public key bytes aren't directly exposed by webauthn-rs'
         // public surface; we fall back to a JSON serialisation of the
@@ -245,12 +256,8 @@ pub fn passkey_to_cred(passkey: &Passkey, created_at: f64) -> crate::store::Pass
         sign_count: 0,
         transports: Vec::new(),
         created_at,
-        // Authoritative re-verification material: the full serialised
-        // Passkey. The authentication ceremony deserialises this so
-        // webauthn-rs sees the persisted sign-count and can enforce
-        // counter / clone detection.
-        passkey_json: serde_json::to_string(passkey).ok(),
-    }
+        passkey_json: Some(passkey_json),
+    })
 }
 
 /// Reconstruct a [`webauthn_rs::prelude::Passkey`] from a stored
