@@ -40,9 +40,15 @@ unseal_key_source = "env:ASSAY_VAULT_UNSEAL_KEY"
 # warning; never use for real secrets):
 #   dev_plaintext_kek = true
 #
-# Day-one boot: set the env var above, then run the engine. Migration:
-# if a pre-#113 plaintext KEK already exists, setting unseal_key_source
-# auto-re-seals it in place on next boot (one-way upgrade).
+# Day-one boot: set the env var above, then run the engine.
+#
+# Migration from a pre-#113 plaintext KEK (IRREVERSIBLE — back up DB first):
+#   1. Set unseal_key_source above.
+#   2. Uncomment allow_plaintext_migration below.
+#   3. Reboot — the engine re-seals the existing KEK in place (one-way).
+#   4. Remove allow_plaintext_migration once the "MIGRATED" log line appears.
+#
+# allow_plaintext_migration = true
 
 [logging]
 level = "info"

@@ -245,7 +245,11 @@ fn resolve_kek_boot_config(
                      unseal key and IGNORING dev_plaintext_kek"
                 );
             }
-            Ok(KekBootConfig::sealed(material))
+            if cfg.allow_plaintext_migration {
+                Ok(KekBootConfig::sealed_allow_migration(material))
+            } else {
+                Ok(KekBootConfig::sealed(material))
+            }
         }
         None if cfg.dev_plaintext_kek => Ok(KekBootConfig::dev_plaintext()),
         None => Ok(KekBootConfig::unset()),

@@ -237,6 +237,17 @@ pub struct VaultConfig {
     /// for real secrets — a DB read decrypts everything. Default false.
     #[serde(default)]
     pub dev_plaintext_kek: bool,
+    /// Gate for the irreversible plaintext→sealed-v1 auto-migration.
+    ///
+    /// When an existing `plaintext` KEK row is found on boot and
+    /// `unseal_key_source` is set, the engine will NOT overwrite the row
+    /// unless this flag is `true`. This prevents an accidental one-way
+    /// migration on first upgrade. Back up the database before enabling.
+    ///
+    /// Once the migration completes (log line "MIGRATED plaintext KEK"),
+    /// this flag may be removed from `engine.toml`. Default false.
+    #[serde(default)]
+    pub allow_plaintext_migration: bool,
 }
 
 /// Session module knobs.

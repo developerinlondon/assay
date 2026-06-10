@@ -314,6 +314,22 @@ fn read_unseal_file(path: &std::path::Path) -> Result<Zeroizing<String>> {
             )));
         }
     }
+    #[cfg(not(unix))]
+    {
+        // File permission enforcement (0600 check) is Unix-only.
+        // On non-Unix platforms the check is skipped — ensure the
+        // unseal key file is access-controlled at the OS/filesystem
+        // level (e.g. NTFS ACLs on Windows).
+        let _ = &meta; // suppress unused warning
+        tracing::warn!(
+            target: "assay-vault",
+            path = %path.display(),
+            "unseal-key file permission check is not supported on this platform; \
+             ensure '{}' is protected by OS-level access controls (e.g. NTFS ACLs). \
+             Use `env:` or `base64:` sources on non-Unix platforms to avoid this gap.",
+            path.display()
+        );
+    }
     let s = std::fs::read_to_string(path).map_err(|e| {
         VaultError::Invalid(format!(
             "vault unseal key file '{}' could not be read: {e}",

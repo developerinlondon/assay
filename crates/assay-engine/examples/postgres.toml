@@ -35,8 +35,13 @@ unseal_key_source = "env:ASSAY_VAULT_UNSEAL_KEY"
 # dev_plaintext_kek = true in production — it persists the KEK in
 # plaintext and logs a CRITICAL warning.
 #
-# Migration from a pre-#113 plaintext KEK: setting unseal_key_source
-# auto-re-seals the existing KEK in place on next boot (one-way).
+# Migration from a pre-#113 plaintext KEK (IRREVERSIBLE — back up DB first):
+#   1. Set unseal_key_source above.
+#   2. Uncomment allow_plaintext_migration below.
+#   3. Reboot — the engine re-seals the existing KEK in place (one-way).
+#   4. Remove allow_plaintext_migration once the "MIGRATED" log line appears.
+#
+# allow_plaintext_migration = true
 
 # Pass-through JWT validation against an upstream OIDC provider
 # (added in 0.3.2). Configure one block per trusted issuer. Tokens

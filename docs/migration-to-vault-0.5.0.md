@@ -52,15 +52,32 @@ which means every wrapped secret is unrecoverable.
 If `vault.kek_metadata` already holds a `plaintext` KEK from a pre-0.5.0
 deployment:
 
-1. Set `unseal_key_source` and export the key (as above).
-2. Reboot. The engine **automatically re-seals the existing KEK in place**
-   (one-way upgrade): the row flips to `sealing_method = 'sealed-v1'`, the
-   plaintext blob is overwritten with the sealed blob, and a `MIGRATED ...` line
-   is logged. Your existing wrapped DEKs keep working — the KEK identity (`kid`)
-   is preserved.
+1. **Back up the database first.** The migration is one-way and irreversible —
+   the plaintext blob is overwritten with the sealed blob and cannot be undone.
+2. Set `unseal_key_source` and export the key (as above).
+3. Set `allow_plaintext_migration = true` to explicitly authorise the one-way
+   rewrite:
 
-If you reboot **without** setting `unseal_key_source`, the engine refuses to
-boot (fail-closed) and prints migration instructions. No data is touched.
+```toml
+[vault]
+unseal_key_source = "env:ASSAY_VAULT_UNSEAL_KEY"
+allow_plaintext_migration = true   # remove after migration completes
+```
+
+4. Reboot. The engine **re-seals the existing KEK in place**: the row flips to
+   `sealing_method = 'sealed-v1'`, the plaintext blob is overwritten with the
+   sealed blob, and a `MIGRATED ...` warning is logged. Your existing wrapped
+   DEKs keep working — the KEK identity (`kid`) is preserved.
+5. **Remove `allow_plaintext_migration = true`** from `engine.toml` once you
+   have confirmed the migration logged successfully. The flag is not needed
+   after a fresh `sealed-v1` row exists.
+
+If you reboot with `unseal_key_source` set but **without** `allow_plaintext_migration`,
+the engine refuses to boot (fail-closed) and prints instructions. No data is
+touched.
+
+If you reboot **without** `unseal_key_source` at all, the engine also refuses to
+boot (fail-closed). No data is touched.
 
 ## Dev / demo escape hatch
 

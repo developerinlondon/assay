@@ -14,9 +14,11 @@
 //!   Wrong material fails the AEAD tag → boot fails closed.
 //! - **Boot without unseal material** — fail closed with an actionable
 //!   error telling the operator how to set the unseal key + migrate.
-//! - **Existing plaintext row found** — if unseal material is present,
-//!   automatically re-seal it in place (one-way upgrade) and log the
-//!   migration. If not, fail closed with migration instructions.
+//! - **Existing plaintext row found + material present + `allow_plaintext_migration = true`** —
+//!   automatically re-seal it in place (irreversible one-way upgrade) and log
+//!   the migration. Material present but flag unset → fail closed with
+//!   instructions to back up the DB and set the flag. No material → fail
+//!   closed with migration instructions.
 //! - **Dev escape hatch** — `dev_plaintext_kek = true` keeps the old
 //!   plaintext behavior for demo flows, behind a loud CRITICAL warning.
 //!   Never the default.
@@ -47,14 +49,38 @@ pub struct KekBootConfig {
     pub material: Option<UnsealMaterial>,
     /// Explicit opt-in to the plaintext escape hatch. Logs CRITICAL.
     pub dev_plaintext: bool,
+    /// Gate for the irreversible plaintext→sealed-v1 auto-migration.
+    ///
+    /// When a `plaintext` row is found and unseal material is present,
+    /// the engine will **not** overwrite the row unless this flag is
+    /// `true`. Default is `false`. Set via
+    /// `vault.allow_plaintext_migration = true` in `engine.toml`.
+    ///
+    /// The gate exists because the migration is **one-way and
+    /// destructive**: the raw KEK bytes in `sealed_blob` are
+    /// overwritten with the sealed blob. Operators MUST back up the
+    /// database before enabling this flag.
+    pub allow_plaintext_migration: bool,
 }
 
 impl KekBootConfig {
     /// Sealed boot with concrete unseal material (the production path).
+    /// `allow_plaintext_migration` defaults to `false` — operator must
+    /// explicitly set it to trigger the one-way migration.
     pub fn sealed(material: UnsealMaterial) -> Self {
         Self {
             material: Some(material),
             dev_plaintext: false,
+            allow_plaintext_migration: false,
+        }
+    }
+
+    /// Like [`Self::sealed`] but with `allow_plaintext_migration = true`.
+    pub fn sealed_allow_migration(material: UnsealMaterial) -> Self {
+        Self {
+            material: Some(material),
+            dev_plaintext: false,
+            allow_plaintext_migration: true,
         }
     }
 
@@ -63,6 +89,7 @@ impl KekBootConfig {
         Self {
             material: None,
             dev_plaintext: true,
+            allow_plaintext_migration: false,
         }
     }
 
@@ -71,6 +98,7 @@ impl KekBootConfig {
         Self {
             material: None,
             dev_plaintext: false,
+            allow_plaintext_migration: false,
         }
     }
 }
@@ -189,6 +217,16 @@ async fn load_existing_pg(
             let key = parse_plaintext_blob(&method, &blob)
                 .with_context(|| format!("unwrap plaintext KEK kid={kid}"))?;
             if let Some(material) = &cfg.material {
+                if !cfg.allow_plaintext_migration {
+                    return Err(anyhow::anyhow!(
+                        "vault.kek_metadata holds a PLAINTEXT master KEK (kid={kid}) and unseal \
+                         material is configured, but `vault.allow_plaintext_migration` is not set. \
+                         This migration is IRREVERSIBLE — the plaintext blob will be overwritten \
+                         with the sealed blob and cannot be undone. Back up the database first, \
+                         then set `vault.allow_plaintext_migration = true` in engine.toml and \
+                         reboot to perform the one-way migration."
+                    ));
+                }
                 // ── One-way migration: re-seal the plaintext KEK ──
                 let sealed_blob =
                     seal_kek(&key, &kid, material).context("seal KEK during plaintext migration")?;
@@ -327,6 +365,16 @@ async fn load_existing_sqlite(
             let key = parse_plaintext_blob(&method, &blob)
                 .with_context(|| format!("unwrap plaintext KEK kid={kid}"))?;
             if let Some(material) = &cfg.material {
+                if !cfg.allow_plaintext_migration {
+                    return Err(anyhow::anyhow!(
+                        "vault.kek_metadata holds a PLAINTEXT master KEK (kid={kid}) and unseal \
+                         material is configured, but `vault.allow_plaintext_migration` is not set. \
+                         This migration is IRREVERSIBLE — the plaintext blob will be overwritten \
+                         with the sealed blob and cannot be undone. Back up the database first, \
+                         then set `vault.allow_plaintext_migration = true` in engine.toml and \
+                         reboot to perform the one-way migration."
+                    ));
+                }
                 let sealed_blob =
                     seal_kek(&key, &kid, material).context("seal KEK during plaintext migration")?;
                 sqlx::query(
@@ -804,6 +852,12 @@ mod tests {
         assert!(res.is_err(), "wrong unseal key must fail the auth tag");
     }
 
+    fn raw_cfg_allow_migration() -> KekBootConfig {
+        let key = crate::crypto::aead::random_dek();
+        let b64 = data_encoding::BASE64.encode(&key);
+        KekBootConfig::sealed_allow_migration(UnsealMaterial::raw_key_from_base64(&b64).unwrap())
+    }
+
     #[tokio::test]
     async fn plaintext_row_migrates_to_sealed() {
         let pool = boot_pool().await;
@@ -821,7 +875,8 @@ mod tests {
         .await
         .unwrap();
 
-        let cfg = raw_cfg();
+        // allow_plaintext_migration = true → migration proceeds.
+        let cfg = raw_cfg_allow_migration();
         let h = load_or_init_sqlite(&pool, &cfg).await.unwrap();
         assert_eq!(h.kid(), kid, "migration must preserve the KEK identity");
         // Row is now sealed-v1, and the plaintext key is gone from disk.
@@ -831,6 +886,49 @@ mod tests {
         // Re-boot unseals the migrated row to the same KEK.
         let h2 = load_or_init_sqlite(&pool, &cfg).await.unwrap();
         assert_eq!(h2.kid(), kid);
+    }
+
+    #[tokio::test]
+    async fn plaintext_row_with_material_but_flag_unset_fails_closed() {
+        let pool = boot_pool().await;
+        // Seed a legacy plaintext KEK.
+        let key = crate::crypto::aead::random_dek();
+        let kid = content_addressed_kid(&key);
+        sqlx::query(
+            "INSERT INTO vault.kek_metadata
+                (kid, sealing_method, sealed, sealed_blob, created_at)
+             VALUES (?, 'plaintext', 0, ?, 0.0)",
+        )
+        .bind(&kid)
+        .bind(key.as_slice())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Material IS configured but allow_plaintext_migration = false (default).
+        let cfg = raw_cfg(); // sealed(), allow_plaintext_migration = false
+        let res = load_or_init_sqlite(&pool, &cfg).await;
+        assert!(
+            res.is_err(),
+            "plaintext row + material + flag unset must fail closed"
+        );
+        let msg = res.unwrap_err().to_string();
+        assert!(
+            msg.contains("allow_plaintext_migration"),
+            "error must mention the flag; got: {msg}"
+        );
+        // Row must be untouched — still plaintext, blob unchanged.
+        assert_eq!(
+            sealing_method(&pool).await,
+            METHOD_PLAINTEXT,
+            "row must not be mutated when migration is gated"
+        );
+        let stored = stored_blob(&pool).await;
+        assert_eq!(
+            stored.as_slice(),
+            key.as_slice(),
+            "plaintext blob must be untouched"
+        );
     }
 
     #[tokio::test]
