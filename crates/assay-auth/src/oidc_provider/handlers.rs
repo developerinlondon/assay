@@ -261,7 +261,7 @@ pub async fn consent_post(
     let Some(session) = session else {
         return error_html(StatusCode::UNAUTHORIZED, "no active session");
     };
-    if session.csrf_token != submission.csrf_token {
+    if !crate::session::csrf_tokens_match(&submission.csrf_token, &session.csrf_token) {
         return error_html(StatusCode::FORBIDDEN, "csrf mismatch");
     }
 
@@ -422,26 +422,25 @@ async fn authenticate_client(
     }
 }
 
-/// Constant-time secret check. The stored hash is either an Argon2 PHC
-/// string (`$argon2id$...`) or — for the simpler v0.2.0 surface — the
-/// plaintext secret. We try Argon2 first and fall back to bytewise
-/// compare so the migration path to PHC-only doesn't require a flag-day.
+/// Verify a presented client secret against the stored Argon2id PHC hash.
+///
+/// All write paths (`create_client`, `rotate_client_secret`) hash with
+/// Argon2id before persisting, so no plaintext fallback is needed or
+/// supported. A stored value that does not start with `$argon2` is
+/// rejected fail-closed with a WARN log — the operator must rotate the
+/// client secret via `POST /admin/oidc/clients/{id}/rotate-secret` to
+/// obtain a properly hashed credential.
 fn verify_client_secret(presented: &str, stored: &str) -> bool {
-    if stored.starts_with("$argon2") {
-        let hasher = crate::password::PasswordHasher::default();
-        return hasher.verify(presented, stored).unwrap_or(false);
-    }
-    // Plaintext fallback — constant-time bytewise compare.
-    let a = presented.as_bytes();
-    let b = stored.as_bytes();
-    if a.len() != b.len() {
+    if !stored.starts_with("$argon2") {
+        tracing::warn!(
+            "client_secret_hash does not look like an Argon2 PHC string; \
+             rejecting. Rotate the client secret to obtain a properly \
+             hashed credential."
+        );
         return false;
     }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
+    let hasher = crate::password::PasswordHasher::default();
+    hasher.verify(presented, stored).unwrap_or(false)
 }
 
 /// `authorization_code` grant — consume the code, verify PKCE, mint
@@ -1430,9 +1429,19 @@ mod tests {
     }
 
     #[test]
-    fn verify_client_secret_handles_plaintext() {
-        assert!(verify_client_secret("secret", "secret"));
-        assert!(!verify_client_secret("wrong", "secret"));
+    fn verify_client_secret_accepts_argon2_hash() {
+        let hasher = crate::password::PasswordHasher::default();
+        let hash = hasher.hash("correct-secret").unwrap();
+        assert!(verify_client_secret("correct-secret", &hash));
+        assert!(!verify_client_secret("wrong-secret", &hash));
+    }
+
+    #[test]
+    fn verify_client_secret_rejects_plaintext_stored_value() {
+        // Plaintext fallback has been removed. A stored value that is not
+        // an Argon2 PHC string must be rejected fail-closed.
+        assert!(!verify_client_secret("secret", "secret"));
+        assert!(!verify_client_secret("secret", "not-a-phc-string"));
         assert!(!verify_client_secret("secret", "differentlength"));
     }
 
