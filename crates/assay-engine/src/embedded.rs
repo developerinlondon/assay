@@ -223,8 +223,9 @@ async fn compose<S: WorkflowStore + Clone + 'static>(
                  (3) run the bundled init script — \
                  `assay-engine serve --config engine.toml` with \
                  `admin_api_keys` set, then execute \
-                 `examples/init/init.lua` to seed the first user and \
-                 Zanzibar tuples, then remove the break-glass key."
+                 `crates/assay-engine/examples/init/init.lua` to seed \
+                 the first user and Zanzibar tuples, then remove the \
+                 break-glass key."
             );
         }
     }

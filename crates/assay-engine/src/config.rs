@@ -333,46 +333,82 @@ impl EngineConfig {
 /// - TOML line comments (`# …` through end of line) are passed through
 ///   verbatim so `${VAR}` inside a comment does not trigger a resolution
 ///   error when `VAR` is unset.
+/// - `#` inside a quoted string value is NOT treated as a comment start,
+///   so `url = "http://x#frag${VAR}"` correctly expands `${VAR}`.
 fn expand_env_vars<F>(raw: &str, lookup: F) -> anyhow::Result<String>
 where
     F: Fn(&str) -> Option<String>,
 {
     let mut out = String::with_capacity(raw.len());
-    // Process the input line-by-line so TOML comments can be skipped.
-    // A TOML comment begins with `#` outside of a quoted string; we use
-    // a conservative heuristic: if a `#` appears before any `${` on the
-    // same line, the rest of that line is a comment and is copied verbatim.
+    // Process line-by-line so we can locate comment spans per line.
     for line in raw.split_inclusive('\n') {
-        // Find the first `#` and the first `${` on this line.
-        let first_hash = line.find('#');
-        let first_expand = line.find("${");
-        match (first_hash, first_expand) {
-            // No expansion markers on this line — copy verbatim.
-            (_, None) => {
-                out.push_str(line);
-            }
-            // Expansion marker exists and either there's no `#` or the
-            // `#` comes *after* the `${` — expand the whole line.
-            (None, Some(_)) | (Some(_), Some(_))
-                if first_hash.unwrap_or(usize::MAX) > first_expand.unwrap() =>
-            {
-                // Expand only the portion before the first `#` (if any),
-                // then append the comment tail verbatim.
-                let (value_part, comment_tail) = match first_hash {
-                    Some(h) if h > first_expand.unwrap() => (&line[..h], &line[h..]),
-                    _ => (line, ""),
-                };
-                expand_env_vars_segment(value_part, &lookup, &mut out)?;
-                out.push_str(comment_tail);
-            }
-            // `#` comes before any `${` — the whole expansion marker is
-            // inside a comment; copy the line verbatim.
-            _ => {
-                out.push_str(line);
-            }
-        }
+        // Locate where the TOML comment starts on this line (if at all).
+        // A `#` only starts a comment when it is outside a quoted string.
+        // We scan char-by-char tracking:
+        //   - basic strings:   "..."  (backslash-escapes \" are respected)
+        //   - literal strings: '...'  (no escapes)
+        let comment_start = toml_comment_start(line);
+
+        let (value_span, comment_tail) = match comment_start {
+            Some(c) => (&line[..c], &line[c..]),
+            None => (line, ""),
+        };
+
+        expand_env_vars_segment(value_span, &lookup, &mut out)?;
+        out.push_str(comment_tail);
     }
     Ok(out)
+}
+
+/// Return the byte offset of the first `#` on `line` that is outside any
+/// TOML quoted string (basic `"…"` or literal `'…'`), or `None` if the
+/// whole line is non-comment content.
+///
+/// Handles:
+/// - Basic strings (`"…"`): `\"` inside does not close the string.
+/// - Literal strings (`'…'`): no escape processing; `'` always closes.
+/// - Does NOT handle multi-line strings (triple-quoted) — those are
+///   extremely rare in config files and do not appear in any shipped
+///   example. If a line is part of a multi-line string its `${...}`
+///   references will still be expanded (safe: `"""…"""` values are
+///   intentional string literals, not comments).
+fn toml_comment_start(line: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let len = bytes.len();
+    let mut i = 0usize;
+    while i < len {
+        match bytes[i] {
+            b'"' => {
+                // Enter a basic string; advance past the closing `"`,
+                // respecting `\"` escapes.
+                i += 1;
+                while i < len {
+                    match bytes[i] {
+                        b'\\' => i += 2, // skip escaped char
+                        b'"' => {
+                            i += 1;
+                            break;
+                        }
+                        _ => i += 1,
+                    }
+                }
+            }
+            b'\'' => {
+                // Enter a literal string; advance past the closing `'`.
+                i += 1;
+                while i < len {
+                    if bytes[i] == b'\'' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            b'#' => return Some(i),
+            _ => i += 1,
+        }
+    }
+    None
 }
 
 /// Expand `${...}` references within a single non-comment segment.
@@ -555,6 +591,63 @@ data_dir = "${DATA_DIR:-./data}"
         // Comment preserved verbatim; the real value falls back to ./data.
         assert!(out.contains("${VAR}"));
         assert!(out.contains("data_dir = \"./data\""));
+    }
+
+    // --- quote-aware comment detection (Finding 1 regression tests) ---
+
+    #[test]
+    fn hash_in_url_fragment_is_not_a_comment() {
+        // `#` inside a basic string is NOT a comment start; ${VAR} must expand.
+        let out = expand_env_vars(
+            "url = \"http://example.com#fragment${VAR}\"",
+            lookup_from(&[("VAR", "?q=1")]),
+        )
+        .unwrap();
+        assert_eq!(out, "url = \"http://example.com#fragment?q=1\"");
+    }
+
+    #[test]
+    fn hash_in_literal_string_is_not_a_comment() {
+        // `#` inside a literal (single-quoted) string is NOT a comment start.
+        let out = expand_env_vars(
+            "pass = 'p#ss${VAR}'",
+            lookup_from(&[("VAR", "word")]),
+        )
+        .unwrap();
+        assert_eq!(out, "pass = 'p#ssword'");
+    }
+
+    #[test]
+    fn pure_comment_line_with_hash_first_is_skipped() {
+        // A line where `#` is the first non-whitespace char is a comment.
+        let err = expand_env_vars("# ${UNSET_VAR}\n", lookup_from(&[]));
+        assert!(err.is_ok(), "comment-only line must not error on unset var");
+        assert!(err.unwrap().contains("${UNSET_VAR}"));
+    }
+
+    #[test]
+    fn trailing_comment_skipped_but_value_before_it_not_expanded_if_no_refs() {
+        // `key = "val" # trailing ${VAR}` — comment tail preserved, no
+        // expansion needed in the value part (no `${...}` there).
+        let out = expand_env_vars(
+            "key = \"val\" # trailing ${SECRET}\n",
+            lookup_from(&[]),
+        )
+        .unwrap();
+        assert_eq!(out, "key = \"val\" # trailing ${SECRET}\n");
+    }
+
+    #[test]
+    fn escaped_quote_inside_basic_string_does_not_end_string_early() {
+        // `url = "he said \"hi#there\" ${VAR}"` — the `\"` must not
+        // prematurely close the string, so `#there` is NOT a comment.
+        let out = expand_env_vars(
+            r#"url = "he said \"hi#there\" ${VAR}""#,
+            lookup_from(&[("VAR", "ok")]),
+        )
+        .unwrap();
+        assert!(out.contains("ok"), "VAR should have been expanded");
+        assert!(out.contains("#there"), "#there is inside the string, not a comment");
     }
 
     #[test]
