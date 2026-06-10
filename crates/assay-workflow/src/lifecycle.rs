@@ -31,7 +31,7 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         // The operator's own attributes take precedence if they also
         // supplied `assay_engine_version` — we don't overwrite, just
         // backfill on the "not set" case.
-        let stamped_attrs = inject_engine_version(search_attributes);
+        let stamped_attrs = inject_engine_version(search_attributes, self.binary_version);
 
         let wf = WorkflowRecord {
             id: workflow_id.to_string(),

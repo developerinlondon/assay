@@ -212,13 +212,20 @@ async fn compose<S: WorkflowStore + Clone + 'static>(
             anyhow::bail!(
                 "engine refuses to start: no operator users exist, \
                  `auth.admin_api_keys` is empty, and no external issuers \
-                 are configured. Either run `assay-engine bootstrap-admin \
-                 --email <e> --password <p>` to seed the first user, add \
-                 at least one entry to `auth.admin_api_keys` in \
-                 engine.toml as a break-glass, or configure \
-                 `[[auth.external_issuers]]` with an upstream OIDC \
-                 provider (e.g. Hydra) that mints the JWTs your callers \
-                 forward."
+                 are configured. To unlock the engine choose one of: \
+                 (1) add at least one token to `auth.admin_api_keys` in \
+                 engine.toml as a break-glass, then use that token with \
+                 the admin API (`POST /api/v1/engine/core/…`) to seed \
+                 operator users; \
+                 (2) configure `[[auth.external_issuers]]` with an \
+                 upstream OIDC provider (e.g. Hydra) that mints the JWTs \
+                 your callers forward; \
+                 (3) run the bundled init script — \
+                 `assay-engine serve --config engine.toml` with \
+                 `admin_api_keys` set, then execute \
+                 `crates/assay-engine/examples/init/init.lua` to seed \
+                 the first user and Zanzibar tuples, then remove the \
+                 break-glass key."
             );
         }
     }
