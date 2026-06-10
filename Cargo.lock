@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "assay-engine"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "assay-auth",
@@ -393,10 +393,11 @@ dependencies = [
 
 [[package]]
 name = "assay-vault"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "aes-gcm-siv",
  "anyhow",
+ "argon2",
  "assay-auth",
  "assay-domain",
  "async-trait",
@@ -421,6 +422,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

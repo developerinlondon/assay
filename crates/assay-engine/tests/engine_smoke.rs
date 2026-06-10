@@ -53,6 +53,13 @@ path = "{db}"
 [auth]
 admin_api_keys = ["engine-smoke-test-key"]
 
+[vault]
+# KEK sealing (#113): the smoke test exercises the real sealed-at-rest
+# path with an inline base64 32-byte unseal key. Boot fails closed
+# without this (or dev_plaintext_kek), which is the whole point of the
+# change. `AAAA...` decodes to 32 zero bytes — fine for a test key.
+unseal_key_source = "base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
 [logging]
 level = "error"
 format = "pretty"
@@ -291,8 +298,10 @@ async fn engine_smoke_sqlite() {
     assert_eq!(decoded, plaintext);
 
     // ── /api/v1/vault/sys/seal-status ─────────────────────────────────
-    // Phase 2 sealing: status reflects unsealed (plaintext-method,
-    // first-boot path), `sealed = false`.
+    // KEK sealing (#113): the KEK was sealed at rest under the inline
+    // unseal key and unsealed into memory at boot, so the vault is
+    // operational (`sealed = false`) and reports method `sealed-v1`
+    // (NOT plaintext — that would mean the KEK is unsealed on disk).
     let r = client
         .get(engine.url("/api/v1/vault/sys/seal-status"))
         .header("Authorization", admin_bearer)
@@ -302,7 +311,7 @@ async fn engine_smoke_sqlite() {
     assert_eq!(r.status(), 200);
     let body: serde_json::Value = r.json().await.unwrap();
     assert_eq!(body["sealed"], false);
-    assert_eq!(body["method"], "plaintext");
+    assert_eq!(body["method"], "sealed-v1");
 
     // ── /api/v1/vault/sys/seal — fail-closed semantics ────────────────
     let r = client
