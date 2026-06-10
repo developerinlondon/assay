@@ -268,14 +268,17 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }} -p assay-lua --bin assay
 
       - name: Build assay-engine
-        run: cargo build --release --target ${{ matrix.target }} -p assay-engine --bin assay-engine
+        # Use server-release profile so the long-running server binary gets
+        # panic=unwind (survives per-request panics) while the CLI above
+        # keeps its size-optimised panic=abort build.
+        run: cargo build --profile server-release --target ${{ matrix.target }} -p assay-engine --bin assay-engine
 
       - name: Package artifacts
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/assay         dist/assay-${{ matrix.suffix }}
-          cp target/${{ matrix.target }}/release/assay-engine  dist/assay-engine-${{ matrix.suffix }}
+          cp target/${{ matrix.target }}/release/assay              dist/assay-${{ matrix.suffix }}
+          cp target/${{ matrix.target }}/server-release/assay-engine dist/assay-engine-${{ matrix.suffix }}
           ls -la dist/
 
       - uses: actions/upload-artifact@v7

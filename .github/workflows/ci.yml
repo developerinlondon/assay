@@ -530,3 +530,104 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: obi1kenobi/cargo-semver-checks-action@v2
+
+  # Lint gate: zero warnings across the whole workspace.  Runs on every
+  # Rust diff so lint regressions are caught at PR time, not release time.
+  # Pre-existing suppressed lints are documented in the -A flags below;
+  # remove them as they are fixed rather than adding new ones.
+  clippy:
+    name: clippy
+    needs: changes
+    if: needs.changes.outputs.assay_rust == 'true'
+    runs-on: ${{
+        (github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]'))
+        || 'ubuntu-latest'
+      }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: jdx/mise-action@v4.0.1
+        with:
+          version: 2026.4.17
+          install: true
+          cache: true
+
+      - name: Add ~/.cargo/bin to PATH (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Use dedicated Cargo target dir (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: |
+          mkdir -p /var/cache/runner-work/assay-target
+          echo "CARGO_TARGET_DIR=/var/cache/runner-work/assay-target" >> "$GITHUB_ENV"
+
+      - name: Install clippy component
+        run: rustup component add clippy
+
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
+        with:
+          shared-key: "clippy-x86_64-unknown-linux-gnu-v1"
+          key: ${{ hashFiles('**/Cargo.lock') }}
+          cache-all-crates: "true"
+          cache-targets: "true"
+          save-if: ${{ github.event_name == 'pull_request' }}
+
+      - name: cargo clippy
+        # -D warnings: zero tolerance for new lint violations.
+        # Pre-existing suppressions go here as -A <lint> with a comment;
+        # removing them as they are fixed is preferred over accumulating more.
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # Boots / validates every shipped example config and workflow so rot
+  # is caught before users hit it.  Known-failing cases that are being
+  # fixed on wt/docs are allowed to fail (XFAIL in the script output)
+  # without blocking CI; they become hard failures once that branch lands.
+  smoke-examples:
+    name: smoke-examples
+    needs: changes
+    if: needs.changes.outputs.assay_rust == 'true' || needs.changes.outputs.engine_lua == 'true'
+    runs-on: ${{
+        (github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]'))
+        || 'ubuntu-latest'
+      }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: jdx/mise-action@v4.0.1
+        with:
+          version: 2026.4.17
+          install: true
+          cache: true
+
+      - name: Add ~/.cargo/bin to PATH (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Use dedicated Cargo target dir (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: |
+          mkdir -p /var/cache/runner-work/assay-target
+          echo "CARGO_TARGET_DIR=/var/cache/runner-work/assay-target" >> "$GITHUB_ENV"
+          rm -rf target
+          ln -s /var/cache/runner-work/assay-target target
+
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
+        with:
+          shared-key: "smoke-x86_64-unknown-linux-gnu-v1"
+          key: ${{ hashFiles('**/Cargo.lock') }}
+          cache-all-crates: "true"
+          cache-targets: "true"
+          save-if: ${{ github.event_name == 'pull_request' }}
+
+      - name: Build assay and assay-engine
+        run: |
+          cargo build --release -p assay-lua --bin assay
+          cargo build --profile server-release -p assay-engine --bin assay-engine
+
+      - name: Run example smoke tests
+        run: bash scripts/smoke-examples.sh
