@@ -9,6 +9,7 @@
 //! surface, and asserts on persistent state — never on logs or stdout.
 
 use assay_workflow::{SqliteStore, WorkflowCtx};
+use serial_test::serial;
 use std::sync::Arc;
 
 async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
@@ -718,10 +719,26 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 /// Locate the `assay` binary inside the workspace target dir. Tries
-/// `debug` then `release`. Returns `None` if neither exists — caller
-/// should skip the test with a message in that case (CI builds the
-/// binary first; a fresh local checkout might not have it yet).
+/// `debug` then `release`.
+///
+/// **Failure policy** — silent SKIP is the rot vector that hid this suite for
+/// 4 releases. The policy is now explicit:
+///
+/// - If `ASSAY_E2E_SKIP=1` is set, return `None` so the caller can skip
+///   gracefully. This is the only sanctioned skip path.
+/// - Otherwise, if the binary is not found, **panic** with an actionable
+///   message. In CI (`CI=true`) this is always fatal. Locally it forces
+///   developers to either build the binary or opt-out explicitly.
+///
+/// Build command: `cargo build --bin assay -p assay-lua` (honours
+/// `CARGO_TARGET_DIR`). Set `ASSAY_E2E_SKIP=1` to skip locally without
+/// building.
 fn locate_assay_binary() -> Option<PathBuf> {
+    // Explicit opt-out: skip gracefully only when the caller sets this.
+    if std::env::var_os("ASSAY_E2E_SKIP").as_deref() == Some(std::ffi::OsStr::new("1")) {
+        return None;
+    }
+
     // Honour an explicit CARGO_TARGET_DIR first — CI (and local multi-build
     // setups) point this at a dedicated target dir that is NOT a `target`
     // subdir of the workspace, so the upward walk below would miss it.
@@ -737,7 +754,7 @@ fn locate_assay_binary() -> Option<PathBuf> {
         }
     }
 
-    let here = std::env::current_dir().ok()?;
+    let here = std::env::current_dir().ok().unwrap_or_default();
     // Walk up until we find a `target` dir (handles running from
     // workspace root or from the crate dir).
     let mut probe = here.clone();
@@ -751,9 +768,18 @@ fn locate_assay_binary() -> Option<PathBuf> {
             return Some(cand_rel);
         }
         if !probe.pop() {
-            return None;
+            break;
         }
     }
+
+    // Binary not found. Panic loudly — silent skip is the rot vector.
+    panic!(
+        "assay binary not found — build with `cargo build --bin assay -p assay-lua` \
+         (honours CARGO_TARGET_DIR); set ASSAY_E2E_SKIP=1 to skip these tests locally.\n\
+         Searched: CARGO_TARGET_DIR={:?}, cwd={:?}",
+        std::env::var_os("CARGO_TARGET_DIR"),
+        here,
+    );
 }
 
 /// Wait for the workflow to reach a terminal status, polling its REST
@@ -1426,22 +1452,27 @@ e.workflow:listen({ queue = "default" })
 /// The test sets ASSAY_WF_DISPATCH_TIMEOUT_SECS=2 on the in-process engine
 /// so the recovery happens quickly.
 #[tokio::test]
+#[serial]
 async fn lua_worker_crash_resumes_workflow() {
     let Some(assay_bin) = locate_assay_binary() else {
-        eprintln!("SKIP: lua_worker_crash_resumes_workflow — no assay binary");
+        eprintln!("SKIP: lua_worker_crash_resumes_workflow — no assay binary (ASSAY_E2E_SKIP=1)");
         return;
     };
 
-    // Short dispatch-recovery timeout. Env vars are process-global, so all
-    // tests in this binary share the value. The dispatch poller reads it
-    // each tick, so other tests still get correct behaviour — just with
-    // a 2s recovery budget. Their workflows submit commands well before
-    // that, so they're unaffected.
+    // Short dispatch-recovery timeout so the lease ages out in ~2s rather
+    // than the production default. ASSAY_WF_DISPATCH_TIMEOUT_SECS is a
+    // process-global env var — it can race with concurrently-running tests
+    // that also exercise the dispatch poller. The #[serial] attribute above
+    // (serial_test crate) serialises this test against any other #[serial]
+    // test in this binary, eliminating the race without requiring a global
+    // `--test-threads=1` that would needlessly slow unrelated async tests.
+    // Any test that mutates ASSAY_WF_DISPATCH_TIMEOUT_SECS must also carry
+    // #[serial].
     //
     // SAFETY: set_var is unsafe in Rust 2024 because it can race with
-    // multi-threaded readers. Acceptable here: tests in this binary all
-    // tolerate any value of this var, and we set it before any workflow
-    // runs in parallel.
+    // concurrent readers. The #[serial] guard above prevents concurrent
+    // execution with other env-mutating tests; remaining concurrent tests
+    // tolerate any u64 value for this var.
     unsafe { std::env::set_var("ASSAY_WF_DISPATCH_TIMEOUT_SECS", "2") };
 
     let (url, _h) = start_test_server().await;

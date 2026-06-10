@@ -149,7 +149,21 @@ function M.make(workflow_id, history)
       local recorded = rec.input
       if type(recorded) == "string" then
         local ok, decoded = pcall(json.parse, recorded)
-        if not ok then return end
+        if not ok then
+          -- History entry exists but its input field is not valid JSON.
+          -- This indicates corrupted or pre-encoding-change history. Log
+          -- visibly so operators can triage — but do not fail the workflow
+          -- task, since the name check above already caught any name drift
+          -- and a hard fail on unparseable args would block recovery.
+          log.warn(string.format(
+            "NonDeterminismCheck: activity seq %d ('%s') — " ..
+            "recorded input could not be decoded (history may be corrupted " ..
+            "or from an older schema); skipping args comparison. " ..
+            "raw recorded input: %s",
+            seq, tostring(name), tostring(rec.input)
+          ))
+          return
+        end
         recorded = decoded
       end
       local want, have = canon(recorded), canon(input)
