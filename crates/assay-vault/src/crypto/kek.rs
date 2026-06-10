@@ -7,17 +7,25 @@
 //! At rest the KEK lives in `vault.kek_metadata.sealed_blob`; how the
 //! blob maps back to raw bytes depends on `sealing_method`:
 //!
-//! - `plaintext` (Phase 1 placeholder): blob *is* the 32 raw bytes.
-//!   Engine boot logs a warning at INFO level so operators know to
-//!   migrate to a real sealing method as Phase 2 lands.
-//! - `shamir` / `kms-*` / `hsm` (Phase 2): real sealing — the unsealed
-//!   bytes never touch disk; this handle holds them in memory only.
+//! - `sealed-v1` (default since 0.5.0): the blob is the KEK encrypted
+//!   with AES-256-GCM-SIV under a wrapping key derived from operator-
+//!   supplied unseal material (env var, file, or Argon2id passphrase).
+//!   The KEK never touches disk in plaintext. See
+//!   [`crate::crypto::kek_seal`] for the blob format.
+//! - `plaintext` (dev-only opt-in via `dev_plaintext_kek = true`): blob
+//!   *is* the 32 raw bytes. Logs a CRITICAL warning. NOT safe for real
+//!   secrets.
+//! - `shamir` / `kms-*` / `hsm` (Phase 2 / future): real sealing with
+//!   an unseal ceremony — the unsealed bytes never touch disk; this
+//!   handle holds them in memory only.
 //!
 //! The handle exposes envelope ops (wrap / unwrap a DEK) but never
 //! exposes the raw bytes — every consumer goes through the wrap/unwrap
 //! API. That confines the KEK material to this file.
 
 use std::sync::Arc;
+
+use zeroize::Zeroize;
 
 use crate::crypto::aead::{KEY_LEN, NONCE_LEN, decrypt, encrypt, random_nonce};
 use crate::error::{Result, VaultError};
@@ -33,6 +41,22 @@ pub struct KekHandle {
 struct KekInner {
     kid: String,
     key: [u8; KEY_LEN],
+}
+
+impl Drop for KekInner {
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
+}
+
+/// Redacting Debug — never prints key bytes.
+impl std::fmt::Debug for KekHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KekHandle")
+            .field("kid", &self.inner.kid)
+            .field("key", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Fully-resolved wrapped DEK — the bytes the storage layer puts on

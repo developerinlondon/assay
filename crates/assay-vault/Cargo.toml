@@ -1,6 +1,6 @@
 [package]
 name = "assay-vault"
-version = "0.4.1"
+version = "0.5.0"
 categories = ["cryptography", "asynchronous", "database"]
 edition = "2024"
 keywords = ["vault", "secrets", "kv", "transit", "biscuit"]
@@ -101,6 +101,15 @@ aes-gcm-siv = "0.11"
 data-encoding = "2"
 rand = "0.9"
 sha2 = "0.10"
+
+# KEK sealing at rest (#113). The master KEK is never persisted in
+# plaintext: it is sealed under operator-supplied unseal material. A raw
+# 32-byte key is used verbatim as the wrapping key; a passphrase is
+# stretched with Argon2id at the SAME cost envelope assay-auth uses for
+# password hashing (m=64MiB, t=3, p=4). `zeroize` wipes the unseal
+# material and the derived wrapping key from memory on drop.
+argon2 = "0.5"
+zeroize = "1.8"
 
 # Shamir Secret Sharing for the init-unseal flow (plan 17 §S7).
 # Galois-field-256 SSS, pure Rust, audited. ~50 KB on disk.

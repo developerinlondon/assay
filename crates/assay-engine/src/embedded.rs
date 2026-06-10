@@ -127,7 +127,7 @@ async fn build_pg(cfg: EngineConfig, b: crate::init::PgBoot) -> anyhow::Result<E
         .map_err(|e| anyhow::anyhow!("workflow store (pg): {e}"))?;
     let auth_ctx = crate::build_auth_ctx_pg(&cfg, &b.pool).await?;
     #[cfg(feature = "vault")]
-    let vault_ctx = crate::build_vault_ctx_pg(&b.modules, &b.pool).await?;
+    let vault_ctx = crate::build_vault_ctx_pg(&b.modules, &cfg.vault, &b.pool).await?;
     #[cfg(not(feature = "vault"))]
     let vault_ctx: Option<()> = None;
 
@@ -154,7 +154,7 @@ async fn build_sqlite(
         .map_err(|e| anyhow::anyhow!("workflow store (sqlite): {e}"))?;
     let auth_ctx = crate::build_auth_ctx_sqlite(&cfg, &b.pool).await?;
     #[cfg(feature = "vault")]
-    let vault_ctx = crate::build_vault_ctx_sqlite(&b.modules, &b.pool).await?;
+    let vault_ctx = crate::build_vault_ctx_sqlite(&b.modules, &cfg.vault, &b.pool).await?;
     #[cfg(not(feature = "vault"))]
     let vault_ctx: Option<()> = None;
 

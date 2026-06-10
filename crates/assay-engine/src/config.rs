@@ -26,6 +26,8 @@ pub struct EngineConfig {
     #[serde(default)]
     pub auth: AuthConfig,
     #[serde(default)]
+    pub vault: VaultConfig,
+    #[serde(default)]
     pub dashboard: DashboardConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -206,6 +208,46 @@ pub struct ExternalIssuerConfig {
 
 fn default_jwks_refresh_secs() -> u64 {
     3600
+}
+
+/// Vault-module deployment shape. Read by the engine binary when the
+/// `vault` Cargo feature is compiled in AND `engine.modules.vault` is
+/// enabled. The master KEK is sealed at rest under operator-supplied
+/// unseal material (#113) — boot fails closed if neither
+/// `unseal_key_source` nor `dev_plaintext_kek` is set.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct VaultConfig {
+    /// Where the engine reads the KEK unseal material. One of:
+    /// - `env:NAME`        — base64 32-byte key (or `passphrase:<text>`)
+    ///   from environment variable `NAME`. Preferred for K8s/systemd.
+    /// - `file:/path`      — same, read from a `0600` file.
+    /// - `base64:BBBB`     — inline base64 raw key (dev/test).
+    /// - `passphrase:TEXT` — inline passphrase, Argon2id-stretched.
+    ///
+    /// Empty (the default) ⇒ no source. Combined with
+    /// `dev_plaintext_kek = false` this makes the vault fail closed at
+    /// boot rather than persist the KEK in plaintext. Supports the
+    /// engine's `${VAR}` expansion, so `unseal_key_source = "env:..."`
+    /// is the recommended indirection (don't inline secrets in TOML).
+    #[serde(default)]
+    pub unseal_key_source: String,
+    /// Dev-only escape hatch. When `true`, the KEK is persisted in
+    /// PLAINTEXT at rest and boot logs a CRITICAL warning. NEVER enable
+    /// for real secrets — a DB read decrypts everything. Default false.
+    #[serde(default)]
+    pub dev_plaintext_kek: bool,
+    /// Gate for the irreversible plaintext→sealed-v1 auto-migration.
+    ///
+    /// When an existing `plaintext` KEK row is found on boot and
+    /// `unseal_key_source` is set, the engine will NOT overwrite the row
+    /// unless this flag is `true`. This prevents an accidental one-way
+    /// migration on first upgrade. Back up the database before enabling.
+    ///
+    /// Once the migration completes (log line "MIGRATED plaintext KEK"),
+    /// this flag may be removed from `engine.toml`. Default false.
+    #[serde(default)]
+    pub allow_plaintext_migration: bool,
 }
 
 /// Session module knobs.

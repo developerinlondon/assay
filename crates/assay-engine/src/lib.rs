@@ -53,7 +53,7 @@ pub use assay_workflow as workflow;
 
 pub use config::{
     AuthConfig, AuthOidcProviderConfig, AuthPasskeyConfig, AuthSessionConfig, BackendConfig,
-    DashboardConfig, EngineConfig, ServerConfig,
+    DashboardConfig, EngineConfig, ServerConfig, VaultConfig,
 };
 pub use state::{AdminApiKeys, EngineState};
 
@@ -76,19 +76,28 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
 #[cfg(all(feature = "vault", feature = "backend-postgres"))]
 async fn build_vault_ctx_pg(
     modules: &[String],
+    vault_cfg: &VaultConfig,
     pool: &sqlx::PgPool,
 ) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
     if !modules.iter().any(|m| m == "vault") {
         return Ok(None);
     }
-    let kek = assay_vault::crypto::kek_store::load_or_init_postgres(pool)
+    let boot = resolve_kek_boot_config(vault_cfg)?;
+    let sealed_at_rest = boot.material.is_some();
+    let kek = assay_vault::crypto::kek_store::load_or_init_postgres(pool, &boot)
         .await
         .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (pg): {e}"))?;
     // The `vault` umbrella feature on assay-vault implies vault-kv +
     // vault-transit, so the with_* methods are unconditionally
-    // available here.
-    let mut ctx = assay_vault::VaultCtx::new()
-        .with_kek(kek)
+    // available here. Report the at-rest method honestly in seal-status:
+    // sealed-v1 when an unseal key sealed it, plaintext for the dev hatch.
+    let base = assay_vault::VaultCtx::new();
+    let base = if sealed_at_rest {
+        base.with_kek_sealed(kek)
+    } else {
+        base.with_kek(kek)
+    };
+    let mut ctx = base
         .with_kv(assay_vault::store::postgres::PgKvStore::new(pool.clone()))
         .with_transit(assay_vault::store::postgres::PgTransitStore::new(
             pool.clone(),
@@ -142,16 +151,24 @@ async fn build_vault_ctx_pg(
 #[cfg(all(feature = "vault", feature = "backend-sqlite"))]
 async fn build_vault_ctx_sqlite(
     modules: &[String],
+    vault_cfg: &VaultConfig,
     pool: &sqlx::SqlitePool,
 ) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
     if !modules.iter().any(|m| m == "vault") {
         return Ok(None);
     }
-    let kek = assay_vault::crypto::kek_store::load_or_init_sqlite(pool)
+    let boot = resolve_kek_boot_config(vault_cfg)?;
+    let sealed_at_rest = boot.material.is_some();
+    let kek = assay_vault::crypto::kek_store::load_or_init_sqlite(pool, &boot)
         .await
         .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (sqlite): {e}"))?;
-    let mut ctx = assay_vault::VaultCtx::new()
-        .with_kek(kek)
+    let base = assay_vault::VaultCtx::new();
+    let base = if sealed_at_rest {
+        base.with_kek_sealed(kek)
+    } else {
+        base.with_kek(kek)
+    };
+    let mut ctx = base
         .with_kv(assay_vault::store::sqlite::SqliteKvStore::new(pool.clone()))
         .with_transit(assay_vault::store::sqlite::SqliteTransitStore::new(
             pool.clone(),
@@ -199,6 +216,44 @@ async fn build_vault_ctx_sqlite(
         ctx = ctx.with_dynamic(svc);
     }
     Ok(Some(ctx))
+}
+
+/// Resolve the `[vault]` config into the vault crate's [`KekBootConfig`]
+/// — read the unseal material from its configured source (env/file/
+/// inline) and honor the dev escape hatch. Fail-closed semantics live
+/// in the vault crate's loader; this just resolves the source. A
+/// configured-but-unreadable source is a hard boot error (never a
+/// silent plaintext fallback).
+#[cfg(feature = "vault")]
+fn resolve_kek_boot_config(
+    cfg: &VaultConfig,
+) -> anyhow::Result<assay_vault::crypto::kek_store::KekBootConfig> {
+    use assay_vault::crypto::kek_store::KekBootConfig;
+    use assay_vault::crypto::kek_seal::UnsealSource;
+
+    let source = UnsealSource::parse(&cfg.unseal_key_source)
+        .map_err(|e| anyhow::anyhow!("vault.unseal_key_source: {e}"))?;
+    match source {
+        Some(src) => {
+            let material = src
+                .resolve()
+                .map_err(|e| anyhow::anyhow!("resolve vault unseal material: {e}"))?;
+            if cfg.dev_plaintext_kek {
+                tracing::warn!(
+                    target: "assay-engine",
+                    "both vault.unseal_key_source and vault.dev_plaintext_kek are set; using the \
+                     unseal key and IGNORING dev_plaintext_kek"
+                );
+            }
+            if cfg.allow_plaintext_migration {
+                Ok(KekBootConfig::sealed_allow_migration(material))
+            } else {
+                Ok(KekBootConfig::sealed(material))
+            }
+        }
+        None if cfg.dev_plaintext_kek => Ok(KekBootConfig::dev_plaintext()),
+        None => Ok(KekBootConfig::unset()),
+    }
 }
 
 #[cfg(feature = "backend-postgres")]

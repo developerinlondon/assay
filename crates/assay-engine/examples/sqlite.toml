@@ -22,6 +22,34 @@ enabled = true
 [dashboard]
 enabled = true
 
+# Vault module (default-enabled when the `vault` feature is compiled in).
+# The master KEK is sealed at rest (#113): the engine will NOT boot with
+# an unsealed KEK. Provide unseal material via ONE of:
+#
+#   1. (recommended) An env var holding a base64 32-byte key:
+#        export ASSAY_VAULT_UNSEAL_KEY=$(openssl rand -base64 32)
+#      then point the engine at it:
+[vault]
+unseal_key_source = "env:ASSAY_VAULT_UNSEAL_KEY"
+#
+#   2. A 0600 file:        unseal_key_source = "file:/var/lib/assay/unseal.key"
+#   3. A passphrase:       unseal_key_source = "passphrase:correct horse battery staple"
+#                          (also: a var/file whose contents start with `passphrase:`)
+#
+# Local demos ONLY — persist the KEK in PLAINTEXT (logs a CRITICAL
+# warning; never use for real secrets):
+#   dev_plaintext_kek = true
+#
+# Day-one boot: set the env var above, then run the engine.
+#
+# Migration from a pre-#113 plaintext KEK (IRREVERSIBLE — back up DB first):
+#   1. Set unseal_key_source above.
+#   2. Uncomment allow_plaintext_migration below.
+#   3. Reboot — the engine re-seals the existing KEK in place (one-way).
+#   4. Remove allow_plaintext_migration once the "MIGRATED" log line appears.
+#
+# allow_plaintext_migration = true
+
 [logging]
 level = "info"
 format = "pretty"

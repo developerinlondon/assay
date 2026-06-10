@@ -22,6 +22,27 @@ enabled = true
 [dashboard]
 enabled = true
 
+# Vault module (default-enabled when the `vault` feature is compiled in).
+# The master KEK is sealed at rest (#113) under operator-supplied unseal
+# material — the engine fails closed rather than persist the KEK in
+# plaintext. Inject a base64 32-byte key out-of-band (K8s Secret env,
+# systemd EnvironmentFile, …), exactly like DATABASE_URL above:
+#   export ASSAY_VAULT_UNSEAL_KEY=$(openssl rand -base64 32)
+[vault]
+unseal_key_source = "env:ASSAY_VAULT_UNSEAL_KEY"
+# Alternatives: `file:/run/secrets/assay_unseal` (must be 0600) or an
+# inline `passphrase:...` (Argon2id-stretched). NEVER set
+# dev_plaintext_kek = true in production — it persists the KEK in
+# plaintext and logs a CRITICAL warning.
+#
+# Migration from a pre-#113 plaintext KEK (IRREVERSIBLE — back up DB first):
+#   1. Set unseal_key_source above.
+#   2. Uncomment allow_plaintext_migration below.
+#   3. Reboot — the engine re-seals the existing KEK in place (one-way).
+#   4. Remove allow_plaintext_migration once the "MIGRATED" log line appears.
+#
+# allow_plaintext_migration = true
+
 # Pass-through JWT validation against an upstream OIDC provider
 # (added in 0.3.2). Configure one block per trusted issuer. Tokens
 # whose `iss` matches a configured `issuer_url` are verified against

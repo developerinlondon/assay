@@ -29,6 +29,11 @@ use crate::error::{Result, VaultError};
 pub enum SealingMethod {
     /// Phase-1 placeholder. Blob IS the raw 32 bytes. WARN-logged.
     Plaintext,
+    /// KEK sealed at rest under operator-supplied unseal material
+    /// (#113) — env-var/file base64 key or Argon2id passphrase. The
+    /// KEK is unsealed into memory at boot; the runtime is operational
+    /// (not gated on an unseal ceremony like Shamir).
+    SealedV1,
     /// Shamir Secret Sharing — KEK split into N shares; threshold K
     /// shares reconstruct on unseal. Phase 2 default for non-cloud.
     Shamir { threshold: u8, shares_count: u8 },
@@ -49,6 +54,7 @@ impl SealingMethod {
     pub fn as_column(&self) -> &'static str {
         match self {
             Self::Plaintext => "plaintext",
+            Self::SealedV1 => "sealed-v1",
             Self::Shamir { .. } => "shamir",
             Self::KmsAws { .. } => "kms-aws",
             Self::KmsGcp { .. } => "kms-gcp",
@@ -58,6 +64,7 @@ impl SealingMethod {
     pub fn parse(s: &str) -> Result<Self> {
         match s {
             "plaintext" => Ok(Self::Plaintext),
+            "sealed-v1" => Ok(Self::SealedV1),
             // Shamir + KMS variants need their parameters from
             // surrounding columns (share_threshold, share_count, KMS
             // config from engine.toml). The store layer hands the

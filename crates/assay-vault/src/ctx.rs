@@ -131,6 +131,20 @@ impl VaultCtx {
         self
     }
 
+    /// Like [`Self::with_kek`] but records the runtime seal method as
+    /// `sealed-v1` (#113) — the KEK was unsealed from an at-rest sealed
+    /// blob at boot. Functionally identical to `with_kek` (the KEK is
+    /// live in memory and the vault is operational); only the reported
+    /// `seal-status.method` differs, so operators can confirm the KEK is
+    /// sealed at rest rather than plaintext.
+    pub fn with_kek_sealed(mut self, kek: KekHandle) -> Self {
+        let seal_state =
+            SealState::unsealed(SealingMethod::SealedV1, kek.kid().to_string(), kek.clone());
+        self.kek = kek;
+        self.seal_state = seal_state;
+        self
+    }
+
     /// Phase-2 builder: vault starts sealed; operator must submit
     /// shares via `/sys/unseal` to bring it up. The KEK held on the
     /// ctx is a placeholder until then — handlers must check

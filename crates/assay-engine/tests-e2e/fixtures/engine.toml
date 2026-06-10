@@ -24,6 +24,13 @@ rp_name = "Assay E2E"
 [auth.oidc_provider]
 enabled = true
 
+# Vault module is default-enabled when compiled in. This is a throwaway
+# E2E fixture (never production) so it uses an inline base64 32-byte
+# unseal key to exercise the real sealed-at-rest boot path (#113). The
+# value below decodes to 32 zero bytes — fine for an ephemeral fixture.
+[vault]
+unseal_key_source = "base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
 [logging]
 level = "info"
 format = "pretty"
