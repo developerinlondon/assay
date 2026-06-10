@@ -232,13 +232,40 @@ use serde_json::json;
 
 use crate::ctx::AuthCtx;
 
+/// Constant-time equality check for CSRF tokens.
+///
+/// Returns `true` only when `a` and `b` are non-empty and byte-for-byte
+/// identical. The empty-string guard ensures a session whose stored
+/// `csrf_token` is somehow empty can never fail open against a missing
+/// `x-csrf-token` header (which also resolves to `""`).
+///
+/// Exported (`pub`) so `crate::oidc_provider::handlers::consent_post`
+/// can use the same standard rather than a plain `!=` compare.
+pub fn csrf_tokens_match(a: &str, b: &str) -> bool {
+    let a = a.as_bytes();
+    let b = b.as_bytes();
+    // Reject empty on either side before the length-equality branch so
+    // (empty, empty) never passes.
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 /// Enforce the double-submit CSRF check for cookie-session-authenticated
 /// state-changing requests.
 ///
 /// Resolves the session from the `assay_session` cookie, then compares
 /// the `x-csrf-token` request header value against the session's stored
-/// `csrf_token`. Returns `Err(Response)` (403) on any mismatch or when
-/// the session cannot be resolved (caller should early-return the error).
+/// `csrf_token` via [`csrf_tokens_match`]. Returns `Err(Response)` (403)
+/// on any mismatch, empty/missing header, or unresolvable session.
 ///
 /// Handlers that are bearer-token-only (admin API, OAuth token endpoint)
 /// do NOT call this — the bearer token itself is non-ambient authority.
@@ -246,6 +273,16 @@ async fn check_csrf(
     headers: &HeaderMap,
     ctx: &AuthCtx,
 ) -> std::result::Result<(), Response> {
+    // Read the submitted token first — reject immediately if absent or
+    // empty, before touching the session store.
+    let submitted = headers
+        .get(CSRF_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if submitted.is_empty() {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "csrf token missing"}))).into_response());
+    }
+
     // Resolve the session from the cookie.
     let sid = match parse_cookie(headers, SESSION_COOKIE) {
         Some(s) => s,
@@ -261,26 +298,7 @@ async fn check_csrf(
         }
     };
 
-    // Read the submitted token from the request header.
-    let submitted = headers
-        .get(CSRF_HEADER)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    // Constant-time comparison to avoid timing side-channels.
-    let a = submitted.as_bytes();
-    let b = session.csrf_token.as_bytes();
-    let mismatch = if a.len() != b.len() {
-        true
-    } else {
-        let mut diff = 0u8;
-        for (x, y) in a.iter().zip(b.iter()) {
-            diff |= x ^ y;
-        }
-        diff != 0
-    };
-
-    if mismatch {
+    if !csrf_tokens_match(submitted, &session.csrf_token) {
         return Err((StatusCode::FORBIDDEN, Json(json!({"error": "csrf mismatch"}))).into_response());
     }
     Ok(())

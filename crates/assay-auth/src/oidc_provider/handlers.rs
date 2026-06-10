@@ -261,7 +261,7 @@ pub async fn consent_post(
     let Some(session) = session else {
         return error_html(StatusCode::UNAUTHORIZED, "no active session");
     };
-    if session.csrf_token != submission.csrf_token {
+    if !crate::session::csrf_tokens_match(&submission.csrf_token, &session.csrf_token) {
         return error_html(StatusCode::FORBIDDEN, "csrf mismatch");
     }
 
