@@ -9,6 +9,7 @@
 //! surface, and asserts on persistent state — never on logs or stdout.
 
 use assay_workflow::{SqliteStore, WorkflowCtx};
+use serial_test::serial;
 use std::sync::Arc;
 
 async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
@@ -718,11 +719,42 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 /// Locate the `assay` binary inside the workspace target dir. Tries
-/// `debug` then `release`. Returns `None` if neither exists — caller
-/// should skip the test with a message in that case (CI builds the
-/// binary first; a fresh local checkout might not have it yet).
+/// `debug` then `release`.
+///
+/// **Failure policy** — silent SKIP is the rot vector that hid this suite for
+/// 4 releases. The policy is now explicit:
+///
+/// - If `ASSAY_E2E_SKIP=1` is set, return `None` so the caller can skip
+///   gracefully. This is the only sanctioned skip path.
+/// - Otherwise, if the binary is not found, **panic** with an actionable
+///   message. In CI (`CI=true`) this is always fatal. Locally it forces
+///   developers to either build the binary or opt-out explicitly.
+///
+/// Build command: `cargo build --bin assay -p assay-lua` (honours
+/// `CARGO_TARGET_DIR`). Set `ASSAY_E2E_SKIP=1` to skip locally without
+/// building.
 fn locate_assay_binary() -> Option<PathBuf> {
-    let here = std::env::current_dir().ok()?;
+    // Explicit opt-out: skip gracefully only when the caller sets this.
+    if std::env::var_os("ASSAY_E2E_SKIP").as_deref() == Some(std::ffi::OsStr::new("1")) {
+        return None;
+    }
+
+    // Honour an explicit CARGO_TARGET_DIR first — CI (and local multi-build
+    // setups) point this at a dedicated target dir that is NOT a `target`
+    // subdir of the workspace, so the upward walk below would miss it.
+    if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
+        let base = PathBuf::from(target_dir);
+        let cand_dbg = base.join("debug/assay");
+        let cand_rel = base.join("release/assay");
+        if cand_dbg.is_file() {
+            return Some(cand_dbg);
+        }
+        if cand_rel.is_file() {
+            return Some(cand_rel);
+        }
+    }
+
+    let here = std::env::current_dir().ok().unwrap_or_default();
     // Walk up until we find a `target` dir (handles running from
     // workspace root or from the crate dir).
     let mut probe = here.clone();
@@ -736,9 +768,18 @@ fn locate_assay_binary() -> Option<PathBuf> {
             return Some(cand_rel);
         }
         if !probe.pop() {
-            return None;
+            break;
         }
     }
+
+    // Binary not found. Panic loudly — silent skip is the rot vector.
+    panic!(
+        "assay binary not found — build with `cargo build --bin assay -p assay-lua` \
+         (honours CARGO_TARGET_DIR); set ASSAY_E2E_SKIP=1 to skip these tests locally.\n\
+         Searched: CARGO_TARGET_DIR={:?}, cwd={:?}",
+        std::env::var_os("CARGO_TARGET_DIR"),
+        here,
+    );
 }
 
 /// Wait for the workflow to reach a terminal status, polling its REST
@@ -791,7 +832,6 @@ async fn wait_for_workflow_status(
 /// 9.4 — End-to-end: a real Lua worker subprocess runs a workflow with
 /// two sequential activities and the result lands in the workflow record.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_runs_to_completion() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!(
@@ -810,24 +850,24 @@ async fn lua_workflow_runs_to_completion() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("TwoStep", function(ctx, input)
+e.workflow:register_workflow("TwoStep", function(ctx, input)
     local a = ctx:execute_activity("step1", { n = input.n })
     local b = ctx:execute_activity("step2", { prev = a })
     return { first = a, second = b, sum = a.value + b.value }
 end)
 
-workflow.activity("step1", function(ctx, input)
+e.workflow:register_activity("step1", function(ctx, input)
     return { value = input.n * 2 }
 end)
 
-workflow.activity("step2", function(ctx, input)
+e.workflow:register_activity("step2", function(ctx, input)
     return { value = input.prev.value + 10 }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -885,7 +925,6 @@ workflow.listen({ queue = "default" })
 /// `ctx:wait_for_signal("approve")`, the test sends the signal after a
 /// pause, and the workflow completes with the signal payload.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_with_signal() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_with_signal — no assay binary");
@@ -900,15 +939,15 @@ async fn lua_workflow_with_signal() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("WaitForApproval", function(ctx, input)
+e.workflow:register_workflow("WaitForApproval", function(ctx, input)
     local approval = ctx:wait_for_signal("approve")
     return { approved = true, by = approval and approval.by }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -986,7 +1025,6 @@ workflow.listen({ queue = "default" })
 /// silently showed as COMPLETED on the dashboard even though the
 /// app-level pipeline_state said "cancelled".
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_ctx_cancel_lands_in_cancelled_status() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_ctx_cancel_lands_in_cancelled_status — no assay binary");
@@ -1001,16 +1039,16 @@ async fn lua_workflow_ctx_cancel_lands_in_cancelled_status() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("SelfCancel", function(ctx, input)
+e.workflow:register_workflow("SelfCancel", function(ctx, input)
     ctx:cancel("operator rejected the request")
     -- unreachable — ctx:cancel raises
     return { unreachable = true }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -1058,7 +1096,6 @@ workflow.listen({ queue = "default" })
 /// workflow.start({namespace}) and workflow.listen({namespace}) flow
 /// through to the engine's partitioning.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_namespace_scoping_end_to_end() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_namespace_scoping_end_to_end — no assay binary");
@@ -1086,14 +1123,14 @@ async fn lua_workflow_namespace_scoping_end_to_end() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("ScopedPing", function(ctx, input)
+e.workflow:register_workflow("ScopedPing", function(ctx, input)
     return { pong = input.n }
 end)
 
-workflow.listen({ queue = "scoped-q", namespace = "deployments" })
+e.workflow:listen({ queue = "scoped-q", namespace = "deployments" })
 "#,
     )
     .expect("write worker.lua");
@@ -1150,7 +1187,6 @@ workflow.listen({ queue = "scoped-q", namespace = "deployments" })
 /// timer fires, so the workflow completes with the payload (timer is
 /// harmlessly ignored on replay).
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_wait_for_signal_timeout_signal_wins() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_wait_for_signal_timeout_signal_wins — no assay binary");
@@ -1165,10 +1201,10 @@ async fn lua_workflow_wait_for_signal_timeout_signal_wins() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("WaitWithTimeout", function(ctx, input)
+e.workflow:register_workflow("WaitWithTimeout", function(ctx, input)
     local payload = ctx:wait_for_signal("decide", { timeout = 30 })
     if payload == nil then
         return { timed_out = true }
@@ -1176,7 +1212,7 @@ workflow.define("WaitWithTimeout", function(ctx, input)
     return { timed_out = false, choice = payload.choice }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -1235,7 +1271,6 @@ workflow.listen({ queue = "default" })
 /// signal arrives, so the workflow resumes with nil and records the
 /// timeout branch.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_wait_for_signal_timeout_timer_wins() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_wait_for_signal_timeout_timer_wins — no assay binary");
@@ -1250,10 +1285,10 @@ async fn lua_workflow_wait_for_signal_timeout_timer_wins() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("WaitWithShortTimeout", function(ctx, input)
+e.workflow:register_workflow("WaitWithShortTimeout", function(ctx, input)
     local payload = ctx:wait_for_signal("decide", { timeout = 1 })
     if payload == nil then
         return { timed_out = true }
@@ -1261,7 +1296,7 @@ workflow.define("WaitWithShortTimeout", function(ctx, input)
     return { timed_out = false, choice = payload.choice }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -1306,7 +1341,6 @@ workflow.listen({ queue = "default" })
 /// Creates a schedule with a never-run-before `next_run_at`, the scheduler
 /// fires it on its next tick, the worker claims and completes it.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_cron_schedule_fires_real_workflow() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_cron_schedule_fires_real_workflow — no assay binary");
@@ -1322,19 +1356,19 @@ async fn lua_cron_schedule_fires_real_workflow() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("CronTriggered", function(ctx, input)
+e.workflow:register_workflow("CronTriggered", function(ctx, input)
     local r = ctx:execute_activity("greet", { who = "world" })
     return { greeting = r.message }
 end)
 
-workflow.activity("greet", function(ctx, input)
+e.workflow:register_activity("greet", function(ctx, input)
     return { message = "hello, " .. input.who }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -1418,23 +1452,27 @@ workflow.listen({ queue = "default" })
 /// The test sets ASSAY_WF_DISPATCH_TIMEOUT_SECS=2 on the in-process engine
 /// so the recovery happens quickly.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
+#[serial]
 async fn lua_worker_crash_resumes_workflow() {
     let Some(assay_bin) = locate_assay_binary() else {
-        eprintln!("SKIP: lua_worker_crash_resumes_workflow — no assay binary");
+        eprintln!("SKIP: lua_worker_crash_resumes_workflow — no assay binary (ASSAY_E2E_SKIP=1)");
         return;
     };
 
-    // Short dispatch-recovery timeout. Env vars are process-global, so all
-    // tests in this binary share the value. The dispatch poller reads it
-    // each tick, so other tests still get correct behaviour — just with
-    // a 2s recovery budget. Their workflows submit commands well before
-    // that, so they're unaffected.
+    // Short dispatch-recovery timeout so the lease ages out in ~2s rather
+    // than the production default. ASSAY_WF_DISPATCH_TIMEOUT_SECS is a
+    // process-global env var — it can race with concurrently-running tests
+    // that also exercise the dispatch poller. The #[serial] attribute above
+    // (serial_test crate) serialises this test against any other #[serial]
+    // test in this binary, eliminating the race without requiring a global
+    // `--test-threads=1` that would needlessly slow unrelated async tests.
+    // Any test that mutates ASSAY_WF_DISPATCH_TIMEOUT_SECS must also carry
+    // #[serial].
     //
     // SAFETY: set_var is unsafe in Rust 2024 because it can race with
-    // multi-threaded readers. Acceptable here: tests in this binary all
-    // tolerate any value of this var, and we set it before any workflow
-    // runs in parallel.
+    // concurrent readers. The #[serial] guard above prevents concurrent
+    // execution with other env-mutating tests; remaining concurrent tests
+    // tolerate any u64 value for this var.
     unsafe { std::env::set_var("ASSAY_WF_DISPATCH_TIMEOUT_SECS", "2") };
 
     let (url, _h) = start_test_server().await;
@@ -1446,8 +1484,8 @@ async fn lua_worker_crash_resumes_workflow() {
 
     let worker_path = tmp.path().join("worker.lua");
     let worker_src = r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
 local COUNTER = "__COUNTER_PATH__"
 
@@ -1457,18 +1495,18 @@ local function bump_and_token()
     return { token = "tok-" .. tostring(cur + 1) }
 end
 
-workflow.define("CrashSafeWorkflow", function(ctx, input)
+e.workflow:register_workflow("CrashSafeWorkflow", function(ctx, input)
     local t = ctx:side_effect("issue", bump_and_token)
     ctx:sleep(2)
     local r = ctx:execute_activity("step", { token = t.token })
     return { token = t, step = r }
 end)
 
-workflow.activity("step", function(ctx, input)
+e.workflow:register_activity("step", function(ctx, input)
     return { saw = input.token }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#
     .replace("__COUNTER_PATH__", counter_path.to_str().unwrap());
     std::fs::write(&worker_path, &worker_src).expect("write worker.lua");
@@ -1596,7 +1634,6 @@ async fn wait_for_event(
 /// records the result in history, and on replay returns the cached value
 /// without re-running the function. Verified by counting function calls.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_side_effect_is_recorded_once() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_side_effect_is_recorded_once — no assay binary");
@@ -1612,8 +1649,8 @@ async fn lua_workflow_side_effect_is_recorded_once() {
 
     let worker_path = tmp.path().join("worker.lua");
     let worker_src = r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
 local COUNTER = "__COUNTER_PATH__"
 
@@ -1626,7 +1663,7 @@ local function bump_counter_and_return_value()
     return { token = "tok-" .. tostring(cur + 1) }
 end
 
-workflow.define("WithSideEffect", function(ctx, input)
+e.workflow:register_workflow("WithSideEffect", function(ctx, input)
     local token = ctx:side_effect("issue_token", bump_counter_and_return_value)
     -- Two activities so we get multiple replay cycles
     local a = ctx:execute_activity("step", { token = token.token })
@@ -1634,11 +1671,11 @@ workflow.define("WithSideEffect", function(ctx, input)
     return { token = token, a = a, b = b }
 end)
 
-workflow.activity("step", function(ctx, input)
+e.workflow:register_activity("step", function(ctx, input)
     return { saw = input.token }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#
     .replace("__COUNTER_PATH__", counter_path.to_str().unwrap());
     std::fs::write(&worker_path, worker_src).expect("write worker.lua");
@@ -1697,7 +1734,6 @@ workflow.listen({ queue = "default" })
 /// complete, picking up the child's result. Verifies the parent and child
 /// run independently as proper workflows (not just inline subroutines).
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_child_workflow_completes_before_parent() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_child_workflow_completes_before_parent — no assay binary");
@@ -1712,10 +1748,10 @@ async fn lua_child_workflow_completes_before_parent() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("Parent", function(ctx, input)
+e.workflow:register_workflow("Parent", function(ctx, input)
     local child_result = ctx:start_child_workflow("Child", {
         workflow_id = "child-of-" .. input.parent_label,
         input = { multiplier = input.multiplier },
@@ -1723,16 +1759,16 @@ workflow.define("Parent", function(ctx, input)
     return { from_child = child_result, parent_label = input.parent_label }
 end)
 
-workflow.define("Child", function(ctx, input)
+e.workflow:register_workflow("Child", function(ctx, input)
     local r = ctx:execute_activity("multiply", { x = 7, by = input.multiplier })
     return { product = r.product }
 end)
 
-workflow.activity("multiply", function(ctx, input)
+e.workflow:register_activity("multiply", function(ctx, input)
     return { product = input.x * input.by }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -1794,7 +1830,6 @@ workflow.listen({ queue = "default" })
 /// the timer never fires, and the activity that came after the sleep is
 /// never scheduled (verified by counting ActivityScheduled events == 0).
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_cancellation_stops_work() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_cancellation_stops_work — no assay binary");
@@ -1809,21 +1844,21 @@ async fn lua_workflow_cancellation_stops_work() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("LongSleepThenWork", function(ctx, input)
+e.workflow:register_workflow("LongSleepThenWork", function(ctx, input)
     ctx:sleep(5)
     -- This activity should NEVER be scheduled — we cancel before the
     -- timer fires.
     return ctx:execute_activity("never_runs", { x = 1 })
 end)
 
-workflow.activity("never_runs", function(ctx, input)
+e.workflow:register_activity("never_runs", function(ctx, input)
     return { x = input.x }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -1912,7 +1947,6 @@ workflow.listen({ queue = "default" })
 /// 9.5 — End-to-end with a durable timer: workflow sleeps for ~1 second
 /// (durably — the timer survives a worker bouncing) then completes.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_with_durable_timer() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_with_durable_timer — no assay binary");
@@ -1927,20 +1961,20 @@ async fn lua_workflow_with_durable_timer() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("SleepThenStep", function(ctx, input)
+e.workflow:register_workflow("SleepThenStep", function(ctx, input)
     ctx:sleep(1)
     local r = ctx:execute_activity("step", { x = input.x })
     return { x = r.x, slept = true }
 end)
 
-workflow.activity("step", function(ctx, input)
+e.workflow:register_activity("step", function(ctx, input)
     return { x = input.x * 3 }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -2027,7 +2061,6 @@ workflow.listen({ queue = "default" })
 /// asserts that the REST endpoint returns the latest state both as a full
 /// map and via the per-query path.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_register_query_exposes_live_state() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_register_query_exposes_live_state — no assay binary");
@@ -2042,10 +2075,10 @@ async fn lua_workflow_register_query_exposes_live_state() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("Staged", function(ctx, input)
+e.workflow:register_workflow("Staged", function(ctx, input)
     local state = { stage = "init", progress = 0 }
     ctx:register_query("stage", function() return state.stage end)
     ctx:register_query("progress", function() return state.progress end)
@@ -2060,10 +2093,10 @@ workflow.define("Staged", function(ctx, input)
     return { ok = true }
 end)
 
-workflow.activity("step_a", function(ctx, input) return { ok = true } end)
-workflow.activity("step_b", function(ctx, input) return { ok = true } end)
+e.workflow:register_activity("step_a", function(ctx, input) return { ok = true } end)
+e.workflow:register_activity("step_b", function(ctx, input) return { ok = true } end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -2158,7 +2191,6 @@ workflow.listen({ queue = "default" })
 /// history. The test verifies both workflows reach terminal state and the
 /// second one received the bumped input.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_continue_as_new_starts_fresh_run() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_continue_as_new_starts_fresh_run — no assay binary");
@@ -2173,12 +2205,12 @@ async fn lua_workflow_continue_as_new_starts_fresh_run() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
 -- First run: call continue_as_new with a bumped counter, never returns.
 -- Second run: observes the bumped input, completes normally.
-workflow.define("Counter", function(ctx, input)
+e.workflow:register_workflow("Counter", function(ctx, input)
     local n = (input and input.n) or 0
     if n == 0 then
         ctx:continue_as_new({ n = 1 })
@@ -2186,7 +2218,7 @@ workflow.define("Counter", function(ctx, input)
     return { final_n = n }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -2258,7 +2290,6 @@ workflow.listen({ queue = "default" })
 /// F5 — `ctx:execute_parallel` schedules multiple activities from one
 /// replay and waits for all to complete before the workflow proceeds.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_execute_parallel_three_activities() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_execute_parallel_three_activities — no assay binary");
@@ -2273,10 +2304,10 @@ async fn lua_workflow_execute_parallel_three_activities() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("FanOut", function(ctx, input)
+e.workflow:register_workflow("FanOut", function(ctx, input)
     local results = ctx:execute_parallel({
         { name = "double", input = { n = 1 } },
         { name = "double", input = { n = 2 } },
@@ -2285,11 +2316,11 @@ workflow.define("FanOut", function(ctx, input)
     return { sum = results[1].v + results[2].v + results[3].v }
 end)
 
-workflow.activity("double", function(ctx, input)
+e.workflow:register_activity("double", function(ctx, input)
     return { v = input.n * 2 }
 end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -2360,7 +2391,6 @@ workflow.listen({ queue = "default" })
 
 /// F5 — execute_parallel raises when any sub-activity fails after retries.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_workflow_execute_parallel_one_fails_raises() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_workflow_execute_parallel_one_fails_raises — no assay binary");
@@ -2375,10 +2405,10 @@ async fn lua_workflow_execute_parallel_one_fails_raises() {
     std::fs::write(
         &worker_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
 
-workflow.define("FanOutWithFailure", function(ctx, input)
+e.workflow:register_workflow("FanOutWithFailure", function(ctx, input)
     ctx:execute_parallel({
         { name = "ok",   input = {}, opts = { max_attempts = 1 } },
         { name = "fail", input = {}, opts = { max_attempts = 1 } },
@@ -2386,10 +2416,10 @@ workflow.define("FanOutWithFailure", function(ctx, input)
     return { reached_end = true }
 end)
 
-workflow.activity("ok", function(ctx, input) return { ok = true } end)
-workflow.activity("fail", function(ctx, input) error("boom") end)
+e.workflow:register_activity("ok", function(ctx, input) return { ok = true } end)
+e.workflow:register_activity("fail", function(ctx, input) error("boom") end)
 
-workflow.listen({ queue = "default" })
+e.workflow:listen({ queue = "default" })
 "#,
     )
     .expect("write worker.lua");
@@ -2428,6 +2458,269 @@ workflow.listen({ queue = "default" })
         error.contains("fail") || error.contains("boom"),
         "error should mention the failing activity, got: {error}"
     );
+
+    let _ = worker.kill().await;
+}
+
+// ─── Non-determinism detection (fail-loud replay matcher) ─────────────────
+//
+// Replay correctness depends on the workflow code re-issuing the SAME
+// commands in the SAME order on every replay. When it doesn't — because the
+// workflow definition changed in an incompatible way, or the code reads a
+// non-deterministic source (os.time / a file / a global) directly instead of
+// through ctx:side_effect — the engine must FAIL the workflow task loudly
+// (a NonDeterminismError), the way Temporal does, rather than silently
+// replaying against the wrong history slot and corrupting state.
+//
+// These tests simulate the "definition changed under an in-flight run" case
+// deterministically: the workflow branches on a counter file that bumps once
+// per handler execution, so the FIRST execution schedules one activity and
+// the REPLAY (after that activity completes) reaches the same seq position
+// requesting a DIFFERENT activity / different args.
+
+/// A workflow that schedules `activity_a` on its first execution but
+/// `activity_b` at the same seq on replay must fail with a NonDeterminismError
+/// rather than mis-replaying `activity_a`'s recorded result into `activity_b`.
+#[tokio::test]
+async fn lua_workflow_nondeterministic_activity_swap_fails_loud() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_nondeterministic_activity_swap_fails_loud — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let counter_path = tmp.path().join("run_counter.txt");
+    std::fs::write(&counter_path, "0").expect("init counter");
+
+    let worker_path = tmp.path().join("worker.lua");
+    let worker_src = r#"
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
+
+local COUNTER = "__COUNTER_PATH__"
+
+-- NON-DETERMINISTIC by design: bumps a file once per handler execution.
+-- First execution sees 0 → schedules step_a; the replay after step_a
+-- completes sees 1 → schedules step_b at the SAME activity seq. The replay
+-- matcher must catch the divergence.
+e.workflow:register_workflow("Flaky", function(ctx, input)
+    local n = tonumber(fs.read(COUNTER)) or 0
+    fs.write(COUNTER, tostring(n + 1))
+    if n == 0 then
+        ctx:execute_activity("step_a", {})
+    else
+        ctx:execute_activity("step_b", {})
+    end
+    return { done = true }
+end)
+
+e.workflow:register_activity("step_a", function(_ctx, _input) return { ok = "a" } end)
+e.workflow:register_activity("step_b", function(_ctx, _input) return { ok = "b" } end)
+
+e.workflow:listen({ queue = "default" })
+"#
+    .replace("__COUNTER_PATH__", counter_path.to_str().unwrap());
+    std::fs::write(&worker_path, &worker_src).expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "Flaky",
+            "workflow_id": "wf-nd-swap",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // The workflow must FAIL (not COMPLETE, not silently corrupt) once the
+    // replay diverges.
+    let wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-nd-swap",
+        "FAILED",
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    let error = wf["error"].as_str().unwrap_or("").to_string();
+    assert!(
+        error.contains("NonDeterminismError"),
+        "expected a NonDeterminismError, got: {error}"
+    );
+    assert!(
+        error.contains("step_a") && error.contains("step_b"),
+        "error should name both the recorded and requested activity, got: {error}"
+    );
+
+    let _ = worker.kill().await;
+}
+
+/// Same activity name but different args on replay must also be detected:
+/// history recorded `step({n=1})`, the replay requests `step({n=2})` at the
+/// same seq.
+#[tokio::test]
+async fn lua_workflow_nondeterministic_activity_args_change_detected() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!(
+            "SKIP: lua_workflow_nondeterministic_activity_args_change_detected — no assay binary"
+        );
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let counter_path = tmp.path().join("run_counter.txt");
+    std::fs::write(&counter_path, "0").expect("init counter");
+
+    let worker_path = tmp.path().join("worker.lua");
+    let worker_src = r#"
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
+
+local COUNTER = "__COUNTER_PATH__"
+
+e.workflow:register_workflow("FlakyArgs", function(ctx, input)
+    local n = tonumber(fs.read(COUNTER)) or 0
+    fs.write(COUNTER, tostring(n + 1))
+    -- Same activity, different args across executions.
+    ctx:execute_activity("step", { n = (n == 0) and 1 or 2 })
+    return { done = true }
+end)
+
+e.workflow:register_activity("step", function(_ctx, input) return { saw = input.n } end)
+
+e.workflow:listen({ queue = "default" })
+"#
+    .replace("__COUNTER_PATH__", counter_path.to_str().unwrap());
+    std::fs::write(&worker_path, &worker_src).expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "FlakyArgs",
+            "workflow_id": "wf-nd-args",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-nd-args",
+        "FAILED",
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    let error = wf["error"].as_str().unwrap_or("").to_string();
+    assert!(
+        error.contains("NonDeterminismError"),
+        "expected a NonDeterminismError on changed args, got: {error}"
+    );
+    assert!(
+        error.contains("args"),
+        "error should mention args divergence, got: {error}"
+    );
+
+    let _ = worker.kill().await;
+}
+
+/// Control: a fully-deterministic workflow that schedules the same activity
+/// with the same args on every replay must NOT trip the matcher — it
+/// completes normally. Guards against false positives in the detection.
+#[tokio::test]
+async fn lua_workflow_deterministic_replay_no_false_positive() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: lua_workflow_deterministic_replay_no_false_positive — no assay binary");
+        return;
+    };
+
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let worker_path = tmp.path().join("worker.lua");
+    std::fs::write(
+        &worker_path,
+        r#"
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
+
+-- Deterministic: two sequential activities with stable names + args. The
+-- workflow replays once per activity completion; the matcher must stay quiet.
+e.workflow:register_workflow("Stable", function(ctx, input)
+    local a = ctx:execute_activity("step", { n = 1 })
+    local b = ctx:execute_activity("step", { n = 2 })
+    return { a = a.saw, b = b.saw }
+end)
+
+e.workflow:register_activity("step", function(_ctx, input) return { saw = input.n } end)
+
+e.workflow:listen({ queue = "default" })
+"#,
+    )
+    .expect("write worker.lua");
+
+    let mut worker = tokio::process::Command::new(&assay_bin)
+        .arg("run")
+        .arg(&worker_path)
+        .env("ASSAY_ENGINE_URL", &url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn worker");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    c.post(format!("{url}/api/v1/engine/workflow/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "Stable",
+            "workflow_id": "wf-nd-stable",
+            "task_queue": "default",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let wf = wait_for_workflow_status(
+        &c,
+        &url,
+        "wf-nd-stable",
+        "COMPLETED",
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    let result: serde_json::Value =
+        serde_json::from_str(wf["result"].as_str().expect("result")).unwrap();
+    assert_eq!(result["a"], 1);
+    assert_eq!(result["b"], 2);
 
     let _ = worker.kill().await;
 }
@@ -2505,7 +2798,6 @@ async fn search_attributes_filter_list() {
 /// REST endpoints themselves have dedicated coverage elsewhere; this
 /// proves the Lua wrappers all parse + round-trip correctly.
 #[tokio::test]
-#[ignore = "uses deleted assay.workflow Lua module — needs rewrite for assay.engine.workflow (plan-15 follow-up)"]
 async fn lua_stdlib_management_surface_roundtrips() {
     let Some(assay_bin) = locate_assay_binary() else {
         eprintln!("SKIP: lua_stdlib_management_surface_roundtrips — no assay binary");
@@ -2519,8 +2811,9 @@ async fn lua_stdlib_management_surface_roundtrips() {
     std::fs::write(
         &script_path,
         r#"
-local workflow = require("assay.workflow")
-workflow.connect(env.get("ASSAY_ENGINE_URL"))
+local engine = require("assay.engine")
+local e = engine.connect({ engine_url = env.get("ASSAY_ENGINE_URL") })
+local wf = e.workflow
 
 -- Assay's Lua environment shadows `assert` with a table of helpers
 -- (assert.eq, assert.ne, …). Plain `assert(cond, msg)` isn't available,
@@ -2529,44 +2822,44 @@ local function check(cond, msg)
     if not cond then error(msg or "assertion failed") end
 end
 
--- workflow.start + list + describe
-workflow.start({
+-- workflow start + list + describe
+wf:start({
     workflow_type = "X", workflow_id = "wf-plan06-a", task_queue = "q1",
-    input = { n = 1 },
+    input = json.encode({ n = 1 }),
 })
-workflow.start({
+wf:start({
     workflow_type = "X", workflow_id = "wf-plan06-b", task_queue = "q1",
 })
 
-local listed = workflow.list({ type = "X", limit = 50 })
+local listed = wf:list({ type = "X", limit = 50 })
 check(#listed >= 2, "list should return at least the 2 we started")
 
-local desc = workflow.describe("wf-plan06-a")
+local desc = wf:describe("wf-plan06-a")
 check(desc.id == "wf-plan06-a", "describe should return the record")
 
--- workflow.get_events — at least WorkflowStarted
-local events = workflow.get_events("wf-plan06-a")
+-- get_events — at least WorkflowStarted
+local events = wf:get_events("wf-plan06-a")
 local has_started = false
-for _, e in ipairs(events) do
-    if e.event_type == "WorkflowStarted" then has_started = true end
+for _, ev in ipairs(events) do
+    if ev.event_type == "WorkflowStarted" then has_started = true end
 end
 check(has_started, "event log should contain WorkflowStarted")
 
--- workflow.get_state — 404 is ok before any register_query snapshot written
-local state = workflow.get_state("wf-plan06-a")
+-- get_state — nil is ok before any register_query snapshot written
+local state = wf:get_state("wf-plan06-a")
 check(state == nil, "no snapshot yet -> get_state returns nil")
 
--- workflow.list_children — empty list for a childless workflow
-local children = workflow.list_children("wf-plan06-a")
+-- list_children — empty list for a childless workflow
+local children = wf:list_children("wf-plan06-a")
 check(#children == 0, "no children yet")
 
--- workflow.terminate — flips status to FAILED
-workflow.terminate("wf-plan06-b", "stdlib test")
-local after = workflow.describe("wf-plan06-b")
+-- terminate — flips status to FAILED
+wf:terminate("wf-plan06-b", "stdlib test")
+local after = wf:describe("wf-plan06-b")
 check(after.status == "FAILED", "terminate should flip to FAILED, got " .. tostring(after.status))
 
--- workflow.schedules.* — full lifecycle
-workflow.schedules.create({
+-- schedules.* — full lifecycle
+wf.schedules:create({
     name = "plan06-sched",
     workflow_type = "X",
     cron_expr = "0 0 2 * * *",
@@ -2575,51 +2868,51 @@ workflow.schedules.create({
     overlap_policy = "skip",
 })
 
-local sched = workflow.schedules.describe("plan06-sched")
+local sched = wf.schedules:describe("plan06-sched")
 check(sched.cron_expr == "0 0 2 * * *", "describe returns the cron expr")
 check(sched.timezone == "Europe/Berlin", "timezone persists")
 check(sched.paused == false, "fresh schedule is not paused")
 
-workflow.schedules.patch("plan06-sched", { cron_expr = "0 0 3 * * *" })
-local patched = workflow.schedules.describe("plan06-sched")
+wf.schedules:patch("plan06-sched", { cron_expr = "0 0 3 * * *" })
+local patched = wf.schedules:describe("plan06-sched")
 check(patched.cron_expr == "0 0 3 * * *", "patch updates cron")
 check(patched.timezone == "Europe/Berlin", "patch preserves unchanged fields")
 
-workflow.schedules.pause("plan06-sched")
-check(workflow.schedules.describe("plan06-sched").paused == true, "pause sets paused")
+wf.schedules:pause("plan06-sched")
+check(wf.schedules:describe("plan06-sched").paused == true, "pause sets paused")
 
-workflow.schedules.resume("plan06-sched")
-check(workflow.schedules.describe("plan06-sched").paused == false, "resume clears paused")
+wf.schedules:resume("plan06-sched")
+check(wf.schedules:describe("plan06-sched").paused == false, "resume clears paused")
 
-local schedules = workflow.schedules.list()
+local schedules = wf.schedules:list()
 local found = false
 for _, s in ipairs(schedules) do
     if s.name == "plan06-sched" then found = true end
 end
 check(found, "list should include our schedule")
 
-workflow.schedules.delete("plan06-sched")
-check(workflow.schedules.describe("plan06-sched") == nil, "delete removes it")
+wf.schedules:delete("plan06-sched")
+check(wf.schedules:describe("plan06-sched") == nil, "delete removes it")
 
--- workflow.namespaces.*
-workflow.namespaces.create("plan06-ns")
-local namespaces = workflow.namespaces.list()
+-- namespaces.*
+wf.namespaces:create("plan06-ns")
+local namespaces = wf.namespaces:list()
 local ns_found = false
 for _, n in ipairs(namespaces) do
     if n.name == "plan06-ns" then ns_found = true end
 end
 check(ns_found, "created namespace should appear in list")
 
-local stats = workflow.namespaces.stats("main")
+local stats = wf.namespaces:stats("main")
 check(type(stats.total_workflows) == "number", "stats returns counts")
 
-workflow.namespaces.delete("plan06-ns")
+wf.namespaces:delete("plan06-ns")
 
--- workflow.workers.list + workflow.queues.stats — just verify they return tables
-local workers = workflow.workers.list()
+-- workers.list + queues.stats — just verify they return tables
+local workers = wf.workers:list()
 check(type(workers) == "table", "workers.list returns a table")
 
-local q = workflow.queues.stats()
+local q = wf.queues:stats()
 check(type(q) == "table", "queues.stats returns a table")
 
 print("stdlib_surface: all assertions passed")
