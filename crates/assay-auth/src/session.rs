@@ -34,6 +34,13 @@ pub const SESSION_COOKIE: &str = "assay_session";
 /// this and echoes it in a request header (double-submit pattern).
 pub const CSRF_COOKIE: &str = "assay_csrf";
 
+/// Request header name used by the double-submit CSRF pattern.
+/// Client JS reads the `assay_csrf` cookie and echoes the value in
+/// this header on every state-changing (POST / DELETE) request.
+/// The server resolves the session and compares this header value
+/// against the session's stored `csrf_token`.
+pub const CSRF_HEADER: &str = "x-csrf-token";
+
 /// Default session lifetime — 30 days. Matches typical "remember me"
 /// expectations; per-deployment configuration overrides via
 /// [`SessionManager::new`].
@@ -225,6 +232,60 @@ use serde_json::json;
 
 use crate::ctx::AuthCtx;
 
+/// Enforce the double-submit CSRF check for cookie-session-authenticated
+/// state-changing requests.
+///
+/// Resolves the session from the `assay_session` cookie, then compares
+/// the `x-csrf-token` request header value against the session's stored
+/// `csrf_token`. Returns `Err(Response)` (403) on any mismatch or when
+/// the session cannot be resolved (caller should early-return the error).
+///
+/// Handlers that are bearer-token-only (admin API, OAuth token endpoint)
+/// do NOT call this — the bearer token itself is non-ambient authority.
+async fn check_csrf(
+    headers: &HeaderMap,
+    ctx: &AuthCtx,
+) -> std::result::Result<(), Response> {
+    // Resolve the session from the cookie.
+    let sid = match parse_cookie(headers, SESSION_COOKIE) {
+        Some(s) => s,
+        None => {
+            return Err((StatusCode::FORBIDDEN, Json(json!({"error": "csrf check: no session"}))).into_response());
+        }
+    };
+    let mgr = SessionManager::with_default_duration(ctx.sessions.clone());
+    let session = match mgr.resolve(&sid).await {
+        Ok(Some(s)) => s,
+        _ => {
+            return Err((StatusCode::FORBIDDEN, Json(json!({"error": "csrf check: session unknown"}))).into_response());
+        }
+    };
+
+    // Read the submitted token from the request header.
+    let submitted = headers
+        .get(CSRF_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    // Constant-time comparison to avoid timing side-channels.
+    let a = submitted.as_bytes();
+    let b = session.csrf_token.as_bytes();
+    let mismatch = if a.len() != b.len() {
+        true
+    } else {
+        let mut diff = 0u8;
+        for (x, y) in a.iter().zip(b.iter()) {
+            diff |= x ^ y;
+        }
+        diff != 0
+    };
+
+    if mismatch {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "csrf mismatch"}))).into_response());
+    }
+    Ok(())
+}
+
 /// Build the session router. Generic over a parent state `S` from
 /// which `AuthCtx` is extractable via `axum::extract::FromRef`.
 pub fn router<S>() -> Router<S>
@@ -296,6 +357,9 @@ async fn login_post(State(ctx): State<AuthCtx>, Json(body): Json<LoginBody>) -> 
 }
 
 async fn logout_delete(State(ctx): State<AuthCtx>, headers: HeaderMap) -> Response {
+    if let Err(r) = check_csrf(&headers, &ctx).await {
+        return r;
+    }
     if let Some(sid) = parse_cookie(&headers, SESSION_COOKIE) {
         let _ = ctx.sessions.delete(&sid).await;
     }
@@ -345,8 +409,12 @@ struct PasskeyRegisterStartBody {
 
 async fn passkey_register_start(
     State(ctx): State<AuthCtx>,
+    headers: HeaderMap,
     Json(body): Json<PasskeyRegisterStartBody>,
 ) -> Response {
+    if let Err(r) = check_csrf(&headers, &ctx).await {
+        return r;
+    }
     let Some(mgr) = ctx.passkeys.as_ref() else {
         return svc_unavailable("passkey manager not configured");
     };
@@ -384,8 +452,12 @@ struct PasskeyRegisterFinishBody {
 
 async fn passkey_register_finish(
     State(ctx): State<AuthCtx>,
+    headers: HeaderMap,
     Json(body): Json<PasskeyRegisterFinishBody>,
 ) -> Response {
+    if let Err(r) = check_csrf(&headers, &ctx).await {
+        return r;
+    }
     let Some(mgr) = ctx.passkeys.as_ref() else {
         return svc_unavailable("passkey manager not configured");
     };
@@ -740,5 +812,125 @@ mod tests {
         let cookie = cookie_for(&session, &url);
         // Local-dev HTTP must not set Secure or the browser drops the cookie.
         assert_eq!(cookie.secure(), Some(false));
+    }
+
+    // ----------------------------------------------------------------
+    // CSRF check helper tests
+    // ----------------------------------------------------------------
+
+    /// Minimal UserStore that panics on every method — sufficient for
+    /// CSRF tests which only exercise the SessionStore path.
+    struct NullUserStore;
+
+    #[async_trait::async_trait]
+    impl crate::store::UserStore for NullUserStore {
+        async fn create_user(&self, _: &crate::store::User) -> anyhow::Result<()> { unimplemented!() }
+        async fn get_user_by_id(&self, _: &str) -> anyhow::Result<Option<crate::store::User>> { unimplemented!() }
+        async fn get_user_by_email(&self, _: &str) -> anyhow::Result<Option<crate::store::User>> { unimplemented!() }
+        async fn update_user(&self, _: &crate::store::User) -> anyhow::Result<()> { unimplemented!() }
+        async fn list_users(&self, _: i64, _: i64, _: Option<&str>) -> anyhow::Result<Vec<crate::store::User>> { unimplemented!() }
+        async fn count_users(&self, _: Option<&str>) -> anyhow::Result<i64> { unimplemented!() }
+        async fn delete_user(&self, _: &str) -> anyhow::Result<bool> { unimplemented!() }
+        async fn set_password_hash(&self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        async fn get_password_hash(&self, _: &str) -> anyhow::Result<Option<String>> { unimplemented!() }
+        async fn list_passkeys(&self, _: &str) -> anyhow::Result<Vec<crate::store::PasskeyCred>> { unimplemented!() }
+        async fn add_passkey(&self, _: &str, _: &crate::store::PasskeyCred) -> anyhow::Result<()> { unimplemented!() }
+        async fn remove_passkey(&self, _: &[u8]) -> anyhow::Result<bool> { unimplemented!() }
+        async fn link_upstream(&self, _: &str, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        async fn get_user_by_upstream(&self, _: &str, _: &str) -> anyhow::Result<Option<crate::store::User>> { unimplemented!() }
+        async fn list_upstream_for_user(&self, _: &str) -> anyhow::Result<Vec<(String, String)>> { unimplemented!() }
+    }
+
+    fn null_ctx(store: Arc<dyn SessionStore>) -> crate::ctx::AuthCtx {
+        let users = Arc::new(NullUserStore) as Arc<dyn crate::store::UserStore>;
+        crate::ctx::AuthCtx::new(users, store)
+    }
+
+    #[tokio::test]
+    async fn check_csrf_accepts_matching_header() {
+        let store = Arc::new(MemSessionStore::new()) as Arc<dyn SessionStore>;
+        let session = Session {
+            id: "sess_csrftest".to_string(),
+            user_id: "u1".to_string(),
+            csrf_token: "csrf_good".to_string(),
+            created_at: now_secs(),
+            expires_at: now_secs() + 3600.0,
+            ip_hash: None,
+            user_agent_hash: None,
+        };
+        store.create(&session).await.unwrap();
+        let ctx = null_ctx(store);
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            format!("{}=sess_csrftest", SESSION_COOKIE).parse().unwrap(),
+        );
+        headers.insert(CSRF_HEADER, "csrf_good".parse().unwrap());
+
+        assert!(check_csrf(&headers, &ctx).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn check_csrf_rejects_missing_token() {
+        let store = Arc::new(MemSessionStore::new()) as Arc<dyn SessionStore>;
+        let session = Session {
+            id: "sess_csrftest2".to_string(),
+            user_id: "u1".to_string(),
+            csrf_token: "csrf_real".to_string(),
+            created_at: now_secs(),
+            expires_at: now_secs() + 3600.0,
+            ip_hash: None,
+            user_agent_hash: None,
+        };
+        store.create(&session).await.unwrap();
+        let ctx = null_ctx(store);
+
+        // Cookie present, but no X-CSRF-Token header — empty string must mismatch.
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            format!("{}=sess_csrftest2", SESSION_COOKIE).parse().unwrap(),
+        );
+
+        let result = check_csrf(&headers, &ctx).await;
+        assert!(result.is_err(), "should reject missing CSRF header");
+    }
+
+    #[tokio::test]
+    async fn check_csrf_rejects_wrong_token() {
+        let store = Arc::new(MemSessionStore::new()) as Arc<dyn SessionStore>;
+        let session = Session {
+            id: "sess_csrftest3".to_string(),
+            user_id: "u1".to_string(),
+            csrf_token: "csrf_correct".to_string(),
+            created_at: now_secs(),
+            expires_at: now_secs() + 3600.0,
+            ip_hash: None,
+            user_agent_hash: None,
+        };
+        store.create(&session).await.unwrap();
+        let ctx = null_ctx(store);
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            format!("{}=sess_csrftest3", SESSION_COOKIE).parse().unwrap(),
+        );
+        headers.insert(CSRF_HEADER, "csrf_wrong".parse().unwrap());
+
+        let result = check_csrf(&headers, &ctx).await;
+        assert!(result.is_err(), "should reject wrong CSRF token");
+    }
+
+    #[tokio::test]
+    async fn check_csrf_rejects_no_session_cookie() {
+        let store = Arc::new(MemSessionStore::new()) as Arc<dyn SessionStore>;
+        let ctx = null_ctx(store);
+
+        // Neither session cookie nor CSRF header.
+        let headers = axum::http::HeaderMap::new();
+        let result = check_csrf(&headers, &ctx).await;
+        assert!(result.is_err(), "should reject when no session cookie");
     }
 }
