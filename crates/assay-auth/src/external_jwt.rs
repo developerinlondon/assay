@@ -33,8 +33,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jsonwebtoken::dangerous::insecure_decode;
-use jsonwebtoken::jwk::JwkSet;
-use jsonwebtoken::{DecodingKey, Validation, decode, decode_header};
+use jsonwebtoken::jwk::{
+    AlgorithmParameters, EllipticCurve, Jwk, JwkSet, KeyAlgorithm,
+};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 
@@ -134,10 +136,31 @@ impl ExternalJwtIssuer {
             ))
         })?;
 
+        // SECURITY: the set of acceptable signature algorithms comes from
+        // the *server-side* JWK we matched on `kid`, never from the
+        // attacker-controlled `header.alg`. This blocks alg-confusion
+        // (e.g. an RSA verification key forced to verify an HS256 token,
+        // where the attacker signs with the RSA public key as the HMAC
+        // secret) and `alg: none`. Reject up front if the token's header
+        // alg is not one this key can legitimately produce.
+        let allowed = allowed_algorithms_for_jwk(&jwk)?;
+        if !allowed.contains(&header.alg) {
+            return Err(Error::Oidc(format!(
+                "jwt header alg {:?} not permitted for kid `{kid}` (issuer `{}`); \
+                 allowed: {allowed:?}",
+                header.alg, self.issuer_url
+            )));
+        }
+
         let key = DecodingKey::from_jwk(&jwk)
             .map_err(|e| Error::Oidc(format!("build decoding key from jwk: {e}")))?;
 
-        let mut validation = Validation::new(header.alg);
+        // Pin the verifier to the server-derived algorithm set. `decode`
+        // independently re-checks `header.alg ∈ validation.algorithms`,
+        // so this is the load-bearing control even if the explicit guard
+        // above is ever refactored away.
+        let mut validation = Validation::new(allowed[0]);
+        validation.algorithms = allowed;
         validation.set_issuer(&[&self.issuer_url]);
         if self.audience.is_empty() {
             // Operator explicitly opted out of audience checking.
@@ -181,6 +204,89 @@ impl ExternalJwtIssuer {
                 }
             }
         });
+    }
+}
+
+/// Derive the set of signature algorithms a given JWK is allowed to
+/// verify, computed purely from server-side key material — the JWK's
+/// declared `alg` (`common.key_algorithm`) when present, otherwise its
+/// key type / curve (`kty`/`crv`). The inbound token header is never
+/// consulted here.
+///
+/// External issuers are asymmetric-only: symmetric (HMAC / `oct`) keys
+/// are hard-rejected. A JWKS published at a public `jwks_uri` should
+/// only ever expose public asymmetric keys; an `oct` entry would mean
+/// the verification secret is also the signing secret, which both
+/// defeats pass-through trust and is the classic RS256→HS256
+/// confusion primitive. `alg: none` can never appear in the returned
+/// set, so unsigned tokens are rejected.
+fn allowed_algorithms_for_jwk(jwk: &Jwk) -> Result<Vec<Algorithm>> {
+    // If the operator/IdP pinned `alg` on the key, honor exactly that
+    // one algorithm — but still refuse symmetric algorithms outright.
+    if let Some(key_alg) = jwk.common.key_algorithm {
+        if matches!(
+            key_alg,
+            KeyAlgorithm::HS256 | KeyAlgorithm::HS384 | KeyAlgorithm::HS512
+        ) {
+            return Err(Error::Oidc(
+                "external issuer JWK declares a symmetric (HS*) alg; \
+                 only asymmetric keys are accepted"
+                    .to_string(),
+            ));
+        }
+        let alg = match key_alg {
+            KeyAlgorithm::ES256 => Algorithm::ES256,
+            KeyAlgorithm::ES384 => Algorithm::ES384,
+            KeyAlgorithm::RS256 => Algorithm::RS256,
+            KeyAlgorithm::RS384 => Algorithm::RS384,
+            KeyAlgorithm::RS512 => Algorithm::RS512,
+            KeyAlgorithm::PS256 => Algorithm::PS256,
+            KeyAlgorithm::PS384 => Algorithm::PS384,
+            KeyAlgorithm::PS512 => Algorithm::PS512,
+            KeyAlgorithm::EdDSA => Algorithm::EdDSA,
+            // HS* handled above; RSA-encryption algs (RSA1_5 / RSA-OAEP*)
+            // and UNKNOWN_ALGORITHM are not JWS signature algorithms.
+            other => {
+                return Err(Error::Oidc(format!(
+                    "external issuer JWK declares unsupported signature alg {other:?}"
+                )));
+            }
+        };
+        return Ok(vec![alg]);
+    }
+
+    // No `alg` on the key — derive the acceptable set from the key type.
+    match &jwk.algorithm {
+        AlgorithmParameters::OctetKey(_) => Err(Error::Oidc(
+            "external issuer JWK is a symmetric (oct) key; only asymmetric keys are accepted"
+                .to_string(),
+        )),
+        AlgorithmParameters::RSA(_) => {
+            // RSA keys verify any of the RSASSA-PKCS1 / RSASSA-PSS
+            // signature algorithms; the signature math binds the
+            // concrete one, so accepting the family is safe.
+            Ok(vec![
+                Algorithm::RS256,
+                Algorithm::RS384,
+                Algorithm::RS512,
+                Algorithm::PS256,
+                Algorithm::PS384,
+                Algorithm::PS512,
+            ])
+        }
+        AlgorithmParameters::EllipticCurve(ec) => match &ec.curve {
+            EllipticCurve::P256 => Ok(vec![Algorithm::ES256]),
+            EllipticCurve::P384 => Ok(vec![Algorithm::ES384]),
+            other => Err(Error::Oidc(format!(
+                "external issuer EC JWK uses unsupported curve {other:?}"
+            ))),
+        },
+        AlgorithmParameters::OctetKeyPair(okp) => match &okp.curve {
+            EllipticCurve::Ed25519 => Ok(vec![Algorithm::EdDSA]),
+            other => Err(Error::Oidc(format!(
+                "external issuer OKP JWK uses unsupported curve {other:?}"
+            ))),
+        },
     }
 }
 
@@ -235,7 +341,10 @@ pub fn verify_with_any<T: DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+    use data_encoding::BASE64URL_NOPAD;
+    use ed25519_dalek::SigningKey;
+    use ed25519_dalek::pkcs8::EncodePrivateKey;
+    use jsonwebtoken::{EncodingKey, Header, encode};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -246,10 +355,38 @@ mod tests {
         exp: usize,
     }
 
+    /// A hermetic Ed25519 signer + its published public JWK. External
+    /// issuers are asymmetric-only, so tests mint a real EdDSA keypair
+    /// (no discovery network call), publish the OKP *public* JWK in the
+    /// verifier's JWKS, and sign tokens with the private half.
+    struct TestSigner {
+        signing_pem: String,
+        public_jwk: serde_json::Value,
+    }
+
+    fn test_signer(kid: &str) -> TestSigner {
+        let signing = SigningKey::generate(&mut rand_core_06::OsRng);
+        let signing_pem = signing
+            .to_pkcs8_pem(ed25519_dalek::pkcs8::spki::der::pem::LineEnding::LF)
+            .expect("ed25519 PKCS#8 PEM")
+            .to_string();
+        let pub_bytes = signing.verifying_key().to_bytes();
+        let public_jwk = serde_json::json!({
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "use": "sig",
+            "alg": "EdDSA",
+            "kid": kid,
+            "x": BASE64URL_NOPAD.encode(&pub_bytes),
+        });
+        TestSigner {
+            signing_pem,
+            public_jwk,
+        }
+    }
+
     /// Build a verifier with a hand-crafted JWKS — skips the discovery
-    /// network call so unit tests stay hermetic. Uses HS256 because
-    /// jsonwebtoken's `from_jwk` accepts symmetric keys, and we don't
-    /// need RSA's complexity for proving the verifier wires up.
+    /// network call so unit tests stay hermetic.
     fn verifier_for_tests(issuer: &str, audience: Vec<String>, jwks: JwkSet) -> ExternalJwtIssuer {
         ExternalJwtIssuer {
             issuer_url: issuer.trim_end_matches('/').to_string(),
@@ -260,144 +397,107 @@ mod tests {
         }
     }
 
-    fn hs256_jwks_with_kid(kid: &str, secret: &[u8]) -> JwkSet {
-        let json = serde_json::json!({
-            "keys": [{
-                "kty": "oct",
-                "use": "sig",
-                "alg": "HS256",
-                "kid": kid,
-                "k": base64_url(secret)
-            }]
-        });
+    /// JWKS containing only `signer`'s public key.
+    fn jwks_from_signer(signer: &TestSigner) -> JwkSet {
+        let json = serde_json::json!({ "keys": [signer.public_jwk] });
         serde_json::from_value(json).unwrap()
     }
 
-    fn base64_url(b: &[u8]) -> String {
-        // Hand-rolled base64url (RFC 4648 §5, no padding) so the test
-        // doesn't pull in an extra dev-dep just to encode a symmetric
-        // key into a test JWK.
-        const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        let mut out = Vec::with_capacity(b.len().div_ceil(3) * 4);
-        for chunk in b.chunks(3) {
-            let mut buf = [0u8; 3];
-            buf[..chunk.len()].copy_from_slice(chunk);
-            let n = u32::from_be_bytes([0, buf[0], buf[1], buf[2]]);
-            out.push(T[((n >> 18) & 0x3F) as usize]);
-            out.push(T[((n >> 12) & 0x3F) as usize]);
-            if chunk.len() >= 2 {
-                out.push(T[((n >> 6) & 0x3F) as usize]);
-            }
-            if chunk.len() == 3 {
-                out.push(T[(n & 0x3F) as usize]);
-            }
-        }
-        String::from_utf8(out).expect("ascii")
+    /// Sign claims with the signer's Ed25519 private key (correct EdDSA
+    /// path). `kid` is stamped into the header.
+    fn issue_test_token(signer: &TestSigner, kid: &str, claims: &TestClaims) -> String {
+        let mut header = Header::new(Algorithm::EdDSA);
+        header.kid = Some(kid.to_string());
+        let key = EncodingKey::from_ed_pem(signer.signing_pem.as_bytes()).unwrap();
+        encode(&header, claims, &key).unwrap()
     }
 
-    fn issue_test_token(secret: &[u8], kid: &str, claims: &TestClaims) -> String {
-        let mut header = Header::new(Algorithm::HS256);
-        header.kid = Some(kid.to_string());
-        encode(&header, claims, &EncodingKey::from_secret(secret)).unwrap()
+    fn future_exp() -> usize {
+        (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3600) as usize
     }
 
     #[test]
     fn verifies_token_from_configured_issuer() {
-        let secret = b"unit-test-secret-key-32bytes!!!!";
         let kid = "test-key-1";
         let issuer = "https://hydra.example.com";
         let aud = "test-app";
+        let signer = test_signer(kid);
         let claims = TestClaims {
             iss: issuer.to_string(),
             aud: aud.to_string(),
             sub: "user-42".to_string(),
-            exp: (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + 3600) as usize,
+            exp: future_exp(),
         };
-        let token = issue_test_token(secret, kid, &claims);
+        let token = issue_test_token(&signer, kid, &claims);
 
-        let v = verifier_for_tests(
-            issuer,
-            vec![aud.to_string()],
-            hs256_jwks_with_kid(kid, secret),
-        );
+        let v = verifier_for_tests(issuer, vec![aud.to_string()], jwks_from_signer(&signer));
         let out = v.verify::<TestClaims>(&token).unwrap();
         assert_eq!(out.claims, claims);
     }
 
     #[test]
     fn rejects_token_with_wrong_issuer() {
-        let secret = b"unit-test-secret-key-32bytes!!!!";
         let kid = "test-key-1";
+        let signer = test_signer(kid);
         let claims = TestClaims {
             iss: "https://other.example.com".to_string(),
             aud: "test-app".to_string(),
             sub: "user-42".to_string(),
-            exp: (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + 3600) as usize,
+            exp: future_exp(),
         };
-        let token = issue_test_token(secret, kid, &claims);
+        let token = issue_test_token(&signer, kid, &claims);
 
         let v = verifier_for_tests(
             "https://hydra.example.com",
             vec!["test-app".to_string()],
-            hs256_jwks_with_kid(kid, secret),
+            jwks_from_signer(&signer),
         );
         assert!(v.verify::<TestClaims>(&token).is_err());
     }
 
     #[test]
     fn rejects_token_with_wrong_audience() {
-        let secret = b"unit-test-secret-key-32bytes!!!!";
         let kid = "test-key-1";
         let issuer = "https://hydra.example.com";
+        let signer = test_signer(kid);
         let claims = TestClaims {
             iss: issuer.to_string(),
             aud: "some-other-app".to_string(),
             sub: "user-42".to_string(),
-            exp: (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + 3600) as usize,
+            exp: future_exp(),
         };
-        let token = issue_test_token(secret, kid, &claims);
+        let token = issue_test_token(&signer, kid, &claims);
 
         let v = verifier_for_tests(
             issuer,
             vec!["test-app".to_string()],
-            hs256_jwks_with_kid(kid, secret),
+            jwks_from_signer(&signer),
         );
         assert!(v.verify::<TestClaims>(&token).is_err());
     }
 
     #[test]
     fn rejects_token_with_unknown_kid() {
-        let secret = b"unit-test-secret-key-32bytes!!!!";
         let issuer = "https://hydra.example.com";
+        let signer = test_signer("rotated-key");
         let claims = TestClaims {
             iss: issuer.to_string(),
             aud: "test-app".to_string(),
             sub: "user-42".to_string(),
-            exp: (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + 3600) as usize,
+            exp: future_exp(),
         };
         // Token signed with kid="rotated-key" but JWKS only knows "current-key".
-        let token = issue_test_token(secret, "rotated-key", &claims);
+        let token = issue_test_token(&signer, "rotated-key", &claims);
 
+        let current = test_signer("current-key");
         let v = verifier_for_tests(
             issuer,
             vec!["test-app".to_string()],
-            hs256_jwks_with_kid("current-key", secret),
+            jwks_from_signer(&current),
         );
         let err = v.verify::<TestClaims>(&token).unwrap_err().to_string();
         assert!(err.contains("kid"), "error should mention kid: {err}");
@@ -405,9 +505,9 @@ mod tests {
 
     #[test]
     fn rejects_expired_token() {
-        let secret = b"unit-test-secret-key-32bytes!!!!";
         let kid = "test-key-1";
         let issuer = "https://hydra.example.com";
+        let signer = test_signer(kid);
         let claims = TestClaims {
             iss: issuer.to_string(),
             aud: "test-app".to_string(),
@@ -419,67 +519,59 @@ mod tests {
                 .as_secs()
                 - 3600) as usize,
         };
-        let token = issue_test_token(secret, kid, &claims);
+        let token = issue_test_token(&signer, kid, &claims);
 
         let v = verifier_for_tests(
             issuer,
             vec!["test-app".to_string()],
-            hs256_jwks_with_kid(kid, secret),
+            jwks_from_signer(&signer),
         );
         assert!(v.verify::<TestClaims>(&token).is_err());
     }
 
     #[test]
     fn empty_audience_list_skips_aud_check() {
-        let secret = b"unit-test-secret-key-32bytes!!!!";
         let kid = "test-key-1";
         let issuer = "https://hydra.example.com";
+        let signer = test_signer(kid);
         let claims = TestClaims {
             iss: issuer.to_string(),
             aud: "literally-anything".to_string(),
             sub: "user-42".to_string(),
-            exp: (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + 3600) as usize,
+            exp: future_exp(),
         };
-        let token = issue_test_token(secret, kid, &claims);
+        let token = issue_test_token(&signer, kid, &claims);
 
         // No audience configured → operator opted out of `aud` checking.
-        let v = verifier_for_tests(issuer, vec![], hs256_jwks_with_kid(kid, secret));
+        let v = verifier_for_tests(issuer, vec![], jwks_from_signer(&signer));
         assert!(v.verify::<TestClaims>(&token).is_ok());
     }
 
     #[test]
     fn verify_with_any_routes_by_iss() {
-        let secret_a = b"key-A-secret-32bytes-unit-tests!";
-        let secret_b = b"key-B-secret-32bytes-unit-tests!";
         let issuer_a = "https://hydra-a.example.com";
         let issuer_b = "https://hydra-b.example.com";
+        let signer_a = test_signer("a-key");
+        let signer_b = test_signer("b-key");
 
         let v_a = verifier_for_tests(
             issuer_a,
             vec!["test-app".to_string()],
-            hs256_jwks_with_kid("a-key", secret_a),
+            jwks_from_signer(&signer_a),
         );
         let v_b = verifier_for_tests(
             issuer_b,
             vec!["test-app".to_string()],
-            hs256_jwks_with_kid("b-key", secret_b),
+            jwks_from_signer(&signer_b),
         );
 
         let claims_b = TestClaims {
             iss: issuer_b.to_string(),
             aud: "test-app".to_string(),
             sub: "user-42".to_string(),
-            exp: (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + 3600) as usize,
+            exp: future_exp(),
         };
-        let token_b = issue_test_token(secret_b, "b-key", &claims_b);
+        let token_b = issue_test_token(&signer_b, "b-key", &claims_b);
 
         // Token from issuer B should route to verifier B and succeed.
         let result = verify_with_any::<TestClaims>(&[v_a, v_b], &token_b)
@@ -490,23 +582,19 @@ mod tests {
 
     #[test]
     fn verify_with_any_returns_none_for_unknown_issuer() {
-        let secret = b"unit-test-secret-key-32bytes!!!!";
+        let signer = test_signer("a-key");
         let v = verifier_for_tests(
             "https://hydra.example.com",
             vec!["test-app".to_string()],
-            hs256_jwks_with_kid("a-key", secret),
+            jwks_from_signer(&signer),
         );
         let claims = TestClaims {
             iss: "https://stranger.example.com".to_string(),
             aud: "test-app".to_string(),
             sub: "user-42".to_string(),
-            exp: (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + 3600) as usize,
+            exp: future_exp(),
         };
-        let token = issue_test_token(secret, "a-key", &claims);
+        let token = issue_test_token(&signer, "a-key", &claims);
 
         let result = verify_with_any::<TestClaims>(&[v], &token);
         assert!(result.is_none(), "unknown issuer should fall through");
@@ -514,14 +602,177 @@ mod tests {
 
     #[test]
     fn verify_with_any_returns_none_for_empty_issuer_list() {
-        let secret = b"unit-test-secret-key-32bytes!!!!";
+        let signer = test_signer("x");
         let claims = TestClaims {
             iss: "https://anywhere.example.com".to_string(),
             aud: "test-app".to_string(),
             sub: "user-42".to_string(),
             exp: 9999999999,
         };
-        let token = issue_test_token(secret, "x", &claims);
+        let token = issue_test_token(&signer, "x", &claims);
         assert!(verify_with_any::<TestClaims>(&[], &token).is_none());
+    }
+
+    // ----- Algorithm-pinning regression tests (HIGH-severity finding) -----
+
+    /// Build a JWKS whose single key is the Ed25519 *public* key from
+    /// `signer` but with its declared `alg`/`kty` overridden to the
+    /// supplied JSON — lets us forge a JWKS that *looks* like a symmetric
+    /// key while still carrying real Ed25519 material.
+    fn jwks_with_overridden_key(signer: &TestSigner, overrides: serde_json::Value) -> JwkSet {
+        let mut key = signer.public_jwk.clone();
+        if let (Some(obj), Some(ov)) = (key.as_object_mut(), overrides.as_object()) {
+            for (k, val) in ov {
+                obj.insert(k.clone(), val.clone());
+            }
+        }
+        serde_json::from_value(serde_json::json!({ "keys": [key] })).unwrap()
+    }
+
+    /// (a) A token whose header advertises an unexpected-but-valid-looking
+    /// alg (RS256) must be rejected even though it is correctly EdDSA-signed
+    /// and the kid matches — the alg is pinned from the server-side JWK, not
+    /// the header.
+    #[test]
+    fn rejects_header_alg_mismatch_against_key() {
+        let kid = "test-key-1";
+        let issuer = "https://hydra.example.com";
+        let signer = test_signer(kid);
+        let claims = TestClaims {
+            iss: issuer.to_string(),
+            aud: "test-app".to_string(),
+            sub: "user-42".to_string(),
+            exp: future_exp(),
+        };
+
+        // Correctly EdDSA-sign, then rewrite the header to claim RS256.
+        let real = issue_test_token(&signer, kid, &claims);
+        let mut parts = real.split('.');
+        let _real_header = parts.next().unwrap();
+        let payload = parts.next().unwrap();
+        let sig = parts.next().unwrap();
+        let forged_header = BASE64URL_NOPAD
+            .encode(br#"{"alg":"RS256","typ":"JWT","kid":"test-key-1"}"#);
+        let forged = format!("{forged_header}.{payload}.{sig}");
+
+        let v = verifier_for_tests(
+            issuer,
+            vec!["test-app".to_string()],
+            jwks_from_signer(&signer),
+        );
+        let err = v.verify::<TestClaims>(&forged).unwrap_err().to_string();
+        assert!(
+            err.contains("not permitted") || err.contains("RS256") || err.contains("InvalidAlgorithm"),
+            "expected alg-mismatch rejection, got: {err}"
+        );
+    }
+
+    /// (b) Alg-confusion: an issuer that publishes only an asymmetric
+    /// (Ed25519) key must never let an attacker authenticate with an HS*
+    /// token. Even if the JWKS entry is tampered to advertise a symmetric
+    /// alg, the verifier hard-rejects symmetric keys for external issuers.
+    #[test]
+    fn rejects_alg_confusion_symmetric_key() {
+        let kid = "test-key-1";
+        let issuer = "https://hydra.example.com";
+        let signer = test_signer(kid);
+        let claims = TestClaims {
+            iss: issuer.to_string(),
+            aud: "test-app".to_string(),
+            sub: "user-42".to_string(),
+            exp: future_exp(),
+        };
+
+        // Attacker crafts an HS256 token, signing with the issuer's public
+        // key bytes as the HMAC secret (the classic RS/ES→HS confusion).
+        let pub_bytes = {
+            let pk = signer.public_jwk["x"].as_str().unwrap();
+            BASE64URL_NOPAD.decode(pk.as_bytes()).unwrap()
+        };
+        let mut header = Header::new(Algorithm::HS256);
+        header.kid = Some(kid.to_string());
+        let forged = encode(
+            &header,
+            &claims,
+            &EncodingKey::from_secret(&pub_bytes),
+        )
+        .unwrap();
+
+        // JWKS still publishes the legitimate asymmetric OKP key.
+        let v = verifier_for_tests(
+            issuer,
+            vec!["test-app".to_string()],
+            jwks_from_signer(&signer),
+        );
+        assert!(
+            v.verify::<TestClaims>(&forged).is_err(),
+            "HS256 token forged with the public key must be rejected"
+        );
+
+        // And even a tampered JWKS that *declares* a symmetric alg is
+        // refused outright before any signature check.
+        let sym_jwks = jwks_with_overridden_key(
+            &signer,
+            serde_json::json!({ "kty": "oct", "alg": "HS256", "k": "AAAA" }),
+        );
+        let v2 = verifier_for_tests(issuer, vec!["test-app".to_string()], sym_jwks);
+        let err = v2.verify::<TestClaims>(&forged).unwrap_err().to_string();
+        assert!(
+            err.contains("symmetric"),
+            "symmetric JWK should be hard-rejected: {err}"
+        );
+    }
+
+    /// (c) Happy path still verifies a correctly EdDSA-signed token whose
+    /// header alg matches the published key.
+    #[test]
+    fn happy_path_eddsa_still_verifies() {
+        let kid = "test-key-1";
+        let issuer = "https://hydra.example.com";
+        let signer = test_signer(kid);
+        let claims = TestClaims {
+            iss: issuer.to_string(),
+            aud: "test-app".to_string(),
+            sub: "user-42".to_string(),
+            exp: future_exp(),
+        };
+        let token = issue_test_token(&signer, kid, &claims);
+
+        let v = verifier_for_tests(
+            issuer,
+            vec!["test-app".to_string()],
+            jwks_from_signer(&signer),
+        );
+        let out = v.verify::<TestClaims>(&token).unwrap();
+        assert_eq!(out.claims, claims);
+    }
+
+    /// `alg: none` (unsigned) tokens must be rejected — `none` can never
+    /// be in the server-derived allowed set.
+    #[test]
+    fn rejects_alg_none_token() {
+        let kid = "test-key-1";
+        let issuer = "https://hydra.example.com";
+        let signer = test_signer(kid);
+        let claims = TestClaims {
+            iss: issuer.to_string(),
+            aud: "test-app".to_string(),
+            sub: "user-42".to_string(),
+            exp: future_exp(),
+        };
+        let header = BASE64URL_NOPAD.encode(br#"{"alg":"none","typ":"JWT","kid":"test-key-1"}"#);
+        let payload = BASE64URL_NOPAD.encode(serde_json::to_vec(&claims).unwrap().as_slice());
+        // Unsigned: empty signature segment.
+        let unsigned = format!("{header}.{payload}.");
+
+        let v = verifier_for_tests(
+            issuer,
+            vec!["test-app".to_string()],
+            jwks_from_signer(&signer),
+        );
+        assert!(
+            v.verify::<TestClaims>(&unsigned).is_err(),
+            "alg:none token must be rejected"
+        );
     }
 }
