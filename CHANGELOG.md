@@ -2,6 +2,17 @@
 
 All notable changes to Assay are documented here.
 
+## assay-vault 0.4.2 — 2026-06-28
+
+### Changed
+
+- Rebuild against `assay-auth 0.6` (no code change). assay-auth's 0.6.0 major bump means the
+  previously-published assay-vault 0.4.1 (which pinned `assay-auth 0.5`) would pull a second
+  `assay-auth` into the crates.io dependency graph when `assay-engine` is published, breaking the
+  `cargo publish --verify` build (`FromRef` resolves across two `assay_auth` versions). Bumping
+  assay-vault so it republishes with the `assay-auth 0.6` requirement keeps a single `assay-auth` in
+  the graph.
+
 ## assay-engine 0.5.3 — 2026-06-28
 
 ### Fixed
