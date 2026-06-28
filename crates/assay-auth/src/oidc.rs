@@ -20,16 +20,19 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use openidconnect::core::{
-    CoreAuthenticationFlow, CoreClient, CoreProviderMetadata, CoreUserInfoClaims,
+    CoreAuthenticationFlow, CoreClient, CoreIdToken, CoreIdTokenClaims, CoreIdTokenVerifier,
+    CoreJsonWebKey, CoreJsonWebKeySet, CoreJwsSigningAlgorithm, CoreProviderMetadata,
+    CoreUserInfoClaims,
 };
 use openidconnect::reqwest as oidc_reqwest;
 use openidconnect::{
-    AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
-    EndpointSet, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier,
-    RedirectUrl, Scope, SubjectIdentifier, TokenResponse,
+    AuthorizationCode, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken,
+    EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, JsonWebKeySetUrl, Nonce,
+    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
+    SignatureVerificationError, SubjectIdentifier, TokenResponse,
 };
 use parking_lot::RwLock;
 use url::Url;
@@ -42,6 +45,45 @@ use crate::error::{Error, Result};
 /// `'["openid","email","profile"]'`); this constant only fires for
 /// rows that pre-date the V5 migration filling in the default.
 pub const DEFAULT_UPSTREAM_SCOPES: &[&str] = &["openid", "email", "profile"];
+
+/// Lower bound on how long a fetched upstream JWKS is trusted before a
+/// proactive re-fetch — even when the certs endpoint advertises a
+/// shorter `max-age`. Keeps us from re-fetching on essentially every
+/// login.
+const JWKS_MIN_TTL: Duration = Duration::from_secs(300);
+
+/// Upper bound on the JWKS cache TTL. Google advertises multi-hour
+/// `max-age`s on its certs endpoint; we cap the trusted window so a
+/// cache that never gets a rotation-triggered refetch still self-heals
+/// within a bounded interval.
+const JWKS_MAX_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// TTL used when the certs response carries no usable `Cache-Control:
+/// max-age` directive.
+const JWKS_DEFAULT_TTL: Duration = Duration::from_secs(60 * 60);
+
+/// Minimum gap between *reactive* (unknown-`kid`) JWKS re-fetches. A
+/// burst of tokens carrying a `kid` we'll never hold — bogus, or from a
+/// misconfigured upstream — can't stampede the certs endpoint faster
+/// than this.
+const JWKS_MIN_REFETCH_INTERVAL: Duration = Duration::from_secs(60);
+
+/// In-memory, refreshable cache of one upstream's signing keys.
+///
+/// Seeded from the discovery metadata at registration, then re-fetched
+/// from `jwks_uri` when the keys go stale — either the TTL lapsed
+/// (honoring the certs endpoint's `Cache-Control: max-age`) or an
+/// incoming id_token carried a `kid` we don't yet hold (upstream key
+/// rotation). Before this cache existed the verifier pinned the
+/// boot-time keys forever, so every login signed by a rotated Google
+/// key failed with `Signature verification failed`.
+struct JwksCache {
+    keys: Vec<CoreJsonWebKey>,
+    /// Deadline for a proactive refresh, set from the last fetch's TTL.
+    expires_at: Instant,
+    /// When we last hit `jwks_uri` — rate-limits reactive refetches.
+    last_fetch: Instant,
+}
 
 /// POD record describing one upstream identity provider. Mirrors the
 /// planned `auth.upstream_providers` table shape (see plan 12d) so the
@@ -112,6 +154,21 @@ pub struct OidcClient {
     /// Owned redirect URL — `set_redirect_uri` consumed it on the
     /// builder, but operators sometimes want it back without re-parsing.
     redirect_uri: RedirectUrl,
+    /// `jwks_uri` from the upstream's discovery doc — where we re-fetch
+    /// signing keys when the cache goes stale.
+    jwks_uri: JsonWebKeySetUrl,
+    /// Algorithms the upstream advertised for id_token signing
+    /// (`id_token_signing_alg_values_supported`), captured at discovery
+    /// so a rebuilt verifier restricts algorithms exactly as the
+    /// metadata-derived one did.
+    signing_algs: Vec<CoreJwsSigningAlgorithm>,
+    /// Refreshable signing-key cache. See [`JwksCache`].
+    jwks: Arc<RwLock<JwksCache>>,
+    /// Dedicated HTTP client for JWKS re-fetches. Kept separate from the
+    /// `openidconnect`/`oauth2` reqwest used for token exchange: that
+    /// crate pins a different `reqwest` major, so we fetch keys with the
+    /// auth crate's own `reqwest` (matching [`crate::external_jwt`]).
+    jwks_http: reqwest::Client,
 }
 
 impl OidcClient {
@@ -191,10 +248,7 @@ impl OidcClient {
         let id_token = token_response
             .id_token()
             .ok_or_else(|| Error::Oidc("upstream returned no id_token".to_string()))?;
-        let id_token_verifier = self.inner.id_token_verifier();
-        let claims = id_token
-            .claims(&id_token_verifier, &nonce)
-            .map_err(|e| Error::Oidc(format!("id_token verify: {e}")))?;
+        let claims = self.verify_id_token_claims(id_token, &nonce).await?;
 
         let subject = claims.subject().to_string();
         let mut email = claims.email().map(|e| e.to_string());
@@ -256,6 +310,131 @@ impl OidcClient {
             raw_claims,
         })
     }
+
+    /// Verify the upstream id_token against the cached signing keys,
+    /// transparently refreshing the JWKS when it has gone stale.
+    ///
+    /// Two refresh triggers, matching the OIDC key-rotation guidance:
+    ///  * **Proactive** — the cache TTL (from the certs endpoint's
+    ///    `Cache-Control: max-age`) has lapsed, so we re-fetch before
+    ///    even trying.
+    ///  * **Reactive** — verification fails with `NoMatchingKey`: the
+    ///    token's `kid` isn't one we hold, i.e. the upstream just
+    ///    rotated. We re-fetch once (rate-limited) and retry.
+    ///
+    /// A proactive-refresh network failure is non-fatal — we fall back
+    /// to the cached keys and let verification decide. Only a missing
+    /// key triggers the reactive retry; other failures (bad audience,
+    /// expired, genuinely bad signature) can't be fixed by re-fetching
+    /// keys, so we surface them directly.
+    async fn verify_id_token_claims<'t>(
+        &self,
+        id_token: &'t CoreIdToken,
+        nonce: &Nonce,
+    ) -> Result<&'t CoreIdTokenClaims> {
+        let mut refreshed = false;
+        let keys = if self.jwks.read().expires_at <= Instant::now() {
+            match self.refresh_jwks().await {
+                Ok(fresh) => {
+                    refreshed = true;
+                    fresh
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        slug = %self.provider.slug,
+                        error = %e,
+                        "proactive jwks refresh failed; verifying against cached keys"
+                    );
+                    self.jwks.read().keys.clone()
+                }
+            }
+        } else {
+            self.jwks.read().keys.clone()
+        };
+
+        let verifier = self.id_token_verifier(keys)?;
+        match id_token.claims(&verifier, nonce) {
+            Ok(claims) => Ok(claims),
+            Err(e)
+                if is_unknown_signing_key(&e) && !refreshed && self.reactive_refetch_allowed() =>
+            {
+                tracing::info!(
+                    slug = %self.provider.slug,
+                    "id_token kid not in cached jwks; refetching upstream keys (likely rotation)"
+                );
+                let fresh = self.refresh_jwks().await?;
+                let verifier = self.id_token_verifier(fresh)?;
+                id_token
+                    .claims(&verifier, nonce)
+                    .map_err(|e| Error::Oidc(format!("id_token verify: {e}")))
+            }
+            Err(e) => Err(Error::Oidc(format!("id_token verify: {e}"))),
+        }
+    }
+
+    /// Build an id_token verifier from `keys`, mirroring the
+    /// public/confidential-client choice and allowed-algorithms set that
+    /// [`CoreClient::id_token_verifier`] would have produced from the
+    /// discovery metadata.
+    fn id_token_verifier(&self, keys: Vec<CoreJsonWebKey>) -> Result<CoreIdTokenVerifier<'static>> {
+        let issuer = IssuerUrl::new(self.provider.issuer.clone())
+            .map_err(|e| Error::Oidc(format!("issuer url {}: {e}", self.provider.issuer)))?;
+        let client_id = ClientId::new(self.provider.client_id.clone());
+        let jwks = CoreJsonWebKeySet::new(keys);
+        let verifier = if self.provider.client_secret.is_empty() {
+            CoreIdTokenVerifier::new_public_client(client_id, issuer, jwks)
+        } else {
+            CoreIdTokenVerifier::new_confidential_client(
+                client_id,
+                ClientSecret::new(self.provider.client_secret.clone()),
+                issuer,
+                jwks,
+            )
+        };
+        Ok(verifier.set_allowed_algs(self.signing_algs.clone()))
+    }
+
+    /// Whether enough time has elapsed since the last fetch to permit a
+    /// reactive (unknown-`kid`) refetch.
+    fn reactive_refetch_allowed(&self) -> bool {
+        self.jwks.read().last_fetch.elapsed() >= JWKS_MIN_REFETCH_INTERVAL
+    }
+
+    /// Re-fetch the upstream JWKS, store it (with a TTL derived from the
+    /// certs endpoint's `Cache-Control: max-age`), and return the fresh
+    /// keys.
+    async fn refresh_jwks(&self) -> Result<Vec<CoreJsonWebKey>> {
+        let uri = self.jwks_uri.url().to_string();
+        let resp = self
+            .jwks_http
+            .get(&uri)
+            .send()
+            .await
+            .map_err(|e| Error::Oidc(format!("fetch jwks {uri}: {e}")))?
+            .error_for_status()
+            .map_err(|e| Error::Oidc(format!("fetch jwks {uri}: {e}")))?;
+        let ttl = jwks_cache_ttl(resp.headers());
+        let fetched: CoreJsonWebKeySet = resp
+            .json()
+            .await
+            .map_err(|e| Error::Oidc(format!("parse jwks {uri}: {e}")))?;
+        let keys = fetched.keys().clone();
+
+        let now = Instant::now();
+        {
+            let mut cache = self.jwks.write();
+            cache.keys = keys.clone();
+            cache.expires_at = now + ttl;
+            cache.last_fetch = now;
+        }
+        tracing::debug!(
+            slug = %self.provider.slug,
+            ttl_secs = ttl.as_secs(),
+            keys = keys.len(),
+            "refreshed upstream jwks"
+        );
+        Ok(keys)
+    }
 }
 
 /// Result of [`OidcClient::start_login`]. The HTTP layer redirects the
@@ -301,6 +480,13 @@ impl OidcRegistry {
         let metadata = CoreProviderMetadata::discover_async(issuer, &http)
             .await
             .map_err(|e| Error::Oidc(format!("discover {}: {e}", provider.slug)))?;
+        // Capture the bits we need to rebuild an id_token verifier later
+        // (on JWKS refresh) before `from_provider_metadata` consumes the
+        // metadata. `discover_async` already fetched the JWKS into the
+        // metadata, so `initial_keys` is a valid seed for the cache.
+        let jwks_uri = metadata.jwks_uri().clone();
+        let signing_algs = metadata.id_token_signing_alg_values_supported().clone();
+        let initial_keys = metadata.jwks().keys().clone();
         let redirect = RedirectUrl::new(redirect_uri.to_string())
             .map_err(|e| Error::Oidc(format!("redirect_uri {redirect_uri}: {e}")))?;
         let client_secret = if provider.client_secret.is_empty() {
@@ -314,10 +500,23 @@ impl OidcRegistry {
             client_secret,
         )
         .set_redirect_uri(redirect.clone());
+        let jwks_http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| Error::Oidc(format!("build jwks http client: {e}")))?;
+        let now = Instant::now();
         let client = OidcClient {
             inner,
             provider: provider.clone(),
             redirect_uri: redirect,
+            jwks_uri,
+            signing_algs,
+            jwks: Arc::new(RwLock::new(JwksCache {
+                keys: initial_keys,
+                expires_at: now + JWKS_DEFAULT_TTL,
+                last_fetch: now,
+            })),
+            jwks_http,
         };
         self.inner
             .write()
@@ -394,6 +593,46 @@ pub fn build_oidc_http_client(opts: HttpClientOptions) -> Result<oidc_reqwest::C
         .map_err(|e| Error::Oidc(format!("build oidc http client: {e}")))
 }
 
+/// TTL for a freshly-fetched JWKS, parsed from `Cache-Control: max-age`
+/// and clamped to `[JWKS_MIN_TTL, JWKS_MAX_TTL]`. Falls back to
+/// [`JWKS_DEFAULT_TTL`] when no usable directive is present.
+fn jwks_cache_ttl(headers: &reqwest::header::HeaderMap) -> Duration {
+    headers
+        .get(reqwest::header::CACHE_CONTROL)
+        .and_then(|v| v.to_str().ok())
+        .and_then(parse_max_age_secs)
+        .map(|secs| Duration::from_secs(secs).clamp(JWKS_MIN_TTL, JWKS_MAX_TTL))
+        .unwrap_or(JWKS_DEFAULT_TTL)
+}
+
+/// Pull the `max-age` value (in seconds) out of a `Cache-Control`
+/// header. Returns `None` if there's no `max-age` directive (e.g.
+/// `s-maxage` only, or `no-cache`).
+fn parse_max_age_secs(cache_control: &str) -> Option<u64> {
+    cache_control.split(',').find_map(|directive| {
+        directive
+            .trim()
+            .strip_prefix("max-age")?
+            .trim_start()
+            .strip_prefix('=')?
+            .trim()
+            .parse::<u64>()
+            .ok()
+    })
+}
+
+/// Whether an id_token verification error means the signing key wasn't
+/// found — i.e. the token's `kid` isn't in our cached JWKS, the
+/// fingerprint of upstream key rotation. Other verification failures
+/// (bad audience, expired, genuinely bad signature) are *not* fixable by
+/// re-fetching keys, so we don't retry on them.
+fn is_unknown_signing_key(e: &ClaimsVerificationError) -> bool {
+    matches!(
+        e,
+        ClaimsVerificationError::SignatureVerification(SignatureVerificationError::NoMatchingKey)
+    )
+}
+
 /// Recursive merge of two JSON values — used so userinfo claims top up
 /// the id_token claims without overwriting them. Object fields merge
 /// recursively; everything else is replaced.
@@ -449,6 +688,59 @@ mod tests {
         };
         let dup = p.clone();
         assert_eq!(p, dup);
+    }
+
+    #[test]
+    fn parses_max_age_from_cache_control() {
+        assert_eq!(parse_max_age_secs("max-age=3600"), Some(3600));
+        assert_eq!(
+            parse_max_age_secs("public, max-age=600, must-revalidate"),
+            Some(600)
+        );
+        assert_eq!(parse_max_age_secs("max-age = 42"), Some(42));
+        assert_eq!(parse_max_age_secs("private, no-cache"), None);
+        // `s-maxage` is a distinct directive — must not be mistaken for
+        // `max-age`.
+        assert_eq!(parse_max_age_secs("s-maxage=120"), None);
+    }
+
+    #[test]
+    fn jwks_ttl_clamps_and_defaults() {
+        use reqwest::header::{CACHE_CONTROL, HeaderMap, HeaderValue};
+
+        // No header → default.
+        assert_eq!(jwks_cache_ttl(&HeaderMap::new()), JWKS_DEFAULT_TTL);
+
+        let ttl = |v: &'static str| {
+            let mut h = HeaderMap::new();
+            h.insert(CACHE_CONTROL, HeaderValue::from_static(v));
+            jwks_cache_ttl(&h)
+        };
+        // Below floor → clamped up; above ceiling → clamped down.
+        assert_eq!(ttl("max-age=10"), JWKS_MIN_TTL);
+        assert_eq!(ttl("public, max-age=999999"), JWKS_MAX_TTL);
+        // In range → passthrough.
+        assert_eq!(ttl("max-age=1800"), Duration::from_secs(1800));
+    }
+
+    #[test]
+    fn only_missing_key_triggers_refetch() {
+        // A missing `kid` (rotation) is retryable...
+        assert!(is_unknown_signing_key(
+            &ClaimsVerificationError::SignatureVerification(
+                SignatureVerificationError::NoMatchingKey
+            )
+        ));
+        // ...but a genuine bad signature or a non-signature failure is
+        // not — re-fetching keys wouldn't help.
+        assert!(!is_unknown_signing_key(
+            &ClaimsVerificationError::SignatureVerification(
+                SignatureVerificationError::CryptoError("bad sig".into())
+            )
+        ));
+        assert!(!is_unknown_signing_key(&ClaimsVerificationError::Expired(
+            "stale".into()
+        )));
     }
 
     /// Discovery against an unreachable URL should fail with `Error::Oidc`,

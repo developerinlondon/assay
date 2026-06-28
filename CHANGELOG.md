@@ -2,6 +2,35 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.3 — 2026-06-28
+
+### Fixed
+
+- Upstream-OIDC ("Continue with Google") logins no longer fail intermittently with
+  `id_token verify: Signature verification failed` after the upstream rotates its signing keys. The
+  federation client cached the upstream JWKS once at discovery and pinned it forever, so once Google
+  rotated keys, id_tokens signed by a new `kid` could no longer be verified. The client now
+  refreshes the JWKS — proactively when the certs endpoint's `Cache-Control: max-age` lapses, and
+  reactively (rate-limited) when a token arrives with a `kid` not in the cache. (Carries
+  `assay-auth 0.6.0`.)
+
+## assay-auth 0.6.0 — 2026-06-28
+
+### Fixed
+
+- `oidc::OidcClient` keeps a refreshable cache of each upstream's signing keys instead of pinning
+  the set fetched at discovery. The id_token verifier is rebuilt from the live cache, which
+  re-fetches from `jwks_uri` on TTL expiry (honoring `Cache-Control: max-age`, clamped) and on an
+  unknown `kid` (`SignatureVerificationError::NoMatchingKey`), with a minimum interval between
+  reactive refetches.
+
+### Changed
+
+- **Breaking (auto-trait):** `OidcClient` no longer implements `UnwindSafe` / `RefUnwindSafe` — it
+  now holds an `Arc<RwLock<…>>` JWKS cache and a `reqwest::Client` for refreshes. `Send` + `Sync`
+  are unaffected. Bumped to 0.6.0 per SemVer; dependents (`assay-engine`, `assay-vault`) updated to
+  require `assay-auth 0.6`.
+
 ## assay-engine 0.5.2 — 2026-06-03
 
 ### Fixed
