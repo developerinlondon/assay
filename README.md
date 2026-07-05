@@ -202,6 +202,17 @@ A script that errors — including a write blocked by read-only mode — comes b
 with `isError: true`; `needs_approval` is not an error. The server implements `initialize`,
 `tools/list`, `tools/call`, and `ping`, and shuts down cleanly on EOF.
 
+## Claude Code plugin
+
+Install assay as a Claude Code plugin — the `assay_run` + `assay_context` tools plus a usage skill, wrapping the MCP server:
+
+```bash
+claude plugin marketplace add developerinlondon/assay
+claude plugin install assay
+```
+
+The plugin (`plugin/`) declares the MCP server as `assay mcp-serve`, so the `assay` binary must be on `PATH` (install via `cargo install assay-lua` or a release binary). Every run is read-only or approval-gated; unrestricted execution is never exposed.
+
 ## Auth + IdP quick-start
 
 Once `assay-engine` is running with the auth module enabled, every IdP capability is reachable over
