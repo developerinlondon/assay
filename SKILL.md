@@ -54,6 +54,14 @@ unchanged. Blocked calls raise
 carry `"readonly": true`. Use it to run untrusted or agent-generated scripts safely for inspection
 and diagnostics.
 
+**Approval mode.** The global `--approval-mode` flag (or `ASSAY_APPROVAL=1`, which wins over
+`--readonly`) gates the same mutating catalog behind per-operation approval instead of a hard block.
+A mutating call suspends the run and raises the tool-mode approval flow (`status:"needs_approval"` +
+resume token) with a descriptor — `op`, `summary`, and a per-run `index`. Decide with
+`assay resume --token … --approve yes|no`: `yes` re-runs the script permitting that one operation
+and re-suspends at the next; `no` fails it with `approval: <op> denied`. Use it for supervised
+remediation where a human or calling system authorizes each write individually.
+
 ## Discovering Modules
 
 When you need to interact with a service, use `assay context` to find the right module:

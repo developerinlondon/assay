@@ -1,3 +1,4 @@
+pub mod approval;
 mod apt;
 mod assert;
 mod cgroup;
@@ -7,6 +8,7 @@ mod crypto;
 #[cfg(feature = "db")]
 mod db;
 mod disk;
+pub(crate) mod gated;
 pub mod http;
 mod json;
 mod linux;

@@ -1,5 +1,6 @@
 use crate::config::CheckConfig;
 use crate::lua;
+use crate::lua::ExecMode;
 use crate::output::CheckResult;
 use anyhow::{Context, Result};
 
@@ -10,7 +11,7 @@ impl ScriptCheck {
         &self,
         config: &CheckConfig,
         client: &reqwest::Client,
-        readonly: bool,
+        exec_mode: ExecMode,
     ) -> Result<CheckResult> {
         let file_path = config
             .file
@@ -18,8 +19,15 @@ impl ScriptCheck {
             .context("script check requires a 'file' field")?;
 
         // Create a fresh Lua VM for each script check (isolation)
-        let vm =
-            lua::create_vm_configured(client.clone(), None, readonly).context("creating Lua VM")?;
+        let vm = lua::create_vm_with_options(
+            client.clone(),
+            lua::VmOptions {
+                global_modules_path: None,
+                mode: exec_mode,
+                approval: lua::ApprovalConfig::default(),
+            },
+        )
+        .context("creating Lua VM")?;
 
         // Inject check-specific environment variables
         lua::inject_env(&vm, &config.env)?;
