@@ -6,6 +6,9 @@ All notable changes to Assay are documented here.
 
 ### Added
 
+- build: track the embedded `stdlib/` tree via `build.rs` `rerun-if-changed` so a stdlib-only change
+  is never served from a stale build cache (persistent CI caches previously missed newly added
+  modules).
 - `assay mcp-serve` — a Model Context Protocol server over stdio so AI coding agents (Claude Code,
   Cursor, Windsurf, Cline, and any MCP client) can drive the runtime directly. It speaks JSON-RPC
   2.0 over stdin/stdout with newline-delimited framing per the MCP stdio transport, implementing
@@ -26,6 +29,25 @@ All notable changes to Assay are documented here.
     error); malformed JSON-RPC returns a transport-level error response. Transport is hand-rolled on
     `serde_json` + `tokio` (both already dependencies) to keep the static binary size flat — no MCP
     SDK is pulled in.
+- Five API-client stdlib modules over the existing `http` and `aws.sigv4` builtins, extending the
+  batteries-included set to more infrastructure and cloud HTTP APIs:
+  - `assay.sonarqube` — SonarQube web API reads: quality-gate project status, issue and hotspot
+    search, component measures, project search. Bearer or basic auth. Read-only.
+  - `assay.servicenow` — ServiceNow Table API (`list` / `get` / `create` / `update`) plus a
+    `cmdb:query` helper. Basic or bearer auth. `create` / `update` mutate; `cmdb:query` is a lookup
+    that uses `POST` by API contract.
+  - `assay.infoblox` — Infoblox WAPI: DNS record / network / range reads and grid status, plus
+    record create / update / delete. Basic auth. Documents that the Grid CA must be trusted by the
+    runtime because the `http` builtin exposes no TLS-skip option.
+  - `assay.aws.ec2` — EC2 Query API reads over Signature V4: `describe_instances`,
+    `describe_volumes`, `describe_security_groups`. Read-only.
+  - `assay.aws.s3` — S3 reads over Signature V4: `list_buckets`, `list_objects`, `head_object`.
+    Read-only.
+
+  Every mutating method routes exclusively through the already-gated `http.post` / `put` / `patch` /
+  `delete` verbs, so read-only and approval modes classify them as mutations with no change to the
+  shared mutation catalog. Because that gate is verb-based, `servicenow.cmdb:query` (a `POST` that
+  reads) is also suspended in gated modes.
 
 ## assay 0.16.10 — 2026-07-05
 
