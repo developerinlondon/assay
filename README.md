@@ -132,6 +132,47 @@ mutators, `systemd` unit/machine lifecycle actions, `apt` mutators, `tar.create`
 when the mode is active, and tool-mode envelopes carry `"readonly": true`. For nil-ing out
 additional globals entirely, combine with `ASSAY_BLOCK_GLOBALS`.
 
+## Approval mode
+
+Where read-only mode hard-blocks every write, approval mode enforces a per-operation human (or
+supervisor) decision on the same catalog of mutating builtins. It is aimed at supervised remediation
+contexts where each write must be individually authorized. Activate with the global
+`--approval-mode` flag or `ASSAY_APPROVAL=1` (approval mode wins if `--readonly` is also set):
+
+```bash
+assay run --mode tool --approval-mode remediate.lua   # also: run, exec, YAML check mode
+```
+
+When a script reaches a mutating operation, the run suspends and raises the existing tool-mode
+approval flow — `status:"needs_approval"` with a resume token — carrying a descriptor of the pending
+operation:
+
+```json
+{
+  "status": "needs_approval",
+  "requiresApproval": {
+    "op": "http.post",
+    "summary": "https://api.example.com/deploy",
+    "index": 0,
+    "resumeToken": "…"
+  }
+}
+```
+
+The supervisor inspects the descriptor and decides:
+
+```bash
+assay resume --token <token> --approve yes   # permit this one operation, re-run, suspend at the next
+assay resume --token <token> --approve no    # fail it with "approval: <op> denied"
+```
+
+Each `yes` re-runs the script from the top: previously-approved operations execute and the run
+re-suspends at the next unapproved one, so grants are single-shot and per-operation. Read paths
+(`http.get`, `fs.read`, `env.get`, `db.query`, status/list helpers) run freely without prompting.
+Because approvals are matched by the sequence index of mutating operations, a read that changes
+control flow between operations across re-runs can shift indices — the same replay limitation
+workflow engines have; suitable for supervised single-writer scripts.
+
 ## Auth + IdP quick-start
 
 Once `assay-engine` is running with the auth module enabled, every IdP capability is reachable over

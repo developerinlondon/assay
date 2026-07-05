@@ -3,13 +3,14 @@ pub mod prometheus;
 pub mod script;
 
 use crate::config::CheckConfig;
+use crate::lua::ExecMode;
 use crate::output::CheckResult;
 use std::time::Instant;
 
 pub async fn run_check(
     config: &CheckConfig,
     client: &reqwest::Client,
-    readonly: bool,
+    exec_mode: ExecMode,
 ) -> CheckResult {
     let start = Instant::now();
     let result = match config.check_type {
@@ -18,7 +19,7 @@ pub async fn run_check(
             prometheus::PrometheusCheck.execute(config, client).await
         }
         crate::config::CheckType::Script => {
-            script::ScriptCheck.execute(config, client, readonly).await
+            script::ScriptCheck.execute(config, client, exec_mode).await
         }
     };
 
