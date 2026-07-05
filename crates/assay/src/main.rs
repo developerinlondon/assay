@@ -55,6 +55,13 @@ struct Cli {
     /// ASSAY_READONLY=1 activates the same mode.
     #[arg(long, global = true)]
     readonly: bool,
+
+    /// Approval mode: mutating builtins suspend for per-operation human
+    /// approval via the resume flow instead of executing.
+    /// ASSAY_APPROVAL=1 activates the same mode. Takes precedence over
+    /// --readonly.
+    #[arg(long, global = true)]
+    approval_mode: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -395,11 +402,12 @@ enum ScriptMode {
     Tool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct RunOptions {
     mode: ScriptMode,
     timeout_secs: u64,
-    readonly: bool,
+    exec_mode: lua::ExecMode,
+    approval: lua::ApprovalConfig,
 }
 
 impl Default for RunOptions {
@@ -407,8 +415,21 @@ impl Default for RunOptions {
         Self {
             mode: resolve_script_mode(None),
             timeout_secs: DEFAULT_TOOL_TIMEOUT_SECS,
-            readonly: lua::readonly_from_env(),
+            exec_mode: resolve_exec_mode(false, false),
+            approval: lua::approval_config_from_env(),
         }
+    }
+}
+
+/// Resolve the execution mode from CLI flags and environment. Approval
+/// mode wins over read-only when both are requested.
+fn resolve_exec_mode(cli_readonly: bool, cli_approval: bool) -> lua::ExecMode {
+    if cli_approval || lua::approval_from_env() {
+        lua::ExecMode::Approval
+    } else if cli_readonly || lua::readonly_from_env() {
+        lua::ExecMode::ReadOnly
+    } else {
+        lua::ExecMode::Unrestricted
     }
 }
 
@@ -443,6 +464,12 @@ struct ApprovalRequestPayload {
     prompt: String,
     #[serde(default)]
     context: JsonValue,
+    #[serde(default)]
+    op: Option<String>,
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    index: Option<u64>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -452,12 +479,30 @@ struct ResumeState {
     approval_context: JsonValue,
     created_at: u64,
     ttl_secs: u64,
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    approved_indices: Vec<u64>,
+    #[serde(default)]
+    pending_index: Option<u64>,
+    #[serde(default)]
+    op: Option<String>,
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    script_args: Vec<String>,
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    let readonly = cli.readonly || lua::readonly_from_env();
+    let exec_mode = resolve_exec_mode(cli.readonly, cli.approval_mode);
+    let readonly = exec_mode.is_readonly();
+    let approval = if exec_mode.is_approval() {
+        lua::approval_config_from_env()
+    } else {
+        lua::ApprovalConfig::default()
+    };
 
     let filter = if cli.verbose {
         EnvFilter::new("debug")
@@ -475,10 +520,11 @@ async fn main() -> ExitCode {
         Some(Commands::Context { query, limit }) => run_context(&query, limit),
         Some(Commands::Exec { eval, file }) => {
             if let Some(code) = eval {
-                run_lua_inline(&code, readonly).await
+                run_lua_inline(&code, exec_mode, &approval).await
             } else if let Some(path) = file {
                 let options = RunOptions {
-                    readonly,
+                    exec_mode,
+                    approval: approval.clone(),
                     ..RunOptions::default()
                 };
                 run_lua_script(&path, options, Vec::new()).await
@@ -487,7 +533,7 @@ async fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         }
-        Some(Commands::Modules) => run_modules(readonly),
+        Some(Commands::Modules) => run_modules(exec_mode),
         Some(Commands::Run {
             file,
             mode,
@@ -497,7 +543,8 @@ async fn main() -> ExitCode {
             let options = RunOptions {
                 mode: resolve_script_mode(mode.as_deref()),
                 timeout_secs: timeout.unwrap_or(DEFAULT_TOOL_TIMEOUT_SECS),
-                readonly,
+                exec_mode,
+                approval: approval.clone(),
             };
             dispatch_file(&file, options, script_args).await
         }
@@ -678,7 +725,8 @@ async fn main() -> ExitCode {
         None => {
             if let Some(ref file) = cli.file {
                 let options = RunOptions {
-                    readonly,
+                    exec_mode,
+                    approval: approval.clone(),
                     ..RunOptions::default()
                 };
                 dispatch_file(file, options, Vec::new()).await
@@ -711,7 +759,7 @@ async fn dispatch_file(
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
-        "yaml" | "yml" => run_yaml_checks(file, options.readonly).await,
+        "yaml" | "yml" => run_yaml_checks(file, options.exec_mode).await,
         "lua" => run_lua_script(file, options, script_args).await,
         other => {
             eprintln!(
@@ -722,7 +770,8 @@ async fn dispatch_file(
     }
 }
 
-async fn run_yaml_checks(path: &std::path::Path, readonly: bool) -> ExitCode {
+async fn run_yaml_checks(path: &std::path::Path, exec_mode: lua::ExecMode) -> ExitCode {
+    let readonly = exec_mode.is_readonly();
     info!(config = %path.display(), readonly, "starting assay (check mode)");
 
     let cfg = match config::load(path) {
@@ -740,7 +789,7 @@ async fn run_yaml_checks(path: &std::path::Path, readonly: bool) -> ExitCode {
         "configuration loaded"
     );
 
-    let result = runner::run(&cfg, readonly).await;
+    let result = runner::run(&cfg, exec_mode).await;
     result.print()
 }
 
@@ -760,14 +809,24 @@ async fn run_lua_script(
     let script = lua::async_bridge::strip_shebang(&script);
 
     match options.mode {
-        ScriptMode::Script => run_lua_script_mode(path, script, script_args, options.readonly).await,
+        ScriptMode::Script => {
+            run_lua_script_mode(
+                path,
+                script,
+                script_args,
+                options.exec_mode,
+                &options.approval,
+            )
+            .await
+        }
         ScriptMode::Tool => {
             run_lua_tool_mode(
                 path,
                 script,
                 options.timeout_secs,
                 script_args,
-                options.readonly,
+                options.exec_mode,
+                &options.approval,
             )
             .await
         }
@@ -794,13 +853,22 @@ async fn run_lua_script_mode(
     path: &std::path::Path,
     script: &str,
     script_args: Vec<String>,
-    readonly: bool,
+    exec_mode: lua::ExecMode,
+    approval: &lua::ApprovalConfig,
 ) -> ExitCode {
+    let readonly = exec_mode.is_readonly();
     info!(script = %path.display(), readonly, "starting assay (script mode)");
 
     let client = build_http_client();
 
-    let vm = match lua::create_vm_configured(client, None, readonly) {
+    let vm = match lua::create_vm_with_options(
+        client,
+        lua::VmOptions {
+            global_modules_path: None,
+            mode: exec_mode,
+            approval: approval.clone(),
+        },
+    ) {
         Ok(vm) => vm,
         Err(e) => {
             eprintln!("error: creating Lua VM: {e:#}");
@@ -837,12 +905,16 @@ async fn run_lua_tool_mode(
     script: &str,
     timeout_secs: u64,
     script_args: Vec<String>,
-    readonly: bool,
+    exec_mode: lua::ExecMode,
+    approval: &lua::ApprovalConfig,
 ) -> ExitCode {
+    let readonly = exec_mode.is_readonly();
+    // Under a gate (read-only or approval) `env.set` is itself gated, so
+    // the mode marker is injected through the check-env table rather than a
+    // script prefix that would trip the gate.
+    let gated = exec_mode.is_readonly() || exec_mode.is_approval();
     info!(script = %path.display(), timeout_secs, readonly, "starting assay (tool mode)");
-    // In read-only mode `env.set` raises, so the mode marker is injected
-    // through the check-env table instead of the script prefix.
-    let tool_script = if readonly {
+    let tool_script = if gated {
         script.to_string()
     } else {
         format!("env.set(\"ASSAY_MODE\", \"tool\")\n{script}")
@@ -850,7 +922,14 @@ async fn run_lua_tool_mode(
 
     let client = build_http_client();
 
-    let vm = match lua::create_vm_configured(client, None, readonly) {
+    let vm = match lua::create_vm_with_options(
+        client,
+        lua::VmOptions {
+            global_modules_path: None,
+            mode: exec_mode,
+            approval: approval.clone(),
+        },
+    ) {
         Ok(vm) => vm,
         Err(e) => {
             emit_tool_error("error", format!("creating Lua VM: {e:#}"), readonly);
@@ -858,7 +937,7 @@ async fn run_lua_tool_mode(
         }
     };
 
-    if readonly {
+    if gated {
         let mode_env =
             std::collections::HashMap::from([("ASSAY_MODE".to_string(), "tool".to_string())]);
         if let Err(e) = lua::inject_env(&vm, &mode_env) {
@@ -895,7 +974,13 @@ async fn run_lua_tool_mode(
         },
         Ok(Err(e)) => {
             if let Some(request) = extract_approval_request(&e) {
-                match persist_resume_state(path, request) {
+                match persist_resume_state(
+                    path,
+                    request,
+                    exec_mode,
+                    &approval.approved_indices,
+                    &script_args,
+                ) {
                     Ok(requires_approval) => emit_tool_needs_approval(requires_approval, readonly),
                     Err(err) => emit_tool_error("error", err, readonly),
                 }
@@ -965,17 +1050,47 @@ async fn resume_tool_execution(
     };
 
     let mut command = Command::new(current_exe);
+    command.args([
+        "run",
+        "--mode",
+        "tool",
+        state.script_path.to_string_lossy().as_ref(),
+    ]);
+    // Re-run with the original positional arguments so the `arg` global —
+    // and any control flow that depends on it — is identical across runs.
+    if !state.script_args.is_empty() {
+        command.arg("--");
+        command.args(&state.script_args);
+    }
     command
-        .args([
-            "run",
-            "--mode",
-            "tool",
-            state.script_path.to_string_lossy().as_ref(),
-        ])
         .env("ASSAY_MODE", "tool")
         .env("ASSAY_APPROVAL_RESULT", approve)
         .env("ASSAY_STATE_DIR", &state_dir);
-    if readonly {
+
+    if state.mode.as_deref() == Some("approval") {
+        command.env(lua::APPROVAL_ENV, "1");
+        let mut approved = state.approved_indices.clone();
+        match approve {
+            "yes" => {
+                if let Some(idx) = state.pending_index
+                    && !approved.contains(&idx)
+                {
+                    approved.push(idx);
+                }
+            }
+            _ => {
+                if let Some(idx) = state.pending_index {
+                    command.env(lua::DENIED_INDEX_ENV, idx.to_string());
+                }
+            }
+        }
+        let joined = approved
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        command.env(lua::APPROVED_INDICES_ENV, joined);
+    } else if readonly {
         command.env(lua::READONLY_ENV, "1");
     }
 
@@ -1006,19 +1121,35 @@ async fn resume_tool_execution(
         output.status.success() && resumed_status.as_deref() != Some("needs_approval");
 
     if should_cleanup && let Err(err) = fs::remove_file(&state_path) {
-        emit_tool_error("error", format!("cleaning up resume state: {err}"), readonly);
+        emit_tool_error(
+            "error",
+            format!("cleaning up resume state: {err}"),
+            readonly,
+        );
         return ExitCode::SUCCESS;
     }
 
     ExitCode::SUCCESS
 }
 
-async fn run_lua_inline(code: &str, readonly: bool) -> ExitCode {
+async fn run_lua_inline(
+    code: &str,
+    exec_mode: lua::ExecMode,
+    approval: &lua::ApprovalConfig,
+) -> ExitCode {
+    let readonly = exec_mode.is_readonly();
     info!(readonly, "starting assay (inline eval mode)");
 
     let client = build_http_client();
 
-    let vm = match lua::create_vm_configured(client, None, readonly) {
+    let vm = match lua::create_vm_with_options(
+        client,
+        lua::VmOptions {
+            global_modules_path: None,
+            mode: exec_mode,
+            approval: approval.clone(),
+        },
+    ) {
         Ok(vm) => vm,
         Err(e) => {
             eprintln!("error: creating Lua VM: {e:#}");
@@ -1075,6 +1206,9 @@ fn extract_approval_request(err: &mlua::Error) -> Option<ApprovalRequestPayload>
 fn persist_resume_state(
     script_path: &std::path::Path,
     request: ApprovalRequestPayload,
+    mode: lua::ExecMode,
+    approved_indices: &[u64],
+    script_args: &[String],
 ) -> Result<JsonValue, String> {
     let state_dir = resolve_state_dir()?;
     let resume_dir = state_dir.join("resume");
@@ -1090,12 +1224,19 @@ fn persist_resume_state(
             Err(_) => script_path.to_path_buf(),
         }
     };
+    let mode_label = mode.is_approval().then(|| "approval".to_string());
     let state = ResumeState {
         script_path: resolved_script_path,
         approval_prompt: request.prompt.clone(),
         approval_context: request.context.clone(),
         created_at: unix_timestamp_now(),
         ttl_secs: DEFAULT_RESUME_TTL_SECS,
+        mode: mode_label,
+        approved_indices: approved_indices.to_vec(),
+        pending_index: request.index,
+        op: request.op.clone(),
+        summary: request.summary.clone(),
+        script_args: script_args.to_vec(),
     };
 
     let serialized =
@@ -1103,11 +1244,20 @@ fn persist_resume_state(
     fs::write(resume_dir.join(format!("{token}.json")), serialized)
         .map_err(|err| format!("writing resume state: {err}"))?;
 
-    Ok(serde_json::json!({
-        "prompt": request.prompt,
-        "context": request.context,
-        "resumeToken": token,
-    }))
+    let mut requires = serde_json::Map::new();
+    requires.insert("prompt".to_string(), JsonValue::String(request.prompt));
+    requires.insert("context".to_string(), request.context);
+    requires.insert("resumeToken".to_string(), JsonValue::String(token));
+    if let Some(op) = request.op {
+        requires.insert("op".to_string(), JsonValue::String(op));
+    }
+    if let Some(summary) = request.summary {
+        requires.insert("summary".to_string(), JsonValue::String(summary));
+    }
+    if let Some(index) = request.index {
+        requires.insert("index".to_string(), JsonValue::from(index));
+    }
+    Ok(JsonValue::Object(requires))
 }
 
 fn resolve_state_dir() -> Result<PathBuf, String> {
@@ -1232,7 +1382,7 @@ fn truncate_tool_envelope(mut envelope: ToolSuccessEnvelope) -> ToolSuccessEnvel
     envelope
 }
 
-fn run_modules(readonly: bool) -> ExitCode {
+fn run_modules(exec_mode: lua::ExecMode) -> ExitCode {
     use assay::discovery::{ModuleSource, discover_modules};
 
     let modules = discover_modules();
@@ -1263,11 +1413,14 @@ fn run_modules(readonly: bool) -> ExitCode {
         );
     }
 
-    if readonly {
+    if exec_mode.is_readonly() {
         println!();
         println!(
             "read-only mode active: mutating builtins raise 'readonly: <name> blocked' errors"
         );
+    } else if exec_mode.is_approval() {
+        println!();
+        println!("approval mode active: mutating builtins pause for per-operation approval");
     }
 
     ExitCode::SUCCESS

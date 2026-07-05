@@ -2,6 +2,35 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.16.10 — 2026-07-05
+
+### Added
+
+- Enforced approval mode for supervised script contexts (agent-generated remediation, self-service
+  automation), where each mutating operation is authorized individually by an operator or calling
+  system rather than trusted to the script. Activate with the global `--approval-mode` CLI flag
+  (works for `run`, `exec`, YAML check mode, and tool mode) or `ASSAY_APPROVAL=1`/`true`. When both
+  read-only and approval mode are requested, approval mode wins (ask, don't hard-block). Instead of
+  executing, a mutating builtin suspends the run and raises the existing tool-mode approval flow
+  (`status:"needs_approval"` + resume token) carrying a descriptor of the operation — `op` (the
+  dotted builtin name), `summary` (the salient argument: url for HTTP, path for filesystem, command
+  for shell, SQL for `db.execute`), and `index` (a per-run sequence number assigned to every gated
+  operation). The supervisor decides with `assay resume --token … --approve yes|no`:
+  - `yes` re-runs the script from the top with that one operation additionally permitted;
+    previously-approved operations execute and the run re-suspends at the next unapproved one, so a
+    two-write script takes two approval cycles before it completes. Grants are single-shot and
+    per-operation, never "unlock the rest of the run".
+  - `no` fails that operation terminally with `approval: <op> denied`, a clean error the script's
+    own error handling can observe. The gated surface is the same catalog read-only mode uses (now
+    shared between the two gates): HTTP write verbs (including `http.client(...)` wrappers),
+    `ws.connect`, all of `shell.*` / `process.*` / `machinectl.*`, `fs` write ops, `env.set`,
+    `db.execute`, `oci`/`systemd`/`apt`/`tar`/`compress` mutators, and the Lua stdlib write paths
+    (`io.popen`, `io.open` write modes, `io.output(target)`). Read paths (`http.get`, `fs.read`,
+    `env.get`, `db.query`, status/list helpers) run freely without prompting. `assay modules` notes
+    when the mode is active. Because approval matching is by sequence index, a read that changes
+    control flow between operations across re-runs can shift indices (the same class of limitation
+    as workflow replay); acceptable for supervised single-writer scripts.
+
 ## assay 0.16.9 — 2026-07-05
 
 ### Added

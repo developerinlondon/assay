@@ -8,52 +8,7 @@
 
 use mlua::{Lua, MultiValue, Table, Value};
 
-/// Tables whose entire function surface is blocked.
-const BLOCKED_TABLES: &[&str] = &["shell", "process", "machinectl"];
-
-/// Individual functions blocked inside otherwise-usable tables.
-const BLOCKED_FUNCTIONS: &[&str] = &[
-    "http.post",
-    "http.put",
-    "http.patch",
-    "http.delete",
-    "http.serve",
-    "http.serve_with_extra",
-    "http.download",
-    "ws.connect",
-    "fs.write",
-    "fs.write_bytes",
-    "fs.remove",
-    "fs.rename",
-    "fs.copy",
-    "fs.chmod",
-    "fs.mkdir",
-    "fs.tempdir",
-    "fs.sub_in_file",
-    "env.set",
-    "db.execute",
-    "oci.copy",
-    "oci.tag",
-    "oci.mutate",
-    "systemd.start",
-    "systemd.stop",
-    "systemd.restart",
-    "systemd.reload",
-    "systemd.unit_action",
-    "systemd.machine_start",
-    "systemd.machine_poweroff",
-    "systemd.machine_reboot",
-    "systemd.machine_terminate",
-    "systemd.machine_exec",
-    "apt.update",
-    "apt.install",
-    "apt.remove",
-    "apt.add_source",
-    "compress.untar",
-    "tar.create",
-    "tar.extract",
-    "io.popen",
-];
+use super::gated::{BLOCKED_FUNCTIONS, BLOCKED_TABLES, is_gated_http_verb};
 
 pub fn apply(lua: &Lua) -> mlua::Result<()> {
     for path in BLOCKED_FUNCTIONS {
@@ -129,7 +84,7 @@ fn guard_http_client_request(lua: &Lua) -> mlua::Result<()> {
                 _ => None,
             };
             if let Some(method) = method
-                && method != "get"
+                && is_gated_http_verb(&method)
             {
                 return Err(blocked(&format!("http.{method}")));
             }

@@ -34,6 +34,100 @@ pub fn readonly_from_env() -> bool {
     )
 }
 
+/// Set to `1` or `true` to activate approval mode for every VM the process
+/// creates. Mutating builtins stay registered but suspend for
+/// per-operation approval via the resume flow instead of executing. The
+/// `--approval-mode` CLI flag activates the same mode per invocation and
+/// takes precedence over read-only mode.
+pub const APPROVAL_ENV: &str = "ASSAY_APPROVAL";
+
+/// Comma-separated set of already-approved operation indices for an
+/// approval-mode re-run (set by the resume machinery).
+pub(crate) const APPROVED_INDICES_ENV: &str = "ASSAY_APPROVED_INDICES";
+
+/// The single operation index to fail terminally on an approval-mode
+/// re-run (set by the resume machinery when a decision is `no`).
+pub(crate) const DENIED_INDEX_ENV: &str = "ASSAY_DENIED_INDEX";
+
+/// Prefix that marks a runtime error as an approval request. The tool-mode
+/// runner extracts the JSON payload that follows it to suspend the run.
+pub(crate) const APPROVAL_REQUEST_PREFIX: &str = "__assay_approval_request__:";
+
+pub fn approval_from_env() -> bool {
+    matches!(
+        std::env::var(APPROVAL_ENV).ok().as_deref().map(str::trim),
+        Some("1") | Some("true")
+    )
+}
+
+/// Execution mode selecting which post-registration gate (if any) is
+/// applied to a VM.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExecMode {
+    #[default]
+    Unrestricted,
+    ReadOnly,
+    Approval,
+}
+
+impl ExecMode {
+    pub fn is_readonly(self) -> bool {
+        matches!(self, ExecMode::ReadOnly)
+    }
+
+    pub fn is_approval(self) -> bool {
+        matches!(self, ExecMode::Approval)
+    }
+}
+
+/// Per-run approval state consumed by the approval gate: which operation
+/// indices are pre-approved for this run and which single index (if any)
+/// must fail terminally.
+#[derive(Clone, Debug, Default)]
+pub struct ApprovalConfig {
+    pub approved_indices: Vec<u64>,
+    pub denied_index: Option<u64>,
+}
+
+/// Resolve the approval set + denied index from the environment. Empty
+/// when the vars are absent, which is the first-run (nothing approved
+/// yet) case.
+pub fn approval_config_from_env() -> ApprovalConfig {
+    let approved_indices = std::env::var(APPROVED_INDICES_ENV)
+        .ok()
+        .map(|raw| parse_indices(&raw))
+        .unwrap_or_default();
+    let denied_index = std::env::var(DENIED_INDEX_ENV)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok());
+    ApprovalConfig {
+        approved_indices,
+        denied_index,
+    }
+}
+
+fn parse_indices(raw: &str) -> Vec<u64> {
+    raw.split(',')
+        .filter_map(|part| {
+            let trimmed = part.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                trimmed.parse::<u64>().ok()
+            }
+        })
+        .collect()
+}
+
+/// Full VM configuration. New knobs are added here rather than by widening
+/// `create_vm_configured`, keeping the older factory signatures stable.
+#[derive(Clone, Debug, Default)]
+pub struct VmOptions {
+    pub global_modules_path: Option<String>,
+    pub mode: ExecMode,
+    pub approval: ApprovalConfig,
+}
+
 fn lua_err(e: mlua::Error) -> anyhow::Error {
     anyhow::anyhow!("{e}")
 }
@@ -61,6 +155,27 @@ pub fn create_vm_configured(
     global_modules_path: Option<String>,
     readonly: bool,
 ) -> Result<Lua> {
+    let mode = if readonly {
+        ExecMode::ReadOnly
+    } else {
+        ExecMode::Unrestricted
+    };
+    create_vm_with_options(
+        client,
+        VmOptions {
+            global_modules_path,
+            mode,
+            approval: ApprovalConfig::default(),
+        },
+    )
+}
+
+pub fn create_vm_with_options(client: reqwest::Client, options: VmOptions) -> Result<Lua> {
+    let VmOptions {
+        global_modules_path,
+        mode,
+        approval,
+    } = options;
     let libs = StdLib::ALL_SAFE;
     let lua = Lua::new_with(libs, LuaOptions::default()).map_err(lua_err)?;
     lua.set_memory_limit(64 * 1024 * 1024).map_err(lua_err)?;
@@ -68,8 +183,10 @@ pub fn create_vm_configured(
     register_fs_loader(&lua, global_modules_path).map_err(lua_err)?;
     register_stdlib_loader(&lua).map_err(lua_err)?;
     builtins::register_all(&lua, client).map_err(lua_err)?;
-    if readonly {
-        builtins::readonly::apply(&lua).map_err(lua_err)?;
+    match mode {
+        ExecMode::ReadOnly => builtins::readonly::apply(&lua).map_err(lua_err)?,
+        ExecMode::Approval => builtins::approval::apply(&lua, &approval).map_err(lua_err)?,
+        ExecMode::Unrestricted => {}
     }
     Ok(lua)
 }
