@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
 
-pub async fn run(config: &Config) -> RunResult {
+pub async fn run(config: &Config, readonly: bool) -> RunResult {
     if config.parallel {
         warn!("parallel execution not yet implemented, running sequentially");
     }
@@ -17,7 +17,7 @@ pub async fn run(config: &Config) -> RunResult {
     let client = build_http_client();
     let results = Arc::new(Mutex::new(Vec::with_capacity(config.checks.len())));
 
-    let run_future = run_all_checks(config, &client, Arc::clone(&results));
+    let run_future = run_all_checks(config, &client, Arc::clone(&results), readonly);
 
     match timeout(config.timeout, run_future).await {
         Ok(()) => {}
@@ -59,9 +59,10 @@ async fn run_all_checks(
     config: &Config,
     client: &reqwest::Client,
     results: Arc<Mutex<Vec<CheckResult>>>,
+    readonly: bool,
 ) {
     for check_config in &config.checks {
-        let result = run_check_with_retries(config, check_config, client).await;
+        let result = run_check_with_retries(config, check_config, client, readonly).await;
         let passed_str = if result.passed { "PASS" } else { "FAIL" };
         info!(
             check = check_config.name,
@@ -77,11 +78,12 @@ async fn run_check_with_retries(
     config: &Config,
     check_config: &crate::config::CheckConfig,
     client: &reqwest::Client,
+    readonly: bool,
 ) -> CheckResult {
     let max_attempts = config.retries + 1;
 
     for attempt in 1..=max_attempts {
-        let result = checks::run_check(check_config, client).await;
+        let result = checks::run_check(check_config, client, readonly).await;
 
         if result.passed {
             return result;
