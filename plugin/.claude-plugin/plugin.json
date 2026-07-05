@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "assay",
+  "version": "0.17.0",
+  "description": "Gated infrastructure toolkit. Run any embedded assay module (Kubernetes, ArgoCD, Vault, Prometheus, GitLab, AWS, and more) through one Lua tool that is always read-only or approval-gated — never unrestricted.",
+  "author": {
+    "name": "developerinlondon",
+    "url": "https://github.com/developerinlondon"
+  },
+  "homepage": "https://github.com/developerinlondon/assay",
+  "repository": "https://github.com/developerinlondon/assay",
+  "license": "Apache-2.0",
+  "keywords": [
+    "assay",
+    "lua",
+    "kubernetes",
+    "argocd",
+    "vault",
+    "prometheus",
+    "aws",
+    "infrastructure",
+    "mcp"
+  ],
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/"
+}

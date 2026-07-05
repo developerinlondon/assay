@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-marketplace.json",
+  "name": "assay",
+  "owner": {
+    "name": "developerinlondon",
+    "url": "https://github.com/developerinlondon"
+  },
+  "description": "The assay infrastructure toolkit as a Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "assay",
+      "source": "./plugin",
+      "description": "Gated Lua infra toolkit — Kubernetes, ArgoCD, Vault, Prometheus, GitLab, AWS and more through one read-only/approval-gated tool.",
+      "version": "0.17.0"
+    }
+  ]
+}
