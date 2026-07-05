@@ -49,6 +49,12 @@ struct Cli {
     /// Enable verbose logging (sets RUST_LOG=debug).
     #[arg(short, long, global = true)]
     verbose: bool,
+
+    /// Read-only mode: mutating builtins (shell, process, fs writes,
+    /// http writes, ...) raise errors instead of executing.
+    /// ASSAY_READONLY=1 activates the same mode.
+    #[arg(long, global = true)]
+    readonly: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -393,6 +399,7 @@ enum ScriptMode {
 struct RunOptions {
     mode: ScriptMode,
     timeout_secs: u64,
+    readonly: bool,
 }
 
 impl Default for RunOptions {
@@ -400,8 +407,13 @@ impl Default for RunOptions {
         Self {
             mode: resolve_script_mode(None),
             timeout_secs: DEFAULT_TOOL_TIMEOUT_SECS,
+            readonly: lua::readonly_from_env(),
         }
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Serialize)]
@@ -413,6 +425,8 @@ struct ToolSuccessEnvelope {
     requires_approval: Option<JsonValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
     truncated: Option<bool>,
+    #[serde(skip_serializing_if = "is_false")]
+    readonly: bool,
 }
 
 #[derive(Serialize)]
@@ -420,6 +434,8 @@ struct ToolErrorEnvelope {
     ok: bool,
     status: &'static str,
     error: String,
+    #[serde(skip_serializing_if = "is_false")]
+    readonly: bool,
 }
 
 #[derive(Deserialize)]
@@ -441,6 +457,7 @@ struct ResumeState {
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
+    let readonly = cli.readonly || lua::readonly_from_env();
 
     let filter = if cli.verbose {
         EnvFilter::new("debug")
@@ -458,15 +475,19 @@ async fn main() -> ExitCode {
         Some(Commands::Context { query, limit }) => run_context(&query, limit),
         Some(Commands::Exec { eval, file }) => {
             if let Some(code) = eval {
-                run_lua_inline(&code).await
+                run_lua_inline(&code, readonly).await
             } else if let Some(path) = file {
-                run_lua_script(&path, RunOptions::default(), Vec::new()).await
+                let options = RunOptions {
+                    readonly,
+                    ..RunOptions::default()
+                };
+                run_lua_script(&path, options, Vec::new()).await
             } else {
                 eprintln!("error: exec requires either -e <code> or a file path");
                 ExitCode::from(1)
             }
         }
-        Some(Commands::Modules) => run_modules(),
+        Some(Commands::Modules) => run_modules(readonly),
         Some(Commands::Run {
             file,
             mode,
@@ -476,6 +497,7 @@ async fn main() -> ExitCode {
             let options = RunOptions {
                 mode: resolve_script_mode(mode.as_deref()),
                 timeout_secs: timeout.unwrap_or(DEFAULT_TOOL_TIMEOUT_SECS),
+                readonly,
             };
             dispatch_file(&file, options, script_args).await
         }
@@ -483,7 +505,7 @@ async fn main() -> ExitCode {
             token,
             approve,
             resume_ttl,
-        }) => resume_tool_execution(&token, &approve, resume_ttl).await,
+        }) => resume_tool_execution(&token, &approve, resume_ttl, readonly).await,
         Some(Commands::Workflow { global, command }) => {
             let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
                 Ok(o) => o,
@@ -655,7 +677,11 @@ async fn main() -> ExitCode {
         }
         None => {
             if let Some(ref file) = cli.file {
-                dispatch_file(file, RunOptions::default(), Vec::new()).await
+                let options = RunOptions {
+                    readonly,
+                    ..RunOptions::default()
+                };
+                dispatch_file(file, options, Vec::new()).await
             } else {
                 use clap::CommandFactory;
                 Cli::command().print_help().ok();
@@ -685,7 +711,7 @@ async fn dispatch_file(
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
-        "yaml" | "yml" => run_yaml_checks(file).await,
+        "yaml" | "yml" => run_yaml_checks(file, options.readonly).await,
         "lua" => run_lua_script(file, options, script_args).await,
         other => {
             eprintln!(
@@ -696,8 +722,8 @@ async fn dispatch_file(
     }
 }
 
-async fn run_yaml_checks(path: &std::path::Path) -> ExitCode {
-    info!(config = %path.display(), "starting assay (check mode)");
+async fn run_yaml_checks(path: &std::path::Path, readonly: bool) -> ExitCode {
+    info!(config = %path.display(), readonly, "starting assay (check mode)");
 
     let cfg = match config::load(path) {
         Ok(cfg) => cfg,
@@ -714,7 +740,7 @@ async fn run_yaml_checks(path: &std::path::Path) -> ExitCode {
         "configuration loaded"
     );
 
-    let result = runner::run(&cfg).await;
+    let result = runner::run(&cfg, readonly).await;
     result.print()
 }
 
@@ -734,9 +760,16 @@ async fn run_lua_script(
     let script = lua::async_bridge::strip_shebang(&script);
 
     match options.mode {
-        ScriptMode::Script => run_lua_script_mode(path, script, script_args).await,
+        ScriptMode::Script => run_lua_script_mode(path, script, script_args, options.readonly).await,
         ScriptMode::Tool => {
-            run_lua_tool_mode(path, script, options.timeout_secs, script_args).await
+            run_lua_tool_mode(
+                path,
+                script,
+                options.timeout_secs,
+                script_args,
+                options.readonly,
+            )
+            .await
         }
     }
 }
@@ -761,12 +794,13 @@ async fn run_lua_script_mode(
     path: &std::path::Path,
     script: &str,
     script_args: Vec<String>,
+    readonly: bool,
 ) -> ExitCode {
-    info!(script = %path.display(), "starting assay (script mode)");
+    info!(script = %path.display(), readonly, "starting assay (script mode)");
 
     let client = build_http_client();
 
-    let vm = match lua::create_vm(client) {
+    let vm = match lua::create_vm_with_paths(client, None, readonly) {
         Ok(vm) => vm,
         Err(e) => {
             eprintln!("error: creating Lua VM: {e:#}");
@@ -803,22 +837,38 @@ async fn run_lua_tool_mode(
     script: &str,
     timeout_secs: u64,
     script_args: Vec<String>,
+    readonly: bool,
 ) -> ExitCode {
-    info!(script = %path.display(), timeout_secs, "starting assay (tool mode)");
-    let tool_script = format!("env.set(\"ASSAY_MODE\", \"tool\")\n{script}");
+    info!(script = %path.display(), timeout_secs, readonly, "starting assay (tool mode)");
+    // In read-only mode `env.set` raises, so the mode marker is injected
+    // through the check-env table instead of the script prefix.
+    let tool_script = if readonly {
+        script.to_string()
+    } else {
+        format!("env.set(\"ASSAY_MODE\", \"tool\")\n{script}")
+    };
 
     let client = build_http_client();
 
-    let vm = match lua::create_vm(client) {
+    let vm = match lua::create_vm_with_paths(client, None, readonly) {
         Ok(vm) => vm,
         Err(e) => {
-            emit_tool_error("error", format!("creating Lua VM: {e:#}"));
+            emit_tool_error("error", format!("creating Lua VM: {e:#}"), readonly);
             return ExitCode::SUCCESS;
         }
     };
 
+    if readonly {
+        let mode_env =
+            std::collections::HashMap::from([("ASSAY_MODE".to_string(), "tool".to_string())]);
+        if let Err(e) = lua::inject_env(&vm, &mode_env) {
+            emit_tool_error("error", format!("injecting ASSAY_MODE: {e:#}"), readonly);
+            return ExitCode::SUCCESS;
+        }
+    }
+
     if let Err(e) = install_script_args(&vm, path, &script_args) {
-        emit_tool_error("error", format!("installing arg global: {e}"));
+        emit_tool_error("error", format!("installing arg global: {e}"), readonly);
         return ExitCode::SUCCESS;
     }
 
@@ -835,22 +885,22 @@ async fn run_lua_tool_mode(
     match result {
         Ok(Ok(value)) => match lua_value_to_json(&vm, value) {
             Ok(output) => {
-                emit_tool_success(output);
+                emit_tool_success(output, readonly);
                 ExitCode::SUCCESS
             }
             Err(e) => {
-                emit_tool_error("error", format!("serializing Lua result: {e}"));
+                emit_tool_error("error", format!("serializing Lua result: {e}"), readonly);
                 ExitCode::SUCCESS
             }
         },
         Ok(Err(e)) => {
             if let Some(request) = extract_approval_request(&e) {
                 match persist_resume_state(path, request) {
-                    Ok(requires_approval) => emit_tool_needs_approval(requires_approval),
-                    Err(err) => emit_tool_error("error", err),
+                    Ok(requires_approval) => emit_tool_needs_approval(requires_approval, readonly),
+                    Err(err) => emit_tool_error("error", err, readonly),
                 }
             } else {
-                emit_tool_error("error", format_lua_error(&e));
+                emit_tool_error("error", format_lua_error(&e), readonly);
             }
             ExitCode::SUCCESS
         }
@@ -858,24 +908,30 @@ async fn run_lua_tool_mode(
             emit_tool_error(
                 "timeout",
                 format!("execution timed out after {timeout_secs}s"),
+                readonly,
             );
             ExitCode::SUCCESS
         }
     }
 }
 
-async fn resume_tool_execution(token: &str, approve: &str, resume_ttl: Option<u64>) -> ExitCode {
+async fn resume_tool_execution(
+    token: &str,
+    approve: &str,
+    resume_ttl: Option<u64>,
+    readonly: bool,
+) -> ExitCode {
     let state_dir = match resolve_state_dir() {
         Ok(dir) => dir,
         Err(err) => {
-            emit_tool_error("error", err);
+            emit_tool_error("error", err, readonly);
             return ExitCode::SUCCESS;
         }
     };
 
     let state_path = state_dir.join("resume").join(format!("{token}.json"));
     if !state_path.exists() {
-        emit_tool_error("error", "invalid resume token".to_string());
+        emit_tool_error("error", "invalid resume token".to_string(), readonly);
         return ExitCode::SUCCESS;
     }
 
@@ -883,12 +939,12 @@ async fn resume_tool_execution(token: &str, approve: &str, resume_ttl: Option<u6
         Ok(content) => match serde_json::from_str::<ResumeState>(&content) {
             Ok(state) => state,
             Err(err) => {
-                emit_tool_error("error", format!("parsing resume state: {err}"));
+                emit_tool_error("error", format!("parsing resume state: {err}"), readonly);
                 return ExitCode::SUCCESS;
             }
         },
         Err(err) => {
-            emit_tool_error("error", format!("reading resume state: {err}"));
+            emit_tool_error("error", format!("reading resume state: {err}"), readonly);
             return ExitCode::SUCCESS;
         }
     };
@@ -896,19 +952,20 @@ async fn resume_tool_execution(token: &str, approve: &str, resume_ttl: Option<u6
     let now = unix_timestamp_now();
     let ttl_secs = resume_ttl.unwrap_or(state.ttl_secs);
     if state.created_at.saturating_add(ttl_secs) < now {
-        emit_tool_error("error", "resume token expired".to_string());
+        emit_tool_error("error", "resume token expired".to_string(), readonly);
         return ExitCode::SUCCESS;
     }
 
     let current_exe = match std::env::current_exe() {
         Ok(path) => path,
         Err(err) => {
-            emit_tool_error("error", format!("locating assay binary: {err}"));
+            emit_tool_error("error", format!("locating assay binary: {err}"), readonly);
             return ExitCode::SUCCESS;
         }
     };
 
-    let output = match Command::new(current_exe)
+    let mut command = Command::new(current_exe);
+    command
         .args([
             "run",
             "--mode",
@@ -917,12 +974,19 @@ async fn resume_tool_execution(token: &str, approve: &str, resume_ttl: Option<u6
         ])
         .env("ASSAY_MODE", "tool")
         .env("ASSAY_APPROVAL_RESULT", approve)
-        .env("ASSAY_STATE_DIR", &state_dir)
-        .output()
-    {
+        .env("ASSAY_STATE_DIR", &state_dir);
+    if readonly {
+        command.env(lua::READONLY_ENV, "1");
+    }
+
+    let output = match command.output() {
         Ok(output) => output,
         Err(err) => {
-            emit_tool_error("error", format!("spawning resume execution: {err}"));
+            emit_tool_error(
+                "error",
+                format!("spawning resume execution: {err}"),
+                readonly,
+            );
             return ExitCode::SUCCESS;
         }
     };
@@ -942,19 +1006,19 @@ async fn resume_tool_execution(token: &str, approve: &str, resume_ttl: Option<u6
         output.status.success() && resumed_status.as_deref() != Some("needs_approval");
 
     if should_cleanup && let Err(err) = fs::remove_file(&state_path) {
-        emit_tool_error("error", format!("cleaning up resume state: {err}"));
+        emit_tool_error("error", format!("cleaning up resume state: {err}"), readonly);
         return ExitCode::SUCCESS;
     }
 
     ExitCode::SUCCESS
 }
 
-async fn run_lua_inline(code: &str) -> ExitCode {
-    info!("starting assay (inline eval mode)");
+async fn run_lua_inline(code: &str, readonly: bool) -> ExitCode {
+    info!(readonly, "starting assay (inline eval mode)");
 
     let client = build_http_client();
 
-    let vm = match lua::create_vm(client) {
+    let vm = match lua::create_vm_with_paths(client, None, readonly) {
         Ok(vm) => vm,
         Err(e) => {
             eprintln!("error: creating Lua VM: {e:#}");
@@ -1067,13 +1131,14 @@ fn unix_timestamp_now() -> u64 {
         .as_secs()
 }
 
-fn emit_tool_success(output: JsonValue) {
+fn emit_tool_success(output: JsonValue, readonly: bool) {
     let mut envelope = ToolSuccessEnvelope {
         ok: true,
         status: "ok",
         output,
         requires_approval: None,
         truncated: None,
+        readonly,
     };
 
     if let Ok(serialized) = serde_json::to_vec(&envelope)
@@ -1084,30 +1149,36 @@ fn emit_tool_success(output: JsonValue) {
 
     match serde_json::to_string(&envelope) {
         Ok(serialized) => print!("{serialized}"),
-        Err(e) => emit_tool_error("error", format!("serializing tool envelope: {e}")),
+        Err(e) => emit_tool_error("error", format!("serializing tool envelope: {e}"), readonly),
     }
 }
 
-fn emit_tool_needs_approval(requires_approval: JsonValue) {
+fn emit_tool_needs_approval(requires_approval: JsonValue, readonly: bool) {
     let envelope = ToolSuccessEnvelope {
         ok: true,
         status: "needs_approval",
         output: JsonValue::Null,
         requires_approval: Some(requires_approval),
         truncated: None,
+        readonly,
     };
 
     match serde_json::to_string(&envelope) {
         Ok(serialized) => print!("{serialized}"),
-        Err(err) => emit_tool_error("error", format!("serializing tool envelope: {err}")),
+        Err(err) => emit_tool_error(
+            "error",
+            format!("serializing tool envelope: {err}"),
+            readonly,
+        ),
     }
 }
 
-fn emit_tool_error(status: &'static str, error_message: String) {
+fn emit_tool_error(status: &'static str, error_message: String, readonly: bool) {
     let envelope = ToolErrorEnvelope {
         ok: false,
         status,
         error: error_message,
+        readonly,
     };
 
     match serde_json::to_string(&envelope) {
@@ -1161,7 +1232,7 @@ fn truncate_tool_envelope(mut envelope: ToolSuccessEnvelope) -> ToolSuccessEnvel
     envelope
 }
 
-fn run_modules() -> ExitCode {
+fn run_modules(readonly: bool) -> ExitCode {
     use assay::discovery::{ModuleSource, discover_modules};
 
     let modules = discover_modules();
@@ -1189,6 +1260,13 @@ fn run_modules() -> ExitCode {
         println!(
             "{:<30} {:<10} {}",
             m.module_name, source_label, m.metadata.description
+        );
+    }
+
+    if readonly {
+        println!();
+        println!(
+            "read-only mode active: mutating builtins raise 'readonly: <name> blocked' errors"
         );
     }
 

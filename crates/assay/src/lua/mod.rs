@@ -21,22 +21,37 @@ pub const MODULES_PATH_ENV: &str = "ASSAY_MODULES_PATH";
 /// `ASSAY_BLOCK_GLOBALS=dofile,os.execute,debug.getinfo`.
 pub const BLOCK_GLOBALS_ENV: &str = "ASSAY_BLOCK_GLOBALS";
 
+/// Set to `1` or `true` to activate read-only mode for every VM the
+/// process creates. Mutating builtins stay registered but raise
+/// `readonly: <name> blocked` errors instead of executing. The
+/// `--readonly` CLI flag activates the same mode per invocation.
+pub const READONLY_ENV: &str = "ASSAY_READONLY";
+
+pub fn readonly_from_env() -> bool {
+    matches!(
+        std::env::var(READONLY_ENV).ok().as_deref().map(str::trim),
+        Some("1") | Some("true")
+    )
+}
+
 fn lua_err(e: mlua::Error) -> anyhow::Error {
     anyhow::anyhow!("{e}")
 }
 
+#[allow(dead_code)]
 pub fn create_vm(client: reqwest::Client) -> Result<Lua> {
-    create_vm_with_paths(client, None)
+    create_vm_with_paths(client, None, readonly_from_env())
 }
 
 #[allow(dead_code)]
 pub fn create_vm_with_lib_path(client: reqwest::Client, lib_path: String) -> Result<Lua> {
-    create_vm_with_paths(client, Some(lib_path))
+    create_vm_with_paths(client, Some(lib_path), readonly_from_env())
 }
 
 pub fn create_vm_with_paths(
     client: reqwest::Client,
     global_modules_path: Option<String>,
+    readonly: bool,
 ) -> Result<Lua> {
     let libs = StdLib::ALL_SAFE;
     let lua = Lua::new_with(libs, LuaOptions::default()).map_err(lua_err)?;
@@ -45,6 +60,9 @@ pub fn create_vm_with_paths(
     register_fs_loader(&lua, global_modules_path).map_err(lua_err)?;
     register_stdlib_loader(&lua).map_err(lua_err)?;
     builtins::register_all(&lua, client).map_err(lua_err)?;
+    if readonly {
+        builtins::readonly::apply(&lua).map_err(lua_err)?;
+    }
     Ok(lua)
 }
 

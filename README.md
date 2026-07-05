@@ -105,6 +105,33 @@ cargo install assay-lua      # the `assay` runtime binary
 cargo install assay-engine   # the workflow + auth server
 ```
 
+## Read-only mode
+
+For semi-trusted script contexts (agent-generated scripts, review pipelines, dry-run diagnostics),
+the runtime can execute scripts with every mutating builtin disabled. Activate with the global
+`--readonly` flag or `ASSAY_READONLY=1` (or `true`):
+
+```bash
+assay run --readonly script.lua        # also: exec, YAML check mode, tool mode
+ASSAY_READONLY=1 assay script.lua      # env activation, same effect
+```
+
+Read paths work unchanged: `http.get` (including `http.client(...)` wrappers), `fs.read` /
+`fs.list` / `fs.stat`, `env.get`, `db.query`, `systemd`/`apt` status and list helpers, and all
+pure builtins (`json`, `crypto`, `regex`, ...). Mutating builtins stay registered but raise a
+clear error instead of executing:
+
+```
+readonly: http.post blocked (write operations are disabled in read-only mode)
+```
+
+Blocked surfaces: HTTP write verbs + `http.serve` + `http.download`, `ws.connect`, all of
+`shell.*` / `process.*` / `machinectl.*`, `fs` write ops, `env.set`, `db.execute`, `oci`
+mutators, `systemd` unit/machine lifecycle actions, `apt` mutators, `tar.create` /
+`tar.extract` / `compress.untar`, `io.popen`, and `io.open` write modes. `assay modules` notes
+when the mode is active, and tool-mode envelopes carry `"readonly": true`. For nil-ing out
+additional globals entirely, combine with `ASSAY_BLOCK_GLOBALS`.
+
 ## Auth + IdP quick-start
 
 Once `assay-engine` is running with the auth module enabled, every IdP capability is reachable over

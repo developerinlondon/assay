@@ -16,6 +16,7 @@ mod oci;
 mod os_info;
 mod process;
 mod process_pty;
+pub mod readonly;
 mod serialization;
 mod shell;
 mod systemd;

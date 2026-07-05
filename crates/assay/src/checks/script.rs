@@ -10,6 +10,7 @@ impl ScriptCheck {
         &self,
         config: &CheckConfig,
         client: &reqwest::Client,
+        readonly: bool,
     ) -> Result<CheckResult> {
         let file_path = config
             .file
@@ -17,7 +18,8 @@ impl ScriptCheck {
             .context("script check requires a 'file' field")?;
 
         // Create a fresh Lua VM for each script check (isolation)
-        let vm = lua::create_vm(client.clone()).context("creating Lua VM")?;
+        let vm =
+            lua::create_vm_with_paths(client.clone(), None, readonly).context("creating Lua VM")?;
 
         // Inject check-specific environment variables
         lua::inject_env(&vm, &config.env)?;

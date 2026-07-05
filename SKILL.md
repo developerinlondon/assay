@@ -46,6 +46,14 @@ assay modules
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
 | `assay modules`             | List all 65 modules (45 stdlib + 20 builtins) |
 
+**Read-only mode.** The global `--readonly` flag (or `ASSAY_READONLY=1`) disables every mutating
+builtin — HTTP write verbs, `shell.*`, `process.*`, `fs` writes, `env.set`, `db.execute`, and system
+mutators — while read paths (`http.get`, `fs.read`, `env.get`, `db.query`, status/list helpers) work
+unchanged. Blocked calls raise
+`readonly: <name> blocked (write operations are disabled in read-only mode)`; tool-mode envelopes
+carry `"readonly": true`. Use it to run untrusted or agent-generated scripts safely for inspection
+and diagnostics.
+
 ## Discovering Modules
 
 When you need to interact with a service, use `assay context` to find the right module:
