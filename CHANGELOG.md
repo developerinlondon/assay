@@ -6,6 +6,9 @@ All notable changes to Assay are documented here.
 
 ### Added
 
+- build: track the embedded `stdlib/` tree via `build.rs` `rerun-if-changed` so a stdlib-only change
+  is never served from a stale build cache (persistent CI caches previously missed newly added
+  modules).
 - `assay mcp-serve` — a Model Context Protocol server over stdio so AI coding agents (Claude Code,
   Cursor, Windsurf, Cline, and any MCP client) can drive the runtime directly. It speaks JSON-RPC
   2.0 over stdin/stdout with newline-delimited framing per the MCP stdio transport, implementing
