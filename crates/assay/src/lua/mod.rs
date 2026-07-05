@@ -40,15 +40,23 @@ fn lua_err(e: mlua::Error) -> anyhow::Error {
 
 #[allow(dead_code)]
 pub fn create_vm(client: reqwest::Client) -> Result<Lua> {
-    create_vm_with_paths(client, None, readonly_from_env())
+    create_vm_configured(client, None, readonly_from_env())
 }
 
 #[allow(dead_code)]
 pub fn create_vm_with_lib_path(client: reqwest::Client, lib_path: String) -> Result<Lua> {
-    create_vm_with_paths(client, Some(lib_path), readonly_from_env())
+    create_vm_configured(client, Some(lib_path), readonly_from_env())
 }
 
+#[allow(dead_code)]
 pub fn create_vm_with_paths(
+    client: reqwest::Client,
+    global_modules_path: Option<String>,
+) -> Result<Lua> {
+    create_vm_configured(client, global_modules_path, readonly_from_env())
+}
+
+pub fn create_vm_configured(
     client: reqwest::Client,
     global_modules_path: Option<String>,
     readonly: bool,

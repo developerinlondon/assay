@@ -1,7 +1,7 @@
 // Read-only execution mode: mutating builtins stay registered but
 // raise `readonly: <name> blocked (write operations are disabled in
 // read-only mode)`, while read paths keep working. Activated per-VM
-// via `create_vm_with_paths(..., readonly = true)`, process-wide via
+// via `create_vm_configured(..., readonly = true)`, process-wide via
 // ASSAY_READONLY=1|true, or per-invocation via the global `--readonly`
 // CLI flag.
 
@@ -33,7 +33,7 @@ fn http_client() -> reqwest::Client {
 
 fn make_vm(readonly: bool) -> mlua::Lua {
     let _g = ENV_LOCK.lock().unwrap();
-    assay::lua::create_vm_with_paths(http_client(), None, readonly).unwrap()
+    assay::lua::create_vm_configured(http_client(), None, readonly).unwrap()
     // _g dropped here, before any caller awaits.
 }
 

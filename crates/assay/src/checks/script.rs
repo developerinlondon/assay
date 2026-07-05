@@ -19,7 +19,7 @@ impl ScriptCheck {
 
         // Create a fresh Lua VM for each script check (isolation)
         let vm =
-            lua::create_vm_with_paths(client.clone(), None, readonly).context("creating Lua VM")?;
+            lua::create_vm_configured(client.clone(), None, readonly).context("creating Lua VM")?;
 
         // Inject check-specific environment variables
         lua::inject_env(&vm, &config.env)?;

@@ -800,7 +800,7 @@ async fn run_lua_script_mode(
 
     let client = build_http_client();
 
-    let vm = match lua::create_vm_with_paths(client, None, readonly) {
+    let vm = match lua::create_vm_configured(client, None, readonly) {
         Ok(vm) => vm,
         Err(e) => {
             eprintln!("error: creating Lua VM: {e:#}");
@@ -850,7 +850,7 @@ async fn run_lua_tool_mode(
 
     let client = build_http_client();
 
-    let vm = match lua::create_vm_with_paths(client, None, readonly) {
+    let vm = match lua::create_vm_configured(client, None, readonly) {
         Ok(vm) => vm,
         Err(e) => {
             emit_tool_error("error", format!("creating Lua VM: {e:#}"), readonly);
@@ -1018,7 +1018,7 @@ async fn run_lua_inline(code: &str, readonly: bool) -> ExitCode {
 
     let client = build_http_client();
 
-    let vm = match lua::create_vm_with_paths(client, None, readonly) {
+    let vm = match lua::create_vm_configured(client, None, readonly) {
         Ok(vm) => vm,
         Err(e) => {
             eprintln!("error: creating Lua VM: {e:#}");
