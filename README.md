@@ -173,6 +173,35 @@ Because approvals are matched by the sequence index of mutating operations, a re
 control flow between operations across re-runs can shift indices — the same replay limitation
 workflow engines have; suitable for supervised single-writer scripts.
 
+## MCP server
+
+`assay mcp-serve` runs a Model Context Protocol server over stdio so AI coding agents (Claude Code,
+Cursor, Windsurf, Cline, and any MCP client) can drive the runtime directly. It speaks JSON-RPC 2.0
+with newline-delimited messages per the MCP stdio transport. Point the client at the binary:
+
+```json
+{
+  "mcpServers": {
+    "assay": { "command": "assay", "args": ["mcp-serve"] }
+  }
+}
+```
+
+Rather than one tool per module — which would balloon the advertised schema as modules are added —
+the server exposes exactly **two tools** and lets Lua compose the modules:
+
+- **`assay_run`** — run a Lua script (all embedded modules and builtins available) and return the
+  tool-mode JSON envelope. Every run is **gated**: `mode` accepts only `readonly` (default) or
+  `approval` — unrestricted execution is not offered, so a caller can never opt out of the gate.
+  Optional `timeout_secs` and `args`. Approval gates suspend and return a `requiresApproval` resume
+  token, resumable with `assay resume`.
+- **`assay_context`** — search the embedded modules and return prompt-ready Markdown docs (method
+  signatures, env vars, builtins), the same output as `assay context`.
+
+A script that errors — including a write blocked by read-only mode — comes back as an MCP result
+with `isError: true`; `needs_approval` is not an error. The server implements `initialize`,
+`tools/list`, `tools/call`, and `ping`, and shuts down cleanly on EOF.
+
 ## Auth + IdP quick-start
 
 Once `assay-engine` is running with the auth module enabled, every IdP capability is reachable over
