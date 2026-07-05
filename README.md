@@ -12,7 +12,7 @@ with 65 modules for Kubernetes, monitoring, secrets, and AI agents.
 Two binaries, one project. `FROM scratch`-shippable, PG18 + SQLite first-class. Sizes today: `assay`
 ~12 MB, `assay-engine` ~19 MB (the engine grew with the auth + IdP work in v0.2.0).
 
-- **`assay`** — Lua 5.5 runtime with 45 stdlib modules (Kubernetes, Prometheus, Vault, GitHub,
+- **`assay`** — Lua 5.5 runtime with 62 stdlib modules (Kubernetes, Prometheus, Vault, GitHub,
   Gmail, OpenClaw, Tailscale, …). Drop-in replacement for 50-250 MB Python/Node/kubectl scripting
   containers.
 - **`assay-engine`** — durable **workflow engine** (Temporal-replacement: deterministic-replay
@@ -51,7 +51,7 @@ jobs. The runtime talks to a deployed `assay-engine` over HTTP via the `assay.wo
 | `assay-engine` auth Zanzibar  | **Ory Keto / SpiceDB**    | Recursive-CTE walk on PG18 + SQLite                    |
 | `assay-engine` auth biscuit   | (Ory has nothing)         | Datalog-attenuable capability tokens — built-in        |
 | `assay-engine` dashboard      | Ory Console + Temporal UI | Single SPA, auth panes appear when auth is on          |
-| `assay` runtime               | Python / Node + kubectl   | 12 MB, 5 ms cold start, 45 stdlib modules              |
+| `assay` runtime               | Python / Node + kubectl   | 12 MB, 5 ms cold start, 62 stdlib modules              |
 
 ## Two binaries, two use cases
 
