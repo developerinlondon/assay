@@ -389,6 +389,11 @@ All 45 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)
 | `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                                                                                        |
 | `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                                                                                      |
 | `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                                                                                                          |
+| `assay.aws.ec2`      | EC2 read-only over Sig V4 — describe instances, volumes, security groups                                                                                         |
+| `assay.aws.s3`       | S3 read-only over Sig V4 — list buckets, list objects, head object                                                                                               |
+| `assay.sonarqube`    | SonarQube reads — quality gate status, issues, hotspots, measures, projects                                                                                      |
+| `assay.servicenow`   | ServiceNow Table API — list/get/create/update rows, CMDB class query                                                                                             |
+| `assay.infoblox`     | Infoblox WAPI — DNS record/network/range reads, grid status, record CRUD                                                                                         |
 | `assay.postgres`     | Postgres helpers: users, databases, grants, Vault integration                                                                                                    |
 | `assay.unleash`      | Feature flags: projects, environments, features, strategies, tokens                                                                                              |
 | `assay.openclaw`     | OpenClaw AI agent — invoke tools, state, diff, approve, LLM tasks                                                                                                |
