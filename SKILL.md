@@ -44,7 +44,7 @@ assay modules
 | `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 65 modules (45 stdlib + 20 builtins) |
+| `assay modules`             | List all 65 modules (62 stdlib + builtins)    |
 
 **Read-only mode.** The global `--readonly` flag (or `ASSAY_READONLY=1`) disables every mutating
 builtin — HTTP write verbs, `shell.*`, `process.*`, `fs` writes, `env.set`, `db.execute`, and system
@@ -358,7 +358,7 @@ embedding assay inside another admin UI. Full table + theme tokens in
 
 ## Stdlib Modules Quick Reference
 
-All 45 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 62 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module               | Description                                                                                                                                                      |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -627,7 +627,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 45 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: All 62 stdlib modules are embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use

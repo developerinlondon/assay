@@ -32,6 +32,7 @@
 - [assay.alertmanager](https://assay.rs/modules/alertmanager.html): Alert management, silences, receivers
 - [assay.loki](https://assay.rs/modules/loki.html): Log push, query, labels, series
 - [assay.grafana](https://assay.rs/modules/grafana.html): Health, dashboards, datasources, annotations
+- [assay.sonarqube](https://assay.rs/modules/sonarqube.html): SonarQube quality gates, issues, hotspots, measures
 
 ## Kubernetes & GitOps
 - [assay.k8s](https://assay.rs/modules/k8s.html): 30+ K8s resource types, CRDs, readiness checks
@@ -55,10 +56,14 @@
 - [assay.velero](https://assay.rs/modules/velero.html): Velero backups, restores, schedules
 - [assay.workflow](https://assay.rs/modules/workflow.html): Native durable workflow engine — `assay serve` runs REST+SSE+dashboard; `require("assay.workflow")` registers handlers; namespace-scoped, JWT/API-key auth, dashboard whitelabel via ASSAY_WHITELABEL_* env vars
 - [assay.harbor](https://assay.rs/modules/harbor.html): Harbor registry, projects, vulnerability scanning
+- [assay.infoblox](https://assay.rs/modules/infoblox.html): Infoblox WAPI — DNS records, networks, ranges, grid status
+- [assay.servicenow](https://assay.rs/modules/servicenow.html): ServiceNow Table API + CMDB lookups
 
 ## Data & Storage
 - [assay.postgres](https://assay.rs/modules/postgres.html): PostgreSQL helpers, user management
 - [assay.s3](https://assay.rs/modules/s3.html): S3-compatible storage (AWS, R2, MinIO) with Sig V4
+- [assay.aws.ec2](https://assay.rs/modules/aws-ec2.html): AWS EC2 read queries over Sig V4 — instances, volumes, security groups
+- [assay.aws.s3](https://assay.rs/modules/aws-s3.html): AWS S3 read over Sig V4 — list buckets/objects, head object
 
 ## Feature Flags & Utilities
 - [assay.unleash](https://assay.rs/modules/unleash.html): Unleash feature flags, environments, strategies
