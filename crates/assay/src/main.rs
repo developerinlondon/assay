@@ -2,6 +2,7 @@ mod checks;
 mod cli;
 mod config;
 mod lua;
+mod mcp;
 mod output;
 mod runner;
 
@@ -159,6 +160,15 @@ enum Commands {
         /// Target shell.
         shell: clap_complete::Shell,
     },
+    /// Run a Model Context Protocol server over stdio.
+    ///
+    /// Speaks JSON-RPC 2.0 over stdin/stdout and exposes two tools:
+    ///   assay_run     — execute a gated Lua script (readonly | approval)
+    ///   assay_context — prompt-ready module docs for discovery
+    ///
+    /// The single `assay_run` tool composes all embedded modules through
+    /// Lua, so the exposed schema stays tiny regardless of module count.
+    McpServe,
 }
 
 /// Global flags shared by `workflow` / `schedule` / `namespace` / `worker` /
@@ -704,6 +714,7 @@ async fn main() -> ExitCode {
             }
         }
         Some(Commands::Install(args)) => install::run(args).await,
+        Some(Commands::McpServe) => mcp::serve().await,
         Some(Commands::Completion { shell }) => {
             use clap::CommandFactory;
             let mut cmd = Cli::command();
@@ -908,6 +919,31 @@ async fn run_lua_tool_mode(
     exec_mode: lua::ExecMode,
     approval: &lua::ApprovalConfig,
 ) -> ExitCode {
+    let outcome =
+        execute_tool_mode(path, script, timeout_secs, script_args, exec_mode, approval).await;
+    print!("{}", outcome.envelope);
+    ExitCode::SUCCESS
+}
+
+/// Result of a tool-mode run: the serialized JSON envelope plus its
+/// `status` field. Shared by the CLI (prints `envelope`) and the MCP
+/// server (surfaces `envelope` as tool content, maps `status` to isError).
+pub struct ToolModeOutcome {
+    pub envelope: String,
+    pub status: &'static str,
+}
+
+/// Execute a Lua script in tool mode and return the JSON envelope without
+/// emitting it. `status` mirrors the envelope's own field: "ok",
+/// "needs_approval", "error", or "timeout".
+async fn execute_tool_mode(
+    path: &std::path::Path,
+    script: &str,
+    timeout_secs: u64,
+    script_args: Vec<String>,
+    exec_mode: lua::ExecMode,
+    approval: &lua::ApprovalConfig,
+) -> ToolModeOutcome {
     let readonly = exec_mode.is_readonly();
     // Under a gate (read-only or approval) `env.set` is itself gated, so
     // the mode marker is injected through the check-env table rather than a
@@ -932,8 +968,10 @@ async fn run_lua_tool_mode(
     ) {
         Ok(vm) => vm,
         Err(e) => {
-            emit_tool_error("error", format!("creating Lua VM: {e:#}"), readonly);
-            return ExitCode::SUCCESS;
+            return ToolModeOutcome {
+                envelope: build_tool_error("error", format!("creating Lua VM: {e:#}"), readonly),
+                status: "error",
+            };
         }
     };
 
@@ -941,14 +979,22 @@ async fn run_lua_tool_mode(
         let mode_env =
             std::collections::HashMap::from([("ASSAY_MODE".to_string(), "tool".to_string())]);
         if let Err(e) = lua::inject_env(&vm, &mode_env) {
-            emit_tool_error("error", format!("injecting ASSAY_MODE: {e:#}"), readonly);
-            return ExitCode::SUCCESS;
+            return ToolModeOutcome {
+                envelope: build_tool_error(
+                    "error",
+                    format!("injecting ASSAY_MODE: {e:#}"),
+                    readonly,
+                ),
+                status: "error",
+            };
         }
     }
 
     if let Err(e) = install_script_args(&vm, path, &script_args) {
-        emit_tool_error("error", format!("installing arg global: {e}"), readonly);
-        return ExitCode::SUCCESS;
+        return ToolModeOutcome {
+            envelope: build_tool_error("error", format!("installing arg global: {e}"), readonly),
+            status: "error",
+        };
     }
 
     let local = tokio::task::LocalSet::new();
@@ -963,14 +1009,18 @@ async fn run_lua_tool_mode(
 
     match result {
         Ok(Ok(value)) => match lua_value_to_json(&vm, value) {
-            Ok(output) => {
-                emit_tool_success(output, readonly);
-                ExitCode::SUCCESS
-            }
-            Err(e) => {
-                emit_tool_error("error", format!("serializing Lua result: {e}"), readonly);
-                ExitCode::SUCCESS
-            }
+            Ok(output) => ToolModeOutcome {
+                envelope: build_tool_success(output, readonly),
+                status: "ok",
+            },
+            Err(e) => ToolModeOutcome {
+                envelope: build_tool_error(
+                    "error",
+                    format!("serializing Lua result: {e}"),
+                    readonly,
+                ),
+                status: "error",
+            },
         },
         Ok(Err(e)) => {
             if let Some(request) = extract_approval_request(&e) {
@@ -981,22 +1031,30 @@ async fn run_lua_tool_mode(
                     &approval.approved_indices,
                     &script_args,
                 ) {
-                    Ok(requires_approval) => emit_tool_needs_approval(requires_approval, readonly),
-                    Err(err) => emit_tool_error("error", err, readonly),
+                    Ok(requires_approval) => ToolModeOutcome {
+                        envelope: build_tool_needs_approval(requires_approval, readonly),
+                        status: "needs_approval",
+                    },
+                    Err(err) => ToolModeOutcome {
+                        envelope: build_tool_error("error", err, readonly),
+                        status: "error",
+                    },
                 }
             } else {
-                emit_tool_error("error", format_lua_error(&e), readonly);
+                ToolModeOutcome {
+                    envelope: build_tool_error("error", format_lua_error(&e), readonly),
+                    status: "error",
+                }
             }
-            ExitCode::SUCCESS
         }
-        Err(_) => {
-            emit_tool_error(
+        Err(_) => ToolModeOutcome {
+            envelope: build_tool_error(
                 "timeout",
                 format!("execution timed out after {timeout_secs}s"),
                 readonly,
-            );
-            ExitCode::SUCCESS
-        }
+            ),
+            status: "timeout",
+        },
     }
 }
 
@@ -1281,7 +1339,7 @@ fn unix_timestamp_now() -> u64 {
         .as_secs()
 }
 
-fn emit_tool_success(output: JsonValue, readonly: bool) {
+fn build_tool_success(output: JsonValue, readonly: bool) -> String {
     let mut envelope = ToolSuccessEnvelope {
         ok: true,
         status: "ok",
@@ -1298,12 +1356,12 @@ fn emit_tool_success(output: JsonValue, readonly: bool) {
     }
 
     match serde_json::to_string(&envelope) {
-        Ok(serialized) => print!("{serialized}"),
-        Err(e) => emit_tool_error("error", format!("serializing tool envelope: {e}"), readonly),
+        Ok(serialized) => serialized,
+        Err(e) => build_tool_error("error", format!("serializing tool envelope: {e}"), readonly),
     }
 }
 
-fn emit_tool_needs_approval(requires_approval: JsonValue, readonly: bool) {
+fn build_tool_needs_approval(requires_approval: JsonValue, readonly: bool) -> String {
     let envelope = ToolSuccessEnvelope {
         ok: true,
         status: "needs_approval",
@@ -1314,8 +1372,8 @@ fn emit_tool_needs_approval(requires_approval: JsonValue, readonly: bool) {
     };
 
     match serde_json::to_string(&envelope) {
-        Ok(serialized) => print!("{serialized}"),
-        Err(err) => emit_tool_error(
+        Ok(serialized) => serialized,
+        Err(err) => build_tool_error(
             "error",
             format!("serializing tool envelope: {err}"),
             readonly,
@@ -1323,7 +1381,7 @@ fn emit_tool_needs_approval(requires_approval: JsonValue, readonly: bool) {
     }
 }
 
-fn emit_tool_error(status: &'static str, error_message: String, readonly: bool) {
+fn build_tool_error(status: &'static str, error_message: String, readonly: bool) -> String {
     let envelope = ToolErrorEnvelope {
         ok: false,
         status,
@@ -1331,12 +1389,15 @@ fn emit_tool_error(status: &'static str, error_message: String, readonly: bool) 
         readonly,
     };
 
-    match serde_json::to_string(&envelope) {
-        Ok(serialized) => print!("{serialized}"),
-        Err(e) => print!(
+    serde_json::to_string(&envelope).unwrap_or_else(|e| {
+        format!(
             "{{\"ok\":false,\"status\":\"error\",\"error\":\"serializing tool envelope: {e}\"}}"
-        ),
-    }
+        )
+    })
+}
+
+fn emit_tool_error(status: &'static str, error_message: String, readonly: bool) {
+    print!("{}", build_tool_error(status, error_message, readonly));
 }
 
 fn truncate_tool_envelope(mut envelope: ToolSuccessEnvelope) -> ToolSuccessEnvelope {
@@ -1427,6 +1488,22 @@ fn run_modules(exec_mode: lua::ExecMode) -> ExitCode {
 }
 
 fn run_context(query: &str, limit: usize) -> ExitCode {
+    match render_context(query, limit) {
+        Ok(output) => {
+            print!("{output}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Render prompt-ready module context Markdown for `query`, returning the
+/// same text the `assay context` CLI prints. Shared by the CLI path and
+/// the MCP `assay_context` tool.
+fn render_context(query: &str, limit: usize) -> Result<String, String> {
     use assay::context::{ModuleContextEntry, QuickRefEntry, format_context};
     use assay::discovery::{discover_modules, search_modules};
 
@@ -1465,14 +1542,7 @@ fn run_context(query: &str, limit: usize) -> ExitCode {
         format_context(&entries)
     });
 
-    match handle.join() {
-        Ok(output) => {
-            print!("{output}");
-            ExitCode::SUCCESS
-        }
-        Err(_) => {
-            eprintln!("error: context search failed");
-            ExitCode::from(1)
-        }
-    }
+    handle
+        .join()
+        .map_err(|_| "context search failed".to_string())
 }

@@ -657,12 +657,12 @@ Run `assay context "grafana"` to get prompt-ready method signatures for any modu
 
 ## AI Agent Integration
 
-Assay integrates with all major AI coding agents via `assay context <query>` (today) or
-`assay mcp-serve` (v0.6.0).
+Assay integrates with all major AI coding agents via `assay context <query>` or the
+`assay mcp-serve` Model Context Protocol server (v0.17.0+).
 
 ### Claude Code
 
-Add to `.mcp.json` (Coming Soon — v0.6.0):
+Add to `.mcp.json`:
 
 ```json
 {
@@ -684,7 +684,7 @@ Example: `assay context "grafana"` returns all grafana client methods with types
 
 ### Cursor
 
-Add to `.cursor/mcp.json` (Coming Soon — v0.6.0):
+Add to `.cursor/mcp.json`:
 
 ```json
 {
@@ -696,7 +696,7 @@ Add to `.cursor/mcp.json` (Coming Soon — v0.6.0):
 
 ### Windsurf
 
-Add to `~/.codeium/windsurf/mcp_config.json` (Coming Soon — v0.6.0):
+Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ```json
 {
@@ -708,19 +708,38 @@ Add to `~/.codeium/windsurf/mcp_config.json` (Coming Soon — v0.6.0):
 
 ### Cline / OpenCode
 
-Same pattern — `assay mcp-serve` exposes all modules as MCP tools (v0.6.0).
+Same pattern — point the client at `assay mcp-serve`.
 
-Today: use `assay context <query>` from terminal and paste output into agent context.
+Alternatively, use `assay context <query>` from the terminal and paste the output into the agent
+context.
 
-## MCP-Serve Vision (v0.6.0)
+## MCP Server (`assay mcp-serve`)
 
-`assay mcp-serve` will expose all 65 modules (45 stdlib + 20 builtins) as MCP tools over stdio/SSE
-transport:
+`assay mcp-serve` runs a Model Context Protocol server over stdio (JSON-RPC 2.0, newline-delimited
+messages). Instead of exposing one tool per module — which would balloon the advertised schema as
+modules are added — it presents exactly **two tools** and lets Lua compose the modules:
 
-- Each stdlib module becomes an MCP tool (e.g., `grafana_health`, `k8s_pods`)
-- Each builtin becomes an MCP tool (e.g., `http_get`, `crypto_jwt_sign`)
-- Agents call tools directly — no Lua scripting required for simple queries
-- Lua scripting still available for complex multi-step workflows
+| Tool            | Purpose                                                                               |
+| --------------- | ------------------------------------------------------------------------------------- |
+| `assay_run`     | Run a Lua script; returns the tool-mode JSON envelope. All modules + builtins usable. |
+| `assay_context` | Search modules; returns prompt-ready Markdown docs (same as `assay context`).         |
 
-Until v0.6.0: use `assay context <query>` + paste into agent context window. See
-https://assay.rs/agent-guides.html for complete integration examples.
+`assay_run` input schema:
+
+| Field          | Type                         | Notes                                                                                  |
+| -------------- | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `script`       | string (required)            | Lua source. `return` a value to surface it as the tool output.                         |
+| `mode`         | `"readonly"` \| `"approval"` | Required, default `readonly`. **`unrestricted` is not accepted** — every run is gated. |
+| `timeout_secs` | number (optional)            | Max execution seconds (default 20).                                                    |
+| `args`         | string[] (optional)          | Positional args exposed to the script as the 1-indexed `arg` global.                   |
+
+`assay_run` returns the same envelope as `assay run --mode tool`: `status` is `ok`, `needs_approval`
+(with a `requiresApproval` resume token when an approval gate is hit), or `error`. A tool call whose
+script errors — including a write blocked by read-only mode — returns an MCP result with
+`isError: true`; `needs_approval` is not an error. Resume an approval gate out of band with
+`assay resume --token <token> --approve yes|no`.
+
+`assay_context` input schema: `query` (string, required) and `limit` (number, optional, default 5).
+
+The server implements `initialize`, `tools/list`, `tools/call`, and `ping`, and shuts down cleanly
+when stdin closes. See https://assay.rs/agent-guides.html for complete integration examples.

@@ -2,6 +2,31 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.17.0 — 2026-07-05
+
+### Added
+
+- `assay mcp-serve` — a Model Context Protocol server over stdio so AI coding agents (Claude Code,
+  Cursor, Windsurf, Cline, and any MCP client) can drive the runtime directly. It speaks JSON-RPC
+  2.0 over stdin/stdout with newline-delimited framing per the MCP stdio transport, implementing
+  `initialize`, `tools/list`, `tools/call`, `ping`, and clean shutdown on EOF. Rather than exposing
+  one tool per module, it presents exactly two tools and lets Lua compose the modules — the
+  advertised schema stays tiny no matter how many modules ship:
+  - `assay_run` — execute a Lua script and return the tool-mode JSON envelope (`status` ok /
+    needs_approval / error, `output`, `requiresApproval` + resume token, `truncated`, `readonly`).
+    Reuses the existing tool-mode execution path, so approval gates suspend and return a resume
+    token exactly as `assay run --mode tool` does. Execution is **always gated**: the `mode`
+    argument accepts only `readonly` (default) or `approval`; an unrestricted mode is intentionally
+    not offered and any other value is rejected, so a caller can never opt out of the gate. A
+    blocked write in read-only mode surfaces as an `error` envelope rather than crashing the server.
+  - `assay_context` — search the embedded modules and return prompt-ready Markdown (method
+    signatures, env vars, builtins), the same output as the `assay context` CLI, so an agent can
+    discover module APIs before composing a script.
+  - Tool-execution failures return an MCP result with `isError: true` (`needs_approval` is not an
+    error); malformed JSON-RPC returns a transport-level error response. Transport is hand-rolled on
+    `serde_json` + `tokio` (both already dependencies) to keep the static binary size flat — no MCP
+    SDK is pulled in.
+
 ## assay 0.16.10 — 2026-07-05
 
 ### Added
