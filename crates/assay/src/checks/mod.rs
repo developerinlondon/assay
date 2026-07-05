@@ -6,14 +6,20 @@ use crate::config::CheckConfig;
 use crate::output::CheckResult;
 use std::time::Instant;
 
-pub async fn run_check(config: &CheckConfig, client: &reqwest::Client) -> CheckResult {
+pub async fn run_check(
+    config: &CheckConfig,
+    client: &reqwest::Client,
+    readonly: bool,
+) -> CheckResult {
     let start = Instant::now();
     let result = match config.check_type {
         crate::config::CheckType::Http => http::HttpCheck.execute(config, client).await,
         crate::config::CheckType::Prometheus => {
             prometheus::PrometheusCheck.execute(config, client).await
         }
-        crate::config::CheckType::Script => script::ScriptCheck.execute(config, client).await,
+        crate::config::CheckType::Script => {
+            script::ScriptCheck.execute(config, client, readonly).await
+        }
     };
 
     let duration_ms = start.elapsed().as_millis() as u64;

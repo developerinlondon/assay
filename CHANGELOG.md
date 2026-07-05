@@ -2,6 +2,24 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.16.9 — 2026-07-05
+
+### Added
+
+- Read-only execution mode for semi-trusted script contexts (agent-generated scripts, review
+  pipelines, dry-run diagnostics). Activate with the global `--readonly` CLI flag (works for `run`,
+  `exec`, YAML check mode, and tool mode) or `ASSAY_READONLY=1`/`true`. Mutating builtins stay
+  registered but raise `readonly: <name> blocked` errors (suffixed with "write operations are
+  disabled in read-only mode") instead of executing: HTTP write verbs
+  (`http.post/put/patch/delete/serve/download`, including `http.client(...)` wrappers),
+  `ws.connect`, all of `shell.*`, `process.*`, and `machinectl.*`, `fs` write ops (`write`,
+  `write_bytes`, `remove`, `rename`, `copy`, `chmod`, `mkdir`, `tempdir`, `sub_in_file`), `env.set`,
+  `db.execute`, `oci` mutators, `systemd` unit and machine lifecycle actions, `apt` mutators,
+  `tar.create`/`tar.extract`/`compress.untar`, and the Lua stdlib write paths (`io.popen`, `io.open`
+  write modes, `io.output(target)`). Read paths (`http.get`, `fs.read`, `env.get`, `db.query`,
+  `systemd.list_units`, journal/status/list helpers) work unchanged. `assay modules` notes when the
+  mode is active, and tool-mode JSON envelopes carry `"readonly": true` (omitted when off).
+
 ## assay-vault 0.4.2 — 2026-06-28
 
 ### Changed
