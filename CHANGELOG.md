@@ -6,6 +6,10 @@ All notable changes to Assay are documented here.
 
 ### Added
 
+- plugin: ship a Claude Code plugin (`plugin/`) + marketplace (`.claude-plugin/marketplace.json`)
+  that wrap the MCP server — `claude plugin marketplace add developerinlondon/assay` then
+  `claude plugin install assay` gives the gated `assay_run` + `assay_context` tools and a usage
+  skill. Requires the `assay` binary on PATH.
 - build: track the embedded `stdlib/` tree via `build.rs` `rerun-if-changed` so a stdlib-only change
   is never served from a stale build cache (persistent CI caches previously missed newly added
   modules).
