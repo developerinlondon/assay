@@ -19,6 +19,24 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_PROTOCOL_VERSION: &str = "2024-11-05";
 const DEFAULT_CONTEXT_LIMIT: usize = 5;
 
+/// Opt-in gate for the third execution mode over MCP. Off by default: the
+/// server advertises and accepts only `readonly` + `approval`, so any MCP
+/// client is safe by default and can never fall through to unrestricted
+/// execution. A deployment that gates access itself — resolving the caller's
+/// allowed mode from its own policy before ever passing `unrestricted` — sets
+/// this to `1`/`true` to enable the full three-mode ladder.
+const UNRESTRICTED_ENV: &str = "ASSAY_MCP_UNRESTRICTED";
+
+fn unrestricted_allowed() -> bool {
+    matches!(
+        std::env::var(UNRESTRICTED_ENV)
+            .ok()
+            .as_deref()
+            .map(str::trim),
+        Some("1") | Some("true")
+    )
+}
+
 static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 // JSON-RPC 2.0 error codes.
@@ -108,9 +126,26 @@ fn tools_list_result() -> JsonValue {
 }
 
 fn assay_run_tool() -> JsonValue {
+    // The advertised mode ladder and its prose track whether this server was
+    // started with unrestricted execution enabled, so the client only ever
+    // sees a mode it can actually request.
+    let (modes, description, mode_description): (Vec<&str>, &str, &str) = if unrestricted_allowed()
+    {
+        (
+            vec!["readonly", "approval", "unrestricted"],
+            "Run a Lua script through the assay runtime and return the tool-mode JSON envelope (status ok | needs_approval | error). Every embedded assay module is available via require(\"assay.<module>\") alongside the builtins (http, json, fs, crypto, ...). Execution is gated by mode: 'readonly' blocks mutating builtins, 'approval' suspends each mutating operation and returns a resume token, 'unrestricted' runs everything ungated. This server was started with unrestricted execution enabled; the caller is responsible for deciding who may request it.",
+            "Execution gate. 'readonly' (default) blocks mutating builtins; 'approval' suspends each mutating operation for per-operation approval; 'unrestricted' runs everything with no gate.",
+        )
+    } else {
+        (
+            vec!["readonly", "approval"],
+            "Run a Lua script through the assay runtime and return the tool-mode JSON envelope (status ok | needs_approval | error). Every embedded assay module is available via require(\"assay.<module>\") alongside the builtins (http, json, fs, crypto, ...). Execution is always gated: 'readonly' blocks mutating builtins, 'approval' suspends each mutating operation and returns a resume token. Unrestricted execution is not exposed by this server.",
+            "Execution gate. 'readonly' (default) blocks mutating builtins; 'approval' suspends each mutating operation for per-operation approval. 'unrestricted' is not accepted.",
+        )
+    };
     json!({
         "name": "assay_run",
-        "description": "Run a Lua script through the assay runtime and return the tool-mode JSON envelope (status ok | needs_approval | error). Every embedded assay module is available via require(\"assay.<module>\") alongside the builtins (http, json, fs, crypto, ...). Execution is always gated: 'readonly' blocks mutating builtins, 'approval' suspends each mutating operation and returns a resume token. Unrestricted execution is intentionally not exposed.",
+        "description": description,
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -120,9 +155,9 @@ fn assay_run_tool() -> JsonValue {
                 },
                 "mode": {
                     "type": "string",
-                    "enum": ["readonly", "approval"],
+                    "enum": modes,
                     "default": "readonly",
-                    "description": "Execution gate. 'readonly' (default) blocks mutating builtins; 'approval' suspends each mutating operation for per-operation approval. 'unrestricted' is not accepted.",
+                    "description": mode_description,
                 },
                 "timeout_secs": {
                     "type": "number",
@@ -242,19 +277,32 @@ fn call_assay_context(arguments: &JsonValue) -> Result<JsonValue, String> {
 }
 
 /// Map the requested mode to an `ExecMode`. An absent mode defaults to
-/// read-only so a caller can never fall through to unrestricted execution;
-/// `unrestricted` (or any other value) is rejected.
+/// read-only so a caller can never fall through to a less restricted mode.
+/// `unrestricted` is accepted only when the server opted in via
+/// `ASSAY_MCP_UNRESTRICTED` (see `unrestricted_allowed`); otherwise it — and
+/// any other value — is rejected.
 fn resolve_mode(value: Option<&JsonValue>) -> Result<lua::ExecMode, String> {
+    let accepted = if unrestricted_allowed() {
+        "\"readonly\", \"approval\", or \"unrestricted\""
+    } else {
+        "\"readonly\" or \"approval\""
+    };
     match value {
         None | Some(JsonValue::Null) => Ok(lua::ExecMode::ReadOnly),
         Some(JsonValue::String(mode)) => match mode.as_str() {
             "readonly" => Ok(lua::ExecMode::ReadOnly),
             "approval" => Ok(lua::ExecMode::Approval),
+            "unrestricted" if unrestricted_allowed() => Ok(lua::ExecMode::Unrestricted),
+            "unrestricted" => Err(
+                "mode \"unrestricted\" is not enabled on this server (start it with \
+                 ASSAY_MCP_UNRESTRICTED=1 to allow it)"
+                    .to_string(),
+            ),
             other => Err(format!(
-                "mode must be \"readonly\" or \"approval\"; \"{other}\" is not accepted (unrestricted execution is never exposed)"
+                "mode must be {accepted}; \"{other}\" is not accepted"
             )),
         },
-        Some(_) => Err("mode must be a string: \"readonly\" or \"approval\"".to_string()),
+        Some(_) => Err(format!("mode must be a string: {accepted}")),
     }
 }
 

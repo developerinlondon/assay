@@ -15,17 +15,30 @@ struct McpServer {
 
 impl McpServer {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_assay"))
-            .arg("mcp-serve")
+        Self::start_with(&[])
+    }
+
+    // A server that opted in to the third mode (ASSAY_MCP_UNRESTRICTED=1).
+    fn start_unrestricted() -> Self {
+        Self::start_with(&[("ASSAY_MCP_UNRESTRICTED", "1")])
+    }
+
+    fn start_with(envs: &[(&str, &str)]) -> Self {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_assay"));
+        cmd.arg("mcp-serve")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            // Per-call modes drive the gate; never inherit a process-wide one.
+            // Per-call modes drive the gate; never inherit a process-wide one,
+            // and start from a clean unrestricted-gate state each time.
             .env_remove("ASSAY_READONLY")
             .env_remove("ASSAY_APPROVAL")
             .env_remove("ASSAY_MODE")
-            .spawn()
-            .unwrap();
+            .env_remove("ASSAY_MCP_UNRESTRICTED");
+        for (k, v) in envs {
+            cmd.env(k, v);
+        }
+        let mut child = cmd.spawn().unwrap();
         let stdin = child.stdin.take().unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
         McpServer {
@@ -173,6 +186,58 @@ fn assay_run_rejects_unrestricted_mode() {
         text_content(result).contains("unrestricted"),
         "rejection should explain the gate: {result}"
     );
+}
+
+#[test]
+fn tools_list_offers_unrestricted_when_enabled() {
+    let mut server = McpServer::start_unrestricted();
+    server.initialize();
+
+    let resp = server.request("tools/list", json!({}));
+    let tools = resp["result"]["tools"].as_array().unwrap();
+    let run = tools.iter().find(|t| t["name"] == "assay_run").unwrap();
+    let modes = run["inputSchema"]["properties"]["mode"]["enum"]
+        .as_array()
+        .unwrap();
+    let modes: Vec<&str> = modes.iter().filter_map(Value::as_str).collect();
+    assert!(
+        modes.contains(&"unrestricted"),
+        "with ASSAY_MCP_UNRESTRICTED=1 the ladder should offer unrestricted: {modes:?}"
+    );
+    // The opt-in never drops the safer modes.
+    assert!(
+        modes.contains(&"readonly") && modes.contains(&"approval"),
+        "modes: {modes:?}"
+    );
+}
+
+#[test]
+fn assay_run_unrestricted_runs_write_op_when_enabled() {
+    let mut server = McpServer::start_unrestricted();
+    server.initialize();
+
+    let path = std::env::temp_dir().join(format!("assay-mcp-unrestricted-{}", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let path_lua = path.to_str().unwrap().replace('\\', "\\\\");
+    let script = format!(r#"fs.write("{path_lua}", "x"); return "wrote""#);
+
+    let resp = server.call_tool(
+        "assay_run",
+        json!({ "script": script, "mode": "unrestricted" }),
+    );
+    let result = &resp["result"];
+    assert_eq!(
+        result["isError"],
+        json!(false),
+        "unrestricted mode should run the write that readonly blocks: {result}"
+    );
+    let envelope: Value = serde_json::from_str(text_content(result)).unwrap();
+    assert_eq!(envelope["status"], "ok", "envelope: {envelope}");
+    assert!(
+        path.exists(),
+        "the fs.write should have reached disk in unrestricted mode"
+    );
+    let _ = std::fs::remove_file(&path);
 }
 
 #[test]

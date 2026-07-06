@@ -2,6 +2,20 @@
 
 All notable changes to Assay are documented here.
 
+## Unreleased
+
+### Added
+
+- **`ASSAY_MCP_UNRESTRICTED` — opt-in exposure of the third execution mode over MCP.** By default
+  `assay mcp-serve` still advertises and accepts only `readonly` + `approval`, so every MCP client
+  stays safe by default and can never fall through to unrestricted execution. When the server is
+  started with `ASSAY_MCP_UNRESTRICTED=1` (or `true`), the `assay_run` tool additionally offers and
+  accepts `mode: "unrestricted"` (the always-existing `ExecMode::Unrestricted`, previously reachable
+  only from the CLI). Intended for a host that gates access itself — resolving the caller's allowed
+  mode from its own policy before ever passing `unrestricted` — rather than trusting the model. The
+  advertised `mode` enum and the tool description track the flag, so a client only ever sees a mode
+  it can actually request.
+
 ## assay 0.17.2 — 2026-07-06
 
 ### Added
