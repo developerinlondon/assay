@@ -122,7 +122,7 @@ fn initialize_result(params: &JsonValue) -> JsonValue {
 }
 
 fn tools_list_result() -> JsonValue {
-    json!({ "tools": [assay_run_tool(), assay_context_tool()] })
+    json!({ "tools": [assay_run_tool(), assay_resume_tool(), assay_context_tool()] })
 }
 
 fn assay_run_tool() -> JsonValue {
@@ -174,6 +174,28 @@ fn assay_run_tool() -> JsonValue {
     })
 }
 
+fn assay_resume_tool() -> JsonValue {
+    json!({
+        "name": "assay_resume",
+        "description": "Resume an assay_run that returned status 'needs_approval'. Pass the 'resumeToken' from that run's requires_approval envelope and whether to approve the pending operation. Returns the next tool-mode envelope: 'ok' when the run completes, 'needs_approval' again (with a fresh token) if it suspends on the next mutating operation, or 'error'. Denying (approve: false) fails the pending operation in the resumed run.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "token": {
+                    "type": "string",
+                    "description": "The resumeToken returned in a prior assay_run's requires_approval envelope.",
+                },
+                "approve": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Approve the pending operation (true) or deny it (false). Denying fails that operation in the resumed run.",
+                },
+            },
+            "required": ["token", "approve"],
+        },
+    })
+}
+
 fn assay_context_tool() -> JsonValue {
     json!({
         "name": "assay_context",
@@ -203,6 +225,10 @@ async fn handle_tools_call(id: JsonValue, params: JsonValue) -> JsonValue {
 
     match params.get("name").and_then(JsonValue::as_str) {
         Some("assay_run") => match call_assay_run(&arguments).await {
+            Ok(result) => success_response(id, result),
+            Err(message) => success_response(id, tool_error_content(message)),
+        },
+        Some("assay_resume") => match call_assay_resume(&arguments).await {
             Ok(result) => success_response(id, result),
             Err(message) => success_response(id, tool_error_content(message)),
         },
@@ -254,6 +280,28 @@ async fn call_assay_run(arguments: &JsonValue) -> Result<JsonValue, String> {
     if outcome.status != "needs_approval" {
         script_file.cleanup();
     }
+
+    let is_error = !matches!(outcome.status, "ok" | "needs_approval");
+    Ok(tool_text_content(outcome.envelope, is_error))
+}
+
+async fn call_assay_resume(arguments: &JsonValue) -> Result<JsonValue, String> {
+    let token = arguments
+        .get("token")
+        .and_then(JsonValue::as_str)
+        .ok_or_else(|| "assay_resume requires a 'token' string argument".to_string())?;
+
+    // Default to approving: the common case is proceeding through the gate.
+    let approve = arguments
+        .get("approve")
+        .and_then(JsonValue::as_bool)
+        .unwrap_or(true);
+    let decision = if approve { "yes" } else { "no" };
+
+    // readonly=false: an approval-mode run is what suspends, so this only ever
+    // resumes an approval token; the flag merely shapes an error envelope's
+    // `readonly` field, which is not meaningful for a resume.
+    let outcome = crate::resume_tool_outcome(token, decision, None, false).await;
 
     let is_error = !matches!(outcome.status, "ok" | "needs_approval");
     Ok(tool_text_content(outcome.envelope, is_error))
