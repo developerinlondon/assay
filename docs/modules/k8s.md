@@ -60,6 +60,22 @@ Generic CRUD operations for any resource kind.
   pod status counts
 - `M.pods:logs(namespace, pod_name, opts?)` → string — Get pod logs. `opts`:
   `{tail, container, previous, since}`
+- `M.pods:exec(namespace, pod_name, command, opts?)` → `{stdout, stderr, exit_code}` — Run a command
+  in a pod over the streaming exec endpoint (WebSocket, `v4.channel.k8s.io` subprotocol). `command`
+  is a string (single argv element) or an array of strings. `opts`:
+  `{container, stdin, tty, timeout_secs, token, base_url, insecure}`. `insecure` defaults to `true`
+  because in-cluster API servers present a cluster-CA certificate the runtime does not trust by
+  default. **Gated:** exec opens its stream via `ws.connect`, so read-only mode blocks it and
+  approval mode suspends it — no separate gate entry. The v4 protocol demultiplexes stdout
+  (channel 1) and stderr (channel 2), and reads the exit code from the `v1.Status` object the server
+  sends on the error channel (channel 3) at process exit.
+
+```lua
+local k8s = require("assay.k8s")
+local result = k8s.pods:exec("default", "my-pod", { "sh", "-c", "echo hi" }, { container = "app" })
+print(result.stdout)     -- "hi\n"
+print(result.exit_code)  -- 0
+```
 
 ### Services (`M.services`)
 

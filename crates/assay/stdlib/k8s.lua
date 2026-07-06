@@ -22,6 +22,7 @@
 --- @quickref M.pods:list(namespace, opts?) -> {items} | List pods in namespace
 --- @quickref M.pods:status(namespace, opts?) -> {running, pending, failed, total} | Get pod status counts
 --- @quickref M.pods:logs(namespace, pod_name, opts?) -> string | Get pod logs
+--- @quickref M.pods:exec(namespace, pod_name, command, opts?) -> {stdout, stderr, exit_code} | Exec a command in a pod over WebSocket (gated)
 --- @quickref M.services:endpoints(namespace, name, opts?) -> [ip] | Get service endpoint IPs
 --- @quickref M.deployments:rollout_status(namespace, name, opts?) -> {desired, ready, complete} | Get deployment rollout
 --- @quickref M.nodes:status(opts?) -> [{name, ready, roles, capacity}] | Get node statuses
@@ -60,6 +61,14 @@ end
 
 local function auth_headers(token)
   return { Authorization = "Bearer " .. (token or sa_token()) }
+end
+
+-- Percent-encode a value for a URL query component. Keeps the RFC 3986
+-- unreserved set literal and encodes everything else.
+local function url_encode(s)
+  return (tostring(s):gsub("[^%w%-%._~]", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end))
 end
 
 local RESOURCE_PATHS = {
@@ -367,6 +376,102 @@ function M.pods:logs(namespace, pod_name, opts)
     error("k8s.logs: HTTP " .. resp.status .. " " .. path .. ": " .. resp.body)
   end
   return resp.body
+end
+
+-- Map a Kubernetes v1.Status (sent on the exec error channel when the process
+-- exits) to a numeric exit code. Success is 0. A Failure carries the code in
+-- details.causes[] with reason "ExitCode"; without that cause a Failure
+-- defaults to 1.
+function M._exit_code_from_status(status)
+  if type(status) ~= "table" then return 0 end
+  if status.status == "Success" then return 0 end
+  if status.status == "Failure" then
+    local details = status.details
+    if details and details.causes then
+      for _, cause in ipairs(details.causes) do
+        if cause.reason == "ExitCode" then
+          return tonumber(cause.message) or 1
+        end
+      end
+    end
+    return 1
+  end
+  return 0
+end
+
+-- Demultiplex Kubernetes exec channel frames. Each frame's first byte is the
+-- channel: 1=stdout, 2=stderr, 3=error/status (a v1.Status JSON with the exit
+-- code). Channel 0 (stdin) and 4 (resize) are ignored on read.
+function M._demux_exec_frames(frames)
+  local stdout, stderr = {}, {}
+  local exit_code = 0
+  for _, frame in ipairs(frames) do
+    if #frame >= 1 then
+      local channel = string.byte(frame, 1)
+      local payload = string.sub(frame, 2)
+      if channel == 1 then
+        stdout[#stdout + 1] = payload
+      elseif channel == 2 then
+        stderr[#stderr + 1] = payload
+      elseif channel == 3 and #payload > 0 then
+        local ok, status = pcall(json.parse, payload)
+        if ok then exit_code = M._exit_code_from_status(status) end
+      end
+    end
+  end
+  return {
+    stdout = table.concat(stdout),
+    stderr = table.concat(stderr),
+    exit_code = exit_code,
+  }
+end
+
+-- Exec a command in a pod over the Kubernetes streaming exec endpoint using the
+-- v4.channel.k8s.io WebSocket subprotocol. `command` is a string (single argv
+-- element) or an array of strings. `opts`: {container, stdin, tty, timeout_secs,
+-- token, base_url, insecure}. Returns {stdout, stderr, exit_code}. Routes
+-- through the gated `ws.connect`, so read-only mode blocks it and approval mode
+-- suspends it. `insecure` defaults to true (cluster API servers present a
+-- cluster-CA cert the runtime does not trust by default).
+function M.pods:exec(namespace, pod_name, command, opts)
+  opts = opts or {}
+  local argv = type(command) == "table" and command or { command }
+  local insecure = opts.insecure
+  if insecure == nil then insecure = true end
+
+  local params = {}
+  if opts.container then params[#params + 1] = "container=" .. url_encode(opts.container) end
+  for _, arg in ipairs(argv) do
+    params[#params + 1] = "command=" .. url_encode(arg)
+  end
+  params[#params + 1] = "stdout=true"
+  params[#params + 1] = "stderr=true"
+  params[#params + 1] = "stdin=" .. tostring(opts.stdin == true)
+  params[#params + 1] = "tty=" .. tostring(opts.tty == true)
+
+  local base = opts.base_url or api_base()
+  local ws_base = base:gsub("^https://", "wss://"):gsub("^http://", "ws://")
+  local url = ws_base
+    .. "/api/v1/namespaces/" .. namespace .. "/pods/" .. pod_name .. "/exec"
+    .. "?" .. table.concat(params, "&")
+
+  local conn = ws.connect(url, {
+    subprotocols = { "v4.channel.k8s.io" },
+    headers = auth_headers(opts.token),
+    insecure = insecure,
+  })
+
+  local frames = {}
+  local deadline = opts.timeout_secs and (time() + opts.timeout_secs) or nil
+  while true do
+    if deadline and time() > deadline then break end
+    local ok, frame = pcall(ws.recv, conn)
+    if not ok or frame == nil then break end
+    frames[#frames + 1] = frame
+  end
+  pcall(ws.close, conn)
+
+  return M._demux_exec_frames(frames)
 end
 
 -- ===== Services sub-object =====

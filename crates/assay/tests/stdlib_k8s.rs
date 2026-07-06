@@ -1,8 +1,61 @@
 mod common;
 
-use common::run_lua;
+use common::{run_lua, run_lua_local};
+use futures_util::{SinkExt, StreamExt};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+// Mock Kubernetes exec endpoint: negotiates the v4.channel.k8s.io subprotocol,
+// then streams channel-1 stdout, channel-2 stderr, and a channel-3 v1.Status
+// before closing. tungstenite's Callback fixes the Err type to its large
+// ErrorResponse, so the result-size lint is unavoidable here.
+#[allow(clippy::result_large_err)]
+async fn start_exec_ws_server(status_json: &'static str) -> u16 {
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
+    use tokio_tungstenite::tungstenite::http::HeaderValue;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let callback =
+                    |req: &Request, mut response: Response| -> Result<Response, ErrorResponse> {
+                        if let Some(sp) = req.headers().get("Sec-WebSocket-Protocol") {
+                            let first = sp
+                                .to_str()
+                                .unwrap_or("")
+                                .split(',')
+                                .next()
+                                .unwrap_or("")
+                                .trim()
+                                .to_string();
+                            response.headers_mut().insert(
+                                "Sec-WebSocket-Protocol",
+                                HeaderValue::from_str(&first).unwrap(),
+                            );
+                        }
+                        Ok(response)
+                    };
+                if let Ok(ws_stream) = tokio_tungstenite::accept_hdr_async(stream, callback).await {
+                    let (mut write, _read) = ws_stream.split();
+                    let mut stdout_frame = vec![1u8];
+                    stdout_frame.extend_from_slice(b"hello\n");
+                    let mut stderr_frame = vec![2u8];
+                    stderr_frame.extend_from_slice(b"warn\n");
+                    let mut status_frame = vec![3u8];
+                    status_frame.extend_from_slice(status_json.as_bytes());
+                    let _ = write.send(Message::Binary(stdout_frame.into())).await;
+                    let _ = write.send(Message::Binary(stderr_frame.into())).await;
+                    let _ = write.send(Message::Binary(status_frame.into())).await;
+                    let _ = write.send(Message::Close(None)).await;
+                }
+            });
+        }
+    });
+    port
+}
 
 #[tokio::test]
 async fn test_require_k8s() {
@@ -1017,4 +1070,71 @@ async fn test_k8s_events_list() {
         server.uri()
     );
     run_lua(&script).await.unwrap();
+}
+
+// ===== Pod exec (WebSocket v4 channel) tests =====
+
+#[tokio::test]
+async fn test_k8s_exec_success() {
+    let port = start_exec_ws_server(r#"{"metadata":{},"status":"Success"}"#).await;
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local result = k8s.pods:exec("default", "mypod", {{ "echo", "hello" }}, {{
+            base_url = "http://127.0.0.1:{port}",
+            token = "test-token",
+        }})
+        assert.eq(result.stdout, "hello\n")
+        assert.eq(result.stderr, "warn\n")
+        assert.eq(result.exit_code, 0)
+        "#
+    );
+    run_lua_local(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_k8s_exec_nonzero_exit() {
+    let port = start_exec_ws_server(
+        r#"{"metadata":{},"status":"Failure","reason":"NonZeroExitCode","details":{"causes":[{"reason":"ExitCode","message":"3"}]}}"#,
+    )
+    .await;
+    let script = format!(
+        r#"
+        local k8s = require("assay.k8s")
+        local result = k8s.pods:exec("default", "mypod", {{ "sh", "-c", "exit 3" }}, {{
+            base_url = "http://127.0.0.1:{port}",
+            token = "test-token",
+        }})
+        assert.eq(result.exit_code, 3)
+        assert.eq(result.stdout, "hello\n")
+        "#
+    );
+    run_lua_local(&script).await.unwrap();
+}
+
+// Pure channel-demux parser test, independent of any WebSocket server.
+#[tokio::test]
+async fn test_k8s_demux_exec_frames() {
+    let script = r#"
+        local k8s = require("assay.k8s")
+        local frames = {
+            "\1stdout-a",
+            "\2stderr-x",
+            "\1stdout-b",
+            "\3{\"status\":\"Success\"}",
+        }
+        local result = k8s._demux_exec_frames(frames)
+        assert.eq(result.stdout, "stdout-astdout-b")
+        assert.eq(result.stderr, "stderr-x")
+        assert.eq(result.exit_code, 0)
+
+        local fail = {
+            "\1partial",
+            "\3{\"status\":\"Failure\",\"details\":{\"causes\":[{\"reason\":\"ExitCode\",\"message\":\"7\"}]}}",
+        }
+        local r2 = k8s._demux_exec_frames(fail)
+        assert.eq(r2.stdout, "partial")
+        assert.eq(r2.exit_code, 7)
+    "#;
+    run_lua(script).await.unwrap();
 }
