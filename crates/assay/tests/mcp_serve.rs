@@ -15,17 +15,30 @@ struct McpServer {
 
 impl McpServer {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_assay"))
-            .arg("mcp-serve")
+        Self::start_with(&[])
+    }
+
+    // A server that opted in to the third mode (ASSAY_MCP_UNRESTRICTED=1).
+    fn start_unrestricted() -> Self {
+        Self::start_with(&[("ASSAY_MCP_UNRESTRICTED", "1")])
+    }
+
+    fn start_with(envs: &[(&str, &str)]) -> Self {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_assay"));
+        cmd.arg("mcp-serve")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            // Per-call modes drive the gate; never inherit a process-wide one.
+            // Per-call modes drive the gate; never inherit a process-wide one,
+            // and start from a clean unrestricted-gate state each time.
             .env_remove("ASSAY_READONLY")
             .env_remove("ASSAY_APPROVAL")
             .env_remove("ASSAY_MODE")
-            .spawn()
-            .unwrap();
+            .env_remove("ASSAY_MCP_UNRESTRICTED");
+        for (k, v) in envs {
+            cmd.env(k, v);
+        }
+        let mut child = cmd.spawn().unwrap();
         let stdin = child.stdin.take().unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
         McpServer {
@@ -176,6 +189,58 @@ fn assay_run_rejects_unrestricted_mode() {
 }
 
 #[test]
+fn tools_list_offers_unrestricted_when_enabled() {
+    let mut server = McpServer::start_unrestricted();
+    server.initialize();
+
+    let resp = server.request("tools/list", json!({}));
+    let tools = resp["result"]["tools"].as_array().unwrap();
+    let run = tools.iter().find(|t| t["name"] == "assay_run").unwrap();
+    let modes = run["inputSchema"]["properties"]["mode"]["enum"]
+        .as_array()
+        .unwrap();
+    let modes: Vec<&str> = modes.iter().filter_map(Value::as_str).collect();
+    assert!(
+        modes.contains(&"unrestricted"),
+        "with ASSAY_MCP_UNRESTRICTED=1 the ladder should offer unrestricted: {modes:?}"
+    );
+    // The opt-in never drops the safer modes.
+    assert!(
+        modes.contains(&"readonly") && modes.contains(&"approval"),
+        "modes: {modes:?}"
+    );
+}
+
+#[test]
+fn assay_run_unrestricted_runs_write_op_when_enabled() {
+    let mut server = McpServer::start_unrestricted();
+    server.initialize();
+
+    let path = std::env::temp_dir().join(format!("assay-mcp-unrestricted-{}", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let path_lua = path.to_str().unwrap().replace('\\', "\\\\");
+    let script = format!(r#"fs.write("{path_lua}", "x"); return "wrote""#);
+
+    let resp = server.call_tool(
+        "assay_run",
+        json!({ "script": script, "mode": "unrestricted" }),
+    );
+    let result = &resp["result"];
+    assert_eq!(
+        result["isError"],
+        json!(false),
+        "unrestricted mode should run the write that readonly blocks: {result}"
+    );
+    let envelope: Value = serde_json::from_str(text_content(result)).unwrap();
+    assert_eq!(envelope["status"], "ok", "envelope: {envelope}");
+    assert!(
+        path.exists(),
+        "the fs.write should have reached disk in unrestricted mode"
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn assay_run_readonly_blocks_write_op() {
     let mut server = McpServer::start();
     server.initialize();
@@ -217,6 +282,86 @@ fn assay_context_returns_markdown() {
     assert!(
         markdown.to_lowercase().contains("grafana"),
         "expected the grafana module in the docs: {markdown}"
+    );
+}
+
+#[test]
+fn tools_list_includes_assay_resume() {
+    let mut server = McpServer::start();
+    server.initialize();
+
+    let resp = server.request("tools/list", json!({}));
+    let tools = resp["result"]["tools"].as_array().unwrap();
+    let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+    assert!(
+        names.contains(&"assay_resume"),
+        "missing assay_resume: {names:?}"
+    );
+
+    let resume = tools.iter().find(|t| t["name"] == "assay_resume").unwrap();
+    let props = &resume["inputSchema"]["properties"];
+    assert!(
+        props["token"].is_object(),
+        "resume needs a token arg: {resume}"
+    );
+    assert!(
+        props["approve"].is_object(),
+        "resume needs an approve arg: {resume}"
+    );
+}
+
+#[test]
+fn approval_run_suspends_then_resume_completes_the_write() {
+    let mut server = McpServer::start();
+    server.initialize();
+
+    let path = std::env::temp_dir().join(format!("assay-mcp-approval-{}", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let path_lua = path.to_str().unwrap().replace('\\', "\\\\");
+    let script = format!(r#"fs.write("{path_lua}", "x"); return "done""#);
+
+    // 1) approval mode → the mutating fs.write suspends and hands back a token.
+    let run = server.call_tool("assay_run", json!({ "script": script, "mode": "approval" }));
+    let envelope: Value = serde_json::from_str(text_content(&run["result"])).unwrap();
+    assert_eq!(envelope["status"], "needs_approval", "envelope: {envelope}");
+    let token = envelope["requiresApproval"]["resumeToken"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no resumeToken in {envelope}"));
+    assert!(!path.exists(), "the write must not land before approval");
+
+    // 2) assay_resume approving the pending op → the run finishes, write lands.
+    let resume = server.call_tool("assay_resume", json!({ "token": token, "approve": true }));
+    let resume_result = &resume["result"];
+    assert_eq!(
+        resume_result["isError"],
+        json!(false),
+        "resume: {resume_result}"
+    );
+    let done: Value = serde_json::from_str(text_content(resume_result)).unwrap();
+    assert_eq!(done["status"], "ok", "resumed envelope: {done}");
+    assert!(path.exists(), "the approved write should have reached disk");
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn assay_resume_rejects_an_unknown_token() {
+    let mut server = McpServer::start();
+    server.initialize();
+
+    let resp = server.call_tool(
+        "assay_resume",
+        json!({ "token": "deadbeefdeadbeefdeadbeefdeadbeef", "approve": true }),
+    );
+    let result = &resp["result"];
+    assert_eq!(
+        result["isError"],
+        json!(true),
+        "unknown token must error: {result}"
+    );
+    assert!(
+        text_content(result).contains("invalid resume token"),
+        "should explain the bad token: {result}"
     );
 }
 

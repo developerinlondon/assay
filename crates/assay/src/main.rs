@@ -1058,53 +1058,50 @@ async fn execute_tool_mode(
     }
 }
 
-async fn resume_tool_execution(
+/// Resume a suspended tool-mode run and RETURN its envelope without emitting
+/// it. Shared by the CLI `resume` command (which prints the envelope) and the
+/// MCP `assay_resume` tool (which surfaces it as tool content). `approve` is
+/// "yes" to approve the pending operation, anything else to deny it. The
+/// child's stderr is forwarded as diagnostics; its stdout is the resumed run's
+/// JSON envelope, returned here with its parsed `status`.
+async fn resume_tool_outcome(
     token: &str,
     approve: &str,
     resume_ttl: Option<u64>,
     readonly: bool,
-) -> ExitCode {
+) -> ToolModeOutcome {
+    let err_outcome = |message: String| ToolModeOutcome {
+        envelope: build_tool_error("error", message, readonly),
+        status: "error",
+    };
+
     let state_dir = match resolve_state_dir() {
         Ok(dir) => dir,
-        Err(err) => {
-            emit_tool_error("error", err, readonly);
-            return ExitCode::SUCCESS;
-        }
+        Err(err) => return err_outcome(err),
     };
 
     let state_path = state_dir.join("resume").join(format!("{token}.json"));
     if !state_path.exists() {
-        emit_tool_error("error", "invalid resume token".to_string(), readonly);
-        return ExitCode::SUCCESS;
+        return err_outcome("invalid resume token".to_string());
     }
 
     let state = match fs::read_to_string(&state_path) {
         Ok(content) => match serde_json::from_str::<ResumeState>(&content) {
             Ok(state) => state,
-            Err(err) => {
-                emit_tool_error("error", format!("parsing resume state: {err}"), readonly);
-                return ExitCode::SUCCESS;
-            }
+            Err(err) => return err_outcome(format!("parsing resume state: {err}")),
         },
-        Err(err) => {
-            emit_tool_error("error", format!("reading resume state: {err}"), readonly);
-            return ExitCode::SUCCESS;
-        }
+        Err(err) => return err_outcome(format!("reading resume state: {err}")),
     };
 
     let now = unix_timestamp_now();
     let ttl_secs = resume_ttl.unwrap_or(state.ttl_secs);
     if state.created_at.saturating_add(ttl_secs) < now {
-        emit_tool_error("error", "resume token expired".to_string(), readonly);
-        return ExitCode::SUCCESS;
+        return err_outcome("resume token expired".to_string());
     }
 
     let current_exe = match std::env::current_exe() {
         Ok(path) => path,
-        Err(err) => {
-            emit_tool_error("error", format!("locating assay binary: {err}"), readonly);
-            return ExitCode::SUCCESS;
-        }
+        Err(err) => return err_outcome(format!("locating assay binary: {err}")),
     };
 
     let mut command = Command::new(current_exe);
@@ -1154,39 +1151,49 @@ async fn resume_tool_execution(
 
     let output = match command.output() {
         Ok(output) => output,
-        Err(err) => {
-            emit_tool_error(
-                "error",
-                format!("spawning resume execution: {err}"),
-                readonly,
-            );
-            return ExitCode::SUCCESS;
-        }
+        Err(err) => return err_outcome(format!("spawning resume execution: {err}")),
     };
 
+    // The child's stderr is diagnostic (logs) — forward it. Safe on the CLI
+    // and on the MCP stdout channel alike, which only ever carries the envelope.
     if !output.stderr.is_empty() {
         eprint!("{}", String::from_utf8_lossy(&output.stderr));
     }
-    if !output.stdout.is_empty() {
-        print!("{}", String::from_utf8_lossy(&output.stdout));
-    }
 
+    let envelope = String::from_utf8_lossy(&output.stdout).into_owned();
     let resumed_status = serde_json::from_slice::<JsonValue>(&output.stdout)
         .ok()
         .and_then(|json| json.get("status").cloned())
         .and_then(|status| status.as_str().map(str::to_owned));
-    let should_cleanup =
-        output.status.success() && resumed_status.as_deref() != Some("needs_approval");
 
-    if should_cleanup && let Err(err) = fs::remove_file(&state_path) {
-        emit_tool_error(
-            "error",
-            format!("cleaning up resume state: {err}"),
-            readonly,
-        );
-        return ExitCode::SUCCESS;
+    // Drop the token once the run reaches a terminal state; a still-pending
+    // approval keeps it for the next resume. Best-effort: a cleanup hiccup
+    // must not turn a successful resume into an error.
+    let terminal = output.status.success() && resumed_status.as_deref() != Some("needs_approval");
+    if terminal {
+        let _ = fs::remove_file(&state_path);
     }
 
+    let status: &'static str = match resumed_status.as_deref() {
+        Some("ok") => "ok",
+        Some("needs_approval") => "needs_approval",
+        Some("timeout") => "timeout",
+        _ => "error",
+    };
+    ToolModeOutcome { envelope, status }
+}
+
+/// CLI `resume` command: resume a suspended run and print its envelope.
+async fn resume_tool_execution(
+    token: &str,
+    approve: &str,
+    resume_ttl: Option<u64>,
+    readonly: bool,
+) -> ExitCode {
+    let outcome = resume_tool_outcome(token, approve, resume_ttl, readonly).await;
+    if !outcome.envelope.is_empty() {
+        print!("{}", outcome.envelope);
+    }
     ExitCode::SUCCESS
 }
 
@@ -1394,10 +1401,6 @@ fn build_tool_error(status: &'static str, error_message: String, readonly: bool)
             "{{\"ok\":false,\"status\":\"error\",\"error\":\"serializing tool envelope: {e}\"}}"
         )
     })
-}
-
-fn emit_tool_error(status: &'static str, error_message: String, readonly: bool) {
-    print!("{}", build_tool_error(status, error_message, readonly));
 }
 
 fn truncate_tool_envelope(mut envelope: ToolSuccessEnvelope) -> ToolSuccessEnvelope {
