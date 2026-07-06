@@ -1,9 +1,13 @@
 use futures_util::{SinkExt, StreamExt};
 use mlua::{Lua, Table, UserData, UserDataFields, UserDataMethods, Value};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio_tungstenite::Connector;
 use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::http::{HeaderName, HeaderValue};
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, frame::coding::CloseCode};
 
 type WsSink = Rc<
@@ -25,6 +29,7 @@ type WsStream = Rc<
 struct WsConn {
     sink: WsSink,
     stream: WsStream,
+    protocol: Option<String>,
 }
 impl UserData for WsConn {}
 
@@ -163,19 +168,147 @@ fn extract_ws_conn(val: &Value, fn_name: &str) -> mlua::Result<(WsSink, WsStream
     Ok((ws.sink.clone(), ws.stream.clone()))
 }
 
+// TLS certificate verifier that accepts any server certificate. Wired in only
+// when `ws.connect` is called with `opts.insecure = true`.
+#[derive(Debug)]
+struct NoCertVerifier {
+    provider: Arc<rustls::crypto::CryptoProvider>,
+}
+
+impl rustls::client::danger::ServerCertVerifier for NoCertVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+// Returns `None` for the default (certificate-verified) path so
+// tokio-tungstenite uses its built-in webpki roots. With `insecure`, returns a
+// connector that skips certificate verification.
+fn build_ws_connector(insecure: bool) -> mlua::Result<Option<Connector>> {
+    if !insecure {
+        return Ok(None);
+    }
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let config = rustls::ClientConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()
+        .map_err(|e| mlua::Error::runtime(format!("ws.connect: TLS setup failed: {e}")))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(NoCertVerifier { provider }))
+        .with_no_client_auth();
+    Ok(Some(Connector::Rustls(Arc::new(config))))
+}
+
 pub fn register_ws(lua: &Lua) -> mlua::Result<()> {
     let ws_table = lua.create_table()?;
 
-    let connect_fn = lua.create_async_function(|lua, url: String| async move {
-        let (stream, _response) = tokio_tungstenite::connect_async(&url)
-            .await
-            .map_err(|e| mlua::Error::runtime(format!("ws.connect: {e}")))?;
-        let (sink, read) = stream.split();
-        lua.create_any_userdata(WsConn {
-            sink: Rc::new(tokio::sync::Mutex::new(sink)),
-            stream: Rc::new(tokio::sync::Mutex::new(read)),
-        })
-    })?;
+    let connect_fn =
+        lua.create_async_function(|lua, (url, opts): (String, Option<Table>)| async move {
+            let mut subprotocols: Vec<String> = Vec::new();
+            let mut header_pairs: Vec<(String, String)> = Vec::new();
+            let mut insecure = false;
+            if let Some(opts) = &opts {
+                if let Ok(list) = opts.get::<Table>("subprotocols") {
+                    for item in list.sequence_values::<String>() {
+                        subprotocols.push(item?);
+                    }
+                }
+                if let Ok(headers) = opts.get::<Table>("headers") {
+                    for pair in headers.pairs::<String, String>() {
+                        let (name, value) = pair?;
+                        header_pairs.push((name, value));
+                    }
+                }
+                insecure = opts.get::<Option<bool>>("insecure")?.unwrap_or(false);
+            }
+
+            let mut request = url
+                .as_str()
+                .into_client_request()
+                .map_err(|e| mlua::Error::runtime(format!("ws.connect: {e}")))?;
+            {
+                let headers = request.headers_mut();
+                if !subprotocols.is_empty() {
+                    let joined = subprotocols.join(", ");
+                    let value = HeaderValue::from_str(&joined).map_err(|e| {
+                        mlua::Error::runtime(format!("ws.connect: invalid subprotocol: {e}"))
+                    })?;
+                    headers.insert("Sec-WebSocket-Protocol", value);
+                }
+                for (name, value) in header_pairs {
+                    let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
+                        mlua::Error::runtime(format!(
+                            "ws.connect: invalid header name '{name}': {e}"
+                        ))
+                    })?;
+                    let header_value = HeaderValue::from_str(&value).map_err(|e| {
+                        mlua::Error::runtime(format!(
+                            "ws.connect: invalid header value for '{name}': {e}"
+                        ))
+                    })?;
+                    headers.append(header_name, header_value);
+                }
+            }
+
+            let connector = build_ws_connector(insecure)?;
+            let (stream, response) =
+                tokio_tungstenite::connect_async_tls_with_config(request, None, false, connector)
+                    .await
+                    .map_err(|e| mlua::Error::runtime(format!("ws.connect: {e}")))?;
+
+            let protocol = response
+                .headers()
+                .get("Sec-WebSocket-Protocol")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            let (sink, read) = stream.split();
+            lua.create_any_userdata(WsConn {
+                sink: Rc::new(tokio::sync::Mutex::new(sink)),
+                stream: Rc::new(tokio::sync::Mutex::new(read)),
+                protocol,
+            })
+        })?;
     ws_table.set("connect", connect_fn)?;
 
     let send_fn = lua.create_async_function(|_, (conn, msg): (Value, String)| async move {
@@ -189,7 +322,24 @@ pub fn register_ws(lua: &Lua) -> mlua::Result<()> {
     })?;
     ws_table.set("send", send_fn)?;
 
-    let recv_fn = lua.create_async_function(|_, conn: Value| async move {
+    let send_binary_fn =
+        lua.create_async_function(|_, (conn, data): (Value, mlua::String)| async move {
+            let (sink, _stream) = extract_ws_conn(&conn, "ws.send_binary")?;
+            let bytes = data.as_bytes().to_vec();
+            sink.lock()
+                .await
+                .send(Message::Binary(bytes.into()))
+                .await
+                .map_err(|e| mlua::Error::runtime(format!("ws.send_binary: {e}")))?;
+            Ok(())
+        })?;
+    ws_table.set("send_binary", send_binary_fn)?;
+
+    // Returns raw frame bytes as a (binary-safe) Lua string. Text frames come
+    // back as their UTF-8 bytes; binary frames come back verbatim, so callers
+    // that need non-UTF-8 payloads (e.g. Kubernetes exec channels) get the raw
+    // bytes rather than a decode error.
+    let recv_fn = lua.create_async_function(|lua, conn: Value| async move {
         let (_sink, stream) = extract_ws_conn(&conn, "ws.recv")?;
         loop {
             let msg = stream
@@ -200,14 +350,13 @@ pub fn register_ws(lua: &Lua) -> mlua::Result<()> {
                 .ok_or_else(|| mlua::Error::runtime("ws.recv: connection closed"))?
                 .map_err(|e| mlua::Error::runtime(format!("ws.recv: {e}")))?;
             match msg {
-                tokio_tungstenite::tungstenite::Message::Text(t) => {
-                    return Ok(t.to_string());
+                Message::Text(t) => {
+                    return Ok(Value::String(lua.create_string(t.as_bytes())?));
                 }
-                tokio_tungstenite::tungstenite::Message::Binary(b) => {
-                    return String::from_utf8(b.into())
-                        .map_err(|e| mlua::Error::runtime(format!("ws.recv: invalid UTF-8: {e}")));
+                Message::Binary(b) => {
+                    return Ok(Value::String(lua.create_string(&b)?));
                 }
-                tokio_tungstenite::tungstenite::Message::Close(_) => {
+                Message::Close(_) => {
                     return Err(mlua::Error::runtime("ws.recv: connection closed"));
                 }
                 _ => continue,
@@ -215,6 +364,25 @@ pub fn register_ws(lua: &Lua) -> mlua::Result<()> {
         }
     })?;
     ws_table.set("recv", recv_fn)?;
+
+    let protocol_fn = lua.create_function(|lua, conn: Value| {
+        let ud = match &conn {
+            Value::UserData(ud) => ud,
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "ws.protocol: first argument must be a ws connection",
+                ));
+            }
+        };
+        let ws = ud.borrow::<WsConn>().map_err(|_| {
+            mlua::Error::runtime("ws.protocol: first argument must be a ws connection")
+        })?;
+        match &ws.protocol {
+            Some(p) => Ok(Value::String(lua.create_string(p)?)),
+            None => Ok(Value::Nil),
+        }
+    })?;
+    ws_table.set("protocol", protocol_fn)?;
 
     let close_fn = lua.create_async_function(|_, conn: Value| async move {
         let (sink, _stream) = extract_ws_conn(&conn, "ws.close")?;

@@ -2,6 +2,28 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.17.2 — 2026-07-06
+
+### Added
+
+- `k8s.pods:exec(namespace, pod, command, opts?)` — run a command inside a pod over the Kubernetes
+  streaming exec endpoint and collect the result as `{stdout, stderr, exit_code}`. It opens a
+  WebSocket with the `v4.channel.k8s.io` subprotocol and a bearer token, demultiplexes stdout
+  (channel 1) and stderr (channel 2), and reads the exit code from the `v1.Status` the API server
+  sends on the error channel (channel 3) at process exit. `opts`:
+  `{container, stdin, tty, timeout_secs, token, base_url, insecure}`. Because it opens its stream
+  via the already-gated `ws.connect`, read-only mode blocks it and approval mode suspends it with no
+  change to the shared mutation catalog.
+- `ws.connect(url, opts?)` gains an optional second argument for the handshake, keeping
+  `ws.connect(url)` unchanged:
+  - `opts.subprotocols` — array of strings offered via `Sec-WebSocket-Protocol`; read the negotiated
+    protocol back with the new `ws.protocol(conn)`.
+  - `opts.headers` — extra request headers on the upgrade (e.g. `Authorization: Bearer …`).
+  - `opts.insecure` — skip TLS certificate verification for the `wss://` handshake.
+- `ws.send_binary(conn, bytes)` — send a binary frame from a binary-safe Lua string of arbitrary
+  bytes. `ws.recv` now returns binary frames as raw bytes instead of erroring on non-UTF-8 payloads,
+  so channel-prefixed protocols round-trip losslessly.
+
 ## assay 0.17.1 — 2026-07-05
 
 ### Added

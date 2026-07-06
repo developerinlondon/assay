@@ -303,7 +303,7 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 | `http.post(url, body, opts?)`     | POST (auto-JSON if body is table)                                                                                                                                             |
 | `http.put/patch/delete(url, ...)` | PUT, PATCH, DELETE                                                                                                                                                            |
 | `http.serve(port, routes)`        | HTTP server with async handlers + SSE streaming (header values can be strings or arrays — array values emit the header multiple times for `Set-Cookie`, `Link`, `Vary`, etc.) |
-| `ws.connect(url)`                 | WebSocket client (`send`, `recv`, `close`)                                                                                                                                    |
+| `ws.connect(url, opts?)`          | WebSocket client (`send`, `send_binary`, `recv`, `protocol`, `close`); `opts` = `{subprotocols, headers, insecure}`                                                            |
 
 ### Serialization
 
