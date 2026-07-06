@@ -22,7 +22,7 @@
 - [crypto, base64](https://assay.rs/modules/crypto.html): JWT signing/verification/decoding (PEM or JWKS), HMAC, hashing, random, base64
 - [regex](https://assay.rs/modules/regex.html): Regex match, find, replace
 - [db](https://assay.rs/modules/db.html): SQL database — Postgres, MySQL, SQLite — db.connect/query/execute
-- [ws](https://assay.rs/modules/ws.html): WebSocket client — ws.connect/send/recv/close
+- [ws](https://assay.rs/modules/ws.html): WebSocket client — ws.connect(url, opts?) with subprotocols/headers/insecure, send/send_binary/recv/protocol/close
 - [template](https://assay.rs/modules/template.html): Jinja2-compatible template rendering
 - [async](https://assay.rs/modules/async.html): Async task spawn and await
 - [assert](https://assay.rs/modules/assert.html): Assertions — assert.eq/ne/gt/lt/contains/not_nil/matches
@@ -36,7 +36,7 @@
 - [assay.grafana](https://assay.rs/modules/grafana.html): Health, dashboards, datasources, annotations
 
 ## Kubernetes & GitOps
-- [assay.k8s](https://assay.rs/modules/k8s.html): 30+ K8s resource types, CRDs, readiness checks
+- [assay.k8s](https://assay.rs/modules/k8s.html): 30+ K8s resource types, CRDs, readiness checks, pod logs + exec
 - [assay.argocd](https://assay.rs/modules/argocd.html): ArgoCD apps, sync, health, projects
 - [assay.kargo](https://assay.rs/modules/kargo.html): Kargo stages, freight, promotions
 - [assay.flux](https://assay.rs/modules/flux.html): Flux GitRepositories, Kustomizations, HelmReleases

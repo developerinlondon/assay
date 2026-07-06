@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.17.1"
+version = "0.17.2"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -99,6 +99,8 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "mys
 
 # WebSocket client
 futures-util = "0.3"
+# Direct rustls handle for the ws.connect insecure (skip-verify) TLS connector.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 tokio-tungstenite = { version = "0.28.0", features = ["connect", "rustls-tls-webpki-roots"] }
 
 # Template engine (Jinja2-compatible)

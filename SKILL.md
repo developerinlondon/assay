@@ -210,14 +210,16 @@ URLs: `postgres://user:pass@host:5432/db`, `mysql://...`, `sqlite:///path/to/fil
 
 ### WebSocket and Templates
 
-| Function                          | Description                   |
-| --------------------------------- | ----------------------------- |
-| `ws.connect(url)`                 | Connect to WebSocket server   |
-| `ws.send(conn, msg)`              | Send message                  |
-| `ws.recv(conn)`                   | Receive message (blocking)    |
-| `ws.close(conn)`                  | Close connection              |
-| `template.render(path, vars)`     | Render Jinja2 template file   |
-| `template.render_string(tmpl, v)` | Render Jinja2 template string |
+| Function                          | Description                                                               |
+| --------------------------------- | ------------------------------------------------------------------------- |
+| `ws.connect(url, opts?)`          | Connect to WebSocket server; `opts` = `{subprotocols, headers, insecure}` |
+| `ws.send(conn, msg)`              | Send text message                                                         |
+| `ws.send_binary(conn, bytes)`     | Send binary frame (raw bytes)                                             |
+| `ws.recv(conn)`                   | Receive message (blocking; raw bytes for binary frames)                   |
+| `ws.protocol(conn)`               | Negotiated subprotocol or nil                                             |
+| `ws.close(conn)`                  | Close connection                                                          |
+| `template.render(path, vars)`     | Render Jinja2 template file                                               |
+| `template.render_string(tmpl, v)` | Render Jinja2 template string                                             |
 
 ### Async
 

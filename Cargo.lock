@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.17.1"
+version = "0.17.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -365,6 +365,7 @@ dependencies = [
  "rand 0.10.0",
  "regex-lite",
  "reqwest 0.13.2",
+ "rustls 0.23.36",
  "serde",
  "serde_json",
  "serde_yml",

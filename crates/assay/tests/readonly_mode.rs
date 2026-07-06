@@ -205,7 +205,10 @@ async fn fs_writes_blocked_reads_allowed_in_readonly() {
         dir = dir.path().display()
     );
     run(&script, vm).await;
-    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "hello readonly");
+    assert_eq!(
+        std::fs::read_to_string(&file_path).unwrap(),
+        "hello readonly"
+    );
 }
 
 #[tokio::test]
@@ -243,6 +246,25 @@ async fn ws_connect_blocked_in_readonly() {
     let vm = make_vm(true);
     let script = r#"
         local ok, err = pcall(ws.connect, "ws://127.0.0.1:1/socket")
+        assert.eq(ok, false)
+        assert.contains(tostring(err), "readonly: ws.connect blocked")
+    "#;
+    run(script, vm).await;
+}
+
+// k8s pod exec opens its stream via the gated ws.connect, so it inherits the
+// read-only block with no separate gate entry.
+#[tokio::test]
+async fn k8s_pod_exec_blocked_in_readonly() {
+    let vm = make_vm(true);
+    let script = r#"
+        local k8s = require("assay.k8s")
+        local ok, err = pcall(function()
+            return k8s.pods:exec("default", "mypod", { "echo", "hi" }, {
+                base_url = "http://127.0.0.1:1",
+                token = "t",
+            })
+        end)
         assert.eq(ok, false)
         assert.contains(tostring(err), "readonly: ws.connect blocked")
     "#;
@@ -404,7 +426,10 @@ fn cli_readonly_flag_blocks_writes() {
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(out.status.success(), "args={args:?} stderr={stderr}");
-        assert!(stdout.contains("readonly-ok"), "args={args:?} stdout={stdout}");
+        assert!(
+            stdout.contains("readonly-ok"),
+            "args={args:?} stdout={stdout}"
+        );
     }
 }
 
@@ -434,7 +459,13 @@ fn cli_tool_envelope_reports_readonly() {
     );
 
     let out = assay_bin()
-        .args(["run", "--mode", "tool", "--readonly", script.to_str().unwrap()])
+        .args([
+            "run",
+            "--mode",
+            "tool",
+            "--readonly",
+            script.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -466,7 +497,13 @@ fn cli_tool_error_envelope_reports_readonly() {
     let script = write_file(dir.path(), "tool.lua", r#"shell.exec("echo hi")"#);
 
     let out = assay_bin()
-        .args(["run", "--mode", "tool", "--readonly", script.to_str().unwrap()])
+        .args([
+            "run",
+            "--mode",
+            "tool",
+            "--readonly",
+            script.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -475,13 +512,19 @@ fn cli_tool_error_envelope_reports_readonly() {
     assert_eq!(envelope["status"], "error");
     assert_eq!(envelope["readonly"], JsonValue::Bool(true));
     let error = envelope["error"].as_str().unwrap();
-    assert!(error.contains("readonly: shell.exec blocked"), "error: {error}");
+    assert!(
+        error.contains("readonly: shell.exec blocked"),
+        "error: {error}"
+    );
     assert!(error.contains(BLOCKED_MSG), "error: {error}");
 }
 
 #[test]
 fn cli_modules_reports_readonly() {
-    let out = assay_bin().args(["modules", "--readonly"]).output().unwrap();
+    let out = assay_bin()
+        .args(["modules", "--readonly"])
+        .output()
+        .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("read-only mode active"), "stdout: {stdout}");
@@ -489,7 +532,10 @@ fn cli_modules_reports_readonly() {
     let out = assay_bin().arg("modules").output().unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(!stdout.contains("read-only mode active"), "stdout: {stdout}");
+    assert!(
+        !stdout.contains("read-only mode active"),
+        "stdout: {stdout}"
+    );
 }
 
 #[test]
