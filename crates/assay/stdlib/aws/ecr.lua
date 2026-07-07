@@ -1,7 +1,7 @@
 --- @module assay.aws.ecr
 --- @description AWS Elastic Container Registry. Get authorization tokens for pushing/pulling images.
 --- @keywords aws, ecr, container, registry, docker, authorization, token, login
---- @quickref client(opts) -> client | Create an ECR client (opts = {access_key, secret_key, region, session_token?, endpoint?})
+--- @quickref client(opts) -> client | Create an ECR client (opts = {access_key?, secret_key?, profile?, role_arn?, region?, session_token?, endpoint?}; no keys -> standard chain via assay.aws.sts)
 --- @quickref c:get_authorization_token() -> {token, proxy_endpoint, expires_at} | Get ECR auth token
 
 local M = {}
@@ -11,18 +11,28 @@ local sigv4 = require("assay.aws.sigv4")
 --- Create an ECR client.
 ---
 --- @param opts table with fields:
----   access_key    (string) AWS access key ID
----   secret_key    (string) AWS secret access key
----   region        (string) AWS region
+---   access_key    (string|nil) AWS access key ID (omit to resolve via the
+---                              standard chain — profile / env / IRSA)
+---   secret_key    (string|nil) AWS secret access key
+---   profile       (string|nil) AWS profile to resolve credentials from
+---   role_arn      (string|nil) Role to assume on top of the resolved credentials
+---   region        (string|nil) AWS region (default AWS_REGION/AWS_DEFAULT_REGION)
 ---   session_token (string|nil) AWS session token (for STS credentials)
 ---   endpoint      (string|nil) Override the API endpoint (for VPC endpoints
 ---                              or tests). Defaults to api.ecr.<region>.amazonaws.com.
 function M.client(opts)
   opts = opts or {}
-  local access_key = opts.access_key or error("ecr.client: access_key is required")
-  local secret_key = opts.secret_key or error("ecr.client: secret_key is required")
-  local region = opts.region or error("ecr.client: region is required")
-  local session_token = opts.session_token
+  -- No explicit keys → resolve via the standard chain (profile / env / IRSA),
+  -- honoring opts.profile and opts.role_arn. See assay.aws.sts.
+  local creds = opts
+  if not opts.access_key then
+    creds = require("assay.aws.sts").credentials(opts)
+  end
+  local access_key = creds.access_key or error("ecr.client: access_key is required")
+  local secret_key = creds.secret_key or error("ecr.client: secret_key is required")
+  local region = opts.region or env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION")
+    or error("ecr.client: region is required")
+  local session_token = creds.session_token
   local endpoint = opts.endpoint
 
   -- Endpoint can be a full URL (http://… for tests, https://… for VPC endpoints)

@@ -1,7 +1,8 @@
 --- @module assay.aws.sigv4
---- @description AWS Signature V4 request signing. Generates Authorization headers for AWS API calls.
---- @keywords aws, sigv4, signature, authorization, signing, v4, signature-v4
+--- @description AWS Signature V4 request signing. Generates Authorization headers and presigned URLs for AWS API calls.
+--- @keywords aws, sigv4, signature, authorization, signing, v4, signature-v4, presign, presigned-url
 --- @quickref M.sign(opts) -> headers | Sign an AWS request and return authorization headers
+--- @quickref M.presign(opts) -> url | Presign an AWS request as a query-string-signed URL
 
 local M = {}
 
@@ -16,8 +17,8 @@ local function fmt02(n)
   return tostring(n)
 end
 
-local function utc_now()
-  local epoch = os.time()
+local function utc_now(epoch)
+  epoch = epoch or os.time()
   local secs = epoch
   local days = math.floor(secs / 86400)
   local time_of_day = secs % 86400
@@ -113,6 +114,7 @@ end
 ---   query       (string|nil) Query string
 ---   payload     (string) Request body
 ---   headers     (table|nil) Additional headers
+---   time        (number|nil) Epoch seconds to sign at (defaults to now; for tests)
 --- @return table Headers map including Authorization, X-Amz-Date, etc.
 function M.sign(opts)
   local access_key = opts.access_key
@@ -127,7 +129,7 @@ function M.sign(opts)
   local payload = opts.payload or ""
   local extra_headers = opts.headers or {}
 
-  local dt = utc_now()
+  local dt = utc_now(opts.time)
   local date_stamp = utc_date_stamp(dt)
   local datetime_stamp = utc_datetime_stamp(dt)
   local credential_scope = date_stamp .. "/" .. region .. "/" .. service .. "/aws4_request"
@@ -174,6 +176,89 @@ function M.sign(opts)
     .. "Signature=" .. signature
 
   return headers_map
+end
+
+--- Presign an AWS API request: the signature goes into the query string instead
+--- of an Authorization header, producing a self-contained URL. This is how EKS
+--- bearer tokens are minted (a presigned sts:GetCallerIdentity URL) — see
+--- assay.aws.eks. GET-only in practice; the payload hash is that of the empty
+--- body.
+---
+--- @param opts table with fields:
+---   access_key  (string) AWS access key ID
+---   secret_key  (string) AWS secret access key
+---   session_token (string|nil) AWS session token (for STS credentials)
+---   service     (string) AWS service name (e.g. "sts")
+---   region      (string) AWS region
+---   method      (string) HTTP method (default "GET")
+---   host        (string) API hostname
+---   path        (string) Request path (default "/")
+---   query       (table|nil) Base query params as {name=value} (e.g. Action)
+---   headers     (table|nil) Headers to include in the signature (host is
+---                           always signed; e.g. ["x-k8s-aws-id"] for EKS)
+---   expires     (number|nil) Validity in seconds (default 60)
+---   time        (number|nil) Epoch seconds to sign at (defaults to now; for tests)
+--- @return string The presigned URL
+function M.presign(opts)
+  local access_key = opts.access_key
+  local secret_key = opts.secret_key
+  local session_token = opts.session_token
+  local service = opts.service
+  local region = opts.region
+  local method = opts.method or "GET"
+  local host = opts.host
+  local path = opts.path or "/"
+  local expires = opts.expires or 60
+
+  local dt = utc_now(opts.time)
+  local date_stamp = utc_date_stamp(dt)
+  local datetime_stamp = utc_datetime_stamp(dt)
+  local credential_scope = date_stamp .. "/" .. region .. "/" .. service .. "/aws4_request"
+
+  local headers_map = { host = host }
+  for k, v in pairs(opts.headers or {}) do
+    headers_map[k:lower()] = v
+  end
+  local canonical_headers_str, signed_headers = canonical_headers_and_signed(headers_map)
+
+  local params = {}
+  for k, v in pairs(opts.query or {}) do
+    params[#params + 1] = url_encode(k) .. "=" .. url_encode(tostring(v))
+  end
+  params[#params + 1] = "X-Amz-Algorithm=AWS4-HMAC-SHA256"
+  params[#params + 1] = "X-Amz-Credential=" .. url_encode(access_key .. "/" .. credential_scope)
+  params[#params + 1] = "X-Amz-Date=" .. datetime_stamp
+  params[#params + 1] = "X-Amz-Expires=" .. tostring(expires)
+  params[#params + 1] = "X-Amz-SignedHeaders=" .. url_encode(signed_headers)
+  if session_token and session_token ~= "" then
+    params[#params + 1] = "X-Amz-Security-Token=" .. url_encode(session_token)
+  end
+  table.sort(params)
+  local canonical_query = table.concat(params, "&")
+
+  local canonical_request = table.concat({
+    method,
+    url_encode_path(path),
+    canonical_query,
+    canonical_headers_str,
+    signed_headers,
+    crypto.hash("", "sha256"),
+  }, "\n")
+
+  local string_to_sign = table.concat({
+    "AWS4-HMAC-SHA256",
+    datetime_stamp,
+    credential_scope,
+    crypto.hash(canonical_request, "sha256"),
+  }, "\n")
+
+  local date_key = crypto.hmac("AWS4" .. secret_key, date_stamp, "sha256", true)
+  local region_key = crypto.hmac(date_key, region, "sha256", true)
+  local service_key = crypto.hmac(region_key, service, "sha256", true)
+  local signing_key = crypto.hmac(service_key, "aws4_request", "sha256", true)
+  local signature = crypto.hmac(signing_key, string_to_sign, "sha256")
+
+  return "https://" .. host .. path .. "?" .. canonical_query .. "&X-Amz-Signature=" .. signature
 end
 
 return M

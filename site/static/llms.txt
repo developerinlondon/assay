@@ -35,7 +35,7 @@
 - [assay.sonarqube](https://assay.rs/modules/sonarqube.html): SonarQube quality gates, issues, hotspots, measures
 
 ## Kubernetes & GitOps
-- [assay.k8s](https://assay.rs/modules/k8s.html): 30+ K8s resource types, CRDs, readiness checks, pod logs + exec
+- [assay.k8s](https://assay.rs/modules/k8s.html): 30+ K8s resource types, CRDs, readiness checks, pod logs + exec; multi-cluster via kubeconfig contexts (EKS exec auth minted in-process)
 - [assay.argocd](https://assay.rs/modules/argocd.html): ArgoCD apps, sync, health, projects
 - [assay.kargo](https://assay.rs/modules/kargo.html): Kargo stages, freight, promotions
 - [assay.flux](https://assay.rs/modules/flux.html): Flux GitRepositories, Kustomizations, HelmReleases
@@ -64,6 +64,8 @@
 - [assay.s3](https://assay.rs/modules/s3.html): S3-compatible storage (AWS, R2, MinIO) with Sig V4
 - [assay.aws.ec2](https://assay.rs/modules/aws-ec2.html): AWS EC2 read queries over Sig V4 — instances, volumes, security groups
 - [assay.aws.s3](https://assay.rs/modules/aws-s3.html): AWS S3 read over Sig V4 — list buckets/objects, head object
+- [assay.aws.sts](https://assay.rs/modules/aws-sts.html): AWS credential chain (profile/env/IRSA) + AssumeRole, in-process
+- [assay.aws.eks](https://assay.rs/modules/aws-eks.html): EKS bearer tokens (aws eks get-token equivalent), in-process
 
 ## Feature Flags & Utilities
 - [assay.unleash](https://assay.rs/modules/unleash.html): Unleash feature flags, environments, strategies

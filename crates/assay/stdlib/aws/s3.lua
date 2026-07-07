@@ -1,7 +1,7 @@
 --- @module assay.aws.s3
 --- @description AWS S3 read-only queries via Signature V4. List buckets, list objects, head object.
 --- @keywords aws, s3, buckets, objects, list, head, sigv4, storage, path-style
---- @quickref client(opts) -> client | Create an S3 client (opts = {access_key, secret_key, region, session_token?, endpoint?})
+--- @quickref client(opts) -> client | Create an S3 client (opts = {access_key?, secret_key?, profile?, role_arn?, region?, session_token?, endpoint?}; no keys -> standard chain via assay.aws.sts)
 --- @quickref c:list_buckets() -> [{name, creation_date}] | List buckets (GET, read)
 --- @quickref c:list_objects(bucket, opts?) -> {objects, is_truncated, ...} | List objects (GET, read)
 --- @quickref c:head_object(bucket, key) -> {status, headers}|nil | Object metadata, nil if absent (GET, read)
@@ -23,10 +23,17 @@ end
 
 function M.client(opts)
   opts = opts or {}
-  local access_key = opts.access_key or error("aws.s3.client: access_key is required")
-  local secret_key = opts.secret_key or error("aws.s3.client: secret_key is required")
-  local region = opts.region or error("aws.s3.client: region is required")
-  local session_token = opts.session_token
+  -- No explicit keys → resolve via the standard chain (profile / env / IRSA),
+  -- honoring opts.profile and opts.role_arn. See assay.aws.sts.
+  local creds = opts
+  if not opts.access_key then
+    creds = require("assay.aws.sts").credentials(opts)
+  end
+  local access_key = creds.access_key or error("aws.s3.client: access_key is required")
+  local secret_key = creds.secret_key or error("aws.s3.client: secret_key is required")
+  local region = opts.region or env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION")
+    or error("aws.s3.client: region is required")
+  local session_token = creds.session_token
   local endpoint = opts.endpoint
 
   local url, host

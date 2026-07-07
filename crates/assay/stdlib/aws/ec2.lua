@@ -1,7 +1,7 @@
 --- @module assay.aws.ec2
 --- @description AWS EC2 read-only queries via Signature V4. Describe instances, volumes, security groups.
 --- @keywords aws, ec2, instances, volumes, security-groups, describe, sigv4, compute, reservations
---- @quickref client(opts) -> client | Create an EC2 client (opts = {access_key, secret_key, region, session_token?, endpoint?})
+--- @quickref client(opts) -> client | Create an EC2 client (opts = {access_key?, secret_key?, profile?, role_arn?, region?, session_token?, endpoint?}; no keys -> standard chain via assay.aws.sts)
 --- @quickref c:describe_instances(opts?) -> [instance] | List instances (Action=DescribeInstances)
 --- @quickref c:describe_volumes(opts?) -> [volume] | List EBS volumes (Action=DescribeVolumes)
 --- @quickref c:describe_security_groups(opts?) -> [group] | List security groups (Action=DescribeSecurityGroups)
@@ -83,10 +83,17 @@ end
 
 function M.client(opts)
   opts = opts or {}
-  local access_key = opts.access_key or error("aws.ec2.client: access_key is required")
-  local secret_key = opts.secret_key or error("aws.ec2.client: secret_key is required")
-  local region = opts.region or error("aws.ec2.client: region is required")
-  local session_token = opts.session_token
+  -- No explicit keys → resolve via the standard chain (profile / env / IRSA),
+  -- honoring opts.profile and opts.role_arn. See assay.aws.sts.
+  local creds = opts
+  if not opts.access_key then
+    creds = require("assay.aws.sts").credentials(opts)
+  end
+  local access_key = creds.access_key or error("aws.ec2.client: access_key is required")
+  local secret_key = creds.secret_key or error("aws.ec2.client: secret_key is required")
+  local region = opts.region or env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION")
+    or error("aws.ec2.client: region is required")
+  local session_token = creds.session_token
   local endpoint = opts.endpoint
 
   local url, host
