@@ -49,6 +49,12 @@ pub(crate) const APPROVED_INDICES_ENV: &str = "ASSAY_APPROVED_INDICES";
 /// re-run (set by the resume machinery when a decision is `no`).
 pub(crate) const DENIED_INDEX_ENV: &str = "ASSAY_DENIED_INDEX";
 
+/// JSON array of `ApprovedOp` records for an approval-mode re-run (set by
+/// the resume machinery). Binds each approved index to the operation that
+/// was approved, so a replay whose control flow shifted cannot spend a
+/// grant on a different operation.
+pub(crate) const APPROVED_OPS_ENV: &str = "ASSAY_APPROVED_OPS";
+
 /// Prefix that marks a runtime error as an approval request. The tool-mode
 /// runner extracts the JSON payload that follows it to suspend the run.
 pub(crate) const APPROVAL_REQUEST_PREFIX: &str = "__assay_approval_request__:";
@@ -78,6 +84,30 @@ impl ExecMode {
     pub fn is_approval(self) -> bool {
         matches!(self, ExecMode::Approval)
     }
+}
+
+/// One granted approval: the operation index it was issued for, the
+/// operation descriptor that was actually approved (e.g. `http.post`),
+/// and — for audit — who authorized it, when the caller supplied an
+/// identity. Serialized into resume state and the re-run environment.
+/// Crate-internal: travels via `ASSAY_APPROVED_OPS`, never the public
+/// `ApprovalConfig` API.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub(crate) struct ApprovedOp {
+    pub index: u64,
+    pub op: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approver: Option<String>,
+}
+
+/// Resolve the op bindings for this run's grants from the environment
+/// (set by the resume machinery). Empty when absent or malformed —
+/// the approval gate then refuses every index-only grant, fail-closed.
+pub(crate) fn approved_ops_from_env() -> Vec<ApprovedOp> {
+    std::env::var(APPROVED_OPS_ENV)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Vec<ApprovedOp>>(&raw).ok())
+        .unwrap_or_default()
 }
 
 /// Per-run approval state consumed by the approval gate: which operation

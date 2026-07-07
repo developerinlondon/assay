@@ -308,6 +308,15 @@ fn tools_list_includes_assay_resume() {
         props["approve"].is_object(),
         "resume needs an approve arg: {resume}"
     );
+    assert!(
+        props["approver"].is_object(),
+        "resume offers an approver audit arg: {resume}"
+    );
+    let required = resume["inputSchema"]["required"].as_array().unwrap();
+    assert!(
+        required.contains(&json!("approve")),
+        "approve must be required: {resume}"
+    );
 }
 
 #[test]
@@ -363,6 +372,60 @@ fn assay_resume_rejects_an_unknown_token() {
         text_content(result).contains("invalid resume token"),
         "should explain the bad token: {result}"
     );
+}
+
+#[test]
+fn assay_resume_requires_an_explicit_approve() {
+    let mut server = McpServer::start();
+    server.initialize();
+
+    // No `approve` at all: the decision may never be defaulted — this must
+    // fail as an argument error before the token is even looked at.
+    let resp = server.call_tool(
+        "assay_resume",
+        json!({ "token": "deadbeefdeadbeefdeadbeefdeadbeef" }),
+    );
+    let result = &resp["result"];
+    assert_eq!(
+        result["isError"],
+        json!(true),
+        "omitted approve must error: {result}"
+    );
+    assert!(
+        text_content(result).contains("explicit 'approve'"),
+        "should demand the explicit decision: {result}"
+    );
+}
+
+#[test]
+fn assay_resume_echoes_the_approver_identity() {
+    let mut server = McpServer::start();
+    server.initialize();
+
+    let path =
+        std::env::temp_dir().join(format!("assay-mcp-approval-audit-{}", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let path_lua = path.to_str().unwrap().replace('\\', "\\\\");
+    let script = format!(r#"fs.write("{path_lua}", "x"); return "done""#);
+
+    let run = server.call_tool("assay_run", json!({ "script": script, "mode": "approval" }));
+    let envelope: Value = serde_json::from_str(text_content(&run["result"])).unwrap();
+    let token = envelope["requiresApproval"]["resumeToken"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no resumeToken in {envelope}"));
+
+    let resume = server.call_tool(
+        "assay_resume",
+        json!({ "token": token, "approve": true, "approver": "alice@example.com" }),
+    );
+    let done: Value = serde_json::from_str(text_content(&resume["result"])).unwrap();
+    assert_eq!(done["status"], "ok", "resumed envelope: {done}");
+    assert_eq!(
+        done["approver"], "alice@example.com",
+        "envelope must carry the audit identity: {done}"
+    );
+
+    let _ = std::fs::remove_file(&path);
 }
 
 #[test]

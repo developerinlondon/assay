@@ -187,8 +187,11 @@ fn assay_resume_tool() -> JsonValue {
                 },
                 "approve": {
                     "type": "boolean",
-                    "default": true,
-                    "description": "Approve the pending operation (true) or deny it (false). Denying fails that operation in the resumed run.",
+                    "description": "Approve the pending operation (true) or deny it (false). Required — the decision must be explicit; omitting it is an error, never an approval. Denying fails that operation in the resumed run.",
+                },
+                "approver": {
+                    "type": "string",
+                    "description": "Optional identity of the human or system that authorized this decision, recorded for audit in the resume state and echoed in the result envelope.",
                 },
             },
             "required": ["token", "approve"],
@@ -291,17 +294,23 @@ async fn call_assay_resume(arguments: &JsonValue) -> Result<JsonValue, String> {
         .and_then(JsonValue::as_str)
         .ok_or_else(|| "assay_resume requires a 'token' string argument".to_string())?;
 
-    // Default to approving: the common case is proceeding through the gate.
+    // The resume IS the authorization step for a suspended mutating op —
+    // the decision must be explicit. No default: an omitted `approve` is an
+    // argument error, never an approval.
     let approve = arguments
         .get("approve")
         .and_then(JsonValue::as_bool)
-        .unwrap_or(true);
+        .ok_or_else(|| {
+            "assay_resume requires an explicit 'approve' boolean argument".to_string()
+        })?;
     let decision = if approve { "yes" } else { "no" };
+
+    let approver = arguments.get("approver").and_then(JsonValue::as_str);
 
     // readonly=false: an approval-mode run is what suspends, so this only ever
     // resumes an approval token; the flag merely shapes an error envelope's
     // `readonly` field, which is not meaningful for a resume.
-    let outcome = crate::resume_tool_outcome(token, decision, None, false).await;
+    let outcome = crate::resume_tool_outcome(token, decision, None, false, approver).await;
 
     let is_error = !matches!(outcome.status, "ok" | "needs_approval");
     Ok(tool_text_content(outcome.envelope, is_error))

@@ -7,14 +7,14 @@
 //! decision. A per-VM counter assigns the index and advances on every
 //! gated call, so successive resumes admit one more operation each.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use mlua::{Lua, MultiValue, Table, Value};
 
 use super::gated::{BLOCKED_FUNCTIONS, BLOCKED_TABLES, is_gated_http_verb};
-use crate::lua::{APPROVAL_REQUEST_PREFIX, ApprovalConfig};
+use crate::lua::{APPROVAL_REQUEST_PREFIX, ApprovalConfig, approved_ops_from_env};
 
 const SUMMARY_CAP: usize = 200;
 
@@ -22,6 +22,9 @@ struct GateState {
     counter: AtomicU64,
     approved: HashSet<u64>,
     denied: Option<u64>,
+    /// Which operation each grant was issued for. A replay whose control
+    /// flow shifted must not spend an index's grant on a different op.
+    bindings: HashMap<u64, String>,
 }
 
 pub fn apply(lua: &Lua, config: &ApprovalConfig) -> mlua::Result<()> {
@@ -29,6 +32,13 @@ pub fn apply(lua: &Lua, config: &ApprovalConfig) -> mlua::Result<()> {
         counter: AtomicU64::new(0),
         approved: config.approved_indices.iter().copied().collect(),
         denied: config.denied_index,
+        // Bindings arrive via ASSAY_APPROVED_OPS (crate-internal transport
+        // set by the resume machinery), keeping the public ApprovalConfig
+        // API unchanged.
+        bindings: approved_ops_from_env()
+            .into_iter()
+            .map(|entry| (entry.index, entry.op))
+            .collect(),
     });
     for path in BLOCKED_FUNCTIONS {
         gate_function(lua, path, &state)?;
@@ -51,7 +61,21 @@ fn gate_decision(state: &GateState, op: &str, summary: &str) -> mlua::Result<()>
         return Err(mlua::Error::runtime(format!("approval: {op} denied")));
     }
     if state.approved.contains(&index) {
-        return Ok(());
+        // Every grant is bound to the op it was approved for — a grant
+        // with no binding is refused outright, and a replay that reaches
+        // a different op at this index fails terminally rather than
+        // executing an operation nobody approved.
+        return match state.bindings.get(&index) {
+            Some(expected) if expected == op => Ok(()),
+            Some(expected) => Err(mlua::Error::runtime(format!(
+                "approval: operation at index {index} changed since approval \
+                 (approved '{expected}', got '{op}')"
+            ))),
+            None => Err(mlua::Error::runtime(format!(
+                "approval: no operation binding for approved index {index} \
+                 ('{op}') — refusing"
+            ))),
+        };
     }
     Err(approval_request(op, summary, index))
 }
