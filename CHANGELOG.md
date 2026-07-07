@@ -2,6 +2,40 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.17.4 — 2026-07-07
+
+### Added
+
+- **`assay.k8s` is multi-cluster: kubeconfig context support.** Any k8s call takes
+  `opts.context` (or set a default with `k8s.use_context(name)` / `ASSAY_K8S_CONTEXT`),
+  resolved from `opts.kubeconfig` / `$KUBECONFIG` / `~/.kube/config`: the cluster's
+  server URL and CA (`certificate-authority-data` honored via a per-context HTTP
+  client), and the user's auth. Supported user auth: a static `token`, or the aws
+  `eks get-token` exec plugin — which is **recognized and minted in-process** (with
+  `--role-arn`/`--profile`/exec-`env` respected) rather than executed, so contexts work
+  in readonly mode where subprocesses are blocked. `k8s.contexts()` lists what's
+  available. Fully backward compatible: with no context configured, calls target the
+  in-cluster ServiceAccount exactly as before.
+- **`assay.aws.sts` — the AWS credential chain, in-process.** `sts.credentials(opts)`
+  resolves like the AWS CLI: explicit keys → `opts.profile`/`AWS_PROFILE` (parsing
+  `~/.aws/config` + `~/.aws/credentials`, following `role_arn` + `source_profile`
+  chains and `web_identity_token_file`) → env keys → IRSA
+  (`AWS_ROLE_ARN`+`AWS_WEB_IDENTITY_TOKEN_FILE`). Plus `sts.assume_role(role_arn, opts)`
+  (SigV4-signed) and `sts.assume_role_with_web_identity(role_arn, token, opts)`.
+  Temporary credentials are cached until shortly before expiry. STS is asked for JSON
+  (Accept header), so no XML parsing is involved.
+- **`assay.aws.eks` — EKS bearer tokens without the aws CLI.** `eks.get_token(cluster)`
+  mints the `k8s-aws-v1.` presigned-STS token in-process (what `aws eks get-token`
+  produces), honoring profile/role/region options. This is what powers the k8s exec-plugin
+  contexts above.
+- **`sigv4.presign(opts)`** — query-string SigV4 signing (presigned URLs), alongside the
+  existing header signing; both now accept `opts.time` for deterministic signatures in
+  tests.
+- **`aws.ec2` / `aws.s3` / `aws.ecr` clients resolve credentials automatically.**
+  `client(opts)` no longer hard-requires literal keys: omit them and the standard chain
+  runs (honoring `opts.profile` and `opts.role_arn`); `region` falls back to
+  `AWS_REGION`/`AWS_DEFAULT_REGION`. Explicit keys keep working unchanged.
+
 ## assay 0.17.3 — 2026-07-07
 
 ### Added
