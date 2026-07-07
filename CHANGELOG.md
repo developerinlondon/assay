@@ -2,7 +2,7 @@
 
 All notable changes to Assay are documented here.
 
-## Unreleased
+## assay 0.17.3 — 2026-07-07
 
 ### Added
 
