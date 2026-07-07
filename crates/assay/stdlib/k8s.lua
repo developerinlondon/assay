@@ -1,7 +1,9 @@
 --- @module assay.k8s
---- @description Kubernetes API client for Kubernetes clusters. 30+ resource types, CRDs, readiness checks, pod logs, rollouts.
---- @keywords kubernetes, k8s, pods, deployments, services, secrets, configmaps, namespaces, crd, custom-resources, rbac, events, logs, rollout, nodes, readiness, wait, deploy, deployment
---- @env KUBERNETES_SERVICE_HOST, KUBERNETES_SERVICE_PORT
+--- @description Kubernetes API client for Kubernetes clusters. 30+ resource types, CRDs, readiness checks, pod logs, rollouts. Multi-cluster via kubeconfig contexts (pass opts.context on any call, or k8s.use_context(name)); EKS aws exec-plugin auth is minted in-process.
+--- @keywords kubernetes, k8s, pods, deployments, services, secrets, configmaps, namespaces, crd, custom-resources, rbac, events, logs, rollout, nodes, readiness, wait, deploy, deployment, kubeconfig, context, multi-cluster, eks
+--- @env KUBERNETES_SERVICE_HOST, KUBERNETES_SERVICE_PORT, KUBECONFIG, ASSAY_K8S_CONTEXT, HOME
+--- @quickref M.contexts(opts?) -> [name], current | List kubeconfig context names + current-context
+--- @quickref M.use_context(name) -> nil | Set the default kubeconfig context for all calls
 --- @quickref M.register_crd(kind, api_group, version, plural, cluster_scoped?) -> nil | Register custom resource
 --- @quickref M.get(path, opts?) -> resource | GET any K8s API path
 --- @quickref M.post(path, body, opts?) -> resource | POST to any K8s API path
@@ -61,6 +63,181 @@ end
 
 local function auth_headers(token)
   return { Authorization = "Bearer " .. (token or sa_token()) }
+end
+
+-- ===== kubeconfig contexts (multi-cluster) =====
+--
+-- Cluster targeting, in priority order:
+--   1. opts.base_url (+ opts.token)                — raw, unchanged behavior
+--   2. opts.context                                — a kubeconfig context, per call
+--   3. M.use_context(name) / ASSAY_K8S_CONTEXT env — a default kubeconfig context
+--   4. in-cluster ServiceAccount                   — the pod's own cluster (default)
+-- Contexts are read from opts.kubeconfig, $KUBECONFIG, or ~/.kube/config. User
+-- auth supported: a static `token`, or the aws `eks get-token` exec plugin —
+-- which is recognized and minted IN-PROCESS via assay.aws.eks (subprocesses are
+-- blocked in readonly mode, so the plugin command is never actually run).
+
+local EKS_TOKEN_TTL_SECS = 600
+
+M._default_context = nil
+local _kubecfg = nil -- { path, doc } parse cache
+local _ctx_cache = {} -- context name -> { base_url, client, static_token, exec, token, token_expires_at }
+
+function M.use_context(name)
+  M._default_context = name
+end
+
+local function kubeconfig_path(opts)
+  return (opts and opts.kubeconfig) or env.get("KUBECONFIG")
+    or ((env.get("HOME") or "") .. "/.kube/config")
+end
+
+local function load_kubeconfig(opts)
+  local path = kubeconfig_path(opts)
+  if _kubecfg and _kubecfg.path == path then return _kubecfg.doc end
+  local ok, text = pcall(fs.read, path)
+  if not ok then
+    error("k8s: cannot read kubeconfig at " .. path .. " (set KUBECONFIG or pass opts.kubeconfig)")
+  end
+  local doc = yaml.parse(text)
+  _kubecfg = { path = path, doc = doc }
+  return doc
+end
+
+--- List the kubeconfig's context names and its current-context.
+function M.contexts(opts)
+  local doc = load_kubeconfig(opts)
+  local names = {}
+  for _, c in ipairs(doc.contexts or {}) do names[#names + 1] = c.name end
+  return names, doc["current-context"]
+end
+
+local function find_named(list, name)
+  for _, e in ipairs(list or {}) do
+    if e.name == name then return e end
+  end
+end
+
+-- Recognize the aws `eks get-token` exec plugin and lift what we need to mint
+-- the token in-process: cluster name, region, role, profile (from args or the
+-- exec env block).
+local function parse_aws_exec(exec)
+  local cmd = exec.command or ""
+  if not (cmd == "aws" or cmd:match("/aws$")) then return nil end
+  local args = exec.args or {}
+  local seen_get_token = false
+  local flags = {}
+  local i = 1
+  while i <= #args do
+    local a = args[i]
+    if a == "get-token" then
+      seen_get_token = true
+    elseif a:match("^%-%-") and args[i + 1] and not args[i + 1]:match("^%-%-") then
+      flags[a] = args[i + 1]
+      i = i + 1
+    end
+    i = i + 1
+  end
+  if not seen_get_token or not flags["--cluster-name"] then return nil end
+  local from_env = {}
+  for _, e in ipairs(exec.env or {}) do
+    from_env[e.name] = e.value
+  end
+  return {
+    cluster_name = flags["--cluster-name"],
+    region = flags["--region"] or from_env.AWS_REGION or from_env.AWS_DEFAULT_REGION,
+    role_arn = flags["--role-arn"],
+    profile = flags["--profile"] or from_env.AWS_PROFILE,
+    access_key = from_env.AWS_ACCESS_KEY_ID,
+    secret_key = from_env.AWS_SECRET_ACCESS_KEY,
+    session_token = from_env.AWS_SESSION_TOKEN,
+  }
+end
+
+local function resolve_context(name, opts)
+  local cached = _ctx_cache[name]
+  if not cached then
+    local doc = load_kubeconfig(opts)
+    local ctx = find_named(doc.contexts, name)
+    if not ctx then
+      error("k8s: context '" .. name .. "' not found in kubeconfig " .. kubeconfig_path(opts))
+    end
+    local cluster_entry = find_named(doc.clusters, ctx.context.cluster)
+    local user_entry = find_named(doc.users, ctx.context.user)
+    if not cluster_entry or not user_entry then
+      error("k8s: kubeconfig context '" .. name .. "' references a missing cluster or user")
+    end
+    local cluster = cluster_entry.cluster
+    local user = user_entry.user or {}
+
+    local client_opts = {}
+    if cluster["certificate-authority-data"] then
+      client_opts.ca_cert = base64.decode(cluster["certificate-authority-data"])
+    elseif cluster["certificate-authority"] then
+      client_opts.ca_cert_file = cluster["certificate-authority"]
+    end
+    local ok, client = pcall(http.client, client_opts)
+    if not ok then client = http.client({}) end
+
+    if user["client-certificate-data"] or user["client-certificate"] then
+      error("k8s: context '" .. name .. "' uses client-certificate auth, which is not supported")
+    end
+    local exec_cfg = nil
+    if not user.token and user.exec then
+      exec_cfg = parse_aws_exec(user.exec)
+      if not exec_cfg then
+        error(
+          "k8s: context '" .. name .. "' uses an unsupported exec credential plugin ("
+            .. tostring(user.exec.command)
+            .. ") — only static tokens and the aws eks get-token plugin (minted in-process) are supported"
+        )
+      end
+    elseif not user.token then
+      error("k8s: context '" .. name .. "' has no supported auth (token or aws eks get-token exec)")
+    end
+
+    cached = {
+      base_url = cluster.server:gsub("/+$", ""),
+      client = client,
+      static_token = user.token,
+      exec = exec_cfg,
+      token = nil,
+      token_expires_at = 0,
+    }
+    _ctx_cache[name] = cached
+  end
+
+  if cached.static_token then
+    cached.token = cached.static_token
+  elseif not cached.token or os.time() > cached.token_expires_at then
+    local eks = require("assay.aws.eks")
+    cached.token = eks.get_token(cached.exec.cluster_name, {
+      region = cached.exec.region,
+      role_arn = cached.exec.role_arn,
+      profile = cached.exec.profile,
+      access_key = cached.exec.access_key,
+      secret_key = cached.exec.secret_key,
+      session_token = cached.exec.session_token,
+    })
+    cached.token_expires_at = os.time() + EKS_TOKEN_TTL_SECS - 60
+  end
+  return cached
+end
+
+-- Resolve where a call goes: {base, client, token}. See the priority order in
+-- the section comment above. Fully backward compatible — with no context
+-- configured, behavior is identical to the pre-context module.
+local function target(opts)
+  opts = opts or {}
+  if opts.base_url then
+    return { base = opts.base_url, client = get_http(), token = opts.token }
+  end
+  local ctx = opts.context or M._default_context or env.get("ASSAY_K8S_CONTEXT")
+  if ctx then
+    local t = resolve_context(ctx, opts)
+    return { base = t.base_url, client = t.client, token = opts.token or t.token }
+  end
+  return { base = api_base(), client = get_http(), token = opts.token }
 end
 
 -- Percent-encode a value for a URL query component. Keeps the RFC 3986
@@ -139,10 +316,9 @@ end
 -- ===== Raw HTTP verbs (top-level) =====
 
 function M.get(path, opts)
-  opts = opts or {}
-  local url = (opts.base_url or api_base()) .. path
-  local resp = get_http():get(url, {
-    headers = auth_headers(opts.token),
+  local t = target(opts)
+  local resp = t.client:get(t.base .. path, {
+    headers = auth_headers(t.token),
   })
   if resp.status ~= 200 then
     error("k8s.get: HTTP " .. resp.status .. " " .. path .. ": " .. resp.body)
@@ -151,10 +327,9 @@ function M.get(path, opts)
 end
 
 function M.post(path, body, opts)
-  opts = opts or {}
-  local url = (opts.base_url or api_base()) .. path
-  local resp = get_http():post(url, body, {
-    headers = auth_headers(opts.token),
+  local t = target(opts)
+  local resp = t.client:post(t.base .. path, body, {
+    headers = auth_headers(t.token),
   })
   if resp.status < 200 or resp.status >= 300 then
     error("k8s.post: HTTP " .. resp.status .. " " .. path .. ": " .. resp.body)
@@ -163,10 +338,9 @@ function M.post(path, body, opts)
 end
 
 function M.put(path, body, opts)
-  opts = opts or {}
-  local url = (opts.base_url or api_base()) .. path
-  local resp = get_http():put(url, body, {
-    headers = auth_headers(opts.token),
+  local t = target(opts)
+  local resp = t.client:put(t.base .. path, body, {
+    headers = auth_headers(t.token),
   })
   if resp.status < 200 or resp.status >= 300 then
     error("k8s.put: HTTP " .. resp.status .. " " .. path .. ": " .. resp.body)
@@ -176,11 +350,11 @@ end
 
 function M.patch(path, body, opts)
   opts = opts or {}
-  local url = (opts.base_url or api_base()) .. path
-  local hdrs = auth_headers(opts.token)
+  local t = target(opts)
+  local hdrs = auth_headers(t.token)
   hdrs["Content-Type"] = opts.content_type or "application/merge-patch+json"
   local encoded = type(body) == "table" and json.encode(body) or body
-  local resp = get_http():patch(url, encoded, {
+  local resp = t.client:patch(t.base .. path, encoded, {
     headers = hdrs,
   })
   if resp.status < 200 or resp.status >= 300 then
@@ -190,10 +364,9 @@ function M.patch(path, body, opts)
 end
 
 function M.delete(path, opts)
-  opts = opts or {}
-  local url = (opts.base_url or api_base()) .. path
-  local resp = get_http():delete(url, {
-    headers = auth_headers(opts.token),
+  local t = target(opts)
+  local resp = t.client:delete(t.base .. path, {
+    headers = auth_headers(t.token),
   })
   if resp.status < 200 or resp.status >= 300 then
     error("k8s.delete: HTTP " .. resp.status .. " " .. path .. ": " .. resp.body)
@@ -238,11 +411,10 @@ function M.resources:delete(namespace, kind, name, opts)
 end
 
 function M.resources:exists(namespace, kind, name, opts)
-  opts = opts or {}
   local api_path = M._resource_path(namespace, kind, name)
-  local url = (opts.base_url or api_base()) .. api_path
-  local resp = get_http():get(url, {
-    headers = auth_headers(opts.token),
+  local t = target(opts)
+  local resp = t.client:get(t.base .. api_path, {
+    headers = auth_headers(t.token),
   })
   return resp.status == 200
 end
@@ -368,9 +540,9 @@ function M.pods:logs(namespace, pod_name, opts)
   if #params > 0 then
     path = path .. "?" .. table.concat(params, "&")
   end
-  local url = (opts.base_url or api_base()) .. path
-  local resp = get_http():get(url, {
-    headers = auth_headers(opts.token),
+  local t = target(opts)
+  local resp = t.client:get(t.base .. path, {
+    headers = auth_headers(t.token),
   })
   if resp.status ~= 200 then
     error("k8s.logs: HTTP " .. resp.status .. " " .. path .. ": " .. resp.body)
@@ -449,15 +621,15 @@ function M.pods:exec(namespace, pod_name, command, opts)
   params[#params + 1] = "stdin=" .. tostring(opts.stdin == true)
   params[#params + 1] = "tty=" .. tostring(opts.tty == true)
 
-  local base = opts.base_url or api_base()
-  local ws_base = base:gsub("^https://", "wss://"):gsub("^http://", "ws://")
+  local t = target(opts)
+  local ws_base = t.base:gsub("^https://", "wss://"):gsub("^http://", "ws://")
   local url = ws_base
     .. "/api/v1/namespaces/" .. namespace .. "/pods/" .. pod_name .. "/exec"
     .. "?" .. table.concat(params, "&")
 
   local conn = ws.connect(url, {
     subprotocols = { "v4.channel.k8s.io" },
-    headers = auth_headers(opts.token),
+    headers = auth_headers(t.token),
     insecure = insecure,
   })
 
