@@ -442,3 +442,32 @@ end"#,
         "no mutation may reach the server"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn approved_index_without_op_binding_is_refused() {
+    // The gate is fail-closed: an index-only grant (no ASSAY_APPROVED_OPS
+    // binding, e.g. hand-rolled env or pre-binding resume state) must be
+    // refused, never executed.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/submit"))
+        .respond_with(ResponseTemplate::new(201))
+        .mount(&server)
+        .await;
+
+    let dir = unique_dir("assay-approval-unbound");
+    let state_dir = dir.join("state");
+    let script = post_script(&dir, "post.lua", &server.uri());
+
+    let mut cmd = tool_cmd(&script, &["--approval-mode"], &state_dir);
+    cmd.env("ASSAY_APPROVED_INDICES", "0");
+    let out = run_blocking(cmd).await;
+    let json = stdout_json(&out);
+    assert_eq!(json["status"], "error", "unbound grant must refuse: {json}");
+    let err = json["error"].as_str().unwrap();
+    assert!(
+        err.contains("no operation binding"),
+        "error explains the refusal: {err}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

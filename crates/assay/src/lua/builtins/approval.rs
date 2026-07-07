@@ -59,18 +59,21 @@ fn gate_decision(state: &GateState, op: &str, summary: &str) -> mlua::Result<()>
         return Err(mlua::Error::runtime(format!("approval: {op} denied")));
     }
     if state.approved.contains(&index) {
-        // A grant is bound to the op it was approved for; a replay that
-        // reaches a different op at this index fails terminally rather
-        // than executing an operation nobody approved.
-        if let Some(expected) = state.bindings.get(&index)
-            && expected != op
-        {
-            return Err(mlua::Error::runtime(format!(
+        // Every grant is bound to the op it was approved for — a grant
+        // with no binding is refused outright, and a replay that reaches
+        // a different op at this index fails terminally rather than
+        // executing an operation nobody approved.
+        return match state.bindings.get(&index) {
+            Some(expected) if expected == op => Ok(()),
+            Some(expected) => Err(mlua::Error::runtime(format!(
                 "approval: operation at index {index} changed since approval \
                  (approved '{expected}', got '{op}')"
-            )));
-        }
-        return Ok(());
+            ))),
+            None => Err(mlua::Error::runtime(format!(
+                "approval: no operation binding for approved index {index} \
+                 ('{op}') — refusing"
+            ))),
+        };
     }
     Err(approval_request(op, summary, index))
 }

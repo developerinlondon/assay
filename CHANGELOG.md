@@ -2,14 +2,14 @@
 
 All notable changes to Assay are documented here.
 
-## assay 0.18.0 — 2026-07-07
+## assay 0.17.5 — 2026-07-07
 
-### Changed
+### Fixed
 
 - **`assay_resume` requires an explicit `approve` decision.** The MCP tool previously defaulted an
   omitted `approve` to `true` — the authorization step for a suspended mutating operation could be
-  taken by accident. Omitting `approve` is now an invalid-arguments error, never an approval. The
-  input schema already declared the field required; the handler now enforces it. (#195)
+  taken by accident. The input schema has always declared the field required; the lenient handler
+  was the bug, and omitting `approve` is now an invalid-arguments error, never an approval. (#195)
 - **Approval grants are bound to the operation they approved.** A resume grant used to be matched
   by sequence index alone: because a resume re-runs the script from the top, a run whose control
   flow shifted between suspend and replay (e.g. a read that returned a different value the second
@@ -18,8 +18,9 @@ All notable changes to Assay are documented here.
   operation at index 0 changed since approval (approved 'http.post', got 'http.put')` — instead of
   executing an operation nobody approved. Grants travel to the re-run via the new
   `ASSAY_APPROVED_OPS` environment variable (a JSON array of `{index, op, approver?}` records) and
-  accumulate across the approval chain in the resume state. State files written by earlier
-  versions keep working; their existing grants simply carry no binding to enforce. (#196)
+  accumulate across the approval chain in the resume state. The gate is fail-closed: an approved
+  index with no op binding is refused outright, so index-only grants — including resume state
+  written by earlier versions — are never honored. (#196)
 
 ### Added
 
