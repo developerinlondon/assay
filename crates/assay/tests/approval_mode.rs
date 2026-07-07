@@ -55,6 +55,7 @@ fn scrub(cmd: &mut Command) {
     for key in [
         "ASSAY_APPROVAL",
         "ASSAY_APPROVED_INDICES",
+        "ASSAY_APPROVED_OPS",
         "ASSAY_DENIED_INDEX",
         "ASSAY_READONLY",
         "ASSAY_MODE",
@@ -362,4 +363,111 @@ fn modules_reports_approval_mode() {
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("approval mode active"), "stdout: {stdout}");
+}
+
+// ── (h) grants are bound to the op they approved ───────────────────────
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resume_grant_cannot_be_spent_on_a_different_op() {
+    // An ungated http.get steers control flow: it returns "first" once,
+    // then "second". Run 1 suspends on http.post at index 0 and the
+    // approval binds that grant to http.post. The replay's http.get now
+    // returns "second", so a different mutating op (http.put) reaches
+    // index 0 — the bound grant must refuse it rather than execute an
+    // operation nobody approved.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/flag"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("first"))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/flag"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("second"))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/submit"))
+        .respond_with(ResponseTemplate::new(201))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/submit"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let dir = unique_dir("assay-approval-binding");
+    let state_dir = dir.join("state");
+    let script = write_script(
+        &dir,
+        "shifty.lua",
+        &format!(
+            r#"local flag = http.get("{uri}/flag")
+if flag.body == "first" then
+  local r = http.post("{uri}/submit", "{{}}")
+  return {{ status = r.status }}
+else
+  local r = http.put("{uri}/submit", "{{}}")
+  return {{ status = r.status }}
+end"#,
+            uri = server.uri()
+        ),
+    );
+
+    let out = run_blocking(tool_cmd(&script, &["--approval-mode"], &state_dir)).await;
+    let json = stdout_json(&out);
+    assert_eq!(json["status"], "needs_approval", "first run: {json}");
+    assert_eq!(json["requiresApproval"]["op"], "http.post");
+    let token = json["requiresApproval"]["resumeToken"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let out = run_blocking(resume_cmd(&token, "yes", &state_dir)).await;
+    let json = stdout_json(&out);
+    assert_eq!(json["status"], "error", "shifted op must not run: {json}");
+    let err = json["error"].as_str().unwrap();
+    assert!(err.contains("changed since approval"), "error: {err}");
+    assert!(
+        err.contains("http.post") && err.contains("http.put"),
+        "error names both ops: {err}"
+    );
+
+    // Neither mutation ever reached the server — only the steering GETs.
+    let hits = server.received_requests().await.unwrap();
+    assert!(
+        hits.iter().all(|r| !r.url.path().ends_with("/submit")),
+        "no mutation may reach the server"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn approved_index_without_op_binding_is_refused() {
+    // The gate is fail-closed: an index-only grant (no ASSAY_APPROVED_OPS
+    // binding, e.g. hand-rolled env or pre-binding resume state) must be
+    // refused, never executed.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/submit"))
+        .respond_with(ResponseTemplate::new(201))
+        .mount(&server)
+        .await;
+
+    let dir = unique_dir("assay-approval-unbound");
+    let state_dir = dir.join("state");
+    let script = post_script(&dir, "post.lua", &server.uri());
+
+    let mut cmd = tool_cmd(&script, &["--approval-mode"], &state_dir);
+    cmd.env("ASSAY_APPROVED_INDICES", "0");
+    let out = run_blocking(cmd).await;
+    let json = stdout_json(&out);
+    assert_eq!(json["status"], "error", "unbound grant must refuse: {json}");
+    let err = json["error"].as_str().unwrap();
+    assert!(
+        err.contains("no operation binding"),
+        "error explains the refusal: {err}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
