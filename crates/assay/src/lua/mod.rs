@@ -49,6 +49,12 @@ pub(crate) const APPROVED_INDICES_ENV: &str = "ASSAY_APPROVED_INDICES";
 /// re-run (set by the resume machinery when a decision is `no`).
 pub(crate) const DENIED_INDEX_ENV: &str = "ASSAY_DENIED_INDEX";
 
+/// JSON array of `ApprovedOp` records for an approval-mode re-run (set by
+/// the resume machinery). Binds each approved index to the operation that
+/// was approved, so a replay whose control flow shifted cannot spend a
+/// grant on a different operation.
+pub(crate) const APPROVED_OPS_ENV: &str = "ASSAY_APPROVED_OPS";
+
 /// Prefix that marks a runtime error as an approval request. The tool-mode
 /// runner extracts the JSON payload that follows it to suspend the run.
 pub(crate) const APPROVAL_REQUEST_PREFIX: &str = "__assay_approval_request__:";
@@ -80,13 +86,26 @@ impl ExecMode {
     }
 }
 
+/// One granted approval: the operation index it was issued for, the
+/// operation descriptor that was actually approved (e.g. `http.post`),
+/// and — for audit — who authorized it, when the caller supplied an
+/// identity. Serialized into resume state and the re-run environment.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct ApprovedOp {
+    pub index: u64,
+    pub op: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approver: Option<String>,
+}
+
 /// Per-run approval state consumed by the approval gate: which operation
-/// indices are pre-approved for this run and which single index (if any)
-/// must fail terminally.
+/// indices are pre-approved for this run, which single index (if any)
+/// must fail terminally, and the op bindings the grants were issued for.
 #[derive(Clone, Debug, Default)]
 pub struct ApprovalConfig {
     pub approved_indices: Vec<u64>,
     pub denied_index: Option<u64>,
+    pub approved_ops: Vec<ApprovedOp>,
 }
 
 /// Resolve the approval set + denied index from the environment. Empty
@@ -100,9 +119,14 @@ pub fn approval_config_from_env() -> ApprovalConfig {
     let denied_index = std::env::var(DENIED_INDEX_ENV)
         .ok()
         .and_then(|raw| raw.trim().parse::<u64>().ok());
+    let approved_ops = std::env::var(APPROVED_OPS_ENV)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Vec<ApprovedOp>>(&raw).ok())
+        .unwrap_or_default();
     ApprovalConfig {
         approved_indices,
         denied_index,
+        approved_ops,
     }
 }
 

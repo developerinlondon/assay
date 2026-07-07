@@ -7,7 +7,7 @@
 //! decision. A per-VM counter assigns the index and advances on every
 //! gated call, so successive resumes admit one more operation each.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -22,6 +22,9 @@ struct GateState {
     counter: AtomicU64,
     approved: HashSet<u64>,
     denied: Option<u64>,
+    /// Which operation each grant was issued for. A replay whose control
+    /// flow shifted must not spend an index's grant on a different op.
+    bindings: HashMap<u64, String>,
 }
 
 pub fn apply(lua: &Lua, config: &ApprovalConfig) -> mlua::Result<()> {
@@ -29,6 +32,11 @@ pub fn apply(lua: &Lua, config: &ApprovalConfig) -> mlua::Result<()> {
         counter: AtomicU64::new(0),
         approved: config.approved_indices.iter().copied().collect(),
         denied: config.denied_index,
+        bindings: config
+            .approved_ops
+            .iter()
+            .map(|entry| (entry.index, entry.op.clone()))
+            .collect(),
     });
     for path in BLOCKED_FUNCTIONS {
         gate_function(lua, path, &state)?;
@@ -51,6 +59,17 @@ fn gate_decision(state: &GateState, op: &str, summary: &str) -> mlua::Result<()>
         return Err(mlua::Error::runtime(format!("approval: {op} denied")));
     }
     if state.approved.contains(&index) {
+        // A grant is bound to the op it was approved for; a replay that
+        // reaches a different op at this index fails terminally rather
+        // than executing an operation nobody approved.
+        if let Some(expected) = state.bindings.get(&index)
+            && expected != op
+        {
+            return Err(mlua::Error::runtime(format!(
+                "approval: operation at index {index} changed since approval \
+                 (approved '{expected}', got '{op}')"
+            )));
+        }
         return Ok(());
     }
     Err(approval_request(op, summary, index))

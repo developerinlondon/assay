@@ -107,6 +107,10 @@ enum Commands {
         approve: String,
         #[arg(long, default_value = "3600")]
         resume_ttl: Option<u64>,
+        /// Identity of whoever authorized this decision, recorded for
+        /// audit in the resume state and echoed in the result envelope.
+        #[arg(long)]
+        approver: Option<String>,
     },
     /// Manage workflows
     Workflow {
@@ -501,6 +505,10 @@ struct ResumeState {
     summary: Option<String>,
     #[serde(default)]
     script_args: Vec<String>,
+    /// Every grant issued so far in this run's approval chain: the index,
+    /// the op it was approved for, and (when supplied) who approved it.
+    #[serde(default)]
+    approved_ops: Vec<lua::ApprovedOp>,
 }
 
 #[tokio::main]
@@ -562,7 +570,10 @@ async fn main() -> ExitCode {
             token,
             approve,
             resume_ttl,
-        }) => resume_tool_execution(&token, &approve, resume_ttl, readonly).await,
+            approver,
+        }) => {
+            resume_tool_execution(&token, &approve, resume_ttl, readonly, approver.as_deref()).await
+        }
         Some(Commands::Workflow { global, command }) => {
             let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
                 Ok(o) => o,
@@ -1029,6 +1040,7 @@ async fn execute_tool_mode(
                     request,
                     exec_mode,
                     &approval.approved_indices,
+                    &approval.approved_ops,
                     &script_args,
                 ) {
                     Ok(requires_approval) => ToolModeOutcome {
@@ -1069,6 +1081,7 @@ async fn resume_tool_outcome(
     approve: &str,
     resume_ttl: Option<u64>,
     readonly: bool,
+    approver: Option<&str>,
 ) -> ToolModeOutcome {
     let err_outcome = |message: String| ToolModeOutcome {
         envelope: build_tool_error("error", message, readonly),
@@ -1122,15 +1135,35 @@ async fn resume_tool_outcome(
         .env("ASSAY_APPROVAL_RESULT", approve)
         .env("ASSAY_STATE_DIR", &state_dir);
 
+    info!(
+        decision = approve,
+        approver = approver.unwrap_or("-"),
+        op = state.op.as_deref().unwrap_or("-"),
+        index = ?state.pending_index,
+        "resume decision"
+    );
+
     if state.mode.as_deref() == Some("approval") {
         command.env(lua::APPROVAL_ENV, "1");
         let mut approved = state.approved_indices.clone();
+        let mut approved_ops = state.approved_ops.clone();
         match approve {
             "yes" => {
-                if let Some(idx) = state.pending_index
-                    && !approved.contains(&idx)
-                {
-                    approved.push(idx);
+                if let Some(idx) = state.pending_index {
+                    if !approved.contains(&idx) {
+                        approved.push(idx);
+                    }
+                    // Bind the grant to the op it was issued for, so the
+                    // re-run cannot spend it on a different operation.
+                    if let Some(op) = state.op.clone()
+                        && !approved_ops.iter().any(|entry| entry.index == idx)
+                    {
+                        approved_ops.push(lua::ApprovedOp {
+                            index: idx,
+                            op,
+                            approver: approver.map(str::to_owned),
+                        });
+                    }
                 }
             }
             _ => {
@@ -1145,6 +1178,11 @@ async fn resume_tool_outcome(
             .collect::<Vec<_>>()
             .join(",");
         command.env(lua::APPROVED_INDICES_ENV, joined);
+        if !approved_ops.is_empty()
+            && let Ok(serialized) = serde_json::to_string(&approved_ops)
+        {
+            command.env(lua::APPROVED_OPS_ENV, serialized);
+        }
     } else if readonly {
         command.env(lua::READONLY_ENV, "1");
     }
@@ -1165,6 +1203,19 @@ async fn resume_tool_outcome(
         .ok()
         .and_then(|json| json.get("status").cloned())
         .and_then(|status| status.as_str().map(str::to_owned));
+
+    // Echo the audit identity in the envelope the caller sees. Best-effort:
+    // a non-object envelope is passed through untouched.
+    let envelope = match approver {
+        Some(who) => match serde_json::from_str::<JsonValue>(&envelope) {
+            Ok(JsonValue::Object(mut map)) => {
+                map.insert("approver".to_string(), JsonValue::String(who.to_string()));
+                serde_json::to_string(&JsonValue::Object(map)).unwrap_or(envelope)
+            }
+            _ => envelope,
+        },
+        None => envelope,
+    };
 
     // Drop the token once the run reaches a terminal state; a still-pending
     // approval keeps it for the next resume. Best-effort: a cleanup hiccup
@@ -1189,8 +1240,9 @@ async fn resume_tool_execution(
     approve: &str,
     resume_ttl: Option<u64>,
     readonly: bool,
+    approver: Option<&str>,
 ) -> ExitCode {
-    let outcome = resume_tool_outcome(token, approve, resume_ttl, readonly).await;
+    let outcome = resume_tool_outcome(token, approve, resume_ttl, readonly, approver).await;
     if !outcome.envelope.is_empty() {
         print!("{}", outcome.envelope);
     }
@@ -1273,6 +1325,7 @@ fn persist_resume_state(
     request: ApprovalRequestPayload,
     mode: lua::ExecMode,
     approved_indices: &[u64],
+    approved_ops: &[lua::ApprovedOp],
     script_args: &[String],
 ) -> Result<JsonValue, String> {
     let state_dir = resolve_state_dir()?;
@@ -1302,6 +1355,7 @@ fn persist_resume_state(
         op: request.op.clone(),
         summary: request.summary.clone(),
         script_args: script_args.to_vec(),
+        approved_ops: approved_ops.to_vec(),
     };
 
     let serialized =

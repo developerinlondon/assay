@@ -2,6 +2,33 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.18.0 — 2026-07-07
+
+### Changed
+
+- **`assay_resume` requires an explicit `approve` decision.** The MCP tool previously defaulted an
+  omitted `approve` to `true` — the authorization step for a suspended mutating operation could be
+  taken by accident. Omitting `approve` is now an invalid-arguments error, never an approval. The
+  input schema already declared the field required; the handler now enforces it. (#195)
+- **Approval grants are bound to the operation they approved.** A resume grant used to be matched
+  by sequence index alone: because a resume re-runs the script from the top, a run whose control
+  flow shifted between suspend and replay (e.g. a read that returned a different value the second
+  time) could spend the grant on a *different* mutating operation that landed on the same index.
+  Each grant now records the op it was issued for and the gate refuses terminally — `approval:
+  operation at index 0 changed since approval (approved 'http.post', got 'http.put')` — instead of
+  executing an operation nobody approved. Grants travel to the re-run via the new
+  `ASSAY_APPROVED_OPS` environment variable (a JSON array of `{index, op, approver?}` records) and
+  accumulate across the approval chain in the resume state. State files written by earlier
+  versions keep working; their existing grants simply carry no binding to enforce. (#196)
+
+### Added
+
+- **`approver` audit identity on resumes.** `assay_resume` (MCP) and `assay resume` (CLI,
+  `--approver`) accept an optional approver identity. It is recorded in the resume state's grant
+  records, logged with the resume decision, and echoed as a top-level `approver` field in the
+  result envelope. Intended for orchestrators that interpose a human decision between suspend and
+  resume and want the authorizer on the record. (#195)
+
 ## assay 0.17.4 — 2026-07-07
 
 ### Added
