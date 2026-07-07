@@ -1040,7 +1040,7 @@ async fn execute_tool_mode(
                     request,
                     exec_mode,
                     &approval.approved_indices,
-                    &approval.approved_ops,
+                    &lua::approved_ops_from_env(),
                     &script_args,
                 ) {
                     Ok(requires_approval) => ToolModeOutcome {

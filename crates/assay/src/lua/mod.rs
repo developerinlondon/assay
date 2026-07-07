@@ -90,22 +90,33 @@ impl ExecMode {
 /// operation descriptor that was actually approved (e.g. `http.post`),
 /// and — for audit — who authorized it, when the caller supplied an
 /// identity. Serialized into resume state and the re-run environment.
+/// Crate-internal: travels via `ASSAY_APPROVED_OPS`, never the public
+/// `ApprovalConfig` API.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct ApprovedOp {
+pub(crate) struct ApprovedOp {
     pub index: u64,
     pub op: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approver: Option<String>,
 }
 
+/// Resolve the op bindings for this run's grants from the environment
+/// (set by the resume machinery). Empty when absent or malformed —
+/// the approval gate then refuses every index-only grant, fail-closed.
+pub(crate) fn approved_ops_from_env() -> Vec<ApprovedOp> {
+    std::env::var(APPROVED_OPS_ENV)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Vec<ApprovedOp>>(&raw).ok())
+        .unwrap_or_default()
+}
+
 /// Per-run approval state consumed by the approval gate: which operation
-/// indices are pre-approved for this run, which single index (if any)
-/// must fail terminally, and the op bindings the grants were issued for.
+/// indices are pre-approved for this run and which single index (if any)
+/// must fail terminally.
 #[derive(Clone, Debug, Default)]
 pub struct ApprovalConfig {
     pub approved_indices: Vec<u64>,
     pub denied_index: Option<u64>,
-    pub approved_ops: Vec<ApprovedOp>,
 }
 
 /// Resolve the approval set + denied index from the environment. Empty
@@ -119,14 +130,9 @@ pub fn approval_config_from_env() -> ApprovalConfig {
     let denied_index = std::env::var(DENIED_INDEX_ENV)
         .ok()
         .and_then(|raw| raw.trim().parse::<u64>().ok());
-    let approved_ops = std::env::var(APPROVED_OPS_ENV)
-        .ok()
-        .and_then(|raw| serde_json::from_str::<Vec<ApprovedOp>>(&raw).ok())
-        .unwrap_or_default();
     ApprovalConfig {
         approved_indices,
         denied_index,
-        approved_ops,
     }
 }
 

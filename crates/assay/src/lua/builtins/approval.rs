@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use mlua::{Lua, MultiValue, Table, Value};
 
 use super::gated::{BLOCKED_FUNCTIONS, BLOCKED_TABLES, is_gated_http_verb};
-use crate::lua::{APPROVAL_REQUEST_PREFIX, ApprovalConfig};
+use crate::lua::{APPROVAL_REQUEST_PREFIX, ApprovalConfig, approved_ops_from_env};
 
 const SUMMARY_CAP: usize = 200;
 
@@ -32,10 +32,12 @@ pub fn apply(lua: &Lua, config: &ApprovalConfig) -> mlua::Result<()> {
         counter: AtomicU64::new(0),
         approved: config.approved_indices.iter().copied().collect(),
         denied: config.denied_index,
-        bindings: config
-            .approved_ops
-            .iter()
-            .map(|entry| (entry.index, entry.op.clone()))
+        // Bindings arrive via ASSAY_APPROVED_OPS (crate-internal transport
+        // set by the resume machinery), keeping the public ApprovalConfig
+        // API unchanged.
+        bindings: approved_ops_from_env()
+            .into_iter()
+            .map(|entry| (entry.index, entry.op))
             .collect(),
     });
     for path in BLOCKED_FUNCTIONS {
