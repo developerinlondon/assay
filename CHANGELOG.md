@@ -2,6 +2,17 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.17.6 — 2026-07-08
+
+### Added
+
+- **`assay.neutron` — Neutron instance admin client.** The Neutron agent platform's full admin REST
+  API from Lua: agents (personas, tool policies, guardrails, baked assay modules), secrets and
+  git-host connections (both with per-agent scoping), workspace/guide resources, roles, instance
+  settings, API tokens, and usage. Env-driven auth (`NEUTRON_URL` / `NEUTRON_TOKEN`, optional
+  Cloudflare Access service token), with a first-boot bootstrap-token takeover flow for freshly
+  provisioned instances. One client per instance; manage a fleet by creating several.
+
 ## assay 0.17.5 — 2026-07-07
 
 ### Fixed
