@@ -10,13 +10,14 @@ All notable changes to Assay are documented here.
   omitted `approve` to `true` — the authorization step for a suspended mutating operation could be
   taken by accident. The input schema has always declared the field required; the lenient handler
   was the bug, and omitting `approve` is now an invalid-arguments error, never an approval. (#195)
-- **Approval grants are bound to the operation they approved.** A resume grant used to be matched
-  by sequence index alone: because a resume re-runs the script from the top, a run whose control
-  flow shifted between suspend and replay (e.g. a read that returned a different value the second
-  time) could spend the grant on a *different* mutating operation that landed on the same index.
-  Each grant now records the op it was issued for and the gate refuses terminally — `approval:
-  operation at index 0 changed since approval (approved 'http.post', got 'http.put')` — instead of
-  executing an operation nobody approved. Grants travel to the re-run via the new
+- **Approval grants are bound to the operation they approved.** A resume grant used to be matched by
+  sequence index alone: because a resume re-runs the script from the top, a run whose control flow
+  shifted between suspend and replay (e.g. a read that returned a different value the second time)
+  could spend the grant on a _different_ mutating operation that landed on the same index. Each
+  grant now records the op it was issued for and the gate refuses terminally —
+  `approval:
+  operation at index 0 changed since approval (approved 'http.post', got 'http.put')` —
+  instead of executing an operation nobody approved. Grants travel to the re-run via the new
   `ASSAY_APPROVED_OPS` environment variable (a JSON array of `{index, op, approver?}` records) and
   accumulate across the approval chain in the resume state. The gate is fail-closed: an approved
   index with no op binding is refused outright, so index-only grants — including resume state
@@ -26,57 +27,53 @@ All notable changes to Assay are documented here.
 
 - **`approver` audit identity on resumes.** `assay_resume` (MCP) and `assay resume` (CLI,
   `--approver`) accept an optional approver identity. It is recorded in the resume state's grant
-  records, logged with the resume decision, and echoed as a top-level `approver` field in the
-  result envelope. Intended for orchestrators that interpose a human decision between suspend and
-  resume and want the authorizer on the record. (#195)
+  records, logged with the resume decision, and echoed as a top-level `approver` field in the result
+  envelope. Intended for orchestrators that interpose a human decision between suspend and resume
+  and want the authorizer on the record. (#195)
 
 ## assay 0.17.4 — 2026-07-07
 
 ### Added
 
-- **`assay.k8s` is multi-cluster: kubeconfig context support.** Any k8s call takes
-  `opts.context` (or set a default with `k8s.use_context(name)` / `ASSAY_K8S_CONTEXT`),
-  resolved from `opts.kubeconfig` / `$KUBECONFIG` / `~/.kube/config`: the cluster's
-  server URL and CA (`certificate-authority-data` honored via a per-context HTTP
-  client), and the user's auth. Supported user auth: a static `token`, or the aws
-  `eks get-token` exec plugin — which is **recognized and minted in-process** (with
-  `--role-arn`/`--profile`/exec-`env` respected) rather than executed, so contexts work
-  in readonly mode where subprocesses are blocked. `k8s.contexts()` lists what's
-  available. Fully backward compatible: with no context configured, calls target the
+- **`assay.k8s` is multi-cluster: kubeconfig context support.** Any k8s call takes `opts.context`
+  (or set a default with `k8s.use_context(name)` / `ASSAY_K8S_CONTEXT`), resolved from
+  `opts.kubeconfig` / `$KUBECONFIG` / `~/.kube/config`: the cluster's server URL and CA
+  (`certificate-authority-data` honored via a per-context HTTP client), and the user's auth.
+  Supported user auth: a static `token`, or the aws `eks get-token` exec plugin — which is
+  **recognized and minted in-process** (with `--role-arn`/`--profile`/exec-`env` respected) rather
+  than executed, so contexts work in readonly mode where subprocesses are blocked. `k8s.contexts()`
+  lists what's available. Fully backward compatible: with no context configured, calls target the
   in-cluster ServiceAccount exactly as before.
-- **`assay.aws.sts` — the AWS credential chain, in-process.** `sts.credentials(opts)`
-  resolves like the AWS CLI: explicit keys → `opts.profile`/`AWS_PROFILE` (parsing
-  `~/.aws/config` + `~/.aws/credentials`, following `role_arn` + `source_profile`
-  chains and `web_identity_token_file`) → env keys → IRSA
-  (`AWS_ROLE_ARN`+`AWS_WEB_IDENTITY_TOKEN_FILE`). Plus `sts.assume_role(role_arn, opts)`
-  (SigV4-signed) and `sts.assume_role_with_web_identity(role_arn, token, opts)`.
-  Temporary credentials are cached until shortly before expiry. STS is asked for JSON
-  (Accept header), so no XML parsing is involved.
-- **`assay.aws.eks` — EKS bearer tokens without the aws CLI.** `eks.get_token(cluster)`
-  mints the `k8s-aws-v1.` presigned-STS token in-process (what `aws eks get-token`
-  produces), honoring profile/role/region options. This is what powers the k8s exec-plugin
-  contexts above.
-- **`sigv4.presign(opts)`** — query-string SigV4 signing (presigned URLs), alongside the
-  existing header signing; both now accept `opts.time` for deterministic signatures in
-  tests.
-- **`aws.ec2` / `aws.s3` / `aws.ecr` clients resolve credentials automatically.**
-  `client(opts)` no longer hard-requires literal keys: omit them and the standard chain
-  runs (honoring `opts.profile` and `opts.role_arn`); `region` falls back to
-  `AWS_REGION`/`AWS_DEFAULT_REGION`. Explicit keys keep working unchanged.
+- **`assay.aws.sts` — the AWS credential chain, in-process.** `sts.credentials(opts)` resolves like
+  the AWS CLI: explicit keys → `opts.profile`/`AWS_PROFILE` (parsing `~/.aws/config` +
+  `~/.aws/credentials`, following `role_arn` + `source_profile` chains and
+  `web_identity_token_file`) → env keys → IRSA (`AWS_ROLE_ARN`+`AWS_WEB_IDENTITY_TOKEN_FILE`). Plus
+  `sts.assume_role(role_arn, opts)` (SigV4-signed) and
+  `sts.assume_role_with_web_identity(role_arn, token, opts)`. Temporary credentials are cached until
+  shortly before expiry. STS is asked for JSON (Accept header), so no XML parsing is involved.
+- **`assay.aws.eks` — EKS bearer tokens without the aws CLI.** `eks.get_token(cluster)` mints the
+  `k8s-aws-v1.` presigned-STS token in-process (what `aws eks get-token` produces), honoring
+  profile/role/region options. This is what powers the k8s exec-plugin contexts above.
+- **`sigv4.presign(opts)`** — query-string SigV4 signing (presigned URLs), alongside the existing
+  header signing; both now accept `opts.time` for deterministic signatures in tests.
+- **`aws.ec2` / `aws.s3` / `aws.ecr` clients resolve credentials automatically.** `client(opts)` no
+  longer hard-requires literal keys: omit them and the standard chain runs (honoring `opts.profile`
+  and `opts.role_arn`); `region` falls back to `AWS_REGION`/`AWS_DEFAULT_REGION`. Explicit keys keep
+  working unchanged.
 
 ## assay 0.17.3 — 2026-07-07
 
 ### Added
 
 - **`assay_resume` MCP tool — the suspend→approve→resume loop now lives entirely in the MCP API.**
-  `assay_run(mode: "approval")` already returns a `needs_approval` envelope with a `resumeToken` when
-  a mutating operation suspends; the new `assay_resume` tool takes that token plus `approve: true|false`
-  and returns the next envelope (`ok` on completion, `needs_approval` again with a fresh token if the
-  run suspends on the next operation, or `error`). Previously resuming was only possible via the
-  `assay resume` CLI subcommand, so an MCP host had to shell out; now a host can drive the whole
-  gated flow over the API and interpose its own approver between run and resume. Internally,
-  `resume_tool_execution` is refactored to a shared `resume_tool_outcome` that returns the envelope
-  (mirroring `execute_tool_mode`), with the CLI now a thin wrapper that prints it.
+  `assay_run(mode: "approval")` already returns a `needs_approval` envelope with a `resumeToken`
+  when a mutating operation suspends; the new `assay_resume` tool takes that token plus
+  `approve: true|false` and returns the next envelope (`ok` on completion, `needs_approval` again
+  with a fresh token if the run suspends on the next operation, or `error`). Previously resuming was
+  only possible via the `assay resume` CLI subcommand, so an MCP host had to shell out; now a host
+  can drive the whole gated flow over the API and interpose its own approver between run and resume.
+  Internally, `resume_tool_execution` is refactored to a shared `resume_tool_outcome` that returns
+  the envelope (mirroring `execute_tool_mode`), with the CLI now a thin wrapper that prints it.
 - **`ASSAY_MCP_UNRESTRICTED` — opt-in exposure of the third execution mode over MCP.** By default
   `assay mcp-serve` still advertises and accepts only `readonly` + `approval`, so every MCP client
   stays safe by default and can never fall through to unrestricted execution. When the server is
