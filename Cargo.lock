@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "assay-engine"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "assay-auth",
@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.17.5"
+version = "0.17.6"
 dependencies = [
  "anyhow",
  "axum",
