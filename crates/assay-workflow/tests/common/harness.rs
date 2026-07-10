@@ -210,6 +210,11 @@ impl Harness {
         dispatch!(self, s => s.get_timed_out_activities(now).await)
     }
 
+    /// One deterministic health-monitor pass at an injected `now`.
+    pub async fn check_health_at(&self, now: f64) -> anyhow::Result<()> {
+        dispatch!(self, s => assay_workflow::health::check_health_at(s, now).await)
+    }
+
     pub async fn cancel_pending_activities(&self, workflow_id: &str) -> anyhow::Result<u64> {
         dispatch!(self, s => s.cancel_pending_activities(workflow_id).await)
     }

@@ -2,6 +2,29 @@
 
 All notable changes to Assay are documented here.
 
+## assay-workflow 0.4.1 — 2026-07-10
+
+### Fixed
+
+- **Heartbeat-timeout reaper re-queues instead of wedging the run.** When a RUNNING activity's
+  heartbeat expired with attempts remaining, the health monitor terminally FAILED it — no requeue,
+  no `ActivityFailed` event, no dispatch wake — so the parent workflow sat RUNNING forever (and with
+  `overlap_policy: "skip"`, every subsequent fire of that schedule was skipped). The reaper now
+  re-queues with the same exponential backoff `/fail` uses; the exhausted path still terminally
+  fails the activity and the workflow.
+- **Claims that die before their first heartbeat now time out.** `get_timed_out_activities` required
+  `last_heartbeat IS NOT NULL`, so a worker that crashed between claim and first beat was invisible
+  to the reaper. The claim time (`started_at`) is now the baseline until a heartbeat arrives.
+- New `health::check_health_at(store, now)` seam so the reaper is integration-testable
+  deterministically; regression tests pin all three paths on both backends.
+
+## assay-engine 0.5.5 — 2026-07-10
+
+### Fixed
+
+- Rebuild on assay-workflow 0.4.1 — heartbeat-timeout reaper re-queues retryable activities and
+  catches never-heartbeated claims (see above).
+
 ## assay 0.17.6 — 2026-07-08
 
 ### Added
