@@ -885,8 +885,7 @@ impl WorkflowStore for SqliteStore {
              FROM workflow.activities
              WHERE status = 'RUNNING'
                AND heartbeat_timeout_secs IS NOT NULL
-               AND last_heartbeat IS NOT NULL
-               AND (? - last_heartbeat) > heartbeat_timeout_secs",
+               AND (? - COALESCE(last_heartbeat, started_at)) > heartbeat_timeout_secs",
         )
         .bind(now)
         .fetch_all(&self.pool)
