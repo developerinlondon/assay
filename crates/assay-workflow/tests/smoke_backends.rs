@@ -1461,3 +1461,135 @@ async fn leader_election(#[case] backend: Backend) {
 // replaces them. Equivalent coverage lives in that crate's pg_test +
 // sqlite_test suites (append_then_read_round_trip, subscribe_receives_*,
 // etc.).
+
+// ── Heartbeat-timeout reaper regressions ─────────────────────────────────────
+//
+// The reaper used to terminally FAIL a timed-out activity even with attempts
+// remaining (no requeue, no ActivityFailed event, no needs_dispatch), leaving
+// the parent workflow RUNNING forever; and it ignored activities that died
+// before their first heartbeat (last_heartbeat NULL). Both paths are pinned
+// here via the deterministic check_health_at seam.
+
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
+async fn reaper_requeues_timed_out_activity_with_attempts_left(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-reap-rq");
+    h.create_workflow(&make_workflow(&wf_id, "main", "reap-q"))
+        .await
+        .unwrap();
+    let mut act = make_activity(&wf_id, 1, "reap-q");
+    act.heartbeat_timeout_secs = Some(30.0);
+    let id = h.create_activity(&act).await.unwrap();
+    h.claim_activity("reap-q", "worker-r")
+        .await
+        .unwrap()
+        .expect("claim");
+    h.heartbeat_activity(id, None).await.unwrap();
+    let hb = h
+        .get_activity(id)
+        .await
+        .unwrap()
+        .unwrap()
+        .last_heartbeat
+        .unwrap();
+
+    h.check_health_at(hb + 60.0).await.unwrap();
+
+    let requeued = h.get_activity(id).await.unwrap().unwrap();
+    assert_eq!(
+        requeued.status, "PENDING",
+        "timed-out activity with attempts left must be re-queued, not terminally failed"
+    );
+    assert_eq!(requeued.attempt, 2);
+    assert!(requeued.claimed_by.is_none());
+    let wf = h.get_workflow(&wf_id).await.unwrap().unwrap();
+    assert_ne!(
+        wf.status, "FAILED",
+        "workflow must survive a retryable timeout"
+    );
+}
+
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
+async fn reaper_catches_activity_that_never_heartbeated(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-reap-nohb");
+    h.create_workflow(&make_workflow(&wf_id, "main", "nohb-q"))
+        .await
+        .unwrap();
+    let mut act = make_activity(&wf_id, 1, "nohb-q");
+    act.heartbeat_timeout_secs = Some(30.0);
+    let id = h.create_activity(&act).await.unwrap();
+    // Claim → RUNNING with last_heartbeat NULL (worker dies before first beat).
+    h.claim_activity("nohb-q", "worker-n")
+        .await
+        .unwrap()
+        .expect("claim");
+    let started = h
+        .get_activity(id)
+        .await
+        .unwrap()
+        .unwrap()
+        .started_at
+        .expect("claim sets started_at");
+
+    let fresh = h.get_timed_out_activities(started + 1.0).await.unwrap();
+    assert!(!fresh.iter().any(|a| a.id == Some(id)));
+    let stale = h.get_timed_out_activities(started + 60.0).await.unwrap();
+    assert!(
+        stale.iter().any(|a| a.id == Some(id)),
+        "a claim that never heartbeats must still time out (started_at baseline)"
+    );
+}
+
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
+async fn reaper_fails_workflow_when_attempts_exhausted(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-reap-ex");
+    h.create_workflow(&make_workflow(&wf_id, "main", "ex-q"))
+        .await
+        .unwrap();
+    let mut act = make_activity(&wf_id, 1, "ex-q");
+    act.heartbeat_timeout_secs = Some(30.0);
+    act.max_attempts = 1;
+    let id = h.create_activity(&act).await.unwrap();
+    h.claim_activity("ex-q", "worker-e")
+        .await
+        .unwrap()
+        .expect("claim");
+    h.heartbeat_activity(id, None).await.unwrap();
+    let hb = h
+        .get_activity(id)
+        .await
+        .unwrap()
+        .unwrap()
+        .last_heartbeat
+        .unwrap();
+
+    h.check_health_at(hb + 60.0).await.unwrap();
+
+    let failed = h.get_activity(id).await.unwrap().unwrap();
+    assert_eq!(failed.status, "FAILED");
+    let wf = h.get_workflow(&wf_id).await.unwrap().unwrap();
+    assert_eq!(
+        wf.status, "FAILED",
+        "exhausted timeout must terminate the workflow"
+    );
+}
