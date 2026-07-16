@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.17.6"
+version = "0.17.7"
 dependencies = [
  "anyhow",
  "axum",

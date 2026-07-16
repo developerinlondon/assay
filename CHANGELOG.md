@@ -2,6 +2,17 @@
 
 All notable changes to Assay are documented here.
 
+## assay 0.17.7 — 2026-07-16
+
+### Added
+
+- **`assay.openstack` — Keystone-authenticated OpenStack inventory.** A GET-only client for
+  identity projects/users/regions, detailed compute servers and quotas, images, networks, subnets,
+  ports, routers, security groups, and network quotas. It supports Keystone v3 project-scoped
+  password authentication, existing tokens, service-catalog endpoint selection by region/interface,
+  and explicit endpoint overrides. Password authentication continues to pass through the existing
+  `http.post` gate, while pre-issued-token inventory runs entirely in readonly mode.
+
 ## assay-workflow 0.4.1 — 2026-07-10
 
 ### Fixed

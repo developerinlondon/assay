@@ -56,6 +56,7 @@
 - [assay.crossplane](https://assay.rs/modules/crossplane.html): Crossplane providers, XRDs, compositions
 - [assay.velero](https://assay.rs/modules/velero.html): Velero backups, restores, schedules
 - [assay.harbor](https://assay.rs/modules/harbor.html): Harbor registry, projects, vulnerability scanning
+- [assay.openstack](https://assay.rs/modules/openstack.html): Keystone-authenticated OpenStack identity, compute, image, network, and quota inventory
 
 ## Data & Storage
 - [assay.postgres](https://assay.rs/modules/postgres.html): PostgreSQL helpers, user management

@@ -273,7 +273,7 @@ caught this).
 
 General-purpose enhanced Lua runtime. Single ~11 MB static binary with batteries included: HTTP
 client/server, JSON/YAML/TOML, crypto, database, WebSocket, filesystem, shell execution, process
-management, async, and 34 embedded stdlib modules for infrastructure services (Kubernetes,
+management, async, and 35 embedded stdlib modules for infrastructure services (Kubernetes,
 Prometheus, Vault, ArgoCD, etc.) and AI agent integrations (OpenClaw, GitHub, Gmail, Google
 Calendar).
 
@@ -478,7 +478,7 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 
 ## Stdlib Modules
 
-35 embedded Lua modules loaded via `require("assay.<name>")`:
+36 embedded Lua modules loaded via `require("assay.<name>")`:
 
 | Module               | Description                                                                                                                                                                                                                                                                     |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -506,6 +506,7 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.crossplane`   | Providers, XRDs, compositions, managed resources                                                                                                                                                                                                                                |
 | `assay.velero`       | Backups, restores, schedules, storage locations                                                                                                                                                                                                                                 |
 | `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                                                                                                                                                                                                       |
+| `assay.openstack`    | Keystone-authenticated OpenStack identity, compute, image, network, and quota inventory                                                                                                                                                                                         |
 | `assay.workflow`     | Workflow engine client — define workflows/activities + listen as worker; or full management surface (list/start/signal/cancel/terminate/state/events/children/continue-as-new plus `.schedules`/`.namespaces`/`.workers`/`.queues` sub-tables). See `docs/modules/workflow.md`. |
 | `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                                                                                                                                                                                                     |
 | `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4                                                                                                                                                                                                                              |
