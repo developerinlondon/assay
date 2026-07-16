@@ -58,6 +58,7 @@
 - [assay.harbor](https://assay.rs/modules/harbor.html): Harbor registry, projects, vulnerability scanning
 - [assay.infoblox](https://assay.rs/modules/infoblox.html): Infoblox WAPI — DNS records, networks, ranges, grid status
 - [assay.servicenow](https://assay.rs/modules/servicenow.html): ServiceNow Table API + CMDB lookups
+- [assay.openstack](https://assay.rs/modules/openstack.html): Keystone-authenticated OpenStack identity, compute, image, network, and quota inventory
 
 ## Data & Storage
 - [assay.postgres](https://assay.rs/modules/postgres.html): PostgreSQL helpers, user management

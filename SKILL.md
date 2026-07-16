@@ -44,7 +44,7 @@ assay modules
 | `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 65 modules (62 stdlib + builtins)    |
+| `assay modules`             | List all 66 modules (63 stdlib + builtins)    |
 
 **Read-only mode.** The global `--readonly` flag (or `ASSAY_READONLY=1`) disables every mutating
 builtin — HTTP write verbs, `shell.*`, `process.*`, `fs` writes, `env.set`, `db.execute`, and system
@@ -360,7 +360,7 @@ embedding assay inside another admin UI. Full table + theme tokens in
 
 ## Stdlib Modules Quick Reference
 
-All 62 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 63 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module               | Description                                                                                                                                                      |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -389,6 +389,7 @@ All 62 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)
 | `assay.velero`       | Backups, restores, schedules, storage locations                                                                                                                  |
 | `assay.workflow`     | Native durable workflow engine client — connect, define workflows + activities, listen as worker, start/signal/cancel from any client. Pairs with `assay serve`. |
 | `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                                                                                        |
+| `assay.openstack`    | Keystone-authenticated OpenStack inventory across identity, compute, images, networks, and quotas                                                                |
 | `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                                                                                      |
 | `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                                                                                                          |
 | `assay.aws.ec2`      | EC2 read-only over Sig V4 — describe instances, volumes, security groups                                                                                         |
@@ -629,7 +630,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 62 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: All 63 stdlib modules are embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use

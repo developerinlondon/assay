@@ -44,7 +44,7 @@ assay modules
 | `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 51 modules (34 stdlib + 17 builtins) |
+| `assay modules`             | List all 52 modules (35 stdlib + 17 builtins) |
 
 ## Discovering Modules
 
@@ -263,7 +263,7 @@ Available when built with `--features temporal`. Native gRPC client for Temporal
 
 ## Stdlib Modules Quick Reference
 
-All 35 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 36 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module               | Description                                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -292,6 +292,7 @@ All 35 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.velero`       | Backups, restores, schedules, storage locations                                                         |
 | `assay.temporal`     | Workflows, task queues, schedules, signals + native gRPC (temporal feature)                             |
 | `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                               |
+| `assay.openstack`    | Keystone-authenticated OpenStack identity, compute, image, network, and quota inventory                  |
 | `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                             |
 | `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                                                 |
 | `assay.postgres`     | Postgres helpers: users, databases, grants, Vault integration                                           |
@@ -506,7 +507,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 34 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: All 35 stdlib modules are embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use
@@ -598,7 +599,7 @@ Today: use `assay context <query>` from terminal and paste output into agent con
 
 ## MCP-Serve Vision (v0.6.0)
 
-`assay mcp-serve` will expose all 51 modules (34 stdlib + 17 builtins) as MCP tools over stdio/SSE
+`assay mcp-serve` will expose all 52 modules (35 stdlib + 17 builtins) as MCP tools over stdio/SSE
 transport:
 
 - Each stdlib module becomes an MCP tool (e.g., `grafana_health`, `k8s_pods`)
