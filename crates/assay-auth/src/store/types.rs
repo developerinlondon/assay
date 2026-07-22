@@ -27,6 +27,15 @@ pub struct PasskeyCred {
     pub sign_count: u32,
     pub transports: Vec<String>,
     pub created_at: f64,
+    /// Full serialised [`webauthn_rs::prelude::Passkey`] JSON blob. This
+    /// is the *authoritative* re-verification material: the server feeds
+    /// it (carrying the persisted sign-count) back into the library on
+    /// the authentication ceremony so counter / clone-detection works.
+    /// `None` only for legacy rows written before the column existed —
+    /// those rows can no longer drive a discoverable login and must be
+    /// re-registered.
+    #[serde(default)]
+    pub passkey_json: Option<String>,
 }
 
 /// Opaque server-side session. `id` is the cookie value the client

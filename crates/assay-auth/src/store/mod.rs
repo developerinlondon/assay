@@ -67,6 +67,27 @@ pub trait UserStore: Send + Sync + 'static {
     async fn add_passkey(&self, user_id: &str, cred: &PasskeyCred) -> anyhow::Result<()>;
     async fn remove_passkey(&self, credential_id: &[u8]) -> anyhow::Result<bool>;
 
+    /// Fetch a single stored credential by its raw credential id, plus
+    /// the `user_id` that owns it. Returns `Ok(None)` when no row
+    /// matches. The authentication ceremony uses this to resolve the
+    /// owning user from the credential the authenticator asserted —
+    /// server-side, never trusting a client-supplied identity.
+    async fn get_passkey(
+        &self,
+        credential_id: &[u8],
+    ) -> anyhow::Result<Option<(String, PasskeyCred)>>;
+
+    /// Persist the post-authentication sign-count bump (and the refreshed
+    /// serialised blob, which carries the same counter + any backup-state
+    /// changes) for the credential. Keyed on `credential_id`. Returns
+    /// `Ok(true)` iff a row was updated.
+    async fn update_passkey_counter(
+        &self,
+        credential_id: &[u8],
+        sign_count: u32,
+        passkey_json: &str,
+    ) -> anyhow::Result<bool>;
+
     // Federated upstream links — `auth.user_upstream`.
     async fn link_upstream(
         &self,

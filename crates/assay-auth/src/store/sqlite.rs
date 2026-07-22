@@ -116,7 +116,7 @@ impl UserStore for SqliteUserStore {
 
     async fn list_passkeys(&self, user_id: &str) -> Result<Vec<PasskeyCred>> {
         let rows = sqlx::query(
-            "SELECT credential_id, public_key, sign_count, transports, created_at
+            "SELECT credential_id, public_key, sign_count, transports, created_at, passkey_json
              FROM auth.passkeys WHERE user_id = ?
              ORDER BY created_at",
         )
@@ -130,8 +130,8 @@ impl UserStore for SqliteUserStore {
     async fn add_passkey(&self, user_id: &str, cred: &PasskeyCred) -> Result<()> {
         sqlx::query(
             "INSERT INTO auth.passkeys
-                 (credential_id, user_id, public_key, sign_count, transports, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
+                 (credential_id, user_id, public_key, sign_count, transports, created_at, passkey_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&cred.credential_id)
         .bind(user_id)
@@ -139,6 +139,7 @@ impl UserStore for SqliteUserStore {
         .bind(cred.sign_count as i64)
         .bind(cred.transports.join(","))
         .bind(cred.created_at)
+        .bind(cred.passkey_json.as_deref())
         .execute(&self.pool)
         .await
         .context("auth.passkeys insert")?;
@@ -151,6 +152,43 @@ impl UserStore for SqliteUserStore {
             .execute(&self.pool)
             .await
             .context("auth.passkeys delete")?;
+        Ok(res.rows_affected() > 0)
+    }
+
+    async fn get_passkey(
+        &self,
+        credential_id: &[u8],
+    ) -> Result<Option<(String, PasskeyCred)>> {
+        let row = sqlx::query(
+            "SELECT credential_id, user_id, public_key, sign_count, transports, created_at, passkey_json
+             FROM auth.passkeys WHERE credential_id = ?",
+        )
+        .bind(credential_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("auth.passkeys get")?;
+        Ok(row.map(|r| {
+            let user_id: String = r.get("user_id");
+            (user_id, map_passkey_row_sqlite(r))
+        }))
+    }
+
+    async fn update_passkey_counter(
+        &self,
+        credential_id: &[u8],
+        sign_count: u32,
+        passkey_json: &str,
+    ) -> Result<bool> {
+        let res = sqlx::query(
+            "UPDATE auth.passkeys SET sign_count = ?, passkey_json = ?
+             WHERE credential_id = ?",
+        )
+        .bind(sign_count as i64)
+        .bind(passkey_json)
+        .bind(credential_id)
+        .execute(&self.pool)
+        .await
+        .context("auth.passkeys counter update")?;
         Ok(res.rows_affected() > 0)
     }
 
@@ -452,5 +490,6 @@ fn map_passkey_row_sqlite(row: sqlx::sqlite::SqliteRow) -> PasskeyCred {
             transports.split(',').map(|s| s.to_string()).collect()
         },
         created_at: row.get("created_at"),
+        passkey_json: row.get("passkey_json"),
     }
 }
