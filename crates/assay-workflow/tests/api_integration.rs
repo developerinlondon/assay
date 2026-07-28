@@ -26,6 +26,24 @@ fn client() -> reqwest::Client {
 }
 
 #[tokio::test]
+async fn get_events_keeps_the_public_two_argument_handler_contract() {
+    let store = SqliteStore::new("sqlite::memory:").await.unwrap();
+    let state = Arc::new(WorkflowCtx::start(Arc::new(store)));
+
+    let result = assay_workflow::api::workflows::get_events(
+        axum::extract::State(state),
+        axum::extract::Path("missing-workflow".to_string()),
+    )
+    .await;
+    let response = match result {
+        Ok(response) => response,
+        Err(_) => panic!("legacy get_events handler failed"),
+    };
+
+    assert!(response.0.is_empty());
+}
+
+#[tokio::test]
 async fn health_check() {
     let (url, _handle) = start_test_server().await;
 

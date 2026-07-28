@@ -15,7 +15,7 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/workflows", post(start_workflow).get(list_workflows))
         .route("/workflows/{id}", get(describe_workflow))
-        .route("/workflows/{id}/events", get(get_events))
+        .route("/workflows/{id}/events", get(get_events_route))
         .route("/workflows/{id}/signal/{name}", post(send_signal))
         .route("/workflows/{id}/cancel", post(cancel_workflow))
         .route("/workflows/{id}/terminate", post(terminate_workflow))
@@ -214,26 +214,37 @@ pub struct EventsQuery {
 pub async fn get_events<S: WorkflowStore>(
     State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    Ok(events_json(state.get_events(&id).await?))
+}
+
+async fn get_events_route<S: WorkflowStore>(
+    State(state): State<Arc<WorkflowCtx<S>>>,
+    Path(id): Path<String>,
     Query(query): Query<EventsQuery>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
     let paged = query.limit.is_some() || query.cursor.is_some() || query.order == EventOrder::Desc;
-    let events = if paged {
-        state
-            .get_events_page(
-                &id,
-                query.cursor,
-                i64::from(query.limit.unwrap_or(50).clamp(1, 1_000)),
-                query.order == EventOrder::Desc,
-            )
-            .await?
-    } else {
-        state.get_events(&id).await?
-    };
-    let json: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|e| serde_json::to_value(e).unwrap_or_default())
-        .collect();
-    Ok(Json(json))
+    if !paged {
+        return get_events(State(state), Path(id)).await;
+    }
+    let events = state
+        .get_events_page(
+            &id,
+            query.cursor,
+            i64::from(query.limit.unwrap_or(50).clamp(1, 1_000)),
+            query.order == EventOrder::Desc,
+        )
+        .await?;
+    Ok(events_json(events))
+}
+
+fn events_json(events: Vec<WorkflowEvent>) -> Json<Vec<serde_json::Value>> {
+    Json(
+        events
+            .into_iter()
+            .map(|e| serde_json::to_value(e).unwrap_or_default())
+            .collect(),
+    )
 }
 
 #[derive(Deserialize, ToSchema)]
