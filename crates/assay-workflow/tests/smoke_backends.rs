@@ -356,6 +356,17 @@ async fn events_append_and_list(#[case] backend: Backend) {
     assert_eq!(events[2].seq, 3);
     assert_eq!(events[0].workflow_id, wf_id);
 
+    let latest = h.list_events_page(&wf_id, None, 2, true).await.unwrap();
+    assert_eq!(
+        latest.iter().map(|event| event.seq).collect::<Vec<_>>(),
+        [3, 2]
+    );
+    let previous = h.list_events_page(&wf_id, Some(3), 2, true).await.unwrap();
+    assert_eq!(
+        previous.iter().map(|event| event.seq).collect::<Vec<_>>(),
+        [2, 1]
+    );
+
     // get_event_count returns 3
     let count = h.get_event_count(&wf_id).await.unwrap();
     assert_eq!(count, 3);

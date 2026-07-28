@@ -141,6 +141,39 @@ pub trait WorkflowStore: Send + Sync + 'static {
         workflow_id: &str,
     ) -> impl Future<Output = anyhow::Result<Vec<WorkflowEvent>>> + Send;
 
+    /// Return a bounded event page in sequence order. A descending page uses
+    /// `cursor` as an exclusive upper bound; an ascending page uses it as an
+    /// exclusive lower bound. Native stores override this to page in SQL.
+    fn list_events_page(
+        &self,
+        workflow_id: &str,
+        cursor: Option<i32>,
+        limit: i64,
+        descending: bool,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowEvent>>> + Send {
+        async move {
+            let limit = limit.clamp(0, 1_000) as usize;
+            if limit == 0 {
+                return Ok(Vec::new());
+            }
+            let mut events = self.list_events(workflow_id).await?;
+            events.retain(|event| {
+                cursor.is_none_or(|sequence| {
+                    if descending {
+                        event.seq < sequence
+                    } else {
+                        event.seq > sequence
+                    }
+                })
+            });
+            if descending {
+                events.reverse();
+            }
+            events.truncate(limit);
+            Ok(events)
+        }
+    }
+
     fn get_event_count(
         &self,
         workflow_id: &str,

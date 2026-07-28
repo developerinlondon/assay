@@ -182,10 +182,31 @@ pub async fn describe_workflow<S: WorkflowStore>(
     Ok(Json(serde_json::to_value(wf)?))
 }
 
+#[derive(Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum EventOrder {
+    #[default]
+    Asc,
+    Desc,
+}
+
+#[derive(Default, Deserialize)]
+pub struct EventsQuery {
+    pub limit: Option<u16>,
+    pub cursor: Option<i32>,
+    #[serde(default)]
+    pub order: EventOrder,
+}
+
 #[utoipa::path(
     get, path = "/api/v1/engine/workflow/workflows/{id}/events",
     tag = "workflows",
-    params(("id" = String, Path, description = "Workflow ID")),
+    params(
+        ("id" = String, Path, description = "Workflow ID"),
+        ("limit" = Option<u16>, Query, description = "Bounded page size, capped at 1000"),
+        ("cursor" = Option<i32>, Query, description = "Exclusive event sequence cursor"),
+        ("order" = Option<String>, Query, description = "Sequence order: asc or desc"),
+    ),
     responses(
         (status = 200, description = "Event history", body = Vec<WorkflowEvent>),
     ),
@@ -193,8 +214,21 @@ pub async fn describe_workflow<S: WorkflowStore>(
 pub async fn get_events<S: WorkflowStore>(
     State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
+    Query(query): Query<EventsQuery>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let events = state.get_events(&id).await?;
+    let paged = query.limit.is_some() || query.cursor.is_some() || query.order == EventOrder::Desc;
+    let events = if paged {
+        state
+            .get_events_page(
+                &id,
+                query.cursor,
+                i64::from(query.limit.unwrap_or(50).clamp(1, 1_000)),
+                query.order == EventOrder::Desc,
+            )
+            .await?
+    } else {
+        state.get_events(&id).await?
+    };
     let json: Vec<serde_json::Value> = events
         .into_iter()
         .map(|e| serde_json::to_value(e).unwrap_or_default())

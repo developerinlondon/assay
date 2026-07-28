@@ -99,6 +99,46 @@ async fn start_and_list_workflows() {
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
     assert_eq!(body.len(), 1);
     assert_eq!(body[0]["event_type"], "WorkflowStarted");
+
+    for index in 1..=3 {
+        let response = c
+            .post(format!(
+                "{url}/api/v1/engine/workflow/workflows/wf-test-1/signal/page-{index}"
+            ))
+            .json(&serde_json::json!({ "payload": { "index": index } }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+    }
+
+    let response = c
+        .get(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-test-1/events?limit=2&order=desc"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let page: Vec<serde_json::Value> = response.json().await.unwrap();
+    assert_eq!(page.len(), 2);
+    assert_eq!(page[0]["seq"], 4);
+    assert_eq!(page[1]["seq"], 3);
+
+    let response = c
+        .get(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-test-1/events?limit=2&order=desc&cursor=3"
+        ))
+        .send()
+        .await
+        .unwrap();
+    let page: Vec<serde_json::Value> = response.json().await.unwrap();
+    assert_eq!(
+        page.iter()
+            .map(|event| event["seq"].as_i64())
+            .collect::<Vec<_>>(),
+        [Some(2), Some(1)]
+    );
 }
 
 #[tokio::test]

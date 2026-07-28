@@ -4,6 +4,15 @@ All notable changes to Assay are documented here.
 
 ## assay-engine 0.5.6 — 2026-07-28
 
+### Added
+
+- **Workflow event history supports bounded cursor pages.** Existing unqueried
+  `GET /api/v1/engine/workflow/workflows/{id}/events` calls retain the full ascending array, while
+  operators can request `limit`, an exclusive sequence `cursor`, and `order=asc|desc`. Native
+  PostgreSQL and SQLite stores apply the bound in SQL, with page sizes capped at 1,000 events. This
+  lets Neutron expose recent durable execution history without loading an unbounded run into an API
+  response or browser.
+
 ### Fixed
 
 - **Standalone builds now include S3 workflow archival.** The engine documented the
@@ -12,6 +21,21 @@ All notable changes to Assay are documented here.
   builds now include archival support while keeping it runtime-disabled until
   `ASSAY_ARCHIVE_S3_BUCKET` is configured. Custom embedders can still omit the AWS dependencies by
   disabling default features and selecting their required features explicitly.
+
+## assay-workflow 0.4.2 — 2026-07-28
+
+### Added
+
+- Added bounded, cursor-based workflow event pages to the REST API and both native stores. The
+  original full-history store and HTTP methods remain compatible for replay and existing clients.
+
+## assay-domain 0.2.2 — 2026-07-28
+
+### Added
+
+- Added the provided `WorkflowStore::list_events_page` method. Third-party stores retain source
+  compatibility through the default bounded implementation; PostgreSQL and SQLite override it with
+  native queries.
 
 ## assay 0.17.7 — 2026-07-16
 
