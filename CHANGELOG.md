@@ -2,15 +2,26 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.6 — 2026-07-28
+
+### Fixed
+
+- **Standalone builds now include S3 workflow archival.** The engine documented the
+  `ASSAY_ARCHIVE_*` runtime settings, but its published default binary did not forward the workflow
+  crate's build feature, so those settings could never start the archiver. Default `assay-engine`
+  builds now include archival support while keeping it runtime-disabled until
+  `ASSAY_ARCHIVE_S3_BUCKET` is configured. Custom embedders can still omit the AWS dependencies by
+  disabling default features and selecting their required features explicitly.
+
 ## assay 0.17.7 — 2026-07-16
 
 ### Added
 
-- **`assay.openstack` — Keystone-authenticated OpenStack inventory.** A GET-only client for
-  identity projects/users/regions, detailed compute servers and quotas, images, networks, subnets,
-  ports, routers, security groups, and network quotas. It supports Keystone v3 project-scoped
-  password authentication, existing tokens, service-catalog endpoint selection by region/interface,
-  and explicit endpoint overrides. Password authentication continues to pass through the existing
+- **`assay.openstack` — Keystone-authenticated OpenStack inventory.** A GET-only client for identity
+  projects/users/regions, detailed compute servers and quotas, images, networks, subnets, ports,
+  routers, security groups, and network quotas. It supports Keystone v3 project-scoped password
+  authentication, existing tokens, service-catalog endpoint selection by region/interface, and
+  explicit endpoint overrides. Password authentication continues to pass through the existing
   `http.post` gate, while pre-issued-token inventory runs entirely in readonly mode.
 
 ## assay-workflow 0.4.1 — 2026-07-10

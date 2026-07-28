@@ -59,12 +59,14 @@ startup). For Kubernetes / Docker Swarm, use Postgres: the cron scheduler picks 
 `pg_advisory_lock` so only one instance fires; workflow + activity task claiming uses
 `FOR UPDATE SKIP LOCKED` so multiple instances don't race.
 
-**Optional S3 archival** (cargo feature `s3-archival`, default-off). When compiled in and
-`ASSAY_ARCHIVE_S3_BUCKET` is set at runtime, a background task periodically finds workflows in
-terminal states older than `ASSAY_ARCHIVE_RETENTION_DAYS` (default 30), uploads `{record, events}`
-to `s3://bucket/prefix/<namespace>/<workflow_id>.json`, and purges dependent rows. The workflow stub
-stays with `archived_at` + `archive_uri` set so `GET /workflows/{id}` still resolves. Credentials
-resolve via the AWS SDK default chain (env / shared config / IRSA).
+**Optional S3 archival.** Default `assay-engine` builds include the archival code as of v0.5.6, but
+it remains disabled at runtime until `ASSAY_ARCHIVE_S3_BUCKET` is set. Custom `assay-workflow`
+embedders must enable the default-off `s3-archival` cargo feature. Once enabled, a background task
+periodically finds workflows in terminal states older than `ASSAY_ARCHIVE_RETENTION_DAYS` (default
+30), uploads `{record, events}` to `s3://bucket/prefix/<namespace>/<workflow_id>.json`, and purges
+dependent rows. The workflow stub stays with `archived_at` + `archive_uri` set so
+`GET /workflows/{id}` still resolves. Credentials resolve via the AWS SDK default chain (env /
+shared config / IRSA).
 
 | Env var                          | Default  | Meaning                                                       |
 | -------------------------------- | -------- | ------------------------------------------------------------- |
@@ -596,5 +598,6 @@ assay workflow wait deploy-1234 --timeout 300   # exit 0 on COMPLETED, 1 on fail
   non-Lua Rust apps. The CLI injects its own `CARGO_PKG_VERSION` via
   `assay_workflow::api::serve_with_version` so `/api/v1/engine/workflow/version` reflects the
   user-facing binary version, not the internal crate version.
-- S3 archival is behind the `s3-archival` cargo feature (default off) and no-op at runtime unless
-  `ASSAY_ARCHIVE_S3_BUCKET` is set.
+- Default `assay-engine` builds include S3 archival as of v0.5.6, but it is a runtime no-op unless
+  `ASSAY_ARCHIVE_S3_BUCKET` is set. Custom `assay-workflow` embedders opt in with the default-off
+  `s3-archival` cargo feature.

@@ -350,8 +350,9 @@ flips the footer to `Powered by Assay Workflow Engine vX.Y.Z` (linked to assay.r
 identity is customised. All optional; unset env preserves assay's built-in identity. Full table +
 examples in `docs/modules/workflow.md#dashboard-whitelabel`.
 
-**Optional S3 archival** (cargo feature `s3-archival`, default-off). Enabled when
-`ASSAY_ARCHIVE_S3_BUCKET` is set. Bundles completed workflows to S3 after
+**Optional S3 archival.** Default `assay-engine` builds include archival support as of v0.5.6; it
+activates only when `ASSAY_ARCHIVE_S3_BUCKET` is set. Custom `assay-workflow` embedders enable the
+default-off `s3-archival` cargo feature. It bundles completed workflows to S3 after
 `ASSAY_ARCHIVE_RETENTION_DAYS` and stubs the row with `archive_uri`.
 
 ### Example: Kubernetes Job
