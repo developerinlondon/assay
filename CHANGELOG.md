@@ -10,8 +10,8 @@ All notable changes to Assay are documented here.
   `GET /api/v1/engine/workflow/workflows/{id}/events` calls retain the full ascending array, while
   operators can request `limit`, an exclusive sequence `cursor`, and `order=asc|desc`. Native
   PostgreSQL and SQLite stores apply the bound in SQL, with page sizes capped at 1,000 events. This
-  lets Neutron expose recent durable execution history without loading an unbounded run into an API
-  response or browser.
+  lets operator consoles expose recent durable execution history without loading an unbounded run
+  into an API response or browser.
 
 ### Fixed
 

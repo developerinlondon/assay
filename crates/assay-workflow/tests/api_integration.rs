@@ -44,6 +44,49 @@ async fn get_events_keeps_the_public_two_argument_handler_contract() {
 }
 
 #[tokio::test]
+async fn explicit_ascending_order_uses_default_bounded_page() {
+    let (url, _handle) = start_test_server().await;
+    let c = client();
+
+    let response = c
+        .post(format!("{url}/api/v1/engine/workflow/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "PagedHistory",
+            "workflow_id": "wf-ascending-page",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 201);
+
+    for index in 1..=50 {
+        let response = c
+            .post(format!(
+                "{url}/api/v1/engine/workflow/workflows/wf-ascending-page/signal/page-{index}"
+            ))
+            .json(&serde_json::json!({ "payload": { "index": index } }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+    }
+
+    let response = c
+        .get(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-ascending-page/events?order=asc"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+
+    let page: Vec<serde_json::Value> = response.json().await.unwrap();
+    assert_eq!(page.len(), 50);
+    assert_eq!(page.first().unwrap()["seq"], 1);
+    assert_eq!(page.last().unwrap()["seq"], 50);
+}
+
+#[tokio::test]
 async fn health_check() {
     let (url, _handle) = start_test_server().await;
 

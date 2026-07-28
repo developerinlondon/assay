@@ -194,8 +194,7 @@ pub enum EventOrder {
 pub struct EventsQuery {
     pub limit: Option<u16>,
     pub cursor: Option<i32>,
-    #[serde(default)]
-    pub order: EventOrder,
+    pub order: Option<EventOrder>,
 }
 
 #[utoipa::path(
@@ -223,7 +222,7 @@ async fn get_events_route<S: WorkflowStore>(
     Path(id): Path<String>,
     Query(query): Query<EventsQuery>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let paged = query.limit.is_some() || query.cursor.is_some() || query.order == EventOrder::Desc;
+    let paged = query.limit.is_some() || query.cursor.is_some() || query.order.is_some();
     if !paged {
         return get_events(State(state), Path(id)).await;
     }
@@ -232,7 +231,7 @@ async fn get_events_route<S: WorkflowStore>(
             &id,
             query.cursor,
             i64::from(query.limit.unwrap_or(50).clamp(1, 1_000)),
-            query.order == EventOrder::Desc,
+            query.order == Some(EventOrder::Desc),
         )
         .await?;
     Ok(events_json(events))
