@@ -54,7 +54,7 @@
 ## Infrastructure
 - [assay.crossplane](https://assay.rs/modules/crossplane.html): Crossplane providers, XRDs, compositions
 - [assay.velero](https://assay.rs/modules/velero.html): Velero backups, restores, schedules
-- [assay.workflow](https://assay.rs/modules/workflow.html): Native durable workflow engine — `assay serve` runs REST+SSE+dashboard; `require("assay.workflow")` registers handlers; namespace-scoped, JWT/API-key auth, dashboard whitelabel via ASSAY_WHITELABEL_* env vars
+- [assay.workflow](https://assay.rs/modules/workflow.html): Native durable workflow engine — `assay serve` runs REST+SSE+dashboard; `require("assay.workflow")` registers handlers; namespace-scoped, JWT/API-key auth, runtime-gated S3 archival in default engine builds, dashboard whitelabel via ASSAY_WHITELABEL_* env vars
 - [assay.harbor](https://assay.rs/modules/harbor.html): Harbor registry, projects, vulnerability scanning
 - [assay.infoblox](https://assay.rs/modules/infoblox.html): Infoblox WAPI — DNS records, networks, ranges, grid status
 - [assay.servicenow](https://assay.rs/modules/servicenow.html): ServiceNow Table API + CMDB lookups

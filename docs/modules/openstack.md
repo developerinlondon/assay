@@ -4,8 +4,8 @@ category: Infrastructure
 
 ## assay.openstack
 
-OpenStack inventory client with Keystone v3 password authentication, service-catalog discovery,
-and GET-only identity, compute, image, network, and quota operations.
+OpenStack inventory client with Keystone v3 password authentication, service-catalog discovery, and
+GET-only identity, compute, image, network, and quota operations.
 
 ### Client
 

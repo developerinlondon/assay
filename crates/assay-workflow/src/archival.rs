@@ -3,7 +3,7 @@
 //! Behind the `s3-archival` cargo feature (default-off). When enabled and
 //! `ASSAY_ARCHIVE_S3_BUCKET` is set in the environment, a background task
 //! periodically identifies workflows in terminal states older than the
-//! configured retention, bundles `{record, events, activities}` as JSON,
+//! configured retention, bundles `{format_version, workflow, events}` as JSON,
 //! uploads the bundle to S3, deletes the dependent rows, and records
 //! `archived_at` + `archive_uri` on the retained stub row.
 //!

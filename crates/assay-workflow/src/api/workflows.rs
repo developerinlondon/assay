@@ -15,7 +15,7 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
         .route("/workflows", post(start_workflow).get(list_workflows))
         .route("/workflows/{id}", get(describe_workflow))
-        .route("/workflows/{id}/events", get(get_events))
+        .route("/workflows/{id}/events", get(get_events_route))
         .route("/workflows/{id}/signal/{name}", post(send_signal))
         .route("/workflows/{id}/cancel", post(cancel_workflow))
         .route("/workflows/{id}/terminate", post(terminate_workflow))
@@ -182,10 +182,30 @@ pub async fn describe_workflow<S: WorkflowStore>(
     Ok(Json(serde_json::to_value(wf)?))
 }
 
+#[derive(Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum EventOrder {
+    #[default]
+    Asc,
+    Desc,
+}
+
+#[derive(Default, Deserialize)]
+pub struct EventsQuery {
+    pub limit: Option<u16>,
+    pub cursor: Option<i32>,
+    pub order: Option<EventOrder>,
+}
+
 #[utoipa::path(
     get, path = "/api/v1/engine/workflow/workflows/{id}/events",
     tag = "workflows",
-    params(("id" = String, Path, description = "Workflow ID")),
+    params(
+        ("id" = String, Path, description = "Workflow ID"),
+        ("limit" = Option<u16>, Query, description = "Bounded page size, capped at 1000"),
+        ("cursor" = Option<i32>, Query, description = "Exclusive event sequence cursor"),
+        ("order" = Option<String>, Query, description = "Sequence order: asc or desc"),
+    ),
     responses(
         (status = 200, description = "Event history", body = Vec<WorkflowEvent>),
     ),
@@ -194,12 +214,36 @@ pub async fn get_events<S: WorkflowStore>(
     State(state): State<Arc<WorkflowCtx<S>>>,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let events = state.get_events(&id).await?;
-    let json: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|e| serde_json::to_value(e).unwrap_or_default())
-        .collect();
-    Ok(Json(json))
+    Ok(events_json(state.get_events(&id).await?))
+}
+
+async fn get_events_route<S: WorkflowStore>(
+    State(state): State<Arc<WorkflowCtx<S>>>,
+    Path(id): Path<String>,
+    Query(query): Query<EventsQuery>,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    let paged = query.limit.is_some() || query.cursor.is_some() || query.order.is_some();
+    if !paged {
+        return get_events(State(state), Path(id)).await;
+    }
+    let events = state
+        .get_events_page(
+            &id,
+            query.cursor,
+            i64::from(query.limit.unwrap_or(50).clamp(1, 1_000)),
+            query.order == Some(EventOrder::Desc),
+        )
+        .await?;
+    Ok(events_json(events))
+}
+
+fn events_json(events: Vec<WorkflowEvent>) -> Json<Vec<serde_json::Value>> {
+    Json(
+        events
+            .into_iter()
+            .map(|e| serde_json::to_value(e).unwrap_or_default())
+            .collect(),
+    )
 }
 
 #[derive(Deserialize, ToSchema)]
