@@ -1,6 +1,6 @@
 [package]
 name = "assay-engine"
-version = "0.5.5"
+version = "0.5.6"
 categories = ["asynchronous", "database", "web-programming::http-server"]
 edition = "2024"
 keywords = ["workflow", "auth", "oidc", "zanzibar", "postgres"]
@@ -32,6 +32,7 @@ default = [
   "auth-oidc",
   "auth-oidc-provider",
   "auth-zanzibar",
+  "s3-archival",
   "vault",
 ]
 
@@ -79,6 +80,7 @@ vault-bitwarden-compat = ["assay-vault?/vault-bitwarden-compat"]
 vault-sealing-hsm = ["assay-vault?/vault-sealing-hsm"]
 
 server = ["dep:clap"]
+s3-archival = ["assay-workflow/s3-archival"]
 
 backend-postgres = [
   "assay-workflow/backend-postgres",

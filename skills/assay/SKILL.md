@@ -292,7 +292,7 @@ All 36 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 | `assay.velero`       | Backups, restores, schedules, storage locations                                                         |
 | `assay.temporal`     | Workflows, task queues, schedules, signals + native gRPC (temporal feature)                             |
 | `assay.harbor`       | Projects, repositories, artifacts, vulnerability scanning                                               |
-| `assay.openstack`    | Keystone-authenticated OpenStack identity, compute, image, network, and quota inventory                  |
+| `assay.openstack`    | Keystone-authenticated OpenStack identity, compute, image, network, and quota inventory                 |
 | `assay.healthcheck`  | HTTP checks, JSON path, body matching, latency, multi-check                                             |
 | `assay.s3`           | S3-compatible storage (AWS, R2, MinIO) with Sig V4 auth                                                 |
 | `assay.postgres`     | Postgres helpers: users, databases, grants, Vault integration                                           |

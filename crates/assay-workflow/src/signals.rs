@@ -75,4 +75,16 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
     pub async fn get_events(&self, workflow_id: &str) -> Result<Vec<WorkflowEvent>> {
         self.store.list_events(workflow_id).await
     }
+
+    pub async fn get_events_page(
+        &self,
+        workflow_id: &str,
+        cursor: Option<i32>,
+        limit: i64,
+        descending: bool,
+    ) -> Result<Vec<WorkflowEvent>> {
+        self.store
+            .list_events_page(workflow_id, cursor, limit, descending)
+            .await
+    }
 }

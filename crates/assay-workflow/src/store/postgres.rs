@@ -687,6 +687,45 @@ impl WorkflowStore for PostgresStore {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    async fn list_events_page(
+        &self,
+        workflow_id: &str,
+        cursor: Option<i32>,
+        limit: i64,
+        descending: bool,
+    ) -> Result<Vec<WorkflowEvent>> {
+        let limit = limit.clamp(0, 1_000);
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let rows = if descending {
+            sqlx::query_as::<_, PgEventRow>(
+                "SELECT id, workflow_id, seq, event_type, payload, timestamp
+                 FROM workflow.events
+                 WHERE workflow_id = $1 AND ($2::INTEGER IS NULL OR seq < $2)
+                 ORDER BY seq DESC LIMIT $3",
+            )
+            .bind(workflow_id)
+            .bind(cursor)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, PgEventRow>(
+                "SELECT id, workflow_id, seq, event_type, payload, timestamp
+                 FROM workflow.events
+                 WHERE workflow_id = $1 AND ($2::INTEGER IS NULL OR seq > $2)
+                 ORDER BY seq ASC LIMIT $3",
+            )
+            .bind(workflow_id)
+            .bind(cursor)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        };
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     async fn get_event_count(&self, workflow_id: &str) -> Result<i64> {
         let row: (i64,) =
             sqlx::query_as("SELECT COUNT(*) FROM workflow.events WHERE workflow_id = $1")

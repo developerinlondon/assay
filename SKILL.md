@@ -342,10 +342,11 @@ create/delete, engine version shown in the status bar.
 `CARGO_PKG_VERSION` so the field reflects the user-facing binary (e.g. `0.11.3`), not the internal
 `assay-workflow` crate version.
 
-**Optional S3 archival** (cargo feature `s3-archival`, default-off). When compiled in and
-`ASSAY_ARCHIVE_S3_BUCKET` is set, a background task archives workflows in terminal states older than
-`ASSAY_ARCHIVE_RETENTION_DAYS` (default 30) to S3 and stubs the row with `archived_at` +
-`archive_uri`. See `docs/modules/workflow.md` for the full list of `ASSAY_ARCHIVE_*` env vars.
+**Optional S3 archival.** Default `assay-engine` builds include archival support as of v0.5.6, but
+the background task starts only when `ASSAY_ARCHIVE_S3_BUCKET` is set. Custom `assay-workflow`
+embedders enable the default-off `s3-archival` cargo feature. The task archives terminal workflows
+older than `ASSAY_ARCHIVE_RETENTION_DAYS` (default 30) to S3 and stubs the row with `archived_at` +
+`archive_uri`. See `docs/modules/workflow.md` for every `ASSAY_ARCHIVE_*` setting.
 
 **Dashboard whitelabel** (v0.11.10+). Nine optional `ASSAY_WHITELABEL_*` env vars rebrand the
 embedded `/workflow` dashboard per-deployment — brand name (`_NAME`), mark-badge glyph (`_MARK`;

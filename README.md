@@ -19,7 +19,7 @@ Two binaries, one project. `FROM scratch`-shippable, PG18 + SQLite first-class. 
   activities, signals, timers, child workflows, schedules, search attributes) **+ full IdP**
   (Kratos + Hydra + Keto replacement: OIDC client + provider, passkey, JWT/JWKS rotation, biscuit
   capability tokens, Argon2 password, Zanzibar ReBAC, session management, admin HTTP API, dashboard
-  panes for everything).
+  panes for everything). Default builds include runtime-gated S3 history archival.
 
 ```bash
 # Lua runtime

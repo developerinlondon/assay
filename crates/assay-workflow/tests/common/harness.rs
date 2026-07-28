@@ -125,6 +125,16 @@ impl Harness {
         dispatch!(self, s => s.list_events(workflow_id).await)
     }
 
+    pub async fn list_events_page(
+        &self,
+        workflow_id: &str,
+        cursor: Option<i32>,
+        limit: i64,
+        descending: bool,
+    ) -> anyhow::Result<Vec<WorkflowEvent>> {
+        dispatch!(self, s => s.list_events_page(workflow_id, cursor, limit, descending).await)
+    }
+
     pub async fn get_event_count(&self, workflow_id: &str) -> anyhow::Result<i64> {
         dispatch!(self, s => s.get_event_count(workflow_id).await)
     }

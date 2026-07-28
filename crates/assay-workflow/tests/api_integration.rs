@@ -26,6 +26,67 @@ fn client() -> reqwest::Client {
 }
 
 #[tokio::test]
+async fn get_events_keeps_the_public_two_argument_handler_contract() {
+    let store = SqliteStore::new("sqlite::memory:").await.unwrap();
+    let state = Arc::new(WorkflowCtx::start(Arc::new(store)));
+
+    let result = assay_workflow::api::workflows::get_events(
+        axum::extract::State(state),
+        axum::extract::Path("missing-workflow".to_string()),
+    )
+    .await;
+    let response = match result {
+        Ok(response) => response,
+        Err(_) => panic!("legacy get_events handler failed"),
+    };
+
+    assert!(response.0.is_empty());
+}
+
+#[tokio::test]
+async fn explicit_ascending_order_uses_default_bounded_page() {
+    let (url, _handle) = start_test_server().await;
+    let c = client();
+
+    let response = c
+        .post(format!("{url}/api/v1/engine/workflow/workflows"))
+        .json(&serde_json::json!({
+            "workflow_type": "PagedHistory",
+            "workflow_id": "wf-ascending-page",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 201);
+
+    for index in 1..=50 {
+        let response = c
+            .post(format!(
+                "{url}/api/v1/engine/workflow/workflows/wf-ascending-page/signal/page-{index}"
+            ))
+            .json(&serde_json::json!({ "payload": { "index": index } }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+    }
+
+    let response = c
+        .get(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-ascending-page/events?order=asc"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+
+    let page: Vec<serde_json::Value> = response.json().await.unwrap();
+    assert_eq!(page.len(), 50);
+    assert_eq!(page.first().unwrap()["seq"], 1);
+    assert_eq!(page.last().unwrap()["seq"], 50);
+}
+
+#[tokio::test]
 async fn health_check() {
     let (url, _handle) = start_test_server().await;
 
@@ -99,6 +160,46 @@ async fn start_and_list_workflows() {
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
     assert_eq!(body.len(), 1);
     assert_eq!(body[0]["event_type"], "WorkflowStarted");
+
+    for index in 1..=3 {
+        let response = c
+            .post(format!(
+                "{url}/api/v1/engine/workflow/workflows/wf-test-1/signal/page-{index}"
+            ))
+            .json(&serde_json::json!({ "payload": { "index": index } }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+    }
+
+    let response = c
+        .get(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-test-1/events?limit=2&order=desc"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let page: Vec<serde_json::Value> = response.json().await.unwrap();
+    assert_eq!(page.len(), 2);
+    assert_eq!(page[0]["seq"], 4);
+    assert_eq!(page[1]["seq"], 3);
+
+    let response = c
+        .get(format!(
+            "{url}/api/v1/engine/workflow/workflows/wf-test-1/events?limit=2&order=desc&cursor=3"
+        ))
+        .send()
+        .await
+        .unwrap();
+    let page: Vec<serde_json::Value> = response.json().await.unwrap();
+    assert_eq!(
+        page.iter()
+            .map(|event| event["seq"].as_i64())
+            .collect::<Vec<_>>(),
+        [Some(2), Some(1)]
+    );
 }
 
 #[tokio::test]
