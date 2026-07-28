@@ -63,10 +63,10 @@ startup). For Kubernetes / Docker Swarm, use Postgres: the cron scheduler picks 
 it remains disabled at runtime until `ASSAY_ARCHIVE_S3_BUCKET` is set. Custom `assay-workflow`
 embedders must enable the default-off `s3-archival` cargo feature. Once enabled, a background task
 periodically finds workflows in terminal states older than `ASSAY_ARCHIVE_RETENTION_DAYS` (default
-30), uploads `{record, events}` to `s3://bucket/prefix/<namespace>/<workflow_id>.json`, and purges
-dependent rows. The workflow stub stays with `archived_at` + `archive_uri` set so
-`GET /workflows/{id}` still resolves. Credentials resolve via the AWS SDK default chain (env /
-shared config / IRSA).
+30), uploads `{format_version, workflow, events}` to
+`s3://bucket/prefix/<namespace>/<workflow_id>.json`, and purges dependent rows. The workflow stub
+stays with `archived_at` + `archive_uri` set so `GET /workflows/{id}` still resolves. Credentials
+resolve via the AWS SDK default chain (env / shared config / IRSA).
 
 | Env var                          | Default  | Meaning                                                       |
 | -------------------------------- | -------- | ------------------------------------------------------------- |
