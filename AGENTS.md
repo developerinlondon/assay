@@ -56,8 +56,11 @@ The library should read the same to a stranger who has never heard of any of ass
 does to someone who works on one of them every day.
 
 This applies to all files in the repo: `stdlib/`, `src/`, `tests/`, `*.md`, `*.html`,
-`CHANGELOG.md`, and any commit/PR text. The only legitimate exception is the copyright holder's name
-in `LICENSE`/`NOTICE`/`CLA.md`.
+`CHANGELOG.md`, and any commit/PR text. The exceptions are the copyright holder's name in
+`LICENSE`/`NOTICE`/`CLA.md` and deployment material for Assay's own public first-party properties.
+First-party deployment details must stay under `service/` or its dedicated deployment workflow and
+may name only public `*.assay.rs` surfaces. They must not introduce knowledge of a downstream
+consumer, private environment, or organisation into the reusable crates.
 
 ## Failing tests: never rewrite, always escalate
 

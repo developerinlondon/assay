@@ -52,11 +52,11 @@ fn default_engine_events_ttl_secs() -> u64 {
 pub struct ServerConfig {
     #[serde(default = "default_bind_addr")]
     pub bind_addr: String,
-    /// Operator-supplied canonical URL the engine is reached at — used
-    /// as the OIDC `iss` claim, biscuit token issuer, passkey origin,
-    /// and the base for federation callbacks. Defaults to the bind addr
-    /// over plain HTTP for local dev convenience; production deployments
-    /// MUST override this with the public HTTPS URL.
+    /// Operator-supplied canonical URL for the engine API and dashboard.
+    /// Auth defaults to this origin too, but can use a dedicated hostname
+    /// through `auth.public_url`. Defaults to the bind address over plain
+    /// HTTP for local development; production deployments MUST override it
+    /// with the public HTTPS URL.
     #[serde(default = "default_public_url")]
     pub public_url: String,
 }
@@ -135,8 +135,12 @@ pub struct WorkflowConfig {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct AuthConfig {
+    /// Canonical browser-facing origin for the auth surface. Defaults to
+    /// `server.public_url` when unset. This allows one engine deployment to
+    /// expose auth on a dedicated hostname without changing its API origin.
+    pub public_url: Option<String>,
     /// JWT issuer + OIDC `iss` claim. Defaults to
-    /// `<server.public_url>/auth` when unset, which matches the route
+    /// `<auth.public_url>/auth` when unset, which matches the route
     /// mount point.
     pub issuer: Option<String>,
     /// JWT audience list — also used by the OIDC provider when minting
@@ -222,7 +226,8 @@ pub struct AuthSessionConfig {
 #[non_exhaustive]
 pub struct AuthPasskeyConfig {
     /// Relying-party id — the host (no scheme/port) the browser will
-    /// scope passkeys to. Defaults to the host of `server.public_url`.
+    /// scope passkeys to. Defaults to the host of `auth.public_url`, or
+    /// `server.public_url` when no dedicated auth origin is configured.
     pub rp_id: Option<String>,
     /// Human-readable label browsers show. Defaults to `"Assay"`.
     pub rp_name: Option<String>,
