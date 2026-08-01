@@ -34,6 +34,7 @@ jobs:
           set -euo pipefail
           version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' crates/assay-engine/Cargo.toml | head -1)
           test -n "$version"
+          test -f service/engine.toml
           flyctl deploy \
             --config service/fly.toml \
             --image "ghcr.io/developerinlondon/assay-engine:${version}" \

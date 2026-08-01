@@ -11,7 +11,7 @@ cmd = ["serve", "--config", "/etc/assay/engine.toml"]
 
 [[files]]
 guest_path = "/etc/assay/engine.toml"
-local_path = "engine.toml"
+local_path = "service/engine.toml"
 
 [http_service]
 internal_port = 8080
