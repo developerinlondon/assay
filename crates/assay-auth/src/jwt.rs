@@ -105,6 +105,24 @@ impl JwtConfig {
     /// by header `kid` (active first, then history), validates `iss` and
     /// the audience list against the in-memory configuration.
     pub fn verify<T: DeserializeOwned>(&self, token: &str) -> Result<TokenData<T>> {
+        self.verify_with_policy(token, true)
+    }
+
+    /// Verify a token minted by this OIDC provider for a dynamic client
+    /// audience. The caller must validate the signed audience and token
+    /// purpose after decoding.
+    pub(crate) fn verify_provider_token<T: DeserializeOwned>(
+        &self,
+        token: &str,
+    ) -> Result<TokenData<T>> {
+        self.verify_with_policy(token, false)
+    }
+
+    fn verify_with_policy<T: DeserializeOwned>(
+        &self,
+        token: &str,
+        validate_configured_audience: bool,
+    ) -> Result<TokenData<T>> {
         let header = decode_header(token).map_err(map_jwt_err)?;
         let kid = header
             .kid
@@ -115,8 +133,10 @@ impl JwtConfig {
             .ok_or_else(|| Error::Jwt(format!("unknown kid {kid}")))?;
         let mut validation = Validation::new(alg);
         validation.set_issuer(std::slice::from_ref(&guard.issuer));
-        if !guard.audience.is_empty() {
+        if validate_configured_audience && !guard.audience.is_empty() {
             validation.set_audience(&guard.audience);
+        } else if !validate_configured_audience {
+            validation.validate_aud = false;
         }
         decode::<T>(token, decoding_key, &validation).map_err(map_jwt_err)
     }
@@ -545,6 +565,45 @@ mod tests {
             })
             .unwrap();
         let result = cfg.verify::<Claims>(&token);
+        assert!(matches!(result, Err(Error::Jwt(_))));
+    }
+
+    #[test]
+    fn provider_token_verification_accepts_a_signed_dynamic_client_audience() {
+        let cfg = config_with_active(
+            "https://auth.assay.rs/auth",
+            &["https://auth.assay.rs/auth"],
+        );
+        let claims = Claims {
+            sub: "user_alice".to_string(),
+            iss: "https://auth.assay.rs/auth".to_string(),
+            aud: "agentkit-pages".to_string(),
+            exp: future_exp(),
+        };
+        let token = cfg.issue(&claims).unwrap();
+
+        let data = cfg.verify_provider_token::<Claims>(&token).unwrap();
+
+        assert_eq!(data.claims, claims);
+    }
+
+    #[test]
+    fn provider_token_verification_still_rejects_the_wrong_issuer() {
+        let cfg = config_with_active(
+            "https://auth.assay.rs/auth",
+            &["https://auth.assay.rs/auth"],
+        );
+        let token = cfg
+            .issue(&Claims {
+                sub: "user_alice".to_string(),
+                iss: "https://attacker.example/auth".to_string(),
+                aud: "agentkit-pages".to_string(),
+                exp: future_exp(),
+            })
+            .unwrap();
+
+        let result = cfg.verify_provider_token::<Claims>(&token);
+
         assert!(matches!(result, Err(Error::Jwt(_))));
     }
 

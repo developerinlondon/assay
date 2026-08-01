@@ -50,6 +50,25 @@ impl AccessTokenClaims {
     }
 }
 
+/// Provider-only wrapper that distinguishes access tokens from ID
+/// tokens without changing the public claims shape consumers use.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub(crate) struct ProviderAccessTokenClaims {
+    #[serde(flatten)]
+    pub claims: AccessTokenClaims,
+    token_use: String,
+}
+
+impl ProviderAccessTokenClaims {
+    /// Whether these signed claims describe an access token minted for
+    /// the same client named by its audience.
+    pub fn is_provider_access_token(&self) -> bool {
+        self.token_use == "access"
+            && !self.claims.client_id.is_empty()
+            && self.claims.aud == self.claims.client_id
+    }
+}
+
 /// Build the userinfo response JSON for `user`, filtered by the scopes
 /// the access_token was issued with. `sub` is always present (per
 /// OIDC Core).
@@ -132,5 +151,29 @@ mod tests {
             sid: "s".into(),
         };
         assert_eq!(c.scopes(), vec!["openid".to_string(), "email".to_string()]);
+    }
+
+    #[test]
+    fn provider_access_token_requires_access_purpose_and_matching_client_audience() {
+        let mut claims = ProviderAccessTokenClaims {
+            claims: AccessTokenClaims {
+                sub: "u".into(),
+                aud: "agentkit-pages".into(),
+                exp: 0,
+                iat: 0,
+                scope: "openid email".into(),
+                client_id: "agentkit-pages".into(),
+                sid: "s".into(),
+            },
+            token_use: "access".into(),
+        };
+        assert!(claims.is_provider_access_token());
+
+        claims.token_use = "id".into();
+        assert!(!claims.is_provider_access_token());
+
+        claims.token_use = "access".into();
+        claims.claims.aud = "other-client".into();
+        assert!(!claims.is_provider_access_token());
     }
 }

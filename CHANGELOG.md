@@ -2,6 +2,22 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.9 — 2026-08-01
+
+### Fixed
+
+- **OIDC consumers can finish sign-in through UserInfo.** Provider access tokens now verify with
+  their signed consumer client audience instead of the engine's static API audience. The provider
+  still requires the configured issuer, signature, expiry, access-token purpose, and matching `aud`
+  / `client_id`. JWT access-token introspection uses the same rules.
+
+## assay-auth 0.6.1 — 2026-08-01
+
+### Fixed
+
+- Added provider-scoped JWT verification for dynamic OIDC client audiences while preserving the
+  existing static-audience verifier for every other auth surface.
+
 ## assay-engine 0.5.8 — 2026-08-01
 
 ### Fixed

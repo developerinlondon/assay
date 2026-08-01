@@ -31,7 +31,7 @@ use super::introspect::{IntrospectRequest, IntrospectResponse};
 use super::revoke::RevokeRequest;
 use super::token::{self as tok, TokenErrorBody, TokenRequest, TokenResponse, errors};
 use super::types::{ConsentGrant, OidcSession};
-use super::userinfo::{self, AccessTokenClaims};
+use super::userinfo::{self, ProviderAccessTokenClaims};
 
 /// Cookie name carrying a transient "in-flight authorize request"
 /// payload. We base64-url-encode the original querystring so the
@@ -753,8 +753,8 @@ pub async fn userinfo_get(State(ctx): State<AuthCtx>, headers: HeaderMap) -> Res
                 .into_response();
         }
     };
-    let data = match jwt.verify::<AccessTokenClaims>(token) {
-        Ok(d) => d,
+    let data = match jwt.verify_provider_token::<ProviderAccessTokenClaims>(token) {
+        Ok(d) if d.claims.is_provider_access_token() => d,
         Err(_) => {
             return (
                 StatusCode::UNAUTHORIZED,
@@ -762,8 +762,15 @@ pub async fn userinfo_get(State(ctx): State<AuthCtx>, headers: HeaderMap) -> Res
             )
                 .into_response();
         }
+        Ok(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "invalid_token"})),
+            )
+                .into_response();
+        }
     };
-    let user = match ctx.users.get_user_by_id(&data.claims.sub).await {
+    let user = match ctx.users.get_user_by_id(&data.claims.claims.sub).await {
         Ok(Some(u)) => u,
         _ => {
             return (
@@ -773,7 +780,7 @@ pub async fn userinfo_get(State(ctx): State<AuthCtx>, headers: HeaderMap) -> Res
                 .into_response();
         }
     };
-    let claims = userinfo::build_userinfo(&user, &data.claims.scopes());
+    let claims = userinfo::build_userinfo(&user, &data.claims.claims.scopes());
     (StatusCode::OK, Json(claims)).into_response()
 }
 
@@ -823,16 +830,19 @@ pub async fn introspect_post(
     };
 
     // Try as an access_token JWT first.
-    if let Ok(data) = jwt.verify::<AccessTokenClaims>(&body.token) {
+    if let Ok(data) = jwt.verify_provider_token::<ProviderAccessTokenClaims>(&body.token)
+        && data.claims.is_provider_access_token()
+    {
+        let claims = data.claims.claims;
         let resp = IntrospectResponse {
             active: true,
-            client_id: Some(data.claims.client_id.clone()),
-            username: Some(data.claims.sub.clone()),
-            scope: Some(data.claims.scope.clone()),
-            exp: Some(data.claims.exp),
-            sub: Some(data.claims.sub.clone()),
-            aud: Some(data.claims.aud.clone()),
-            iat: Some(data.claims.iat),
+            client_id: Some(claims.client_id.clone()),
+            username: Some(claims.sub.clone()),
+            scope: Some(claims.scope.clone()),
+            exp: Some(claims.exp),
+            sub: Some(claims.sub.clone()),
+            aud: Some(claims.aud.clone()),
+            iat: Some(claims.iat),
             token_type: Some("Bearer".into()),
         };
         return (StatusCode::OK, Json(resp)).into_response();
