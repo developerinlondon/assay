@@ -226,14 +226,14 @@ auto_enable_modules = ["auth"]
 
 [server]
 bind_addr = "0.0.0.0:3000"
-public_url = "${PUBLIC_URL:-https://auth.example.com}"
+public_url = "${ENGINE_PUBLIC_URL:-https://engine.example.com}"
 
 [backend]
 type = "postgres"
 url = "${DATABASE_URL}"
 
 [auth]
-issuer = "${PUBLIC_URL:-https://auth.example.com}/auth"
+public_url = "${AUTH_PUBLIC_URL:-https://auth.example.com}"
 admin_api_keys = ["${ADMIN_API_KEY}"]
 TOML
 
@@ -246,6 +246,10 @@ assay-engine serve --config engine.toml
 #   /auth/login, /auth/passkey/*           → user-facing auth flows
 #   /auth/admin/auth/*                     → admin HTTP API (api-key gated)
 ```
+
+When `auth.public_url` is omitted, auth continues to use `server.public_url`. Set it only when the
+same engine is intentionally exposed through a separate browser-facing auth hostname; an explicit
+`auth.issuer` still takes precedence over both defaults.
 
 Same `engine.toml` works under Kubernetes — keep the TOML in a ConfigMap, project the secrets in via
 env from a Secret:

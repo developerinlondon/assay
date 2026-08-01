@@ -1,0 +1,32 @@
+[server]
+bind_addr = "0.0.0.0:8080"
+public_url = "https://engine.assay.rs"
+
+[backend]
+type = "postgres"
+url = "${DATABASE_URL}"
+
+[workflow]
+enabled = true
+
+[auth]
+public_url = "https://auth.assay.rs"
+admin_api_keys = ["${ADMIN_API_KEY}"]
+
+[auth.session]
+ttl_seconds = 2592000
+
+[auth.passkey]
+rp_id = "auth.assay.rs"
+rp_name = "Assay"
+
+[auth.oidc_provider]
+enabled = true
+auto_provision = false
+
+[dashboard]
+enabled = true
+
+[logging]
+level = "info"
+format = "json"

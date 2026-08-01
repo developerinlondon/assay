@@ -2,6 +2,20 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.7 — 2026-08-01
+
+### Added
+
+- **One engine can expose a dedicated authentication origin.** The optional `auth.public_url`
+  setting controls the default OIDC issuer, federation callback base, and passkey origin while
+  `server.public_url` remains the canonical workflow, vault, and dashboard URL. Deployments can
+  therefore present stable auth and engine hostnames from the same process and database without
+  adding a gateway or duplicating the identity plane.
+- **The first-party Assay service is deployable from this repository.** The new flat `service/`
+  package runs the complete released engine on Fly.io against externally managed PostgreSQL, scales
+  to zero while idle, and verifies the public engine health and OIDC discovery surfaces after each
+  successful engine release.
+
 ## assay-engine 0.5.6 — 2026-07-28
 
 ### Added

@@ -434,14 +434,21 @@ async fn discover_external_issuers(
 }
 
 /// Issuer for JWTs minted via the `auth-jwt` module. Defaults to
-/// `<server.public_url>/auth` when unset, matching where the auth
+/// `<auth.public_url>/auth` when unset, matching where the auth
 /// router is mounted.
 fn effective_issuer(cfg: &EngineConfig) -> String {
     if let Some(issuer) = &cfg.auth.issuer {
         return issuer.clone();
     }
-    let base = cfg.server.public_url.trim_end_matches('/');
+    let base = auth_public_url(cfg).trim_end_matches('/');
     format!("{base}/auth")
+}
+
+fn auth_public_url(cfg: &EngineConfig) -> &str {
+    cfg.auth
+        .public_url
+        .as_deref()
+        .unwrap_or(&cfg.server.public_url)
 }
 
 /// Issuer the OIDC provider advertises in its discovery doc + the `iss`
@@ -455,13 +462,12 @@ fn oidc_issuer(cfg: &EngineConfig) -> String {
         .unwrap_or_else(|| effective_issuer(cfg))
 }
 
-/// Parse `server.public_url` as a `url::Url`. Used by passkey RP setup
+/// Parse the canonical auth origin as a `url::Url`. Used by passkey RP setup
 /// (which wants the bare origin) — not by the OIDC provider, which
 /// needs the issuer URL (with `/auth`); see [`oidc_public_url`].
-#[cfg(feature = "auth-passkey")]
-fn parse_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
-    url::Url::parse(&cfg.server.public_url)
-        .map_err(|e| anyhow::anyhow!("server.public_url {:?}: {e}", cfg.server.public_url))
+fn parse_auth_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
+    let public_url = auth_public_url(cfg);
+    url::Url::parse(public_url).map_err(|e| anyhow::anyhow!("auth.public_url {public_url:?}: {e}"))
 }
 
 /// Base URL the OIDC provider exposes its endpoints at — same as
@@ -482,7 +488,7 @@ fn build_passkey_manager(
     cfg: &EngineConfig,
     users: Arc<dyn assay_auth::store::UserStore>,
 ) -> Option<assay_auth::passkey::PasskeyManager> {
-    let url = match parse_public_url(cfg) {
+    let url = match parse_auth_public_url(cfg) {
         Ok(u) => u,
         Err(e) => {
             tracing::warn!(?e, "passkeys disabled — bad public_url");
@@ -512,6 +518,76 @@ fn build_passkey_manager(
             tracing::warn!(?e, "passkeys disabled — manager construction failed");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod public_url_tests {
+    use super::*;
+
+    fn config(server_public_url: &str, auth_public_url: Option<&str>) -> EngineConfig {
+        let auth_public_url = auth_public_url
+            .map(|url| format!("public_url = \"{url}\""))
+            .unwrap_or_default();
+        toml::from_str(&format!(
+            r#"
+[server]
+bind_addr = "127.0.0.1:3000"
+public_url = "{server_public_url}"
+
+[backend]
+type = "sqlite"
+data_dir = ":memory:"
+
+[auth]
+{auth_public_url}
+"#
+        ))
+        .expect("valid engine config")
+    }
+
+    #[test]
+    fn auth_origin_defaults_to_engine_public_url() {
+        let cfg = config("https://engine.example.com", None);
+
+        assert_eq!(effective_issuer(&cfg), "https://engine.example.com/auth");
+        assert_eq!(
+            parse_auth_public_url(&cfg).unwrap().as_str(),
+            "https://engine.example.com/"
+        );
+    }
+
+    #[test]
+    fn auth_origin_override_drives_default_issuer_and_passkey_origin() {
+        let cfg = config(
+            "https://engine.example.com",
+            Some("https://auth.example.com"),
+        );
+
+        assert_eq!(effective_issuer(&cfg), "https://auth.example.com/auth");
+        assert_eq!(
+            parse_auth_public_url(&cfg).unwrap().as_str(),
+            "https://auth.example.com/"
+        );
+    }
+
+    #[test]
+    fn explicit_issuer_takes_precedence_over_auth_origin() {
+        let mut cfg = config(
+            "https://engine.example.com",
+            Some("https://auth.example.com"),
+        );
+        cfg.auth.issuer = Some("https://issuer.example.net/oauth".to_string());
+
+        assert_eq!(effective_issuer(&cfg), "https://issuer.example.net/oauth");
+    }
+
+    #[test]
+    fn invalid_auth_origin_is_rejected() {
+        let cfg = config("https://engine.example.com", Some("not a URL"));
+
+        let error = parse_auth_public_url(&cfg).unwrap_err();
+        assert!(error.to_string().contains("auth.public_url"));
     }
 }
 
