@@ -4,7 +4,7 @@ kill_signal = "SIGINT"
 kill_timeout = "10s"
 
 [build]
-image = "ghcr.io/developerinlondon/assay-engine:0.5.7"
+image = "ghcr.io/developerinlondon/assay-engine:0.5.8"
 
 [experimental]
 cmd = ["serve", "--config", "/etc/assay/engine.toml"]

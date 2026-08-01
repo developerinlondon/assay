@@ -1,9 +1,7 @@
 /* Assay Auth — login landing controller.
  *
- * Fetches enabled upstream IdPs from /auth/upstreams and renders one
- * button per row, preserving the `return_to` query parameter so the
- * user lands back at the page that bounced them here once the
- * upstream round-trip completes.
+ * Submits first-party email/password credentials to the engine session
+ * endpoint. Enabled upstream IdPs are rendered as optional alternatives.
  *
  * Provider icons come from /auth/icons.svg (a single sprite shipped
  * with the auth dashboard). The button references the right symbol by
@@ -21,10 +19,56 @@
   'use strict';
 
   const params = new URLSearchParams(window.location.search);
-  const returnTo = params.get('return_to') || '/';
+  const returnTo = safeReturnTo(params.get('return_to'));
 
   const container = document.getElementById('upstreams');
-  if (!container) return;
+  const upstreamSection = document.getElementById('upstream-login');
+  const upstreamStatus = document.getElementById('upstream-status');
+  const passwordForm = document.getElementById('password-login');
+  const emailInput = document.getElementById('email');
+  const passwordInput = document.getElementById('password');
+  const passwordError = document.getElementById('password-error');
+  const passwordSubmit = document.getElementById('password-submit');
+
+  function safeReturnTo(raw) {
+    try {
+      const candidate = new URL(raw || '/', window.location.origin);
+      if (candidate.origin !== window.location.origin) return '/';
+      return candidate.pathname + candidate.search + candidate.hash;
+    } catch (_error) {
+      return '/';
+    }
+  }
+
+  function showPasswordError(message) {
+    passwordError.textContent = message;
+    passwordInput.value = '';
+    passwordInput.focus();
+  }
+
+  function submitPasswordLogin(event) {
+    event.preventDefault();
+    passwordError.textContent = '';
+    passwordSubmit.disabled = true;
+    fetch('/api/v1/engine/auth/login', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: emailInput.value,
+        password: passwordInput.value
+      })
+    }).then(function (response) {
+      if (!response.ok) throw new Error('invalid credentials');
+      window.location.assign(returnTo);
+    }).catch(function () {
+      showPasswordError('Email or password is incorrect.');
+      passwordSubmit.disabled = false;
+    });
+  }
+
+  if (passwordForm) passwordForm.addEventListener('submit', submitPasswordLogin);
+  if (!container || !upstreamSection || !upstreamStatus) return;
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const XLINK_NS = 'http://www.w3.org/1999/xlink';
@@ -72,13 +116,10 @@
     return null;
   }
 
-  function showStatus(text, isError) {
-    container.dataset.state = isError ? 'error' : 'empty';
-    container.innerHTML = '';
-    const p = document.createElement('p');
-    p.className = 'login-status' + (isError ? ' login-status-error' : '');
-    p.textContent = text;
-    container.appendChild(p);
+  function showUpstreamStatus(text, isError) {
+    upstreamStatus.className = 'login-status' + (isError ? ' login-status-error' : '');
+    upstreamStatus.textContent = text;
+    upstreamStatus.hidden = !text;
   }
 
   // Same-origin fetch — must allow cookies so the browser attaches the
@@ -92,10 +133,11 @@
     })
     .then(function (upstreams) {
       if (!Array.isArray(upstreams) || upstreams.length === 0) {
-        showStatus('No sign-in providers configured.');
+        showUpstreamStatus('', false);
         return;
       }
-      container.dataset.state = 'ready';
+      upstreamSection.hidden = false;
+      showUpstreamStatus('', false);
       container.innerHTML = '';
       upstreams.forEach(function (u) {
         const a = document.createElement('a');
@@ -137,6 +179,6 @@
       });
     })
     .catch(function () {
-      showStatus('Could not load sign-in options.', true);
+      showUpstreamStatus('Could not load additional sign-in options.', true);
     });
 })();

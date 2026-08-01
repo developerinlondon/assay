@@ -2,6 +2,15 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.8 — 2026-08-01
+
+### Fixed
+
+- **Fresh installations can sign in without an upstream identity provider.** The embedded auth
+  landing now always offers first-party email/password login and treats configured OIDC providers as
+  optional alternatives. Successful login resumes only a same-origin authorization URL, while
+  invalid credentials leave the form usable and clear the submitted password.
+
 ## assay-engine 0.5.7 — 2026-08-01
 
 ### Added
