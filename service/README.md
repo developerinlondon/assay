@@ -32,8 +32,9 @@ the same Machine; `auth.public_url` keeps identity metadata stable without a sec
 
 The `Deploy flagship engine` workflow runs after the repository's `Release` workflow succeeds. It
 deploys the version declared by `crates/assay-engine/Cargo.toml`, then verifies engine health and
-OIDC discovery through the canonical domains. The repository secret `FLY_API_TOKEN` must be an
-app-scoped deploy token; runtime secrets stay in Fly and are not copied into GitHub Actions.
+OIDC discovery through the canonical domains. The repository secret `FLY_API_TOKEN` must be
+authorized to deploy the app; prefer an app-scoped token when the Fly account can mint one.
+Runtime secrets stay in Fly and are not copied into GitHub Actions.
 
 For a manual recovery deploy, dispatch that workflow from the default branch. Do not deploy an
 unreleased `latest` image: keeping the Fly release tied to the immutable engine version makes
