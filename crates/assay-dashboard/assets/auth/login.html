@@ -35,12 +35,24 @@
         <span class="login-mark" aria-hidden="true">__BRAND_MARK__</span>
         <h1 class="login-title" id="login-title">__BRAND_NAME__</h1>
       </header>
-      <div class="login-buttons" id="upstreams" data-state="loading" aria-live="polite">
-        <p class="login-status">Loading sign-in options&hellip;</p>
+      <form id="password-login" class="password-login">
+        <label class="login-label" for="email">Email</label>
+        <input class="login-input" id="email" name="email" type="email" autocomplete="username" required>
+        <label class="login-label" for="password">Password</label>
+        <input class="login-input" id="password" name="password" type="password" autocomplete="current-password" required>
+        <p class="login-status login-status-error" id="password-error" aria-live="polite"></p>
+        <button class="login-submit" id="password-submit" type="submit">Sign in</button>
+      </form>
+      <section class="upstream-login" id="upstream-login" hidden>
+        <div class="login-separator"><span>or</span></div>
+        <div class="login-buttons" id="upstreams" aria-live="polite"></div>
+      </section>
+      <div class="login-status" id="upstream-status" aria-live="polite">
+        Loading additional sign-in options&hellip;
       </div>
       <noscript>
         <p class="login-status login-status-error">
-          JavaScript is required to render sign-in options.
+          JavaScript is required to sign in.
         </p>
       </noscript>
     </section>

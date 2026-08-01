@@ -124,6 +124,10 @@ enabled = true</code></pre>
 #   /auth/login, /auth/passkey/*           → user-facing auth flows
 #   /auth/admin/auth/*                     → admin HTTP API (api-key gated)</code></pre>
 
+    <p>The browser login page always offers local email/password authentication. Enabled OIDC
+      upstream providers appear beneath it as optional alternatives, so a fresh installation does
+      not need an external identity provider before its first user can sign in.</p>
+
     <h2>Dashboard panes</h2>
     <p>When the auth module is enabled in <code>engine.modules</code>, the engine's dashboard SPA
       lights up with these panes:</p>

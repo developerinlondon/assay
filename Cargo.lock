@@ -279,7 +279,7 @@ dependencies = [
 
 [[package]]
 name = "assay-dashboard"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "assay-domain",
  "axum",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "assay-engine"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "assay-auth",

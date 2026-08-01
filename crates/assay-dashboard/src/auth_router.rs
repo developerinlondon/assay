@@ -154,3 +154,33 @@ async fn login_js() -> impl IntoResponse {
 async fn login_css() -> impl IntoResponse {
     asset("text/css", AUTH_LOGIN_CSS)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::assets::{AUTH_LOGIN_HTML, AUTH_LOGIN_JS};
+
+    #[test]
+    fn login_page_keeps_first_party_password_auth_available() {
+        assert!(AUTH_LOGIN_HTML.contains("<form id=\"password-login\""));
+        assert!(AUTH_LOGIN_HTML.contains("type=\"email\""));
+        assert!(AUTH_LOGIN_HTML.contains("type=\"password\""));
+        assert!(AUTH_LOGIN_HTML.contains("aria-live=\"polite\""));
+    }
+
+    #[test]
+    fn password_login_posts_json_with_same_origin_credentials() {
+        assert!(AUTH_LOGIN_JS.contains("fetch('/api/v1/engine/auth/login'"));
+        assert!(AUTH_LOGIN_JS.contains("credentials: 'same-origin'"));
+        assert!(AUTH_LOGIN_JS.contains("'Content-Type': 'application/json'"));
+        assert!(AUTH_LOGIN_JS.contains("email: emailInput.value"));
+        assert!(AUTH_LOGIN_JS.contains("password: passwordInput.value"));
+    }
+
+    #[test]
+    fn password_login_rejects_external_return_targets() {
+        assert!(AUTH_LOGIN_JS.contains("function safeReturnTo"));
+        assert!(AUTH_LOGIN_JS.contains("candidate.origin !== window.location.origin"));
+        assert!(AUTH_LOGIN_JS.contains("return '/';"));
+        assert!(AUTH_LOGIN_JS.contains("window.location.assign(returnTo)"));
+    }
+}
