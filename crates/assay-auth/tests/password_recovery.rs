@@ -57,6 +57,11 @@ impl RecoveryStore for MemoryRecoveryStore {
         Ok(())
     }
 
+    async fn valid(&self, token_hash: &str, now: f64) -> anyhow::Result<bool> {
+        let state = self.0.lock().unwrap();
+        Ok(state.token_hash.as_deref() == Some(token_hash) && state.expires_at > now)
+    }
+
     async fn complete(
         &self,
         token_hash: &str,
@@ -71,6 +76,40 @@ impl RecoveryStore for MemoryRecoveryStore {
         state.password_hash = Some(password_hash.to_string());
         state.sessions_revoked = true;
         Ok(true)
+    }
+}
+
+#[derive(Clone)]
+struct RejectingStore;
+
+#[async_trait::async_trait]
+impl RecoveryStore for RejectingStore {
+    async fn issue(
+        &self,
+        _email: &str,
+        _token_hash: &str,
+        _created_at: f64,
+        _expires_at: f64,
+        _cooldown_before: f64,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(None)
+    }
+
+    async fn delete(&self, _token_hash: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn valid(&self, _token_hash: &str, _now: f64) -> anyhow::Result<bool> {
+        Ok(false)
+    }
+
+    async fn complete(
+        &self,
+        _token_hash: &str,
+        _now: f64,
+        _password_hash: &str,
+    ) -> anyhow::Result<bool> {
+        panic!("invalid token reached password update")
     }
 }
 
@@ -241,6 +280,24 @@ async fn expired_tokens_cannot_change_the_password() {
     let state = store.0.lock().unwrap();
     assert!(state.password_hash.is_none());
     assert!(!state.sessions_revoked);
+}
+
+#[tokio::test]
+async fn invalid_tokens_are_rejected_before_password_hashing_and_update() {
+    let recovery = PasswordRecovery::new(
+        Arc::new(RejectingStore),
+        Arc::new(MemoryMailer::default()),
+        Url::parse("https://auth.example.com/auth/recovery").unwrap(),
+        Duration::from_secs(900),
+        Duration::from_secs(60),
+    );
+
+    assert!(
+        !recovery
+            .complete("invalid", "replacement password")
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]

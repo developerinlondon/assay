@@ -21,6 +21,8 @@ pub trait RecoveryStore: Send + Sync + 'static {
 
     async fn delete(&self, token_hash: &str) -> anyhow::Result<()>;
 
+    async fn valid(&self, token_hash: &str, now: f64) -> anyhow::Result<bool>;
+
     async fn complete(
         &self,
         token_hash: &str,
@@ -168,10 +170,13 @@ impl PasswordRecovery {
     }
 
     pub async fn complete(&self, token: &str, password: &str) -> anyhow::Result<bool> {
+        let token_hash = token_hash(token);
+        let now = now_secs();
+        if !self.store.valid(&token_hash, now).await? {
+            return Ok(false);
+        }
         let password_hash = PasswordHasher::default().hash(password)?;
-        self.store
-            .complete(&token_hash(token), now_secs(), &password_hash)
-            .await
+        self.store.complete(&token_hash, now, &password_hash).await
     }
 }
 
@@ -353,6 +358,21 @@ impl RecoveryStore for PostgresRecoveryStore {
         Ok(())
     }
 
+    async fn valid(&self, token_hash: &str, now: f64) -> anyhow::Result<bool> {
+        use anyhow::Context;
+        sqlx::query_scalar(
+            "SELECT EXISTS(
+                 SELECT 1 FROM auth.password_recovery_tokens
+                 WHERE token_hash = $1 AND expires_at > $2
+             )",
+        )
+        .bind(token_hash)
+        .bind(now)
+        .fetch_one(&self.pool)
+        .await
+        .context("validate recovery token")
+    }
+
     async fn complete(
         &self,
         token_hash: &str,
@@ -480,6 +500,21 @@ impl RecoveryStore for SqliteRecoveryStore {
             .await
             .context("delete recovery token")?;
         Ok(())
+    }
+
+    async fn valid(&self, token_hash: &str, now: f64) -> anyhow::Result<bool> {
+        use anyhow::Context;
+        sqlx::query_scalar(
+            "SELECT EXISTS(
+                 SELECT 1 FROM auth.password_recovery_tokens
+                 WHERE token_hash = ? AND expires_at > ?
+             )",
+        )
+        .bind(token_hash)
+        .bind(now)
+        .fetch_one(&self.pool)
+        .await
+        .context("validate recovery token")
     }
 
     async fn complete(
