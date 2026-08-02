@@ -59,7 +59,8 @@ pub const MODULE_NAME: &str = "auth";
 ///               and `auth.oidc_upstream_states` with `binding_hash`
 ///               (cookie-bound CSRF binding token hash) — the
 ///               provider-agnostic federation hardening pack.
-pub const MIGRATION_VERSION: i32 = 5;
+/// V6: adds hashed, expiring, single-use password recovery tokens.
+pub const MIGRATION_VERSION: i32 = 6;
 
 /// Postgres DDL for the auth schema, version 1.
 ///
@@ -320,6 +321,17 @@ ALTER TABLE auth.upstream_providers
 
 ALTER TABLE auth.oidc_upstream_states
     ADD COLUMN IF NOT EXISTS binding_hash TEXT NOT NULL DEFAULT '';
+"#;
+
+pub const PG_DDL_V6: &str = r#"
+CREATE TABLE IF NOT EXISTS auth.password_recovery_tokens (
+    token_hash  TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+    created_at  DOUBLE PRECISION NOT NULL,
+    expires_at  DOUBLE PRECISION NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_password_recovery_expires
+    ON auth.password_recovery_tokens (expires_at);
 "#;
 
 /// SQLite DDL for the auth schema, version 1.
@@ -617,6 +629,23 @@ pub const SQLITE_DDL_V5: &[(&str, &str)] = &[
     ),
 ];
 
+pub const SQLITE_DDL_V6: &[(&str, &str)] = &[
+    (
+        "password_recovery_tokens",
+        "CREATE TABLE IF NOT EXISTS auth.password_recovery_tokens (
+            token_hash  TEXT PRIMARY KEY,
+            user_id     TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+            created_at  REAL NOT NULL,
+            expires_at  REAL NOT NULL
+        )",
+    ),
+    (
+        "idx_password_recovery_expires",
+        "CREATE INDEX IF NOT EXISTS auth.idx_auth_password_recovery_expires \
+         ON password_recovery_tokens (expires_at)",
+    ),
+];
+
 /// Postgres migration runner.
 ///
 /// Applies every DDL pack up to and including the current
@@ -627,7 +656,9 @@ pub const SQLITE_DDL_V5: &[(&str, &str)] = &[
 #[cfg(feature = "backend-postgres")]
 pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     use anyhow::Context;
-    for ddl in [PG_DDL_V1, PG_DDL_V2, PG_DDL_V3, PG_DDL_V4, PG_DDL_V5] {
+    for ddl in [
+        PG_DDL_V1, PG_DDL_V2, PG_DDL_V3, PG_DDL_V4, PG_DDL_V5, PG_DDL_V6,
+    ] {
         for stmt in split_pg_statements(ddl) {
             sqlx::query(&stmt)
                 .execute(pool)
@@ -676,6 +707,12 @@ pub async fn migrate_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
             }
             return Err(anyhow::anyhow!("auth sqlite migrate: {label}: {e}"));
         }
+    }
+    for (label, stmt) in SQLITE_DDL_V6 {
+        sqlx::query(stmt)
+            .execute(pool)
+            .await
+            .with_context(|| format!("auth sqlite migrate: {label}"))?;
     }
     sqlx::query("INSERT OR IGNORE INTO engine.migrations (module, version) VALUES (?, ?)")
         .bind(MODULE_NAME)

@@ -128,9 +128,33 @@ body {
   outline: none;
 }
 
+.login-primary-link {
+  text-align: center;
+  text-decoration: none;
+}
+
 .login-submit:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.login-link {
+  color: var(--login-accent);
+  margin-top: 0.5rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.login-link:hover,
+.login-link:focus-visible {
+  text-decoration: underline;
+}
+
+.login-copy {
+  color: var(--login-muted);
+  line-height: 1.5;
+  margin: 0 0 1.25rem;
+  text-align: center;
 }
 
 .upstream-login {

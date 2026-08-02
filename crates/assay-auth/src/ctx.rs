@@ -11,6 +11,9 @@ use std::sync::Arc;
 use crate::biscuit::BiscuitConfig;
 use crate::store::{SessionStore, UserStore};
 
+#[cfg(feature = "auth-recovery")]
+use crate::recovery::PasswordRecovery;
+
 #[cfg(feature = "auth-jwt")]
 use crate::external_jwt::ExternalJwtIssuer;
 #[cfg(feature = "auth-jwt")]
@@ -32,6 +35,8 @@ pub struct AuthCtx {
     pub users: Arc<dyn UserStore>,
     /// Session record store — opaque session id + CSRF token + expiry.
     pub sessions: Arc<dyn SessionStore>,
+    #[cfg(feature = "auth-recovery")]
+    pub recovery: Option<PasswordRecovery>,
     /// Biscuit capability-token issuer + verifier. Foundational
     /// (always present): wraps the active root keypair loaded from
     /// `auth.biscuit_root_keys` (or generated on first boot). Used for
@@ -102,6 +107,8 @@ impl AuthCtx {
         Self {
             users,
             sessions,
+            #[cfg(feature = "auth-recovery")]
+            recovery: None,
             biscuit: BiscuitConfig::generate_ephemeral(),
             #[cfg(feature = "auth-jwt")]
             jwt: None,
@@ -116,6 +123,12 @@ impl AuthCtx {
             #[cfg(feature = "auth-oidc-provider")]
             oidc_provider: None,
         }
+    }
+
+    #[cfg(feature = "auth-recovery")]
+    pub fn with_recovery(mut self, recovery: PasswordRecovery) -> Self {
+        self.recovery = Some(recovery);
+        self
     }
 
     /// Replace the JWT configuration. Used by engine boot once the

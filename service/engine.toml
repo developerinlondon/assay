@@ -1,6 +1,7 @@
 [server]
 bind_addr = "0.0.0.0:8080"
 public_url = "https://engine.assay.rs"
+allowed_hosts = ["auth.assay.rs", "engine.assay.rs"]
 
 [backend]
 type = "postgres"
@@ -20,12 +21,27 @@ ttl_seconds = 2592000
 rp_id = "auth.assay.rs"
 rp_name = "Assay"
 
+[auth.recovery]
+enabled = true
+token_ttl_seconds = 900
+request_cooldown_seconds = 60
+
+[auth.recovery.smtp]
+host = "${SMTP_HOST}"
+port = 587
+username = "${SMTP_USERNAME}"
+password = "${SMTP_PASSWORD}"
+from = "Assay <noreply@assay.rs>"
+starttls = true
+
 [auth.oidc_provider]
 enabled = true
-auto_provision = false
+auto_provision = true
 
 [dashboard]
 enabled = true
+operator_enabled = false
+auth_ui_enabled = true
 
 [logging]
 level = "info"

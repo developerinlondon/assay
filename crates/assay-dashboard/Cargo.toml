@@ -1,6 +1,6 @@
 [package]
 name = "assay-dashboard"
-version = "0.4.3"
+version = "0.4.4"
 categories = ["web-programming::http-server"]
 edition = "2024"
 keywords = ["dashboard", "workflow", "auth", "assay"]
@@ -19,3 +19,7 @@ assay-domain = { path = "../assay-domain", version = "0.2" }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }

@@ -108,6 +108,9 @@ pub mod session;
 #[cfg(feature = "auth-password")]
 pub mod password;
 
+#[cfg(feature = "auth-recovery")]
+pub mod recovery;
+
 #[cfg(feature = "auth-jwt")]
 pub mod jwt;
 

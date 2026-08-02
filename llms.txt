@@ -43,6 +43,7 @@
 - [assay.traefik](https://assay.rs/modules/traefik.html): Traefik routers, services, middlewares
 
 ## Security & Identity
+- [assay-engine auth](https://assay.rs/auth-overview.html): Embedded IdP with password and SMTP recovery, passkeys, OIDC provider and federation, sessions, JWT/JWKS, Biscuit capabilities, and Zanzibar ReBAC on PostgreSQL or SQLite
 - [assay.hashicorp.vault](https://assay.rs/modules/vault.html): HashiCorp Vault KV, transit, PKI, auth
 - [assay.openbao](https://assay.rs/modules/openbao.html): OpenBao (Vault API-compatible)
 - [assay.certmanager](https://assay.rs/modules/certmanager.html): cert-manager certificates, issuers, ACME
