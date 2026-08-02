@@ -1,6 +1,6 @@
 [package]
 name = "assay-engine"
-version = "0.5.9"
+version = "0.5.10"
 categories = ["asynchronous", "database", "web-programming::http-server"]
 edition = "2024"
 keywords = ["workflow", "auth", "oidc", "zanzibar", "postgres"]
@@ -28,6 +28,7 @@ default = [
   "auth-jwt",
   "auth-session",
   "auth-password",
+  "auth-recovery",
   "auth-passkey",
   "auth-oidc",
   "auth-oidc-provider",
@@ -46,6 +47,7 @@ default = [
 auth-jwt = ["assay-auth/auth-jwt"]
 auth-session = ["assay-auth/auth-session"]
 auth-password = ["assay-auth/auth-password"]
+auth-recovery = ["auth-password", "assay-auth/auth-recovery"]
 auth-passkey = ["assay-auth/auth-passkey"]
 auth-oidc = ["assay-auth/auth-oidc"]
 auth-oidc-provider = ["assay-auth/auth-oidc-provider"]

@@ -52,8 +52,8 @@ pub use assay_domain as core;
 pub use assay_workflow as workflow;
 
 pub use config::{
-    AuthConfig, AuthOidcProviderConfig, AuthPasskeyConfig, AuthSessionConfig, BackendConfig,
-    DashboardConfig, EngineConfig, ServerConfig,
+    AuthConfig, AuthOidcProviderConfig, AuthPasskeyConfig, AuthRecoveryConfig, AuthSessionConfig,
+    AuthSmtpConfig, BackendConfig, DashboardConfig, EngineConfig, ServerConfig,
 };
 pub use state::{AdminApiKeys, EngineState};
 
@@ -211,6 +211,21 @@ async fn build_auth_ctx_pg(
     let sessions = PostgresSessionStore::new(pool.clone()).into_dyn();
     let mut ctx = assay_auth::AuthCtx::new(users.clone(), sessions);
 
+    #[cfg(feature = "auth-recovery")]
+    if let Some(options) = recovery_options(cfg)? {
+        let store = Arc::new(assay_auth::recovery::PostgresRecoveryStore::new(
+            pool.clone(),
+        ));
+        let mailer = Arc::new(assay_auth::recovery::SmtpRecoveryMailer::new(options.smtp)?);
+        ctx = ctx.with_recovery(assay_auth::recovery::PasswordRecovery::new(
+            store,
+            mailer,
+            options.recovery_url,
+            options.token_ttl,
+            options.request_cooldown,
+        ));
+    }
+
     let biscuit = assay_auth::biscuit::load_or_init_postgres(pool)
         .await
         .map_err(|e| anyhow::anyhow!("biscuit root key (pg): {e}"))?;
@@ -311,6 +326,19 @@ async fn build_auth_ctx_sqlite(
     let users = SqliteUserStore::new(pool.clone()).into_dyn();
     let sessions = SqliteSessionStore::new(pool.clone()).into_dyn();
     let mut ctx = assay_auth::AuthCtx::new(users.clone(), sessions);
+
+    #[cfg(feature = "auth-recovery")]
+    if let Some(options) = recovery_options(cfg)? {
+        let store = Arc::new(assay_auth::recovery::SqliteRecoveryStore::new(pool.clone()));
+        let mailer = Arc::new(assay_auth::recovery::SmtpRecoveryMailer::new(options.smtp)?);
+        ctx = ctx.with_recovery(assay_auth::recovery::PasswordRecovery::new(
+            store,
+            mailer,
+            options.recovery_url,
+            options.token_ttl,
+            options.request_cooldown,
+        ));
+    }
 
     let biscuit = assay_auth::biscuit::load_or_init_sqlite(pool)
         .await
@@ -470,6 +498,51 @@ fn parse_auth_public_url(cfg: &EngineConfig) -> anyhow::Result<url::Url> {
     url::Url::parse(public_url).map_err(|e| anyhow::anyhow!("auth.public_url {public_url:?}: {e}"))
 }
 
+struct RecoveryOptions {
+    smtp: assay_auth::recovery::SmtpRecoverySettings,
+    recovery_url: url::Url,
+    token_ttl: std::time::Duration,
+    request_cooldown: std::time::Duration,
+}
+
+impl std::fmt::Debug for RecoveryOptions {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RecoveryOptions")
+            .field("recovery_url", &self.recovery_url)
+            .field("token_ttl", &self.token_ttl)
+            .field("request_cooldown", &self.request_cooldown)
+            .finish_non_exhaustive()
+    }
+}
+
+fn recovery_options(cfg: &EngineConfig) -> anyhow::Result<Option<RecoveryOptions>> {
+    if !cfg.auth.recovery.enabled {
+        return Ok(None);
+    }
+    let smtp = cfg.auth.recovery.smtp.as_ref().ok_or_else(|| {
+        anyhow::anyhow!("auth.recovery.smtp is required when recovery is enabled")
+    })?;
+    let recovery_url = parse_auth_public_url(cfg)?
+        .join("auth/recovery")
+        .map_err(|error| anyhow::anyhow!("build auth recovery URL: {error}"))?;
+    Ok(Some(RecoveryOptions {
+        smtp: assay_auth::recovery::SmtpRecoverySettings {
+            host: smtp.host.clone(),
+            port: smtp.port,
+            username: smtp.username.clone(),
+            password: smtp.password.clone(),
+            from: smtp.from.clone(),
+            starttls: smtp.starttls,
+        },
+        recovery_url,
+        token_ttl: std::time::Duration::from_secs(cfg.auth.recovery.token_ttl_seconds),
+        request_cooldown: std::time::Duration::from_secs(
+            cfg.auth.recovery.request_cooldown_seconds,
+        ),
+    }))
+}
+
 /// Base URL the OIDC provider exposes its endpoints at — same as
 /// [`oidc_issuer`] (which already accounts for the `/auth` mount
 /// prefix), parsed as a `url::Url`. Passed into `OidcProviderConfig`
@@ -588,6 +661,45 @@ data_dir = ":memory:"
 
         let error = parse_auth_public_url(&cfg).unwrap_err();
         assert!(error.to_string().contains("auth.public_url"));
+    }
+
+    #[test]
+    fn enabled_password_recovery_requires_smtp_configuration() {
+        let mut cfg = config(
+            "https://engine.example.com",
+            Some("https://auth.example.com"),
+        );
+        cfg.auth.recovery.enabled = true;
+
+        let error = recovery_options(&cfg).unwrap_err();
+        assert!(error.to_string().contains("auth.recovery.smtp"));
+    }
+
+    #[test]
+    fn password_recovery_uses_auth_origin_and_configured_limits() {
+        let mut cfg = config(
+            "https://engine.example.com",
+            Some("https://auth.example.com"),
+        );
+        cfg.auth.recovery.enabled = true;
+        cfg.auth.recovery.token_ttl_seconds = 1200;
+        cfg.auth.recovery.request_cooldown_seconds = 90;
+        cfg.auth.recovery.smtp = Some(crate::config::AuthSmtpConfig {
+            host: "smtp.example.com".to_string(),
+            port: 587,
+            username: "mailer".to_string(),
+            password: "secret".to_string(),
+            from: "Example Auth <noreply@example.com>".to_string(),
+            starttls: true,
+        });
+
+        let options = recovery_options(&cfg).unwrap().unwrap();
+        assert_eq!(
+            options.recovery_url.as_str(),
+            "https://auth.example.com/auth/recovery"
+        );
+        assert_eq!(options.token_ttl, std::time::Duration::from_secs(1200));
+        assert_eq!(options.request_cooldown, std::time::Duration::from_secs(90));
     }
 }
 

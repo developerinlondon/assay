@@ -235,15 +235,28 @@ url = "${DATABASE_URL}"
 [auth]
 public_url = "${AUTH_PUBLIC_URL:-https://auth.example.com}"
 admin_api_keys = ["${ADMIN_API_KEY}"]
+
+[auth.recovery]
+enabled = true
+
+[auth.recovery.smtp]
+host = "${SMTP_HOST}"
+port = 587
+username = "${SMTP_USERNAME}"
+password = "${SMTP_PASSWORD}"
+from = "Example Auth <noreply@example.com>"
+starttls = true
 TOML
 
 # Inject the secrets via the environment — never bake them into the file.
 export DATABASE_URL='postgres://postgres:postgres@localhost/assay'
 export ADMIN_API_KEY='sk_admin_replace_me'
+# Also inject SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD when recovery is enabled.
 assay-engine serve --config engine.toml
 #   /auth/console                          → admin SPA
 #   /.well-known/openid-configuration      → OIDC discovery (Hydra-equivalent)
-#   /auth/login, /auth/passkey/*           → user-facing auth flows
+#   /auth/login, /auth/recovery             → password auth and recovery pages
+#   /auth/passkey/*                         → passkey flows
 #   /auth/admin/auth/*                     → admin HTTP API (api-key gated)
 ```
 

@@ -61,6 +61,8 @@ where
     let r = Router::new();
     #[cfg(feature = "auth-session")]
     let r = r.merge(crate::session::router::<S>());
+    #[cfg(feature = "auth-recovery")]
+    let r = r.merge(crate::recovery::router::<S>());
     // Cross-cutting admin endpoints (users / sessions / zanzibar /
     // biscuit / jwks / audit). Always merged when the auth router is
     // built — the handlers themselves degrade gracefully (503) when
