@@ -152,6 +152,8 @@ pub struct AuthConfig {
     #[serde(default)]
     pub passkey: AuthPasskeyConfig,
     #[serde(default)]
+    pub recovery: AuthRecoveryConfig,
+    #[serde(default)]
     pub oidc_provider: AuthOidcProviderConfig,
     /// Admin API keys — comma-separated bearer tokens that grant access
     /// to `/admin/*` routes. Operators rotate these via the engine
@@ -231,6 +233,60 @@ pub struct AuthPasskeyConfig {
     pub rp_id: Option<String>,
     /// Human-readable label browsers show. Defaults to `"Assay"`.
     pub rp_name: Option<String>,
+}
+
+/// Self-service password-recovery deployment knobs.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct AuthRecoveryConfig {
+    /// Mount the public recovery endpoints and send reset emails.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Lifetime of a single-use recovery token. Defaults to 15 minutes.
+    #[serde(default = "default_recovery_token_ttl_seconds")]
+    pub token_ttl_seconds: u64,
+    /// Minimum time between recovery emails for one account.
+    #[serde(default = "default_recovery_cooldown_seconds")]
+    pub request_cooldown_seconds: u64,
+    /// SMTP delivery settings. Required when recovery is enabled.
+    pub smtp: Option<AuthSmtpConfig>,
+}
+
+impl Default for AuthRecoveryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            token_ttl_seconds: default_recovery_token_ttl_seconds(),
+            request_cooldown_seconds: default_recovery_cooldown_seconds(),
+            smtp: None,
+        }
+    }
+}
+
+fn default_recovery_token_ttl_seconds() -> u64 {
+    15 * 60
+}
+
+fn default_recovery_cooldown_seconds() -> u64 {
+    60
+}
+
+/// SMTP settings used only by password recovery.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct AuthSmtpConfig {
+    pub host: String,
+    #[serde(default = "default_smtp_port")]
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub from: String,
+    #[serde(default = "default_true")]
+    pub starttls: bool,
+}
+
+fn default_smtp_port() -> u16 {
+    587
 }
 
 /// OIDC provider knobs.
@@ -521,5 +577,64 @@ data_dir = "/tmp/assay-engine-test-data-static"
             }
             _ => panic!("expected sqlite backend"),
         }
+    }
+
+    #[test]
+    fn password_recovery_is_disabled_by_default() {
+        let cfg: EngineConfig = toml::from_str(
+            r#"
+[server]
+bind_addr = "127.0.0.1:3000"
+
+[backend]
+type = "sqlite"
+data_dir = ":memory:"
+"#,
+        )
+        .unwrap();
+
+        assert!(!cfg.auth.recovery.enabled);
+        assert_eq!(cfg.auth.recovery.token_ttl_seconds, 900);
+        assert_eq!(cfg.auth.recovery.request_cooldown_seconds, 60);
+        assert!(cfg.auth.recovery.smtp.is_none());
+    }
+
+    #[test]
+    fn password_recovery_smtp_configuration_deserializes() {
+        let cfg: EngineConfig = toml::from_str(
+            r#"
+[server]
+bind_addr = "127.0.0.1:3000"
+
+[backend]
+type = "sqlite"
+data_dir = ":memory:"
+
+[auth.recovery]
+enabled = true
+token_ttl_seconds = 1200
+request_cooldown_seconds = 90
+
+[auth.recovery.smtp]
+host = "smtp.example.com"
+port = 587
+username = "mailer"
+password = "secret"
+from = "Example Auth <noreply@example.com>"
+starttls = true
+"#,
+        )
+        .unwrap();
+
+        assert!(cfg.auth.recovery.enabled);
+        assert_eq!(cfg.auth.recovery.token_ttl_seconds, 1200);
+        assert_eq!(cfg.auth.recovery.request_cooldown_seconds, 90);
+        let smtp = cfg.auth.recovery.smtp.unwrap();
+        assert_eq!(smtp.host, "smtp.example.com");
+        assert_eq!(smtp.port, 587);
+        assert_eq!(smtp.username, "mailer");
+        assert_eq!(smtp.password, "secret");
+        assert_eq!(smtp.from, "Example Auth <noreply@example.com>");
+        assert!(smtp.starttls);
     }
 }

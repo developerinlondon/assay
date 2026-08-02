@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" data-default-theme="__BRAND_DEFAULT_THEME__">
+<head>
+  <script>
+    (function () {
+      var theme = 'dark';
+      try {
+        var saved = localStorage.getItem('assay-theme');
+        var def = document.documentElement.dataset.defaultTheme || 'auto';
+        theme = saved || ((def === 'dark' || def === 'light') ? def : null)
+          || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      } catch (_error) {
+        theme = 'dark';
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset password · __BRAND_NAME__</title>
+  __FAVICON_LINK__
+  <link rel="stylesheet" href="/auth/login.css?v=__ASSETV__">
+  __EXTRA_CSS_LINK__
+</head>
+<body>
+  <main class="login">
+    <section class="login-card" aria-labelledby="recovery-title">
+      <header class="login-brand">
+        <span class="login-mark" aria-hidden="true">__BRAND_MARK__</span>
+        <h1 class="login-title" id="recovery-title">Reset your password</h1>
+      </header>
+
+      <form id="recovery-request" class="password-login">
+        <p class="login-copy">Enter your verified email address. If an account exists, we will send a reset link.</p>
+        <label class="login-label" for="recovery-email">Email</label>
+        <input class="login-input" id="recovery-email" name="email" type="email" autocomplete="email" required>
+        <p class="login-status" id="request-status" aria-live="polite"></p>
+        <button class="login-submit" id="request-submit" type="submit">Send reset link</button>
+        <a class="login-link" href="/auth/login">Back to sign in</a>
+      </form>
+
+      <form id="recovery-complete" class="password-login" hidden>
+        <p class="login-copy">Choose a new password. Completing this reset signs out existing sessions.</p>
+        <label class="login-label" for="new-password">New password</label>
+        <input class="login-input" id="new-password" name="password" type="password" autocomplete="new-password" maxlength="1024" required>
+        <label class="login-label" for="confirm-password">Confirm new password</label>
+        <input class="login-input" id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" maxlength="1024" required>
+        <p class="login-status login-status-error" id="complete-status" aria-live="polite"></p>
+        <button class="login-submit" id="complete-submit" type="submit">Reset password</button>
+        <a class="login-link" href="/auth/login">Back to sign in</a>
+      </form>
+
+      <noscript><p class="login-status login-status-error">JavaScript is required to reset a password.</p></noscript>
+    </section>
+  </main>
+  <script src="/auth/recovery.js?v=__ASSETV__"></script>
+</body>
+</html>

@@ -2,6 +2,30 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.10 — 2026-08-02
+
+### Added
+
+- **Verified users can recover a forgotten password by email.** Deployments can enable an SMTP
+  recovery flow with a 15-minute, single-use token. Only the SHA-256 token digest is stored, the raw
+  token remains in the browser URL fragment, successful completion revokes existing sessions, and
+  public request responses do not expose account existence or SMTP latency.
+- The embedded login page links to a dedicated recovery page that requests an email or accepts a
+  reset token without placing that token in request URLs or browser history.
+
+## assay-auth 0.6.2 — 2026-08-02
+
+### Added
+
+- Added backend-neutral password-recovery contracts, SMTP delivery, and native PostgreSQL and SQLite
+  stores for hashed, expiring, single-use recovery tokens.
+
+## assay-dashboard 0.4.4 — 2026-08-02
+
+### Added
+
+- Added the public password-recovery request and completion interface to the embedded auth assets.
+
 ## assay-engine 0.5.9 — 2026-08-01
 
 ### Fixed

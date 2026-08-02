@@ -35,6 +35,7 @@
       <tbody>
         <tr><td><code>session</code></td><td>Ory Kratos (sessions)</td><td>Cookie + CSRF + 30-day TTL session manager</td></tr>
         <tr><td><code>password</code></td><td>Ory Kratos (passwords)</td><td>Argon2id PHC strings, peppered hashing</td></tr>
+        <tr><td><code>recovery</code></td><td>Ory Kratos (recovery)</td><td>SMTP reset links with hashed, expiring, single-use tokens</td></tr>
         <tr><td><code>jwt</code></td><td>Hydra (JWT)</td><td>RS256 issue/verify with rotated JWKS (active + history)</td></tr>
         <tr><td><code>oidc</code> (client)</td><td>Kratos (federation)</td><td>Log in via Google / Apple / GitHub / any OIDC IdP</td></tr>
         <tr><td><code>oidc_provider</code></td><td><strong>Ory Hydra</strong></td><td>Full <code>/authorize</code>, <code>/token</code>, <code>/userinfo</code>, RFC 7009 revoke, RFC 7662 introspect, back-channel logout</td></tr>
@@ -91,6 +92,7 @@
         <tr><td><code>auth.oidc_sessions</code></td><td>SSO session registry (one per id_token)</td></tr>
         <tr><td><code>auth.oidc_consents</code></td><td>Per-(user, client) consent grants</td></tr>
         <tr><td><code>auth.oidc_upstream_states</code></td><td>Short-lived federation state</td></tr>
+        <tr><td><code>auth.password_recovery_tokens</code></td><td>SHA-256 token digests and expiry; raw reset tokens are never stored</td></tr>
       </tbody>
     </table>
 
@@ -115,16 +117,27 @@ admin_api_keys = ["sk_admin_replace_me"]
 rp_id = "auth.example.com"
 rp_name = "Acme Identity"
 
+[auth.recovery]
+enabled = true
+
+[auth.recovery.smtp]
+host = "${SMTP_HOST}"
+username = "${SMTP_USERNAME}"
+password = "${SMTP_PASSWORD}"
+from = "Acme Identity <noreply@example.com>"
+
 [auth.oidc_provider]
 enabled = true</code></pre>
 
     <pre><code>assay-engine serve --config engine.toml
 #   /auth/console                          → admin SPA
 #   /.well-known/openid-configuration      → OIDC discovery (Hydra-equivalent)
-#   /auth/login, /auth/passkey/*           → user-facing auth flows
+#   /auth/login, /auth/recovery             → password auth and recovery pages
+#   /auth/passkey/*                         → passkey flows
 #   /auth/admin/auth/*                     → admin HTTP API (api-key gated)</code></pre>
 
-    <p>The browser login page always offers local email/password authentication. Enabled OIDC
+    <p>The browser login page always offers local email/password authentication and links to an
+      optional SMTP-backed recovery flow. Enabled OIDC
       upstream providers appear beneath it as optional alternatives, so a fresh installation does
       not need an external identity provider before its first user can sign in.</p>
 

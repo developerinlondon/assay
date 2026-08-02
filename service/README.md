@@ -12,6 +12,7 @@ flowchart LR
     M --> W[Workflow API and dashboard]
     M --> V[Vault API]
     M --> I[Auth and OIDC provider]
+    I --> S[SMTP relay]
 ```
 
 `engine.assay.rs` is the canonical engine, workflow, vault, and dashboard URL.
@@ -24,6 +25,9 @@ the same Machine; `auth.public_url` keeps identity metadata stable without a sec
 - Image: exact released `ghcr.io/developerinlondon/assay-engine:<version>` tag.
 - Database: external PostgreSQL via the `DATABASE_URL` Fly secret; no Fly volume or local state.
 - Operator credential: `ADMIN_API_KEY` Fly secret; never committed or passed as a command argument.
+- Password recovery: `SMTP_HOST`, `SMTP_USERNAME`, and `SMTP_PASSWORD` Fly secrets connect the auth
+  surface to the configured STARTTLS relay. The public response does not wait for delivery and does
+  not reveal whether an address exists.
 - Capacity: one shared CPU and 512 MB RAM. The Machine stops while idle and starts on the next
   request; PostgreSQL remains available independently.
 - Readiness: `GET /api/v1/engine/core/health` must return 2xx before Fly routes traffic.

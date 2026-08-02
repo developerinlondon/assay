@@ -16,7 +16,8 @@ use axum::routing::get;
 use crate::assets::{
     AUTH_API_JS, AUTH_APP_JS, AUTH_AUDIT_JS, AUTH_ICONS_SVG, AUTH_INDEX_HTML, AUTH_KEYS_JS,
     AUTH_LOGIN_CSS, AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_OIDC_CLIENTS_JS, AUTH_OIDC_UPSTREAM_JS,
-    AUTH_SESSIONS_JS, AUTH_STYLE_CSS, AUTH_USERS_JS, AUTH_ZANZIBAR_JS, FAVICON_SVG,
+    AUTH_RECOVERY_HTML, AUTH_RECOVERY_JS, AUTH_SESSIONS_JS, AUTH_STYLE_CSS, AUTH_USERS_JS,
+    AUTH_ZANZIBAR_JS, FAVICON_SVG,
 };
 
 /// Build the auth-console asset router. Stateless `Router<()>` ready
@@ -47,6 +48,9 @@ pub fn router() -> Router<()> {
         .route("/auth/login/", get(login_index))
         .route("/auth/login.js", get(login_js))
         .route("/auth/login.css", get(login_css))
+        .route("/auth/recovery", get(recovery_index))
+        .route("/auth/recovery/", get(recovery_index))
+        .route("/auth/recovery.js", get(recovery_js))
         .route("/auth/icons.svg", get(icons_svg))
 }
 
@@ -155,9 +159,29 @@ async fn login_css() -> impl IntoResponse {
     asset("text/css", AUTH_LOGIN_CSS)
 }
 
+async fn recovery_index() -> impl IntoResponse {
+    let body = crate::whitelabel::render_index(
+        AUTH_RECOVERY_HTML,
+        env!("CARGO_PKG_VERSION"),
+        &crate::whitelabel::WHITELABEL,
+    );
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, NO_CACHE),
+        ],
+        body,
+    )
+}
+
+async fn recovery_js() -> impl IntoResponse {
+    asset("application/javascript", AUTH_RECOVERY_JS)
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::assets::{AUTH_LOGIN_HTML, AUTH_LOGIN_JS};
+    use crate::assets::{AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_RECOVERY_HTML, AUTH_RECOVERY_JS};
 
     #[test]
     fn login_page_keeps_first_party_password_auth_available() {
@@ -182,5 +206,37 @@ mod tests {
         assert!(AUTH_LOGIN_JS.contains("candidate.origin !== window.location.origin"));
         assert!(AUTH_LOGIN_JS.contains("return '/';"));
         assert!(AUTH_LOGIN_JS.contains("window.location.assign(returnTo)"));
+    }
+
+    #[test]
+    fn login_page_links_to_password_recovery() {
+        assert!(AUTH_LOGIN_HTML.contains("href=\"/auth/recovery\""));
+    }
+
+    #[test]
+    fn recovery_page_supports_request_and_completion_forms() {
+        assert!(AUTH_RECOVERY_HTML.contains("<form id=\"recovery-request\""));
+        assert!(AUTH_RECOVERY_HTML.contains("<form id=\"recovery-complete\""));
+        assert!(AUTH_RECOVERY_HTML.contains("autocomplete=\"email\""));
+        assert!(AUTH_RECOVERY_HTML.contains("autocomplete=\"new-password\""));
+        assert!(AUTH_RECOVERY_HTML.contains("aria-live=\"polite\""));
+    }
+
+    #[test]
+    fn recovery_controller_removes_fragment_before_using_token() {
+        let read_fragment = AUTH_RECOVERY_JS
+            .find("window.location.hash.slice(1)")
+            .expect("controller reads fragment");
+        let clear_fragment = AUTH_RECOVERY_JS
+            .find("window.history.replaceState")
+            .expect("controller clears fragment");
+        let complete_request = AUTH_RECOVERY_JS
+            .find("fetch('/api/v1/engine/auth/password/recovery/complete'")
+            .expect("controller completes recovery");
+
+        assert!(read_fragment < clear_fragment);
+        assert!(clear_fragment < complete_request);
+        assert!(AUTH_RECOVERY_JS.contains("fetch('/api/v1/engine/auth/password/recovery/request'"));
+        assert!(AUTH_RECOVERY_JS.contains("credentials: 'same-origin'"));
     }
 }
