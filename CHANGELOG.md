@@ -12,6 +12,10 @@ All notable changes to Assay are documented here.
   public request responses do not expose account existence or SMTP latency.
 - The embedded login page links to a dedicated recovery page that requests an email or accepts a
   reset token without placing that token in request URLs or browser history.
+- Public deployments can independently mount browser authentication assets and operator consoles,
+  allowlist accepted hostnames, and keep health checks reachable for infrastructure probes. The
+  first-party service uses this boundary to show a clean auth landing page while withholding every
+  operator console and rejecting ordinary requests to its Fly hostname.
 
 ## assay-auth 0.6.2 — 2026-08-02
 
@@ -25,6 +29,8 @@ All notable changes to Assay are documented here.
 ### Added
 
 - Added the public password-recovery request and completion interface to the embedded auth assets.
+- Split public sign-in/recovery assets from operator auth-console assets and added a minimal public
+  Assay Auth landing page.
 
 ## assay-engine 0.5.9 — 2026-08-01
 

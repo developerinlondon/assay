@@ -128,6 +128,11 @@ body {
   outline: none;
 }
 
+.login-primary-link {
+  text-align: center;
+  text-decoration: none;
+}
+
 .login-submit:disabled {
   cursor: wait;
   opacity: 0.65;

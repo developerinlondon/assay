@@ -15,9 +15,9 @@ use axum::routing::get;
 
 use crate::assets::{
     AUTH_API_JS, AUTH_APP_JS, AUTH_AUDIT_JS, AUTH_ICONS_SVG, AUTH_INDEX_HTML, AUTH_KEYS_JS,
-    AUTH_LOGIN_CSS, AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_OIDC_CLIENTS_JS, AUTH_OIDC_UPSTREAM_JS,
-    AUTH_RECOVERY_HTML, AUTH_RECOVERY_JS, AUTH_SESSIONS_JS, AUTH_STYLE_CSS, AUTH_USERS_JS,
-    AUTH_ZANZIBAR_JS, FAVICON_SVG,
+    AUTH_LANDING_HTML, AUTH_LOGIN_CSS, AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_OIDC_CLIENTS_JS,
+    AUTH_OIDC_UPSTREAM_JS, AUTH_RECOVERY_HTML, AUTH_RECOVERY_JS, AUTH_SESSIONS_JS, AUTH_STYLE_CSS,
+    AUTH_USERS_JS, AUTH_ZANZIBAR_JS, FAVICON_SVG,
 };
 
 /// Build the auth-console asset router. Stateless `Router<()>` ready
@@ -27,6 +27,12 @@ use crate::assets::{
 /// invalidates client cache without manual busting (matches the
 /// workflow dashboard's `router::NO_CACHE`).
 pub fn router() -> Router<()> {
+    console_router().merge(public_router())
+}
+
+/// Operator-only auth console assets. Public deployments can omit this
+/// router while retaining browser sign-in and recovery.
+pub fn console_router() -> Router<()> {
     Router::new()
         .route("/auth/console", get(index))
         .route("/auth/console/", get(index))
@@ -40,10 +46,13 @@ pub fn router() -> Router<()> {
         .route("/auth/components/zanzibar.js", get(zanzibar_js))
         .route("/auth/components/keys.js", get(keys_js))
         .route("/auth/components/audit.js", get(audit_js))
-        .route("/auth/favicon.svg", get(favicon))
-        // Login landing — target of assay_auth's `return_to_for(...)`
-        // redirect for unauthenticated /authorize. Browser-facing by
-        // design.
+}
+
+/// Browser-facing authentication assets. This excludes every operator
+/// console route and is safe to mount on a public auth origin.
+pub fn public_router() -> Router<()> {
+    Router::new()
+        .route("/auth/landing", get(landing_index))
         .route("/auth/login", get(login_index))
         .route("/auth/login/", get(login_index))
         .route("/auth/login.js", get(login_js))
@@ -52,6 +61,7 @@ pub fn router() -> Router<()> {
         .route("/auth/recovery/", get(recovery_index))
         .route("/auth/recovery.js", get(recovery_js))
         .route("/auth/icons.svg", get(icons_svg))
+        .route("/auth/favicon.svg", get(favicon))
 }
 
 const NO_CACHE: &str = "no-cache, no-store, must-revalidate";
@@ -129,6 +139,22 @@ async fn icons_svg() -> impl IntoResponse {
     asset("image/svg+xml", AUTH_ICONS_SVG)
 }
 
+async fn landing_index() -> impl IntoResponse {
+    let body = crate::whitelabel::render_index(
+        AUTH_LANDING_HTML,
+        env!("CARGO_PKG_VERSION"),
+        &crate::whitelabel::WHITELABEL,
+    );
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, NO_CACHE),
+        ],
+        body,
+    )
+}
+
 async fn login_index() -> impl IntoResponse {
     // The login template carries its own literal title token
     // (`Sign in · __BRAND_NAME__`), so we don't need the brittle
@@ -181,7 +207,41 @@ async fn recovery_js() -> impl IntoResponse {
 
 #[cfg(test)]
 mod tests {
-    use crate::assets::{AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_RECOVERY_HTML, AUTH_RECOVERY_JS};
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    use crate::assets::{
+        AUTH_LANDING_HTML, AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_RECOVERY_HTML, AUTH_RECOVERY_JS,
+    };
+
+    use super::public_router;
+
+    #[test]
+    fn public_landing_exposes_only_account_entry_points() {
+        assert!(AUTH_LANDING_HTML.contains("Assay Auth"));
+        assert!(AUTH_LANDING_HTML.contains("href=\"/auth/login\""));
+        assert!(AUTH_LANDING_HTML.contains("href=\"/auth/recovery\""));
+        assert!(!AUTH_LANDING_HTML.contains("/workflow/"));
+        assert!(!AUTH_LANDING_HTML.contains("admin_api_keys"));
+    }
+
+    #[tokio::test]
+    async fn public_router_serves_landing_but_not_the_operator_console() {
+        let landing = public_router()
+            .oneshot(Request::get("/auth/landing").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(landing.status(), StatusCode::OK);
+        let body = to_bytes(landing.into_body(), 64 * 1024).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("Secure sign-in"));
+
+        let console = public_router()
+            .oneshot(Request::get("/auth/console").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(console.status(), StatusCode::NOT_FOUND);
+    }
 
     #[test]
     fn login_page_keeps_first_party_password_auth_available() {

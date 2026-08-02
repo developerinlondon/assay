@@ -59,6 +59,21 @@ pub struct ServerConfig {
     /// with the public HTTPS URL.
     #[serde(default = "default_public_url")]
     pub public_url: String,
+    /// Host header values accepted by the public server. Empty keeps the
+    /// embedded/local-development behavior and accepts every host. Health
+    /// checks remain reachable when this allowlist is populated.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            bind_addr: default_bind_addr(),
+            public_url: default_public_url(),
+            allowed_hosts: Vec::new(),
+        }
+    }
 }
 
 fn default_bind_addr() -> String {
@@ -320,6 +335,12 @@ pub struct AuthOidcProviderConfig {
 pub struct DashboardConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Operator consoles (`/workflow`, `/engine`, `/vault`, and
+    /// `/auth/console`). Defaults to the legacy `enabled` value.
+    pub operator_enabled: Option<bool>,
+    /// Public browser authentication UI (`/auth/login`, recovery, and the
+    /// auth landing page). Defaults to the legacy `enabled` value.
+    pub auth_ui_enabled: Option<bool>,
 }
 
 impl Default for DashboardConfig {
@@ -329,7 +350,21 @@ impl Default for DashboardConfig {
         // derived default is `false`. We want `enabled: true` here so
         // a fresh engine.toml without a [dashboard] section still
         // mounts the SPAs out of the box.
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            operator_enabled: None,
+            auth_ui_enabled: None,
+        }
+    }
+}
+
+impl DashboardConfig {
+    pub fn operator_enabled(&self) -> bool {
+        self.operator_enabled.unwrap_or(self.enabled)
+    }
+
+    pub fn auth_ui_enabled(&self) -> bool {
+        self.auth_ui_enabled.unwrap_or(self.enabled)
     }
 }
 
@@ -636,5 +671,41 @@ starttls = true
         assert_eq!(smtp.password, "secret");
         assert_eq!(smtp.from, "Example Auth <noreply@example.com>");
         assert!(smtp.starttls);
+    }
+
+    #[test]
+    fn flagship_host_and_dashboard_boundaries_deserialize() {
+        let cfg: EngineConfig = toml::from_str(
+            r#"
+[server]
+bind_addr = "127.0.0.1:3000"
+allowed_hosts = ["auth.assay.rs", "engine.assay.rs"]
+
+[backend]
+type = "sqlite"
+data_dir = ":memory:"
+
+[dashboard]
+enabled = true
+operator_enabled = false
+auth_ui_enabled = true
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.server.allowed_hosts,
+            ["auth.assay.rs", "engine.assay.rs"]
+        );
+        assert!(!cfg.dashboard.operator_enabled());
+        assert!(cfg.dashboard.auth_ui_enabled());
+    }
+
+    #[test]
+    fn dashboard_surface_flags_preserve_the_legacy_enabled_default() {
+        let dashboard = DashboardConfig::default();
+        assert!(dashboard.operator_enabled());
+        assert!(dashboard.auth_ui_enabled());
+        assert!(ServerConfig::default().allowed_hosts.is_empty());
     }
 }

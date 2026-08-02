@@ -65,6 +65,7 @@ pub const AUTH_AUDIT_JS: &str = include_str!("../assets/auth/components/audit.js
 // so `/auth/login` sits alongside the admin console under the same
 // `/auth/*` namespace as the OIDC spec endpoints.
 pub const AUTH_LOGIN_HTML: &str = include_str!("../assets/auth/login.html");
+pub const AUTH_LANDING_HTML: &str = include_str!("../assets/auth/landing.html");
 pub const AUTH_LOGIN_CSS: &str = include_str!("../assets/auth/login.css");
 pub const AUTH_LOGIN_JS: &str = include_str!("../assets/auth/login.js");
 pub const AUTH_RECOVERY_HTML: &str = include_str!("../assets/auth/recovery.html");

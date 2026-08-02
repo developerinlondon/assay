@@ -21,7 +21,8 @@
 //! own auth, verified inside the handler.
 
 use axum::Router;
-use axum::response::Redirect;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use std::sync::Arc;
 use tracing::info;
@@ -42,6 +43,8 @@ use crate::state::EngineState;
 /// at `/auth/`) and the engine-internal auth router (mounted under
 /// `/api/v1/engine/auth/`) join the composition.
 pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> Router {
+    let operator_ui_enabled = state.engine_config.dashboard.operator_enabled();
+    let auth_ui_enabled = state.engine_config.dashboard.auth_ui_enabled();
     // Workflow router takes a non-optional gate closure (typechecked).
     // We supply admin_bearer_middleware as the gate; the workflow
     // crate applies it to only the authed portion of the router so
@@ -78,7 +81,7 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     // Deployments fronting the engine with sysops/gondor (or any
     // other dashboard) toggle this off at runtime with
     // `[dashboard] enabled = false` in engine.toml.
-    if state.engine_config.dashboard.enabled {
+    if operator_ui_enabled {
         let dashboard_router =
             assay_dashboard::workflow_router().with_state(Arc::clone(&state.dashboard));
         let engine_console_router = assay_dashboard::engine_router();
@@ -114,14 +117,14 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
             assay_auth::engine_auth_router::<EngineState<S>>().with_state(state.clone());
         app = app.nest("/api/v1/engine/auth", engine_auth_router);
 
-        // Auth-console SPA + /auth/login. Runtime-gated on
-        // `[dashboard] enabled = true`. Deployments that turn the
-        // dashboard off also lose /auth/login (so they can't serve
-        // OIDC authorization-code redirects directly to a browser),
-        // which is the price of running engine as a pure API.
-        if state.engine_config.dashboard.enabled {
-            let asset_router = assay_dashboard::auth_router();
-            app = app.merge(asset_router);
+        // Browser sign-in/recovery and the operator auth console are
+        // independently gated so a public issuer does not need to expose
+        // administrative HTML.
+        if auth_ui_enabled {
+            app = app.merge(assay_dashboard::auth_public_router());
+        }
+        if operator_ui_enabled {
+            app = app.merge(assay_dashboard::auth_console_router());
         }
     }
 
@@ -148,7 +151,7 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
 
         // Vault console SPA at /vault, /vault/console, /vault/console/*.
         // Runtime-gated on the dashboard flag, same as the other SPAs.
-        if state.engine_config.dashboard.enabled {
+        if operator_ui_enabled {
             app = app.merge(assay_dashboard::vault_router());
         }
     }
@@ -165,7 +168,78 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         app = app.merge(bw);
     }
 
+    if auth_ui_enabled && !operator_ui_enabled {
+        let auth_url = state
+            .engine_config
+            .auth
+            .public_url
+            .as_deref()
+            .unwrap_or(&state.engine_config.server.public_url);
+        let auth_host = url::Url::parse(auth_url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned));
+        let root = Router::new()
+            .route("/", get(auth_origin_root))
+            .with_state(auth_host);
+        app = app.merge(root);
+    }
+
+    if !state.engine_config.server.allowed_hosts.is_empty() {
+        app = app.layer(axum::middleware::from_fn_with_state(
+            state,
+            allowed_host_middleware::<S>,
+        ));
+    }
+
     app
+}
+
+async fn auth_origin_root(
+    axum::extract::State(auth_host): axum::extract::State<Option<String>>,
+    headers: HeaderMap,
+) -> Response {
+    let request_host = request_host(&headers);
+    if auth_host
+        .as_deref()
+        .zip(request_host.as_deref())
+        .is_some_and(|(expected, actual)| expected.eq_ignore_ascii_case(actual))
+    {
+        return Redirect::temporary("/auth/landing").into_response();
+    }
+    StatusCode::NOT_FOUND.into_response()
+}
+
+async fn allowed_host_middleware<S: WorkflowStore + Clone + 'static>(
+    axum::extract::State(state): axum::extract::State<EngineState<S>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    if request.uri().path() == "/api/v1/engine/core/health"
+        || host_is_allowed(request.headers(), &state.engine_config.server.allowed_hosts)
+    {
+        return next.run(request).await;
+    }
+    StatusCode::MISDIRECTED_REQUEST.into_response()
+}
+
+fn host_is_allowed(headers: &HeaderMap, allowed_hosts: &[String]) -> bool {
+    if allowed_hosts.is_empty() {
+        return true;
+    }
+    let Some(host) = request_host(headers) else {
+        return false;
+    };
+    allowed_hosts
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(&host))
+}
+
+fn request_host(headers: &HeaderMap) -> Option<String> {
+    let value = headers.get(header::HOST)?.to_str().ok()?;
+    value
+        .parse::<axum::http::uri::Authority>()
+        .ok()
+        .map(|authority| authority.host().to_owned())
 }
 
 /// Resource-server middleware applied to every engine module router.
@@ -257,4 +331,51 @@ pub fn build_workflow_ctx_with_bus<S: WorkflowStore + 'static>(
         .with_binary_version(env!("CARGO_PKG_VERSION"))
         .with_event_bus(WorkflowEventBus::new(bus));
     Arc::new(ctx)
+}
+
+#[cfg(test)]
+mod host_boundary_tests {
+    use axum::extract::State;
+    use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+
+    use super::{auth_origin_root, host_is_allowed};
+
+    #[tokio::test]
+    async fn auth_origin_root_enters_public_auth_while_engine_root_stays_hidden() {
+        let mut auth_headers = HeaderMap::new();
+        auth_headers.insert(header::HOST, HeaderValue::from_static("auth.assay.rs"));
+        let auth = auth_origin_root(State(Some("auth.assay.rs".to_string())), auth_headers).await;
+        assert_eq!(auth.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(auth.headers()[header::LOCATION], "/auth/landing");
+
+        let mut engine_headers = HeaderMap::new();
+        engine_headers.insert(header::HOST, HeaderValue::from_static("engine.assay.rs"));
+        let engine =
+            auth_origin_root(State(Some("auth.assay.rs".to_string())), engine_headers).await;
+        assert_eq!(engine.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn configured_hosts_are_case_insensitive_and_port_agnostic() {
+        let allowed = vec!["auth.assay.rs".to_string(), "engine.assay.rs".to_string()];
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("AUTH.ASSAY.RS:443"));
+
+        assert!(host_is_allowed(&headers, &allowed));
+    }
+
+    #[test]
+    fn unknown_and_missing_hosts_are_rejected_when_the_allowlist_is_configured() {
+        let allowed = vec!["auth.assay.rs".to_string(), "engine.assay.rs".to_string()];
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("assay-auth.fly.dev"));
+
+        assert!(!host_is_allowed(&headers, &allowed));
+        assert!(!host_is_allowed(&HeaderMap::new(), &allowed));
+    }
+
+    #[test]
+    fn an_empty_allowlist_preserves_embedded_and_local_callers() {
+        assert!(host_is_allowed(&HeaderMap::new(), &[]));
+    }
 }

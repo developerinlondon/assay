@@ -1,6 +1,7 @@
 [server]
 bind_addr = "0.0.0.0:8080"
 public_url = "https://engine.assay.rs"
+allowed_hosts = ["auth.assay.rs", "engine.assay.rs"]
 
 [backend]
 type = "postgres"
@@ -39,6 +40,8 @@ auto_provision = true
 
 [dashboard]
 enabled = true
+operator_enabled = false
+auth_ui_enabled = true
 
 [logging]
 level = "info"
