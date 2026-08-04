@@ -37,6 +37,10 @@ function M.make(workflow_id, history)
       activity_results[p.activity_seq] = { ok = true, value = p.result }
     elseif event.event_type == "ActivityFailed" and p and p.activity_seq then
       activity_results[p.activity_seq] = { ok = false, err = p.error }
+    elseif event.event_type == "ActivityRetryRequested" and p and p.activity_seq then
+      for seq in pairs(activity_results) do
+        if seq >= p.activity_seq then activity_results[seq] = nil end
+      end
     elseif event.event_type == "TimerFired" and p and p.timer_seq then
       fired_timers[p.timer_seq] = true
       timer_fired_seqs[p.timer_seq] = event.seq

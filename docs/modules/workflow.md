@@ -174,9 +174,9 @@ The engine serves:
 | `GET /workflow/`                            | Built-in dashboard (see "Dashboard" below)  |
 | `GET /api/v1/engine/workflow/events/stream` | SSE event stream                            |
 
-Full endpoint list in the OpenAPI spec — workflow lifecycle, state queries, events, children,
-continue-as-new, signals, schedules (CRUD + patch/pause/resume), namespaces, workers, queues, worker
-task polling and dispatch.
+Full endpoint list in the OpenAPI spec — workflow lifecycle, failed-activity retry, state queries,
+events, children, continue-as-new, signals, schedules (CRUD + patch/pause/resume), namespaces,
+workers, queues, worker task polling and dispatch.
 
 ### CLI
 
@@ -233,6 +233,7 @@ assay workflow
   signal    <id> <name> [payload]
   cancel    <id>
   terminate <id> [--reason R]
+  retry     <id> --requested-by ID --reason R       # terminal failed activity only
   continue-as-new <id> [--input JSON]           # client-side (distinct from ctx:)
   wait      <id> [--timeout SECS] [--target STATUS]   # scripting-friendly blocking
 
@@ -279,18 +280,19 @@ Two roles in one module: **worker** (register handlers and block polling for tas
 
 **Workflows:**
 
-| Function                               | REST                                   |
-| -------------------------------------- | -------------------------------------- |
-| `workflow.start(opts)`                 | `POST /workflows`                      |
-| `workflow.list(opts?)`                 | `GET  /workflows?...`                  |
-| `workflow.describe(id)`                | `GET  /workflows/{id}`                 |
-| `workflow.get_events(id)`              | `GET  /workflows/{id}/events`          |
-| `workflow.get_state(id, name?)`        | `GET  /workflows/{id}/state[/{name}]`  |
-| `workflow.list_children(id)`           | `GET  /workflows/{id}/children`        |
-| `workflow.signal(id, name, payload)`   | `POST /workflows/{id}/signal/{name}`   |
-| `workflow.cancel(id)`                  | `POST /workflows/{id}/cancel`          |
-| `workflow.terminate(id, reason?)`      | `POST /workflows/{id}/terminate`       |
-| `workflow.continue_as_new(id, input?)` | `POST /workflows/{id}/continue-as-new` |
+| Function                                                   | REST                                   |
+| ---------------------------------------------------------- | -------------------------------------- |
+| `workflow.start(opts)`                                     | `POST /workflows`                      |
+| `workflow.list(opts?)`                                     | `GET  /workflows?...`                  |
+| `workflow.describe(id)`                                    | `GET  /workflows/{id}`                 |
+| `workflow.get_events(id)`                                  | `GET  /workflows/{id}/events`          |
+| `workflow.get_state(id, name?)`                            | `GET  /workflows/{id}/state[/{name}]`  |
+| `workflow.list_children(id)`                               | `GET  /workflows/{id}/children`        |
+| `workflow.signal(id, name, payload)`                       | `POST /workflows/{id}/signal/{name}`   |
+| `workflow.cancel(id)`                                      | `POST /workflows/{id}/cancel`          |
+| `workflow.terminate(id, reason?)`                          | `POST /workflows/{id}/terminate`       |
+| `workflow.retry_failed_activity(id, requested_by, reason)` | `POST /workflows/{id}/retry`           |
+| `workflow.continue_as_new(id, input?)`                     | `POST /workflows/{id}/continue-as-new` |
 
 `workflow.list(opts)` accepts `{ namespace?, status?, type?, search_attrs?, limit?, offset? }`.
 `search_attrs` is a table; the CLI URL-encodes it as the `search_attrs=` query param.
@@ -355,6 +357,19 @@ same state and only the next unfulfilled step actually runs.
 | Workflow worker dies mid-replay    | `dispatch_last_heartbeat` ages out (`ASSAY_WF_DISPATCH_TIMEOUT_SECS`, default 30s); any worker on the queue picks it up and replays. |
 | Engine dies                        | All state in the DB. On restart, in-flight tasks become claimable again as heartbeats age out.                                       |
 
+Activity retry policies are bounded. After an activity exhausts `max_attempts` and the workflow
+reaches `FAILED`, the engine does not loop forever: an operator must first correct the external
+blocker, then request `POST /workflows/{id}/retry` with non-empty `requested_by` and `reason`
+fields. The native stores atomically requeue only the latest failed activity, reset its attempt
+counter, remove later activity rows created by the failure-handling branch, and append an
+`ActivityRetryRequested` event. Replay retains the successful history before that activity while
+discarding cached activity results at and after the retry boundary.
+
+The operation rejects active, completed, cancelled, timed-out, archived, and child workflows. It is
+intentionally not an arbitrary whole-workflow rerun: replaying a terminal workflow against changed
+handler code is unsafe without workflow code-versioning. Use continue-as-new when a fresh history is
+required.
+
 `ctx:side_effect` is the escape hatch for any operation that would produce different values across
 replays (current time, random IDs, external HTTP). The result is recorded once on first execution
 and returned from cache thereafter, even after a worker crash.
@@ -409,14 +424,14 @@ AND-join; unchanged keys are preserved across upserts.
 
 `/workflow/` (or just `/` — redirects). Real-time monitoring + tier-1 operator controls.
 
-| View      | Read                                                | Mutate                                                                            |
-| --------- | --------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Workflows | List + filter (status, type, search_attrs)          | `+ Start workflow` form; per-row Signal / Cancel / Terminate                      |
-| Detail    | Metadata, event timeline, children, live state      | Signal / Cancel / Terminate / Continue-as-new; live `ctx:register_query` snapshot |
-| Schedules | List with timezone + paused state                   | Create (with timezone) / Edit (PATCH) / Pause / Resume / Delete                   |
-| Workers   | Identity, queue, last heartbeat                     | —                                                                                 |
-| Queues    | Pending + running per queue                         | —                                                                                 |
-| Settings  | Engine version, build profile, namespaces, API docs | Namespace create / delete                                                         |
+| View      | Read                                                | Mutate                                                                         |
+| --------- | --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Workflows | List + filter (status, type, search_attrs)          | `+ Start workflow`; per-row Signal / Cancel / Terminate; failed-activity Retry |
+| Detail    | Metadata, event timeline, children, live state      | Continue-as-new; live `ctx:register_query` snapshot                            |
+| Schedules | List with timezone + paused state                   | Create (with timezone) / Edit (PATCH) / Pause / Resume / Delete                |
+| Workers   | Identity, queue, last heartbeat                     | —                                                                              |
+| Queues    | Pending + running per queue                         | —                                                                              |
+| Settings  | Engine version, build profile, namespaces, API docs | Namespace create / delete                                                      |
 
 Status-bar footer always shows the engine version (fetched from `/api/v1/engine/workflow/version`).
 Live list updates via SSE. Cache-busted asset URLs per startup.
@@ -534,6 +549,7 @@ single assay release improve every consumer's dashboard without coupled rollouts
 | Concept           | Meaning                                                                                                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Activity          | A unit of concrete work with at-least-once semantics. Result is persisted before the workflow proceeds. Configurable retry + timeout. |
+| Retry boundary    | A recorded terminal failed activity that an operator can requeue in place after correcting its external blocker.                      |
 | Workflow          | Deterministic orchestration of activities, sleeps, signals, child workflows. Full event history persisted; crashed worker → replay.   |
 | Task queue        | Named queue workers subscribe to. Workflows are routed to a queue; only workers on that queue claim them.                             |
 | Namespace         | Logical tenant. Workflows / schedules / workers are namespace-scoped. Default `main`.                                                 |

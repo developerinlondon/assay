@@ -162,6 +162,21 @@ impl EngineClient {
         Ok(())
     }
 
+    pub async fn workflow_retry_failed_activity(
+        &self,
+        id: &str,
+        requested_by: &str,
+        reason: &str,
+    ) -> Result<Value> {
+        let url = format!("{}/workflows/{}/retry", self.base, urlencoding_encode(id));
+        let body = serde_json::json!({
+            "requested_by": requested_by,
+            "reason": reason,
+        });
+        self.send(self.http.post(&url).json(&body), "workflow retry")
+            .await
+    }
+
     pub async fn workflow_continue_as_new(&self, id: &str, input: Option<&Value>) -> Result<Value> {
         let url = format!("{}/workflows/{id}/continue-as-new", self.base);
         let body = serde_json::json!({ "input": input });
@@ -337,7 +352,12 @@ fn urlencoding_encode(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::urlencoding_encode;
+    use serde_json::json;
+    use wiremock::matchers::{body_json, header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{EngineClient, urlencoding_encode};
+    use crate::cli::{GlobalOpts, Output};
 
     #[test]
     fn encodes_json_like_strings() {
@@ -348,5 +368,46 @@ mod tests {
     #[test]
     fn leaves_safe_chars_alone() {
         assert_eq!(urlencoding_encode("abc-123_XYZ"), "abc-123_XYZ");
+    }
+
+    #[tokio::test]
+    async fn retry_failed_activity_sends_audited_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(
+                "/api/v1/engine/workflow/workflows/promotion%2Fqa/retry",
+            ))
+            .and(header("authorization", "Bearer test-key"))
+            .and(body_json(json!({
+                "requested_by": "operator@example.com",
+                "reason": "branch permission was corrected"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "workflow_id": "promotion/qa",
+                "status": "WAITING",
+                "activity": {"name": "update_manifest"},
+                "invalidated_activities": 1
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = EngineClient::new(&GlobalOpts {
+            engine_url: server.uri(),
+            api_key: Some("test-key".into()),
+            namespace: "main".into(),
+            output: Output::Json,
+        });
+        let response = client
+            .workflow_retry_failed_activity(
+                "promotion/qa",
+                "operator@example.com",
+                "branch permission was corrected",
+            )
+            .await
+            .expect("retry request should succeed");
+
+        assert_eq!(response["status"], "WAITING");
+        assert_eq!(response["activity"]["name"], "update_manifest");
     }
 }

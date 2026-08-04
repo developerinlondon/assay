@@ -25,6 +25,7 @@ use crate::store::WorkflowStore;
         crate::api::workflows::send_signal,
         crate::api::workflows::cancel_workflow,
         crate::api::workflows::terminate_workflow,
+        crate::api::workflows::retry_failed_activity,
         crate::api::tasks::register_worker,
         crate::api::tasks::poll_task,
         crate::api::tasks::complete_task,
@@ -66,6 +67,8 @@ use crate::store::WorkflowStore;
         crate::api::schedules::CreateScheduleRequest,
         crate::api::schedules::PatchScheduleRequest,
         crate::api::workflows::ContinueAsNewBody,
+        crate::api::workflows::RetryFailedActivityBody,
+        crate::api::workflows::RetryFailedActivityResponse,
         crate::api::public::VersionInfo,
     )),
     tags(

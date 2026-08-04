@@ -249,6 +249,23 @@ pub struct WorkflowActivity {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct RetriedActivity {
+    pub activity: WorkflowActivity,
+    pub invalidated_activities: u64,
+}
+
+#[derive(Clone, Debug)]
+pub enum RetryFailedActivityResult {
+    Retried(Box<RetriedActivity>),
+    NotFound,
+    NotFailed { status: String },
+    Archived,
+    ChildWorkflow,
+    NoFailedActivity,
+    Unsupported,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkflowTimer {
     pub id: Option<i64>,
     pub workflow_id: String,

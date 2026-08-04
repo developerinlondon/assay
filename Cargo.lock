@@ -281,7 +281,7 @@ dependencies = [
 
 [[package]]
 name = "assay-dashboard"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "assay-domain",
  "axum",
@@ -293,7 +293,7 @@ dependencies = [
 
 [[package]]
 name = "assay-domain"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -313,7 +313,7 @@ dependencies = [
 
 [[package]]
 name = "assay-engine"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "anyhow",
  "assay-auth",
@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.17.7"
+version = "0.17.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -430,7 +430,7 @@ dependencies = [
 
 [[package]]
 name = "assay-workflow"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "assay-domain",
