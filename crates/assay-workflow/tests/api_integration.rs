@@ -25,6 +25,73 @@ fn client() -> reqwest::Client {
     reqwest::Client::new()
 }
 
+async fn prepare_failed_activity_workflow(
+    state: &Arc<WorkflowCtx<SqliteStore>>,
+    workflow_id: &str,
+) -> (i64, i64) {
+    state
+        .start_workflow(
+            "main",
+            "DeploymentWorkflow",
+            workflow_id,
+            None,
+            "deployments",
+            None,
+        )
+        .await
+        .unwrap();
+    let failed = state
+        .schedule_activity(
+            workflow_id,
+            1,
+            "update_config",
+            None,
+            "deployments",
+            assay_workflow::types::ScheduleActivityOpts {
+                max_attempts: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let failed_id = failed.id.unwrap();
+    state
+        .claim_activity("deployments", "worker-1")
+        .await
+        .unwrap()
+        .expect("failed activity should be claimable");
+    state
+        .fail_activity(failed_id, "dependency rejected the update")
+        .await
+        .unwrap();
+    let notification = state
+        .schedule_activity(
+            workflow_id,
+            2,
+            "notify_failure",
+            None,
+            "deployments",
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    let notification_id = notification.id.unwrap();
+    state
+        .claim_activity("deployments", "worker-1")
+        .await
+        .unwrap()
+        .expect("notification activity should be claimable");
+    state
+        .complete_activity(notification_id, Some(r#"{"sent":true}"#), None, false)
+        .await
+        .unwrap();
+    state
+        .fail_workflow(workflow_id, "activity 'update_config' failed")
+        .await
+        .unwrap();
+    (failed_id, notification_id)
+}
+
 #[tokio::test]
 async fn get_events_keeps_the_public_two_argument_handler_contract() {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
@@ -566,4 +633,136 @@ async fn version_endpoint_returns_shape() {
         profile == "debug" || profile == "release",
         "build_profile one of debug|release, got {profile}"
     );
+}
+
+#[tokio::test]
+async fn retry_failed_activity_resumes_at_the_failure_boundary() {
+    let store = SqliteStore::new("sqlite::memory:").await.unwrap();
+    let state = Arc::new(WorkflowCtx::start(Arc::new(store)));
+    let (failed_id, notification_id) =
+        prepare_failed_activity_workflow(&state, "wf-retry-failed").await;
+
+    let app = assay_workflow::api::router(Arc::clone(&state), |router| router);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let response = client()
+        .post(format!(
+            "http://127.0.0.1:{port}/api/v1/engine/workflow/workflows/wf-retry-failed/retry"
+        ))
+        .json(&serde_json::json!({
+            "requested_by": "operator@example.com",
+            "reason": "dependency configuration corrected",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["workflow_id"], "wf-retry-failed");
+    assert_eq!(body["status"], "WAITING");
+    assert_eq!(body["activity"]["id"], failed_id);
+    assert_eq!(body["activity"]["seq"], 1);
+    assert_eq!(body["activity"]["name"], "update_config");
+    assert_eq!(body["activity"]["status"], "PENDING");
+    assert_eq!(body["activity"]["attempt"], 1);
+    assert_eq!(body["invalidated_activities"], 1);
+
+    let workflow = state
+        .get_workflow("wf-retry-failed")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(workflow.status, "WAITING");
+    assert!(workflow.error.is_none());
+    assert!(workflow.completed_at.is_none());
+    assert!(state.get_activity(notification_id).await.unwrap().is_none());
+
+    let events = state.get_events("wf-retry-failed").await.unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.event_type == "ActivityFailed")
+    );
+    assert!(events.iter().any(|event| {
+        event.event_type == "ActivityCompleted"
+            && event
+                .payload
+                .as_deref()
+                .is_some_and(|payload| payload.contains("notify_failure"))
+    }));
+    let retry = events
+        .iter()
+        .find(|event| event.event_type == "ActivityRetryRequested")
+        .expect("retry request should be retained in workflow history");
+    let retry_payload: serde_json::Value =
+        serde_json::from_str(retry.payload.as_deref().unwrap()).unwrap();
+    assert_eq!(retry_payload["activity_seq"], 1);
+    assert_eq!(retry_payload["requested_by"], "operator@example.com");
+    assert_eq!(
+        retry_payload["reason"],
+        "dependency configuration corrected"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn concurrent_retry_requests_schedule_the_failed_activity_once() {
+    let store = SqliteStore::new("sqlite::memory:").await.unwrap();
+    let state = Arc::new(WorkflowCtx::start(Arc::new(store)));
+    prepare_failed_activity_workflow(&state, "wf-concurrent-retry").await;
+    let app = assay_workflow::api::router(Arc::clone(&state), |router| router);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let retry_url = format!(
+        "http://127.0.0.1:{port}/api/v1/engine/workflow/workflows/wf-concurrent-retry/retry"
+    );
+    let first_client = client();
+    let second_client = client();
+    let first = first_client.post(&retry_url).json(&serde_json::json!({
+        "requested_by": "operator-a@example.com",
+        "reason": "dependency corrected",
+    }));
+    let second = second_client.post(&retry_url).json(&serde_json::json!({
+        "requested_by": "operator-b@example.com",
+        "reason": "dependency corrected",
+    }));
+    let (first_response, second_response) = tokio::join!(first.send(), second.send());
+    let mut statuses = [
+        first_response.unwrap().status().as_u16(),
+        second_response.unwrap().status().as_u16(),
+    ];
+    statuses.sort_unstable();
+    assert_eq!(statuses, [200, 409]);
+
+    let events = state.get_events("wf-concurrent-retry").await.unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.event_type == "ActivityRetryRequested")
+            .count(),
+        1
+    );
+    let claimed = state
+        .claim_activity("deployments", "worker-retry")
+        .await
+        .unwrap()
+        .expect("one retry should be scheduled");
+    assert_eq!(claimed.seq, 1);
+    assert!(
+        state
+            .claim_activity("deployments", "worker-retry")
+            .await
+            .unwrap()
+            .is_none(),
+        "a concurrent request must not create a second activity"
+    );
+    handle.abort();
 }

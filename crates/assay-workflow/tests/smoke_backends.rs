@@ -653,6 +653,77 @@ async fn activity_retry_on_failure(#[case] backend: Backend) {
 )]
 #[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
 #[tokio::test(flavor = "multi_thread")]
+async fn terminal_activity_retry_is_atomic_across_backends(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let wf_id = uid("wf-act-terminal-retry");
+    h.create_workflow(&make_workflow(&wf_id, "main", "retry-q"))
+        .await
+        .unwrap();
+    h.append_event(&make_event(&wf_id, 1)).await.unwrap();
+
+    let mut failed = make_activity(&wf_id, 1, "retry-q");
+    failed.status = "FAILED".to_string();
+    failed.attempt = failed.max_attempts;
+    failed.error = Some("dependency rejected the update".to_string());
+    failed.completed_at = Some(failed.scheduled_at + 1.0);
+    let failed_id = h.create_activity(&failed).await.unwrap();
+    let mut failed_event = make_event(&wf_id, 2);
+    failed_event.event_type = "ActivityFailed".to_string();
+    failed_event.payload = Some(
+        serde_json::json!({
+            "activity_id": failed_id,
+            "activity_seq": 1,
+            "name": "step",
+            "error": "dependency rejected the update",
+        })
+        .to_string(),
+    );
+    h.append_event(&failed_event).await.unwrap();
+
+    let mut aftermath = make_activity(&wf_id, 2, "retry-q");
+    aftermath.status = "COMPLETED".to_string();
+    aftermath.result = Some(r#"{"sent":true}"#.to_string());
+    aftermath.completed_at = Some(aftermath.scheduled_at + 1.0);
+    let aftermath_id = h.create_activity(&aftermath).await.unwrap();
+    h.update_workflow_status(
+        &wf_id,
+        assay_domain::types::WorkflowStatus::Failed,
+        None,
+        Some("activity failed"),
+    )
+    .await
+    .unwrap();
+
+    let retried = h
+        .retry_failed_activity(
+            &wf_id,
+            "operator@example.com",
+            "dependency corrected",
+            failed.scheduled_at + 2.0,
+        )
+        .await
+        .unwrap();
+    let assay_domain::types::RetryFailedActivityResult::Retried(retried) = retried else {
+        panic!("failed workflow should accept one retry request")
+    };
+    assert_eq!(retried.activity.id, Some(failed_id));
+    assert_eq!(retried.activity.status, "PENDING");
+    assert_eq!(retried.activity.attempt, 1);
+    assert_eq!(retried.invalidated_activities, 1);
+    assert!(h.get_activity(aftermath_id).await.unwrap().is_none());
+    let workflow = h.get_workflow(&wf_id).await.unwrap().unwrap();
+    assert_eq!(workflow.status, "WAITING");
+    assert!(workflow.error.is_none());
+    assert!(workflow.completed_at.is_none());
+}
+
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
 async fn activity_heartbeat_timeout(#[case] backend: Backend) {
     let h = backend.setup().await.expect("setup");
     let wf_id = uid("wf-act-hb");

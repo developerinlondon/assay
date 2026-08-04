@@ -221,11 +221,59 @@ var AssayActions = (function () {
     });
   }
 
+  function retryFailedActivity(id) {
+    AssayModal.form({
+      title: 'Retry failed activity — ' + id,
+      submitLabel: 'Retry activity',
+      description:
+        'Requeues only the terminal failed activity and resumes this run at ' +
+        'that failure boundary. Existing history is preserved for audit.',
+      fields: [
+        {
+          name: 'requested_by',
+          label: 'Requested by',
+          type: 'text',
+          required: true,
+          placeholder: 'Operator identity or email',
+        },
+        {
+          name: 'reason',
+          label: 'Reason',
+          type: 'textarea',
+          required: true,
+          placeholder: 'What changed, and why is the activity safe to retry?',
+        },
+      ],
+      onSubmit: async function (values) {
+        try {
+          var result = await ctx.apiFetch(
+            '/workflows/' + encodeURIComponent(id) + '/retry',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                requested_by: String(values.requested_by).trim(),
+                reason: String(values.reason).trim(),
+              }),
+            }
+          );
+          var activity = result && result.activity && result.activity.name;
+          ctx.toast('Retry queued' + (activity ? ': ' + activity : ''), 'success');
+          reopenDetail(id);
+          refreshList();
+        } catch (err) {
+          ctx.toast('Retry failed: ' + (err && err.message), 'error');
+        }
+      },
+    });
+  }
+
   return {
     init: init,
     signal: signal,
     cancel: cancel,
     terminate: terminate,
+    retryFailedActivity: retryFailedActivity,
     continueAsNew: continueAsNew,
   };
 })();

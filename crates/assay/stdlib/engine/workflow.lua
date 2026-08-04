@@ -12,6 +12,7 @@
 --- @quickref c:get_state(workflow_id, name?) -> table|any | Latest snapshot
 --- @quickref c:list_children(workflow_id) -> [WorkflowRecord] | Child workflows
 --- @quickref c:continue_as_new(workflow_id, input?) -> WorkflowRecord | Client-side continue-as-new
+--- @quickref c:retry_failed_activity(workflow_id, requested_by, reason) -> RetryResult | Retry terminal failed activity with audit context
 --- @quickref c.namespaces:create(name) | Create a namespace
 --- @quickref c.namespaces:list() -> [NamespaceRecord] | List namespaces
 --- @quickref c.namespaces:stats(name) -> NamespaceStats | Per-namespace counters
@@ -186,6 +187,20 @@ function M.client(opts)
   function client:list_children(workflow_id)
     local resp = api_call("GET", "/workflows/" .. url_encode(workflow_id) .. "/children")
     expect(resp, 200, "engine.workflow.list_children")
+    return json.parse(resp.body)
+  end
+
+  --- Retry the terminal failed activity in place after its external
+  --- blocker is corrected. The workflow history remains intact and the
+  --- requester + reason are recorded in ActivityRetryRequested.
+  function client:retry_failed_activity(workflow_id, requested_by, reason)
+    if not requested_by or requested_by == "" or not reason or reason == "" then
+      error("engine.workflow.retry_failed_activity: requested_by and reason required")
+    end
+    local resp = api_call("POST",
+      "/workflows/" .. url_encode(workflow_id) .. "/retry",
+      { requested_by = requested_by, reason = reason })
+    expect(resp, 200, "engine.workflow.retry_failed_activity")
     return json.parse(resp.body)
   end
 

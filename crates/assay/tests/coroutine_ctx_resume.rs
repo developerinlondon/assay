@@ -77,3 +77,53 @@ async fn coroutine_can_yield_and_resume_with_args() {
     "#;
     run_lua(script).await.unwrap();
 }
+
+#[tokio::test]
+async fn activity_retry_boundary_discards_failure_path_activity_results() {
+    let script = r#"
+        local ctx_mod = require("assay.engine.workflow.ctx")
+        local history = {
+            {
+                seq = 2,
+                event_type = "ActivityCompleted",
+                payload = { activity_seq = 1, name = "prepare", result = { prepared = true } },
+            },
+            {
+                seq = 4,
+                event_type = "ActivityFailed",
+                payload = { activity_seq = 2, name = "update_config", error = "rejected" },
+            },
+            {
+                seq = 6,
+                event_type = "ActivityCompleted",
+                payload = { activity_seq = 3, name = "notify_failure", result = { sent = true } },
+            },
+            {
+                seq = 8,
+                event_type = "ActivityRetryRequested",
+                payload = { activity_seq = 2, failed_event_seq = 4 },
+            },
+            {
+                seq = 9,
+                event_type = "ActivityCompleted",
+                payload = { activity_seq = 2, name = "update_config", result = { commit = "abc123" } },
+            },
+        }
+        local ctx = ctx_mod.make("wf-retry", history)
+        local co = coroutine.create(function()
+            local prepared = ctx:execute_activity("prepare", {})
+            assert.eq(prepared.prepared, true)
+            local update = ctx:execute_activity("update_config", {})
+            assert.eq(update.commit, "abc123")
+            return ctx:execute_activity("deploy", {})
+        end)
+
+        local ok, command = coroutine.resume(co)
+        assert.eq(ok, true)
+        assert.eq(coroutine.status(co), "suspended")
+        assert.eq(command.type, "ScheduleActivity")
+        assert.eq(command.seq, 3)
+        assert.eq(command.name, "deploy")
+    "#;
+    run_lua(script).await.unwrap();
+}

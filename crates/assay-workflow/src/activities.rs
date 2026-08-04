@@ -133,6 +133,37 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         self.store.get_activity(id).await
     }
 
+    pub async fn retry_failed_activity(
+        &self,
+        workflow_id: &str,
+        requested_by: &str,
+        reason: &str,
+    ) -> Result<RetryFailedActivityResult> {
+        let result = self
+            .store
+            .retry_failed_activity(workflow_id, requested_by, reason, timestamp_now())
+            .await?;
+        if let RetryFailedActivityResult::Retried(retried) = &result {
+            let activity = &retried.activity;
+            let namespace = self
+                .store
+                .get_workflow(workflow_id)
+                .await?
+                .map(|workflow| workflow.namespace)
+                .unwrap_or_else(|| "main".to_string());
+            self.emit(
+                &namespace,
+                WorkflowBusEvent::WorkflowRetryRequested {
+                    workflow_id: workflow_id.to_string(),
+                    activity_id: activity.id.unwrap_or_default(),
+                    activity_seq: activity.seq,
+                },
+            )
+            .await;
+        }
+        Ok(result)
+    }
+
     /// Mark a successfully-executed activity complete and append an
     /// `ActivityCompleted` event to the workflow event log so a replaying
     /// workflow can pick up the cached result.

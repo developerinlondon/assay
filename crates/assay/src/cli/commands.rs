@@ -296,6 +296,25 @@ pub async fn workflow_terminate(opts: &GlobalOpts, id: &str, reason: Option<Stri
     }
 }
 
+pub async fn workflow_retry(
+    opts: &GlobalOpts,
+    id: &str,
+    requested_by: &str,
+    reason: &str,
+) -> ExitCode {
+    let client = EngineClient::new(opts);
+    match client
+        .workflow_retry_failed_activity(id, requested_by, reason)
+        .await
+    {
+        Ok(v) => {
+            print_record(opts.output, &v);
+            ExitCode::SUCCESS
+        }
+        Err(e) => eprint_err(e),
+    }
+}
+
 pub async fn workflow_continue_as_new(
     opts: &GlobalOpts,
     id: &str,

@@ -48,6 +48,11 @@ pub enum WorkflowBusEvent {
     WorkflowFailed {
         workflow_id: String,
     },
+    WorkflowRetryRequested {
+        workflow_id: String,
+        activity_id: i64,
+        activity_seq: i32,
+    },
     WorkflowCancelled {
         workflow_id: String,
     },
@@ -88,6 +93,7 @@ impl WorkflowBusEvent {
             WorkflowBusEvent::WorkflowRunning { .. } => "workflow_running",
             WorkflowBusEvent::WorkflowCompleted { .. } => "workflow_completed",
             WorkflowBusEvent::WorkflowFailed { .. } => "workflow_failed",
+            WorkflowBusEvent::WorkflowRetryRequested { .. } => "workflow_retry_requested",
             WorkflowBusEvent::WorkflowCancelled { .. } => "workflow_cancelled",
             WorkflowBusEvent::WorkflowTerminated { .. } => "workflow_terminated",
             WorkflowBusEvent::ActivityInserted { .. } => "activity_inserted",

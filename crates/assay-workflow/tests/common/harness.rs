@@ -199,6 +199,16 @@ impl Harness {
         dispatch!(self, s => s.requeue_activity_for_retry(id, next_attempt, next_scheduled_at).await)
     }
 
+    pub async fn retry_failed_activity(
+        &self,
+        workflow_id: &str,
+        requested_by: &str,
+        reason: &str,
+        requested_at: f64,
+    ) -> anyhow::Result<RetryFailedActivityResult> {
+        dispatch!(self, s => s.retry_failed_activity(workflow_id, requested_by, reason, requested_at).await)
+    }
+
     pub async fn complete_activity(
         &self,
         id: i64,
