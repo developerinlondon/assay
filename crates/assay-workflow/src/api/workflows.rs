@@ -378,7 +378,7 @@ pub async fn retry_failed_activity<S: WorkflowStore>(
     Json(body): Json<RetryFailedActivityBody>,
 ) -> Result<Json<RetryFailedActivityResponse>, AppError> {
     if body.requested_by.trim().is_empty() || body.reason.trim().is_empty() {
-        return Err(AppError::BadRequest(
+        return Err(AppError::bad_request(
             "requested_by and reason are required".to_string(),
         ));
     }
@@ -393,19 +393,19 @@ pub async fn retry_failed_activity<S: WorkflowStore>(
             invalidated_activities: retried.invalidated_activities,
         })),
         RetryFailedActivityResult::NotFound => Err(AppError::NotFound(format!("workflow {id}"))),
-        RetryFailedActivityResult::NotFailed { status } => Err(AppError::Conflict(format!(
+        RetryFailedActivityResult::NotFailed { status } => Err(AppError::conflict(format!(
             "workflow {id} is {status}; only FAILED workflows can retry an activity"
         ))),
         RetryFailedActivityResult::Archived => {
-            Err(AppError::Conflict(format!("workflow {id} is archived")))
+            Err(AppError::conflict(format!("workflow {id} is archived")))
         }
-        RetryFailedActivityResult::ChildWorkflow => Err(AppError::Conflict(format!(
+        RetryFailedActivityResult::ChildWorkflow => Err(AppError::conflict(format!(
             "child workflow {id} cannot be retried independently"
         ))),
-        RetryFailedActivityResult::NoFailedActivity => Err(AppError::Conflict(format!(
+        RetryFailedActivityResult::NoFailedActivity => Err(AppError::conflict(format!(
             "workflow {id} has no failed activity"
         ))),
-        RetryFailedActivityResult::Unsupported => Err(AppError::Conflict(
+        RetryFailedActivityResult::Unsupported => Err(AppError::conflict(
             "the configured workflow store does not support activity retry".to_string(),
         )),
     }
@@ -552,8 +552,34 @@ pub async fn get_workflow_state_by_name<S: WorkflowStore>(
 pub enum AppError {
     Internal(anyhow::Error),
     NotFound(String),
-    BadRequest(String),
-    Conflict(String),
+}
+
+#[derive(Debug)]
+struct HttpError {
+    status: axum::http::StatusCode,
+    message: String,
+}
+
+impl std::fmt::Display for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for HttpError {}
+
+impl AppError {
+    fn bad_request(message: String) -> Self {
+        Self::http(axum::http::StatusCode::BAD_REQUEST, message)
+    }
+
+    fn conflict(message: String) -> Self {
+        Self::http(axum::http::StatusCode::CONFLICT, message)
+    }
+
+    fn http(status: axum::http::StatusCode, message: String) -> Self {
+        Self::Internal(HttpError { status, message }.into())
+    }
 }
 
 impl From<anyhow::Error> for AppError {
@@ -572,6 +598,13 @@ impl axum::response::IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         match self {
             Self::Internal(e) => {
+                if let Some(http_error) = e.downcast_ref::<HttpError>() {
+                    return (
+                        http_error.status,
+                        Json(serde_json::json!({ "error": http_error.message })),
+                    )
+                        .into_response();
+                }
                 tracing::error!("Internal error: {e}");
                 (
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -582,16 +615,6 @@ impl axum::response::IntoResponse for AppError {
             Self::NotFound(msg) => (
                 axum::http::StatusCode::NOT_FOUND,
                 Json(serde_json::json!({ "error": format!("not found: {msg}") })),
-            )
-                .into_response(),
-            Self::BadRequest(msg) => (
-                axum::http::StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": msg })),
-            )
-                .into_response(),
-            Self::Conflict(msg) => (
-                axum::http::StatusCode::CONFLICT,
-                Json(serde_json::json!({ "error": msg })),
             )
                 .into_response(),
         }

@@ -48,11 +48,6 @@ pub enum WorkflowBusEvent {
     WorkflowFailed {
         workflow_id: String,
     },
-    WorkflowRetryRequested {
-        workflow_id: String,
-        activity_id: i64,
-        activity_seq: i32,
-    },
     WorkflowCancelled {
         workflow_id: String,
     },
@@ -93,7 +88,6 @@ impl WorkflowBusEvent {
             WorkflowBusEvent::WorkflowRunning { .. } => "workflow_running",
             WorkflowBusEvent::WorkflowCompleted { .. } => "workflow_completed",
             WorkflowBusEvent::WorkflowFailed { .. } => "workflow_failed",
-            WorkflowBusEvent::WorkflowRetryRequested { .. } => "workflow_retry_requested",
             WorkflowBusEvent::WorkflowCancelled { .. } => "workflow_cancelled",
             WorkflowBusEvent::WorkflowTerminated { .. } => "workflow_terminated",
             WorkflowBusEvent::ActivityInserted { .. } => "activity_inserted",
@@ -142,6 +136,27 @@ impl WorkflowEventBus {
                 subsystem: Subsystem::Workflow,
                 kind,
                 payload,
+            })
+            .await
+    }
+
+    pub(crate) async fn publish_retry_requested(
+        &self,
+        namespace: &str,
+        workflow_id: &str,
+        activity_id: i64,
+        activity_seq: i32,
+    ) -> Result<i64> {
+        self.inner
+            .publish_committed(NewEvent {
+                namespace,
+                subsystem: Subsystem::Workflow,
+                kind: "workflow_retry_requested",
+                payload: serde_json::json!({
+                    "workflow_id": workflow_id,
+                    "activity_id": activity_id,
+                    "activity_seq": activity_seq,
+                }),
             })
             .await
     }

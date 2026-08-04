@@ -110,6 +110,22 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         }
     }
 
+    pub(crate) async fn emit_retry_requested(
+        &self,
+        namespace: &str,
+        workflow_id: &str,
+        activity_id: i64,
+        activity_seq: i32,
+    ) {
+        if let Some(bus) = &self.bus
+            && let Err(e) = bus
+                .publish_retry_requested(namespace, workflow_id, activity_id, activity_seq)
+                .await
+        {
+            tracing::warn!(?e, "engine retry event emit failed");
+        }
+    }
+
     /// Mark a workflow dispatchable AND emit a `WorkflowNeedsDispatch`
     /// on the bus so the dispatch-wakeup loop wakes workers
     /// on this node / across the cluster. The extra SELECT is skipped

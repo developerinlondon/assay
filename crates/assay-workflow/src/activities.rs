@@ -151,13 +151,11 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
                 .await?
                 .map(|workflow| workflow.namespace)
                 .unwrap_or_else(|| "main".to_string());
-            self.emit(
+            self.emit_retry_requested(
                 &namespace,
-                WorkflowBusEvent::WorkflowRetryRequested {
-                    workflow_id: workflow_id.to_string(),
-                    activity_id: activity.id.unwrap_or_default(),
-                    activity_seq: activity.seq,
-                },
+                workflow_id,
+                activity.id.unwrap_or_default(),
+                activity.seq,
             )
             .await;
         }
