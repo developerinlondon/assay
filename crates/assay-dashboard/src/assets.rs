@@ -107,3 +107,17 @@ pub const VAULT_APP_JS: &str = include_str!("../assets/vault/app.js");
 
 pub const CROSS_NAV_CSS: &str = include_str!("../assets/shared/cross-nav.css");
 pub const CROSS_NAV_JS: &str = include_str!("../assets/shared/cross-nav.js");
+
+#[cfg(test)]
+mod tests {
+    use super::{ACTIONS_JS, WORKFLOWS_JS};
+
+    #[test]
+    fn failed_workflows_expose_audited_activity_retry() {
+        assert!(WORKFLOWS_JS.contains("status === 'FAILED'"));
+        assert!(WORKFLOWS_JS.contains("data-action=\"retry\""));
+        assert!(ACTIONS_JS.contains("function retryFailedActivity(id)"));
+        assert!(ACTIONS_JS.contains("requested_by"));
+        assert!(ACTIONS_JS.contains("'/retry'"));
+    }
+}

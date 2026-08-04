@@ -12,10 +12,10 @@
 
 
   <main>
-    <!-- assay-engine v0.5.10 release banner -->
+    <!-- assay-engine v0.5.11 release banner -->
     <a href="auth-overview.html" class="release-banner">
-      <span class="release-banner-tag">v0.5.10</span>
-      <span class="release-banner-text"><strong>assay-engine v0.5.10:</strong> SMTP password recovery with hashed, expiring, single-use tokens and an embedded browser flow.</span>
+      <span class="release-banner-tag">v0.5.11</span>
+      <span class="release-banner-text"><strong>assay-engine v0.5.11:</strong> audited recovery at a terminal failed-activity boundary, with bounded automatic retries preserved.</span>
       <span class="release-banner-arrow">&rarr;</span>
     </a>
 
@@ -150,7 +150,7 @@
     <h2>Core Capabilities</h2>
     <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
       <div class="card card-highlight">
-        <h3 style="margin-top: 0;">Auth &amp; IdP <span style="color: var(--accent); font-size: 0.7rem; font-weight: 700; vertical-align: middle; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px;">v0.5.10</span></h3>
+        <h3 style="margin-top: 0;">Auth &amp; IdP <span style="color: var(--accent); font-size: 0.7rem; font-weight: 700; vertical-align: middle; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px;">v0.5.11</span></h3>
         <p class="text-muted">Full Ory replacement in the same binary as the workflow engine. Passkey (WebAuthn), Argon2 password login and SMTP recovery, full OIDC <strong>provider</strong> (Hydra-equivalent: <code>/authorize</code>, <code>/token</code>, <code>/userinfo</code>, JWKS rotation, RFC 7009 revoke, RFC 7662 introspect, back-channel logout), OIDC <strong>client</strong> (federate via Google/Apple/GitHub/etc.), <strong>biscuit</strong> capability tokens, <strong>Zanzibar</strong> ReBAC, session manager, admin HTTP API, and dashboard. Module enable/disable is runtime, not compile-time.</p>
         <pre style="margin-bottom: 0;"><code>local auth = require("assay.auth")
 local c = auth.client({ engine_url = url })
@@ -162,8 +162,8 @@ local ok   = c.zanzibar:check(
         <p style="margin-top: 0.6rem; margin-bottom: 0;"><a href="auth-overview.html">Auth &amp; IdP overview &rarr;</a></p>
       </div>
       <div class="card card-highlight">
-        <h3 style="margin-top: 0;">Workflow Engine <span style="color: var(--accent); font-size: 0.7rem; font-weight: 700; vertical-align: middle; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px;">v0.5.10</span></h3>
-        <p class="text-muted">Native durable workflow engine — full Temporal replacement — with deterministic-replay runtime. Activities (sequential + parallel), signals (with optional timeout), durable timers, child workflows, side effects, live state via <code>ctx:register_query</code>, self-initiated cancel via <code>ctx:cancel</code>, search attributes, namespace-scoped workers + workflows, optional S3 archival, and dashboard whitelabel (<code>ASSAY_WHITELABEL_*</code> env vars to rebrand the embedded <code>/workflow</code> UI per deployment — including brand mark, subtitle, and a "Powered by" attribution when customised). Crash-safe by replay — workers can die mid-flight without losing work or duplicating side effects.</p>
+        <h3 style="margin-top: 0;">Workflow Engine <span style="color: var(--accent); font-size: 0.7rem; font-weight: 700; vertical-align: middle; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px;">v0.5.11</span></h3>
+        <p class="text-muted">Native durable workflow engine — full Temporal replacement — with deterministic-replay runtime. Activities (sequential + parallel), bounded automatic retries, audited operator retry after a terminal failed activity, signals (with optional timeout), durable timers, child workflows, side effects, live state via <code>ctx:register_query</code>, self-initiated cancel via <code>ctx:cancel</code>, search attributes, namespace-scoped workers + workflows, optional S3 archival, and dashboard whitelabel (<code>ASSAY_WHITELABEL_*</code> env vars to rebrand the embedded <code>/workflow</code> UI per deployment — including brand mark, subtitle, and a "Powered by" attribution when customised). Crash-safe by replay — workers can die mid-flight without losing work or duplicating side effects.</p>
         <pre style="margin-bottom: 0;"><code>workflow.define("Deploy", function(ctx, in)
   local img = ctx:execute_activity("build", in)
   ctx:wait_for_signal("approve")

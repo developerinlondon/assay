@@ -282,7 +282,7 @@ CLI — `assay <noun> <verb>` with global
 | `assay workflow start --type T [--id] [--input] …`              | Start a workflow                                                  |
 | `assay workflow list/describe/events/children`                  | Inspect workflows (events supports `--follow` for live streaming) |
 | `assay workflow state <id> [<query-name>]`                      | Read the latest `ctx:register_query` snapshot                     |
-| `assay workflow signal/cancel/terminate/continue-as-new`        | Mutate workflows                                                  |
+| `assay workflow signal/cancel/terminate/retry/continue-as-new`  | Mutate workflows; retry requires requester + reason               |
 | `assay workflow wait <id> [--timeout] [--target]`               | Block for scripts; exit 0/1/2 for COMPLETED / failure / timeout   |
 | `assay schedule list/describe/create/patch/pause/resume/delete` | Full cron schedule lifecycle (cron is 6/7-field)                  |
 | `assay namespace create/list/describe/delete`                   | Namespace management                                              |
@@ -313,6 +313,7 @@ on other non-2xx.
 | `workflow.list_children(id)`                                                                        | List a parent's child workflows                                                                                |
 | `workflow.signal(id, name, payload?)`                                                               | Send a signal                                                                                                  |
 | `workflow.cancel(id)` / `workflow.terminate(id, reason?)`                                           | Graceful / hard stop                                                                                           |
+| `workflow.retry_failed_activity(id, requested_by, reason)`                                          | Requeue the terminal failed activity with audit context                                                        |
 | `workflow.continue_as_new(id, input?)`                                                              | Client-side continue-as-new (distinct from `ctx:`)                                                             |
 | `workflow.schedules.{create, list, describe, patch, pause, resume, delete}`                         | Full schedule management                                                                                       |
 | `workflow.namespaces.{create, list, describe, stats, delete}`                                       | Namespace management                                                                                           |
@@ -334,9 +335,9 @@ Workflow handler `ctx`:
 | `ctx:cancel(reason?)`                      | never (raises)  | **v0.11.11**: terminate the workflow with engine status `CANCELLED`. Self-decided cancel; not the same as an external cancel request. |
 
 **Dashboard** at `/workflow/` — read-only views in v0.11.2; **v0.11.3** adds tier-1 operator
-controls: start-workflow form, per-row signal/cancel/terminate, full schedule CRUD (including
-patch/pause/resume/timezone), detail-panel continue-as-new + live `register_query` state, namespace
-create/delete, engine version shown in the status bar.
+controls: start-workflow form, per-row signal/cancel/terminate/failed-activity retry, full schedule
+CRUD (including patch/pause/resume/timezone), detail-panel continue-as-new + live `register_query`
+state, namespace create/delete, engine version shown in the status bar.
 
 **`GET /api/v1/version`** returns `{ version, build_profile }`. CLI forwards its own
 `CARGO_PKG_VERSION` so the field reflects the user-facing binary (e.g. `0.11.3`), not the internal

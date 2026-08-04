@@ -1,8 +1,11 @@
 use anyhow::Result;
 use sqlx::PgPool;
 
-use crate::store::WorkflowStore;
+use crate::store::{RetryEvent, WorkflowStore, retry_denial};
 use crate::types::*;
+
+const RETRY_ACTIVITY_SELECT: &str = "SELECT id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat FROM workflow.activities WHERE workflow_id = $1 AND status = 'FAILED' ORDER BY seq DESC LIMIT 1 FOR UPDATE";
+const RETRY_ACTIVITY_UPDATE: &str = "UPDATE workflow.activities SET status = 'PENDING', result = NULL, error = NULL, attempt = 1, claimed_by = NULL, scheduled_at = $1, started_at = NULL, completed_at = NULL, last_heartbeat = NULL WHERE id = $2 RETURNING id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat";
 
 /// v0.1.2 schema layout: workflow tables live in the `workflow` schema;
 /// the engine-events outbox lives in the `engine` schema (created
@@ -833,6 +836,100 @@ impl WorkflowStore for PostgresStore {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    async fn retry_failed_activity(
+        &self,
+        workflow_id: &str,
+        requested_by: &str,
+        reason: &str,
+        requested_at: f64,
+    ) -> Result<RetryFailedActivityResult> {
+        let mut tx = self.pool.begin().await?;
+        let workflow: Option<(String, Option<String>, Option<f64>)> = sqlx::query_as(
+            "SELECT status, parent_id, archived_at FROM workflow.workflows WHERE id = $1 FOR UPDATE",
+        )
+        .bind(workflow_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some((status, parent_id, archived_at)) = workflow else {
+            return Ok(RetryFailedActivityResult::NotFound);
+        };
+        if let Some(denial) = retry_denial(status, parent_id, archived_at) {
+            return Ok(denial);
+        }
+
+        let failed = sqlx::query_as::<_, PgActivityRow>(RETRY_ACTIVITY_SELECT)
+            .bind(workflow_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+        let Some(failed) = failed else {
+            return Ok(RetryFailedActivityResult::NoFailedActivity);
+        };
+        let failed_event_seq: (i32,) = sqlx::query_as(
+            "SELECT seq FROM workflow.events
+             WHERE workflow_id = $1 AND event_type = 'ActivityFailed'
+             ORDER BY seq DESC LIMIT 1",
+        )
+        .bind(workflow_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let invalidated =
+            sqlx::query("DELETE FROM workflow.activities WHERE workflow_id = $1 AND seq > $2")
+                .bind(workflow_id)
+                .bind(failed.seq)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+        let activity = sqlx::query_as::<_, PgActivityRow>(RETRY_ACTIVITY_UPDATE)
+            .bind(requested_at)
+            .bind(failed.id)
+            .fetch_one(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE workflow.workflows
+             SET status = 'WAITING', result = NULL, error = NULL, completed_at = NULL,
+                 updated_at = $1, needs_dispatch = FALSE, dispatch_claimed_by = NULL,
+                 dispatch_last_heartbeat = NULL
+             WHERE id = $2",
+        )
+        .bind(requested_at)
+        .bind(workflow_id)
+        .execute(&mut *tx)
+        .await?;
+        let event_seq: (i32,) = sqlx::query_as(
+            "SELECT COALESCE(MAX(seq), 0) + 1 FROM workflow.events WHERE workflow_id = $1",
+        )
+        .bind(workflow_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let payload = RetryEvent {
+            activity_id: failed.id,
+            activity_seq: failed.seq,
+            activity_name: &failed.name,
+            failed_event_seq: failed_event_seq.0,
+            requested_by,
+            reason,
+            invalidated_activities: invalidated,
+        }
+        .payload();
+        sqlx::query(
+            "INSERT INTO workflow.events (workflow_id, seq, event_type, payload, timestamp)
+             VALUES ($1, $2, 'ActivityRetryRequested', $3, $4)",
+        )
+        .bind(workflow_id)
+        .bind(event_seq.0)
+        .bind(payload.to_string())
+        .bind(requested_at)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(RetryFailedActivityResult::Retried(Box::new(
+            RetriedActivity {
+                activity: activity.into(),
+                invalidated_activities: invalidated,
+            },
+        )))
     }
 
     async fn complete_activity(

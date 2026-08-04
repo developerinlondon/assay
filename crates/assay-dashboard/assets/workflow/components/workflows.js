@@ -199,6 +199,7 @@ var AssayWorkflows = (function () {
         if (act === 'signal')        ctx.actions.signal(id);
         else if (act === 'cancel')   ctx.actions.cancel(id);
         else if (act === 'terminate') ctx.actions.terminate(id);
+        else if (act === 'retry') ctx.actions.retryFailedActivity(id);
         else if (act === 'continue') ctx.actions.continueAsNew(id);
         return;
       }
@@ -359,6 +360,14 @@ var AssayWorkflows = (function () {
       // from the terminal run. The icon is plus-in-play-circle —
       // reads as "new", not "retry".
       if (terminal) {
+        if (status === 'FAILED') {
+          html +=
+            '<button class="row-action-btn" data-action="retry" data-id="' + idAttr + '" title="Retry failed activity in this run" aria-label="Retry failed activity">' +
+              '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                '<path d="M20 11a8.1 8.1 0 1 0 2 5.3"/><polyline points="20 4 20 11 13 11"/>' +
+              '</svg>' +
+            '</button>';
+        }
         html +=
           '<button class="row-action-btn" data-action="continue" data-id="' + idAttr + '" title="Start a new run (continue-as-new)" aria-label="Start a new run">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +

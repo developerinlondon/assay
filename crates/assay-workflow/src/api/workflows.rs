@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 use crate::ctx::WorkflowCtx;
 use crate::store::WorkflowStore;
-use crate::types::WorkflowStatus;
+use crate::types::{RetryFailedActivityResult, WorkflowStatus};
 
 pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
     Router::new()
@@ -19,6 +19,7 @@ pub fn router<S: WorkflowStore + 'static>() -> Router<Arc<WorkflowCtx<S>>> {
         .route("/workflows/{id}/signal/{name}", post(send_signal))
         .route("/workflows/{id}/cancel", post(cancel_workflow))
         .route("/workflows/{id}/terminate", post(terminate_workflow))
+        .route("/workflows/{id}/retry", post(retry_failed_activity))
         .route("/workflows/{id}/children", get(list_children))
         .route("/workflows/{id}/continue-as-new", post(continue_as_new))
         .route("/workflows/{id}/state", get(get_workflow_state))
@@ -346,6 +347,70 @@ pub async fn terminate_workflow<S: WorkflowStore>(
     }
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct RetryFailedActivityBody {
+    pub requested_by: String,
+    pub reason: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RetryFailedActivityResponse {
+    pub workflow_id: String,
+    pub status: String,
+    pub activity: crate::types::WorkflowActivity,
+    pub invalidated_activities: u64,
+}
+
+#[utoipa::path(
+    post, path = "/api/v1/engine/workflow/workflows/{id}/retry",
+    tag = "workflows",
+    params(("id" = String, Path, description = "Workflow ID")),
+    request_body = RetryFailedActivityBody,
+    responses(
+        (status = 200, description = "Failed activity requeued", body = RetryFailedActivityResponse),
+        (status = 404, description = "Workflow not found"),
+        (status = 409, description = "Workflow cannot be retried"),
+    ),
+)]
+pub async fn retry_failed_activity<S: WorkflowStore>(
+    State(state): State<Arc<WorkflowCtx<S>>>,
+    Path(id): Path<String>,
+    Json(body): Json<RetryFailedActivityBody>,
+) -> Result<Json<RetryFailedActivityResponse>, AppError> {
+    if body.requested_by.trim().is_empty() || body.reason.trim().is_empty() {
+        return Err(AppError::bad_request(
+            "requested_by and reason are required".to_string(),
+        ));
+    }
+    match state
+        .retry_failed_activity(&id, body.requested_by.trim(), body.reason.trim())
+        .await?
+    {
+        RetryFailedActivityResult::Retried(retried) => Ok(Json(RetryFailedActivityResponse {
+            workflow_id: id,
+            status: "WAITING".to_string(),
+            activity: retried.activity,
+            invalidated_activities: retried.invalidated_activities,
+        })),
+        RetryFailedActivityResult::NotFound => Err(AppError::NotFound(format!("workflow {id}"))),
+        RetryFailedActivityResult::NotFailed { status } => Err(AppError::conflict(format!(
+            "workflow {id} is {status}; only FAILED workflows can retry an activity"
+        ))),
+        RetryFailedActivityResult::Archived => {
+            Err(AppError::conflict(format!("workflow {id} is archived")))
+        }
+        RetryFailedActivityResult::ChildWorkflow => Err(AppError::conflict(format!(
+            "child workflow {id} cannot be retried independently"
+        ))),
+        RetryFailedActivityResult::NoFailedActivity => Err(AppError::conflict(format!(
+            "workflow {id} has no failed activity"
+        ))),
+        RetryFailedActivityResult::Unsupported => Err(AppError::conflict(
+            "the configured workflow store does not support activity retry".to_string(),
+        )),
+    }
+}
+
 #[utoipa::path(
     get, path = "/api/v1/engine/workflow/workflows/{id}/children",
     tag = "workflows",
@@ -489,6 +554,34 @@ pub enum AppError {
     NotFound(String),
 }
 
+#[derive(Debug)]
+struct HttpError {
+    status: axum::http::StatusCode,
+    message: String,
+}
+
+impl std::fmt::Display for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for HttpError {}
+
+impl AppError {
+    fn bad_request(message: String) -> Self {
+        Self::http(axum::http::StatusCode::BAD_REQUEST, message)
+    }
+
+    fn conflict(message: String) -> Self {
+        Self::http(axum::http::StatusCode::CONFLICT, message)
+    }
+
+    fn http(status: axum::http::StatusCode, message: String) -> Self {
+        Self::Internal(HttpError { status, message }.into())
+    }
+}
+
 impl From<anyhow::Error> for AppError {
     fn from(e: anyhow::Error) -> Self {
         Self::Internal(e)
@@ -505,6 +598,13 @@ impl axum::response::IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         match self {
             Self::Internal(e) => {
+                if let Some(http_error) = e.downcast_ref::<HttpError>() {
+                    return (
+                        http_error.status,
+                        Json(serde_json::json!({ "error": http_error.message })),
+                    )
+                        .into_response();
+                }
                 tracing::error!("Internal error: {e}");
                 (
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,

@@ -140,6 +140,27 @@ impl WorkflowEventBus {
             .await
     }
 
+    pub(crate) async fn publish_retry_requested(
+        &self,
+        namespace: &str,
+        workflow_id: &str,
+        activity_id: i64,
+        activity_seq: i32,
+    ) -> Result<i64> {
+        self.inner
+            .publish_committed(NewEvent {
+                namespace,
+                subsystem: Subsystem::Workflow,
+                kind: "workflow_retry_requested",
+                payload: serde_json::json!({
+                    "workflow_id": workflow_id,
+                    "activity_id": activity_id,
+                    "activity_seq": activity_seq,
+                }),
+            })
+            .await
+    }
+
     /// Read a cursor's worth of events for this namespace (any
     /// subsystem — SSE uses this for the replay phase).
     pub async fn read_since(

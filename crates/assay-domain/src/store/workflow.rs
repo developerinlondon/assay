@@ -218,6 +218,16 @@ pub trait WorkflowStore: Send + Sync + 'static {
         next_scheduled_at: f64,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
+    fn retry_failed_activity(
+        &self,
+        _workflow_id: &str,
+        _requested_by: &str,
+        _reason: &str,
+        _requested_at: f64,
+    ) -> impl Future<Output = anyhow::Result<RetryFailedActivityResult>> + Send {
+        async { Ok(RetryFailedActivityResult::Unsupported) }
+    }
+
     fn complete_activity(
         &self,
         id: i64,

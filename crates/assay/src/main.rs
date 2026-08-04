@@ -293,6 +293,17 @@ enum WorkflowCommands {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// Retry the terminal failed activity in place, preserving history.
+    Retry {
+        /// Workflow ID
+        id: String,
+        /// Audit identity of the operator requesting the retry
+        #[arg(long)]
+        requested_by: String,
+        /// Why the failed activity is safe to retry now
+        #[arg(long)]
+        reason: String,
+    },
     /// Close out a workflow and start a fresh run with the same type,
     /// namespace, and task queue. Client-side continue-as-new — distinct
     /// from the worker-side `ctx:continue_as_new`.
@@ -625,6 +636,11 @@ async fn main() -> ExitCode {
                 WorkflowCommands::Terminate { id, reason } => {
                     cli::commands::workflow_terminate(&opts, &id, reason).await
                 }
+                WorkflowCommands::Retry {
+                    id,
+                    requested_by,
+                    reason,
+                } => cli::commands::workflow_retry(&opts, &id, &requested_by, &reason).await,
                 WorkflowCommands::ContinueAsNew { id, input } => {
                     cli::commands::workflow_continue_as_new(&opts, &id, input).await
                 }

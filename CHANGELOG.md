@@ -2,6 +2,47 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.11 — 2026-08-04
+
+### Added
+
+- **Operators can resume a run after correcting an external activity blocker.** The authenticated
+  workflow API, embedded dashboard, CLI, and Lua management client can atomically requeue the
+  terminal failed activity with a required requester and reason. Replay preserves earlier results,
+  invalidates activity results produced by the failure-handling branch, and records the retry in
+  immutable workflow history.
+- Retry requests reject non-failed, archived, and child workflows and cannot create duplicate work
+  when submitted concurrently. Automatic activity retries remain bounded by the activity policy;
+  terminal recovery remains an explicit operator decision.
+
+## assay-workflow 0.4.3 — 2026-08-04
+
+### Added
+
+- Added backend-neutral terminal failed-activity retry, native atomic PostgreSQL and SQLite
+  implementations, REST/OpenAPI support, replay-boundary handling, and retry-request bus events.
+
+## assay-domain 0.2.3 — 2026-08-04
+
+### Added
+
+- Added the source-compatible `WorkflowStore::retry_failed_activity` extension point and its typed
+  outcomes. Third-party stores default to an unsupported result until they implement the operation.
+
+## assay-dashboard 0.4.5 — 2026-08-04
+
+### Added
+
+- Failed workflow rows now offer an audited Retry action that collects the operator identity and
+  reason before requeuing the failed activity.
+
+## assay-lua 0.17.8 — 2026-08-04
+
+### Added
+
+- Added `assay workflow retry` and `workflow:retry_failed_activity(...)` management clients.
+- Durable replay now clears cached activity outcomes at the recorded retry boundary.
+
 ## assay-engine 0.5.10 — 2026-08-02
 
 ### Added
