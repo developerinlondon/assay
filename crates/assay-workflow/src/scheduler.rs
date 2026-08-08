@@ -7,7 +7,7 @@ use tokio::time::{Duration, interval};
 use tracing::{debug, error, info, warn};
 
 use crate::store::WorkflowStore;
-use crate::types::{WorkflowEvent, WorkflowRecord};
+use crate::types::{WorkflowEvent, WorkflowRecord, WorkflowSchedule};
 
 const SCHEDULER_POLL_SECS: u64 = 15;
 
@@ -40,8 +40,13 @@ pub async fn run_scheduler<S: WorkflowStore>(store: Arc<S>) {
 }
 
 async fn evaluate_schedules<S: WorkflowStore>(store: &S) -> Result<()> {
+    evaluate_schedules_at(store, timestamp_now()).await
+}
+
+/// One scheduler pass at an injected `now` — public so integration tests can
+/// drive cron evaluation deterministically without waiting on the poll tick.
+pub async fn evaluate_schedules_at<S: WorkflowStore>(store: &S, now: f64) -> Result<()> {
     let namespaces = store.list_namespaces().await?;
-    let now = timestamp_now();
 
     for ns in &namespaces {
         if let Err(e) = evaluate_namespace_schedules(store, &ns.name, now).await {
@@ -63,10 +68,12 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(
             continue;
         }
 
-        // Check if the schedule is due
+        // Creation seeds next_run_at (see `seed_next_run`), so a NULL here is
+        // either a row written before that or a cron that won't parse — the
+        // latter is rejected below. Firing keeps pre-seed rows as they were.
         let is_due = match sched.next_run_at {
             Some(next) => now >= next,
-            None => true, // Never run before — run now
+            None => true,
         };
 
         if !is_due {
@@ -105,44 +112,7 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(
             continue;
         }
 
-        // Start a new workflow run
-        let workflow_id = format!("{}-{}", sched.name, now as u64);
-        let run_id = format!("run-{workflow_id}");
-
-        let wf = WorkflowRecord {
-            id: workflow_id.clone(),
-            namespace: namespace.to_string(),
-            run_id,
-            workflow_type: sched.workflow_type.clone(),
-            task_queue: sched.task_queue.clone(),
-            status: "PENDING".to_string(),
-            input: sched.input.clone(),
-            result: None,
-            error: None,
-            parent_id: None,
-            claimed_by: None,
-            search_attributes: None,
-            archived_at: None,
-            archive_uri: None,
-            created_at: now,
-            updated_at: now,
-            completed_at: None,
-        };
-
-        store.create_workflow(&wf).await?;
-        store
-            .append_event(&WorkflowEvent {
-                id: None,
-                workflow_id: workflow_id.clone(),
-                seq: 1,
-                event_type: "WorkflowStarted".to_string(),
-                payload: sched.input.clone(),
-                timestamp: now,
-            })
-            .await?;
-
-        // worker can pick them up. Without this they'd sit PENDING forever.
-        store.mark_workflow_dispatchable(&workflow_id).await?;
+        let workflow_id = start_scheduled_run(store, namespace, &sched, now).await?;
 
         store
             .update_schedule_last_run(namespace, &sched.name, now, next_run, &workflow_id)
@@ -157,7 +127,63 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(
     Ok(())
 }
 
-fn compute_next_run(cron_expr: &str, timezone: &str) -> Option<f64> {
+async fn start_scheduled_run<S: WorkflowStore>(
+    store: &S,
+    namespace: &str,
+    sched: &WorkflowSchedule,
+    now: f64,
+) -> Result<String> {
+    let workflow_id = format!("{}-{}", sched.name, now as u64);
+    let run_id = format!("run-{workflow_id}");
+
+    let wf = WorkflowRecord {
+        id: workflow_id.clone(),
+        namespace: namespace.to_string(),
+        run_id,
+        workflow_type: sched.workflow_type.clone(),
+        task_queue: sched.task_queue.clone(),
+        status: "PENDING".to_string(),
+        input: sched.input.clone(),
+        result: None,
+        error: None,
+        parent_id: None,
+        claimed_by: None,
+        search_attributes: None,
+        archived_at: None,
+        archive_uri: None,
+        created_at: now,
+        updated_at: now,
+        completed_at: None,
+    };
+
+    store.create_workflow(&wf).await?;
+    store
+        .append_event(&WorkflowEvent {
+            id: None,
+            workflow_id: workflow_id.clone(),
+            seq: 1,
+            event_type: "WorkflowStarted".to_string(),
+            payload: sched.input.clone(),
+            timestamp: now,
+        })
+        .await?;
+
+    // worker can pick them up. Without this they'd sit PENDING forever.
+    store.mark_workflow_dispatchable(&workflow_id).await?;
+
+    Ok(workflow_id)
+}
+
+/// `next_run_at` to persist for a schedule being created. The scheduler reads
+/// a NULL `next_run_at` as due-now, so an unseeded schedule fires one run at
+/// registration no matter what its cron says.
+pub(crate) fn seed_next_run(sched: &WorkflowSchedule) -> Option<f64> {
+    sched
+        .next_run_at
+        .or_else(|| compute_next_run(&sched.cron_expr, &sched.timezone))
+}
+
+pub(crate) fn compute_next_run(cron_expr: &str, timezone: &str) -> Option<f64> {
     let schedule = Schedule::from_str(cron_expr).ok()?;
     // Empty string is treated as UTC so older schedules (pre-v0.11.3) keep
     // behaving identically even if they migrate in without the column set.

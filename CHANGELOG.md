@@ -2,6 +2,29 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.12 — 2026-08-08
+
+### Fixed
+
+- A newly created cron schedule no longer starts one run the moment it is registered. Scheduling a
+  workflow for a date months away now waits for that date.
+
+## assay-workflow 0.4.4 — 2026-08-08
+
+### Fixed
+
+- `create_schedule` seeds `next_run_at` from the cron expression on both backends. The scheduler
+  reads a NULL `next_run_at` as due-now, so an unseeded schedule fired one run at registration
+  regardless of its cron. Schedules whose fire time has already elapsed still catch up, and an
+  explicitly supplied `next_run_at` is preserved.
+- `POST /schedules` returns the stored record, so its `next_run_at` reflects the seeded value
+  instead of `null`.
+
+### Added
+
+- `scheduler::evaluate_schedules_at(store, now)` — one deterministic scheduler pass at an injected
+  `now`, for tests that would otherwise wait on the 15s poll interval.
+
 ## assay-engine 0.5.11 — 2026-08-04
 
 ### Added

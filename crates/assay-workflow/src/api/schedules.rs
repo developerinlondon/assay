@@ -105,11 +105,11 @@ pub async fn create_schedule<S: WorkflowStore>(
         created_at: now,
     };
 
-    state.create_schedule(&schedule).await?;
+    let stored = state.create_schedule(&schedule).await?;
 
     Ok((
         axum::http::StatusCode::CREATED,
-        Json(serde_json::to_value(schedule)?),
+        Json(serde_json::to_value(stored)?),
     ))
 }
 
