@@ -7,14 +7,8 @@ use crate::store::WorkflowStore;
 use crate::types::*;
 
 impl<S: WorkflowStore> WorkflowCtx<S> {
-    /// Persist a new schedule. Returns the stored record, whose `next_run_at`
-    /// is seeded from the cron expression so the first run happens at the
-    /// first cron time rather than at registration.
-    pub async fn create_schedule(&self, schedule: &WorkflowSchedule) -> Result<WorkflowSchedule> {
-        let mut stored = schedule.clone();
-        stored.next_run_at = crate::scheduler::seed_next_run(schedule);
-        self.store.create_schedule(&stored).await?;
-        Ok(stored)
+    pub async fn create_schedule(&self, schedule: &WorkflowSchedule) -> Result<()> {
+        self.store.create_schedule(schedule).await
     }
 
     pub async fn list_schedules(&self, namespace: &str) -> Result<Vec<WorkflowSchedule>> {

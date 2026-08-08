@@ -70,7 +70,8 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(
 
         // Creation seeds next_run_at (see `seed_next_run`), so a NULL here is
         // either a row written before that or a cron that won't parse — the
-        // latter is rejected below. Firing keeps pre-seed rows as they were.
+        // latter is rejected below. The seeding is not retroactive: a pre-seed
+        // row still fires once, and that fire gives it a cadence.
         let is_due = match sched.next_run_at {
             Some(next) => now >= next,
             None => true,
@@ -206,6 +207,44 @@ fn timestamp_now() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn schedule_in_timezone(timezone: &str) -> WorkflowSchedule {
+        WorkflowSchedule {
+            name: "sched".to_string(),
+            namespace: "main".to_string(),
+            workflow_type: "wf".to_string(),
+            cron_expr: "0 0 8 * * *".to_string(),
+            timezone: timezone.to_string(),
+            input: None,
+            task_queue: "main".to_string(),
+            overlap_policy: "skip".to_string(),
+            paused: false,
+            last_run_at: None,
+            next_run_at: None,
+            last_workflow_id: None,
+            created_at: 0.0,
+        }
+    }
+
+    /// The seed must be computed in the schedule's own timezone: "daily at
+    /// 08:00" is a different UTC instant in Auckland (UTC+12/+13) than in UTC.
+    #[test]
+    fn seed_next_run_honors_the_schedule_timezone() {
+        let auckland =
+            seed_next_run(&schedule_in_timezone("Pacific/Auckland")).expect("auckland seed");
+        let utc = seed_next_run(&schedule_in_timezone("UTC")).expect("utc seed");
+        assert_ne!(
+            auckland, utc,
+            "08:00 Pacific/Auckland and 08:00 UTC should not coincide"
+        );
+    }
+
+    #[test]
+    fn seed_next_run_preserves_an_explicit_next_run_at() {
+        let mut sched = schedule_in_timezone("UTC");
+        sched.next_run_at = Some(1.0);
+        assert_eq!(seed_next_run(&sched), Some(1.0));
+    }
 
     /// "Daily at 02:00" computes a different UTC epoch depending on the
     /// schedule's timezone. UTC and Europe/Berlin produce different
