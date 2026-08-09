@@ -281,6 +281,11 @@ impl Harness {
         dispatch!(self, s => s.create_schedule(sched).await)
     }
 
+    /// One deterministic scheduler pass at an injected `now`.
+    pub async fn evaluate_schedules_at(&self, now: f64) -> anyhow::Result<()> {
+        dispatch!(self, s => assay_workflow::scheduler::evaluate_schedules_at(s, now).await)
+    }
+
     pub async fn get_schedule(
         &self,
         namespace: &str,

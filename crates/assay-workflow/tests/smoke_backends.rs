@@ -957,11 +957,15 @@ async fn signal_send_and_consume(#[case] backend: Backend) {
 
 // ── Task 3.9 — Schedules ──────────────────────────────────────────────────────
 
-fn make_schedule(namespace: &str, name: &str) -> common::harness::WorkflowSchedule {
-    let now = std::time::SystemTime::now()
+fn wall_clock_now() -> f64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs_f64();
+        .as_secs_f64()
+}
+
+fn make_schedule(namespace: &str, name: &str) -> common::harness::WorkflowSchedule {
+    let now = wall_clock_now();
     common::harness::WorkflowSchedule {
         namespace: namespace.to_string(),
         name: name.to_string(),
@@ -1101,6 +1105,102 @@ async fn schedule_last_run_update(#[case] backend: Backend) {
         got.last_workflow_id.as_deref(),
         Some(wf_id.as_str()),
         "last_workflow_id should be updated"
+    );
+}
+
+/// A schedule whose cron next-fires months from now must not run at
+/// registration: `create_schedule` seeds `next_run_at`, and the first
+/// scheduler pass sees a future fire time instead of a NULL it reads as due.
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
+async fn schedule_does_not_fire_at_registration(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let sched_name = uid("sched-first-fire");
+    let mut sched = make_schedule("main", &sched_name);
+    // 08:00 on Jan 1 — months away from any run of this test.
+    sched.cron_expr = "0 0 8 1 1 *".to_string();
+    h.create_schedule(&sched).await.unwrap();
+    let now = wall_clock_now();
+
+    h.evaluate_schedules_at(now).await.unwrap();
+
+    let started = h
+        .list_workflows("main", None, None, None, 100, 0)
+        .await
+        .unwrap();
+    assert!(
+        started.is_empty(),
+        "a not-yet-due schedule must start no workflows, got {:?}",
+        started.iter().map(|w| &w.id).collect::<Vec<_>>()
+    );
+
+    let after = h
+        .get_schedule("main", &sched_name)
+        .await
+        .unwrap()
+        .expect("should exist");
+    let seeded = after
+        .next_run_at
+        .expect("create_schedule must seed next_run_at from the cron expression");
+    assert!(
+        seeded > now,
+        "seeded next_run_at {seeded} should be in the future (now {now})"
+    );
+    assert!(
+        after.last_run_at.is_none() && after.last_workflow_id.is_none(),
+        "a schedule that never ran must not record a last run"
+    );
+}
+
+/// Catch-up: a schedule whose `next_run_at` already elapsed (engine down over
+/// the fire time) still fires on the next pass, and seeding never overwrites a
+/// caller-supplied `next_run_at`.
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
+async fn schedule_with_elapsed_next_run_fires_on_catch_up(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let sched_name = uid("sched-catch-up");
+    let now = wall_clock_now();
+    let missed = now - 60.0;
+    let mut sched = make_schedule("main", &sched_name);
+    sched.cron_expr = "0 0 8 1 1 *".to_string();
+    sched.next_run_at = Some(missed);
+    h.create_schedule(&sched).await.unwrap();
+
+    let stored = h.get_schedule("main", &sched_name).await.unwrap().unwrap();
+    assert_eq!(
+        stored.next_run_at,
+        Some(missed),
+        "an explicit next_run_at must survive creation"
+    );
+
+    h.evaluate_schedules_at(now).await.unwrap();
+
+    let started = h
+        .list_workflows("main", None, None, None, 100, 0)
+        .await
+        .unwrap();
+    assert_eq!(started.len(), 1, "an elapsed fire time should catch up");
+    assert!(started[0].id.starts_with(&sched_name));
+
+    let after = h.get_schedule("main", &sched_name).await.unwrap().unwrap();
+    assert_eq!(
+        after.last_workflow_id.as_deref(),
+        Some(started[0].id.as_str())
+    );
+    assert!(
+        after.next_run_at.unwrap() > now,
+        "next_run_at should roll forward past the fire"
     );
 }
 

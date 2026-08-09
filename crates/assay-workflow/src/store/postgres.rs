@@ -1103,7 +1103,7 @@ impl WorkflowStore for PostgresStore {
         .bind(&sched.overlap_policy)
         .bind(sched.paused)
         .bind(sched.last_run_at)
-        .bind(sched.next_run_at)
+        .bind(crate::scheduler::seed_next_run(sched))
         .bind(&sched.last_workflow_id)
         .bind(sched.created_at)
         .execute(&self.pool)

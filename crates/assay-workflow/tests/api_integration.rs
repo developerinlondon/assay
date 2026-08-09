@@ -481,6 +481,50 @@ async fn workflow_not_found() {
     assert_eq!(resp.status(), 404);
 }
 
+/// The 201 body reports the `next_run_at` the store seeded, not the null the
+/// request carried — the response and the stored row must agree.
+#[tokio::test]
+async fn schedule_create_returns_the_seeded_next_run_at() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let resp = c
+        .post(format!("{url}/api/v1/engine/workflow/schedules"))
+        .json(&serde_json::json!({
+            "name": "new-year",
+            "workflow_type": "Report",
+            "cron_expr": "0 0 8 1 1 *",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let created: serde_json::Value = resp.json().await.unwrap();
+    let seeded = created["next_run_at"]
+        .as_f64()
+        .expect("201 body should carry the seeded next_run_at");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    assert!(
+        seeded > now,
+        "seeded next_run_at {seeded} should be in the future"
+    );
+
+    let resp = c
+        .get(format!("{url}/api/v1/engine/workflow/schedules/new-year"))
+        .send()
+        .await
+        .unwrap();
+    let fetched: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        fetched["next_run_at"].as_f64(),
+        Some(seeded),
+        "the 201 body and the stored row should agree"
+    );
+}
+
 #[tokio::test]
 async fn schedule_patch_updates_fields() {
     let (url, _h) = start_test_server().await;

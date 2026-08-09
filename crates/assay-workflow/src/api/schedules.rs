@@ -107,9 +107,17 @@ pub async fn create_schedule<S: WorkflowStore>(
 
     state.create_schedule(&schedule).await?;
 
+    // Read back so the response carries the `next_run_at` the store seeded
+    // rather than the null we sent in; falls back to the request-derived
+    // record if the schedule is deleted in between.
+    let stored = state
+        .get_schedule(&req.namespace, &req.name)
+        .await?
+        .unwrap_or(schedule);
+
     Ok((
         axum::http::StatusCode::CREATED,
-        Json(serde_json::to_value(schedule)?),
+        Json(serde_json::to_value(stored)?),
     ))
 }
 
