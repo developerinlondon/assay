@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assay — Privacy Policy</title>
+  <meta name="description" content="How the hosted Assay identity service at auth.assay.rs handles account data, including data received from Google Sign-In, and the rights you have under UK data protection law.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-privacy">
+  __HEADER__
+
+  <main>
+    <h1>Privacy Policy</h1>
+    <p class="text-muted">Last updated 11 August 2026</p>
+
+    <p>This policy covers the hosted Assay services at <code>assay.rs</code>, <code>auth.assay.rs</code>
+      and <code>engine.assay.rs</code>. Assay is also open source software you can run yourself; when you
+      self-host it, you are the controller of the data it stores and this policy does not apply.</p>
+
+    <h2>Who we are</h2>
+    <p>The hosted service is operated by NSM Technologies Limited, registered in England and Wales under
+      company number 16748005, with its registered office at 7 Sanderling Close, Bicester, England,
+      OX26 6WF. We are the data controller for the personal information described here. Contact us at
+      <a href="mailto:info@nsmtechnologies.co.uk">info@nsmtechnologies.co.uk</a>.</p>
+
+    <h2>What we store</h2>
+    <p><code>auth.assay.rs</code> is an identity provider. It exists to confirm who you are to the
+      applications you sign in to. To do that it stores:</p>
+    <ul>
+      <li>your account record — an internal identifier, your email address, whether that address is
+        verified, and your display name</li>
+      <li>a password hash, if you set a password. Passwords are never stored in a recoverable form.</li>
+      <li>passkey public keys, if you register a passkey. A passkey's private key never leaves your device.</li>
+      <li>a link between your account and any upstream provider you signed in with, stored as that
+        provider's subject identifier</li>
+      <li>session records, authorisation codes, refresh tokens and your consent decisions for each
+        application you have signed in to</li>
+    </ul>
+
+    <h2>Data we receive from Google Sign-In</h2>
+    <p>If you choose to sign in with Google, we ask Google only for the <code>openid</code>,
+      <code>email</code> and <code>profile</code> scopes. From those we receive your Google account
+      identifier, your email address, whether Google has verified it, and your name.</p>
+    <p>We use that data for one purpose: to create or recognise your Assay account and to tell the
+      application you are signing in to who you are. We do not use Google user data for advertising,
+      we do not sell or transfer it, we do not use it to train machine learning models, and no human
+      reads it except where you ask us to help with a support issue or the law requires it.</p>
+    <p>Applications that use Assay to sign you in never receive your Google credentials. They receive
+      an identity token issued by Assay.</p>
+
+    <h2>Why we may lawfully do this</h2>
+    <p>We process account data to perform the contract by which we provide the service to you. We
+      process security and operational logs on the basis of our legitimate interests in keeping the
+      service available and defending it against abuse.</p>
+
+    <h2>Logs</h2>
+    <p>Our servers and network provider record technical information needed to operate the service
+      securely, such as IP addresses, timestamps and requested endpoints. These are retained for a
+      short operational period and then discarded.</p>
+
+    <h2>Who we share it with</h2>
+    <p>We share personal information only with providers that process it on our behalf under contract:
+      our application hosting provider, our managed database provider, our network and content delivery
+      provider, and our transactional email provider, which sends password recovery messages. We do not
+      sell personal information.</p>
+    <p>We may disclose information where the law requires it, or to establish, exercise or defend
+      legal claims.</p>
+
+    <h2>International transfers</h2>
+    <p>Our providers operate globally, so your information may be processed outside the United Kingdom.
+      Where that happens we rely on the safeguards UK data protection law recognises, such as adequacy
+      regulations or the International Data Transfer Addendum to the EU Standard Contractual Clauses.</p>
+
+    <h2>How long we keep it</h2>
+    <p>We keep your account record while your account exists. Sessions and authorisation codes expire on
+      their own within minutes to weeks depending on their kind. If you delete your account we remove
+      your account record and everything keyed to it, including upstream links, passkeys, sessions and
+      consents, within 30 days, except where we must retain something to meet a legal obligation.</p>
+
+    <h2>Your rights</h2>
+    <p>Under UK data protection law you may ask for a copy of the personal information we hold about
+      you, ask us to correct or delete it, ask us to restrict or object to our use of it, and ask us to
+      transfer it to another organisation in a portable format. To exercise any of these, email
+      <a href="mailto:info@nsmtechnologies.co.uk">info@nsmtechnologies.co.uk</a>. We respond within one
+      month and there is no charge.</p>
+    <p>You can revoke Assay's access to your Google account at any time from your
+      <a href="https://myaccount.google.com/permissions">Google account permissions page</a>. Doing so
+      stops future sign-ins through Google but does not by itself delete your Assay account.</p>
+
+    <h2>Complaints</h2>
+    <p>If you are unhappy with how we have handled your information you can complain to the Information
+      Commissioner's Office at <a href="https://ico.org.uk">ico.org.uk</a> or on 0303 123 1113. We would
+      appreciate the chance to put things right first.</p>
+
+    <h2>Changes</h2>
+    <p>We will update this page when our practices change and revise the date above. Where a change
+      materially affects data we already hold about you, we will contact you.</p>
+
+    <h2>Contact</h2>
+    <p>NSM Technologies Limited<br>
+      7 Sanderling Close, Bicester, England, OX26 6WF, United Kingdom<br>
+      Registered in England and Wales, company number 16748005<br>
+      <a href="mailto:info@nsmtechnologies.co.uk">info@nsmtechnologies.co.uk</a></p>
+
+  </main>
+  __FOOTER__
+</body>
+</html>
