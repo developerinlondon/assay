@@ -12,7 +12,7 @@
 # RUST_VERSION must match .mise.toml.
 
 ARG BUILD_MODE=artifact
-ARG RUST_VERSION=1.95
+ARG RUST_VERSION=1.97
 
 FROM scratch AS artifact
 COPY assay-linux-x86_64 /assay

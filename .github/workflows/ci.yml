@@ -111,13 +111,18 @@ jobs:
     # the actor is the maintainer; any other actor (Dependabot, outside
     # contributors) falls back to `ubuntu-latest`.
     #
-    # macOS row: always uses GitHub-hosted `macos-14`. GitHub Actions
-    # cannot fall back from an offline self-hosted runner once a job has
-    # been routed there, so required PR checks must not depend on a local
-    # Mac runner being online.
+    # macOS row: opt-in, routed to the maintainer's local Mac only while
+    # `vars.MAC_LOCAL_RUNNER == 'true'` (the same switch release.yml uses).
+    # GitHub Actions cannot fall back from an offline self-hosted runner
+    # once a job has been routed there, so this stays a deliberate toggle
+    # rather than a default — flip the variable and the next run goes back
+    # to GitHub-hosted `macos-14` with no workflow edit:
+    #
+    #   gh variable set MAC_LOCAL_RUNNER --repo developerinlondon/assay --body false
     runs-on: >-
       ${{
         (matrix.os == 'ubuntu-latest' && github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]'))
+        || (matrix.os == 'macos-14' && github.actor == 'developerinlondon' && vars.MAC_LOCAL_RUNNER == 'true' && fromJSON('["self-hosted","macos","assay"]'))
         || matrix.os
       }}
     timeout-minutes: 25
@@ -187,8 +192,11 @@ jobs:
       # Keep self-hosted Cargo output off the runner checkout volume. On
       # assay-runner-eda, /var/cache/runner-work is mounted from the
       # dedicated cargo-targets LV and is owned by the runner user.
+      # Linux-only: the LV and its path exist on assay-runner-eda alone. The
+      # Mac runner keeps Cargo output in the checkout, where it persists
+      # between runs anyway.
       - name: Use dedicated Cargo target dir (self-hosted)
-        if: steps.targets.outputs.run_checks == 'true' && runner.environment == 'self-hosted'
+        if: steps.targets.outputs.run_checks == 'true' && runner.environment == 'self-hosted' && runner.os == 'Linux'
         run: |
           mkdir -p /var/cache/runner-work/assay-target
           echo "CARGO_TARGET_DIR=/var/cache/runner-work/assay-target" >> "$GITHUB_ENV"

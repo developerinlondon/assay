@@ -12,7 +12,7 @@
 # release workflow extracts and passes it; bump both together if changed manually.
 
 ARG BUILD_MODE=artifact
-ARG RUST_VERSION=1.95
+ARG RUST_VERSION=1.97
 
 FROM scratch AS artifact
 COPY assay-engine-linux-x86_64 /assay-engine

@@ -1,7 +1,7 @@
 [tools]
 # Rust toolchain — pinned so local dev and CI agree byte-for-byte.
 # Bump in lockstep with anything that needs a newer compiler feature.
-rust = "1.95.0"
+rust = "1.97.1"
 
 # Node + npm for:
 #   - crates/assay-workflow/tests-e2e (Playwright dashboard e2e suite)

@@ -17,7 +17,7 @@ node:
   version: null
 
 # Rust — workflow crate + root binary. Same deal: mise owns the
-# version pin (rust = "1.95.0" in .mise.toml).
+# version pin (rust = "1.97.1" in .mise.toml).
 rust:
   version: null
   bins: []
