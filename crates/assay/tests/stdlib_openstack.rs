@@ -85,9 +85,8 @@ fn catalog(base_url: &str) -> serde_json::Value {
 }
 
 async fn mount_password_auth(server: &MockServer) {
-    // Exact-value match, so a duplicated Content-Type fails here: the runtime
-    // sets it for a table body and http.post appends rather than replaces, so
-    // a module naming it too sends it twice and Keystone 400s.
+    // Exact-value match, so a duplicated Content-Type fails here rather than
+    // slipping past a looser one — the shape that hid the Keystone 400.
     Mock::given(method("POST"))
         .and(path("/v3/auth/tokens"))
         .and(header("content-type", "application/json"))
