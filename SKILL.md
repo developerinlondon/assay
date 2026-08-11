@@ -405,6 +405,7 @@ All 63 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)
 | `assay.gitlab`       | GitLab REST API v4 — projects, repos, commits, MRs, pipelines, registry                                                                                          |
 | `assay.github`       | GitHub REST API — PRs, issues, actions, repos, GraphQL                                                                                                           |
 | `assay.n8n`          | n8n public REST API — workflows, executions, credentials, projects, variables, idempotent reconcilers                                                            |
+| `assay.clickup`      | ClickUp REST API — tasks, sprint Lists, goals, custom fields, time tracking, Docs                                                                                |
 | `assay.gmail`        | Gmail REST API with OAuth2 — search, read, reply, send, labels                                                                                                   |
 | `assay.gcal`         | Google Calendar REST API with OAuth2 — events CRUD, calendar list                                                                                                |
 | `assay.oauth2`       | Google OAuth2 token management — credentials, auto-refresh, persistence                                                                                          |
