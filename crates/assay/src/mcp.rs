@@ -268,14 +268,14 @@ async fn call_assay_run(arguments: &JsonValue) -> Result<JsonValue, String> {
     let script_file = write_temp_script(script).map_err(|e| format!("writing temp script: {e}"))?;
     let stripped = lua::async_bridge::strip_shebang(script);
 
-    let outcome = crate::execute_tool_mode(
-        &script_file.path,
-        stripped,
+    let outcome = crate::tool_mode::execute_tool_mode(crate::tool_mode::ToolModeRequest {
+        path: &script_file.path,
+        script: stripped,
         timeout_secs,
         script_args,
         exec_mode,
-        &approval,
-    )
+        approval: &approval,
+    })
     .await;
 
     // Keep the script on disk only while an approval gate still references
@@ -310,7 +310,8 @@ async fn call_assay_resume(arguments: &JsonValue) -> Result<JsonValue, String> {
     // readonly=false: an approval-mode run is what suspends, so this only ever
     // resumes an approval token; the flag merely shapes an error envelope's
     // `readonly` field, which is not meaningful for a resume.
-    let outcome = crate::resume_tool_outcome(token, decision, None, false, approver).await;
+    let outcome =
+        crate::tool_mode::resume_tool_outcome(token, decision, None, false, approver).await;
 
     let is_error = !matches!(outcome.status, "ok" | "needs_approval");
     Ok(tool_text_content(outcome.envelope, is_error))

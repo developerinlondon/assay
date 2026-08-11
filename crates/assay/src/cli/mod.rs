@@ -6,6 +6,7 @@
 //! ad-hoc debugging, shell scripts). Lua scripts are the preferred path
 //! for automation.
 
+pub mod args;
 pub mod client;
 pub mod commands;
 pub mod config;
