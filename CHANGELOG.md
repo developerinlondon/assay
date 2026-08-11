@@ -39,6 +39,7 @@ tradeoff is documented in `docs/policy.md`.
   `ensure_workflow_tags`, `ensure_variable`, `ensure_project`, and `set_active`. Plus `all()` to
   walk every cursor page, `find_workflow_by_name()` for exact-name lookup — the server-side `name`
   filter matches substrings — and `wait()` to block until `/healthz` answers.
+
 ## assay-lua 0.17.9 — 2026-08-11
 
 ### Added
