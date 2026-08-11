@@ -125,7 +125,12 @@ jobs:
         || (matrix.os == 'macos-14' && github.actor == 'developerinlondon' && vars.MAC_LOCAL_RUNNER == 'true' && fromJSON('["self-hosted","macos","assay"]'))
         || matrix.os
       }}
-    timeout-minutes: 25
+    # A cold self-hosted build installs the toolchain and fills an empty
+    # target dir; GitHub-hosted macOS already takes ~18 min, so 25 left no
+    # room and killed the first local run before it could finish. Warm runs
+    # reuse the persisted checkout and target dir and are far quicker — this
+    # ceiling exists for the cold case, not the normal one.
+    timeout-minutes: 45
 
     steps:
       - name: Select check targets
