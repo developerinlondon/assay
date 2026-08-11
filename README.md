@@ -231,6 +231,24 @@ control flow between operations across re-runs can shift indices — the same re
 workflow engines have; suitable for supervised single-writer scripts. The digest turns a shifted
 index into a hard failure instead of a misapplied grant.
 
+## HTTP API server
+
+`mcp-serve` speaks stdio, which suits a client that spawns the runtime as a child process. A host
+that wants the runtime in a *separate trust domain* — its own process, its own credentials, reached
+over the network — can serve the same gated execution over HTTP:
+
+```bash
+ASSAY_API_TOKENS="$(openssl rand -hex 32)" \
+ASSAY_POLICY_FILE=/etc/assay/policy.yaml \
+  assay api-serve --bind 0.0.0.0:8080
+```
+
+`POST /v1/run` and `POST /v1/resume` behind a bearer token, plus an unauthenticated `GET /healthz`.
+Both return the tool-mode envelope. `unrestricted` is refused unless the server opts in, exactly as
+over MCP, and the server **refuses to start with no tokens configured** rather than quietly serving
+an ungated runtime. Pair it with a policy so the transport is not the only control — see
+[`docs/api-server.md`](docs/api-server.md).
+
 ## MCP server
 
 `assay mcp-serve` runs a Model Context Protocol server over stdio so AI coding agents (Claude Code,

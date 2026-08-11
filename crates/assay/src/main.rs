@@ -1,3 +1,4 @@
+mod api;
 mod checks;
 mod cli;
 mod config;
@@ -15,10 +16,7 @@ use clap::Parser;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
-use cli::args::{
-    Cli, Commands, NamespaceCommands, QueueCommands, ScheduleCommands, WorkerCommands,
-    WorkflowCommands,
-};
+use cli::args::{Cli, Commands};
 use tool_mode::{format_lua_error, resume_tool_execution, run_lua_tool_mode};
 
 const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 20;
@@ -134,162 +132,19 @@ async fn main() -> ExitCode {
             resume_tool_execution(&token, &approve, resume_ttl, readonly, approver.as_deref()).await
         }
         Some(Commands::Workflow { global, command }) => {
-            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
-                Ok(o) => o,
-                Err(code) => return code,
-            };
-            match command {
-                WorkflowCommands::Start {
-                    workflow_type,
-                    id,
-                    input,
-                    queue,
-                    search_attrs,
-                } => {
-                    cli::commands::workflow_start(
-                        &opts,
-                        &workflow_type,
-                        id,
-                        input,
-                        queue,
-                        search_attrs,
-                    )
-                    .await
-                }
-                WorkflowCommands::List {
-                    status,
-                    workflow_type,
-                    search_attrs,
-                    limit,
-                } => {
-                    cli::commands::workflow_list(&opts, status, workflow_type, search_attrs, limit)
-                        .await
-                }
-                WorkflowCommands::Describe { id } => {
-                    cli::commands::workflow_describe(&opts, &id).await
-                }
-                WorkflowCommands::State { id, name } => {
-                    cli::commands::workflow_state(&opts, &id, name.as_deref()).await
-                }
-                WorkflowCommands::Events { id, follow } => {
-                    cli::commands::workflow_events(&opts, &id, follow).await
-                }
-                WorkflowCommands::Children { id } => {
-                    cli::commands::workflow_children(&opts, &id).await
-                }
-                WorkflowCommands::Signal { id, name, payload } => {
-                    cli::commands::workflow_signal(&opts, &id, &name, payload).await
-                }
-                WorkflowCommands::Cancel { id } => cli::commands::workflow_cancel(&opts, &id).await,
-                WorkflowCommands::Terminate { id, reason } => {
-                    cli::commands::workflow_terminate(&opts, &id, reason).await
-                }
-                WorkflowCommands::Retry {
-                    id,
-                    requested_by,
-                    reason,
-                } => cli::commands::workflow_retry(&opts, &id, &requested_by, &reason).await,
-                WorkflowCommands::ContinueAsNew { id, input } => {
-                    cli::commands::workflow_continue_as_new(&opts, &id, input).await
-                }
-                WorkflowCommands::Wait {
-                    id,
-                    timeout,
-                    target,
-                } => cli::commands::workflow_wait(&opts, &id, timeout, target).await,
-            }
+            cli::dispatch::workflow(global, command).await
         }
         Some(Commands::Schedule { global, command }) => {
-            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
-                Ok(o) => o,
-                Err(code) => return code,
-            };
-            match command {
-                ScheduleCommands::List => cli::commands::schedule_list(&opts).await,
-                ScheduleCommands::Describe { name } => {
-                    cli::commands::schedule_describe(&opts, &name).await
-                }
-                ScheduleCommands::Create {
-                    name,
-                    workflow_type,
-                    cron,
-                    timezone,
-                    input,
-                    queue,
-                } => {
-                    cli::commands::schedule_create(
-                        &opts,
-                        &name,
-                        &workflow_type,
-                        &cron,
-                        timezone,
-                        input,
-                        Some(queue),
-                    )
-                    .await
-                }
-                ScheduleCommands::Patch {
-                    name,
-                    cron,
-                    timezone,
-                    input,
-                    queue,
-                    overlap,
-                } => {
-                    cli::commands::schedule_patch(
-                        &opts, &name, cron, timezone, input, queue, overlap,
-                    )
-                    .await
-                }
-                ScheduleCommands::Pause { name } => {
-                    cli::commands::schedule_pause(&opts, &name).await
-                }
-                ScheduleCommands::Resume { name } => {
-                    cli::commands::schedule_resume(&opts, &name).await
-                }
-                ScheduleCommands::Delete { name } => {
-                    cli::commands::schedule_delete(&opts, &name).await
-                }
-            }
+            cli::dispatch::schedule(global, command).await
         }
         Some(Commands::Namespace { global, command }) => {
-            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
-                Ok(o) => o,
-                Err(code) => return code,
-            };
-            match command {
-                NamespaceCommands::Create { name } => {
-                    cli::commands::namespace_create(&opts, &name).await
-                }
-                NamespaceCommands::List => cli::commands::namespace_list(&opts).await,
-                NamespaceCommands::Describe { name } => {
-                    cli::commands::namespace_describe(&opts, &name).await
-                }
-                NamespaceCommands::Delete { name } => {
-                    cli::commands::namespace_delete(&opts, &name).await
-                }
-            }
+            cli::dispatch::namespace(global, command).await
         }
-        Some(Commands::Worker { global, command }) => {
-            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
-                Ok(o) => o,
-                Err(code) => return code,
-            };
-            match command {
-                WorkerCommands::List => cli::commands::worker_list(&opts).await,
-            }
-        }
-        Some(Commands::Queue { global, command }) => {
-            let opts = match cli::GlobalOpts::resolve(global.as_flags()) {
-                Ok(o) => o,
-                Err(code) => return code,
-            };
-            match command {
-                QueueCommands::Stats => cli::commands::queue_stats(&opts).await,
-            }
-        }
+        Some(Commands::Worker { global, command }) => cli::dispatch::worker(global, command).await,
+        Some(Commands::Queue { global, command }) => cli::dispatch::queue(global, command).await,
         Some(Commands::Install(args)) => install::run(args).await,
         Some(Commands::McpServe) => mcp::serve().await,
+        Some(Commands::ApiServe { bind }) => api::serve(&bind).await,
         Some(Commands::Completion { shell }) => {
             use clap::CommandFactory;
             let mut cmd = Cli::command();
