@@ -22,7 +22,7 @@ pub fn apply(lua: &Lua) -> mlua::Result<()> {
     for name in BLOCKED_TABLES {
         block_table(lua, name)?;
     }
-    wrap_http_verbs(lua, |op, _url| Err(blocked(op)))?;
+    wrap_http_verbs(lua, |op, _url, _digest, _headers| Err(blocked(op)))?;
     guard_http_client_request(lua)?;
     guard_io_open(lua)?;
     guard_io_output(lua)?;

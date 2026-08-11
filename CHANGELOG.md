@@ -2,6 +2,41 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.3 — 2026-08-11
+
+### Added
+
+- **`assay api-serve` runs gated Lua over authenticated HTTP.** `POST /v1/run` and `POST /v1/resume`
+  behind a bearer token from `ASSAY_API_TOKENS`, plus an unauthenticated `GET /healthz`. Both return
+  the same tool-mode envelope the CLI prints. `mcp-serve` speaks stdio, so a host wanting the
+  runtime in a separate trust domain had to invent a protocol over the CLI to get there; this is
+  that protocol, in the runtime.
+- The server refuses to start when no tokens are configured, rather than serving an ungated runtime.
+  Token comparison is constant-time and does not short-circuit across the configured list.
+  `unrestricted` mode is refused unless the server opts in, matching `mcp-serve`'s default, and
+  `timeout_secs` is clamped rather than trusted.
+- Each run executes on its own thread with its own current-thread runtime, because the Lua VM is
+  `!Send`; concurrent requests share no VM state.
+
+## assay-lua 0.18.2 — 2026-08-11
+
+### Added
+
+- **An approval grant is now bound to the exact call it was issued for.** Approving an operation
+  used to approve its _name_ at a sequence index, so a replay that reached the same index with a
+  different URL or body still spent the grant. Each grant now carries a SHA-256 digest over the
+  operation and its arguments, and a replay whose request differs fails terminally with
+  `approval: ... changed since approval` instead of executing what nobody approved.
+- The approval descriptor reports that `digest` plus the **header names** in play, so an approver
+  can see which credential a request carries without the value ever entering the descriptor or the
+  persisted resume state.
+
+### Changed
+
+- A grant with no digest — resume state written by an earlier version — is refused rather than
+  falling back to name-only matching. The check fails closed, so an in-flight resume token issued
+  before this release must be re-approved.
+
 ## assay-lua 0.18.1 — 2026-08-11
 
 ### Added

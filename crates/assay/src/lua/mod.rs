@@ -97,6 +97,11 @@ impl ExecMode {
 pub(crate) struct ApprovedOp {
     pub index: u64,
     pub op: String,
+    /// Digest of the exact call the grant was issued for. A grant without
+    /// one is refused: an older resume state cannot silently widen into an
+    /// op-name-only approval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approver: Option<String>,
 }

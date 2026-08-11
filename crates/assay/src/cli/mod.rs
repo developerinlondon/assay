@@ -10,6 +10,7 @@ pub mod args;
 pub mod client;
 pub mod commands;
 pub mod config;
+pub mod dispatch;
 pub mod input;
 pub mod output;
 pub mod table;
