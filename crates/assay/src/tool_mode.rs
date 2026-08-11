@@ -52,6 +52,10 @@ pub(crate) struct ApprovalRequestPayload {
     summary: Option<String>,
     #[serde(default)]
     index: Option<u64>,
+    #[serde(default)]
+    digest: Option<String>,
+    #[serde(default)]
+    headers: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -71,6 +75,10 @@ pub(crate) struct ResumeState {
     op: Option<String>,
     #[serde(default)]
     summary: Option<String>,
+    #[serde(default)]
+    digest: Option<String>,
+    #[serde(default)]
+    headers: Vec<String>,
     #[serde(default)]
     script_args: Vec<String>,
     /// Every grant issued so far in this run's approval chain: the index,
@@ -345,6 +353,7 @@ fn apply_resume_decision(
                 approved_ops.push(lua::ApprovedOp {
                     index: idx,
                     op,
+                    digest: state.digest.clone(),
                     approver: approver.map(str::to_owned),
                 });
             }
@@ -496,6 +505,8 @@ pub(crate) fn persist_resume_state(
         pending_index: request.index,
         op: request.op.clone(),
         summary: request.summary.clone(),
+        digest: request.digest.clone(),
+        headers: request.headers.clone(),
         script_args: script_args.to_vec(),
         approved_ops: approved_ops.to_vec(),
     };
@@ -517,6 +528,18 @@ pub(crate) fn persist_resume_state(
     }
     if let Some(index) = request.index {
         requires.insert("index".to_string(), JsonValue::from(index));
+    }
+    // The approver sees which exact request they are authorising: the
+    // digest binds the grant, and header names identify the credentials in
+    // play without printing their values.
+    if let Some(digest) = request.digest {
+        requires.insert("digest".to_string(), JsonValue::String(digest));
+    }
+    if !request.headers.is_empty() {
+        requires.insert(
+            "headers".to_string(),
+            JsonValue::from(request.headers.clone()),
+        );
     }
     Ok(JsonValue::Object(requires))
 }

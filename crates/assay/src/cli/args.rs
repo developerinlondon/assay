@@ -147,6 +147,13 @@ pub(crate) enum Commands {
     /// The single `assay_run` tool composes all embedded modules through
     /// Lua, so the exposed schema stays tiny regardless of module count.
     McpServe,
+    /// Serve gated Lua runs over HTTP: POST /v1/run, POST /v1/resume, and
+    /// GET /healthz. Bearer tokens come from ASSAY_API_TOKENS.
+    ApiServe {
+        /// Address to bind, e.g. 127.0.0.1:8080.
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        bind: String,
+    },
 }
 
 /// Global flags shared by `workflow` / `schedule` / `namespace` / `worker` /

@@ -339,7 +339,7 @@ fn call_assay_context(arguments: &JsonValue) -> Result<JsonValue, String> {
 /// `unrestricted` is accepted only when the server opted in via
 /// `ASSAY_MCP_UNRESTRICTED` (see `unrestricted_allowed`); otherwise it — and
 /// any other value — is rejected.
-fn resolve_mode(value: Option<&JsonValue>) -> Result<lua::ExecMode, String> {
+pub(crate) fn resolve_mode(value: Option<&JsonValue>) -> Result<lua::ExecMode, String> {
     let accepted = if unrestricted_allowed() {
         "\"readonly\", \"approval\", or \"unrestricted\""
     } else {
@@ -364,7 +364,7 @@ fn resolve_mode(value: Option<&JsonValue>) -> Result<lua::ExecMode, String> {
     }
 }
 
-fn parse_string_array(value: Option<&JsonValue>) -> Vec<String> {
+pub(crate) fn parse_string_array(value: Option<&JsonValue>) -> Vec<String> {
     value
         .and_then(JsonValue::as_array)
         .map(|items| {
@@ -404,18 +404,18 @@ async fn write_message(stdout: &mut tokio::io::Stdout, message: &JsonValue) -> s
 
 /// A Lua script materialised on disk for a single `assay_run` call. The
 /// path feeds the tool-mode runner and any resume token it persists.
-struct TempScript {
-    path: PathBuf,
+pub(crate) struct TempScript {
+    pub(crate) path: PathBuf,
     dir: PathBuf,
 }
 
 impl TempScript {
-    fn cleanup(&self) {
+    pub(crate) fn cleanup(&self) {
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
-fn write_temp_script(script: &str) -> std::io::Result<TempScript> {
+pub(crate) fn write_temp_script(script: &str) -> std::io::Result<TempScript> {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
