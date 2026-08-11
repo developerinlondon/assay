@@ -58,13 +58,16 @@ fn catalog(base_url: &str) -> serde_json::Value {
                         }
                     ]
                 },
+                // Unversioned, as PCD and most clouds publish these two. An
+                // earlier versioned `image` entry here is why the suite passed
+                // while every real image read came back 300.
                 {
                     "type": "image",
                     "endpoints": [{
                         "interface": "public",
                         "region": "RegionOne",
                         "region_id": "RegionOne",
-                        "url": format!("{base_url}/image/v2")
+                        "url": format!("{base_url}/glance")
                     }]
                 },
                 {
@@ -73,7 +76,7 @@ fn catalog(base_url: &str) -> serde_json::Value {
                         "interface": "public",
                         "region": "RegionOne",
                         "region_id": "RegionOne",
-                        "url": format!("{base_url}/network")
+                        "url": format!("{base_url}/neutron")
                     }]
                 }
             ]
@@ -117,6 +120,24 @@ async fn mount_password_auth(server: &MockServer) {
         .await;
 }
 
+/// The password-auth client the mounted Keystone mock expects, binding `c`.
+fn password_client_lua(base: &str) -> String {
+    format!(
+        r#"
+        local openstack = require("assay.openstack")
+        local c = openstack.client("{base}/v3", {{
+          username = "reader",
+          password = "secret",
+          project_name = "demo-project",
+          user_domain_name = "Users",
+          project_domain_name = "Projects",
+          region = "RegionOne",
+          interface = "public",
+        }})
+"#
+    )
+}
+
 #[tokio::test]
 async fn require_openstack_exposes_read_only_service_groups() {
     let script = r#"
@@ -158,23 +179,13 @@ async fn password_auth_discovers_the_selected_compute_endpoint() {
         .await;
 
     let script = format!(
-        r#"
-        local openstack = require("assay.openstack")
-        local c = openstack.client("{}/v3", {{
-          username = "reader",
-          password = "secret",
-          project_name = "demo-project",
-          user_domain_name = "Users",
-          project_domain_name = "Projects",
-          region = "RegionOne",
-          interface = "public",
-        }})
+        r#"{}
         local servers = c.compute:list_servers({{ all_tenants = true, name = "app one" }})
         assert.eq(#servers, 1)
         assert.eq(servers[1].id, "server-1")
         assert.eq(servers[1].status, "ACTIVE")
         "#,
-        server.uri()
+        password_client_lua(&server.uri())
     );
     run_lua(&script).await.unwrap();
 }
@@ -401,6 +412,64 @@ async fn network_methods_cover_inventory_and_project_quotas() {
         server.uri()
     );
     run_lua(&script).await.unwrap();
+}
+
+/// Mounts the only two paths a correctly-versioned client can reach. Anything
+/// that composes a missing or doubled version segment misses these and 404s.
+async fn mount_versioned_image_and_network(server: &MockServer) {
+    for (route, key, id) in [
+        ("/glance/v2/images", "images", "image-1"),
+        ("/neutron/v2.0/networks", "networks", "network-1"),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(route))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({key: [{"id": id}]})),
+            )
+            .mount(server)
+            .await;
+    }
+}
+
+const READ_IMAGE_AND_NETWORK: &str = r#"
+        assert.eq(c.image:list_images()[1].id, "image-1")
+        assert.eq(c.network:list_networks()[1].id, "network-1")
+"#;
+
+#[tokio::test]
+async fn catalog_endpoints_without_a_version_segment_get_one() {
+    let server = MockServer::start().await;
+    mount_password_auth(&server).await;
+    mount_versioned_image_and_network(&server).await;
+
+    let script = format!(
+        "{}{READ_IMAGE_AND_NETWORK}",
+        password_client_lua(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn already_versioned_endpoints_do_not_get_a_second_version() {
+    let server = MockServer::start().await;
+    mount_versioned_image_and_network(&server).await;
+
+    let base = server.uri();
+    let script = format!(
+        r#"
+        local openstack = require("assay.openstack")
+        local c = openstack.client("{base}/v3", {{
+          token = "token",
+          endpoints = {{
+            image = "{base}/glance/v2",
+            network = "{base}/neutron/v2.0",
+          }},
+        }})
+        {READ_IMAGE_AND_NETWORK}
+        "#
+    );
+    run_lua(&script).await.unwrap();
+    assert_eq!(server.received_requests().await.unwrap().len(), 2);
 }
 
 #[tokio::test]

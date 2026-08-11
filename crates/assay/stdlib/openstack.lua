@@ -42,6 +42,25 @@ local function strip_slash(url)
   return url:gsub("/+$", "")
 end
 
+-- OpenStack clouds disagree on whether the service catalog carries the API
+-- version. PCD publishes image as `/glance` and network as `/neutron`, while
+-- others publish `/glance/v2`. Pinning the version in the request path breaks
+-- the second form; omitting it breaks the first.
+local SERVICE_VERSION = {
+  image = "v2",
+  network = "v2.0",
+}
+
+local function has_version_suffix(url)
+  return url:match("/v%d+%.?%d*$") ~= nil
+end
+
+local function apply_version(service_type, url)
+  local version = SERVICE_VERSION[service_type]
+  if not version or has_version_suffix(url) then return url end
+  return url .. "/" .. version
+end
+
 local function domain_ref(name, id)
   if id then return { id = id } end
   return { name = name or "Default" }
@@ -144,9 +163,9 @@ function M.client(auth_url, opts)
   local function endpoint_for(service_type)
     authenticate()
     local endpoint = endpoints[service_type]
-    if endpoint then return strip_slash(endpoint) end
+    if endpoint then return apply_version(service_type, strip_slash(endpoint)) end
     endpoint = catalog_endpoint(service_type)
-    if endpoint then return endpoint end
+    if endpoint then return apply_version(service_type, endpoint) end
     if service_type == "identity" then return identity_url end
     error("openstack: no endpoint for " .. service_type)
   end
@@ -237,47 +256,47 @@ function M.client(auth_url, opts)
   c.network = {}
 
   function c.network:list_networks(query)
-    return list("network", "/v2.0/networks", "networks", query)
+    return list("network", "/networks", "networks", query)
   end
 
   function c.network:get_network(id)
-    return get("network", "/v2.0/networks/" .. encode(id), "network")
+    return get("network", "/networks/" .. encode(id), "network")
   end
 
   function c.network:list_subnets(query)
-    return list("network", "/v2.0/subnets", "subnets", query)
+    return list("network", "/subnets", "subnets", query)
   end
 
   function c.network:get_subnet(id)
-    return get("network", "/v2.0/subnets/" .. encode(id), "subnet")
+    return get("network", "/subnets/" .. encode(id), "subnet")
   end
 
   function c.network:list_ports(query)
-    return list("network", "/v2.0/ports", "ports", query)
+    return list("network", "/ports", "ports", query)
   end
 
   function c.network:get_port(id)
-    return get("network", "/v2.0/ports/" .. encode(id), "port")
+    return get("network", "/ports/" .. encode(id), "port")
   end
 
   function c.network:list_routers(query)
-    return list("network", "/v2.0/routers", "routers", query)
+    return list("network", "/routers", "routers", query)
   end
 
   function c.network:get_router(id)
-    return get("network", "/v2.0/routers/" .. encode(id), "router")
+    return get("network", "/routers/" .. encode(id), "router")
   end
 
   function c.network:list_security_groups(query)
-    return list("network", "/v2.0/security-groups", "security_groups", query)
+    return list("network", "/security-groups", "security_groups", query)
   end
 
   function c.network:get_security_group(id)
-    return get("network", "/v2.0/security-groups/" .. encode(id), "security_group")
+    return get("network", "/security-groups/" .. encode(id), "security_group")
   end
 
   function c.network:get_quota(id)
-    local data = api_get("network", "/v2.0/quotas/" .. encode(id), nil, false)
+    local data = api_get("network", "/quotas/" .. encode(id), nil, false)
     return data.quota or {}
   end
 
