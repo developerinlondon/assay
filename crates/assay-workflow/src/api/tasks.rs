@@ -67,7 +67,7 @@ pub async fn register_worker<S: WorkflowStore>(
     Json(req): Json<RegisterWorkerRequest>,
 ) -> Result<Json<RegisterWorkerResponse>, AppError> {
     let now = timestamp_now();
-    let worker_id = format!("w-{}", &uuid_short());
+    let worker_id = format!("w-{}", uuid_short());
 
     let worker = WorkflowWorker {
         id: worker_id.clone(),
