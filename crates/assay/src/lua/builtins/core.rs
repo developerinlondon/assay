@@ -34,9 +34,16 @@ pub fn register_log(lua: &Lua) -> mlua::Result<()> {
 pub fn register_env(lua: &Lua) -> mlua::Result<()> {
     let env_table = lua.create_table()?;
 
-    let process_get_fn = lua.create_function(|_, name: String| match std::env::var(&name) {
-        Ok(val) => Ok(Some(val)),
-        Err(_) => Ok(None),
+    // A key outside the policy allowlist reads as absent rather than
+    // erroring: presence itself is information a caller shouldn't get.
+    let process_get_fn = lua.create_function(|lua, name: String| {
+        if !crate::lua::policy::env_visible(lua, &name) {
+            return Ok(None);
+        }
+        match std::env::var(&name) {
+            Ok(val) => Ok(Some(val)),
+            Err(_) => Ok(None),
+        }
     })?;
     env_table.set("_process_get", process_get_fn)?;
     env_table.set("_check_env", lua.create_table()?)?;
@@ -69,7 +76,8 @@ pub fn register_env(lua: &Lua) -> mlua::Result<()> {
     // env.list() — returns table of {key, value} for all env vars
     let list_fn = lua.create_function(|lua, ()| {
         let results = lua.create_table()?;
-        for (i, (key, val)) in (1..).zip(std::env::vars()) {
+        let visible = std::env::vars().filter(|(key, _)| crate::lua::policy::env_visible(lua, key));
+        for (i, (key, val)) in (1..).zip(visible) {
             let entry = lua.create_table()?;
             entry.set("key", key)?;
             entry.set("value", val)?;

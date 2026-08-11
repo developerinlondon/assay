@@ -8,15 +8,21 @@
 
 use mlua::{Lua, MultiValue, Table, Value};
 
-use super::gated::{BLOCKED_FUNCTIONS, BLOCKED_TABLES, is_gated_http_verb};
+use super::gated::{
+    BLOCKED_FUNCTIONS, BLOCKED_TABLES, http_call_is_read, is_http_verb_path, wrap_http_verbs,
+};
 
 pub fn apply(lua: &Lua) -> mlua::Result<()> {
     for path in BLOCKED_FUNCTIONS {
+        if is_http_verb_path(path) {
+            continue;
+        }
         block_function(lua, path)?;
     }
     for name in BLOCKED_TABLES {
         block_table(lua, name)?;
     }
+    wrap_http_verbs(lua, |op, _url| Err(blocked(op)))?;
     guard_http_client_request(lua)?;
     guard_io_open(lua)?;
     guard_io_output(lua)?;
@@ -76,15 +82,19 @@ fn guard_http_client_request(lua: &Lua) -> mlua::Result<()> {
     let Some(inner) = http.get::<Option<mlua::Function>>("_client_request")? else {
         return Ok(());
     };
-    let wrapper = lua.create_async_function(move |_, args: MultiValue| {
+    let wrapper = lua.create_async_function(move |lua, args: MultiValue| {
         let inner = inner.clone();
         async move {
             let method = match args.iter().nth(1) {
                 Some(Value::String(s)) => Some(s.to_str()?.to_string()),
                 _ => None,
             };
+            let url = match args.iter().nth(2) {
+                Some(Value::String(s)) => Some(s.to_str()?.to_string()),
+                _ => None,
+            };
             if let Some(method) = method
-                && is_gated_http_verb(&method)
+                && !http_call_is_read(&lua, &method, url.as_deref())
             {
                 return Err(blocked(&format!("http.{method}")));
             }

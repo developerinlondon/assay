@@ -1,6 +1,7 @@
 pub mod async_bridge;
 pub mod builtins;
 pub mod file_source;
+pub mod policy;
 
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
@@ -162,6 +163,17 @@ fn lua_err(e: mlua::Error) -> anyhow::Error {
     anyhow::anyhow!("{e}")
 }
 
+/// An explicit policy wins; otherwise fall back to `ASSAY_POLICY_FILE`, so a
+/// deployment can police every VM without touching call sites.
+fn resolve_policy(
+    explicit: Option<std::sync::Arc<policy::Policy>>,
+) -> Result<Option<std::sync::Arc<policy::Policy>>> {
+    match explicit {
+        Some(policy) => Ok(Some(policy)),
+        None => policy::from_env().map_err(|e| anyhow::anyhow!("{e}")),
+    }
+}
+
 #[allow(dead_code)]
 pub fn create_vm(client: reqwest::Client) -> Result<Lua> {
     create_vm_configured(client, None, readonly_from_env())
@@ -201,6 +213,16 @@ pub fn create_vm_configured(
 }
 
 pub fn create_vm_with_options(client: reqwest::Client, options: VmOptions) -> Result<Lua> {
+    create_vm_with_policy(client, options, None)
+}
+
+/// Same as `create_vm_with_options`, with an explicit policy for embedders
+/// that resolve one themselves instead of through `ASSAY_POLICY_FILE`.
+pub fn create_vm_with_policy(
+    client: reqwest::Client,
+    options: VmOptions,
+    policy: Option<std::sync::Arc<policy::Policy>>,
+) -> Result<Lua> {
     let VmOptions {
         global_modules_path,
         mode,
@@ -209,10 +231,21 @@ pub fn create_vm_with_options(client: reqwest::Client, options: VmOptions) -> Re
     let libs = StdLib::ALL_SAFE;
     let lua = Lua::new_with(libs, LuaOptions::default()).map_err(lua_err)?;
     lua.set_memory_limit(64 * 1024 * 1024).map_err(lua_err)?;
+    // Installed before the builtins register so `env` and the module
+    // searchers can consult it on their very first call.
+    let policed = resolve_policy(policy)?;
+    if let Some(policy) = policed.clone() {
+        policy::install(&lua, policy);
+    }
     sandbox(&lua).map_err(lua_err)?;
     register_fs_loader(&lua, global_modules_path).map_err(lua_err)?;
     register_stdlib_loader(&lua).map_err(lua_err)?;
     builtins::register_all(&lua, client).map_err(lua_err)?;
+    // Before the mode gates, so a gate wrapping an http builtin wraps the
+    // policy-guarded version and both checks run.
+    if policed.is_some() {
+        policy::apply::apply(&lua).map_err(lua_err)?;
+    }
     match mode {
         ExecMode::ReadOnly => builtins::readonly::apply(&lua).map_err(lua_err)?,
         ExecMode::Approval => builtins::approval::apply(&lua, &approval).map_err(lua_err)?,
@@ -266,6 +299,24 @@ fn nil_dotted_path(lua: &Lua, path: &str) -> mlua::Result<()> {
     current.set(parts[parts.len() - 1], mlua::Value::Nil)
 }
 
+/// Both searchers resolve `assay.ory.kratos` to `ory/kratos.lua`, falling
+/// back to `ory/kratos/init.lua`, and both refuse a module the policy has
+/// not allowed. `None` means the name is not an `assay.*` module at all.
+fn module_candidates(lua: &Lua, module_name: &str) -> mlua::Result<Option<[String; 2]>> {
+    let Some(rest) = module_name.strip_prefix("assay.") else {
+        return Ok(None);
+    };
+    policy::guard_require(lua, module_name)?;
+    let base = rest.replace('.', "/");
+    Ok(Some([format!("{base}.lua"), format!("{base}/init.lua")]))
+}
+
+fn not_an_assay_module(lua: &Lua, module_name: &str) -> mlua::Result<mlua::Value> {
+    Ok(mlua::Value::String(lua.create_string(format!(
+        "not an assay.* module: {module_name}"
+    ))?))
+}
+
 fn register_stdlib_loader(lua: &Lua) -> mlua::Result<()> {
     let package: mlua::Table = lua.globals().get("package")?;
     let searchers: mlua::Table = package.get("searchers")?;
@@ -276,17 +327,10 @@ fn register_stdlib_loader(lua: &Lua) -> mlua::Result<()> {
     // both `stdlib/ory.lua` (flat convenience wrapper) and
     // `stdlib/ory/kratos.lua` (nested submodule) resolve correctly.
     let stdlib_searcher = lua.create_function(|lua, module_name: String| {
-        let rest = match module_name.strip_prefix("assay.") {
-            Some(r) => r,
-            None => {
-                return Ok(mlua::Value::String(
-                    lua.create_string(format!("not an assay.* module: {module_name}"))?,
-                ));
-            }
+        let candidates = match module_candidates(lua, &module_name)? {
+            Some(c) => c,
+            None => return not_an_assay_module(lua, &module_name),
         };
-
-        let base = rest.replace('.', "/");
-        let candidates = [format!("{base}.lua"), format!("{base}/init.lua")];
 
         for path in &candidates {
             if let Some(file) = STDLIB_DIR.get_file(path) {
@@ -320,16 +364,10 @@ fn register_fs_loader(lua: &Lua, global_modules_path: Option<String>) -> mlua::R
     // Same dotted-path resolution as the stdlib loader: `assay.ory.kratos`
     // -> "ory/kratos.lua", falling back to "ory/kratos/init.lua".
     let fs_searcher = lua.create_function(move |lua, module_name: String| {
-        let rest = match module_name.strip_prefix("assay.") {
-            Some(r) => r,
-            None => {
-                return Ok(mlua::Value::String(
-                    lua.create_string(format!("not an assay.* module: {module_name}"))?,
-                ));
-            }
+        let candidates = match module_candidates(lua, &module_name)? {
+            Some(c) => c,
+            None => return not_an_assay_module(lua, &module_name),
         };
-        let base = rest.replace('.', "/");
-        let candidates = [format!("{base}.lua"), format!("{base}/init.lua")];
 
         let try_load = |dir: &std::path::Path| -> Option<(std::path::PathBuf, String)> {
             for rel in &candidates {
