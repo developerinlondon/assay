@@ -73,6 +73,7 @@
 
 ## AI Agent
 - [AI Agents](https://assay.rs/modules/ai-agents.html): OpenClaw, GitHub, Gmail, Google Calendar, OAuth2, Email Triage
+- [assay.n8n](https://assay.rs/modules/n8n.html): n8n public REST API — workflows, executions, credentials, projects, variables, idempotent reconcilers
 
 ## Optional
 - [Crates.io](https://crates.io/crates/assay-lua): Use Assay as a Rust crate in your own projects
