@@ -59,8 +59,12 @@ function M.client(auth_url, opts)
   local region = opts.region
   local endpoint_interface = opts.interface or "public"
 
+  -- No Content-Type here. The runtime already sets it when the body is a
+  -- table, and `http.post` appends rather than replaces, so naming it again
+  -- sends the header twice — which Keystone rejects with a 400 complaining
+  -- it cannot find application/json in Content-Type.
   local function auth_headers()
-    return { ["Accept"] = "application/json", ["Content-Type"] = "application/json" }
+    return { ["Accept"] = "application/json" }
   end
 
   local function service_headers()
