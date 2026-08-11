@@ -2,6 +2,20 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.4 — 2026-08-11
+
+### Fixed
+
+- **`assay.openstack` could never authenticate against a real Keystone.** The module named
+  `Content-Type: application/json` in its auth request headers, and the runtime already sets that
+  header itself when the body is a table. `http.post` appends headers rather than replacing them, so
+  the request carried the header twice and Keystone rejected it with
+  `400 Expecting to find application/json in Content-Type header`. Every read that needed a fresh
+  token failed; only callers supplying a pre-issued token were unaffected. The module now sends
+  `Accept` alone and lets the runtime set `Content-Type`.
+- The shared Keystone test mock now matches `content-type` by exact value, so a duplicated header
+  fails the suite rather than passing a looser match.
+
 ## assay-lua 0.18.3 — 2026-08-11
 
 ### Added
