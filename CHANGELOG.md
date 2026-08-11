@@ -2,6 +2,20 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.5 — 2026-08-11
+
+### Fixed
+
+- **`assay.openstack` image reads failed with HTTP 300 on clouds that publish an unversioned Glance
+  endpoint.** The module was inconsistent about which side carried the API version: network methods
+  hardcoded `/v2.0` in the request path while image methods hardcoded nothing, so a catalog entry of
+  `…/glance` composed `…/glance/images` and Glance answered with its version document instead of a
+  listing. The mirror-image bug was latent for network — a versioned `…/neutron/v2.0` catalog entry
+  composed `/v2.0/v2.0/networks`. Both services now resolve the endpoint and append the expected
+  version only when the URL does not already end in one, so either catalog convention works.
+- The shared test catalog published image as already-versioned, which is why no test caught this. It
+  now publishes both services unversioned, as real clouds do, and both conventions are covered.
+
 ## assay-lua 0.18.4 — 2026-08-11
 
 ### Fixed
