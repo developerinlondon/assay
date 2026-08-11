@@ -37,6 +37,17 @@ The client authenticates lazily on the first operation. `c:authenticate()` trigg
 explicitly and returns the scoped project ID plus service catalog; the token stays internal to the
 client.
 
+### Endpoint versions
+
+Clouds disagree on whether the service catalog carries the API version. Some publish image as
+`https://host/glance`, others as `https://host/glance/v2`. The client resolves an endpoint, then
+appends the version the service expects — `v2` for image, `v2.0` for network — only when the
+resolved URL does not already end in one. Both catalog conventions work, and an `endpoints` override
+follows the same rule, so pinning `.../glance/v2` yields one version segment rather than two.
+
+Compute needs no such default (the catalog entry is project-scoped and already versioned, e.g.
+`/nova/v2.1/<project_id>`) and identity comes from the `auth_url` you pass.
+
 ### Identity
 
 - `c.identity:list_projects(opts?)` -> `[project]`
