@@ -2,6 +2,24 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.0 — 2026-08-11
+
+### Added
+
+- **`assay.n8n` — n8n public REST API client.** Covers the whole `/api/v1` surface of n8n 2.x:
+  workflows (CRUD, activate/deactivate, publish/unpublish, archive/unarchive, transfer, tags,
+  version history), test runs, executions (list/get/delete/retry/stop/stop-all, tags), credentials
+  (CRUD, test, type schema, transfer), tags, variables, projects and project members, folders,
+  users, source-control pull, security audit, data tables (rows and columns), community packages,
+  instance settings (security policy, OTel, SAML), log-streaming destinations, package
+  export/import, insights, and discover. Authenticates with `X-N8N-API-KEY`, falling back to the
+  `N8N_API_KEY` environment variable.
+- Idempotent reconcilers on top of that surface, so a script can be re-run without creating
+  duplicates: `ensure_workflow` (identity is the workflow name), `ensure_tag`,
+  `ensure_workflow_tags`, `ensure_variable`, `ensure_project`, and `set_active`. Plus `all()` to
+  walk every cursor page, `find_workflow_by_name()` for exact-name lookup — the server-side `name`
+  filter matches substrings — and `wait()` to block until `/healthz` answers.
+
 ## assay-lua 0.17.9 — 2026-08-11
 
 ### Added
