@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 
 pub const SUPPORTED_VERSION: u32 = 1;
@@ -12,6 +14,8 @@ pub struct PolicyFile {
     pub env: Option<EnvSection>,
     #[serde(default)]
     pub http: Option<HttpSection>,
+    #[serde(default)]
+    pub credentials: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

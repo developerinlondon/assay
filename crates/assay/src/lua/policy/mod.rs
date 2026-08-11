@@ -6,11 +6,12 @@
 //! no policy loaded every check passes and behaviour is unchanged.
 
 pub mod apply;
+pub mod credential;
 mod glob;
 mod redact;
 mod schema;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use mlua::Lua;
@@ -36,6 +37,7 @@ pub struct Policy {
     http_rules: Option<Vec<HttpRule>>,
     max_response_bytes: Option<usize>,
     redact: Vec<String>,
+    pub(crate) credentials: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 #[derive(Clone)]
@@ -123,6 +125,7 @@ impl Policy {
             max_response_bytes: http.as_ref().and_then(|h| h.max_response_bytes),
             redact: http.as_ref().map(|h| h.redact.clone()).unwrap_or_default(),
             http_rules: http.and_then(|h| h.rules),
+            credentials: file.credentials,
         })
     }
 
