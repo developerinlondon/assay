@@ -2,6 +2,20 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.6 — 2026-08-11
+
+### Added
+
+- **`assay.clickup` — ClickUp REST API.** Tasks, Lists (ClickUp models a sprint as a List), folders,
+  spaces, comments, Goals, custom fields, time tracking, and Docs. `all_tasks` follows the
+  zero-based `page` pagination to `last_page` under a bounded page count, `ensure_task` is
+  idempotent by name, and `resolve_team` refuses to guess when a token sees several workspaces.
+- The token travels in `Authorization` with no `Bearer` prefix, which ClickUp rejects on personal
+  `pk_` tokens. Docs are the one resource on API v3; everything else is v2.
+- Driving ClickUp through this module rather than its hosted MCP server matters for throughput: the
+  REST API allows 100 requests per minute, while that MCP endpoint permits 50 calls per 24 hours on
+  the Free plan and 300 on paid tiers.
+
 ## assay-lua 0.18.5 — 2026-08-11
 
 ### Fixed

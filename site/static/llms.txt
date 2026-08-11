@@ -75,6 +75,7 @@
 
 ## AI Agent & Workflow
 - [AI Agents](https://assay.rs/modules/ai-agents.html): OpenClaw, GitHub, Gmail, Google Calendar, OAuth2, Email Triage
+- [assay.clickup](https://assay.rs/modules/clickup.html): ClickUp REST API — tasks, sprint Lists, goals, custom fields, time tracking, Docs
 - [assay.n8n](https://assay.rs/modules/n8n.html): n8n public REST API — workflows, executions, credentials, projects, variables, idempotent reconcilers
 
 ## Optional
