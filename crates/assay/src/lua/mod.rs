@@ -243,7 +243,8 @@ pub fn create_vm_with_policy(
     builtins::register_all(&lua, client).map_err(lua_err)?;
     // Before the mode gates, so a gate wrapping an http builtin wraps the
     // policy-guarded version and both checks run.
-    if policed.is_some() {
+    if let Some(policy) = policed.as_ref() {
+        policy::credential::register(&lua, policy).map_err(lua_err)?;
         policy::apply::apply(&lua).map_err(lua_err)?;
     }
     match mode {

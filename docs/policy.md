@@ -123,10 +123,57 @@ A response larger than this raises rather than truncating, so a caller cannot mi
 for a complete one. The transport buffers the body before the check, so treat this as a disclosure
 control — a bound on what reaches the script — not as a memory bound on the process.
 
+## `credentials`
+
+A script that must authenticate has, until now, had to read the secret itself — which means any
+script the runtime executes can read it, and send it anywhere the policy allows. Declared
+credentials break that link:
+
+```yaml
+credentials:
+  inventory-ro:
+    username: ASSAY_INVENTORY_USER
+    password: ASSAY_INVENTORY_PASSWORD
+```
+
+Each field names the environment key holding the value. `credential.get("inventory-ro")` returns a
+handle whose fields are opaque placeholders, not secrets:
+
+```lua
+local c = credential.get("inventory-ro")
+local openstack = require("assay.openstack")
+local client = openstack.client("https://identity.example.com/v3", {
+  username = c.username,
+  password = c.password,
+  project_name = "demo-project",
+})
+```
+
+The real values are substituted into the outgoing request body and headers by the HTTP layer, after
+the policy has already decided the target is allowed. The script composes an authenticated request
+without ever holding the secret: printing, concatenating, or `json.encode`-ing a handle yields the
+placeholder. Modules that accept `username`/`password` need no changes.
+
+Pair this with `env.allow` that excludes the backing keys — otherwise the script can simply read the
+environment directly and the handle buys nothing.
+
+Requesting a credential the policy does not declare is an error, not an empty handle.
+
+A handle used in a **URL** is refused rather than substituted: a secret in a request line ends up in
+every access log along the path.
+
+### Residual risk, stated plainly
+
+Substitution is positional, not semantic. A script can put a handle in a field the target service
+does not expect, and the real value will be sent there — to a host the policy already allows. The
+`http.rules` allowlist is what bounds this. It is a smaller blast radius than a script that can read
+the secret and post it anywhere allowed, but it is not zero, and a policy whose `hosts` list is wide
+gives most of that back.
+
 ## What it does not do
 
 - It does not revalidate redirects. Set `follow_redirects = false` on the client for now if that
   matters.
 - It does not restrict filesystem reads.
-- It does not resolve credentials; a script that needs a secret still reads it from an allowlisted
-  environment key.
+- Credential fields resolve from environment keys only. There is no file or secret-manager source
+  yet.
