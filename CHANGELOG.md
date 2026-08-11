@@ -2,6 +2,26 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.1 — 2026-08-11
+
+### Added
+
+- **Credential handles let a script authenticate without being able to read the secret.** A policy
+  can declare named credentials whose fields resolve from environment keys. `credential.get("name")`
+  returns a handle of opaque placeholders; the real values are substituted into the outgoing request
+  body and headers by the HTTP layer, after the policy has already decided the target is allowed.
+  Printing, concatenating, or encoding a handle yields the placeholder, so a script composes an
+  authenticated request without ever holding the secret, and modules that accept
+  `username`/`password` need no changes. Pair with an `env.allow` list that excludes the backing
+  keys.
+- A handle used in a URL is refused rather than substituted — a secret in a request line ends up in
+  every access log along the path. Requesting an undeclared credential is an error rather than an
+  empty handle.
+
+Substitution is positional, not semantic: a handle placed in an unexpected field is still sent to
+whatever host the rules allow, so the `http.rules` allowlist is what bounds the exposure. The
+tradeoff is documented in `docs/policy.md`.
+
 ## assay-lua 0.18.0 — 2026-08-11
 
 ### Added
@@ -19,7 +39,6 @@ All notable changes to Assay are documented here.
   `ensure_workflow_tags`, `ensure_variable`, `ensure_project`, and `set_active`. Plus `all()` to
   walk every cursor page, `find_workflow_by_name()` for exact-name lookup — the server-side `name`
   filter matches substrings — and `wait()` to block until `/healthz` answers.
-
 ## assay-lua 0.17.9 — 2026-08-11
 
 ### Added

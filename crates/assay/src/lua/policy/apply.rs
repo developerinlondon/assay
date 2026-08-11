@@ -7,12 +7,16 @@ use std::sync::Arc;
 
 use mlua::{Lua, MultiValue, Table, Value};
 
-use super::{guard_http, is_redacted_header, redact_json_text, redact_keys, response_limit};
+use super::{
+    active, credential, guard_http, is_redacted_header, redact_json_text, redact_keys,
+    response_limit,
+};
 
 const VERBS: &[&str] = &["get", "post", "put", "patch", "delete"];
 
-/// Pulls the (method, URL) pair a given builtin puts in its arguments.
-type Target = Arc<dyn Fn(&MultiValue) -> Option<(String, String)>>;
+/// Pulls the method, the URL, and which argument the URL came from — the one
+/// argument credential substitution must leave alone.
+type Target = Arc<dyn Fn(&MultiValue) -> Option<(String, String, usize)>>;
 
 pub fn apply(lua: &Lua) -> mlua::Result<()> {
     let Some(http) = lua.globals().get::<Option<Table>>("http")? else {
@@ -29,11 +33,11 @@ pub fn apply(lua: &Lua) -> mlua::Result<()> {
 }
 
 fn verb_target(verb: &'static str) -> Target {
-    Arc::new(move |args| arg_string(args, 0).map(|url| (verb.to_string(), url)))
+    Arc::new(move |args| arg_string(args, 0).map(|url| (verb.to_string(), url, 0)))
 }
 
 fn client_request_target() -> Target {
-    Arc::new(|args| Some((arg_string(args, 1)?, arg_string(args, 2)?)))
+    Arc::new(|args| Some((arg_string(args, 1)?, arg_string(args, 2)?, 2)))
 }
 
 fn arg_string(args: &MultiValue, at: usize) -> Option<String> {
@@ -51,14 +55,38 @@ fn wrap(lua: &Lua, http: &Table, name: &str, target: Target) -> mlua::Result<()>
         let inner = inner.clone();
         let target = Arc::clone(&target);
         async move {
-            if let Some((method, url)) = target(&args) {
+            let mut args = args;
+            if let Some((method, url, url_index)) = target(&args) {
+                credential::reject_in_url(&url)?;
                 guard_http(&lua, &method, &url)?;
+                args = fill_credentials(&lua, args, url_index)?;
             }
             let result = inner.call_async::<Value>(args).await?;
             sanitize(&lua, result)
         }
     })?;
     http.set(name, wrapper)
+}
+
+/// Swap credential placeholders for real values, everywhere except the URL.
+/// This runs after the target check, so a secret is only ever materialised
+/// for a request the policy has already allowed.
+fn fill_credentials(lua: &Lua, args: MultiValue, url_index: usize) -> mlua::Result<MultiValue> {
+    let Some(policy) = active(lua) else {
+        return Ok(args);
+    };
+    if policy.credentials.is_empty() {
+        return Ok(args);
+    }
+    let mut out = Vec::with_capacity(args.len());
+    for (i, value) in args.into_iter().enumerate() {
+        out.push(if i == url_index {
+            value
+        } else {
+            credential::substitute(lua, &policy, value)?
+        });
+    }
+    Ok(MultiValue::from_iter(out))
 }
 
 /// Enforce the size cap and strip declared keys before the response reaches

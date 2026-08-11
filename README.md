@@ -160,8 +160,27 @@ http:
 
 `classify: read` marks a target that authenticates with a POST — an OpenStack token issue, an STS
 presign — as the read it actually is, so it proceeds under `--readonly` instead of being refused
-for its verb. With no policy loaded nothing changes. See
-[`docs/policy.md`](docs/policy.md).
+for its verb. With no policy loaded nothing changes.
+
+A policy can also declare credentials, so a script authenticates without being able to read the
+secret:
+
+```yaml
+credentials:
+  inventory-ro:
+    username: ASSAY_INVENTORY_USER
+    password: ASSAY_INVENTORY_PASSWORD
+```
+
+```lua
+local c = credential.get("inventory-ro")   -- opaque placeholders, not secrets
+require("assay.openstack").client(url, { username = c.username, password = c.password })
+```
+
+The real values are substituted into the request body and headers by the HTTP layer, after the
+policy has allowed the target — so printing or encoding a handle yields the placeholder, and
+modules taking `username`/`password` need no changes. See [`docs/policy.md`](docs/policy.md) for
+the residual-risk note.
 
 ## Approval mode
 
