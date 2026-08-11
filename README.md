@@ -219,9 +219,17 @@ assay resume --token <token> --approve no    # fail it with "approval: <op> deni
 Each `yes` re-runs the script from the top: previously-approved operations execute and the run
 re-suspends at the next unapproved one, so grants are single-shot and per-operation. Read paths
 (`http.get`, `fs.read`, `env.get`, `db.query`, status/list helpers) run freely without prompting.
+Each grant is bound to the exact call it was issued for: a SHA-256 digest over the operation, its
+URL, and its arguments, reported in the approval descriptor as `digest` alongside the header
+*names* in play (never their values). A replay that reaches the same index with a different target
+or a different body is refused with `approval: ... changed since approval` rather than executing
+what nobody approved. A grant carrying no digest — resume state written by an older version — is
+refused too, so the check fails closed.
+
 Because approvals are matched by the sequence index of mutating operations, a read that changes
 control flow between operations across re-runs can shift indices — the same replay limitation
-workflow engines have; suitable for supervised single-writer scripts.
+workflow engines have; suitable for supervised single-writer scripts. The digest turns a shifted
+index into a hard failure instead of a misapplied grant.
 
 ## MCP server
 

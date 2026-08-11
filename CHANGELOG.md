@@ -2,6 +2,25 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.2 — 2026-08-11
+
+### Added
+
+- **An approval grant is now bound to the exact call it was issued for.** Approving an operation
+  used to approve its _name_ at a sequence index, so a replay that reached the same index with a
+  different URL or body still spent the grant. Each grant now carries a SHA-256 digest over the
+  operation and its arguments, and a replay whose request differs fails terminally with
+  `approval: ... changed since approval` instead of executing what nobody approved.
+- The approval descriptor reports that `digest` plus the **header names** in play, so an approver
+  can see which credential a request carries without the value ever entering the descriptor or the
+  persisted resume state.
+
+### Changed
+
+- A grant with no digest — resume state written by an earlier version — is refused rather than
+  falling back to name-only matching. The check fails closed, so an in-flight resume token issued
+  before this release must be re-approved.
+
 ## assay-lua 0.18.1 — 2026-08-11
 
 ### Added
