@@ -754,3 +754,62 @@ script errors — including a write blocked by read-only mode — returns an MCP
 
 The server implements `initialize`, `tools/list`, `tools/call`, and `ping`, and shuts down cleanly
 when stdin closes. See https://assay.rs/agent-guides.html for complete integration examples.
+
+## HTTP API (`assay api-serve`)
+
+`mcp-serve` speaks stdio, which suits a client that spawns the runtime as a child process. When the
+runtime needs to sit in a separate trust domain — its own process, its own credentials, reached over
+the network — `assay api-serve --bind 0.0.0.0:8080` exposes the same two operations over HTTP:
+
+| Method | Path         | Auth   | Body                                     |
+| ------ | ------------ | ------ | ---------------------------------------- |
+| `GET`  | `/healthz`   | none   | —                                        |
+| `POST` | `/v1/run`    | bearer | `{ script, mode, args?, timeout_secs? }` |
+| `POST` | `/v1/resume` | bearer | `{ token, approve, approver? }`          |
+
+Both authenticated endpoints return the **same envelope** as `assay run --mode tool`, so a caller
+parses one shape whichever transport it uses. HTTP status reports whether the _request_ was
+accepted; the envelope's own `status` reports what the script did — a script that fails is still
+`200` with `status: "error"`.
+
+Bearer tokens come from `ASSAY_API_TOKENS` (comma-separated). **The server exits 2 rather than start
+with none**, so a network-reachable runtime never runs uncredentialed. `unrestricted` is refused
+unless `ASSAY_MCP_UNRESTRICTED=1`, exactly as over MCP.
+
+The transport is not a boundary by itself — pair it with `ASSAY_POLICY_FILE`. See
+[`docs/api-server.md`](docs/api-server.md).
+
+## The `--mode` / `--approval-mode` pair
+
+These two flags read like a pair and are not one. Getting them confused is the single most common
+integration error:
+
+| Flag              | Values             | Decides                                               |
+| ----------------- | ------------------ | ----------------------------------------------------- |
+| `--mode`          | `tool` \| `script` | **Output shape** — JSON envelope, or plain stdout.    |
+| `--approval-mode` | (boolean flag)     | **Execution gate** — suspend each mutating operation. |
+| `--readonly`      | (boolean flag)     | **Execution gate** — refuse each mutating operation.  |
+
+`--mode approval` is not valid and fails at argument parsing. The gate flags are booleans, and
+`--approval-mode` wins when both gates are set.
+
+Positional arguments after the script are passed through to Lua's `arg` global; separate them with
+`--`, and note there is no `--args` flag:
+
+```bash
+assay run --mode tool --approval-mode script.lua -- https://identity.example.com demo-project
+```
+
+## Extracting the binary from the container image
+
+`ghcr.io/developerinlondon/assay` is `FROM scratch` and ships two files: `/assay` and
+`/etc/ssl/certs/ca-certificates.crt`. A consumer that copies only the binary into another base image
+gets a runtime that panics on the first HTTPS call with
+`No CA certificates were loaded from the
+system`. Copy both, or install `ca-certificates` in the
+destination image:
+
+```dockerfile
+COPY --from=ghcr.io/developerinlondon/assay:0.18.3 /assay /usr/local/bin/assay
+COPY --from=ghcr.io/developerinlondon/assay:0.18.3 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+```
