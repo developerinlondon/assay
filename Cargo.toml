@@ -15,6 +15,12 @@ edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/developerinlondon/assay"
 
+# The workspace links 193 test binaries; at full debuginfo a clean target dir is
+# 48 GB, and 22 GB with line tables only. Backtraces still resolve; stepping in a
+# debugger needs `CARGO_PROFILE_DEV_DEBUG=2` for that build.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 opt-level = "z" # Optimize for size
 lto = true # Link-time optimization
