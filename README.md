@@ -132,6 +132,37 @@ mutators, `systemd` unit/machine lifecycle actions, `apt` mutators, `tar.create`
 when the mode is active, and tool-mode envelopes carry `"readonly": true`. For nil-ing out
 additional globals entirely, combine with `ASSAY_BLOCK_GLOBALS`.
 
+## Capability policy
+
+Read-only and approval mode decide whether a *mutating* operation runs. A policy file decides what
+is *reachable at all* — which modules a script may `require`, which environment keys it may read,
+and which HTTP hosts, methods, and paths it may call. The two compose, and a policy applies in
+every mode. Point `ASSAY_POLICY_FILE` at a YAML file:
+
+```yaml
+version: 1
+modules:
+  allow: [assay.openstack, assay.json]
+env:
+  allow: [OS_PROJECT_NAME]
+http:
+  max_response_bytes: 262144
+  redact: [password, token]
+  rules:
+    - hosts: ["*.identity.example.com"]
+      methods: [GET]
+      paths: ["/v3/*"]
+    - hosts: ["*.identity.example.com"]
+      methods: [POST]
+      paths: ["/v3/auth/tokens"]
+      classify: read
+```
+
+`classify: read` marks a target that authenticates with a POST — an OpenStack token issue, an STS
+presign — as the read it actually is, so it proceeds under `--readonly` instead of being refused
+for its verb. With no policy loaded nothing changes. See
+[`docs/policy.md`](docs/policy.md).
+
 ## Approval mode
 
 Where read-only mode hard-blocks every write, approval mode enforces a per-operation human (or

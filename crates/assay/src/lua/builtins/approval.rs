@@ -13,7 +13,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use mlua::{Lua, MultiValue, Table, Value};
 
-use super::gated::{BLOCKED_FUNCTIONS, BLOCKED_TABLES, is_gated_http_verb};
+use super::gated::{
+    BLOCKED_FUNCTIONS, BLOCKED_TABLES, http_call_is_read, is_http_verb_path, wrap_http_verbs,
+};
 use crate::lua::{APPROVAL_REQUEST_PREFIX, ApprovalConfig, approved_ops_from_env};
 
 const SUMMARY_CAP: usize = 200;
@@ -41,11 +43,18 @@ pub fn apply(lua: &Lua, config: &ApprovalConfig) -> mlua::Result<()> {
             .collect(),
     });
     for path in BLOCKED_FUNCTIONS {
+        if is_http_verb_path(path) {
+            continue;
+        }
         gate_function(lua, path, &state)?;
     }
     for name in BLOCKED_TABLES {
         gate_table(lua, name, &state)?;
     }
+    let verb_state = Arc::clone(&state);
+    wrap_http_verbs(lua, move |op, url| {
+        gate_decision(&verb_state, op, &truncate(url))
+    })?;
     gate_http_client_request(lua, &state)?;
     gate_io_open(lua, &state)?;
     gate_io_output(lua, &state)?;
@@ -173,7 +182,7 @@ fn gate_http_client_request(lua: &Lua, state: &Arc<GateState>) -> mlua::Result<(
         return Ok(());
     };
     let state = Arc::clone(state);
-    let wrapper = lua.create_async_function(move |_, args: MultiValue| {
+    let wrapper = lua.create_async_function(move |lua, args: MultiValue| {
         let inner = inner.clone();
         let state = Arc::clone(&state);
         async move {
@@ -181,15 +190,15 @@ fn gate_http_client_request(lua: &Lua, state: &Arc<GateState>) -> mlua::Result<(
                 Some(Value::String(s)) => Some(s.to_str()?.to_string()),
                 _ => None,
             };
+            let url = match args.iter().nth(2) {
+                Some(Value::String(s)) => Some(s.to_str()?.to_string()),
+                _ => None,
+            };
             if let Some(method) = method
-                && is_gated_http_verb(&method)
+                && !http_call_is_read(&lua, &method, url.as_deref())
             {
                 let op = format!("http.{method}");
-                let summary = match args.iter().nth(2) {
-                    Some(Value::String(s)) => truncate(&s.to_str()?),
-                    _ => String::new(),
-                };
-                gate_decision(&state, &op, &summary)?;
+                gate_decision(&state, &op, &truncate(url.as_deref().unwrap_or("")))?;
             }
             inner.call_async::<MultiValue>(args).await
         }

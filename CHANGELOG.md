@@ -2,6 +2,31 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.17.9 — 2026-08-11
+
+### Added
+
+- **A capability policy confines a run to a declared set of modules, environment keys, and HTTP
+  targets.** `ASSAY_POLICY_FILE` (or `create_vm_with_policy` for embedders) loads a YAML file
+  declaring which `assay.*` modules may be required, which environment keys `env.get` and `env.list`
+  can see, and which hosts, methods, and paths the HTTP builtins may reach. Enforcement lives in the
+  runtime, so a script cannot reach past it by building a name at runtime the way it can past a
+  caller that inspects source text before running. Policy is orthogonal to execution mode: the mode
+  governs writes, the policy governs reach, and both apply together.
+- **`classify: read` lets an authentication POST run under read-only mode.** Classifying by verb
+  alone marks OpenStack Keystone token issue and Kubernetes bearer-token presign as writes, so
+  read-only automation could not reach those services at all and approval mode demanded a human
+  decision for what is only a login. A rule may now declare an exact host, method, and path a read;
+  everything else on the same host is unaffected.
+- Responses can be capped with `http.max_response_bytes` (oversize raises rather than truncating, so
+  a clipped body is never mistaken for a complete one) and filtered with `http.redact`, which
+  replaces matching JSON keys at any depth and matching response header names with `[redacted]`.
+- Unknown keys in a policy file are rejected rather than ignored — a typo in an allowlist that
+  silently widened the policy is the failure worth being loud about. Every section is optional and
+  absent means unrestricted, so adding a section can only tighten a file.
+
+With no policy loaded every check passes and behaviour is unchanged.
+
 ## assay-engine 0.5.12 — 2026-08-08
 
 ### Fixed
