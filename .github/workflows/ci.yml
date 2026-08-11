@@ -192,6 +192,11 @@ jobs:
         run: |
           mkdir -p /var/cache/runner-work/assay-target
           echo "CARGO_TARGET_DIR=/var/cache/runner-work/assay-target" >> "$GITHUB_ENV"
+          # Incremental caches buy nothing here — every job compiles from a
+          # cold or near-cold target dir — but they are a large share of what
+          # fills the LV, and a full run exhausts it with "No space left on
+          # device" mid-link.
+          echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
           # The lua-test moon tasks invoke the built CLI via the conventional
           # `target/release/assay` path. With CARGO_TARGET_DIR redirected to the
           # dedicated LV that path is otherwise empty, so engine-lua:test (and
