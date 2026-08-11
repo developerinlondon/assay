@@ -15,6 +15,22 @@ All notable changes to Assay are documented here.
   version only when the URL does not already end in one, so either catalog convention works.
 - The shared test catalog published image as already-versioned, which is why no test caught this. It
   now publishes both services unversioned, as real clouds do, and both conventions are covered.
+- **Caller-supplied headers replaced runtime-set ones instead of duplicating them.** `opts.headers`
+  was applied with `RequestBuilder::header`, which appends, so a caller naming a header the runtime
+  also sets — `Content-Type`, for a table body — sent it twice. Strict servers reject that; Keystone
+  answers `400 Expecting to find application/json in Content-Type header`. Naming the header
+  explicitly is the obvious thing for a module author to do, and it was exactly what broke. Caller
+  headers now replace per name, and an invalid header name or value fails loudly at the call rather
+  than surfacing as an opaque send error. This repaired eight stdlib modules that pass a table body
+  alongside an explicit `Content-Type` — `argocd`, `grafana`, `harbor`, `infoblox`, `neutron`,
+  `openclaw`, `github` and `alertmanager` — all of which were sending it twice against every server
+  lenient enough not to complain.
+
+### Changed
+
+- `lua/builtins/http.rs` is split into `http/mod.rs` (client) and `http/server.rs` (the
+  `server`-gated `http.serve` half), and the two oversized functions inside it are decomposed. The
+  file had passed the repo's 1000-line cap, which is what blocked the header fix above.
 
 ## assay-lua 0.18.4 — 2026-08-11
 

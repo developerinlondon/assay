@@ -44,6 +44,52 @@ async fn test_http_get_with_headers() {
 }
 
 #[tokio::test]
+async fn caller_headers_replace_the_runtime_set_content_type() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/data"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    // A table body makes the runtime set Content-Type. Naming it again in opts
+    // is the obvious thing for a module author to do, and it used to send the
+    // header twice — which a strict server (Keystone) rejects with a 400.
+    for declared in ["application/json", "application/vnd.api+json"] {
+        let script = format!(
+            r#"
+            local resp = http.post("{}/data", {{ name = "test" }},
+              {{ headers = {{ ["Content-Type"] = "{declared}" }} }})
+            assert.eq(resp.status, 200)
+            "#,
+            server.uri()
+        );
+        run_lua(&script).await.unwrap();
+    }
+
+    // Assert the values themselves, not a matcher: a loose match is what hid
+    // the duplicate, and "contains application/json" is true of both shapes.
+    let sent: Vec<Vec<String>> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| {
+            r.headers
+                .get_all("content-type")
+                .iter()
+                .map(|v| v.to_str().unwrap().to_string())
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        sent,
+        [["application/json"], ["application/vnd.api+json"]],
+        "each request must carry exactly one Content-Type, the caller's"
+    );
+}
+
+#[tokio::test]
 async fn test_http_post_json_table() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
