@@ -128,6 +128,13 @@ function M.client(opts)
     return envelope[key] or {}
   end
 
+  -- Goal endpoints wrap their single objects in a `goal` key. Every other v2
+  -- resource returns the object at the top level.
+  local function one(envelope, key)
+    if not envelope then return nil end
+    return envelope[key]
+  end
+
   -- ===== Client =====
 
   local c = {}
@@ -284,15 +291,15 @@ function M.client(opts)
   end
 
   function c.goals:get(goal_id)
-    return api_get(V2, "/goal/" .. urlencode(goal_id))
+    return one(api_get(V2, "/goal/" .. urlencode(goal_id)), "goal")
   end
 
   function c.goals:create(team_id, goal)
-    return api_post(V2, "/team/" .. urlencode(team_id) .. "/goal", goal)
+    return one(api_post(V2, "/team/" .. urlencode(team_id) .. "/goal", goal), "goal")
   end
 
   function c.goals:update(goal_id, patch)
-    return api_put(V2, "/goal/" .. urlencode(goal_id), patch)
+    return one(api_put(V2, "/goal/" .. urlencode(goal_id), patch), "goal")
   end
 
   function c.goals:delete(goal_id)
