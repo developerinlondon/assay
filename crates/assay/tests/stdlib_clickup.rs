@@ -304,13 +304,29 @@ async fn test_clickup_goals_use_singular_paths() {
         &server,
         "GET",
         "/v2/goal/g1",
-        serde_json::json!({"id": "g1", "name": "Q3 revenue"}),
+        serde_json::json!({"goal": {"id": "g1", "name": "Q3 revenue"}}),
+    )
+    .await;
+    mock_json(
+        &server,
+        "POST",
+        "/v2/team/9001/goal",
+        serde_json::json!({"goal": {"id": "g2", "name": "Q4 revenue"}}),
+    )
+    .await;
+    mock_json(
+        &server,
+        "PUT",
+        "/v2/goal/g2",
+        serde_json::json!({"goal": {"id": "g2", "name": "Q4 revenue revised"}}),
     )
     .await;
 
     let body = r#"
         assert.eq(#c.goals:list("9001"), 1)
         assert.eq(c.goals:get("g1").name, "Q3 revenue")
+        assert.eq(c.goals:create("9001", { name = "Q4 revenue" }).id, "g2")
+        assert.eq(c.goals:update("g2", { name = "Q4 revenue revised" }).name, "Q4 revenue revised")
     "#;
     run_lua(&script(&server.uri(), body)).await.unwrap();
 }

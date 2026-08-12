@@ -2,6 +2,17 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.7 — 2026-08-12
+
+### Fixed
+
+- **`assay.clickup` Goals returned the response envelope instead of the goal.** ClickUp wraps single
+  goals in a `goal` key, unlike every other v2 resource, so `goals:get`, `goals:create`, and
+  `goals:update` handed back `{goal = ...}` and every field read as nil — a `create` looked like it
+  had failed while having silently created the goal. The mocked responses asserted the unwrapped
+  shape, so the suite stayed green against a shape the API never returns; they now carry the real
+  envelope, and `create`/`update` are covered.
+
 ## assay-lua 0.18.6 — 2026-08-11
 
 ### Added
