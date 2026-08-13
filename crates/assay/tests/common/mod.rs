@@ -1,3 +1,5 @@
+pub mod excalidash;
+
 use std::time::Duration;
 
 #[allow(dead_code)]
