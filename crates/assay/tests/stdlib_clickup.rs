@@ -31,6 +31,9 @@ async fn test_require_clickup() {
         assert.not_nil(clickup.find_task_by_name)
         assert.not_nil(clickup.ensure_task)
         assert.not_nil(clickup.resolve_team)
+        assert.not_nil(clickup.resolve_member)
+        assert.not_nil(clickup.rich)
+        assert.not_nil(clickup.comment_payload)
     "#;
     run_lua(body).await.unwrap();
 }
@@ -486,6 +489,114 @@ async fn test_clickup_comment_accepts_bare_string() {
 
     let body = r#"
         assert.eq(c.comments:create("T1", "done").id, "c1")
+    "#;
+    run_lua(&script(&server.uri(), body)).await.unwrap();
+}
+
+// The delta is the whole point: line formatting rides the newline op, a mention
+// is a `tag` block carrying the numeric id, and no markdown reaches the wire.
+#[tokio::test]
+async fn test_clickup_rich_comment_builds_a_delta() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v2/task/T1/comment"))
+        .and(body_json(serde_json::json!({
+            "notify_all": true,
+            "comment": [
+                {"text": "Shipped", "attributes": {"bold": true}},
+                {"text": "\n"},
+                {"text": "see "},
+                {"text": "the docs", "attributes": {"link": "https://example.com"}},
+                {"text": "\n", "attributes": {"list": "bullet"}},
+                {"text": "docs/hextra/content", "attributes": {"code": true}},
+                {"text": "\n", "attributes": {"list": "ordered"}},
+                {"type": "tag", "user": {"id": 113633770}, "text": "@Bharat Paryani"},
+                {"text": " over to you."},
+                {"text": "\n"}
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": "c9"})))
+        .mount(&server)
+        .await;
+
+    let body = r#"
+        local rich = clickup.rich()
+            :bold("Shipped"):br()
+            :text("see "):link("the docs", "https://example.com"):bullet()
+            :code("docs/hextra/content"):number()
+            :mention({ id = 113633770, username = "Bharat Paryani" })
+            :text(" over to you."):br()
+
+        assert.eq(c.comments:create("T1", rich, { notify_all = true }).id, "c9")
+    "#;
+    run_lua(&script(&server.uri(), body)).await.unwrap();
+}
+
+// A mention given a bare id still tags: the id notifies, the label is cosmetic.
+#[tokio::test]
+async fn test_clickup_mention_accepts_a_bare_id() {
+    let body = r#"
+        local ops = clickup.rich():mention(42):build().comment
+        assert.eq(ops[1].type, "tag")
+        assert.eq(ops[1].user.id, 42)
+        assert.eq(ops[1].text, "@42")
+
+        local ok, err = pcall(function() return clickup.rich():mention({}) end)
+        assert.eq(ok, false)
+        assert.contains(tostring(err), "mention needs a user id")
+    "#;
+    run_lua(&script("http://example.invalid", body)).await.unwrap();
+}
+
+// `extra` must not write through into the caller's table.
+#[tokio::test]
+async fn test_clickup_comment_payload_does_not_mutate_its_input() {
+    let body = r#"
+        local original = { comment_text = "note" }
+        local payload = clickup.comment_payload(original)
+        payload.notify_all = true
+        assert.eq(original.notify_all, nil)
+        assert.eq(payload.comment_text, "note")
+
+        assert.eq(clickup.comment_payload("plain").comment_text, "plain")
+    "#;
+    run_lua(&script("http://example.invalid", body)).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_clickup_resolve_member_by_name_email_and_ambiguity() {
+    let server = MockServer::start().await;
+    mock_json(
+        &server,
+        "GET",
+        "/v2/team",
+        serde_json::json!({"teams": [{
+            "id": "90182966627",
+            "name": "Acme",
+            "members": [
+                {"user": {"id": 1, "username": "Bharat Paryani", "email": "dev@acme.test"}},
+                {"user": {"id": 2, "username": "Bharti Rao", "email": "ops@acme.test"}}
+            ]
+        }]}),
+    )
+    .await;
+
+    let body = r#"
+        assert.eq(clickup.resolve_member(c, "90182966627", "Bharat Paryani").id, 1)
+        assert.eq(clickup.resolve_member(c, "90182966627", "ops@acme.test").id, 2)
+        assert.eq(clickup.resolve_member(c, "90182966627", "paryani").id, 1)
+
+        local ok, err = pcall(function()
+            return clickup.resolve_member(c, "90182966627", "bhar")
+        end)
+        assert.eq(ok, false)
+        assert.contains(tostring(err), "2 members match")
+
+        local missing_ok, missing_err = pcall(function()
+            return clickup.resolve_member(c, "90182966627", "nobody")
+        end)
+        assert.eq(missing_ok, false)
+        assert.contains(tostring(missing_err), "no member of workspace")
     "#;
     run_lua(&script(&server.uri(), body)).await.unwrap();
 }
