@@ -2,6 +2,20 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.9 — 2026-08-13
+
+### Added
+
+- **`assay.huly` — Huly transactor REST API.** Huly exposes no per-resource endpoints: every read is
+  a class-parameterised query and every write is a transaction document, so the client is shaped
+  around those two calls plus tracker helpers for projects, issues, milestones, and components.
+  Reads unwrap the `TotalArray` envelope and re-inject what the transactor drops — `_class` on
+  class-scoped reads, and any attribute the query already pinned to a scalar — because a document
+  queried by `identifier` comes back without one. `create_issue` numbers an issue by atomically
+  incrementing the project's `sequence`, since an issue written without a `number` and `PREFIX-N`
+  identifier is invisible in the UI. Requests ask for identity encoding: Huly's own client asks for
+  `snappy, gzip`, and assay can decode neither.
+
 ## assay-lua 0.18.8 — 2026-08-13
 
 ### Added
