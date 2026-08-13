@@ -545,7 +545,9 @@ async fn test_clickup_mention_accepts_a_bare_id() {
         assert.eq(ok, false)
         assert.contains(tostring(err), "mention needs a user id")
     "#;
-    run_lua(&script("http://example.invalid", body)).await.unwrap();
+    run_lua(&script("http://example.invalid", body))
+        .await
+        .unwrap();
 }
 
 // `extra` must not write through into the caller's table.
@@ -560,7 +562,9 @@ async fn test_clickup_comment_payload_does_not_mutate_its_input() {
 
         assert.eq(clickup.comment_payload("plain").comment_text, "plain")
     "#;
-    run_lua(&script("http://example.invalid", body)).await.unwrap();
+    run_lua(&script("http://example.invalid", body))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

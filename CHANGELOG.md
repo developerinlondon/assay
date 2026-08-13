@@ -2,6 +2,21 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.11 — 2026-08-13
+
+### Added
+
+- **`assay.excalidash` — ExcaliDash REST API.** Excalidraw drawings, collections, version-history
+  snapshots, and user and link sharing on a self-hosted dashboard. The credential decides the reach:
+  an `exd_` API key is exempt from CSRF but the server's scope gate admits it to only four route
+  shapes, while a session token reaches everything and pays a one-off `/csrf-token` handshake for
+  writes. The client picks per route when it holds both, and refuses a history or sharing call made
+  with only an API key rather than relaying the bare 401 or 403 the server would answer. Scene
+  writes carry the version they were read at, so a stale edit is refused instead of clobbering;
+  `history:restore` guards the same way. A wrong `api_path` is caught too — a dashboard origin
+  answers unknown paths with the SPA's HTML and a 200, which would otherwise read as an empty
+  dashboard.
+
 ## assay-lua 0.18.10 — 2026-08-13
 
 ### Added
