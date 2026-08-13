@@ -68,9 +68,45 @@ local open = c.tasks:list(list_id, { statuses = { "to do", "in progress" }, page
 ### Comments
 
 - `c.comments:list(task_id, opts?)` -> `[comment]`
-- `c.comments:create(task_id, body)` -> `comment` — `body` may be a string or a full payload table
+- `c.comments:create(task_id, body, extra?)` -> `comment` — `body` is a rich builder, a string, or a
+  full payload table; `extra` merges in request options such as `notify_all`
 - `c.comments:update(comment_id, patch)` -> `comment`
 - `c.comments:delete(comment_id)` -> `true`
+
+ClickUp renders comments as Quill rich text. A string goes out on `comment_text` and is displayed
+**verbatim**, so markdown arrives with its asterisks and pipes intact and a plain `@Name` tags
+nobody. Use `clickup.rich()` for anything beyond a one-line note.
+
+```lua
+local bharat = clickup.resolve_member(c, team.id, "nsmtech.development@gmail.com")
+
+local body = clickup.rich()
+  :bold("Docs cutover: done and live."):br()
+  :mention(bharat):text(" — the revision is yours."):br()
+  :text("Live at "):link("docs.agentkit.sbs", "https://docs.agentkit.sbs/"):bullet()
+  :text("Source: "):code("docs/hextra/content/**"):bullet()
+  :text("Review it against the acceptance criteria"):number()
+
+c.comments:create(task_id, body, { notify_all = true })
+```
+
+Builder methods, each returning the builder so calls chain:
+
+- Inline runs — `:text(s)`, `:bold(s)`, `:italic(s)`, `:code(s)`, `:link(s, url)`
+- Mentions — `:mention(user)`, taking the record `resolve_member` returns or a bare user id
+- Line terminators — `:br()`, `:bullet()`, `:number()`, `:heading(level?)`
+
+The terminator formats the line it closes, because a Quill delta carries line-level attributes on
+the newline op rather than on the text before it. There is **no table type** — flatten tabular
+content into labelled bullets.
+
+`clickup.resolve_member(c, team_id, needle)` -> `user` matches a username or email exactly, then
+falls back to a username substring, and raises rather than guess when several members match. A
+mention notifies on the numeric id; the `@Name` text is only a label, so a name that was never
+resolved against the roster silently reaches no one.
+
+`clickup.comment_payload(body)` -> `table` exposes the same normalisation for callers assembling a
+request by hand.
 
 ### Goals
 

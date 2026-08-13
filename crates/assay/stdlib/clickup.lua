@@ -18,7 +18,9 @@
 --- @quickref c.tasks:delete(task_id) -> true | Delete a task
 --- @quickref c.tasks:filtered(team_id, opts?) -> {tasks, last_page} | Workspace-wide filtered task page
 --- @quickref c.comments:list(task_id, opts?) -> [comment] | Comments on a task
---- @quickref c.comments:create(task_id, body) -> comment | Comment on a task
+--- @quickref c.comments:create(task_id, body, extra?) -> comment | Comment on a task; body may be a rich builder
+--- @quickref M.rich() -> builder | Rich-text comment body: bold, code, link, bullet, number, mention
+--- @quickref M.resolve_member(c, team_id, needle) -> user | Workspace member by username or email, for mentions
 --- @quickref c.goals:list(team_id, opts?) -> [goal] | Goals in a workspace (quarterly targets)
 --- @quickref c.goals:get(goal_id) -> goal|nil | Get a goal
 --- @quickref c.goals:create(team_id, goal) -> goal | Create a goal
@@ -269,13 +271,14 @@ function M.client(opts)
     return items(api_get(V2, "/task/" .. urlencode(task_id) .. "/comment", query_opts), "comments")
   end
 
-  function c.comments:create(task_id, body)
-    local payload = type(body) == "table" and body or { comment_text = tostring(body) }
+  function c.comments:create(task_id, body, extra)
+    local payload = M.comment_payload(body)
+    for key, value in pairs(extra or {}) do payload[key] = value end
     return api_post(V2, "/task/" .. urlencode(task_id) .. "/comment", payload)
   end
 
   function c.comments:update(comment_id, patch)
-    return api_put(V2, "/comment/" .. urlencode(comment_id), patch)
+    return api_put(V2, "/comment/" .. urlencode(comment_id), M.comment_payload(patch))
   end
 
   function c.comments:delete(comment_id)
@@ -463,6 +466,109 @@ function M.resolve_team(c, name)
     error("clickup: token sees " .. #teams .. " workspaces; pass a name to disambiguate")
   end
   return teams[1]
+end
+
+--- Resolve one workspace member to the user record a mention needs.
+---
+--- A mention notifies on the numeric id; its `@Name` text is only a label, so a
+--- guessed name silently tags nobody. `needle` matches a username or an email
+--- exactly, falling back to a substring of the username. Ambiguity is an error
+--- rather than a coin toss.
+function M.resolve_member(c, team_id, needle)
+  local want = tostring(needle):lower()
+  local team
+  for _, candidate in ipairs(c.teams:list()) do
+    if tostring(candidate.id) == tostring(team_id) then team = candidate break end
+  end
+  if not team then error("clickup: no workspace with id " .. tostring(team_id)) end
+
+  local partial = {}
+  for _, member in ipairs(team.members or {}) do
+    local user = member.user or member
+    local username = tostring(user.username or ""):lower()
+    local email = tostring(user.email or ""):lower()
+    if username == want or email == want then return user end
+    if username:find(want, 1, true) then partial[#partial + 1] = user end
+  end
+
+  if #partial == 1 then return partial[1] end
+  if #partial > 1 then
+    error("clickup: " .. #partial .. " members match " .. tostring(needle) .. "; use a full username or email")
+  end
+  error("clickup: no member of workspace " .. tostring(team_id) .. " matches " .. tostring(needle))
+end
+
+--- Build a rich-text comment body.
+---
+--- ClickUp renders comments as Quill rich text, so markdown posted through
+--- `comment_text` arrives with its asterisks and pipes intact. The `comment`
+--- field takes a delta instead, which this assembles. Two things about that
+--- format bite: line-level formatting rides the *newline* op rather than the
+--- text before it, and there is no table type — tabular content has to become
+--- labelled lines.
+---
+--- Every method returns the builder, so calls chain and the last one is handed
+--- straight to `c.comments:create`.
+function M.rich()
+  local b = { ops = {} }
+
+  local function push(op)
+    b.ops[#b.ops + 1] = op
+    return b
+  end
+
+  local function run(text, attributes)
+    local op = { text = tostring(text) }
+    if attributes then op.attributes = attributes end
+    return push(op)
+  end
+
+  function b:text(s) return run(s) end
+  function b:bold(s) return run(s, { bold = true }) end
+  function b:italic(s) return run(s, { italic = true }) end
+  function b:code(s) return run(s, { code = true }) end
+  function b:link(s, url) return run(s, { link = url or s }) end
+
+  --- Tag a person. Takes the user record `M.resolve_member` returns, or a bare id.
+  function b:mention(user)
+    local id, label
+    if type(user) == "table" then
+      id, label = user.id, user.username
+    else
+      id = user
+    end
+    if id == nil then error("clickup: mention needs a user id") end
+    return push({ type = "tag", user = { id = id }, text = "@" .. tostring(label or id) })
+  end
+
+  --- Line terminators. The attribute here formats the line it closes.
+  function b:br() return run("\n") end
+  function b:bullet() return run("\n", { list = "bullet" }) end
+  function b:number() return run("\n", { list = "ordered" }) end
+  function b:heading(level) return run("\n", { header = level or 3 }) end
+
+  function b:build()
+    return { comment = b.ops }
+  end
+
+  return b
+end
+
+--- Normalise whatever a caller passes as a comment into a request payload.
+---
+--- A builder becomes a `comment` delta, a table is taken as an explicit payload,
+--- and a string stays on `comment_text` — which ClickUp will render literally,
+--- so it is for plain notes only.
+function M.comment_payload(body)
+  if type(body) == "table" and type(body.build) == "function" then
+    return body:build()
+  end
+  if type(body) == "table" then
+    local copy = {}
+    for key, value in pairs(body) do copy[key] = value end
+    return copy
+  end
+  return { comment_text = tostring(body) }
 end
 
 return M
