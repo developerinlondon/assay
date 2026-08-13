@@ -2,6 +2,19 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.10 — 2026-08-13
+
+### Added
+
+- **`assay.clickup` rich comments and member resolution.** ClickUp renders comments as Quill rich
+  text, so a markdown string posted through `comment_text` arrives with its asterisks and pipes
+  intact and a plain `@Name` tags nobody. `clickup.rich()` builds the delta instead — bold, italic,
+  code, links, bullet and numbered lines, headings, and `type: tag` mentions — and
+  `c.comments:create` takes the builder directly, with an `extra` table for options like
+  `notify_all`. `clickup.resolve_member` looks a person up in the workspace roster by username or
+  email, since a mention notifies on the numeric id and the visible `@Name` is only a label. The
+  bare-string path is unchanged for plain notes.
+
 ## assay-lua 0.18.9 — 2026-08-13
 
 ### Added
