@@ -2,6 +2,18 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.8 — 2026-08-13
+
+### Added
+
+- **`assay.plane` — Plane REST API.** Projects, work items, Cycles (Plane models a sprint as a
+  Cycle), Modules, states, labels, members, comments, and links, against self-hosted or cloud Plane.
+  The workspace slug binds at client construction because it appears in every path, and a blank slug
+  errors on first use rather than building `/workspaces//`. `all_items` follows the `next_cursor`
+  envelope under a bounded page count, `ensure_item` is idempotent by name, and `resolve_project`
+  refuses to guess when a key sees several projects. Comments and links are addressed under
+  `/issues/` while work items sit under `/work-items/`, matching Plane's own split.
+
 ## assay-lua 0.18.7 — 2026-08-12
 
 ### Fixed
