@@ -16,9 +16,10 @@
 --- @quickref c.collections:share(id, identifier, role) -> share | Share a collection by email or username
 --- @quickref c.collections:set_share_role(id, user_id, role) -> true | Change a collection share's role
 --- @quickref c.collections:unshare(id, user_id) -> true | Drop a collection share
+--- @quickref c.collections:resolve_users(id, q) -> [user] | Search users to share a collection with
 --- @quickref c.history:list(drawing_id, opts?) -> {snapshots, totalCount} | Snapshot metadata, newest first
 --- @quickref c.history:get(drawing_id, snapshot_id) -> snapshot | One snapshot with its scene
---- @quickref c.history:restore(drawing_id, snapshot_id) -> drawing | Roll a drawing back to a snapshot
+--- @quickref c.history:restore(drawing_id, snapshot_id, version) -> drawing | Roll a drawing back to a snapshot
 --- @quickref c.sharing:get(drawing_id) -> {permissions, linkShares} | A drawing's whole sharing state
 --- @quickref c.sharing:grant(drawing_id, user_id, permission) -> permission | Share a drawing with a user
 --- @quickref c.sharing:revoke(drawing_id, permission_id) -> true | Drop a user share
@@ -28,9 +29,11 @@
 --- @quickref M.all_drawings(c, opts?) -> [drawing] | Walk every page to the end
 --- @quickref M.find_drawing_by_name(c, name, opts?) -> drawing|nil | Exact-name drawing lookup
 --- @quickref M.ensure_drawing(c, spec) -> drawing | Create a drawing unless the name exists
+--- @quickref M.collections(c) -> [collection] | Collections you own, Trash excluded
 --- @quickref M.resolve_collection(c, name?) -> collection | The only collection, or the one matching a name
 --- @quickref M.ensure_collection(c, name) -> collection | Create a collection unless the name exists
 --- @quickref M.trash(c, drawing_id) -> drawing | Move a drawing to Trash instead of deleting it
+--- @quickref M.undo_last_change(c, drawing_id) -> drawing|nil | Restore the snapshot before the last scene write
 
 local M = {}
 
