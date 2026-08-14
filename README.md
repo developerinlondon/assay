@@ -28,6 +28,7 @@ assay checks.yaml    # Structured checks with retry/backoff/JSON output
 assay exec -e 'log.info("hello")'   # Inline evaluation
 assay context "grafana"              # LLM-ready module docs
 assay modules                        # List all 65 modules
+assay modules --json                 # Same list as JSON, with full per-module metadata
 
 # Workflow + auth + dashboard server (one process)
 assay-engine serve --config engine.toml
@@ -272,7 +273,9 @@ the server exposes exactly **two tools** and lets Lua compose the modules:
   Optional `timeout_secs` and `args`. Approval gates suspend and return a `requiresApproval` resume
   token, resumable with `assay resume`.
 - **`assay_context`** — search the embedded modules and return prompt-ready Markdown docs (method
-  signatures, env vars, builtins), the same output as `assay context`.
+  signatures, env vars), the same output as `assay context --no-builtins`. The builtins reference is
+  omitted by default because the calling agent's harness already carries it; pass
+  `include_builtins: true` to append it.
 
 A script that errors — including a write blocked by read-only mode — comes back as an MCP result
 with `isError: true`; `needs_approval` is not an error. The server implements `initialize`,

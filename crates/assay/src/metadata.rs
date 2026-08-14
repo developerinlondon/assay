@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 /// LDoc-style metadata parsed from `--- @tag value` lines at the top of a Lua module.
 #[derive(Debug, Clone, Default)]
 pub struct ModuleMetadata {
@@ -16,7 +18,7 @@ pub struct ModuleMetadata {
 }
 
 /// A quick-reference entry parsed from `@quickref signature -> return_hint | description`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct QuickRef {
     /// e.g. `c:health()`
     pub signature: String,

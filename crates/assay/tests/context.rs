@@ -1,4 +1,6 @@
-use assay::context::{ModuleContextEntry, QuickRefEntry, format_context};
+use assay::context::{
+    ModuleContextEntry, QuickRefEntry, format_context, format_context_without_builtins,
+};
 
 #[test]
 fn test_format_single_module() {
@@ -81,6 +83,23 @@ fn test_format_builtins_always_present() {
     assert!(output.contains("http.get(url, opts?)"));
     assert!(output.contains("json.parse(str)"));
     assert!(output.contains("env.get(key)"));
+}
+
+#[test]
+fn test_format_context_without_builtins_omits_the_block() {
+    let entries = vec![ModuleContextEntry {
+        module_name: "assay.grafana".to_string(),
+        description: "Grafana monitoring.".to_string(),
+        env_vars: vec!["GRAFANA_URL".to_string()],
+        quickrefs: vec![],
+    }];
+
+    let output = format_context_without_builtins(&entries);
+
+    assert!(output.contains("### assay.grafana"));
+    assert!(!output.contains("## Built-in Functions"));
+    assert!(!output.contains("http.get(url, opts?)"));
+    assert!(!output.contains("env.get(key)"));
 }
 
 #[test]

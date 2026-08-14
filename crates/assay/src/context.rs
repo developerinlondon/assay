@@ -16,14 +16,20 @@ pub struct QuickRefEntry {
     pub description: String,
 }
 
-/// Format module context entries into prompt-ready Markdown.
-///
-/// Output includes:
-/// - Module list with descriptions, env vars, and method signatures
-/// - Built-in functions section (always present)
-///
-/// Lines are kept under 120 chars where practical.
+/// Format module context entries into prompt-ready Markdown: the module list
+/// with descriptions, env vars and method signatures, followed by the built-in
+/// functions reference. Lines are kept under 120 chars where practical.
 pub fn format_context(entries: &[ModuleContextEntry]) -> String {
+    render(entries, true)
+}
+
+/// [`format_context`] without the built-in functions reference, for a caller
+/// whose context already carries it.
+pub fn format_context_without_builtins(entries: &[ModuleContextEntry]) -> String {
+    render(entries, false)
+}
+
+fn render(entries: &[ModuleContextEntry], include_builtins: bool) -> String {
     let mut output = String::new();
 
     output.push_str("# Assay Module Context\n\n");
@@ -55,6 +61,14 @@ pub fn format_context(entries: &[ModuleContextEntry]) -> String {
         }
     }
 
+    if include_builtins {
+        push_builtins(&mut output);
+    }
+
+    output
+}
+
+fn push_builtins(output: &mut String) {
     output.push_str("## Built-in Functions (always available, no require needed)\n");
     output.push_str("http.get(url, opts?) -> {status, body, headers}\n");
     output.push_str("json.parse(str) -> table | json.encode(tbl) -> str\n");
@@ -82,6 +96,4 @@ pub fn format_context(entries: &[ModuleContextEntry]) -> String {
     output.push_str("assert.matches(str, pat, msg?)\n");
     output.push_str("log.info(msg) | log.warn(msg) | log.error(msg)\n");
     output.push_str("env.get(key) -> str | sleep(secs) | time() -> int\n");
-
-    output
 }
