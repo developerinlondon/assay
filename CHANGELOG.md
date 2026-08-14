@@ -2,7 +2,14 @@
 
 All notable changes to Assay are documented here.
 
-## assay-lua 0.18.13 — 2026-08-14
+## assay-lua 0.19.0 — 2026-08-14
+
+### Changed
+
+- **`ModuleMetadata` gained two public fields**, so code building one with a struct literal must add
+  them (or an `..Default::default()` rest pattern). `cargo-semver-checks` classes that as breaking,
+  which is why this is a minor bump rather than the patch the rest of the change would have
+  warranted.
 
 ### Added
 
