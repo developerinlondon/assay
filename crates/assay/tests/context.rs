@@ -1,4 +1,6 @@
-use assay::context::{ModuleContextEntry, QuickRefEntry, format_context};
+use assay::context::{
+    ModuleContextEntry, QuickRefEntry, format_context, format_context_without_builtins,
+};
 
 #[test]
 fn test_format_single_module() {
@@ -20,7 +22,7 @@ fn test_format_single_module() {
         ],
     }];
 
-    let output = format_context(&entries, true);
+    let output = format_context(&entries);
 
     assert!(output.contains("# Assay Module Context"));
     assert!(output.contains("### assay.grafana"));
@@ -41,7 +43,7 @@ fn test_format_env_vars() {
         quickrefs: vec![],
     }];
 
-    let output = format_context(&entries, true);
+    let output = format_context(&entries);
 
     assert!(output.contains("Env: VAULT_ADDR, VAULT_TOKEN"));
 }
@@ -55,7 +57,7 @@ fn test_format_no_env_vars() {
         quickrefs: vec![],
     }];
 
-    let output = format_context(&entries, true);
+    let output = format_context(&entries);
 
     assert!(output.contains("### assay.k8s"));
     assert!(!output.contains("Env:"));
@@ -65,17 +67,17 @@ fn test_format_no_env_vars() {
 fn test_format_empty_results() {
     let entries: Vec<ModuleContextEntry> = vec![];
 
-    let output = format_context(&entries, true);
+    let output = format_context(&entries);
 
     assert!(output.contains("# Assay Module Context"));
     assert!(output.contains("No matching modules found."));
 }
 
 #[test]
-fn test_format_builtins_present_when_requested() {
+fn test_format_builtins_always_present() {
     let entries: Vec<ModuleContextEntry> = vec![];
 
-    let output = format_context(&entries, true);
+    let output = format_context(&entries);
 
     assert!(output.contains("## Built-in Functions"));
     assert!(output.contains("http.get(url, opts?)"));
@@ -84,7 +86,7 @@ fn test_format_builtins_present_when_requested() {
 }
 
 #[test]
-fn test_format_builtins_omitted_when_not_requested() {
+fn test_format_context_without_builtins_omits_the_block() {
     let entries = vec![ModuleContextEntry {
         module_name: "assay.grafana".to_string(),
         description: "Grafana monitoring.".to_string(),
@@ -92,7 +94,7 @@ fn test_format_builtins_omitted_when_not_requested() {
         quickrefs: vec![],
     }];
 
-    let output = format_context(&entries, false);
+    let output = format_context_without_builtins(&entries);
 
     assert!(output.contains("### assay.grafana"));
     assert!(!output.contains("## Built-in Functions"));
@@ -117,7 +119,7 @@ fn test_format_multiple_modules() {
         },
     ];
 
-    let output = format_context(&entries, true);
+    let output = format_context(&entries);
 
     assert!(output.contains("### assay.grafana"));
     assert!(output.contains("### assay.prometheus"));
@@ -138,7 +140,7 @@ fn test_format_line_length() {
         }],
     }];
 
-    let output = format_context(&entries, true);
+    let output = format_context(&entries);
 
     // Check that most lines are under 120 chars (allow some flexibility for edge cases)
     for line in output.lines() {

@@ -18,10 +18,18 @@ pub struct QuickRefEntry {
 
 /// Format module context entries into prompt-ready Markdown: the module list
 /// with descriptions, env vars and method signatures, followed by the built-in
-/// functions reference when `include_builtins` is set.
-///
-/// Lines are kept under 120 chars where practical.
-pub fn format_context(entries: &[ModuleContextEntry], include_builtins: bool) -> String {
+/// functions reference. Lines are kept under 120 chars where practical.
+pub fn format_context(entries: &[ModuleContextEntry]) -> String {
+    render(entries, true)
+}
+
+/// [`format_context`] without the built-in functions reference, for a caller
+/// whose context already carries it.
+pub fn format_context_without_builtins(entries: &[ModuleContextEntry]) -> String {
+    render(entries, false)
+}
+
+fn render(entries: &[ModuleContextEntry], include_builtins: bool) -> String {
     let mut output = String::new();
 
     output.push_str("# Assay Module Context\n\n");

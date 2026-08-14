@@ -499,7 +499,9 @@ fn run_context(query: &str, limit: usize, include_builtins: bool) -> ExitCode {
 /// same text the `assay context` CLI prints. Shared by the CLI path and
 /// the MCP `assay_context` tool.
 fn render_context(query: &str, limit: usize, include_builtins: bool) -> Result<String, String> {
-    use assay::context::{ModuleContextEntry, QuickRefEntry, format_context};
+    use assay::context::{
+        ModuleContextEntry, QuickRefEntry, format_context, format_context_without_builtins,
+    };
     use assay::discovery::{discover_modules, search_modules};
 
     // Run on a dedicated thread to avoid tokio runtime nesting.
@@ -534,7 +536,11 @@ fn render_context(query: &str, limit: usize, include_builtins: bool) -> Result<S
             })
             .collect();
 
-        format_context(&entries, include_builtins)
+        if include_builtins {
+            format_context(&entries)
+        } else {
+            format_context_without_builtins(&entries)
+        }
     });
 
     handle

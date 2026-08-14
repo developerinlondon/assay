@@ -20,8 +20,8 @@ All notable changes to Assay are documented here.
   previously ended with the same ~1,300-character built-in function list, spending roughly 325
   tokens per call on text an agent's harness already carries. Over MCP the block is now opt-in via
   `include_builtins: true`; the `assay context` CLI is unchanged for a human reader and gains
-  `--no-builtins` for the same trim. `context::format_context` takes the choice as a second
-  argument.
+  `--no-builtins` for the same trim. `context::format_context` keeps its behaviour and signature;
+  the trimmed rendering is the new `context::format_context_without_builtins`.
 
 ### Added
 
