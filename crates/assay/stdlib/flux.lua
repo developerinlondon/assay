@@ -1,5 +1,7 @@
 --- @module assay.flux
 --- @description Flux CD GitOps toolkit. GitRepositories, Kustomizations, HelmReleases, notifications.
+--- @category gitops
+--- @icon flux
 --- @keywords flux, gitops, kustomizations, helmreleases, gitrepositories, kubernetes, helm, oci, image-automation, notification, readiness, sources
 --- @quickref c.git_repos:list(namespace) -> {items} | List GitRepositories
 --- @quickref c.git_repos:get(namespace, name) -> repo|nil | Get GitRepository by name

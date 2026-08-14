@@ -1,5 +1,7 @@
 --- @module assay.harbor
 --- @description Harbor container registry. Projects, repositories, artifacts, vulnerability scanning.
+--- @category devtools
+--- @icon harbor
 --- @keywords harbor, registry, artifacts, vulnerabilities, scanning, containers, project, repository, artifact, tag, scan, vulnerability, replication, image, docker, container-registry, oci
 --- @quickref c.system:health() -> {status, components} | Check Harbor health
 --- @quickref c.system:info() -> {harbor_version, ...} | Get system information

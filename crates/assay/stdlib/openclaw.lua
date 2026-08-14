@@ -1,5 +1,6 @@
 --- @module assay.openclaw
 --- @description OpenClaw AI agent platform integration. Invoke tools, send messages, manage state, spawn sub-agents, approval gates, LLM tasks.
+--- @category saas
 --- @keywords openclaw, clawd, agent, ai, workflow, invoke, state, diff, approve, llm, cron, spawn, message, notify
 --- @quickref c.tools:invoke(tool, action, args) -> result | Invoke an OpenClaw tool action
 --- @quickref c.messaging:send(channel, target, message) -> result | Send a message via channel

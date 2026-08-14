@@ -1,5 +1,7 @@
 --- @module assay.gmail
 --- @description Gmail REST API client with OAuth2 token refresh. Search, read, reply, send emails, manage labels.
+--- @category comms
+--- @icon gmail
 --- @keywords gmail, email, oauth2, google, search, send, reply, labels, message, thread
 --- @quickref c.messages:search(query, opts?) -> [message] | Search emails by query
 --- @quickref c.messages:get(message_id, opts?) -> message | Get email message by ID

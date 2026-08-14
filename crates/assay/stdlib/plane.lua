@@ -1,5 +1,7 @@
 --- @module assay.plane
 --- @description Plane REST API — projects, work items, cycles, modules, states, labels, members, comments, and links. Covers sprint execution on self-hosted or cloud Plane.
+--- @category saas
+--- @icon plane
 --- @keywords plane, work-item, issue, task, cycle, sprint, module, initiative, state, label, project, workspace, backlog, comment, link, intake, member, project-management, tracker, self-hosted
 --- @quickref c.projects:list() -> [project] | Projects in the workspace
 --- @quickref c.projects:get(project_id) -> project|nil | Get a project

@@ -1,5 +1,6 @@
 --- @module assay.engine.auth
 --- @description Lua client for assay-engine's auth module — login/whoami, passkey, OIDC client + provider, biscuit, zanzibar, and admin (users, sessions, OIDC clients/upstream, JWKS, audit).
+--- @category identity
 --- @keywords auth, login, session, passkey, oidc, biscuit, zanzibar, rebac, admin, users, sessions
 --- @quickref auth.client(opts) -> client | Build an auth client (engine_url + optional api_key)
 --- @quickref c:login(email, password) -> {user_id, email, csrf_token} | Password login

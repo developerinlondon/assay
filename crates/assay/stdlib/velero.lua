@@ -1,5 +1,6 @@
 --- @module assay.velero
 --- @description Velero backup and restore. Backups, restores, schedules, storage locations.
+--- @category kubernetes
 --- @keywords velero, backups, restores, schedules, disaster-recovery, kubernetes, backup, restore, schedule, storage-location, snapshot, repository, completion, status, failover
 --- @quickref c.backups:list() -> [backup] | List backups
 --- @quickref c.backups:get(name) -> backup|nil | Get backup by name

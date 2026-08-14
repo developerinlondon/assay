@@ -87,6 +87,46 @@ fn test_discover_modules_no_duplicates_by_name() {
     }
 }
 
+/// The categories a gallery groups its cards by. A module carrying anything
+/// else lands in a bucket nobody renders.
+const CATEGORIES: &[&str] = &[
+    "kubernetes",
+    "gitops",
+    "secrets",
+    "identity",
+    "observability",
+    "cloud",
+    "saas",
+    "devtools",
+    "comms",
+    "host",
+    "data",
+    "core",
+];
+
+#[test]
+fn test_every_shipped_module_has_a_known_category() {
+    let modules = discover_modules();
+    let shipped: Vec<_> = modules
+        .iter()
+        .filter(|m| m.source == ModuleSource::BuiltIn)
+        .collect();
+    assert!(!shipped.is_empty(), "no builtin modules discovered");
+
+    for m in shipped {
+        let category = m
+            .metadata
+            .category
+            .as_deref()
+            .unwrap_or_else(|| panic!("{} ships without a category", m.module_name));
+        assert!(
+            CATEGORIES.contains(&category),
+            "{} has category {category:?}, which is not one of {CATEGORIES:?}",
+            m.module_name
+        );
+    }
+}
+
 #[test]
 fn test_search_modules_limit_respected() {
     let results = search_modules("a", 3);

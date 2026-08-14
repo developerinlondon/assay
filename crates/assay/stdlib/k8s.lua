@@ -1,5 +1,7 @@
 --- @module assay.k8s
 --- @description Kubernetes API client for Kubernetes clusters. 30+ resource types, CRDs, readiness checks, pod logs, rollouts. Multi-cluster via kubeconfig contexts (pass opts.context on any call, or k8s.use_context(name)); EKS aws exec-plugin auth is minted in-process.
+--- @category kubernetes
+--- @icon kubernetes
 --- @keywords kubernetes, k8s, pods, deployments, services, secrets, configmaps, namespaces, crd, custom-resources, rbac, events, logs, rollout, nodes, readiness, wait, deploy, deployment, kubeconfig, context, multi-cluster, eks
 --- @env KUBERNETES_SERVICE_HOST, KUBERNETES_SERVICE_PORT, KUBECONFIG, ASSAY_K8S_CONTEXT, HOME
 --- @quickref M.contexts(opts?) -> [name], current | List kubeconfig context names + current-context

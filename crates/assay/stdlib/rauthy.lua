@@ -1,5 +1,6 @@
 --- @module assay.rauthy
 --- @description Rauthy IdP admin API client. OAuth2 client reconciliation, secret rotation, discovery, health.
+--- @category identity
 --- @keywords rauthy, oidc, oauth2, openid, idp, identity, sso, clients, client-credentials, pkce, jwks, discovery, authorization-server, rotation, reconcile
 --- @quickref c.sys:health() -> bool | Check Rauthy is reachable + healthy
 --- @quickref c.sys:wait_healthy(timeout_secs?) -> true | Block until /health returns 2xx (default 120 s)

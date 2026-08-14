@@ -1,5 +1,6 @@
 --- @module assay.pkg
 --- @description Package manager framework — catalog loading, target abstractions, plan/apply/reconcile.
+--- @category host
 --- @keywords pkg, package, apt, binary, install, upgrade, reconcile, idempotent
 
 local M = {}

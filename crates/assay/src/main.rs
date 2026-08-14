@@ -460,6 +460,8 @@ struct ModuleEntry<'a> {
     env_vars: &'a [String],
     quickrefs: &'a [assay::metadata::QuickRef],
     auto_functions: &'a [String],
+    icon: Option<&'a str>,
+    category: Option<&'a str>,
 }
 
 fn modules_json(modules: &[assay::discovery::DiscoveredModule]) -> String {
@@ -475,6 +477,8 @@ fn modules_json(modules: &[assay::discovery::DiscoveredModule]) -> String {
                 env_vars: &m.metadata.env_vars,
                 quickrefs: &m.metadata.quickrefs,
                 auto_functions: &m.metadata.auto_functions,
+                icon: m.metadata.icon.as_deref(),
+                category: m.metadata.category.as_deref(),
             })
             .collect(),
     };

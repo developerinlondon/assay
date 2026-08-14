@@ -1,5 +1,7 @@
 --- @module assay.alertmanager
 --- @description Alertmanager alert and silence management. Query, create, and delete alerts and silences.
+--- @category observability
+--- @icon prometheus
 --- @keywords alertmanager, alerts, silences, receivers, monitoring, silence, inhibit, grouping, notification, receiver
 --- @quickref c.alerts:list(opts?) -> [alert] | List active alerts with filters
 --- @quickref c.alerts:post(alerts) -> true | Post new alerts

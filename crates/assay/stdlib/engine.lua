@@ -1,5 +1,6 @@
 --- @module assay.engine
 --- @description Convenience umbrella for the assay-engine clients (core, auth, workflow, vault). One `engine.connect()` call returns all four sharing a base URL + admin key. Prefer requiring the individual submodules directly (`assay.engine.core`, etc.) if you only need one.
+--- @category devtools
 --- @keywords engine, assay, core, auth, workflow, vault, secrets, idp, oidc, zanzibar, scheduler
 --- @quickref engine.core — engine-core admin (info, modules, instances, audit, config)
 --- @quickref engine.auth — auth (login, passkey, OIDC client + provider, biscuit, zanzibar, admin)

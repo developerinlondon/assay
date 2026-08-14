@@ -1,5 +1,6 @@
 --- @module assay.email_triage
 --- @description Email triage helpers for deterministic categorization or OpenClaw-assisted classification into action, reply, and FYI buckets.
+--- @category comms
 --- @keywords email, triage, gmail, inbox, classify, categorize, openclaw, llm, workflow
 --- @quickref email_triage.categorize(emails, opts?) -> buckets | Deterministically bucket emails by subject and sender
 --- @quickref email_triage.categorize_llm(emails, openclaw_client, opts?) -> buckets | Use OpenClaw LLM task for smarter bucketing

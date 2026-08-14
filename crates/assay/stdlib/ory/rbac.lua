@@ -1,5 +1,7 @@
 --- @module assay.ory.rbac
 --- @description Capability-based RBAC engine layered on top of Ory Keto. Define a policy once (role -> capabilities map) and get user lookups, capability checks, and membership management helpers. A user can hold multiple roles; their effective capability set is the union of all assigned roles. Each role also has a rank so a single "primary" role can be shown for display.
+--- @category identity
+--- @icon ory
 --- @keywords rbac, roles, permissions, capabilities, authz, authorization, keto, ory, zanzibar, policy
 --- @quickref rbac.policy(opts) -> policy | Build a policy from a role map and a Keto client. opts: { namespace, keto, roles, default_role? }
 --- @quickref p.users:roles(user_id) -> [role_name] | All roles a user holds, sorted by rank (highest first)

@@ -1,5 +1,7 @@
 --- @module assay.n8n
 --- @description n8n public REST API (/api/v1) — workflows, executions, credentials, tags, variables, projects, folders, users, data tables, source control, audit, settings.
+--- @category saas
+--- @icon n8n
 --- @keywords n8n, workflow, automation, execution, credential, tag, variable, project, folder, node, trigger, webhook, source-control, audit, data-table, low-code
 --- @quickref c.workflows:list(opts?) -> [workflow] | List workflows (first page)
 --- @quickref c.workflows:page(opts?) -> {data, nextCursor} | One cursor page of workflows

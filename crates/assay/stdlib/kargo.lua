@@ -1,5 +1,6 @@
 --- @module assay.kargo
 --- @description Kargo continuous promotion. Stages, freight, promotions, warehouses, pipeline status.
+--- @category gitops
 --- @keywords kargo, promotions, stages, freight, warehouses, gitops, kubernetes, promotion, pipeline, health, wait, status, stage
 --- @quickref c.stages:list(namespace) -> [stage] | List stages in namespace
 --- @quickref c.stages:get(namespace, name) -> stage | Get stage by name

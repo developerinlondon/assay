@@ -1,5 +1,7 @@
 --- @module assay.openstack
 --- @description OpenStack inventory client. Keystone v3 auth and service discovery; identity, compute, image, network, and quota reads.
+--- @category cloud
+--- @icon openstack
 --- @keywords openstack, keystone, nova, glance, neutron, identity, compute, image, network, quota, servers
 --- @quickref c:authenticate() -> table | Authenticate with Keystone v3 (POST, approval-gated)
 --- @quickref c.identity:list_projects(opts?) -> [project] | List projects (GET, read)

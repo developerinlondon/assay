@@ -1,5 +1,7 @@
 --- @module assay.excalidash
 --- @description ExcaliDash REST API — Excalidraw drawings, collections, version-history snapshots, and user/link sharing on a self-hosted ExcaliDash dashboard.
+--- @category saas
+--- @icon excalidraw
 --- @keywords excalidash, excalidraw, drawing, diagram, sketch, whiteboard, canvas, scene, elements, collection, folder, trash, snapshot, version-history, restore, share, link-share, permission, api-key, self-hosted, zimengxiong
 --- @quickref c.drawings:list(opts?) -> {drawings, totalCount} | One page of drawing summaries
 --- @quickref c.drawings:get(id) -> drawing|nil | A drawing with its scene

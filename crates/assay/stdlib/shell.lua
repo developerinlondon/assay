@@ -1,5 +1,6 @@
 --- @module assay.shell
 --- @description WebSocket ↔ PTY bridge for in-browser terminals (xterm.js, etc). Spawns a child on a fresh PTY, pipes raw bytes both directions, and interprets a small JSON resize control protocol on text frames.
+--- @category host
 --- @keywords shell, pty, websocket, terminal, xterm, browser, bridge
 --- @quickref M.bridge(conn, opts) | Bridge a ws server conn to a `process.spawn_pty` child until either side closes
 

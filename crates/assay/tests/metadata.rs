@@ -45,6 +45,39 @@ return M
 }
 
 #[test]
+fn test_parse_icon_and_category() {
+    let source =
+        "--- @module assay.k8s\n--- @category kubernetes\n--- @icon kubernetes\n\nlocal M = {}\n";
+    let meta = parse_metadata(source);
+    assert_eq!(meta.category.as_deref(), Some("kubernetes"));
+    assert_eq!(meta.icon.as_deref(), Some("kubernetes"));
+}
+
+#[test]
+fn test_no_icon_tag_leaves_icon_absent() {
+    let source = "--- @module assay.velero\n--- @category kubernetes\n\nlocal M = {}\n";
+    let meta = parse_metadata(source);
+    assert_eq!(meta.category.as_deref(), Some("kubernetes"));
+    assert!(
+        meta.icon.is_none(),
+        "a module with no brand must stay absent rather than inventing a slug, got: {:?}",
+        meta.icon
+    );
+}
+
+#[test]
+fn test_unknown_tag_does_not_stop_later_tags() {
+    let source =
+        "--- @module assay.future\n--- @notatag whatever\n--- @category core\n\nlocal M = {}\n";
+    let meta = parse_metadata(source);
+    assert_eq!(
+        meta.category.as_deref(),
+        Some("core"),
+        "an unrecognised tag must be skipped, not abort the header scan"
+    );
+}
+
+#[test]
 fn test_parse_quickref_format() {
     let source = "--- @quickref c:health() -> {database, version} | Check health\n\nlocal M = {}\n";
     let meta = parse_metadata(source);

@@ -1,5 +1,7 @@
 --- @module assay.oauth2
 --- @description Google OAuth2 helper for loading credentials, refreshing access tokens, persisting token files, and building auth headers.
+--- @category identity
+--- @icon google
 --- @keywords oauth2, google, auth, token, refresh, credentials, bearer, gmail, gcal
 --- @quickref oauth2.from_file(credentials_path?, token_path?, opts?) -> client | Load OAuth2 credentials and token files
 --- @quickref client:access_token() -> string | Return current access token

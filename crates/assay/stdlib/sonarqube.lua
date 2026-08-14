@@ -1,5 +1,7 @@
 --- @module assay.sonarqube
 --- @description SonarQube code quality API. Quality gates, issues, hotspots, measures, projects.
+--- @category devtools
+--- @icon sonarqubeserver
 --- @keywords sonarqube, sonar, quality-gate, issues, hotspots, measures, projects, code-quality, coverage, security, bugs, vulnerabilities
 --- @quickref c.qualitygate:project_status(project_key) -> {projectStatus}|nil | Quality gate status for a project
 --- @quickref c.issues:search(opts?) -> {total, issues} | Search issues

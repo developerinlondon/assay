@@ -1,5 +1,7 @@
 --- @module assay.tailscale
 --- @description Tailscale REST API client. OAuth2 client_credentials, mint auth keys, list/find devices, manage device key expiry, tags, authorize, delete, ACL preview.
+--- @category cloud
+--- @icon tailscale
 --- @keywords tailscale, ts, oauth2, authkey, mint, device, tailnet, key-expiry, tags, acl
 --- @quickref tailscale.client(opts?) -> client | OAuth2-authed Tailscale REST client
 --- @quickref c:mint_key(opts) -> key | POST /tailnet/{tailnet}/keys

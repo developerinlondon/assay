@@ -1,5 +1,6 @@
 --- @module assay.url
 --- @description Pure-Lua URL helpers. RFC 3986 percent-encoding plus form-encoded body builder.
+--- @category core
 --- @keywords url, urlencode, percent-encode, form, query, encode, decode, www-form-urlencoded
 --- @quickref url.encode(s) -> string | RFC 3986 percent-encode a string (space -> %20)
 --- @quickref url.encode_form(t) -> string | Build application/x-www-form-urlencoded body

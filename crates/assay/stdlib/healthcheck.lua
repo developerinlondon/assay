@@ -1,5 +1,6 @@
 --- @module assay.healthcheck
 --- @description HTTP health checking utilities. Status codes, JSON path, body matching, latency, multi-check.
+--- @category observability
 --- @keywords healthcheck, http, health, status, latency, monitoring, json-path, body-match, multi-check, wait, endpoint, probe
 --- @quickref M.http(url, opts?) -> {ok, status, latency_ms} | HTTP health check with status assertion
 --- @quickref M.json_path(url, path_expr, expected, opts?) -> {ok, actual, expected} | Check JSON path value

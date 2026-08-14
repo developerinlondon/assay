@@ -1,5 +1,6 @@
 --- @module assay.engine.workflow.worker
 --- @description Worker poll loop + task handlers for `assay.engine.workflow`.
+--- @category devtools
 ---
 --- The umbrella `engine.workflow.client(opts)` exposes `register_workflow`,
 --- `register_activity`, and `listen()`. This module is the implementation:

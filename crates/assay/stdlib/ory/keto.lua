@@ -1,5 +1,7 @@
 --- @module assay.ory.keto
 --- @description Ory Keto authorization — relation-tuple CRUD, permission checks (including OPL permits), role membership queries. Implements relationship-based access control (ReBAC, Google Zanzibar-style).
+--- @category identity
+--- @icon ory
 --- @keywords keto, ory, authorization, authz, rbac, rebac, permissions, roles, relation-tuples, zanzibar, access-control, members, groups, opl, permits
 --- @quickref keto.client(read_url, opts?) -> client | Create a Keto client (read endpoint)
 --- @quickref c.tuples:list(opts) -> {relation_tuples, next_page_token} | List relation tuples matching filters
