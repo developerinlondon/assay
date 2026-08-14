@@ -2,7 +2,26 @@
 
 All notable changes to Assay are documented here.
 
-## assay-lua 0.18.11 — 2026-08-13
+## assay-lua 0.18.12 — 2026-08-14
+
+### Added
+
+- **`assay modules --json`.** The table prints three columns, so a tool that wants the module
+  catalogue had to scrape fixed-width text and still lost most of what discovery already parsed.
+  `--json` emits the full record per module — name, source, description, keywords, env vars,
+  quickref signatures with their return hints, and the auto-extracted function names — under a
+  `{ version, modules }` envelope whose `version` is the binary's, so a consumer can cache the
+  catalogue and invalidate it on upgrade. Output is unchanged without the flag, and the JSON path
+  survives a closed pipe (`| head`) instead of panicking.
+
+### Changed
+
+- **The `assay_context` MCP tool no longer repeats the builtins reference.** Every response
+  previously ended with the same ~1,300-character built-in function list, spending roughly 325
+  tokens per call on text an agent's harness already carries. Over MCP the block is now opt-in via
+  `include_builtins: true`; the `assay context` CLI is unchanged for a human reader and gains
+  `--no-builtins` for the same trim. `context::format_context` keeps its behaviour and signature;
+  the trimmed rendering is the new `context::format_context_without_builtins`.
 
 ### Added
 

@@ -27,6 +27,16 @@ pub enum ModuleSource {
     Global,
 }
 
+impl ModuleSource {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ModuleSource::BuiltIn => "builtin",
+            ModuleSource::Project => "project",
+            ModuleSource::Global => "global",
+        }
+    }
+}
+
 /// A module discovered during the discovery phase.
 #[derive(Debug, Clone)]
 pub struct DiscoveredModule {

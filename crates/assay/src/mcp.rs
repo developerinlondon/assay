@@ -202,7 +202,7 @@ fn assay_resume_tool() -> JsonValue {
 fn assay_context_tool() -> JsonValue {
     json!({
         "name": "assay_context",
-        "description": "Search assay's embedded modules and return prompt-ready Markdown docs (method signatures, env vars, builtins) for the matches. Call this before writing an assay_run script to discover the correct module APIs.",
+        "description": "Search assay's embedded modules and return prompt-ready Markdown docs (method signatures, env vars) for the matches. Call this before writing an assay_run script to discover the correct module APIs. The builtin-function reference is omitted by default — request it with include_builtins if your context does not already carry it.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -213,6 +213,11 @@ fn assay_context_tool() -> JsonValue {
                 "limit": {
                     "type": "number",
                     "description": "Maximum number of modules to return (default 5).",
+                },
+                "include_builtins": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Append the reference for assay's always-available builtins (http, json, fs, crypto, ...). Off by default: it is the same block on every call, so ask for it only when your context lacks it.",
                 },
             },
             "required": ["query"],
@@ -330,7 +335,14 @@ fn call_assay_context(arguments: &JsonValue) -> Result<JsonValue, String> {
         .filter(|n| *n > 0)
         .unwrap_or(DEFAULT_CONTEXT_LIMIT);
 
-    let markdown = crate::render_context(query, limit)?;
+    // Off unless asked for: an MCP client's harness already documents the
+    // builtins, so repeating the block on every search is dead weight.
+    let include_builtins = arguments
+        .get("include_builtins")
+        .and_then(JsonValue::as_bool)
+        .unwrap_or(false);
+
+    let markdown = crate::render_context(query, limit, include_builtins)?;
     Ok(tool_text_content(markdown, false))
 }
 

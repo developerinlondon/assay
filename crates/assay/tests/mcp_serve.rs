@@ -286,6 +286,68 @@ fn assay_context_returns_markdown() {
 }
 
 #[test]
+fn assay_context_omits_builtins_unless_asked() {
+    let mut server = McpServer::start();
+    server.initialize();
+
+    let resp = server.call_tool("assay_context", json!({ "query": "grafana" }));
+    let markdown = text_content(&resp["result"]);
+
+    assert!(
+        markdown.to_lowercase().contains("grafana"),
+        "the module docs are still the point: {markdown}"
+    );
+    assert!(
+        !markdown.contains("Built-in Functions"),
+        "the builtins block repeats on every call and must be opt-in over MCP: {markdown}"
+    );
+    assert!(
+        !markdown.contains("http.get(url, opts?)"),
+        "builtins body leaked: {markdown}"
+    );
+}
+
+#[test]
+fn assay_context_includes_builtins_on_request() {
+    let mut server = McpServer::start();
+    server.initialize();
+
+    let resp = server.call_tool(
+        "assay_context",
+        json!({ "query": "grafana", "include_builtins": true }),
+    );
+    let markdown = text_content(&resp["result"]);
+
+    assert!(
+        markdown.contains("## Built-in Functions"),
+        "include_builtins should bring the block back: {markdown}"
+    );
+    assert!(
+        markdown.contains("http.get(url, opts?)"),
+        "builtins body missing: {markdown}"
+    );
+}
+
+#[test]
+fn assay_context_schema_advertises_include_builtins() {
+    let mut server = McpServer::start();
+    server.initialize();
+
+    let resp = server.request("tools/list", json!({}));
+    let tools = resp["result"]["tools"].as_array().unwrap();
+    let ctx = tools.iter().find(|t| t["name"] == "assay_context").unwrap();
+    let flag = &ctx["inputSchema"]["properties"]["include_builtins"];
+
+    assert_eq!(flag["type"], "boolean", "assay_context schema: {ctx}");
+    assert_eq!(flag["default"], json!(false), "assay_context schema: {ctx}");
+    let required = ctx["inputSchema"]["required"].as_array().unwrap();
+    assert!(
+        !required.contains(&json!("include_builtins")),
+        "the flag is optional: {ctx}"
+    );
+}
+
+#[test]
 fn tools_list_includes_assay_resume() {
     let mut server = McpServer::start();
     server.initialize();

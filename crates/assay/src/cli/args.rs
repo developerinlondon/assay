@@ -48,6 +48,9 @@ pub(crate) enum Commands {
         /// Maximum results to show
         #[arg(short, long, default_value = "5")]
         limit: usize,
+        /// Omit the built-in functions reference from the output
+        #[arg(long)]
+        no_builtins: bool,
     },
     /// Execute a Lua script inline or from file
     Exec {
@@ -58,7 +61,11 @@ pub(crate) enum Commands {
         file: Option<PathBuf>,
     },
     /// List all available modules
-    Modules,
+    Modules {
+        /// Emit full module metadata as JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
     /// Run a file (yaml or lua)
     Run {
         /// Path to .yaml or .lua file
