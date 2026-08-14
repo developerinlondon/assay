@@ -1,5 +1,6 @@
 --- @module assay.ansi
 --- @description ANSI SGR → HTML conversion + stripper for log viewers. No state, no deps.
+--- @category core
 --- @keywords ansi, sgr, escape, html, log, color, terminal
 --- @quickref ansi.to_html(line) -> string | Convert SGR to <span> tags, HTML-escape unsafe chars
 --- @quickref ansi.strip(line) -> string | Drop all CSI sequences, return plain text

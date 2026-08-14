@@ -1,5 +1,7 @@
 --- @module assay.github
 --- @description GitHub REST API client. PRs, issues, actions, repositories, GraphQL, releases. No gh CLI dependency.
+--- @category devtools
+--- @icon github
 --- @keywords github, pr, pull-request, issue, actions, runs, graphql, repository, merge, review, comment, release, asset, checksum
 --- @quickref c.pulls:get(repo, number) -> pr | Get pull request details
 --- @quickref c.pulls:list(repo, opts?) -> [pr] | List pull requests

@@ -1,5 +1,7 @@
 --- @module assay.gitlab
 --- @description GitLab REST API v4 — projects, repositories, commits, merge requests, pipelines, issues, releases, container registry.
+--- @category devtools
+--- @icon gitlab
 --- @keywords gitlab, git, ci, cd, merge-request, pipeline, repository, commit, registry, release
 --- @quickref c.projects:get(id) -> table|nil | Get project details
 --- @quickref c.files:raw(project, path, opts?) -> string|nil | Read raw file content

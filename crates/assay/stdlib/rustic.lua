@@ -1,5 +1,6 @@
 --- @module assay.rustic
 --- @description rustic backup CLI wrapper. Snapshots, backup, restore, init, check. Repository + credentials passed via env (kept off the cmdline).
+--- @category host
 --- @keywords rustic, backup, restic, snapshot, restore, repository, s3, b2, azure, gcs, retention
 --- @quickref rustic.snapshots(opts) -> [snap]|nil, err | List all snapshots in a repo
 --- @quickref rustic.snapshot_detail(opts, id) -> snap|nil, err | Detail for one snapshot

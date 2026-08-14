@@ -1,5 +1,7 @@
 --- @module assay.apt
 --- @description Debian/Ubuntu apt package index reader. Fetches and parses Packages indexes (gz/xz/zstd/plain) from any apt-style HTTP repository.
+--- @category host
+--- @icon debian
 --- @keywords apt, debian, ubuntu, packages, package, dpkg, repository, deb, version, index
 --- @quickref apt.packages(opts) -> idx | Fetch and parse a Packages index
 --- @quickref idx:find(name) -> pkg | nil | Look up a package by name

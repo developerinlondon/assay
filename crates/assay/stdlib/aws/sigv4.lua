@@ -1,5 +1,6 @@
 --- @module assay.aws.sigv4
 --- @description AWS Signature V4 request signing. Generates Authorization headers and presigned URLs for AWS API calls.
+--- @category cloud
 --- @keywords aws, sigv4, signature, authorization, signing, v4, signature-v4, presign, presigned-url
 --- @quickref M.sign(opts) -> headers | Sign an AWS request and return authorization headers
 --- @quickref M.presign(opts) -> url | Presign an AWS request as a query-string-signed URL

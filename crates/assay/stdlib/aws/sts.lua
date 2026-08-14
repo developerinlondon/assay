@@ -1,5 +1,6 @@
 --- @module assay.aws.sts
 --- @description AWS credential resolution + STS. Resolves credentials like the AWS CLI (explicit -> profile -> env -> IRSA web identity), assumes roles, all in-process (no aws CLI needed, works in readonly mode).
+--- @category cloud
 --- @keywords aws, sts, credentials, assume-role, web-identity, irsa, profile, aws-profile, credential-chain
 --- @env AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_PROFILE, AWS_ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE, AWS_REGION, AWS_DEFAULT_REGION, HOME
 --- @quickref M.credentials(opts?) -> {access_key, secret_key, session_token?} | Resolve credentials via the standard chain

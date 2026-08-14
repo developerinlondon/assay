@@ -1,5 +1,6 @@
 --- @module assay.dex
 --- @description Dex OIDC identity provider. Discovery, JWKS, health, and configuration validation.
+--- @category identity
 --- @keywords dex, oidc, identity, discovery, jwks, authentication, openid-configuration, key-set, scope, grant-type, response-type, validation
 --- @quickref c.discovery:config() -> {issuer, endpoints...} | Get OIDC discovery configuration
 --- @quickref c.discovery:jwks() -> {keys} | Get JSON Web Key Set

@@ -1,5 +1,6 @@
 --- @module assay.certmanager
 --- @description cert-manager certificate lifecycle. Certificates, issuers, ACME orders and challenges.
+--- @category kubernetes
 --- @keywords certmanager, certificates, issuers, acme, tls, kubernetes, letsencrypt, order, challenge, request, approval, readiness, wait, ssl
 --- @quickref c.certificates:list(namespace) -> {items} | List certificates in namespace
 --- @quickref c.certificates:get(namespace, name) -> cert|nil | Get certificate by name

@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.18.12"
+version = "0.19.0"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"

@@ -1,5 +1,6 @@
 --- @module assay.infoblox
 --- @description Infoblox WAPI. DNS records, networks, DHCP ranges, grid status. Basic auth.
+--- @category cloud
 --- @keywords infoblox, wapi, ipam, dns, dhcp, network, range, grid, records, a-record, ref
 --- @quickref c.records:get(type, opts?) -> [record]|nil | Get records of a type (GET, read)
 --- @quickref c.network:get(opts?) -> [network] | Get networks (GET, read)

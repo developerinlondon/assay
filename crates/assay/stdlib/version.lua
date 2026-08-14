@@ -1,5 +1,6 @@
 --- @module assay.version
 --- @description Cross-scheme version comparison: semver, debian, rpm, plain numeric. Pure Lua.
+--- @category core
 --- @keywords version, semver, debian, rpm, compare, sort
 --- @quickref version.compare(a, b, scheme?) -> -1|0|1 | Compare two versions; default scheme = "semver"
 --- @quickref version.max(list, scheme?) -> string | Return the largest version in the list

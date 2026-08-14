@@ -1,5 +1,6 @@
 --- @module assay.cron
 --- @description Scheduled job inspector. Parses /etc/crontab, /etc/cron.d/*, /etc/cron.{hourly,daily,weekly,monthly}/*, /var/spool/cron/crontabs/*, plus a passthrough to the systemd builtin's timer list.
+--- @category host
 --- @keywords cron, crontab, schedule, scheduled, jobs, systemd, timer, timers, anacron
 --- @quickref M.system_crontab() -> [{source, line, schedule, user, command}, ...] | Parse /etc/crontab + /etc/cron.d/*
 --- @quickref M.user_crontabs() -> {user = parsed_crontab, ...} | Parse /var/spool/cron/crontabs/* (root-readable)

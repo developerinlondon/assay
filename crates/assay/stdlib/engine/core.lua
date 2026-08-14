@@ -1,5 +1,6 @@
 --- @module assay.engine.core
 --- @description Lua client for assay-engine's engine-core admin API mounted at `/api/v1/engine/core/*`. Covers info, modules, instances, audit, config, plus the public `/healthz` and `/api/v1/engine/core/active-modules` probes.
+--- @category devtools
 --- @keywords engine, core, admin, modules, instances, audit, config, health
 --- @quickref core.client(opts) -> client | Build a core admin client (engine_url + optional api_key)
 --- @quickref c:info() -> {version, instance_id, modules, ...} | Public engine identity

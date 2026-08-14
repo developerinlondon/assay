@@ -1,5 +1,7 @@
 --- @module assay.clickup
 --- @description ClickUp REST API — tasks, lists, folders, spaces, goals, custom fields, time tracking, comments, and Docs. Covers sprint execution, quarterly goals, and KPI custom fields.
+--- @category saas
+--- @icon clickup
 --- @keywords clickup, task, subtask, sprint, cycle, goal, okr, kpi, doc, page, list, folder, space, workspace, team, backlog, comment, time-tracking, custom-field, assignee, project-management, tracker
 --- @quickref c.teams:list() -> [team] | Workspaces the token can see (v2 calls them teams)
 --- @quickref c.spaces:list(team_id, opts?) -> [space] | Spaces in a workspace

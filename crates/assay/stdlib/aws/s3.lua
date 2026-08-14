@@ -1,5 +1,6 @@
 --- @module assay.aws.s3
 --- @description AWS S3 read-only queries via Signature V4. List buckets, list objects, head object.
+--- @category cloud
 --- @keywords aws, s3, buckets, objects, list, head, sigv4, storage, path-style
 --- @quickref client(opts) -> client | Create an S3 client (opts = {access_key?, secret_key?, profile?, role_arn?, region?, session_token?, endpoint?}; no keys -> standard chain via assay.aws.sts)
 --- @quickref c:list_buckets() -> [{name, creation_date}] | List buckets (GET, read)

@@ -1,5 +1,6 @@
 --- @module assay.huly
 --- @description Huly transactor REST API — document queries, transactions, fulltext search, and tracker helpers for projects, issues, milestones, and components on a self-hosted or cloud Huly workspace.
+--- @category saas
 --- @keywords huly, hulylabs, huly.io, tracker, issue, project, milestone, component, task, transactor, document, transaction, tx, findall, workspace, self-hosted, project-management, knowledge-base, hcengineering
 --- @quickref c:account() -> account | Identity behind the token
 --- @quickref c:model(full?) -> [tx] | Model transactions describing every class

@@ -1,5 +1,6 @@
 --- @module assay.aws.ecr
 --- @description AWS Elastic Container Registry. Get authorization tokens for pushing/pulling images.
+--- @category cloud
 --- @keywords aws, ecr, container, registry, docker, authorization, token, login
 --- @quickref client(opts) -> client | Create an ECR client (opts = {access_key?, secret_key?, profile?, role_arn?, region?, session_token?, endpoint?}; no keys -> standard chain via assay.aws.sts)
 --- @quickref c:get_authorization_token() -> {token, proxy_endpoint, expires_at} | Get ECR auth token

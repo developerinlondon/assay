@@ -1,5 +1,6 @@
 --- @module assay.aws.eks
 --- @description EKS authentication token minting (the aws eks get-token equivalent), in-process — no aws CLI subprocess, works in readonly mode. Used by assay.k8s kubeconfig contexts.
+--- @category cloud
 --- @keywords aws, eks, kubernetes, token, get-token, authentication, k8s-aws-v1, presigned
 --- @quickref M.get_token(cluster_name, opts?) -> token | Mint a k8s-aws-v1 bearer token for an EKS cluster
 

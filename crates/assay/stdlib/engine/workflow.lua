@@ -1,5 +1,6 @@
 --- @module assay.engine.workflow
 --- @description Lua client for assay-engine's workflow module mounted at `/api/v1/engine/workflow/*`. Covers workflow CRUD + signal/cancel/state, schedules, namespaces, workers, queues, plus a worker-mode (`define` + `activity` + `listen`) that turns the calling process into an assay worker.
+--- @category devtools
 --- @keywords workflow, engine, scheduler, signal, queue, namespace, worker
 --- @quickref workflow.client(opts) -> client | Build a workflow client
 --- @quickref c:start({workflow_type, workflow_id, namespace?, input?, task_queue?}) -> {workflow_id, run_id, status} | Start a workflow
