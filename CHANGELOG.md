@@ -6,10 +6,15 @@ All notable changes to Assay are documented here.
 
 ### Changed
 
-- **`ModuleMetadata` gained two public fields**, so code building one with a struct literal must add
-  them (or an `..Default::default()` rest pattern). `cargo-semver-checks` classes that as breaking,
-  which is why this is a minor bump rather than the patch the rest of the change would have
-  warranted.
+- **`ModuleMetadata`, `QuickRef` and `DiscoveredModule` are now `#[non_exhaustive]`.** Adding `icon`
+  and `category` to `ModuleMetadata` is a breaking change — `cargo-semver-checks` classes any field
+  added to an externally-constructible public struct that way — which is why this is a minor bump
+  rather than the patch the rest of the change would have warranted. Rather than pay that again on
+  the next tag, all three types are marked `#[non_exhaustive]` in the same release: assay parses or
+  discovers every one of them and hands it out, nothing outside constructs one, and closing
+  struct-literal construction makes a future field addition a patch. Both breaks are covered by this
+  one minor. Code outside the crate that built one by literal starts from `Default::default()`
+  instead, or reads the value assay returns; `modules --json` output is unchanged.
 
 ### Added
 

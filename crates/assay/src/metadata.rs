@@ -1,7 +1,11 @@
 use serde::Serialize;
 
 /// LDoc-style metadata parsed from `--- @tag value` lines at the top of a Lua module.
+///
+/// Only assay constructs one; `#[non_exhaustive]` keeps a new `@tag` a patch release
+/// instead of forcing a minor on every consumer.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct ModuleMetadata {
     /// From `@module` tag
     pub module_name: String,
@@ -23,6 +27,7 @@ pub struct ModuleMetadata {
 
 /// A quick-reference entry parsed from `@quickref signature -> return_hint | description`.
 #[derive(Debug, Clone, Default, Serialize)]
+#[non_exhaustive]
 pub struct QuickRef {
     /// e.g. `c:health()`
     pub signature: String,

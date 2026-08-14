@@ -39,6 +39,7 @@ impl ModuleSource {
 
 /// A module discovered during the discovery phase.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct DiscoveredModule {
     pub module_name: String,
     pub source: ModuleSource,
