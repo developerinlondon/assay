@@ -92,7 +92,11 @@ async fn main() -> ExitCode {
         .init();
 
     match cli.command {
-        Some(Commands::Context { query, limit }) => run_context(&query, limit),
+        Some(Commands::Context {
+            query,
+            limit,
+            no_builtins,
+        }) => run_context(&query, limit, !no_builtins),
         Some(Commands::Exec { eval, file }) => {
             if let Some(code) = eval {
                 run_lua_inline(&code, exec_mode, &approval).await
@@ -108,7 +112,7 @@ async fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         }
-        Some(Commands::Modules) => run_modules(exec_mode),
+        Some(Commands::Modules { json }) => run_modules(exec_mode, json),
         Some(Commands::Run {
             file,
             mode,
@@ -145,24 +149,7 @@ async fn main() -> ExitCode {
         Some(Commands::Install(args)) => install::run(args).await,
         Some(Commands::McpServe) => mcp::serve().await,
         Some(Commands::ApiServe { bind }) => api::serve(&bind).await,
-        Some(Commands::Completion { shell }) => {
-            use clap::CommandFactory;
-            let mut cmd = Cli::command();
-            // Buffer first so we can exit cleanly on a broken pipe
-            // (e.g. `assay completion bash | head`): clap_complete's
-            // default writer panics on BrokenPipe.
-            let mut buf: Vec<u8> = Vec::new();
-            clap_complete::generate(shell, &mut cmd, "assay", &mut buf);
-            use std::io::Write;
-            match std::io::stdout().write_all(&buf) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
-                Err(e) => {
-                    eprintln!("error: writing completion: {e}");
-                    ExitCode::from(1)
-                }
-            }
-        }
+        Some(Commands::Completion { shell }) => run_completion(shell),
         None => {
             if let Some(ref file) = cli.file {
                 let options = RunOptions {
@@ -177,6 +164,26 @@ async fn main() -> ExitCode {
                 println!();
                 ExitCode::from(1)
             }
+        }
+    }
+}
+
+fn run_completion(shell: clap_complete::Shell) -> ExitCode {
+    use clap::CommandFactory;
+    use std::io::Write;
+
+    let mut cmd = Cli::command();
+    // Buffer first so we can exit cleanly on a broken pipe
+    // (e.g. `assay completion bash | head`): clap_complete's
+    // default writer panics on BrokenPipe.
+    let mut buf: Vec<u8> = Vec::new();
+    clap_complete::generate(shell, &mut cmd, "assay", &mut buf);
+    match std::io::stdout().write_all(&buf) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: writing completion: {e}");
+            ExitCode::from(1)
         }
     }
 }
@@ -381,8 +388,8 @@ async fn run_lua_inline(
         }
     }
 }
-fn run_modules(exec_mode: lua::ExecMode) -> ExitCode {
-    use assay::discovery::{ModuleSource, discover_modules};
+fn run_modules(exec_mode: lua::ExecMode, json: bool) -> ExitCode {
+    use assay::discovery::discover_modules;
 
     let modules = discover_modules();
 
@@ -396,19 +403,30 @@ fn run_modules(exec_mode: lua::ExecMode) -> ExitCode {
     // Sort alphabetically for consistent output
     unique.sort_by(|a, b| a.module_name.cmp(&b.module_name));
 
+    if json {
+        // The payload is big enough that `| head` is the natural way to eyeball
+        // it, and the default println! panics on the resulting broken pipe.
+        use std::io::Write;
+        return match writeln!(std::io::stdout(), "{}", modules_json(&unique)) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: writing modules json: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+
     // Print header
     println!("{:<30} {:<10} DESCRIPTION", "MODULE", "SOURCE");
     println!("{}", "-".repeat(80));
 
     for m in &unique {
-        let source_label = match m.source {
-            ModuleSource::BuiltIn => "builtin",
-            ModuleSource::Project => "project",
-            ModuleSource::Global => "global",
-        };
         println!(
             "{:<30} {:<10} {}",
-            m.module_name, source_label, m.metadata.description
+            m.module_name,
+            m.source.label(),
+            m.metadata.description
         );
     }
 
@@ -425,8 +443,47 @@ fn run_modules(exec_mode: lua::ExecMode) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn run_context(query: &str, limit: usize) -> ExitCode {
-    match render_context(query, limit) {
+/// The `assay modules --json` payload. The `version` envelope lets a consumer
+/// cache the metadata and invalidate it when the binary changes.
+#[derive(serde::Serialize)]
+struct ModulesPayload<'a> {
+    version: &'a str,
+    modules: Vec<ModuleEntry<'a>>,
+}
+
+#[derive(serde::Serialize)]
+struct ModuleEntry<'a> {
+    name: &'a str,
+    source: &'a str,
+    description: &'a str,
+    keywords: &'a [String],
+    env_vars: &'a [String],
+    quickrefs: &'a [assay::metadata::QuickRef],
+    auto_functions: &'a [String],
+}
+
+fn modules_json(modules: &[assay::discovery::DiscoveredModule]) -> String {
+    let payload = ModulesPayload {
+        version: env!("CARGO_PKG_VERSION"),
+        modules: modules
+            .iter()
+            .map(|m| ModuleEntry {
+                name: &m.module_name,
+                source: m.source.label(),
+                description: &m.metadata.description,
+                keywords: &m.metadata.keywords,
+                env_vars: &m.metadata.env_vars,
+                quickrefs: &m.metadata.quickrefs,
+                auto_functions: &m.metadata.auto_functions,
+            })
+            .collect(),
+    };
+
+    serde_json::to_string_pretty(&payload).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
+}
+
+fn run_context(query: &str, limit: usize, include_builtins: bool) -> ExitCode {
+    match render_context(query, limit, include_builtins) {
         Ok(output) => {
             print!("{output}");
             ExitCode::SUCCESS
@@ -441,7 +498,7 @@ fn run_context(query: &str, limit: usize) -> ExitCode {
 /// Render prompt-ready module context Markdown for `query`, returning the
 /// same text the `assay context` CLI prints. Shared by the CLI path and
 /// the MCP `assay_context` tool.
-fn render_context(query: &str, limit: usize) -> Result<String, String> {
+fn render_context(query: &str, limit: usize, include_builtins: bool) -> Result<String, String> {
     use assay::context::{ModuleContextEntry, QuickRefEntry, format_context};
     use assay::discovery::{discover_modules, search_modules};
 
@@ -477,7 +534,7 @@ fn render_context(query: &str, limit: usize) -> Result<String, String> {
             })
             .collect();
 
-        format_context(&entries)
+        format_context(&entries, include_builtins)
     });
 
     handle

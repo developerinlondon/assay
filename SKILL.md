@@ -45,6 +45,7 @@ assay modules
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
 | `assay modules`             | List all 66 modules (63 stdlib + builtins)    |
+| `assay modules --json`      | Same list as JSON with keywords/quickrefs     |
 
 **Read-only mode.** The global `--readonly` flag (or `ASSAY_READONLY=1`) disables every mutating
 builtin — HTTP write verbs, `shell.*`, `process.*`, `fs` writes, `env.set`, `db.execute`, and system
@@ -731,10 +732,10 @@ context.
 messages). Instead of exposing one tool per module — which would balloon the advertised schema as
 modules are added — it presents exactly **two tools** and lets Lua compose the modules:
 
-| Tool            | Purpose                                                                               |
-| --------------- | ------------------------------------------------------------------------------------- |
-| `assay_run`     | Run a Lua script; returns the tool-mode JSON envelope. All modules + builtins usable. |
-| `assay_context` | Search modules; returns prompt-ready Markdown docs (same as `assay context`).         |
+| Tool            | Purpose                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------- |
+| `assay_run`     | Run a Lua script; returns the tool-mode JSON envelope. All modules + builtins usable.                     |
+| `assay_context` | Search modules; returns prompt-ready Markdown docs. Builtins reference omitted unless `include_builtins`. |
 
 `assay_run` input schema:
 

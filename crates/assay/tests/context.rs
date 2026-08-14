@@ -20,7 +20,7 @@ fn test_format_single_module() {
         ],
     }];
 
-    let output = format_context(&entries);
+    let output = format_context(&entries, true);
 
     assert!(output.contains("# Assay Module Context"));
     assert!(output.contains("### assay.grafana"));
@@ -41,7 +41,7 @@ fn test_format_env_vars() {
         quickrefs: vec![],
     }];
 
-    let output = format_context(&entries);
+    let output = format_context(&entries, true);
 
     assert!(output.contains("Env: VAULT_ADDR, VAULT_TOKEN"));
 }
@@ -55,7 +55,7 @@ fn test_format_no_env_vars() {
         quickrefs: vec![],
     }];
 
-    let output = format_context(&entries);
+    let output = format_context(&entries, true);
 
     assert!(output.contains("### assay.k8s"));
     assert!(!output.contains("Env:"));
@@ -65,22 +65,39 @@ fn test_format_no_env_vars() {
 fn test_format_empty_results() {
     let entries: Vec<ModuleContextEntry> = vec![];
 
-    let output = format_context(&entries);
+    let output = format_context(&entries, true);
 
     assert!(output.contains("# Assay Module Context"));
     assert!(output.contains("No matching modules found."));
 }
 
 #[test]
-fn test_format_builtins_always_present() {
+fn test_format_builtins_present_when_requested() {
     let entries: Vec<ModuleContextEntry> = vec![];
 
-    let output = format_context(&entries);
+    let output = format_context(&entries, true);
 
     assert!(output.contains("## Built-in Functions"));
     assert!(output.contains("http.get(url, opts?)"));
     assert!(output.contains("json.parse(str)"));
     assert!(output.contains("env.get(key)"));
+}
+
+#[test]
+fn test_format_builtins_omitted_when_not_requested() {
+    let entries = vec![ModuleContextEntry {
+        module_name: "assay.grafana".to_string(),
+        description: "Grafana monitoring.".to_string(),
+        env_vars: vec!["GRAFANA_URL".to_string()],
+        quickrefs: vec![],
+    }];
+
+    let output = format_context(&entries, false);
+
+    assert!(output.contains("### assay.grafana"));
+    assert!(!output.contains("## Built-in Functions"));
+    assert!(!output.contains("http.get(url, opts?)"));
+    assert!(!output.contains("env.get(key)"));
 }
 
 #[test]
@@ -100,7 +117,7 @@ fn test_format_multiple_modules() {
         },
     ];
 
-    let output = format_context(&entries);
+    let output = format_context(&entries, true);
 
     assert!(output.contains("### assay.grafana"));
     assert!(output.contains("### assay.prometheus"));
@@ -121,7 +138,7 @@ fn test_format_line_length() {
         }],
     }];
 
-    let output = format_context(&entries);
+    let output = format_context(&entries, true);
 
     // Check that most lines are under 120 chars (allow some flexibility for edge cases)
     for line in output.lines() {
