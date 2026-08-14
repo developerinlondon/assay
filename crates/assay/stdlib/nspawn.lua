@@ -1,5 +1,6 @@
 --- @module assay.nspawn
 --- @description nspawn machine provisioning + lifecycle. Composes the
+--- @category host
 ---              machinectl, systemd, and fs builtins into a high-level
 ---              "create from template, destroy, start, stop, configure" API.
 --- @keywords nspawn, container, machine, provision, machinectl, systemd

@@ -1,5 +1,7 @@
 --- @module assay.system
 --- @description Host introspection and control umbrella: re-exports linux/cgroup/systemd builtins + assay.cron, plus convenience aggregates (host_snapshot, machine_snapshot, machines).
+--- @category host
+--- @icon linux
 --- @keywords system, host, linux, cgroup, systemd, cron, snapshot, machines, observability
 --- @quickref M.linux | direct passthrough to the linux builtin
 --- @quickref M.cgroup | direct passthrough to the cgroup builtin

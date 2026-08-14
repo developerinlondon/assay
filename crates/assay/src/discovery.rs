@@ -47,7 +47,7 @@ pub struct DiscoveredModule {
 }
 
 /// Hardcoded Rust builtins with their descriptions and search keywords.
-const BUILTINS: &[(&str, &str, &[&str])] = &[
+const BUILTINS: &[(&str, &str, &[&str], &str)] = &[
     (
         "http",
         "HTTP client and server: get, post, put, patch, delete, serve",
@@ -55,6 +55,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "http", "client", "server", "request", "response", "headers", "endpoint", "api",
             "webhook", "rest",
         ],
+        "core",
     ),
     (
         "json",
@@ -68,6 +69,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "encode",
             "format",
         ],
+        "core",
     ),
     (
         "yaml",
@@ -80,6 +82,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "encode",
             "format",
         ],
+        "core",
     ),
     (
         "toml",
@@ -92,11 +95,13 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "encode",
             "configuration",
         ],
+        "core",
     ),
     (
         "fs",
         "Filesystem: read and write files",
         &["fs", "filesystem", "file", "read", "write", "io", "path"],
+        "core",
     ),
     (
         "crypto",
@@ -115,11 +120,13 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "rsa",
             "sha256",
         ],
+        "core",
     ),
     (
         "base64",
         "Base64 encoding and decoding",
         &["base64", "encoding", "decode", "encode", "binary"],
+        "core",
     ),
     (
         "regex",
@@ -133,6 +140,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "regular-expression",
             "regexp",
         ],
+        "core",
     ),
     (
         "db",
@@ -148,6 +156,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "query",
             "execute",
         ],
+        "data",
     ),
     (
         "ws",
@@ -161,6 +170,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "realtime",
             "socket",
         ],
+        "core",
     ),
     (
         "template",
@@ -173,6 +183,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "mustache",
             "render",
         ],
+        "core",
     ),
     (
         "async",
@@ -186,6 +197,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "spawn",
             "interval",
         ],
+        "core",
     ),
     (
         "assert",
@@ -199,6 +211,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "check",
             "verify",
         ],
+        "core",
     ),
     (
         "log",
@@ -206,21 +219,25 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
         &[
             "log", "logging", "output", "debug", "error", "warning", "info", "trace",
         ],
+        "core",
     ),
     (
         "env",
         "Environment variables: get",
         &["env", "environment", "variable", "configuration", "config"],
+        "core",
     ),
     (
         "sleep",
         "Sleep for N seconds",
         &["sleep", "delay", "pause", "wait", "time"],
+        "core",
     ),
     (
         "time",
         "Unix timestamp in seconds",
         &["time", "timestamp", "unix", "epoch", "clock", "datetime"],
+        "core",
     ),
     (
         "compress",
@@ -234,6 +251,7 @@ const BUILTINS: &[(&str, &str, &[&str])] = &[
             "lzma",
             "zstd",
         ],
+        "core",
     ),
 ];
 
@@ -412,7 +430,7 @@ fn discover_embedded_stdlib(modules: &mut Vec<DiscoveredModule>) {
 
 /// Add hardcoded Rust builtins (not Lua files) to the module list.
 fn discover_rust_builtins(modules: &mut Vec<DiscoveredModule>) {
-    for &(name, description, kw) in BUILTINS {
+    for &(name, description, kw, category) in BUILTINS {
         modules.push(DiscoveredModule {
             module_name: name.to_string(),
             source: ModuleSource::BuiltIn,
@@ -421,6 +439,7 @@ fn discover_rust_builtins(modules: &mut Vec<DiscoveredModule>) {
                 module_name: name.to_string(),
                 description: description.to_string(),
                 keywords: kw.iter().map(|k| k.to_string()).collect(),
+                category: Some(category.to_string()),
                 ..Default::default()
             },
         });

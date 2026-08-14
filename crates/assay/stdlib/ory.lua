@@ -1,5 +1,7 @@
 --- @module assay.ory
 --- @description Convenience umbrella for the Ory stack submodules (kratos, hydra, keto, rbac). Prefer requiring the individual submodules directly (e.g. assay.ory.kratos) if you only need one.
+--- @category identity
+--- @icon ory
 --- @keywords ory, stack, kratos, hydra, keto, rbac, identity, oauth2, oidc, authz, zanzibar, capability
 --- @quickref ory.kratos.client(opts) -> kratos client | Kratos identity management
 --- @quickref ory.hydra.client(opts) -> hydra client | Hydra OAuth2 and OIDC

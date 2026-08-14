@@ -1,5 +1,6 @@
 --- @module assay.servicenow
 --- @description ServiceNow Table API and a small CMDB helper. List, get, create, update records; query CMDB classes.
+--- @category saas
 --- @keywords servicenow, snow, table-api, cmdb, itsm, incident, ci, records, now, sys_id
 --- @quickref c.table:list(table, opts?) -> [record] | List rows (GET, read)
 --- @quickref c.table:get(table, sys_id) -> record|nil | Get a row by sys_id (GET, read)

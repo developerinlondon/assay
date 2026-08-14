@@ -1,5 +1,6 @@
 --- @module assay.fs_snapshot
 --- @description Read-only filesystem snapshots for crash-consistent backup capture. btrfs subvolume snapshot / zfs snapshot under the hood.
+--- @category host
 --- @keywords fs_snapshot, btrfs, zfs, subvolume, snapshot, backup, consistency, crash-consistent
 --- @quickref fs_snapshot.detect(path) -> {backend, source, identifier} | Identify the FS backing `path`
 --- @quickref fs_snapshot.take(name, path) -> handle | Take a read-only snapshot

@@ -1,5 +1,6 @@
 --- @module assay.eso
 --- @description External Secrets Operator. ExternalSecrets, SecretStores, ClusterSecretStores sync status.
+--- @category secrets
 --- @keywords eso, external-secrets, secretstores, kubernetes, secrets, sync, store, readiness, wait, cluster, external-secret
 --- @quickref c.external_secrets:list(namespace) -> {items} | List ExternalSecrets in namespace
 --- @quickref c.external_secrets:get(namespace, name) -> es|nil | Get ExternalSecret by name

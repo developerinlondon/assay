@@ -1,5 +1,7 @@
 --- @module assay.gcal
 --- @description Google Calendar REST API client with OAuth2 token refresh. Events CRUD, calendar list.
+--- @category saas
+--- @icon googlecalendar
 --- @keywords google, calendar, gcal, events, oauth2, schedule, meeting, create, update, delete
 --- @quickref c.events:list(opts?) -> [event] | List calendar events
 --- @quickref c.events:get(event_id) -> event | Get event by ID

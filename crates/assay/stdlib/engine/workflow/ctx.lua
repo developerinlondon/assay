@@ -1,3 +1,4 @@
+--- @category devtools
 --- Workflow context (`ctx`) factory — the object passed to every
 --- workflow handler. Owns the deterministic-replay machinery: each
 --- `ctx:*` call increments an internal seq counter and either returns

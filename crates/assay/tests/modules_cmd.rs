@@ -140,6 +140,30 @@ fn test_modules_json_carries_env_vars() {
 }
 
 #[test]
+fn test_modules_json_carries_icon_and_category() {
+    let payload = modules_json();
+    let k8s = module_named(&payload, "assay.k8s");
+    assert_eq!(k8s["category"], Value::from("kubernetes"), "k8s: {k8s}");
+    assert_eq!(k8s["icon"], Value::from("kubernetes"), "k8s: {k8s}");
+}
+
+#[test]
+fn test_modules_json_emits_null_icon_for_unbranded_module() {
+    let payload = modules_json();
+    let velero = module_named(&payload, "assay.velero");
+    assert_eq!(
+        velero["category"],
+        Value::from("kubernetes"),
+        "velero: {velero}"
+    );
+    assert_eq!(
+        velero["icon"],
+        Value::Null,
+        "an unbranded module must emit a null a consumer can fall back on, not be omitted: {velero}"
+    );
+}
+
+#[test]
 fn test_modules_table_unaffected_by_json_support() {
     let output = assay_bin().arg("modules").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);

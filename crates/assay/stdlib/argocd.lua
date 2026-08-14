@@ -1,5 +1,7 @@
 --- @module assay.argocd
 --- @description ArgoCD GitOps application management. Apps, sync, health, projects, repositories, clusters.
+--- @category gitops
+--- @icon argo
 --- @keywords argocd, gitops, applications, sync, health, projects, repositories, clusters, rollback, manifest, resource-tree, refresh, wait, cicd, continuous-delivery
 --- @quickref c.apps:list(opts?) -> [app] | List applications with optional project/selector filter
 --- @quickref c.apps:get(name) -> app | Get application by name

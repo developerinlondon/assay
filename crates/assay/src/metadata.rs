@@ -11,6 +11,10 @@ pub struct ModuleMetadata {
     pub keywords: Vec<String>,
     /// From `@env` tag, split by comma and trimmed
     pub env_vars: Vec<String>,
+    /// From `@icon` tag — a simple-icons slug, absent when no brand fits
+    pub icon: Option<String>,
+    /// From `@category` tag
+    pub category: Option<String>,
     /// From `@quickref` tags (one per tag line)
     pub quickrefs: Vec<QuickRef>,
     /// Auto-extracted function names from `function c:method(` and `function M.method(` patterns
@@ -68,6 +72,8 @@ fn parse_header_tags(source: &str, meta: &mut ModuleMetadata) {
                 "env" => {
                     meta.env_vars = split_comma_list(value);
                 }
+                "icon" => meta.icon = Some(value.to_string()),
+                "category" => meta.category = Some(value.to_string()),
                 "quickref" => {
                     if let Some(qr) = parse_quickref(value) {
                         meta.quickrefs.push(qr);

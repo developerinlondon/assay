@@ -2,6 +2,25 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.18.13 — 2026-08-14
+
+### Added
+
+- **`@icon` and `@category` module metadata.** `modules --json` told a consumer what every module
+  does but nothing about how to present it, so a catalogue UI had one shape for all 89 entries.
+  Modules now carry an optional `--- @icon <simple-icons slug>` and a `--- @category <name>`, both
+  parsed alongside the existing `@keywords`/`@env` tags and both emitted by `modules --json`; `icon`
+  is `null` rather than absent when no brand fits, so a consumer can branch on one shape. Categories
+  are `kubernetes`, `gitops`, `secrets`, `identity`, `observability`, `cloud`, `saas`, `devtools`,
+  `comms`, `host`, `data`, `core`, and every shipped module has one — a test walks discovery and
+  fails on a module that ships without one or invents a thirteenth bucket.
+
+  Every embedded stdlib module is backfilled, 32 of them with a brand mark. Slugs were checked
+  against the published `simple-icons` 16.28.0 package rather than derived from the brand name,
+  which is not a formality: `argocd`, `fluxcd` and `sonarqube` are all wrong (the real slugs are
+  `argo`, `flux` and `sonarqubeserver`), and simple-icons carries no Amazon or AWS mark at all, so
+  the `assay.aws.*` modules and `assay.s3` intentionally have no icon.
+
 ## assay-lua 0.18.12 — 2026-08-14
 
 ### Added

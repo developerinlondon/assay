@@ -1,5 +1,6 @@
 --- @module assay.neutron
 --- @description Neutron self-hosted agent platform — full admin API: agents (personas, tool policies, guardrails, baked assay modules), secrets, git-host connections, workspace/guide resources, roles, instance settings, API tokens, usage. One client per instance; manage a fleet by creating several.
+--- @category saas
 --- @keywords neutron, agent, agents, admin, fleet, secrets, connections, workspaces, guides, roles, tokens, persona, tool-policy
 --- @env NEUTRON_URL, NEUTRON_TOKEN, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET
 --- @quickref c.agents:list() -> {agents, default_agent, defaults, brand} | Named agents + core-agent config
