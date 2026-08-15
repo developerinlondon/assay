@@ -110,6 +110,6 @@ assert.eq(eng:check(alice, "docs.read", "doc:42").allowed, false) -- bound unsat
 ### Conformance
 
 The engine is decision-identical to the
-[agentauthz](https://github.com/developerinlondon/agentauthz) reference library: all 149 of its
-language-neutral golden fixtures are vendored under `crates/assay-authz/conformance/cases` and run
-on every build, through both the pure evaluator and the composed engine.
+[agentauthz](https://github.com/developerinlondon/agentauthz) reference library at `0.6.0`: all 149
+of its language-neutral golden fixtures are vendored under `crates/assay-authz/conformance/cases`
+and run on every build, through both the pure evaluator and the composed engine.

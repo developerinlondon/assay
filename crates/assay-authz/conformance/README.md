@@ -6,7 +6,7 @@ from the reference implementation:
 | | |
 | --- | --- |
 | Upstream | [`developerinlondon/agentauthz`](https://github.com/developerinlondon/agentauthz), path `src/conformance/cases` |
-| Version | `0.5.0` |
+| Version | `0.6.0` (copied at `0.5.0`; the fixtures and the whole decision path are byte-identical between the two) |
 | Cases | 149 across 9 suites |
 
 The fixtures are the contract, not a convenience: an engine conforms when it decides every case
