@@ -280,6 +280,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "assay-authz"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "assay-dashboard"
 version = "0.4.5"
 dependencies = [
@@ -342,9 +351,10 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "anyhow",
+ "assay-authz",
  "axum",
  "clap",
  "clap_complete",

@@ -24,6 +24,7 @@ jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
+      assay_authz_bumped: ${{ steps.assay-authz.outputs.bumped }}
       assay_domain_bumped: ${{ steps.assay-domain.outputs.bumped }}
       assay_workflow_bumped: ${{ steps.assay-workflow.outputs.bumped }}
       assay_dashboard_bumped: ${{ steps.assay-dashboard.outputs.bumped }}
@@ -61,6 +62,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.rust.outputs.version }}
+
+      - id: assay-authz
+        run: .github/release/check-bumped.sh assay-authz
 
       - id: assay-domain
         run: .github/release/check-bumped.sh assay-domain
@@ -151,6 +155,7 @@ jobs:
   libraries:
     needs: detect
     if: >
+      needs.detect.outputs.assay_authz_bumped     == 'true' ||
       needs.detect.outputs.assay_domain_bumped    == 'true' ||
       needs.detect.outputs.assay_workflow_bumped  == 'true' ||
       needs.detect.outputs.assay_dashboard_bumped == 'true' ||
@@ -185,8 +190,14 @@ jobs:
           EOF
           chmod +x /tmp/publish-crate.sh
 
-      # Order: assay-domain first (no assay-* deps), then the three crates
-      # that depend on it.
+      # Order: the crates with no assay-* deps first (assay-authz,
+      # assay-domain), then the crates that depend on them.
+      - name: Publish assay-authz
+        if: needs.detect.outputs.assay_authz_bumped == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: /tmp/publish-crate.sh assay-authz
+
       - name: Publish assay-domain
         if: needs.detect.outputs.assay_domain_bumped == 'true'
         env:

@@ -1,0 +1,692 @@
+{
+  "suite": "set-membership",
+  "scopeKinds": [
+    "root"
+  ],
+  "conditionKeys": {
+    "app:Pool": {
+      "type": "string"
+    },
+    "app:Roles": {
+      "type": "string"
+    },
+    "app:Email": {
+      "type": "string",
+      "lowercase": true
+    }
+  },
+  "cases": [
+    {
+      "name": "a member of the permitted set is allowed by one condition",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringIn",
+                  "key": "app:Pool",
+                  "values": [
+                    "infra",
+                    "lite"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Pool": "lite"
+        }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a non-member is denied",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringIn",
+                  "key": "app:Pool",
+                  "values": [
+                    "infra",
+                    "lite"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Pool": "kata"
+        }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "StringNotIn excludes a member",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringNotIn",
+                  "key": "app:Pool",
+                  "values": [
+                    "kata"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Pool": "kata"
+        }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a list context and a list value intersect \u2014 holding one permitted value is enough",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringIn",
+                  "key": "app:Roles",
+                  "values": [
+                    "ops",
+                    "sre"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Roles": [
+            "dev",
+            "sre"
+          ]
+        }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "StringNotIn over a list context is true only when nothing intersects",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringNotIn",
+                  "key": "app:Roles",
+                  "values": [
+                    "ops",
+                    "sre"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Roles": [
+            "dev",
+            "sre"
+          ]
+        }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "StringLikeIn matches across prefix patterns",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringLikeIn",
+                  "key": "app:Pool",
+                  "values": [
+                    "infra-*",
+                    "lite-*"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Pool": "lite-eu"
+        }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "an empty values list is unmatchable \u2014 an allow never matches on it",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringIn",
+                  "key": "app:Pool",
+                  "values": []
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Pool": "lite"
+        }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an empty values list on a DENY keeps the deny standing",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ]
+            },
+            {
+              "effect": "deny",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringIn",
+                  "key": "app:Pool",
+                  "values": []
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Pool": "lite"
+        }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a set operator carrying value instead of values is unmatchable",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringIn",
+                  "key": "app:Pool",
+                  "value": "lite"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Pool": "lite"
+        }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a scalar operator carrying values instead of value is unmatchable",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringEquals",
+                  "key": "app:Pool",
+                  "values": [
+                    "lite"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Pool": "lite"
+        }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a lowercase-declared key compares set membership case-insensitively",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringIn",
+                  "key": "app:Email",
+                  "values": [
+                    "Alice@Example.COM"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {
+          "app:Email": "alice@example.com"
+        }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a set condition on an unpopulated key is unmatchable, so the allow never fires",
+      "grants": [
+        {
+          "subject": {
+            "kind": "user",
+            "id": "u1"
+          },
+          "scope": {
+            "kind": "root",
+            "id": "*"
+          },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": [
+                "templates.author"
+              ],
+              "resources": [
+                "*"
+              ],
+              "conditions": [
+                {
+                  "operator": "StringIn",
+                  "key": "app:Pool",
+                  "values": [
+                    "lite"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [
+          {
+            "kind": "user",
+            "id": "u1"
+          }
+        ],
+        "action": "templates.author",
+        "resource": "template:x",
+        "scopeChain": [
+          {
+            "kind": "root",
+            "id": "*"
+          }
+        ],
+        "context": {}
+      },
+      "expect": "deny"
+    }
+  ]
+}

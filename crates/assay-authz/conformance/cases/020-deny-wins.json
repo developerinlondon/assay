@@ -1,0 +1,215 @@
+{
+  "suite": "deny-wins",
+  "scopeKinds": ["root", "space"],
+  "cases": [
+    {
+      "name": "an explicit deny beats an allow on the same resource",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "carol" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.write"], "resources": ["doc:*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "carol" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "deny", "actions": ["docs.write"], "resources": ["doc:locked"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "carol" }],
+        "action": "docs.write",
+        "resource": "doc:locked",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "the deny stays scoped to its own resources",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "carol" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.write"], "resources": ["doc:*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "carol" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "deny", "actions": ["docs.write"], "resources": ["doc:locked"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "carol" }],
+        "action": "docs.write",
+        "resource": "doc:free",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a deny attached via a role beats a direct user allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "carol" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.write"], "resources": ["doc:*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "role", "id": "audited" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "deny", "actions": ["docs.write"], "resources": ["doc:locked"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "carol" }, { "kind": "role", "id": "audited" }],
+        "action": "docs.write",
+        "resource": "doc:locked",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "without the denying role the allow stands",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "carol" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.write"], "resources": ["doc:*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "role", "id": "audited" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "deny", "actions": ["docs.write"], "resources": ["doc:locked"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "carol" }],
+        "action": "docs.write",
+        "resource": "doc:locked",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a deny granted at the leaf beats an allow inherited from the root",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "dana" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "dana" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            { "effect": "deny", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "dana" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "the leaf deny is itself confined — outside that scope the allow stands",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "dana" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "dana" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            { "effect": "deny", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "dana" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a deny at the root beats an allow granted at the leaf",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "dana" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "deny", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "dana" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "dana" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a lone deny with no matching allow is still deny",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "dana" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "deny", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "dana" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    }
+  ]
+}

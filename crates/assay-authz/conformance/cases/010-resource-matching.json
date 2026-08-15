@@ -1,0 +1,318 @@
+{
+  "suite": "resource-matching",
+  "scopeKinds": ["root"],
+  "cases": [
+    {
+      "name": "exact resource match allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["doc:support"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:support",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a non-matching resource denies",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["doc:support"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:other",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an action not granted anywhere denies",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["doc:support"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "secrets.read",
+        "resource": "doc:support",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a trailing-* resource is a prefix wildcard",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["doc:sales-*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:sales-eu",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a trailing-* resource requires its prefix",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["doc:sales-*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:support-eu",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a bare * resource matches everything",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "weird:thing",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a statement action never wildcards at eval (exact equality only)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.*"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an unattached subject is denied everything",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "bob" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "no subjects (anonymous) is denied everything",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a malformed subject entry never matches a grant",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "" }, { "kind": "user" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a role grant matches a holder of that role",
+      "grants": [
+        {
+          "subject": { "kind": "role", "id": "ops" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["doc:sales-*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "bob" }, { "kind": "role", "id": "ops" }],
+        "action": "docs.read",
+        "resource": "doc:sales-eu",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a role grant never matches a non-holder",
+      "grants": [
+        {
+          "subject": { "kind": "role", "id": "ops" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["doc:sales-*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "bob" }, { "kind": "role", "id": "dev" }],
+        "action": "docs.read",
+        "resource": "doc:sales-eu",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a token subject with no grants is default-deny",
+      "grants": [],
+      "check": {
+        "subjects": [{ "kind": "token", "id": "svc" }],
+        "action": "tool.invoke",
+        "resource": "tool:Bash",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a token grant scoped to one tool resource allows it",
+      "grants": [
+        {
+          "subject": { "kind": "token", "id": "svc" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["tool.invoke"], "resources": ["tool:Bash"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "token", "id": "svc" }],
+        "action": "tool.invoke",
+        "resource": "tool:Bash",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a token grant scoped to one tool resource denies another",
+      "grants": [
+        {
+          "subject": { "kind": "token", "id": "svc" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["tool.invoke"], "resources": ["tool:Bash"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "token", "id": "svc" }],
+        "action": "tool.invoke",
+        "resource": "tool:Write",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a trailing-* tool resource covers tools that did not exist when granted",
+      "grants": [
+        {
+          "subject": { "kind": "token", "id": "svc" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["tool.invoke"], "resources": ["tool:*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "token", "id": "svc" }],
+        "action": "tool.invoke",
+        "resource": "tool:SomeToolThatDidntExistYet",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    }
+  ]
+}

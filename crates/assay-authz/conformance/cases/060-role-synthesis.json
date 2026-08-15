@@ -1,0 +1,303 @@
+{
+  "suite": "role-synthesis",
+  "scopeKinds": ["root", "space"],
+  "cases": [
+    {
+      "name": "a synthesized owner-role grant carries full authority in its space",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceOwner",
+          "subject": { "kind": "user", "id": "owner" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["space.participate", "space.approvals.settle", "space.roles.manage"],
+              "resources": ["*"]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "owner" }],
+        "action": "space.roles.manage",
+        "resource": "space:s1",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a synthesized owner settles approvals in its space",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceOwner",
+          "subject": { "kind": "user", "id": "owner" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["space.participate", "space.approvals.settle", "space.roles.manage"],
+              "resources": ["*"]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "owner" }],
+        "action": "space.approvals.settle",
+        "resource": "space:s1",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a synthesized admin-role grant settles approvals",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceAdmin",
+          "subject": { "kind": "user", "id": "admin" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["space.participate", "space.approvals.settle"],
+              "resources": ["*"]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "admin" }],
+        "action": "space.approvals.settle",
+        "resource": "space:s1",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a synthesized admin can NOT manage roles (authority split preserved)",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceAdmin",
+          "subject": { "kind": "user", "id": "admin" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["space.participate", "space.approvals.settle"],
+              "resources": ["*"]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "admin" }],
+        "action": "space.roles.manage",
+        "resource": "space:s1",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a synthesized member participates only",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceMember",
+          "subject": { "kind": "user", "id": "member" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            { "effect": "allow", "actions": ["space.participate"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "member" }],
+        "action": "space.participate",
+        "resource": "space:s1",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a synthesized member can NOT settle approvals",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceMember",
+          "subject": { "kind": "user", "id": "member" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            { "effect": "allow", "actions": ["space.participate"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "member" }],
+        "action": "space.approvals.settle",
+        "resource": "space:s1",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an outsider with no synthesized role gets nothing",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceMember",
+          "subject": { "kind": "user", "id": "member" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            { "effect": "allow", "actions": ["space.participate"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "outsider" }],
+        "action": "space.participate",
+        "resource": "space:s1",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a synthesized role never leaks sideways into another space",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceOwner",
+          "subject": { "kind": "user", "id": "owner" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["space.participate", "space.approvals.settle", "space.roles.manage"],
+              "resources": ["*"]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "owner" }],
+        "action": "space.roles.manage",
+        "resource": "space:s2",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s2" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a synthesized role never leaks upward to the root",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceOwner",
+          "subject": { "kind": "user", "id": "owner" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["space.participate", "space.approvals.settle", "space.roles.manage"],
+              "resources": ["*"]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "owner" }],
+        "action": "space.roles.manage",
+        "resource": "space:s1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a stored deny beats a synthesized allow (one deny-wins engine, one grant universe)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "admin" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "deny", "actions": ["space.approvals.settle"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceAdmin",
+          "subject": { "kind": "user", "id": "admin" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["space.participate", "space.approvals.settle"],
+              "resources": ["*"]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "admin" }],
+        "action": "space.approvals.settle",
+        "resource": "space:s1",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a non-user subject kind synthesizes the same way",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceAdmin",
+          "subject": { "kind": "service", "id": "bot" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["space.participate", "space.approvals.settle"],
+              "resources": ["*"]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "service", "id": "bot" }],
+        "action": "space.approvals.settle",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a token-kind subject with no membership row synthesizes nothing",
+      "synthesizedGrants": [
+        {
+          "policyName": "SpaceAdmin",
+          "subject": { "kind": "user", "id": "admin" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["space.participate", "space.approvals.settle"],
+              "resources": ["*"]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "token", "id": "svc" }],
+        "action": "space.approvals.settle",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "deny"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 [package]
 name = "assay-lua"
-version = "0.19.0"
+version = "0.19.1"
 categories = ["command-line-utilities", "development-tools::testing"]
 edition = "2024"
 homepage = "https://assay.rs"
@@ -28,6 +28,10 @@ server = ["dep:http-body-util", "dep:hyper", "dep:hyper-util"]
 cli = ["dep:clap", "dep:clap_complete", "dep:tracing-subscriber"]
 
 [dependencies]
+# In-process authorization engine (policy statements, grants-at-scope,
+# ABAC conditions). Pure computation, no I/O — backs the `authz` builtin.
+assay-authz = { path = "../assay-authz", version = "0.1" }
+
 # Lua scripting engine
 mlua = { version = "0.11.6", features = ["lua55", "vendored", "async", "serialize"] }
 
