@@ -551,3 +551,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          # assay-authz has no crates.io release to diff against yet, and
+          # the tool errors rather than skipping on a missing baseline.
+          # Drop this once its first version is published.
+          exclude: assay-authz
