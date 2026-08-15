@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/assay",
   "crates/assay-auth",
+  "crates/assay-authz",
   "crates/assay-dashboard",
   "crates/assay-domain",
   "crates/assay-engine",

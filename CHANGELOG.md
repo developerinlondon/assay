@@ -2,6 +2,37 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.19.1 — 2026-08-15
+
+### Added
+
+- **`assay.authz` — in-process authorization engine.** Scripts that gate an action on who is asking
+  had two options, both bad: hand-rolled `if` ladders that drift between scripts, or a network hop
+  to a policy service that a host-management script cannot depend on being up. The new module
+  decides in-process, with no I/O, no storage and no expression language to sandbox — the policy is
+  data, and the vocabulary is closed by construction, which is what makes it safe to let an agent
+  author one.
+
+  `authz.engine(opts)` takes a grant universe plus a declared vocabulary (condition keys, scope
+  kinds, an action registry) and returns an engine; `e:check(subjects, action, resource, opts?)`
+  answers one question. The semantics are the interesting part, and all of them fail toward less
+  access: deny wins over any allow in the resolved scope chain; a condition that cannot be evaluated
+  withdraws an allow but leaves a deny standing; a grant's `bounds` narrow the allow statements of
+  the policy it confers and never its denies; a malformed or undeclared scope entry denies outright
+  rather than quietly evaluating a different chain; and an action names a base that covers a closed,
+  enumerable family of derived actions rather than a wildcard. `e:validate` refuses a statement or
+  condition the evaluator could never evaluate, `e:describe` serves the whole vocabulary as data for
+  an administration surface, and `e:grants_for` lists what applies over a chain for a "why" view.
+
+- **`assay-authz` crate.** The engine lives in its own workspace crate, dependency-light (serde,
+  serde_json, chrono) and usable from Rust without the Lua runtime. It is decision-identical to the
+  [agentauthz](https://github.com/developerinlondon/agentauthz) reference library: that project's
+  149 language-neutral golden fixtures are vendored verbatim under
+  `crates/assay-authz/conformance/cases` and run on every build, through both the pure evaluator and
+  the composed engine. The four fixtures marked `storable: false` name a conditions shape a storage
+  layer must refuse at rest; with no storage layer here, the suite asserts `validate` refuses them
+  and the evaluator still fails closed on them.
+
 ## assay-lua 0.19.0 — 2026-08-14
 
 ### Changed

@@ -22,6 +22,7 @@ fileGroups:
     - "Cargo.toml"
 
 dependsOn:
+  - "assay-authz"
   - "assay-domain"
   - "assay-workflow"
   - "assay-dashboard"

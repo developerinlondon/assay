@@ -1,0 +1,823 @@
+{
+  "suite": "asymmetric-fail-closed",
+  "scopeKinds": ["root"],
+  "conditionKeys": {
+    "app:Email": { "type": "string", "lowercase": true },
+    "app:Role": { "type": "string" },
+    "app:Source": { "type": "string" }
+  },
+  "cases": [
+    {
+      "name": "an allow with an unknown operator never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "Bogus", "key": "app:Source", "value": "x" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "api" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an allow on an undeclared key never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "aws:SourceIp", "value": "1.2.3.4" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a crafted prototype-chain key never resolves",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "StringEquals", "key": "__proto__", "value": "x" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an allow on a declared but UNPOPULATED key never allows",
+      "grants": [
+        {
+          "subject": { "kind": "token", "id": "svc" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Email", "value": "x@example.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "token", "id": "svc" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "CRITICAL: StringNotEquals on an unpopulated key never vacuously matches an allow",
+      "grants": [
+        {
+          "subject": { "kind": "token", "id": "svc" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringNotEquals", "key": "app:Role", "value": "contractor" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "token", "id": "svc" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an operator/key type mismatch never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "NumericLessThan", "key": "app:Source", "value": "5" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "api" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a condition element missing its value never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "StringEquals", "key": "app:Source" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "api" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a non-string condition value never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "StringEquals", "key": "app:Source", "value": 5 }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "api" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a non-array conditions member never allows",
+      "storable": false,
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": "yes"
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a null condition element never allows",
+      "storable": false,
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [null]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a nested-array condition element never allows",
+      "storable": false,
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [[]]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an unparseable numeric bound never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "NumericLessThan", "key": "request:HourUTC", "value": "lots" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an unparseable date bound never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "DateLessThan", "key": "request:Time", "value": "next tuesday" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "CRITICAL: an IpAddress allow with NO source ip in context never matches — even 0.0.0.0/0",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "0.0.0.0/0" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a CIDR without a prefix length never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "10.0.0.0" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an out-of-range IPv4 prefix length never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "10.0.0.0/33" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a leading-zero octet (possible octal ambiguity) never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "010.0.0.0/8" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a five-octet address never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "10.0.0.0.0/8" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an address-family mismatch (IPv6 CIDR vs IPv4 caller) never allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "2001:db8::/32" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "THE ASYMMETRIC CRUX: a deny with an unknown operator STAYS STANDING over an allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "Bogus", "key": "app:Source", "value": "10.0.0.0/8" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "api" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a deny on an unpopulated key stays standing over an allow",
+      "grants": [
+        {
+          "subject": { "kind": "token", "id": "svc" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "token", "id": "svc" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Email", "value": "x@example.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "token", "id": "svc" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "CRITICAL: an IpAddress deny with NO source ip in context FIRES (stays standing)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "0.0.0.0/0" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a StringNotEquals deny on an unpopulated roles key FIRES for a roleless caller",
+      "grants": [
+        {
+          "subject": { "kind": "token", "id": "svc" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "token", "id": "svc" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringNotEquals", "key": "app:Role", "value": "contractor" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "token", "id": "svc" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a deny with a definitively FALSE condition steps aside — the allow stands",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Source", "value": "token-gate" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "api" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "the same conditioned deny fires when its condition matches",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Source", "value": "token-gate" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "token-gate" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "unmatchable outranks no-match: a deny with one false and one malformed condition fires",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Source", "value": "nope" },
+                { "operator": "Bogus", "key": "app:Source", "value": "x" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "api" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "unmatchable outranks no-match regardless of order",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "Bogus", "key": "app:Source", "value": "x" },
+                { "operator": "StringEquals", "key": "app:Source", "value": "nope" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "api" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a deny with a malformed conditions shape stays standing",
+      "storable": false,
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": "yes"
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    }
+  ]
+}
