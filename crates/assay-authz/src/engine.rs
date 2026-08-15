@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use crate::action::{ActionCatalogue, ActionDerivation};
+use crate::condition::PolicyCondition;
 use crate::condition::{
     ConditionContext, ConditionKeys, builtin_context_entries, resolve_condition_keys,
 };
@@ -14,7 +15,7 @@ use crate::evaluate::{
     Decision, Outcome, Query, Reason, applicable_grants, decide, refuse_bad_chain,
 };
 use crate::model::{ResolvedGrant, ScopeEntry, Statement, SubjectEntry};
-use crate::validate::{Vocabulary, validate_statements};
+use crate::validate::{Vocabulary, validate_conditions, validate_statements};
 
 #[derive(Default)]
 pub struct EngineConfig {
@@ -142,6 +143,13 @@ impl Engine {
                 is_known_resource: None,
             },
         )
+    }
+
+    /// Validate grant bounds the way the reference validates them at its write
+    /// boundaries. A host with its own store gates writes with this; the
+    /// evaluator refuses anything that fails it regardless.
+    pub fn validate_bounds(&self, bounds: &Value) -> Result<Vec<PolicyCondition>, String> {
+        validate_conditions(bounds, &self.keys)
     }
 
     pub fn describe(&self) -> AuthzDescriptor {

@@ -68,6 +68,12 @@ fn strip_ci_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
 /// process runs, and `validate` refuses to store such a value anyway.
 pub fn parse_instant(value: &str) -> Option<i64> {
     let trimmed = value.trim();
+    // chrono accepts a leap second and folds it into the following minute; the
+    // reference cannot parse one at all, so a bound naming :60 must stay
+    // unmatchable rather than silently become an instant.
+    if has_leap_second(trimmed) {
+        return None;
+    }
     if let Ok(parsed) = DateTime::parse_from_rfc3339(trimmed) {
         return Some(parsed.timestamp_millis());
     }
@@ -85,6 +91,17 @@ pub fn parse_instant(value: &str) -> Option<i64> {
         .map(|instant: DateTime<Utc>| instant.timestamp_millis())
 }
 
+fn has_leap_second(value: &str) -> bool {
+    let Some((_, time)) = value.split_once('T') else {
+        return false;
+    };
+    let seconds = time
+        .split(':')
+        .nth(2)
+        .map(|field| field.trim_end_matches(|c: char| !c.is_ascii_digit()));
+    matches!(seconds, Some(field) if field.starts_with("60"))
+}
+
 /// The evaluation instant a caller names, so a host at the language boundary
 /// never has to depend on this crate's clock library to pass one.
 pub fn parse_rfc3339(raw: &str) -> Result<DateTime<Utc>, String> {
@@ -100,11 +117,14 @@ pub fn has_explicit_timezone(value: &str) -> bool {
     if trimmed.ends_with('Z') {
         return true;
     }
+    // `get` rather than a slice index: the offset is a byte count, and a
+    // multi-byte character straddling it would panic on a public entry point.
     [(6, true), (5, false)].into_iter().any(|(width, colon)| {
         trimmed
             .len()
             .checked_sub(width)
-            .is_some_and(|start| is_offset(&trimmed[start..], colon))
+            .and_then(|start| trimmed.get(start..))
+            .is_some_and(|tail| is_offset(tail, colon))
     })
 }
 
@@ -245,6 +265,22 @@ mod tests {
         assert!(parse_instant("2026-08-01T00:00:00Z").is_some());
         assert!(parse_instant("next tuesday").is_none());
         assert!(parse_instant("2026-08-01T00:00:00Z") > parse_instant("2026-07-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn a_multibyte_tail_does_not_panic() {
+        for candidate in ["2026-08-01T00:00:00é", "日本語テキスト", "é", "±00:00"] {
+            assert!(!has_explicit_timezone(candidate));
+        }
+    }
+
+    #[test]
+    fn a_leap_second_is_not_an_instant() {
+        assert!(parse_instant("2026-06-30T23:59:60Z").is_none());
+        assert!(parse_instant("2026-06-30T23:59:60.500Z").is_none());
+        assert!(parse_instant("2026-06-30T23:59:59Z").is_some());
+        assert!(parse_instant("2026-06-30T00:00:06Z").is_some());
+        assert!(parse_instant("2026-08-01T00:00:00+06:00").is_some());
     }
 
     #[test]

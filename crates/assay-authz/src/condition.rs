@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, SecondsFormat, Timelike, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConditionOperator {
@@ -128,30 +129,88 @@ pub struct ConditionKeySpec {
 pub type ConditionKeys = BTreeMap<String, ConditionKeySpec>;
 
 /// A multi-valued key (a principal holding several roles) carries a list;
-/// every other key is a scalar.
+/// every other key is a scalar. Every JSON shape maps to some variant, so a
+/// context a host builds by hand still yields a decision rather than an error.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(from = "Value", into = "Value")]
 pub enum ContextValue {
     Number(f64),
+    Bool(bool),
     List(Vec<String>),
     Text(String),
+    /// A value the reference engine can only stringify, held as that
+    /// stringification: pattern and set operators compare what it compares,
+    /// while equality stays strict and never matches a string.
+    Opaque(String),
 }
 
 impl ContextValue {
     pub fn as_strings(&self) -> Vec<String> {
         match self {
             Self::List(items) => items.clone(),
-            Self::Text(s) => vec![s.clone()],
+            Self::Text(s) | Self::Opaque(s) => vec![s.clone()],
             Self::Number(n) => vec![format_number(*n)],
+            Self::Bool(b) => vec![b.to_string()],
         }
     }
 
+    /// Only strings and lists normalize, matching the reference: a value of
+    /// any other shape is compared as it stands.
     pub fn lowercased(&self) -> Self {
         match self {
             Self::Text(s) => Self::Text(s.to_lowercase()),
             Self::List(items) => Self::List(items.iter().map(|v| v.to_lowercase()).collect()),
-            Self::Number(n) => Self::Number(*n),
+            other => other.clone(),
         }
+    }
+}
+
+impl From<Value> for ContextValue {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::String(text) => Self::Text(text),
+            Value::Bool(flag) => Self::Bool(flag),
+            Value::Number(ref number) => match number.as_f64() {
+                Some(parsed) => Self::Number(parsed),
+                None => Self::Opaque(js_string(&value)),
+            },
+            Value::Array(items) => Self::List(items.iter().map(js_string).collect()),
+            // An empty table is the only way a Lua host can spell "no values
+            // held", and it encodes as an object; every other object is a
+            // shape the engine can only stringify.
+            Value::Object(ref fields) if fields.is_empty() => Self::List(Vec::new()),
+            other => Self::Opaque(js_string(&other)),
+        }
+    }
+}
+
+impl From<ContextValue> for Value {
+    fn from(value: ContextValue) -> Self {
+        match value {
+            ContextValue::Text(text) | ContextValue::Opaque(text) => Value::String(text),
+            ContextValue::Bool(flag) => Value::Bool(flag),
+            ContextValue::List(items) => {
+                Value::Array(items.into_iter().map(Value::String).collect())
+            }
+            ContextValue::Number(number) => serde_json::Number::from_f64(number)
+                .map(Value::Number)
+                .unwrap_or(Value::Null),
+        }
+    }
+}
+
+/// A JSON value as JavaScript's `String()` renders it, which is what the
+/// reference engine feeds to pattern and set operators.
+fn js_string(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Null => "null".to_string(),
+        Value::Number(number) => number
+            .as_f64()
+            .map_or_else(|| number.to_string(), format_number),
+        Value::Array(items) => items.iter().map(js_string).collect::<Vec<_>>().join(","),
+        Value::Object(_) => "[object Object]".to_string(),
     }
 }
 
@@ -231,12 +290,40 @@ pub fn builtin_context_entries(
     entries
 }
 
-/// Numbers reach string comparisons through the same rendering the reference
-/// engine uses, so an integral value never grows a `.0` tail.
+/// Numbers reach string comparisons through JavaScript's `String(n)`, because
+/// that is what a policy value was written to match. Magnitudes at or beyond
+/// 1e21, and below 1e-6, render in exponential form there and nowhere else.
 pub fn format_number(value: f64) -> String {
-    if value.is_finite() && value.fract() == 0.0 && value.abs() < 1e21 {
-        format!("{}", value as i128)
-    } else {
-        format!("{value}")
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "Infinity".to_string()
+        } else {
+            "-Infinity".to_string()
+        };
+    }
+    if value == 0.0 {
+        return "0".to_string();
+    }
+    const FIXED_NOTATION: std::ops::Range<f64> = 1e-6..1e21;
+    if !FIXED_NOTATION.contains(&value.abs()) {
+        return exponential(value);
+    }
+    if value.fract() == 0.0 {
+        return format!("{}", value as i128);
+    }
+    format!("{value}")
+}
+
+/// Rust writes a non-negative exponent bare (`1e21`); JavaScript signs it.
+fn exponential(value: f64) -> String {
+    let rendered = format!("{value:e}");
+    match rendered.split_once('e') {
+        Some((mantissa, exponent)) if !exponent.starts_with('-') => {
+            format!("{mantissa}e+{exponent}")
+        }
+        _ => rendered,
     }
 }

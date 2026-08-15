@@ -182,10 +182,12 @@ fn eval_one_set(
 fn eval_one(operator: ConditionOperator, value: &str, ctx_value: &ContextValue) -> Option<bool> {
     match operator {
         ConditionOperator::StringEquals | ConditionOperator::StringNotEquals => {
+            // Equality is strict: a value of any other shape is never equal to
+            // an authored string, however it renders.
             let equal = match ctx_value {
                 ContextValue::List(items) => items.iter().any(|item| item == value),
                 ContextValue::Text(text) => text == value,
-                ContextValue::Number(_) => false,
+                _ => false,
             };
             Some(if operator == ConditionOperator::StringEquals {
                 equal

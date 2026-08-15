@@ -25,13 +25,27 @@ All notable changes to Assay are documented here.
   an administration surface, and `e:grants_for` lists what applies over a chain for a "why" view.
 
 - **`assay-authz` crate.** The engine lives in its own workspace crate, dependency-light (serde,
-  serde_json, chrono) and usable from Rust without the Lua runtime. It is decision-identical to the
-  [agentauthz](https://github.com/developerinlondon/agentauthz) reference library: that project's
-  149 language-neutral golden fixtures are vendored verbatim under
+  serde_json, chrono) and usable from Rust without the Lua runtime. It decides every case in the
+  [agentauthz](https://github.com/developerinlondon/agentauthz) conformance fixture set identically
+  to that reference library: all 149 language-neutral golden fixtures are vendored verbatim under
   `crates/assay-authz/conformance/cases` and run on every build, through both the pure evaluator and
-  the composed engine. The four fixtures marked `storable: false` name a conditions shape a storage
-  layer must refuse at rest; with no storage layer here, the suite asserts `validate` refuses them
-  and the evaluator still fails closed on them.
+  the composed engine. Conformance is the claim the fixtures support — behaviour outside their reach
+  is covered by this crate's own tests, not by that suite. The four fixtures marked
+  `storable: false` name a conditions shape a storage layer must refuse at rest; with no storage
+  layer here, the suite asserts `validate` refuses them and the evaluator still fails closed on
+  them.
+
+  Behaviour the fixtures do not reach is pinned against the reference implementation directly: a
+  context value of any shape yields a decision rather than aborting the check (an empty list, a
+  boolean, a number under a string key, and a value the reference could only stringify all follow
+  its verdicts); numbers render through JavaScript's `String(n)`, exponential form and all, because
+  that is what a policy value was written to match; and a grant or statement missing a required
+  field degrades to a dropped grant or a skipped statement rather than taking the engine down at
+  construction.
+
+  Grant bounds have no write boundary in-process, so the evaluator applies the one the reference
+  applies at its own: a bound `validate` would refuse is unmatchable, and can never narrow an allow
+  into existence. `e:validate_bounds(...)` exposes the same check to a host that owns storage.
 
 ## assay-lua 0.19.0 — 2026-08-14
 

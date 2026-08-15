@@ -195,6 +195,7 @@ fn statement_fires(
     match effect {
         Effect::Allow => verdict == ConditionsVerdict::Match,
         Effect::Deny => verdict != ConditionsVerdict::NoMatch,
+        Effect::Malformed => false,
     }
 }
 
@@ -219,6 +220,7 @@ fn action_ok(statement: &Statement, effect: Effect, query: &Query<'_>) -> bool {
     match effect {
         Effect::Allow => verdict == ActionMatch::Match,
         Effect::Deny => verdict != ActionMatch::NoMatch,
+        Effect::Malformed => false,
     }
 }
 
@@ -233,7 +235,7 @@ fn conditions_verdict(
 ) -> ConditionsVerdict {
     let bounds = match effect {
         Effect::Allow => grant.bounds.as_ref().filter(|bounds| !bounds.is_empty()),
-        Effect::Deny => None,
+        Effect::Deny | Effect::Malformed => None,
     };
     let Some(bounds) = bounds else {
         return eval_conditions(
@@ -242,6 +244,14 @@ fn conditions_verdict(
             query.condition_keys,
         );
     };
+    // A bound the write path would have refused could not have been stored by
+    // a conforming host, so it never narrows an allow into existence here.
+    // There is no write boundary in-process to catch it earlier.
+    if crate::validate::validate_conditions(&Value::Array(bounds.clone()), query.condition_keys)
+        .is_err()
+    {
+        return ConditionsVerdict::Unmatchable;
+    }
     let mut combined: Vec<Value> = match statement.conditions.as_ref() {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::Array(existing)) => existing.clone(),

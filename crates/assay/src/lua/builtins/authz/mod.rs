@@ -1,4 +1,5 @@
 use assay_authz::action::{ActionCatalogue, ActionDerivation};
+use assay_authz::condition::{ConditionContext, ContextValue};
 use assay_authz::engine::{CheckOptions, Engine, EngineConfig};
 use assay_authz::model::{ScopeEntry, SubjectEntry};
 use mlua::{Lua, Table, UserData, UserDataMethods, Value};
@@ -32,6 +33,17 @@ impl UserData for LuaEngine {
             match this.engine.validate(&raw) {
                 Ok(statements) => {
                     let value = serde_json::to_value(statements).map_err(runtime)?;
+                    Ok((json_value_to_lua(lua, &value)?, Value::Nil))
+                }
+                Err(error) => Ok((Value::Nil, Value::String(lua.create_string(&error)?))),
+            }
+        });
+
+        methods.add_method("validate_bounds", |lua, this, bounds: Table| {
+            let raw = serde_json::Value::Array(list_values(&bounds)?);
+            match this.engine.validate_bounds(&raw) {
+                Ok(bounds) => {
+                    let value = serde_json::to_value(bounds).map_err(runtime)?;
                     Ok((json_value_to_lua(lua, &value)?, Value::Nil))
                 }
                 Err(error) => Ok((Value::Nil, Value::String(lua.create_string(&error)?))),
@@ -81,7 +93,7 @@ fn build_engine(options: &Table) -> mlua::Result<LuaEngine> {
     };
     let config = EngineConfig {
         grants: optional_list(options, "grants")?,
-        synthesized_grants: synthesized_grants(options)?,
+        synthesized_grants: optional_list(options, "synthesized_grants")?,
         condition_keys: optional_map(options, "condition_keys")?,
         scope_kinds: match optional_table(options, "scope_kinds")? {
             Some(table) => Some(decode_list(&table, "scope_kinds")?),
@@ -102,14 +114,6 @@ fn build_engine(options: &Table) -> mlua::Result<LuaEngine> {
     })
 }
 
-fn synthesized_grants(options: &Table) -> mlua::Result<Vec<assay_authz::ResolvedGrant>> {
-    let stored: Vec<assay_authz::ResolvedGrant> = optional_list(options, "synthesized_grants")?;
-    if stored.is_empty() {
-        return optional_list(options, "synthesizedGrants");
-    }
-    Ok(stored)
-}
-
 fn check_options(options: Option<&Table>) -> mlua::Result<CheckOptions> {
     let Some(options) = options else {
         return Ok(CheckOptions::default());
@@ -120,7 +124,7 @@ fn check_options(options: Option<&Table>) -> mlua::Result<CheckOptions> {
             Some(table) => Some(decode_list(&table, "scope_chain")?),
             None => None,
         },
-        context: optional_map(options, "context")?,
+        context: context_values(options)?,
         source_ip: options.get("source_ip")?,
         now: now
             .as_deref()
@@ -129,6 +133,56 @@ fn check_options(options: Option<&Table>) -> mlua::Result<CheckOptions> {
             .map_err(|error| runtime(format!("authz: `now` — {error}")))?,
         bypass: options.get::<Option<bool>>("bypass")?.unwrap_or(false),
     })
+}
+
+/// Context values are read by shape, never through the JSON encoder's
+/// array-vs-object heuristic: an empty table there becomes an object, which is
+/// no context value at all, and a check that cannot encode its context would
+/// abort instead of deciding.
+fn context_values(options: &Table) -> mlua::Result<ConditionContext> {
+    let Some(table) = optional_table(options, "context")? else {
+        return Ok(ConditionContext::new());
+    };
+    let mut context = ConditionContext::new();
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let key = match key {
+            Value::String(text) => text.to_str()?.to_string(),
+            Value::Integer(index) => index.to_string(),
+            other => {
+                return Err(runtime(format!(
+                    "authz: `context` key of type {}",
+                    other.type_name()
+                )));
+            }
+        };
+        context.insert(key, context_value(&value)?);
+    }
+    Ok(context)
+}
+
+fn context_value(value: &Value) -> mlua::Result<ContextValue> {
+    match value {
+        Value::Table(table) => Ok(ContextValue::List(
+            table
+                .clone()
+                .sequence_values::<Value>()
+                .map(|item| Ok(scalar_text(&item?)))
+                .collect::<mlua::Result<Vec<String>>>()?,
+        )),
+        other => Ok(ContextValue::from(lua_value_to_json(other)?)),
+    }
+}
+
+fn scalar_text(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.to_string_lossy().to_string(),
+        Value::Integer(number) => number.to_string(),
+        Value::Number(number) => assay_authz::condition::format_number(*number),
+        Value::Boolean(flag) => flag.to_string(),
+        Value::Nil => "null".to_string(),
+        other => other.type_name().to_string(),
+    }
 }
 
 /// A Lua sequence, read positionally rather than through the JSON encoder's

@@ -66,6 +66,12 @@ macro_rules! loose_ref {
                 Self::Valid(inner)
             }
         }
+
+        impl Default for $entry {
+            fn default() -> Self {
+                Self::Malformed
+            }
+        }
     };
 }
 
@@ -90,11 +96,36 @@ fn parse_kind_id(value: &Value) -> Option<(String, String)> {
     Some((kind.to_string(), id.to_string()))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+/// A statement whose effect is absent or unreadable is `Malformed`: it matches
+/// neither an allow pass nor a deny pass, so it is skipped rather than taking
+/// the whole engine down at construction.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "Value", into = "Value")]
 pub enum Effect {
     Allow,
     Deny,
+    #[default]
+    Malformed,
+}
+
+impl From<Value> for Effect {
+    fn from(value: Value) -> Self {
+        match value.as_str() {
+            Some("allow") => Self::Allow,
+            Some("deny") => Self::Deny,
+            _ => Self::Malformed,
+        }
+    }
+}
+
+impl From<Effect> for Value {
+    fn from(effect: Effect) -> Self {
+        match effect {
+            Effect::Allow => Value::String("allow".into()),
+            Effect::Deny => Value::String("deny".into()),
+            Effect::Malformed => Value::Null,
+        }
+    }
 }
 
 /// A single policy statement. `conditions` is held as raw JSON because the
@@ -103,6 +134,7 @@ pub enum Effect {
 /// fail to load.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Statement {
+    #[serde(default)]
     pub effect: Effect,
     #[serde(default)]
     pub actions: Vec<String>,
@@ -121,11 +153,14 @@ pub type GrantBounds = Vec<Value>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedGrant {
-    #[serde(default)]
+    #[serde(default, alias = "policy_id")]
     pub policy_id: String,
-    #[serde(default)]
+    #[serde(default, alias = "policy_name")]
     pub policy_name: String,
+    /// Absent means `Malformed`, which drops the grant rather than the engine.
+    #[serde(default)]
     pub subject: SubjectEntry,
+    #[serde(default)]
     pub scope: ScopeEntry,
     #[serde(default)]
     pub statements: Vec<Statement>,

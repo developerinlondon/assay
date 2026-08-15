@@ -13,6 +13,8 @@ expression language. The host resolves its grants and hands them over.
 - `e:check(subjects, action, resource, opts?)` → `decision` — Decide one question.
 - `e:validate(statements)` → `statements` | `nil, err` — Refuse a shape the engine could never
   evaluate.
+- `e:validate_bounds(bounds)` → `bounds` | `nil, err` — The same gate for a grant's bounds, for a
+  host that owns storage.
 - `e:describe()` → `descriptor` — The declared vocabulary as data, for an administration surface.
 - `e:grants_for(subjects, scope_chain?)` → `grants` — What applies over a chain, for a "why" view.
 
@@ -27,7 +29,9 @@ expression language. The host resolves its grants and hands them over.
   type for the key, a key the request context does not populate — withdraws an **allow** and leaves
   a **deny** standing. Both directions fail toward less access.
 - **Bounds narrow allows only.** A grant's `bounds` are ANDed onto the allow statements of the
-  policy it confers. ANDing them onto a deny would make it fire less often.
+  policy it confers. ANDing them onto a deny would make it fire less often. A bound that
+  `validate_bounds` would refuse is unmatchable, so it can never narrow an allow into existence —
+  there is no write boundary in-process to catch it earlier.
 - **Actions derive, they do not wildcard.** A statement naming a base action covers every action
   declared to derive from it, allow and deny alike, and the expansion stays closed and enumerable.
   Resources take a single trailing `*`; actions never take one.
@@ -62,6 +66,15 @@ Scalar operators take `value`; the set operators (`StringIn`, `StringNotIn`, `St
 `values`. Carrying both, or the wrong one, is unreadable and therefore unmatchable. The engine
 populates three keys itself on every check: `request:Time` (RFC 3339), `request:HourUTC` (0-23) and
 `request:SourceIp` — the last only when the check carried one, so a condition on it fails closed.
+
+### Context values
+
+A context value may be a string, a number, a boolean, or a table of strings. Tables are read
+positionally, so an empty table is "holds nothing" rather than an empty map — which is what makes a
+`StringNotIn` condition over an empty role list _match_, exactly as the reference does. A value of
+any other shape still yields a decision rather than an error: equality is strict, so a non-string
+never equals an authored string, while pattern and set operators compare the value as JavaScript
+would render it.
 
 ### Check options
 
@@ -109,7 +122,9 @@ assert.eq(eng:check(alice, "docs.read", "doc:42").allowed, false) -- bound unsat
 
 ### Conformance
 
-The engine is decision-identical to the
-[agentauthz](https://github.com/developerinlondon/agentauthz) reference library at `0.6.0`: all 149
-of its language-neutral golden fixtures are vendored under `crates/assay-authz/conformance/cases`
-and run on every build, through both the pure evaluator and the composed engine.
+The engine decides every case in the [agentauthz](https://github.com/developerinlondon/agentauthz)
+`0.6.0` conformance fixture set identically to that reference library: all 149 language-neutral
+golden fixtures are vendored under `crates/assay-authz/conformance/cases` and run on every build,
+through both the pure evaluator and the composed engine. Behaviour the fixtures do not reach —
+context values of unusual shape, bounds the write path would refuse, rows missing a required field —
+is pinned against the reference directly in that crate's own tests.
