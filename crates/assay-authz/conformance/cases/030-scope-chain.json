@@ -1,0 +1,266 @@
+{
+  "suite": "scope-chain",
+  "scopeKinds": ["root", "space"],
+  "cases": [
+    {
+      "name": "a root grant applies at the root",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a root grant is inherited into a deeper scope",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a root grant is inherited into every sibling scope",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s2" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a leaf grant applies in its own chain",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "bob" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "bob" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a leaf grant never leaks sideways into a sibling",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "bob" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "bob" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s2" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a leaf grant never leaks upward to the root",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "bob" },
+          "scope": { "kind": "space", "id": "s1" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "bob" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an empty scope chain denies even a broad root allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a chain entry with an empty id denies outright",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a chain entry missing its id denies outright",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an undeclared scope kind denies outright",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "galaxy", "id": "x" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a non-object chain entry denies outright",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }, "space:s1"],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a role subject's root grant inherits into a deeper scope for a holder",
+      "grants": [
+        {
+          "subject": { "kind": "role", "id": "ops" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "holder" }, { "kind": "role", "id": "ops" }],
+        "action": "docs.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a non-holder gets nothing from a role's root grant in a deeper scope",
+      "grants": [
+        {
+          "subject": { "kind": "role", "id": "ops" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.read"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "nobody" }],
+        "action": "docs.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "s1" }],
+        "context": {}
+      },
+      "expect": "deny"
+    }
+  ]
+}

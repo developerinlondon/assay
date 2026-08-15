@@ -1,6 +1,7 @@
 pub mod approval;
 mod apt;
 mod assert;
+mod authz;
 mod cgroup;
 mod compress;
 pub mod core;
@@ -43,6 +44,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     core::register_string_helpers(lua)?;
     core::register_base64(lua)?;
     crypto::register_crypto(lua)?;
+    authz::register_authz(lua)?;
     core::register_regex(lua)?;
     core::register_async(lua)?;
     #[cfg(feature = "db")]

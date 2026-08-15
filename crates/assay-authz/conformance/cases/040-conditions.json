@@ -1,0 +1,1194 @@
+{
+  "suite": "conditions",
+  "scopeKinds": ["root"],
+  "conditionKeys": {
+    "app:Email": { "type": "string", "lowercase": true },
+    "app:Kind": { "type": "string" },
+    "app:Role": { "type": "string" },
+    "app:Source": { "type": "string" },
+    "app:ScopeId": { "type": "string" }
+  },
+  "cases": [
+    {
+      "name": "StringEquals: a matching condition lets the allow contribute",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Source", "value": "admin-api" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "admin-api" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "StringEquals: a non-matching condition withholds the allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Source", "value": "token-gate" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "admin-api" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "StringNotEquals: match",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringNotEquals", "key": "app:Source", "value": "token-gate" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "admin-api" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "StringNotEquals: no-match",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringNotEquals", "key": "app:Source", "value": "admin-api" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "admin-api" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "StringLike: exact value matches",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringLike", "key": "app:Email", "value": "alice@example.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "alice@example.com" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "StringLike: trailing-* prefix matches",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "StringLike", "key": "app:Email", "value": "alice@*" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "alice@example.com" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "StringLike: non-matching prefix",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "StringLike", "key": "app:Email", "value": "bob@*" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "alice@example.com" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "StringLike: a non-trailing * is an invalid pattern, not a wildcard (allow never matches)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringLike", "key": "app:Email", "value": "*@example.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "alice@example.com" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "NumericLessThan on request:HourUTC: true bound",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "NumericLessThan", "key": "request:HourUTC", "value": "18" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "NumericLessThan on request:HourUTC: strict comparison (12 < 12 is false)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "NumericLessThan", "key": "request:HourUTC", "value": "12" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "NumericGreaterThan on request:HourUTC: true bound",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "NumericGreaterThan", "key": "request:HourUTC", "value": "8" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "NumericGreaterThan on request:HourUTC: strict comparison (12 > 12 is false)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "NumericGreaterThan", "key": "request:HourUTC", "value": "12" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "DateLessThan on request:Time: an unexpired validity window allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                {
+                  "operator": "DateLessThan",
+                  "key": "request:Time",
+                  "value": "2026-08-01T00:00:00Z"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "DateLessThan on request:Time: an expired window withholds the allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                {
+                  "operator": "DateLessThan",
+                  "key": "request:Time",
+                  "value": "2026-07-01T00:00:00Z"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "DateGreaterThan on request:Time: match and no-match",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                {
+                  "operator": "DateGreaterThan",
+                  "key": "request:Time",
+                  "value": "2026-07-01T00:00:00Z"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "DateGreaterThan on request:Time: a future bound withholds the allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                {
+                  "operator": "DateGreaterThan",
+                  "key": "request:Time",
+                  "value": "2026-08-01T00:00:00Z"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "IpAddress: IPv4 CIDR membership allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "10.0.0.0/8" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "IpAddress: outside the CIDR withholds the allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "192.168.0.0/16" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "NotIpAddress: outside the CIDR matches",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "NotIpAddress", "key": "request:SourceIp", "value": "192.168.0.0/16" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "NotIpAddress: inside the CIDR withholds the allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "NotIpAddress", "key": "request:SourceIp", "value": "10.0.0.0/8" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "IpAddress: /32 exact host matches",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "10.1.2.3/32" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "IpAddress: /32 different host does not match",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "10.1.2.4/32" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "10.1.2.3"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "IpAddress: 0.0.0.0/0 matches any IPv4 caller",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "0.0.0.0/0" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "203.0.113.9"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "IpAddress: IPv6 CIDR membership allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "2001:db8::/32" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "2001:db8::1"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "IpAddress: a different IPv6 network does not match",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "2001:db9::/32" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "2001:db8::1"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "IpAddress: ::/0 matches any IPv6 caller; ::1/128 does not match a non-loopback",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "IpAddress", "key": "request:SourceIp", "value": "::/0" },
+                { "operator": "NotIpAddress", "key": "request:SourceIp", "value": "::1/128" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {},
+        "sourceIp": "2001:db8::1"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "multiple conditions AND together: all true allows",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Source", "value": "admin-api" },
+                { "operator": "NumericLessThan", "key": "request:HourUTC", "value": "18" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "admin-api" },
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "multiple conditions AND together: one false withholds the allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Source", "value": "admin-api" },
+                { "operator": "NumericLessThan", "key": "request:HourUTC", "value": "18" },
+                { "operator": "StringEquals", "key": "app:ScopeId", "value": "space-1" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Source": "admin-api", "app:ScopeId": "*" },
+        "now": "2026-07-14T12:30:00.000Z"
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an empty conditions array is vacuously true",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": []
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a lowercase key compares a mixed-case authored value case-insensitively (allow matches)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Email", "value": "Alice@Example.COM" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "alice@example.com" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a mixed-case StringEquals deny still FIRES against its lowercased target",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "evil" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "evil" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Email", "value": "Evil@Corp.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "evil" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "evil@corp.com" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a mixed-case StringNotEquals still excludes its target (no widening)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "bad" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringNotEquals", "key": "app:Email", "value": "Bad@Corp.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "bad" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "bad@corp.com" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a mixed-case StringNotEquals lets a non-target through",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "good" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringNotEquals", "key": "app:Email", "value": "Bad@Corp.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "good" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "good@corp.com" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "an array-valued key: StringEquals is existential (ANY element matches)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "StringEquals", "key": "app:Role", "value": "ops" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Role": ["ops", "on-call"] }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "an array-valued key: StringEquals with no matching element",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "StringEquals", "key": "app:Role", "value": "billing" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Role": ["ops", "on-call"] }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an array-valued key: StringLike is existential over the set",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "StringLike", "key": "app:Role", "value": "on-*" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Role": ["ops", "on-call"] }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "an array-valued key: StringNotEquals is universal (NONE may match)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [{ "operator": "StringNotEquals", "key": "app:Role", "value": "ops" }]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Role": ["ops", "on-call"] }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an array-valued key: StringNotEquals matches when no element equals the value",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringNotEquals", "key": "app:Role", "value": "billing" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Role": ["ops", "on-call"] }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a lowercase key normalizes a mixed-case CONTEXT value too: StringEquals allow matches",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "bad" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Email", "value": "bad@corp.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "bad" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "Bad@Corp.com" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a mixed-case CONTEXT value cannot dodge a StringNotEquals exclusion (no widening)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "bad" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["docs.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringNotEquals", "key": "app:Email", "value": "bad@corp.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "bad" }],
+        "action": "docs.read",
+        "resource": "doc:x",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "Bad@Corp.com" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a StringEquals deny still FIRES against a mixed-case CONTEXT value",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "evil" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "evil" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Email", "value": "evil@corp.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "evil" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "Evil@Corp.com" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a StringNotEquals deny steps aside for its mixed-case-context target (equality holds after normalization)",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "evil" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["secrets.read"], "resources": ["*"] }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "evil" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "deny",
+              "actions": ["secrets.read"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringNotEquals", "key": "app:Email", "value": "evil@corp.com" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "evil" }],
+        "action": "secrets.read",
+        "resource": "*",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Email": "Evil@Corp.com" }
+      },
+      "expect": "allow"
+    }
+  ]
+}

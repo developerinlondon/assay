@@ -1,0 +1,207 @@
+{
+  "suite": "grant-bounds",
+  "scopeKinds": ["root", "space"],
+  "conditionKeys": {
+    "app:Region": { "type": "string" },
+    "app:Tier": { "type": "string" }
+  },
+  "cases": [
+    {
+      "name": "a satisfied bound leaves the allow standing",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["widgets.write"], "resources": ["*"] }
+          ],
+          "bounds": [
+            { "operator": "StringEquals", "key": "app:Region", "value": "eu-west" }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "widgets.write",
+        "resource": "widget:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Region": "eu-west" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "an unsatisfied bound withdraws the allow",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["widgets.write"], "resources": ["*"] }
+          ],
+          "bounds": [
+            { "operator": "StringEquals", "key": "app:Region", "value": "eu-west" }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "widgets.write",
+        "resource": "widget:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Region": "us-east" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a bound on an unpopulated key fails closed",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["widgets.write"], "resources": ["*"] }
+          ],
+          "bounds": [
+            { "operator": "StringEquals", "key": "app:Region", "value": "eu-west" }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "widgets.write",
+        "resource": "widget:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "bounds never weaken the granted policy's own deny",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["widgets.write"], "resources": ["*"] },
+            { "effect": "deny", "actions": ["widgets.write"], "resources": ["widget:locked"] }
+          ],
+          "bounds": [
+            { "operator": "StringEquals", "key": "app:Region", "value": "eu-west" }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "widgets.write",
+        "resource": "widget:locked",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Region": "us-east" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "bounds AND with the statement's own conditions",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["widgets.write"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Tier", "value": "gold" }
+              ]
+            }
+          ],
+          "bounds": [
+            { "operator": "StringEquals", "key": "app:Region", "value": "eu-west" }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "widgets.write",
+        "resource": "widget:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Region": "eu-west", "app:Tier": "silver" }
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a bound confines one grant without touching another",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["widgets.write"], "resources": ["*"] }
+          ],
+          "bounds": [
+            { "operator": "StringEquals", "key": "app:Region", "value": "eu-west" }
+          ]
+        },
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "space", "id": "acme" },
+          "statements": [
+            { "effect": "allow", "actions": ["widgets.write"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "widgets.write",
+        "resource": "widget:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }, { "kind": "space", "id": "acme" }],
+        "context": { "app:Region": "us-east" }
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "an empty bounds list confers the policy unchanged",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["widgets.write"], "resources": ["*"] }
+          ],
+          "bounds": []
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "widgets.write",
+        "resource": "widget:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "a malformed bound is unmatchable, so the allow never fires",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "alice" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["widgets.write"], "resources": ["*"] }
+          ],
+          "bounds": [
+            { "operator": "NoSuchOperator", "key": "app:Region", "value": "eu-west" }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "alice" }],
+        "action": "widgets.write",
+        "resource": "widget:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Region": "eu-west" }
+      },
+      "expect": "deny"
+    }
+  ]
+}

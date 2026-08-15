@@ -21,6 +21,7 @@ projects:
   # picking up unrelated subdirectories that happen to contain a
   # moon.yml in the future.
   assay-lua: "crates/assay"
+  assay-authz: "crates/assay-authz"
   assay-domain: "crates/assay-domain"
   assay-auth: "crates/assay-auth"
   assay-dashboard: "crates/assay-dashboard"

@@ -1,0 +1,8 @@
+# Authorization engine crate. Cargo builds and tests it as part of the root
+# project's `cargo test --workspace`, so this project runs nothing of its own.
+# It exists so `assay-lua` can declare a typed dependency on it for
+# affected-graph detection.
+
+language: "rust"
+layer: "library"
+stack: "systems"

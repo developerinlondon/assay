@@ -44,6 +44,7 @@
 
 ## Security & Identity
 - [assay-engine auth](https://assay.rs/auth-overview.html): Embedded IdP with password and SMTP recovery, passkeys, OIDC provider and federation, sessions, JWT/JWKS, Biscuit capabilities, and Zanzibar ReBAC on PostgreSQL or SQLite
+- [assay.authz](https://assay.rs/modules/authz.html): In-process authorization engine — policy statements, grants-at-scope with typed bounds, ABAC conditions, deny-wins, asymmetric fail-closed
 - [assay.hashicorp.vault](https://assay.rs/modules/vault.html): HashiCorp Vault KV, transit, PKI, auth
 - [assay.openbao](https://assay.rs/modules/openbao.html): OpenBao (Vault API-compatible)
 - [assay.certmanager](https://assay.rs/modules/certmanager.html): cert-manager certificates, issuers, ACME

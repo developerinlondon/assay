@@ -1,0 +1,215 @@
+{
+  "suite": "action-derivation",
+  "scopeKinds": ["root"],
+  "actionDerivation": {
+    "docs.update": "edit",
+    "docs.delete": "docs.update",
+    "docs.read": "read"
+  },
+  "cases": [
+    {
+      "name": "a statement naming a base action allows an action deriving from it",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [{ "effect": "allow", "actions": ["edit"], "resources": ["*"] }]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "docs.update",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "derivation is transitive — a grandchild is covered by the root of its chain",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [{ "effect": "allow", "actions": ["edit"], "resources": ["*"] }]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "docs.delete",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "allow"
+    },
+    {
+      "name": "derivation never runs downward — granting a leaf does not grant its base",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [{ "effect": "allow", "actions": ["docs.delete"], "resources": ["*"] }]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "edit",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "derivation never runs sideways — a separate tree is not covered",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [{ "effect": "allow", "actions": ["edit"], "resources": ["*"] }]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "docs.read",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a deny naming a base action stops an action deriving from it",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["docs.delete"], "resources": ["*"] },
+            { "effect": "deny", "actions": ["edit"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "docs.delete",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a deny at a base beats an allow at a leaf granted in a separate scope entry",
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [{ "effect": "deny", "actions": ["edit"], "resources": ["*"] }]
+        },
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [{ "effect": "allow", "actions": ["docs.update"], "resources": ["*"] }]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "docs.update",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an unresolvable ancestry keeps a deny standing — it never lifts to an allow",
+      "actionDerivation": { "loop.a": "loop.b", "loop.b": "loop.a" },
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            { "effect": "allow", "actions": ["loop.a"], "resources": ["*"] },
+            { "effect": "deny", "actions": ["edit"], "resources": ["*"] }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "loop.a",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "an unresolvable ancestry never carries an allow",
+      "actionDerivation": { "loop.a": "loop.b", "loop.b": "loop.a" },
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [{ "effect": "allow", "actions": ["edit"], "resources": ["*"] }]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "loop.a",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "with no derivation declared, actions still match exactly and nothing widens",
+      "actionDerivation": {},
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [{ "effect": "allow", "actions": ["edit"], "resources": ["*"] }]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "docs.update",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": {}
+      },
+      "expect": "deny"
+    },
+    {
+      "name": "a condition on a base-action statement still narrows its derived actions",
+      "conditionKeys": { "app:Tier": { "type": "string" } },
+      "grants": [
+        {
+          "subject": { "kind": "user", "id": "u1" },
+          "scope": { "kind": "root", "id": "*" },
+          "statements": [
+            {
+              "effect": "allow",
+              "actions": ["edit"],
+              "resources": ["*"],
+              "conditions": [
+                { "operator": "StringEquals", "key": "app:Tier", "value": "pro" }
+              ]
+            }
+          ]
+        }
+      ],
+      "check": {
+        "subjects": [{ "kind": "user", "id": "u1" }],
+        "action": "docs.update",
+        "resource": "doc:1",
+        "scopeChain": [{ "kind": "root", "id": "*" }],
+        "context": { "app:Tier": "free" }
+      },
+      "expect": "deny"
+    }
+  ]
+}
