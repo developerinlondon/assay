@@ -26,6 +26,8 @@ pub struct EngineConfig {
     #[serde(default)]
     pub auth: AuthConfig,
     #[serde(default)]
+    pub vault: VaultConfig,
+    #[serde(default)]
     pub dashboard: DashboardConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -330,6 +332,40 @@ pub struct AuthOidcProviderConfig {
     pub auto_provision: bool,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct VaultConfig {
+    #[serde(default)]
+    pub hashicorp_compat: HashicorpCompatConfig,
+}
+
+/// Vault / OpenBao KV2 read facade at `/v1/*`. Off unless an operator asks
+/// for it: serving a second dialect of the secret store at the engine root is
+/// a deliberate act, not a default.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct HashicorpCompatConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Set this to the mount the estate's OpenBao used and consumers keep
+    /// their existing paths.
+    #[serde(default = "default_vault_compat_mount")]
+    pub mount: String,
+}
+
+impl Default for HashicorpCompatConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mount: default_vault_compat_mount(),
+        }
+    }
+}
+
+fn default_vault_compat_mount() -> String {
+    "secrets".to_string()
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct DashboardConfig {
@@ -612,6 +648,40 @@ data_dir = "/tmp/assay-engine-test-data-static"
             }
             _ => panic!("expected sqlite backend"),
         }
+    }
+
+    fn minimal_config_with(sections: &str) -> EngineConfig {
+        let base = r#"
+[server]
+bind_addr = "127.0.0.1:3000"
+
+[backend]
+type = "sqlite"
+data_dir = ":memory:"
+"#;
+        toml::from_str(&format!("{base}{sections}")).unwrap()
+    }
+
+    #[test]
+    fn the_vault_compat_facade_is_off_until_an_operator_asks_for_it() {
+        let cfg = minimal_config_with("");
+
+        assert!(!cfg.vault.hashicorp_compat.enabled);
+        assert_eq!(cfg.vault.hashicorp_compat.mount, "secrets");
+    }
+
+    #[test]
+    fn the_vault_compat_mount_is_operator_selectable() {
+        let cfg = minimal_config_with(
+            r#"
+[vault.hashicorp_compat]
+enabled = true
+mount = "kv"
+"#,
+        );
+
+        assert!(cfg.vault.hashicorp_compat.enabled);
+        assert_eq!(cfg.vault.hashicorp_compat.mount, "kv");
     }
 
     #[test]

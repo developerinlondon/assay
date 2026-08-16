@@ -1,6 +1,6 @@
 [package]
 name = "assay-engine"
-version = "0.5.12"
+version = "0.5.13"
 categories = ["asynchronous", "database", "web-programming::http-server"]
 edition = "2024"
 keywords = ["workflow", "auth", "oidc", "zanzibar", "postgres"]
@@ -64,6 +64,7 @@ vault = [
   "vault-collections",
   "vault-share",
   "vault-bitwarden-compat",
+  "vault-hashicorp-compat",
   "vault-sealing-shamir",
   "vault-audit-forwarding",
   "vault-dynamic-postgres",
@@ -79,6 +80,7 @@ vault-transit = ["assay-vault?/vault-transit"]
 vault-collections = ["assay-vault?/vault-collections"]
 vault-share = ["assay-vault?/vault-share"]
 vault-bitwarden-compat = ["assay-vault?/vault-bitwarden-compat"]
+vault-hashicorp-compat = ["assay-vault?/vault-hashicorp-compat"]
 vault-sealing-hsm = ["assay-vault?/vault-sealing-hsm"]
 
 server = ["dep:clap"]

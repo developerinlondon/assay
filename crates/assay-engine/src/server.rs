@@ -6,6 +6,7 @@
 //! - `/api/v1/engine/workflow/*` workflow API (admin-bearer-gated)
 //! - `/api/v1/engine/auth/*`     engine-internal auth + admin
 //! - `/api/v1/vault/*`           vault module (admin-bearer-gated)
+//! - `/v1/*`                     Vault/OpenBao KV2 read facade (opt-in)
 //! - `/healthz`                  redirect to `/api/v1/engine/core/health`
 //!
 //! Per the decoupled-modules architecture: each module accepts ONLY
@@ -156,6 +157,11 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
         }
     }
 
+    #[cfg(all(feature = "vault", feature = "vault-hashicorp-compat"))]
+    if state.vault.is_some() && state.engine_config.vault.hashicorp_compat.enabled {
+        app = app.merge(hashicorp_compat_router(&state));
+    }
+
     // BW-compat shim (Phase 7). Stock BW mobile / browser / CLI
     // clients hardcode /identity/* and /api/* — mount the compat
     // router at root so those clients work without a reverse-proxy
@@ -192,6 +198,24 @@ pub fn build_app<S: WorkflowStore + Clone + 'static>(state: EngineState<S>) -> R
     }
 
     app
+}
+
+/// Vault / OpenBao KV2 read facade, mounted at the router root because Vault
+/// clients (ESO, ansible, curl) hardcode `/v1/…` and cannot be told to use a
+/// prefix. It carries the same admin-bearer gate every other module surface
+/// does, translating `X-Vault-Token` into that bearer on the way in.
+#[cfg(all(feature = "vault", feature = "vault-hashicorp-compat"))]
+fn hashicorp_compat_router<S: WorkflowStore + Clone + 'static>(state: &EngineState<S>) -> Router {
+    let compat = &state.engine_config.vault.hashicorp_compat;
+    let mount = assay_vault::hashicorp_compat::Mount::new(&compat.mount);
+    let state_for_gate = state.clone();
+    assay_vault::hashicorp_compat::router::<EngineState<S>, _>(mount, |r| {
+        r.layer(axum::middleware::from_fn_with_state(
+            state_for_gate,
+            admin_bearer_middleware::<S>,
+        ))
+    })
+    .with_state(state.clone())
 }
 
 async fn auth_origin_root(

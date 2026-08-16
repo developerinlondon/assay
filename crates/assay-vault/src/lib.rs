@@ -19,6 +19,7 @@
 //! | `personal_vault` (P3)    | S4       | Per-user personal vault (auto-created on signup)            |
 //! | `share` (Phase 4)        | S5       | Biscuit-attenuated share links, server-revocable            |
 //! | `bitwarden_compat` (P7)  | S6       | BW-protocol shim — stock BW clients work as front-ends      |
+//! | `hashicorp_compat`       | —        | Vault / OpenBao KV2 read facade — ESO + ansible + curl      |
 //! | `sealing` (Phase 2)      | S7       | Master KEK protection (Shamir / cloud KMS / HSM)            |
 //! | `audit` (Phase 2)        | S8       | Forward audit events to syslog / S3 / webhook               |
 //! | `ha` (Phase 6)           | S9       | Leader-lease tightening for sub-10s failover                |
@@ -58,6 +59,9 @@ pub mod sealing;
 
 #[cfg(feature = "vault-bitwarden-compat")]
 pub mod bitwarden_compat;
+
+#[cfg(feature = "vault-hashicorp-compat")]
+pub mod hashicorp_compat;
 
 #[cfg(feature = "vault-collections")]
 #[cfg(feature = "vault-audit-forwarding")]
