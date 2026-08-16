@@ -2,6 +2,54 @@
 
 All notable changes to Assay are documented here.
 
+## assay-vault 0.4.3 — 2026-08-16
+
+### Added
+
+- **A HashiCorp Vault / OpenBao read facade, so an estate adopts assay-vault by repointing a URL.**
+  Estates that already hold their secrets in Vault or OpenBao consume them through one dialect:
+  `X-Vault-Token` for auth, `/v1/{mount}/data/{path}` for a KV2 read, and a fixed response envelope.
+  External Secrets Operator's vault provider speaks it, ansible's `community.hashi_vault` speaks it,
+  `vault kv get` and curl speak it. Until now none of them could point at assay-vault, so adopting
+  it meant rewriting every `ExternalSecret` and every inventory lookup. The new `hashicorp_compat`
+  module serves that dialect on top of the existing KV store.
+
+  Read-only by construction: `GET /v1/{mount}/data/{path}` (with `?version=N`), `GET` and `LIST` on
+  `/v1/{mount}/metadata/{path}`, and `GET /v1/sys/health`. Writes, rotation, sealing, and token
+  issuance stay on the native `/api/v1/vault/*` surface where the policy and the audit trail already
+  live; any other method on a facade route answers `405`, and there is no `sys/mounts`, no auth
+  mount, and no token endpoint to find.
+
+  A Vault token IS an assay token — the facade presents `X-Vault-Token` to the embedder's existing
+  admin-bearer / trusted-JWT gate as the bearer it already checks, so there is no second token store
+  to keep in sync and one enforcement point rather than two. Answers speak Vault's vocabulary:
+  `403 {"errors":["permission denied"]}` for a rejected or absent token (Vault answers 403 for
+  both), `404 {"errors":[]}` for a missing path, `503` and a sealed `sys/health` when the engine is
+  sealed.
+
+  The mount is a label, not a namespace: it names the one logical KV2 mount an engine exposes
+  (`secrets` by default) and is stripped before the lookup, leaving the assay KV path verbatim, so
+  `secrets/data/platform/postgres` and `/api/v1/vault/kv/platform/postgres` are the same secret. Any
+  other mount name is a 404 rather than a quiet read of a different path. assay KV stores an opaque
+  UTF-8 payload per version where KV2 hands back an object, so a payload that parses as a JSON
+  object is served field-by-field and anything else is served as `{"value": …}` — an
+  `ExternalSecret` naming `property: password` works, and a single-string secret stays reachable.
+
+  Gated behind the `vault-hashicorp-compat` Cargo feature (in the default `vault` umbrella) and, in
+  the engine, behind config. Documented in `docs/vault-hashicorp-compat.md`.
+
+## assay-engine 0.5.13 — 2026-08-16
+
+### Added
+
+- **`[vault.hashicorp_compat]` mounts the Vault / OpenBao KV2 read facade at `/v1/*`.** Off by
+  default: serving a second dialect of the secret store at the engine root is a deliberate act, not
+  something an upgrade should switch on. `mount` (default `secrets`) names the logical KV2 mount, so
+  consumers keep the paths their old OpenBao used. The routes sit at the server root because Vault
+  clients hardcode `/v1/…` and cannot be told to use a prefix — point `VAULT_ADDR` or an ESO
+  `server:` at the engine's base URL. `GET /v1/sys/health` is unauthenticated, as Vault's is;
+  everything else carries the same admin-bearer gate as every other engine module surface.
+
 ## assay-lua 0.19.1 — 2026-08-15
 
 ### Added

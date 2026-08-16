@@ -1,12 +1,12 @@
 [package]
 name = "assay-vault"
-version = "0.4.2"
+version = "0.4.3"
 categories = ["cryptography", "asynchronous", "database"]
 edition = "2024"
 keywords = ["vault", "secrets", "kv", "transit", "biscuit"]
 license = "Apache-2.0"
 repository = "https://github.com/developerinlondon/assay"
-description = "Vault module for assay-engine: KV v2, transit, dynamic credentials, Bitwarden-aligned vaults + collections + items + folders, biscuit-attenuated share links, sealing (Shamir / cloud KMS / HSM), audit forwarding, and a Bitwarden-protocol compat shim. PG18 + SQLite, both first-class."
+description = "Vault module for assay-engine: KV v2, transit, dynamic credentials, Bitwarden-aligned vaults + collections + items + folders, biscuit-attenuated share links, sealing (Shamir / cloud KMS / HSM), audit forwarding, a Bitwarden-protocol compat shim, and a HashiCorp Vault / OpenBao KV2 read facade. PG18 + SQLite, both first-class."
 
 [features]
 # Default builds: full vault meta-feature plus both backends. The
@@ -31,6 +31,7 @@ vault = [
   "vault-sealing-kms",
   "vault-audit-forwarding",
   "vault-bitwarden-compat",
+  "vault-hashicorp-compat",
   "vault-dynamic-postgres",
   "vault-dynamic-aws",
   "vault-dynamic-gcp",
@@ -55,6 +56,10 @@ vault-bitwarden-compat = [
   "assay-auth/auth-password",
   "assay-auth/auth-jwt",
 ]
+# Vault / OpenBao KV2 read facade. Reads through the KV surface and
+# reuses the embedder's own auth gate, so it needs no dep of its own —
+# a Vault token is an assay token.
+vault-hashicorp-compat = ["vault-kv"]
 vault-dynamic-postgres = []
 vault-dynamic-aws = ["dep:reqwest", "dep:hmac"]
 vault-dynamic-gcp = ["dep:reqwest", "dep:jsonwebtoken"]
@@ -141,3 +146,4 @@ sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "any"], optional =
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["util"] }

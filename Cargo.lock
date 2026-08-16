@@ -322,7 +322,7 @@ dependencies = [
 
 [[package]]
 name = "assay-engine"
-version = "0.5.12"
+version = "0.5.13"
 dependencies = [
  "anyhow",
  "assay-auth",
@@ -408,7 +408,7 @@ dependencies = [
 
 [[package]]
 name = "assay-vault"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "aes-gcm-siv",
  "anyhow",
@@ -433,6 +433,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tower",
  "tracing",
  "url",
  "uuid",
