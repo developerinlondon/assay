@@ -57,6 +57,8 @@
     event.preventDefault();
     passwordError.textContent = '';
     passwordSubmit.disabled = true;
+    passwordSubmit.dataset.idleLabel = passwordSubmit.textContent;
+    passwordSubmit.textContent = 'Signing in\u2026';
     fetch('/api/v1/engine/auth/login', {
       method: 'POST',
       credentials: 'same-origin',
@@ -70,6 +72,9 @@
       window.location.assign(returnTo);
     }).catch(function () {
       showPasswordError('Email or password is incorrect.');
+      if (passwordSubmit.dataset.idleLabel) {
+        passwordSubmit.textContent = passwordSubmit.dataset.idleLabel;
+      }
       passwordSubmit.disabled = false;
     });
   }

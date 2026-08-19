@@ -20,6 +20,7 @@
   <title>Reset password · __BRAND_NAME__</title>
   __FAVICON_LINK__
   <link rel="stylesheet" href="/auth/login.css?v=__ASSETV__">
+  __ACCENT_STYLE__
   __EXTRA_CSS_LINK__
 </head>
 <body>
@@ -32,8 +33,10 @@
 
       <form id="recovery-request" class="password-login">
         <p class="login-copy">Enter your verified email address. If an account exists, we will send a reset link.</p>
-        <label class="login-label" for="recovery-email">Email</label>
-        <input class="login-input" id="recovery-email" name="email" type="email" autocomplete="email" required>
+        <div class="login-field">
+          <label class="login-label" for="recovery-email">Email</label>
+          <input class="login-input" id="recovery-email" name="email" type="email" autocomplete="email" required>
+        </div>
         <p class="login-status" id="request-status" aria-live="polite"></p>
         <button class="login-submit" id="request-submit" type="submit">Send reset link</button>
         <a class="login-link" href="/auth/login">Back to sign in</a>
@@ -41,10 +44,14 @@
 
       <form id="recovery-complete" class="password-login" hidden>
         <p class="login-copy">Choose a new password. Completing this reset signs out existing sessions.</p>
-        <label class="login-label" for="new-password">New password</label>
-        <input class="login-input" id="new-password" name="password" type="password" autocomplete="new-password" maxlength="1024" required>
-        <label class="login-label" for="confirm-password">Confirm new password</label>
-        <input class="login-input" id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" maxlength="1024" required>
+        <div class="login-field">
+          <label class="login-label" for="new-password">New password</label>
+          <input class="login-input" id="new-password" name="password" type="password" autocomplete="new-password" maxlength="1024" required>
+        </div>
+        <div class="login-field">
+          <label class="login-label" for="confirm-password">Confirm new password</label>
+          <input class="login-input" id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" maxlength="1024" required>
+        </div>
         <p class="login-status login-status-error" id="complete-status" aria-live="polite"></p>
         <button class="login-submit" id="complete-submit" type="submit">Reset password</button>
         <a class="login-link" href="/auth/login">Back to sign in</a>

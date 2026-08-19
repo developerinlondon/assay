@@ -47,6 +47,13 @@ body {
   height: 100%;
 }
 
+/* An author `display` beats the UA's [hidden] rule, and .password-login sets
+   one — which left the recovery page showing its request and completion forms
+   at the same time, because recovery.js swaps them by toggling `hidden`. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--login-bg);
@@ -61,10 +68,10 @@ body {
    light show. */
 .login {
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: minmax(0, 25rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  align-content: center;
   padding: 1.5rem;
   box-sizing: border-box;
   background:
@@ -249,6 +256,7 @@ body {
   border-radius: 14px;
   padding: 2rem 1.875rem;
   width: 100%;
+  max-width: 25rem;
   box-shadow:
     0 1px 2px var(--login-shadow),
     0 24px 56px -34px var(--login-shadow),
@@ -276,6 +284,17 @@ body {
   align-items: center;
   justify-content: center;
   margin-bottom: 0.75rem;
+}
+
+/* A real logo replaces the letter badge rather than sitting in a coloured
+   square — the mark supplies its own shape and ground. */
+.login-mark.is-logo,
+.story-mark.is-logo {
+  background: none;
+  border-radius: 0;
+  object-fit: contain;
+  width: 34px;
+  height: 34px;
 }
 
 .login-title {
@@ -435,6 +454,12 @@ body {
 .login-link:hover,
 .login-link:focus-visible {
   text-decoration: underline;
+}
+
+.password-login > .login-link {
+  margin-top: 0.25rem;
+  text-align: center;
+  font-size: 0.8125rem;
 }
 
 .login-copy {
@@ -605,10 +630,19 @@ body {
    blocks floating in whatever space is left over. */
 @media (min-width: 62rem) {
   .login {
-    grid-template-columns: minmax(0, 30rem) minmax(0, 24rem);
-    column-gap: 4rem;
+    flex-direction: row;
     align-items: center;
+    justify-content: center;
+    gap: 4rem;
     padding: 3rem;
+  }
+
+  .login-story {
+    flex: 0 1 30rem;
+  }
+
+  .login-panel {
+    flex: 0 0 24rem;
   }
 
   .login-story {
@@ -637,7 +671,7 @@ body {
 
 @media (min-width: 80rem) {
   .login {
-    column-gap: 6rem;
+    gap: 6rem;
   }
 
   .story-headline {

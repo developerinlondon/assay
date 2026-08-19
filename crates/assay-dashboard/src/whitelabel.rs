@@ -347,6 +347,11 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         None => String::new(),
     };
 
+    // The sign-in badge. An operator with a real mark gets it rendered as an
+    // image; everyone else keeps the letter glyph, which is what the badge has
+    // always been.
+    let brand_badge = brand_badge_html(wl, "login-mark");
+
     // Subtitle is rendered as a distinct span under the brand name so
     // operators get a real, accessible, translatable line of text —
     // not a baked-into-SVG image.
@@ -462,6 +467,7 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         .replace("__BRAND_PARENT_NAME__", &parent_name_attr)
         .replace("__BRAND_DEFAULT_THEME__", &default_theme)
         .replace("__ACCENT_STYLE__", &accent_style)
+        .replace("__BRAND_BADGE__", &brand_badge)
         .replace("__LOGIN_STORY__", &login_story)
 }
 
@@ -473,6 +479,24 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
 /// The roster rows are explicitly conceptual: they are operator copy,
 /// never account data, and the panel is labelled as an illustration for
 /// screen readers so nobody reads it as live state.
+/// The brand badge: an operator logo when one is configured, otherwise the
+/// letter glyph. `extra` is the class the host surface styles it with.
+fn brand_badge_html(wl: &WhitelabelConfig, extra: &str) -> String {
+    match &wl.logo_url {
+        Some(url) => format!(
+            r#"<img class="{} is-logo" src="{}" alt="{}">"#,
+            extra,
+            html_escape(url),
+            html_escape(&wl.name)
+        ),
+        None => format!(
+            r#"<span class="{}" aria-hidden="true">{}</span>"#,
+            extra,
+            html_escape(&wl.mark)
+        ),
+    }
+}
+
 fn render_login_story(wl: &WhitelabelConfig) -> String {
     if wl.login_headline.trim().is_empty() {
         return String::new();
@@ -535,13 +559,13 @@ fn render_login_story(wl: &WhitelabelConfig) -> String {
 
     format!(
         r#"<aside class="login-story">
-        <div class="story-brand"><span class="story-mark" aria-hidden="true">{mark}</span><span class="story-name">{name}</span></div>
+        <div class="story-brand">{badge}<span class="story-name">{name}</span></div>
         <h2 class="story-headline">{headline}</h2>
         {subhead}
         {roster}
         {note}
       </aside>"#,
-        mark = html_escape(&wl.mark),
+        badge = brand_badge_html(wl, "story-mark"),
         name = html_escape(&wl.name),
     )
 }

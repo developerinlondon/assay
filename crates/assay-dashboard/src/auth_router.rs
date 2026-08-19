@@ -212,7 +212,8 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::assets::{
-        AUTH_LANDING_HTML, AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_RECOVERY_HTML, AUTH_RECOVERY_JS,
+        AUTH_LANDING_HTML, AUTH_LOGIN_CSS, AUTH_LOGIN_HTML, AUTH_LOGIN_JS, AUTH_RECOVERY_HTML,
+        AUTH_RECOVERY_JS,
     };
 
     use super::public_router;
@@ -312,6 +313,60 @@ mod tests {
             .find("passwordInput.value = ''")
             .expect("failed attempt clears the field");
         assert!(clears < remask);
+    }
+
+    // login.css is the stylesheet for all three auth pages. Recovery and
+    // landing put a bare .login-card in .login with no .login-panel around
+    // it, so the sign-in layout must never assume that wrapper exists.
+    #[test]
+    fn the_shared_stylesheet_serves_pages_that_have_no_sign_in_panel() {
+        for page in [AUTH_RECOVERY_HTML, AUTH_LANDING_HTML] {
+            assert!(page.contains("/auth/login.css"));
+            assert!(page.contains(r#"<main class="login">"#));
+            assert!(!page.contains("login-panel"));
+        }
+        // The card carries its own measure for exactly those two pages.
+        assert!(AUTH_LOGIN_CSS.contains(".login-card {"));
+        let card = AUTH_LOGIN_CSS
+            .find(".login-card {")
+            .expect("card rule exists");
+        let block_end = AUTH_LOGIN_CSS[card..].find('}').expect("rule closes");
+        assert!(AUTH_LOGIN_CSS[card..card + block_end].contains("max-width"));
+    }
+
+    // A letter in a coloured square is the fallback, not the design: an
+    // operator with a real mark gets it rendered instead.
+    #[test]
+    fn the_sign_in_badge_is_a_whitelabel_token_so_a_real_logo_can_replace_it() {
+        assert!(AUTH_LOGIN_HTML.contains("__BRAND_BADGE__"));
+        assert!(!AUTH_LOGIN_HTML.contains("__BRAND_MARK__"));
+    }
+
+    #[test]
+    fn the_submit_button_reports_that_it_is_working_and_recovers_on_failure() {
+        assert!(AUTH_LOGIN_JS.contains("passwordSubmit.disabled = true"));
+        assert!(AUTH_LOGIN_JS.contains("Signing in"));
+        assert!(AUTH_LOGIN_JS.contains("passwordSubmit.dataset.idleLabel"));
+        assert!(AUTH_LOGIN_JS.contains("passwordSubmit.disabled = false"));
+    }
+
+    // recovery.js swaps its two forms by toggling `hidden`, and .password-login
+    // declares a display, which beats the UA rule. Without this the reset page
+    // shows both forms at once.
+    #[test]
+    fn the_hidden_attribute_survives_the_form_display_rule() {
+        assert!(AUTH_LOGIN_CSS.contains("[hidden]"));
+        assert!(AUTH_LOGIN_CSS.contains("display: none !important"));
+        assert!(AUTH_RECOVERY_JS.contains("completeForm.hidden = false"));
+    }
+
+    // One stylesheet, one accent: a caller who follows "Forgot password?" must
+    // not land on a page wearing a different brand colour.
+    #[test]
+    fn every_page_sharing_the_stylesheet_also_takes_the_accent() {
+        for page in [AUTH_LOGIN_HTML, AUTH_RECOVERY_HTML, AUTH_LANDING_HTML] {
+            assert!(page.contains("__ACCENT_STYLE__"));
+        }
     }
 
     #[test]
