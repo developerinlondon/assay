@@ -107,20 +107,20 @@ unset keeps the default `/api/v1/engine/workflow/docs` link, empty hides it.
 
 The sign-in page renders a single centred card by default. Setting a headline turns it into a
 two-area layout — the product's story on the left, the credential form on the right — so operators
-running assay as the front door of their own product can say what that product *is* before asking
+running assay as the front door of their own product can say what that product _is_ before asking
 for a password. Every value is operator copy; assay supplies only the layout and the tone styling.
 
-| Variable                                | Default            | Effect                                                        |
-| --------------------------------------- | ------------------ | ------------------------------------------------------------- |
-| `ASSAY_WHITELABEL_LOGIN_HEADLINE`       | (unset, no panel)  | Headline. Split on `\|` to control where it breaks             |
-| `ASSAY_WHITELABEL_LOGIN_SUBHEAD`        | (unset)            | One supporting sentence under the headline                    |
-| `ASSAY_WHITELABEL_LOGIN_ROSTER_TITLE`   | (unset)            | Small caption above the illustration rows                     |
-| `ASSAY_WHITELABEL_LOGIN_ROSTER`         | (unset)            | `Label:tone:Status`, `\|`-separated. Max 5 rows                |
-| `ASSAY_WHITELABEL_LOGIN_NOTE`           | (unset)            | Short trust statement under the illustration                  |
+| Variable                              | Default           | Effect                                             |
+| ------------------------------------- | ----------------- | -------------------------------------------------- |
+| `ASSAY_WHITELABEL_LOGIN_HEADLINE`     | (unset, no panel) | Headline. Split on `\|` to control where it breaks |
+| `ASSAY_WHITELABEL_LOGIN_SUBHEAD`      | (unset)           | One supporting sentence under the headline         |
+| `ASSAY_WHITELABEL_LOGIN_ROSTER_TITLE` | (unset)           | Small caption above the illustration rows          |
+| `ASSAY_WHITELABEL_LOGIN_ROSTER`       | (unset)           | `Label:tone:Status`, `\|`-separated. Max 5 rows    |
+| `ASSAY_WHITELABEL_LOGIN_NOTE`         | (unset)           | Short trust statement under the illustration       |
 
 `tone` is one of `active`, `pending`, `done` — it selects the dot and status colour and nothing
-else. Anything unrecognised falls back to `pending`; a row missing its status is dropped rather
-than half-rendered, so a typo in env degrades instead of breaking sign-in.
+else. Anything unrecognised falls back to `pending`; a row missing its status is dropped rather than
+half-rendered, so a typo in env degrades instead of breaking sign-in.
 
 The rows are an **illustration, not live data**. Assay never reads account state to fill them, and
 the panel carries `aria-label="Illustration of the product"` so assistive tech does not announce it

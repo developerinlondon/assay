@@ -2,14 +2,14 @@
 
 All notable changes to Assay are documented here.
 
-## assay-dashboard 0.4.6 — 2026-08-19
+## assay-dashboard 0.5.0 — 2026-08-19
 
 ### Added
 
-- **A sign-in page that can say what the product is.** The hosted login was a centred card on a
-  flat rectangle: a badge, two fields and a button. Every operator running assay as the front door
-  of their own product got a page that said nothing about that product, and assay's own orange read
-  as their brand because changing it meant hosting a stylesheet.
+- **A sign-in page that can say what the product is.** The hosted login was a centred card on a flat
+  rectangle: a badge, two fields and a button. Every operator running assay as the front door of
+  their own product got a page that said nothing about that product, and assay's own orange read as
+  their brand because changing it meant hosting a stylesheet.
 
   Sign-in is now a two-area composition — the operator's story beside the credential panel —
   assembled entirely from whitelabel config. `ASSAY_WHITELABEL_LOGIN_HEADLINE` turns it on;
@@ -40,7 +40,7 @@ All notable changes to Assay are documented here.
 
 ### Changed
 
-- Ships assay-dashboard 0.4.6 (sign-in redesign above). No engine behaviour changes.
+- Ships assay-dashboard 0.5.0 (sign-in redesign above). No engine behaviour changes.
 
 ## assay-vault 0.4.3 — 2026-08-16
 
