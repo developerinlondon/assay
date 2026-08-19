@@ -43,6 +43,13 @@
   function showPasswordError(message) {
     passwordError.textContent = message;
     passwordInput.value = '';
+    passwordInput.type = 'password';
+    const reveal = document.getElementById('password-reveal');
+    if (reveal) {
+      reveal.setAttribute('aria-pressed', 'false');
+      const label = reveal.querySelector('.login-reveal-label');
+      if (label) label.textContent = 'Show';
+    }
     passwordInput.focus();
   }
 
@@ -68,6 +75,22 @@
   }
 
   if (passwordForm) passwordForm.addEventListener('submit', submitPasswordLogin);
+
+  // Reveal control. Additive and self-contained — it only ever flips the
+  // input's type, so a browser that never runs this block still has a
+  // working password field.
+  const passwordReveal = document.getElementById('password-reveal');
+  if (passwordReveal && passwordInput) {
+    passwordReveal.addEventListener('click', function () {
+      const shown = passwordInput.type === 'text';
+      passwordInput.type = shown ? 'password' : 'text';
+      passwordReveal.setAttribute('aria-pressed', shown ? 'false' : 'true');
+      passwordReveal.title = shown ? 'Show password' : 'Hide password';
+      const label = passwordReveal.querySelector('.login-reveal-label');
+      if (label) label.textContent = shown ? 'Show' : 'Hide';
+      passwordInput.focus();
+    });
+  }
   if (!container || !upstreamSection || !upstreamStatus) return;
 
   const SVG_NS = 'http://www.w3.org/2000/svg';

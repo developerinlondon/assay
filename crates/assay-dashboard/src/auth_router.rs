@@ -273,6 +273,47 @@ mod tests {
         assert!(AUTH_LOGIN_HTML.contains("href=\"/auth/recovery\""));
     }
 
+    // The story panel is a whitelabel token, never markup baked into the
+    // page — an operator who configures nothing must still get a login.
+    #[test]
+    fn login_page_carries_the_story_as_a_token_not_as_literal_copy() {
+        assert!(AUTH_LOGIN_HTML.contains("__LOGIN_STORY__"));
+        assert!(AUTH_LOGIN_HTML.contains("__ACCENT_STYLE__"));
+        assert!(!AUTH_LOGIN_HTML.contains("AI workforce"));
+        assert!(!AUTH_LOGIN_HTML.contains("story-panel"));
+    }
+
+    // Every field keeps a real <label for=…>, and the error region stays
+    // announced — the redesign must not cost the form its semantics.
+    #[test]
+    fn login_form_keeps_labelled_fields_and_an_announced_error_region() {
+        assert!(AUTH_LOGIN_HTML.contains("<label class=\"login-label\" for=\"email\""));
+        assert!(AUTH_LOGIN_HTML.contains("<label class=\"login-label\" for=\"password\""));
+        assert!(AUTH_LOGIN_HTML.contains("id=\"password-error\""));
+        assert!(AUTH_LOGIN_HTML.contains("role=\"alert\""));
+        assert!(AUTH_LOGIN_HTML.contains("autocomplete=\"username\""));
+        assert!(AUTH_LOGIN_HTML.contains("autocomplete=\"current-password\""));
+    }
+
+    // The reveal only ever flips the input's type, and a failed attempt
+    // re-masks the field rather than leaving it in plain text.
+    #[test]
+    fn password_reveal_is_additive_and_remasks_after_a_failed_attempt() {
+        assert!(AUTH_LOGIN_HTML.contains("id=\"password-reveal\""));
+        assert!(AUTH_LOGIN_HTML.contains("aria-controls=\"password\""));
+        assert!(AUTH_LOGIN_JS.contains("passwordInput.type = shown ? 'password' : 'text'"));
+        let error_fn = AUTH_LOGIN_JS
+            .find("function showPasswordError")
+            .expect("error handler exists");
+        let remask = AUTH_LOGIN_JS[error_fn..]
+            .find("passwordInput.type = 'password'")
+            .expect("failed attempt re-masks the field");
+        let clears = AUTH_LOGIN_JS[error_fn..]
+            .find("passwordInput.value = ''")
+            .expect("failed attempt clears the field");
+        assert!(clears < remask);
+    }
+
     #[test]
     fn recovery_page_supports_request_and_completion_forms() {
         assert!(AUTH_RECOVERY_HTML.contains("<form id=\"recovery-request\""));

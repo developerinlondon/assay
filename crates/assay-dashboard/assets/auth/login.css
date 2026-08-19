@@ -1,25 +1,45 @@
-/* Login landing — centred single-card layout. Self-contained so the
-   page renders before any other dashboard CSS loads. Reuses the same
-   accent + surface tokens as the workflow/auth consoles. */
+/* Sign-in — a two-area composition: the operator's product story on the
+   left, a focused credential panel on the right. With no story
+   configured the grid collapses to one centred column, which is the
+   layout every unbranded deployment keeps. Self-contained so the page
+   renders before any other dashboard CSS loads. */
 
 :root {
   --login-bg: #0d1117;
+  --login-bg-deep: #090c12;
   --login-card: #161b22;
+  --login-surface: #1b212b;
   --login-text: #e6edf3;
   --login-muted: #8b949e;
+  --login-faint: #6b7580;
   --login-accent: #e6662a;
+  --login-accent-ink: #fff;
   --login-border: #30363d;
+  --login-border-subtle: #22282f;
   --login-button-hover-bg: rgba(230, 102, 42, 0.06);
+  --login-active: #3fb950;
+  --login-pending: #d29922;
+  --login-shadow: rgba(0, 0, 0, 0.45);
+  --login-rim: rgba(255, 255, 255, 0.04);
 }
 
 [data-theme="light"] {
   --login-bg: #f6f8fa;
+  --login-bg-deep: #eef1f5;
   --login-card: #ffffff;
+  --login-surface: #f6f8fa;
   --login-text: #1f2328;
   --login-muted: #59636e;
+  --login-faint: #818b98;
   --login-accent: #cf5d27;
+  --login-accent-ink: #fff;
   --login-border: #d0d7de;
+  --login-border-subtle: #e4e8ed;
   --login-button-hover-bg: rgba(207, 93, 39, 0.06);
+  --login-active: #1a7f37;
+  --login-pending: #9a6700;
+  --login-shadow: rgba(31, 35, 40, 0.1);
+  --login-rim: rgba(255, 255, 255, 0);
 }
 
 html,
@@ -36,96 +56,363 @@ body {
   font-size: 14px;
 }
 
+/* Depth comes from one accent wash and a deeper ground behind the story
+   column — not from a glow. The page must read as a surface, not a
+   light show. */
 .login {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 25rem);
   justify-content: center;
+  align-content: center;
   padding: 1.5rem;
   box-sizing: border-box;
+  background:
+    radial-gradient(
+      80% 50% at 22% 0%,
+      color-mix(in srgb, var(--login-accent) 20%, transparent) 0%,
+      transparent 62%
+    ),
+    linear-gradient(180deg, var(--login-bg) 0%, var(--login-bg-deep) 100%);
+}
+
+/* ── Product story ─────────────────────────────────────────────────── */
+
+.login-story {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 24rem;
+  margin: 0 auto 1.5rem;
+}
+
+.login-story .story-panel,
+.login-story .story-subhead {
+  display: none;
+}
+
+.story-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 1rem;
+}
+
+.story-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--login-accent);
+  color: var(--login-accent-ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.story-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.story-headline {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  line-height: 1.18;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.story-headline span {
+  display: block;
+}
+
+.story-headline span + span {
+  color: var(--login-muted);
+}
+
+.story-subhead {
+  margin: 0 0 2rem;
+  max-width: 34ch;
+  color: var(--login-muted);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+/* The illustration. Deliberately built from the same row vocabulary the
+   product itself uses, so it explains the concept rather than decorating
+   the page. */
+.story-panel {
+  margin: 0 0 1.25rem;
+  padding: 0.875rem 1rem 1rem;
+  border: 1px solid var(--login-border-subtle);
+  border-radius: 14px;
+  background: var(--login-card);
+  box-shadow:
+    0 1px 2px var(--login-shadow),
+    0 18px 40px -30px var(--login-shadow),
+    inset 0 1px 0 var(--login-rim);
+}
+
+.story-panel-title {
+  margin: 0 0 0.75rem;
+  color: var(--login-faint);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.story-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.story-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 0.8125rem;
+}
+
+.story-row-label {
+  font-weight: 500;
+}
+
+.story-row-status {
+  margin-left: auto;
+  color: var(--login-muted);
+  font-size: 0.75rem;
+}
+
+.story-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--login-faint);
+}
+
+.story-row.is-active .story-dot {
+  background: var(--login-active);
+}
+
+.story-row.is-active .story-row-status {
+  color: var(--login-active);
+}
+
+.story-row.is-pending .story-dot {
+  background: var(--login-pending);
+}
+
+.story-row.is-pending .story-row-status {
+  color: var(--login-pending);
+}
+
+.story-note {
+  margin: 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--login-border);
+  color: var(--login-faint);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  max-width: 36ch;
+}
+
+/* ── Sign-in panel ─────────────────────────────────────────────────── */
+
+/* The story already carries the brand, so the card drops its own mark —
+   the same badge twice on one screen is not two pieces of information.
+   Unconfigured deployments have no story element, the selector does not
+   match, and the card keeps its mark. */
+.login-story ~ .login-panel .login-mark {
+  display: none;
+}
+
+.login-panel {
+  width: 100%;
+  max-width: 25rem;
+  display: flex;
+  justify-content: center;
 }
 
 .login-card {
   background: var(--login-card);
   border: 1px solid var(--login-border);
-  border-radius: 12px;
-  padding: 2.5rem 2.25rem;
+  border-radius: 14px;
+  padding: 2rem 1.875rem;
   width: 100%;
-  max-width: 360px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  box-shadow:
+    0 1px 2px var(--login-shadow),
+    0 24px 56px -34px var(--login-shadow),
+    inset 0 1px 0 var(--login-rim);
   box-sizing: border-box;
 }
 
 .login-brand {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  margin: 0 0 1.75rem;
+  align-items: flex-start;
+  gap: 0.25rem;
+  margin: 0 0 1.5rem;
 }
 
 .login-mark {
-  width: 56px;
-  height: 56px;
+  width: 36px;
+  height: 36px;
   background: var(--login-accent);
-  color: #fff;
-  font-size: 1.75rem;
+  color: var(--login-accent-ink);
+  font-size: 1.125rem;
   font-weight: 700;
-  border-radius: 12px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 0.75rem;
 }
 
 .login-title {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
-  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+.login-subtitle {
+  margin: 0;
+  color: var(--login-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 .password-login {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.875rem;
+}
+
+/* Grid rather than stacked rows so the recovery link can sit up on the
+   label line while staying AFTER the input in the DOM — a keyboard user
+   reaches the password field before the way around it. */
+.login-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 0.375rem 0.75rem;
+}
+
+.login-field > .login-label {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.login-field > .login-input,
+.login-field > .login-input-wrap {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.login-field > .login-link {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
 }
 
 .login-label {
   color: var(--login-text);
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
   font-weight: 500;
+}
+
+.login-input-wrap {
+  position: relative;
+  display: flex;
 }
 
 .login-input {
   border: 1px solid var(--login-border);
-  border-radius: 8px;
-  background: var(--login-bg);
+  border-radius: 9px;
+  background: var(--login-surface);
   color: var(--login-text);
   font: inherit;
-  padding: 0.7rem 0.75rem;
+  padding: 0.625rem 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.login-input-wrap .login-input {
+  padding-right: 4rem;
+}
+
+.login-input:hover {
+  border-color: color-mix(in srgb, var(--login-border) 55%, var(--login-text));
 }
 
 .login-input:focus-visible {
   border-color: var(--login-accent);
-  box-shadow: 0 0 0 3px var(--login-button-hover-bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-accent) 22%, transparent);
   outline: none;
+}
+
+/* Text, not an eye glyph: the control's state has to be readable, and a
+   crossed-out eye is ambiguous about which state it reports. */
+.login-reveal {
+  position: absolute;
+  right: 0.3125rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--login-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.3125rem 0.5rem;
+}
+
+.login-reveal:hover {
+  color: var(--login-text);
+}
+
+.login-reveal:focus-visible {
+  outline: 2px solid var(--login-accent);
+  outline-offset: 1px;
 }
 
 .login-submit {
-  margin-top: 0.25rem;
+  margin-top: 0.375rem;
   border: 1px solid var(--login-accent);
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--login-accent);
-  color: #fff;
+  color: var(--login-accent-ink);
   cursor: pointer;
   font: inherit;
   font-weight: 600;
-  padding: 0.7rem 1rem;
+  padding: 0.625rem 1rem;
+  transition: filter 120ms ease, box-shadow 120ms ease;
+}
+
+.login-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 
 .login-submit:focus-visible {
-  box-shadow: 0 0 0 3px var(--login-button-hover-bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-accent) 30%, transparent);
   outline: none;
+}
+
+.login-submit:active:not(:disabled) {
+  filter: brightness(0.95);
 }
 
 .login-primary-link {
@@ -135,14 +422,14 @@ body {
 
 .login-submit:disabled {
   cursor: wait;
-  opacity: 0.65;
+  opacity: 0.6;
 }
 
 .login-link {
   color: var(--login-accent);
-  margin-top: 0.5rem;
-  text-align: center;
   text-decoration: none;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .login-link:hover,
@@ -163,16 +450,16 @@ body {
 
 .login-separator {
   align-items: center;
-  color: var(--login-muted);
+  color: var(--login-faint);
   display: flex;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   gap: 0.75rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1rem;
 }
 
 .login-separator::before,
 .login-separator::after {
-  background: var(--login-border);
+  background: var(--login-border-subtle);
   content: "";
   flex: 1;
   height: 1px;
@@ -185,18 +472,20 @@ body {
   min-height: 3rem;
 }
 
+/* Secondary by construction: outlined, never filled, so it cannot
+   compete with the primary submit above it. */
 .login-button {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.7rem 1rem;
+  padding: 0.625rem 1rem;
   border: 1px solid var(--login-border);
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
   color: var(--login-text);
   text-decoration: none;
   font-weight: 500;
-  font-size: 0.95rem;
+  font-size: 0.875rem;
   transition: border-color 120ms ease, background-color 120ms ease,
               box-shadow 120ms ease, transform 80ms ease;
 }
@@ -206,6 +495,10 @@ body {
   border-color: var(--login-accent);
   background: var(--login-button-hover-bg);
   outline: none;
+}
+
+.login-button:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-accent) 22%, transparent);
 }
 
 .login-button:active {
@@ -284,4 +577,95 @@ body {
 .login-status-error {
   color: #f85149;
   min-height: 1.1rem;
+}
+
+.login-status:empty {
+  margin: 0;
+}
+
+/* The form's own error keeps its space reserved so a failed attempt does
+   not shove the button down, but sits tight under the field it belongs
+   to rather than centred in a gap of its own. */
+.password-login .login-status-error {
+  margin: 0;
+  min-height: 0.95rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  text-align: left;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────
+   Below the split the story does not shrink — it is removed. A phone
+   gets the brand, the form and nothing competing with it, in that
+   order. The panel keeps its own max-width at every size so the form
+   never stretches into a letterbox. */
+
+/* The split. Both columns get a fixed, generous measure and the pair is
+   centred, so the composition reads as composed rather than as two
+   blocks floating in whatever space is left over. */
+@media (min-width: 62rem) {
+  .login {
+    grid-template-columns: minmax(0, 30rem) minmax(0, 24rem);
+    column-gap: 4rem;
+    align-items: center;
+    padding: 3rem;
+  }
+
+  .login-story {
+    max-width: none;
+    margin: 0;
+  }
+
+  .login-story .story-panel,
+  .login-story .story-subhead {
+    display: block;
+  }
+
+  .story-brand {
+    margin-bottom: 2rem;
+  }
+
+  .story-headline {
+    font-size: 2.125rem;
+    margin-bottom: 0.875rem;
+  }
+
+  .login-card {
+    padding: 2.25rem 2rem;
+  }
+}
+
+@media (min-width: 80rem) {
+  .login {
+    column-gap: 6rem;
+  }
+
+  .story-headline {
+    font-size: 2.5rem;
+  }
+}
+
+@media (max-width: 30rem) {
+  .login {
+    padding: 1rem;
+    align-items: start;
+    padding-top: 3rem;
+  }
+
+  .login-card {
+    padding: 1.5rem 1.25rem;
+    border-radius: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-input,
+  .login-submit,
+  .login-button {
+    transition: none;
+  }
+
+  .login-button:active {
+    transform: none;
+  }
 }

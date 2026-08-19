@@ -26,36 +26,50 @@
   <title>Sign in · __BRAND_NAME__</title>
   __FAVICON_LINK__
   <link rel="stylesheet" href="/auth/login.css?v=__ASSETV__">
+  __ACCENT_STYLE__
   __EXTRA_CSS_LINK__
 </head>
 <body>
   <main class="login">
-    <section class="login-card" aria-labelledby="login-title">
-      <header class="login-brand">
-        <span class="login-mark" aria-hidden="true">__BRAND_MARK__</span>
-        <h1 class="login-title" id="login-title">__BRAND_NAME__</h1>
-      </header>
-      <form id="password-login" class="password-login">
-        <label class="login-label" for="email">Email</label>
-        <input class="login-input" id="email" name="email" type="email" autocomplete="username" required>
-        <label class="login-label" for="password">Password</label>
-        <input class="login-input" id="password" name="password" type="password" autocomplete="current-password" required>
-        <p class="login-status login-status-error" id="password-error" aria-live="polite"></p>
-        <button class="login-submit" id="password-submit" type="submit">Sign in</button>
-        <a class="login-link" href="/auth/recovery">Forgot password?</a>
-      </form>
-      <section class="upstream-login" id="upstream-login" hidden>
-        <div class="login-separator"><span>or</span></div>
-        <div class="login-buttons" id="upstreams" aria-live="polite"></div>
-      </section>
-      <div class="login-status" id="upstream-status" aria-live="polite">
-        Loading additional sign-in options&hellip;
+    __LOGIN_STORY__
+    <section class="login-panel">
+      <div class="login-card" aria-labelledby="login-title">
+        <header class="login-brand">
+          <span class="login-mark" aria-hidden="true">__BRAND_MARK__</span>
+          <h1 class="login-title" id="login-title">Welcome back</h1>
+          <p class="login-subtitle">Sign in to continue to __BRAND_NAME__.</p>
+        </header>
+        <form id="password-login" class="password-login">
+          <div class="login-field">
+            <label class="login-label" for="email">Email</label>
+            <input class="login-input" id="email" name="email" type="email" autocomplete="username" required>
+          </div>
+          <div class="login-field">
+            <label class="login-label" for="password">Password</label>
+            <div class="login-input-wrap">
+              <input class="login-input" id="password" name="password" type="password" autocomplete="current-password" required>
+              <button class="login-reveal" id="password-reveal" type="button" aria-controls="password" aria-pressed="false" title="Show password">
+                <span class="login-reveal-label">Show</span>
+              </button>
+            </div>
+            <a class="login-link" href="/auth/recovery">Forgot password?</a>
+          </div>
+          <p class="login-status login-status-error" id="password-error" role="alert" aria-live="polite"></p>
+          <button class="login-submit" id="password-submit" type="submit">Sign in</button>
+        </form>
+        <section class="upstream-login" id="upstream-login" hidden>
+          <div class="login-separator"><span>or</span></div>
+          <div class="login-buttons" id="upstreams" aria-live="polite"></div>
+        </section>
+        <div class="login-status" id="upstream-status" aria-live="polite">
+          Loading additional sign-in options&hellip;
+        </div>
+        <noscript>
+          <p class="login-status login-status-error">
+            JavaScript is required to sign in.
+          </p>
+        </noscript>
       </div>
-      <noscript>
-        <p class="login-status login-status-error">
-          JavaScript is required to sign in.
-        </p>
-      </noscript>
     </section>
   </main>
   <script src="/auth/login.js?v=__ASSETV__"></script>
