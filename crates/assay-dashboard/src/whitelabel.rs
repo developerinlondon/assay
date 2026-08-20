@@ -20,7 +20,7 @@
 //! | `ASSAY_WHITELABEL_MARK`         | Single glyph for the always-visible badge square     | First char of NAME (upper)   |
 //! | `ASSAY_WHITELABEL_FAVICON_URL`  | Replace the browser-tab icon                         | Built-in `A`-mark SVG        |
 //! | `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | Namespace the dashboard opens on                | `main`                       |
-//! | `ASSAY_WHITELABEL_LOGIN_BRAND`  | Sign-in wordmark; `|` marks the accented tail        | `NAME`, one colour           |
+//! | `ASSAY_WHITELABEL_LOGIN_BRAND`  | Sign-in wordmark; `|` sets back the tail             | `NAME`, one colour           |
 //!
 //! ## Hiding vs overriding
 //!
@@ -105,9 +105,9 @@ pub struct WhitelabelConfig {
     /// just to change one custom property.
     pub accent: Option<String>,
     /// Sign-in wordmark, when the operator's product name reads as two
-    /// parts. Split on `|`: everything after the first segment takes the
-    /// accent colour, so `Neutron|Core` renders `Core` in the brand
-    /// colour. Empty ⇒ the plain `name` in one colour.
+    /// parts. Split on `|`: everything after the first segment is set
+    /// back, so `Neutron|Core` reads as one mark with `Core` subordinate.
+    /// Empty ⇒ the plain `name` in one colour.
     pub login_brand: String,
     /// Sign-in story panel. Empty headline ⇒ no panel, and the page
     /// keeps its centred single-card layout. Split on `|` to control
@@ -561,7 +561,7 @@ fn render_login_story(wl: &WhitelabelConfig) -> String {
         String::new()
     } else {
         format!(
-            r#"<p class="story-note">{NOTE_SHIELD}<span>{}</span></p>"#,
+            r#"<p class="story-note">{}</p>"#,
             html_escape(&wl.login_note)
         )
     };
@@ -579,13 +579,8 @@ fn render_login_story(wl: &WhitelabelConfig) -> String {
     )
 }
 
-/// A shield beside the trust note. Inline rather than a sprite
-/// reference: the note is the page's one claim about who stays in
-/// control, and it must be drawn even if the sprite request fails.
-const NOTE_SHIELD: &str = r#"<svg class="story-note-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.75 4.75 6v5.5c0 4.4 3 8.4 7.25 9.75 4.25-1.35 7.25-5.35 7.25-9.75V6Z"/><path d="m9.25 12 1.9 1.9 3.6-3.6"/></svg>"#;
-
 /// The sign-in wordmark. `login_brand` splits on `|` so an operator can
-/// mark the product half of a two-part name; unset falls back to the
+/// set back the product half of a two-part name; unset falls back to the
 /// plain `name`, which is what every deployment renders today.
 fn render_login_brand(wl: &WhitelabelConfig) -> String {
     let raw = if wl.login_brand.trim().is_empty() {
@@ -600,7 +595,7 @@ fn render_login_brand(wl: &WhitelabelConfig) -> String {
         return html_escape(head);
     }
     format!(
-        r#"{} <span class="story-name-accent">{}</span>"#,
+        r#"{} <span class="story-name-tail">{}</span>"#,
         html_escape(head),
         html_escape(&tail)
     )
@@ -688,18 +683,18 @@ v=__ASSETV__
     fn the_wordmark_is_the_plain_name_until_a_brand_split_is_configured() {
         let out = render_index(LOGIN_TEMPLATE, "42", &storied_cfg());
         assert!(out.contains(r#"<span class="story-name">Neutron Core</span>"#));
-        assert!(!out.contains("story-name-accent"));
+        assert!(!out.contains("story-name-tail"));
     }
 
     #[test]
-    fn a_split_brand_accents_only_the_tail() {
+    fn a_split_brand_sets_back_only_the_tail() {
         let cfg = WhitelabelConfig {
             login_brand: "Neutron|Core".into(),
             ..storied_cfg()
         };
         let out = render_index(LOGIN_TEMPLATE, "42", &cfg);
         assert!(out.contains(
-            r#"<span class="story-name">Neutron <span class="story-name-accent">Core</span></span>"#
+            r#"<span class="story-name">Neutron <span class="story-name-tail">Core</span></span>"#
         ));
     }
 
@@ -713,7 +708,7 @@ v=__ASSETV__
                 ..storied_cfg()
             };
             let out = render_index(LOGIN_TEMPLATE, "42", &cfg);
-            assert!(!out.contains("story-name-accent"), "{raw} accented a tail");
+            assert!(!out.contains("story-name-tail"), "{raw} set back a tail");
         }
     }
 
@@ -726,15 +721,6 @@ v=__ASSETV__
         let out = render_index(LOGIN_TEMPLATE, "42", &cfg);
         assert!(!out.contains("<b>"));
         assert!(out.contains("&lt;b&gt;Neutron"));
-    }
-
-    // The trust note is the page's one claim about who stays in control,
-    // so its mark is inline and cannot fail to a missing sprite request.
-    #[test]
-    fn the_trust_note_carries_its_own_inline_mark() {
-        let out = render_index(LOGIN_TEMPLATE, "42", &storied_cfg());
-        assert!(out.contains(r#"<svg class="story-note-icon""#));
-        assert!(out.contains(r#"<p class="story-note">"#));
     }
 
     // The panel must never read as live account data — it is labelled as

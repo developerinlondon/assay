@@ -2,6 +2,37 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.16 — 2026-08-20
+
+### Changed
+
+- Ships assay-dashboard 0.6.1 (sign-in rework below). No engine behaviour changes.
+
+## assay-dashboard 0.6.1 — 2026-08-20
+
+### Changed
+
+- **Sign-in reads as an instrument, not a landing page.** 0.6.0 left the two-area layout as two
+  cards floating on a gradient. The composition was doing no work, so ambient glow was doing it
+  instead: blooms behind the mark and under the page, a gradient submit with a bloom of its own, and
+  the accent repeated eight times until it meant nothing.
+
+  The split is structural now. The story sits on its own ground, the credential column on a deeper
+  one, and a single rule runs the full height between them. Nothing on the page is lit.
+
+  Hierarchy comes from hairlines and a monospace utility voice. Field labels, roster statuses, the
+  wordmark and the separator share one size and tracking, so the form and the roster across the rule
+  read as the same machine. The roster itself is a duty board — a rule per row, statuses on a fixed
+  right column — rather than a card of coloured pills.
+
+  The accent is spent on exactly two things: the submit, and the roster row whose tone is `pending`.
+  That row is the product's whole thesis, so `pending` has to keep meaning "this needs you" instead
+  of becoming another brand colour. The headline's second line recedes rather than lighting up, and
+  the trust note drops the shield 0.6.0 gave it.
+
+- `ASSAY_WHITELABEL_LOGIN_BRAND` sets its tail back rather than accenting it, for the same reason.
+  `Neutron|Core` reads as one mark with `Core` subordinate.
+
 ## assay-engine 0.5.15 — 2026-08-20
 
 ### Changed
@@ -12,26 +43,32 @@ All notable changes to Assay are documented here.
 
 ### Changed
 
-- **The sign-in composition now fills the screen it is given.** The two-area layout shipped at a
-  phone's measure and kept it on a desktop: a 40px headline and a 400px card marooned in the middle
-  of a 1920px window, with the story and the form each reading as an isolated block. Column widths,
-  type sizes, card padding and control heights are `clamp()`ed against the viewport, so the page
-  scales as one composition instead of stepping between two fixed sizes.
+- **Sign-in reads as an instrument, not a landing page.** The two-area layout shipped at a phone's
+  measure and kept it on a desktop — a 40px headline and a 400px card marooned mid-window — and it
+  reached for the vocabulary of a product page to fill the space: ambient glow, a gradient button, a
+  headline whose second line lit up in the accent. Assay is an operations console, and its front
+  door now says so.
 
-  The ground carries two accent blooms — behind the brand mark and under the composition — mixed
-  from `ASSAY_WHITELABEL_ACCENT`, so a deployment re-colours the whole page from the one variable it
-  already sets. The headline's second line takes the accent rather than receding into muted grey,
-  the brand mark blooms at logo size, and the trust note gets a shield of its own instead of the
-  rule it shared with block quotes.
+  The page is built from hairlines and a monospace utility voice. Above `62rem` it stops being a
+  stack of blocks and becomes two columns of one surface, divided by a rule that runs the full
+  height, with the story side on its own ground so the division is material rather than decorative.
+  Every gradient and bloom is gone.
 
-  Form work: both fields carry placeholders, the primary submit is a gradient off the accent and
-  sits a notch taller than the inputs it follows, and the provider buttons centre their label. The
-  password-reset page picks up the same placeholders.
+  The illustration is now the instrument it depicts: a duty board you scan down, statuses set in the
+  utility voice on a fixed right column, one hairline per row. Field labels are set in that same
+  voice at the same size across the rule, so both columns read as one system.
+
+  **The accent has exactly one job: naming the row that is waiting for a person.** It was previously
+  spent on the headline, the dots, the submit, the links, the focus ring and two background washes,
+  which left it meaning nothing. The submit is ink now — contrast is the loudest a control can be
+  without borrowing the one colour that carries meaning.
+
+  Form work: both fields carry placeholders, and the password-reset page picks up the same ones.
 
 ### Added
 
 - **`ASSAY_WHITELABEL_LOGIN_BRAND`** — a sign-in wordmark for product names that read as two parts.
-  Text after `|` takes the accent colour, so `Neutron|Core` renders `Core` in the brand colour.
+  Text after `|` is set back a tone, so `Neutron|Core` reads as one mark with `Core` subordinate.
   Unset renders `ASSAY_WHITELABEL_NAME` in one colour, unchanged.
 
 ### Breaking

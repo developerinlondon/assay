@@ -112,7 +112,7 @@ for a password. Every value is operator copy; assay supplies only the layout and
 
 | Variable                              | Default               | Effect                                             |
 | ------------------------------------- | --------------------- | -------------------------------------------------- |
-| `ASSAY_WHITELABEL_LOGIN_BRAND`        | (unset, plain `NAME`) | Wordmark; text after `\|` takes the accent         |
+| `ASSAY_WHITELABEL_LOGIN_BRAND`        | (unset, plain `NAME`) | Wordmark; text after `\|` is set back              |
 | `ASSAY_WHITELABEL_LOGIN_HEADLINE`     | (unset, no panel)     | Headline. Split on `\|` to control where it breaks |
 | `ASSAY_WHITELABEL_LOGIN_SUBHEAD`      | (unset)               | One supporting sentence under the headline         |
 | `ASSAY_WHITELABEL_LOGIN_ROSTER_TITLE` | (unset)               | Small caption above the illustration rows          |
@@ -128,8 +128,12 @@ the panel carries `aria-label="Illustration of the product"` so assistive tech d
 as status.
 
 A product name that reads as two parts can carry the split into the wordmark:
-`ASSAY_WHITELABEL_LOGIN_BRAND="Neutron|Core"` renders `Core` in the accent colour. Leave it unset
-and the wordmark is `NAME` in one colour, which is what every deployment renders today.
+`ASSAY_WHITELABEL_LOGIN_BRAND="Neutron|Core"` sets `Core` back so the pair reads as one mark. Leave
+it unset and the wordmark is `NAME` in one colour, which is what every deployment renders today.
+
+The accent is spent deliberately: it fills the sign-in button, and it marks the one roster row whose
+tone is `pending` — the row waiting on a person. Nothing else on the page takes it, so `pending`
+keeps meaning "this needs you" instead of becoming another brand colour.
 
 ```
 ASSAY_WHITELABEL_NAME="Neutron Core"
