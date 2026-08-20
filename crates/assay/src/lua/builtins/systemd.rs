@@ -857,9 +857,25 @@ mod impl_linux {
             // future and we'd lose access on timeout — leaving cleanup to
             // kill_on_drop, which only schedules an async reap. Explicit
             // start_kill + wait reaps before we return.
-            let mut child = tokio_cmd
-                .spawn()
-                .map_err(|e| mlua::Error::runtime(format!("systemd.machine_exec: spawn: {e}")))?;
+            // A host without systemd-run (containers, minimal images) is a
+            // target-unreachable outcome, not a runtime fault: exec against an
+            // unreachable target contracts to a non-zero status table, and 127
+            // is the shell's own command-not-found code.
+            let mut child = match tokio_cmd.spawn() {
+                Ok(child) => child,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    let result = lua.create_table()?;
+                    result.set("status", 127i64)?;
+                    result.set("stdout", "")?;
+                    result.set("stderr", format!("systemd.machine_exec: spawn: {e}"))?;
+                    return Ok(result);
+                }
+                Err(e) => {
+                    return Err(mlua::Error::runtime(format!(
+                        "systemd.machine_exec: spawn: {e}"
+                    )));
+                }
+            };
 
             // Push stdin first (single await; child is still owned).
             if let Some(bytes) = stdin_bytes.as_deref()
