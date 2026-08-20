@@ -2,6 +2,37 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.16 — 2026-08-20
+
+### Changed
+
+- Ships assay-dashboard 0.6.1 (sign-in rework below). No engine behaviour changes.
+
+## assay-dashboard 0.6.1 — 2026-08-20
+
+### Changed
+
+- **Sign-in reads as an instrument, not a landing page.** 0.6.0 left the two-area layout as two
+  cards floating on a gradient. The composition was doing no work, so ambient glow was doing it
+  instead: blooms behind the mark and under the page, a gradient submit with a bloom of its own, and
+  the accent repeated eight times until it meant nothing.
+
+  The split is structural now. The story sits on its own ground, the credential column on a deeper
+  one, and a single rule runs the full height between them. Nothing on the page is lit.
+
+  Hierarchy comes from hairlines and a monospace utility voice. Field labels, roster statuses, the
+  wordmark and the separator share one size and tracking, so the form and the roster across the rule
+  read as the same machine. The roster itself is a duty board — a rule per row, statuses on a fixed
+  right column — rather than a card of coloured pills.
+
+  The accent is spent on exactly two things: the submit, and the roster row whose tone is `pending`.
+  That row is the product's whole thesis, so `pending` has to keep meaning "this needs you" instead
+  of becoming another brand colour. The headline's second line recedes rather than lighting up, and
+  the trust note drops the shield 0.6.0 gave it.
+
+- `ASSAY_WHITELABEL_LOGIN_BRAND` sets its tail back rather than accenting it, for the same reason.
+  `Neutron|Core` reads as one mark with `Core` subordinate.
+
 ## assay-engine 0.5.15 — 2026-08-20
 
 ### Changed
