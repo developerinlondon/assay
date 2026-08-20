@@ -12,27 +12,28 @@ All notable changes to Assay are documented here.
 
 ### Changed
 
-- **The sign-in composition now fills the screen it is given.** The two-area layout shipped at a
-  phone's measure and kept it on a desktop: a 40px headline and a 400px card marooned in the middle
-  of a 1920px window, with the story and the form each reading as an isolated block. Column widths,
-  type sizes, card padding and control heights are `clamp()`ed against the viewport, so the page
-  scales as one composition instead of stepping between two fixed sizes.
+- **Sign-in reads as an instrument, not a landing page.** The two-area layout was two cards floating
+  on a gradient: the composition was doing nothing, so ambient glow was doing it instead. The split
+  is now structural — the story sits on its own ground, the credential column on a deeper one, and a
+  single rule runs the full height between them. Blooms, the button's gradient and its glow are
+  gone; nothing on the page is lit.
 
-  The ground carries two accent blooms — behind the brand mark and under the composition — mixed
-  from `ASSAY_WHITELABEL_ACCENT`, so a deployment re-colours the whole page from the one variable it
-  already sets. The headline's second line takes the accent rather than receding into muted grey,
-  the brand mark blooms at logo size, and the trust note gets a shield of its own instead of the
-  rule it shared with block quotes.
+  Structure and hierarchy come from hairlines and a monospace utility voice. Field labels, statuses,
+  the wordmark and the separator are set in that voice at one size, so the credential column and the
+  roster across the rule read as the same machine. The roster itself is a duty board — a rule per
+  row, statuses on a fixed right column — rather than a card of coloured pills.
 
-  Form work: both fields carry placeholders, the primary submit is a gradient off the accent and
-  sits a notch taller than the inputs it follows, and the provider buttons centre their label. The
-  password-reset page picks up the same placeholders.
+  The accent is now spent on exactly two things: the submit, and the roster row whose tone is
+  `pending`. It previously appeared eight times, which left it meaning nothing. The headline's
+  second line recedes instead of lighting up, and the trust note drops the shield it grew.
+
+  Form work: both fields carry placeholders and the password-reset page picks up the same ones.
 
 ### Added
 
 - **`ASSAY_WHITELABEL_LOGIN_BRAND`** — a sign-in wordmark for product names that read as two parts.
-  Text after `|` takes the accent colour, so `Neutron|Core` renders `Core` in the brand colour.
-  Unset renders `ASSAY_WHITELABEL_NAME` in one colour, unchanged.
+  Text after `|` is set back, so `Neutron|Core` reads as one mark with `Core` subordinate. Unset
+  renders `ASSAY_WHITELABEL_NAME` in one colour, unchanged.
 
 ### Breaking
 
