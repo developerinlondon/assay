@@ -1,0 +1,4 @@
+image: rust:1
+resources:
+  cpu: "4"
+  memory: 8Gi
