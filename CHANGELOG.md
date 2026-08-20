@@ -6,9 +6,9 @@ All notable changes to Assay are documented here.
 
 ### Changed
 
-- Ships assay-dashboard 0.5.1 (sign-in composition below). No engine behaviour changes.
+- Ships assay-dashboard 0.6.0 (sign-in composition below). No engine behaviour changes.
 
-## assay-dashboard 0.5.1 — 2026-08-20
+## assay-dashboard 0.6.0 — 2026-08-20
 
 ### Changed
 
@@ -33,6 +33,11 @@ All notable changes to Assay are documented here.
 - **`ASSAY_WHITELABEL_LOGIN_BRAND`** — a sign-in wordmark for product names that read as two parts.
   Text after `|` takes the accent colour, so `Neutron|Core` renders `Core` in the brand colour.
   Unset renders `ASSAY_WHITELABEL_NAME` in one colour, unchanged.
+
+### Breaking
+
+- `WhitelabelConfig` gains a `login_brand` field. Callers constructing it as a struct literal need
+  the extra field; `WhitelabelConfig::from_env` is unaffected.
 
 ## assay-dashboard 0.5.0 — 2026-08-19
 
