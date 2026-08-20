@@ -110,13 +110,14 @@ two-area layout — the product's story on the left, the credential form on the 
 running assay as the front door of their own product can say what that product _is_ before asking
 for a password. Every value is operator copy; assay supplies only the layout and the tone styling.
 
-| Variable                              | Default           | Effect                                             |
-| ------------------------------------- | ----------------- | -------------------------------------------------- |
-| `ASSAY_WHITELABEL_LOGIN_HEADLINE`     | (unset, no panel) | Headline. Split on `\|` to control where it breaks |
-| `ASSAY_WHITELABEL_LOGIN_SUBHEAD`      | (unset)           | One supporting sentence under the headline         |
-| `ASSAY_WHITELABEL_LOGIN_ROSTER_TITLE` | (unset)           | Small caption above the illustration rows          |
-| `ASSAY_WHITELABEL_LOGIN_ROSTER`       | (unset)           | `Label:tone:Status`, `\|`-separated. Max 5 rows    |
-| `ASSAY_WHITELABEL_LOGIN_NOTE`         | (unset)           | Short trust statement under the illustration       |
+| Variable                              | Default               | Effect                                             |
+| ------------------------------------- | --------------------- | -------------------------------------------------- |
+| `ASSAY_WHITELABEL_LOGIN_BRAND`        | (unset, plain `NAME`) | Wordmark; text after `\|` takes the accent         |
+| `ASSAY_WHITELABEL_LOGIN_HEADLINE`     | (unset, no panel)     | Headline. Split on `\|` to control where it breaks |
+| `ASSAY_WHITELABEL_LOGIN_SUBHEAD`      | (unset)               | One supporting sentence under the headline         |
+| `ASSAY_WHITELABEL_LOGIN_ROSTER_TITLE` | (unset)               | Small caption above the illustration rows          |
+| `ASSAY_WHITELABEL_LOGIN_ROSTER`       | (unset)               | `Label:tone:Status`, `\|`-separated. Max 5 rows    |
+| `ASSAY_WHITELABEL_LOGIN_NOTE`         | (unset)               | Short trust statement under the illustration       |
 
 `tone` is one of `active`, `pending`, `done` — it selects the dot and status colour and nothing
 else. Anything unrecognised falls back to `pending`; a row missing its status is dropped rather than
@@ -126,9 +127,14 @@ The rows are an **illustration, not live data**. Assay never reads account state
 the panel carries `aria-label="Illustration of the product"` so assistive tech does not announce it
 as status.
 
+A product name that reads as two parts can carry the split into the wordmark:
+`ASSAY_WHITELABEL_LOGIN_BRAND="Neutron|Core"` renders `Core` in the accent colour. Leave it unset
+and the wordmark is `NAME` in one colour, which is what every deployment renders today.
+
 ```
 ASSAY_WHITELABEL_NAME="Neutron Core"
 ASSAY_WHITELABEL_ACCENT="#3f8cff"
+ASSAY_WHITELABEL_LOGIN_BRAND="Neutron|Core"
 ASSAY_WHITELABEL_LOGIN_HEADLINE="Run your AI workforce.|Keep humans in control."
 ASSAY_WHITELABEL_LOGIN_SUBHEAD="Delegate work to AI employees, supervise what they are doing, and approve important actions before they happen."
 ASSAY_WHITELABEL_LOGIN_ROSTER_TITLE="AI Workforce"

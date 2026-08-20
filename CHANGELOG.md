@@ -2,6 +2,43 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.15 — 2026-08-20
+
+### Changed
+
+- Ships assay-dashboard 0.6.0 (sign-in composition below). No engine behaviour changes.
+
+## assay-dashboard 0.6.0 — 2026-08-20
+
+### Changed
+
+- **The sign-in composition now fills the screen it is given.** The two-area layout shipped at a
+  phone's measure and kept it on a desktop: a 40px headline and a 400px card marooned in the middle
+  of a 1920px window, with the story and the form each reading as an isolated block. Column widths,
+  type sizes, card padding and control heights are `clamp()`ed against the viewport, so the page
+  scales as one composition instead of stepping between two fixed sizes.
+
+  The ground carries two accent blooms — behind the brand mark and under the composition — mixed
+  from `ASSAY_WHITELABEL_ACCENT`, so a deployment re-colours the whole page from the one variable it
+  already sets. The headline's second line takes the accent rather than receding into muted grey,
+  the brand mark blooms at logo size, and the trust note gets a shield of its own instead of the
+  rule it shared with block quotes.
+
+  Form work: both fields carry placeholders, the primary submit is a gradient off the accent and
+  sits a notch taller than the inputs it follows, and the provider buttons centre their label. The
+  password-reset page picks up the same placeholders.
+
+### Added
+
+- **`ASSAY_WHITELABEL_LOGIN_BRAND`** — a sign-in wordmark for product names that read as two parts.
+  Text after `|` takes the accent colour, so `Neutron|Core` renders `Core` in the brand colour.
+  Unset renders `ASSAY_WHITELABEL_NAME` in one colour, unchanged.
+
+### Breaking
+
+- `WhitelabelConfig` gains a `login_brand` field. Callers constructing it as a struct literal need
+  the extra field; `WhitelabelConfig::from_env` is unaffected.
+
 ## assay-dashboard 0.5.0 — 2026-08-19
 
 ### Added
