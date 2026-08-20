@@ -15,6 +15,7 @@
   --login-card: #101318;
   --login-surface: #161a20;
   --login-text: #e8eaed;
+  --login-dim: #9aa2ad;
   --login-muted: #79818d;
   --login-faint: #59606b;
   --login-accent: #e6662a;
@@ -36,6 +37,7 @@
   --login-card: #ffffff;
   --login-surface: #f7f8f9;
   --login-text: #14171c;
+  --login-dim: #4a525d;
   --login-muted: #656d79;
   --login-faint: #8a929d;
   --login-accent: #cf5d27;
@@ -139,11 +141,10 @@ body {
   display: block;
 }
 
-/* The second line qualifies the first, so it steps back in colour rather
-   than lighting up — the accent is spent on the row that needs a human
-   and nowhere else on this side of the page. */
+/* The second line qualifies the first, so it steps back one tone rather
+   than lighting up. The accent belongs to the row that needs a human. */
 .story-headline span + span {
-  color: var(--login-muted);
+  color: var(--login-dim);
 }
 
 .story-subhead {
@@ -434,15 +435,17 @@ body {
   outline-offset: 1px;
 }
 
-/* Flat and solid. The accent has one other job on this page — the row
-   waiting for a person — and a gradient with a bloom under it would make
-   the button shout over the thing it is meant to sit quieter than. */
+/* Ink, not accent. The accent names the one row waiting on a person, and
+   a filled accent button is the largest object on the page — it would
+   outshout the thing it is supposed to be quieter than, and the colour
+   would stop meaning "this needs you". Contrast carries the action
+   instead, which is the loudest a control can be without borrowing. */
 .login-submit {
   margin-top: 0.25rem;
-  border: 1px solid var(--login-accent);
+  border: 1px solid var(--login-text);
   border-radius: 8px;
-  background: var(--login-accent);
-  color: var(--login-accent-ink);
+  background: var(--login-text);
+  color: var(--login-bg);
   cursor: pointer;
   font: inherit;
   font-size: 0.9375rem;
@@ -457,7 +460,7 @@ body {
 }
 
 .login-submit:focus-visible {
-  outline: 1px solid var(--login-text);
+  outline: 2px solid var(--login-accent);
   outline-offset: 2px;
 }
 
@@ -625,16 +628,17 @@ body {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    align-items: flex-end;
+    align-items: flex-start;
     max-width: none;
     margin: 0;
-    padding: clamp(3rem, 6vw, 6.5rem) clamp(2.5rem, 5vw, 6rem);
+    padding: clamp(3rem, 6vw, 6.5rem) clamp(2.5rem, 4vw, 4.5rem)
+             clamp(3rem, 6vw, 6.5rem) clamp(3rem, 6.5vw, 7.5rem);
     background: var(--login-panel);
     border-right: 1px solid var(--login-border-strong);
   }
 
   .login-story > * {
-    max-width: 33rem;
+    max-width: 42rem;
     width: 100%;
   }
 
