@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "checks": [
+    {
+      "name": "cargo-test",
+      "argv": ["cargo", "test", "--locked", "--", "--skip", "_pg"],
+      "timeoutSeconds": 600
+    }
+  ]
+}
