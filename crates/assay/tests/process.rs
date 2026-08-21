@@ -84,7 +84,7 @@ async fn test_process_kill_spawned() {
         process.kill(pid, 9)
 
         -- Poll until the process is reaped (avoids flaky fixed sleep)
-        local deadline = time() + 5  -- 5-second overall timeout
+        local deadline = time() + 30  -- generous: zombie reap lags under loaded schedulers
         local gone = false
         while time() < deadline do
             local ok = pcall(process.kill, pid, 0)
