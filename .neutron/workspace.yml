@@ -1,4 +1,4 @@
 image: rust:1
 resources:
-  cpu: "8"
-  memory: 12Gi
+  cpu: "16"
+  memory: 16Gi
