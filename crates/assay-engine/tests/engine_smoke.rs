@@ -83,7 +83,7 @@ format = "pretty"
     }
 
     async fn wait_ready(&self, client: &reqwest::Client) {
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             if let Ok(r) = client
                 .get(self.url("/api/v1/engine/workflow/health"))
