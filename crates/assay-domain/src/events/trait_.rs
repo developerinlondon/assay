@@ -191,3 +191,67 @@ pub trait EngineEventBus: Send + Sync + 'static {
     /// older than retention.
     async fn oldest_id(&self, namespace: &str) -> Result<Option<i64>>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every variant, in declaration order. Kept honest by the
+    /// exhaustive `match` in `as_str_pins_wire_names`, which fails to
+    /// compile until a newly added variant is listed there.
+    const ALL: [Subsystem; 4] = [
+        Subsystem::Workflow,
+        Subsystem::Auth,
+        Subsystem::Secrets,
+        Subsystem::System,
+    ];
+
+    #[test]
+    fn subsystem_round_trips_through_as_str() {
+        for v in ALL {
+            assert_eq!(Subsystem::from_str(v.as_str()), v);
+        }
+    }
+
+    #[test]
+    fn unknown_subsystem_maps_to_system() {
+        // Infallible by design: an unknown subsystem degrades to `System`
+        // so an older node can still read events written by a newer one.
+        // Pinned here so a future switch to a fallible `FromStr` cannot
+        // change wire behaviour silently.
+        for s in ["telemetry", "", "unknown", "Workflow", "workflow "] {
+            assert_eq!(
+                Subsystem::from_str(s),
+                Subsystem::System,
+                "unknown subsystem {s:?} must degrade to System"
+            );
+        }
+    }
+
+    #[test]
+    fn as_str_pins_wire_names() {
+        // These strings are the stored form of `engine_events.subsystem`;
+        // renaming one orphans existing rows. Exhaustive on purpose.
+        for v in ALL {
+            let expected = match v {
+                Subsystem::Workflow => "workflow",
+                Subsystem::Auth => "auth",
+                Subsystem::Secrets => "secrets",
+                Subsystem::System => "system",
+            };
+            assert_eq!(v.as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn serde_repr_matches_as_str() {
+        // `Event.subsystem` travels as JSON via the derives while the
+        // column uses `as_str`; the two spellings must not drift apart.
+        for v in ALL {
+            let s = v.as_str();
+            let json = serde_json::to_string(&v).unwrap();
+            assert_eq!(json, format!("\"{s}\""));
+            assert_eq!(serde_json::from_str::<Subsystem>(&json).unwrap(), v);
+        }
+    }
+}
