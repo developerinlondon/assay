@@ -2,6 +2,11 @@
   "version": 1,
   "checks": [
     {
+      "name": "cargo-build",
+      "argv": ["cargo", "build", "--tests", "--locked"],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "cargo-test",
       "argv": ["cargo", "test", "--locked", "--", "--skip", "_pg"],
       "timeoutSeconds": 900
