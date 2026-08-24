@@ -97,10 +97,53 @@ dashboard to read as part of that product.
 | `ASSAY_WHITELABEL_MARK`              | First char of `NAME` (uppercased) | Glyph in the always-visible brand badge square                   |
 | `ASSAY_WHITELABEL_FAVICON_URL`       | Built-in SVG                      | Browser-tab icon URL (v0.11.12+)                                 |
 | `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | `main`                            | Namespace the dashboard opens on (v0.11.12+)                     |
+| `ASSAY_WHITELABEL_ACCENT`            | (unset, assay orange)             | Accent colour for the sign-in pages, as any CSS colour           |
 
 `ASSAY_WHITELABEL_API_DOCS_URL=""` (empty string) hides the link entirely. Any other value redirects
 the link to that URL. Setting the variable explicitly to empty is distinct from leaving it unset —
 unset keeps the default `/api/v1/engine/workflow/docs` link, empty hides it.
+
+### Sign-in story panel
+
+The sign-in page renders a single centred card by default. Setting a headline turns it into a
+two-area layout — the product's story on the left, the credential form on the right — so operators
+running assay as the front door of their own product can say what that product _is_ before asking
+for a password. Every value is operator copy; assay supplies only the layout and the tone styling.
+
+| Variable                              | Default               | Effect                                             |
+| ------------------------------------- | --------------------- | -------------------------------------------------- |
+| `ASSAY_WHITELABEL_LOGIN_BRAND`        | (unset, plain `NAME`) | Wordmark; text after `\|` takes the accent         |
+| `ASSAY_WHITELABEL_LOGIN_HEADLINE`     | (unset, no panel)     | Headline. Split on `\|` to control where it breaks |
+| `ASSAY_WHITELABEL_LOGIN_SUBHEAD`      | (unset)               | One supporting sentence under the headline         |
+| `ASSAY_WHITELABEL_LOGIN_ROSTER_TITLE` | (unset)               | Small caption above the illustration rows          |
+| `ASSAY_WHITELABEL_LOGIN_ROSTER`       | (unset)               | `Label:tone:Status`, `\|`-separated. Max 5 rows    |
+| `ASSAY_WHITELABEL_LOGIN_NOTE`         | (unset)               | Short trust statement under the illustration       |
+
+`tone` is one of `active`, `pending`, `done` — it selects the dot and status colour and nothing
+else. Anything unrecognised falls back to `pending`; a row missing its status is dropped rather than
+half-rendered, so a typo in env degrades instead of breaking sign-in.
+
+The rows are an **illustration, not live data**. Assay never reads account state to fill them, and
+the panel carries `aria-label="Illustration of the product"` so assistive tech does not announce it
+as status.
+
+A product name that reads as two parts can carry the split into the wordmark:
+`ASSAY_WHITELABEL_LOGIN_BRAND="Neutron|Core"` renders `Core` in the accent colour. Leave it unset
+and the wordmark is `NAME` in one colour, which is what every deployment renders today.
+
+```
+ASSAY_WHITELABEL_NAME="Neutron Core"
+ASSAY_WHITELABEL_ACCENT="#3f8cff"
+ASSAY_WHITELABEL_LOGIN_BRAND="Neutron|Core"
+ASSAY_WHITELABEL_LOGIN_HEADLINE="Run your AI workforce.|Keep humans in control."
+ASSAY_WHITELABEL_LOGIN_SUBHEAD="Delegate work to AI employees, supervise what they are doing, and approve important actions before they happen."
+ASSAY_WHITELABEL_LOGIN_ROSTER_TITLE="AI Workforce"
+ASSAY_WHITELABEL_LOGIN_ROSTER="Research Agent:active:Working|Outreach Agent:pending:Waiting for approval|Support Agent:done:Completed"
+ASSAY_WHITELABEL_LOGIN_NOTE="AI employees can work autonomously. Important actions still require your approval."
+```
+
+Below the split the illustration stands down and the page keeps the brand, the headline and the
+trust note above the form — a phone gets the positioning without the layout.
 
 **Theming via CSS custom properties.** Every colour, radius, and shadow on the dashboard is a CSS
 variable on `:root`. An extra stylesheet loaded after assay's own CSS can re-declare any of them
