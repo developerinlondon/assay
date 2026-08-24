@@ -7,6 +7,7 @@ jobs:
     cloneCredential: !DefaultCredential {}
     withLfs: false
     withSubmodules: false
+    condition: SUCCESSFUL
   - !CommandStep
     name: build and test
     runInContainer: true
@@ -16,6 +17,7 @@ jobs:
         cargo build --tests --locked
         cargo test --locked -- --skip _pg
     useTTY: false
+    condition: SUCCESSFUL
   triggers:
   - !PullRequestUpdateTrigger {}
   retryCondition: never
