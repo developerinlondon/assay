@@ -20,6 +20,7 @@
 //! | `ASSAY_WHITELABEL_MARK`         | Single glyph for the always-visible badge square     | First char of NAME (upper)   |
 //! | `ASSAY_WHITELABEL_FAVICON_URL`  | Replace the browser-tab icon                         | Built-in `A`-mark SVG        |
 //! | `ASSAY_WHITELABEL_DEFAULT_NAMESPACE` | Namespace the dashboard opens on                | `main`                       |
+//! | `ASSAY_WHITELABEL_LOGIN_BRAND`  | Sign-in wordmark; `|` marks the accented tail        | `NAME`, one colour           |
 //!
 //! ## Hiding vs overriding
 //!
@@ -98,6 +99,30 @@ pub struct WhitelabelConfig {
     /// assay single-tenant (all workflows in one non-`main` namespace)
     /// shouldn't force every user to change the dropdown on first load.
     pub default_namespace: String,
+    /// Accent colour for the sign-in pages, as any CSS colour. Assay's
+    /// own orange is a default, not a brand — an operator whose product
+    /// has a real accent sets it here rather than hosting a stylesheet
+    /// just to change one custom property.
+    pub accent: Option<String>,
+    /// Sign-in wordmark, when the operator's product name reads as two
+    /// parts. Split on `|`: everything after the first segment takes the
+    /// accent colour, so `Neutron|Core` renders `Core` in the brand
+    /// colour. Empty ⇒ the plain `name` in one colour.
+    pub login_brand: String,
+    /// Sign-in story panel. Empty headline ⇒ no panel, and the page
+    /// keeps its centred single-card layout. Split on `|` to control
+    /// where the headline breaks.
+    pub login_headline: String,
+    pub login_subhead: String,
+    /// A short trust statement under the panel — what the product
+    /// promises about control, in the operator's own words.
+    pub login_note: String,
+    pub login_roster_title: String,
+    /// Conceptual rows illustrating what the product operates:
+    /// `Label:tone:Status`, `|`-separated. Tone is one of `active`,
+    /// `pending`, `done` — assay styles the tone and never supplies the
+    /// words, so nothing here claims to be live account data.
+    pub login_roster: Vec<LoginRosterRow>,
     /// Default theme for the SPA: `"dark"`, `"light"`, or `"auto"` (the
     /// default — track the system's `prefers-color-scheme`). Pinning a
     /// theme lets a brand-pack consumer match its parent app's chrome
@@ -105,6 +130,67 @@ pub struct WhitelabelConfig {
     /// in each `index.html` and applied via `data-theme` on `<html>`
     /// when localStorage doesn't already record a user preference.
     pub default_theme: String,
+}
+
+/// One conceptual row of the sign-in story panel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginRosterRow {
+    pub label: String,
+    pub tone: LoginTone,
+    pub status: String,
+}
+
+/// The three states a story row can be in. A fixed vocabulary because
+/// assay styles it; the words the reader sees come from `status`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginTone {
+    Active,
+    Pending,
+    Done,
+}
+
+impl LoginTone {
+    fn css_class(self) -> &'static str {
+        match self {
+            LoginTone::Active => "is-active",
+            LoginTone::Pending => "is-pending",
+            LoginTone::Done => "is-done",
+        }
+    }
+}
+
+/// At most this many rows are rendered. A story panel is an
+/// illustration; an operator pasting a hundred entries would push the
+/// form off the page.
+const MAX_ROSTER_ROWS: usize = 5;
+
+/// Parse `Label:tone:Status|Label:tone:Status`. A row missing its tone
+/// or status is skipped rather than half-rendered, and an unknown tone
+/// falls back to `pending` rather than raising — a typo in env must not
+/// take the sign-in page down.
+pub fn parse_login_roster(raw: &str) -> Vec<LoginRosterRow> {
+    raw.split('|')
+        .filter_map(|entry| {
+            let mut parts = entry.splitn(3, ':').map(str::trim);
+            let label = parts.next().unwrap_or_default();
+            let tone = parts.next().unwrap_or_default();
+            let status = parts.next().unwrap_or_default();
+            if label.is_empty() || status.is_empty() {
+                return None;
+            }
+            let tone = match tone.to_ascii_lowercase().as_str() {
+                "active" => LoginTone::Active,
+                "done" => LoginTone::Done,
+                _ => LoginTone::Pending,
+            };
+            Some(LoginRosterRow {
+                label: label.to_string(),
+                tone,
+                status: status.to_string(),
+            })
+        })
+        .take(MAX_ROSTER_ROWS)
+        .collect()
 }
 
 impl WhitelabelConfig {
@@ -118,6 +204,8 @@ impl WhitelabelConfig {
             || self.logo_url.is_some()
             || self.css_url.is_some()
             || self.favicon_url.is_some()
+            || self.accent.is_some()
+            || !self.login_brand.is_empty()
     }
 }
 
@@ -183,10 +271,28 @@ impl WhitelabelConfig {
             Ok(s) if s == "dark" || s == "light" || s == "auto" => s,
             _ => "auto".to_string(),
         };
+        let accent = std::env::var("ASSAY_WHITELABEL_ACCENT")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let login_brand = std::env::var("ASSAY_WHITELABEL_LOGIN_BRAND").unwrap_or_default();
+        let login_headline = std::env::var("ASSAY_WHITELABEL_LOGIN_HEADLINE").unwrap_or_default();
+        let login_subhead = std::env::var("ASSAY_WHITELABEL_LOGIN_SUBHEAD").unwrap_or_default();
+        let login_note = std::env::var("ASSAY_WHITELABEL_LOGIN_NOTE").unwrap_or_default();
+        let login_roster_title =
+            std::env::var("ASSAY_WHITELABEL_LOGIN_ROSTER_TITLE").unwrap_or_default();
+        let login_roster =
+            parse_login_roster(&std::env::var("ASSAY_WHITELABEL_LOGIN_ROSTER").unwrap_or_default());
         Self {
             name,
             mark,
             subtitle,
+            accent,
+            login_brand,
+            login_headline,
+            login_subhead,
+            login_note,
+            login_roster_title,
+            login_roster,
             logo_url,
             page_title,
             parent_url,
@@ -249,6 +355,11 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         ),
         None => String::new(),
     };
+
+    // The sign-in badge. An operator with a real mark gets it rendered as an
+    // image; everyone else keeps the letter glyph, which is what the badge has
+    // always been.
+    let brand_badge = brand_badge_html(wl, "login-mark");
 
     // Subtitle is rendered as a distinct span under the brand name so
     // operators get a real, accessible, translatable line of text —
@@ -335,6 +446,19 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
     // record a user choice.
     let default_theme = html_escape(&wl.default_theme);
 
+    // An accent override lands as one custom-property declaration after
+    // the stylesheet's own :root, so it wins on source order without the
+    // operator hosting a sheet to change a single colour.
+    let accent_style = match &wl.accent {
+        Some(colour) => format!(
+            r#"<style>:root,[data-theme="light"]{{--login-accent:{};}}</style>"#,
+            html_escape(colour)
+        ),
+        None => String::new(),
+    };
+
+    let login_story = render_login_story(wl);
+
     template
         .replace("__ASSETV__", asset_version)
         .replace("__PAGE_TITLE__", &html_escape(&wl.page_title))
@@ -351,6 +475,135 @@ pub fn render_index(template: &str, asset_version: &str, wl: &WhitelabelConfig) 
         .replace("__BRAND_PARENT_URL__", &parent_url_attr)
         .replace("__BRAND_PARENT_NAME__", &parent_name_attr)
         .replace("__BRAND_DEFAULT_THEME__", &default_theme)
+        .replace("__ACCENT_STYLE__", &accent_style)
+        .replace("__BRAND_BADGE__", &brand_badge)
+        .replace("__LOGIN_STORY__", &login_story)
+}
+
+/// Build the sign-in story panel — the operator's one-screen answer to
+/// "what is this product". Returns an empty string when no headline is
+/// configured, which is what keeps every existing deployment on the
+/// centred single-card layout it has today.
+///
+/// The roster rows are explicitly conceptual: they are operator copy,
+/// never account data, and the panel is labelled as an illustration for
+/// screen readers so nobody reads it as live state.
+/// The brand badge: an operator logo when one is configured, otherwise the
+/// letter glyph. `extra` is the class the host surface styles it with.
+fn brand_badge_html(wl: &WhitelabelConfig, extra: &str) -> String {
+    match &wl.logo_url {
+        Some(url) => format!(
+            r#"<img class="{} is-logo" src="{}" alt="{}">"#,
+            extra,
+            html_escape(url),
+            html_escape(&wl.name)
+        ),
+        None => format!(
+            r#"<span class="{}" aria-hidden="true">{}</span>"#,
+            extra,
+            html_escape(&wl.mark)
+        ),
+    }
+}
+
+fn render_login_story(wl: &WhitelabelConfig) -> String {
+    if wl.login_headline.trim().is_empty() {
+        return String::new();
+    }
+
+    let headline = wl
+        .login_headline
+        .split('|')
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| format!("<span>{}</span>", html_escape(line)))
+        .collect::<Vec<_>>()
+        .join("");
+
+    let subhead = if wl.login_subhead.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<p class="story-subhead">{}</p>"#,
+            html_escape(&wl.login_subhead)
+        )
+    };
+
+    let roster = if wl.login_roster.is_empty() {
+        String::new()
+    } else {
+        let title = if wl.login_roster_title.trim().is_empty() {
+            String::new()
+        } else {
+            format!(
+                r#"<p class="story-panel-title">{}</p>"#,
+                html_escape(&wl.login_roster_title)
+            )
+        };
+        let rows = wl
+            .login_roster
+            .iter()
+            .map(|row| {
+                format!(
+                    r#"<li class="story-row {tone}"><span class="story-dot" aria-hidden="true"></span><span class="story-row-label">{label}</span><span class="story-row-status">{status}</span></li>"#,
+                    tone = row.tone.css_class(),
+                    label = html_escape(&row.label),
+                    status = html_escape(&row.status),
+                )
+            })
+            .collect::<String>();
+        format!(
+            r#"<figure class="story-panel" aria-label="Illustration of the product">{title}<ul class="story-rows">{rows}</ul></figure>"#
+        )
+    };
+
+    let note = if wl.login_note.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<p class="story-note">{NOTE_SHIELD}<span>{}</span></p>"#,
+            html_escape(&wl.login_note)
+        )
+    };
+
+    format!(
+        r#"<aside class="login-story">
+        <div class="story-brand">{badge}<span class="story-name">{name}</span></div>
+        <h2 class="story-headline">{headline}</h2>
+        {subhead}
+        {roster}
+        {note}
+      </aside>"#,
+        badge = brand_badge_html(wl, "story-mark"),
+        name = render_login_brand(wl),
+    )
+}
+
+/// A shield beside the trust note. Inline rather than a sprite
+/// reference: the note is the page's one claim about who stays in
+/// control, and it must be drawn even if the sprite request fails.
+const NOTE_SHIELD: &str = r#"<svg class="story-note-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.75 4.75 6v5.5c0 4.4 3 8.4 7.25 9.75 4.25-1.35 7.25-5.35 7.25-9.75V6Z"/><path d="m9.25 12 1.9 1.9 3.6-3.6"/></svg>"#;
+
+/// The sign-in wordmark. `login_brand` splits on `|` so an operator can
+/// mark the product half of a two-part name; unset falls back to the
+/// plain `name`, which is what every deployment renders today.
+fn render_login_brand(wl: &WhitelabelConfig) -> String {
+    let raw = if wl.login_brand.trim().is_empty() {
+        wl.name.as_str()
+    } else {
+        wl.login_brand.as_str()
+    };
+    let mut parts = raw.split('|').map(str::trim).filter(|p| !p.is_empty());
+    let head = parts.next().unwrap_or_default();
+    let tail = parts.collect::<Vec<_>>().join(" ");
+    if tail.is_empty() {
+        return html_escape(head);
+    }
+    format!(
+        r#"{} <span class="story-name-accent">{}</span>"#,
+        html_escape(head),
+        html_escape(&tail)
+    )
 }
 
 #[cfg(test)]
@@ -381,9 +634,169 @@ v=__ASSETV__
             api_docs_url: Some("/api/v1/engine/workflow/docs".into()),
             css_url: None,
             favicon_url: None,
+            accent: None,
+            login_brand: String::new(),
+            login_headline: String::new(),
+            login_subhead: String::new(),
+            login_note: String::new(),
+            login_roster_title: String::new(),
+            login_roster: Vec::new(),
             default_namespace: "main".into(),
             default_theme: "auto".into(),
         }
+    }
+
+    const LOGIN_TEMPLATE: &str = r#"<head>__ACCENT_STYLE__</head><main>__LOGIN_STORY__</main>"#;
+
+    fn storied_cfg() -> WhitelabelConfig {
+        WhitelabelConfig {
+            name: "Neutron Core".into(),
+            mark: "N".into(),
+            login_headline: "Run your AI workforce.|Keep humans in control.".into(),
+            login_subhead: "Delegate work to AI employees.".into(),
+            login_note: "Important actions still require your approval.".into(),
+            login_roster_title: "AI Workforce".into(),
+            login_roster: parse_login_roster(
+                "Research Agent:active:Working|Outreach Agent:pending:Waiting for approval",
+            ),
+            ..default_cfg()
+        }
+    }
+
+    // The whole point of gating on the headline: every deployment that
+    // does not configure a story keeps the layout it has today.
+    #[test]
+    fn no_story_is_configured_by_default_and_the_token_renders_empty() {
+        let out = render_index(LOGIN_TEMPLATE, "42", &default_cfg());
+        assert_eq!(out, "<head></head><main></main>");
+    }
+
+    #[test]
+    fn a_configured_story_renders_brand_headline_and_supporting_copy() {
+        let out = render_index(LOGIN_TEMPLATE, "42", &storied_cfg());
+        assert!(out.contains(r#"<aside class="login-story">"#));
+        assert!(out.contains("<span>Run your AI workforce.</span>"));
+        assert!(out.contains("<span>Keep humans in control.</span>"));
+        assert!(out.contains("Delegate work to AI employees."));
+        assert!(out.contains("Important actions still require your approval."));
+        assert!(out.contains("AI Workforce"));
+    }
+
+    // Without the knob the wordmark stays one colour, which is what every
+    // deployment configured before it existed renders.
+    #[test]
+    fn the_wordmark_is_the_plain_name_until_a_brand_split_is_configured() {
+        let out = render_index(LOGIN_TEMPLATE, "42", &storied_cfg());
+        assert!(out.contains(r#"<span class="story-name">Neutron Core</span>"#));
+        assert!(!out.contains("story-name-accent"));
+    }
+
+    #[test]
+    fn a_split_brand_accents_only_the_tail() {
+        let cfg = WhitelabelConfig {
+            login_brand: "Neutron|Core".into(),
+            ..storied_cfg()
+        };
+        let out = render_index(LOGIN_TEMPLATE, "42", &cfg);
+        assert!(out.contains(
+            r#"<span class="story-name">Neutron <span class="story-name-accent">Core</span></span>"#
+        ));
+    }
+
+    // A brand with no separator must not grow an empty accent span, and a
+    // trailing separator is a typo, not a request for one.
+    #[test]
+    fn a_brand_without_a_split_renders_one_colour() {
+        for raw in ["Neutron Core", "Neutron Core|", "|"] {
+            let cfg = WhitelabelConfig {
+                login_brand: raw.into(),
+                ..storied_cfg()
+            };
+            let out = render_index(LOGIN_TEMPLATE, "42", &cfg);
+            assert!(!out.contains("story-name-accent"), "{raw} accented a tail");
+        }
+    }
+
+    #[test]
+    fn a_split_brand_is_escaped_like_every_other_operator_value() {
+        let cfg = WhitelabelConfig {
+            login_brand: "<b>Neutron|Core</b>".into(),
+            ..storied_cfg()
+        };
+        let out = render_index(LOGIN_TEMPLATE, "42", &cfg);
+        assert!(!out.contains("<b>"));
+        assert!(out.contains("&lt;b&gt;Neutron"));
+    }
+
+    // The trust note is the page's one claim about who stays in control,
+    // so its mark is inline and cannot fail to a missing sprite request.
+    #[test]
+    fn the_trust_note_carries_its_own_inline_mark() {
+        let out = render_index(LOGIN_TEMPLATE, "42", &storied_cfg());
+        assert!(out.contains(r#"<svg class="story-note-icon""#));
+        assert!(out.contains(r#"<p class="story-note">"#));
+    }
+
+    // The panel must never read as live account data — it is labelled as
+    // an illustration, and its words come from operator config.
+    #[test]
+    fn the_story_panel_is_labelled_as_an_illustration() {
+        let out = render_index(LOGIN_TEMPLATE, "42", &storied_cfg());
+        assert!(out.contains(r#"aria-label="Illustration of the product""#));
+        assert!(out.contains(r#"<li class="story-row is-active">"#));
+        assert!(out.contains(r#"<li class="story-row is-pending">"#));
+        assert!(out.contains("Waiting for approval"));
+    }
+
+    #[test]
+    fn story_copy_is_escaped_like_every_other_operator_value() {
+        let cfg = WhitelabelConfig {
+            login_headline: "<script>alert(1)</script>".into(),
+            login_note: r#"a "quoted" note"#.into(),
+            ..storied_cfg()
+        };
+        let out = render_index(LOGIN_TEMPLATE, "42", &cfg);
+        assert!(!out.contains("<script>alert(1)</script>"));
+        assert!(out.contains("&lt;script&gt;"));
+        assert!(out.contains("&quot;quoted&quot;"));
+    }
+
+    #[test]
+    fn roster_parsing_takes_label_tone_and_status() {
+        let rows = parse_login_roster("Research Agent:active:Working");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "Research Agent");
+        assert_eq!(rows[0].tone, LoginTone::Active);
+        assert_eq!(rows[0].status, "Working");
+    }
+
+    // A typo in env must degrade, never take the sign-in page down.
+    #[test]
+    fn an_unknown_tone_falls_back_and_an_incomplete_row_is_dropped() {
+        let rows = parse_login_roster("A:sideways:Doing|B::|:active:Orphan|C:done:Finished");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].tone, LoginTone::Pending);
+        assert_eq!(rows[1].tone, LoginTone::Done);
+    }
+
+    #[test]
+    fn the_roster_is_capped_so_a_long_env_cannot_push_the_form_off_screen() {
+        let raw = (0..40)
+            .map(|i| format!("Agent {i}:active:Working"))
+            .collect::<Vec<_>>()
+            .join("|");
+        assert_eq!(parse_login_roster(&raw).len(), MAX_ROSTER_ROWS);
+    }
+
+    #[test]
+    fn an_accent_override_lands_as_one_custom_property_declaration() {
+        let cfg = WhitelabelConfig {
+            accent: Some("#2f6be6".into()),
+            ..default_cfg()
+        };
+        let out = render_index(LOGIN_TEMPLATE, "42", &cfg);
+        assert!(out.contains("--login-accent:#2f6be6;"));
+        assert!(cfg.is_customised());
     }
 
     #[test]
