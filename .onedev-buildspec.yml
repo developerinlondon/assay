@@ -24,3 +24,34 @@ jobs:
   maxRetries: 0
   retryDelay: 30
   timeout: 5400
+- name: mirror
+  steps:
+  - !CheckoutStep
+    name: checkout
+    cloneCredential: !DefaultCredential {}
+    withLfs: false
+    withSubmodules: false
+    condition: SUCCESSFUL
+  - !CommandStep
+    name: push to github
+    runInContainer: true
+    image: alpine/git
+    interpreter: !DefaultInterpreter
+      commands: |
+        mkdir -p /root/.ssh
+        cat > /root/.ssh/id_ed25519 <<'KEYEOF'
+        @secret:github-mirror-key@
+        KEYEOF
+        chmod 600 /root/.ssh/id_ed25519
+        ssh-keyscan github.com >> /root/.ssh/known_hosts 2>/dev/null
+        git push ssh://git@github.com/developerinlondon/assay HEAD:refs/heads/main
+        git push ssh://git@github.com/developerinlondon/assay --tags
+    useTTY: false
+    condition: SUCCESSFUL
+  triggers:
+  - !BranchUpdateTrigger
+    branches: main
+  retryCondition: never
+  maxRetries: 0
+  retryDelay: 30
+  timeout: 900
