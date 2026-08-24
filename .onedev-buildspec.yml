@@ -44,8 +44,8 @@ jobs:
         KEYEOF
         chmod 600 /root/.ssh/id_ed25519
         ssh-keyscan github.com >> /root/.ssh/known_hosts 2>/dev/null
-        git push ssh://git@github.com/developerinlondon/assay HEAD:refs/heads/main
-        git push ssh://git@github.com/developerinlondon/assay --tags
+        git push ssh://git@@github.com/developerinlondon/assay HEAD:refs/heads/main
+        git push ssh://git@@github.com/developerinlondon/assay --tags
     useTTY: false
     condition: SUCCESSFUL
   triggers:
