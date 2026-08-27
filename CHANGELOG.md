@@ -2,6 +2,18 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua Unreleased
+
+### Added
+
+- **`assay.gleif` and `assay.edgar` — the first registry modules.** Company discovery kept
+  paying (or scraping) for facts that sit in open registries. GLEIF answers "does this legal
+  entity exist, where, under what status" for every jurisdiction with no key at all; EDGAR
+  answers the US public-company half — tickers, SIC, addresses, filings, full-text search —
+  behind nothing but an identifying User-Agent, which the client refuses to run without.
+  Both normalize to one flat registry shape and stamp provenance on every record, so a fact
+  fetched here stays auditable wherever it flows.
+
 ## assay-engine 0.5.15 — 2026-08-20
 
 ### Changed
