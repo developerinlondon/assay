@@ -2,130 +2,17 @@
 
 All notable changes to Assay are documented here.
 
-## assay-engine 0.5.15 — 2026-08-20
-
-### Changed
-
-- Ships assay-dashboard 0.6.0 (sign-in composition below). No engine behaviour changes.
-
-## assay-dashboard 0.6.0 — 2026-08-20
-
-### Changed
-
-- **The sign-in composition now fills the screen it is given.** The two-area layout shipped at a
-  phone's measure and kept it on a desktop: a 40px headline and a 400px card marooned in the middle
-  of a 1920px window, with the story and the form each reading as an isolated block. Column widths,
-  type sizes, card padding and control heights are `clamp()`ed against the viewport, so the page
-  scales as one composition instead of stepping between two fixed sizes.
-
-  The ground carries two accent blooms — behind the brand mark and under the composition — mixed
-  from `ASSAY_WHITELABEL_ACCENT`, so a deployment re-colours the whole page from the one variable it
-  already sets. The headline's second line takes the accent rather than receding into muted grey,
-  the brand mark blooms at logo size, and the trust note gets a shield of its own instead of the
-  rule it shared with block quotes.
-
-  Form work: both fields carry placeholders, the primary submit is a gradient off the accent and
-  sits a notch taller than the inputs it follows, and the provider buttons centre their label. The
-  password-reset page picks up the same placeholders.
+## Unreleased
 
 ### Added
 
-- **`ASSAY_WHITELABEL_LOGIN_BRAND`** — a sign-in wordmark for product names that read as two parts.
-  Text after `|` takes the accent colour, so `Neutron|Core` renders `Core` in the brand colour.
-  Unset renders `ASSAY_WHITELABEL_NAME` in one colour, unchanged.
-
-### Breaking
-
-- `WhitelabelConfig` gains a `login_brand` field. Callers constructing it as a struct literal need
-  the extra field; `WhitelabelConfig::from_env` is unaffected.
-
-## assay-dashboard 0.5.0 — 2026-08-19
-
-### Added
-
-- **A sign-in page that can say what the product is.** The hosted login was a centred card on a flat
-  rectangle: a badge, two fields and a button. Every operator running assay as the front door of
-  their own product got a page that said nothing about that product, and assay's own orange read as
-  their brand because changing it meant hosting a stylesheet.
-
-  Sign-in is now a two-area composition — the operator's story beside the credential panel —
-  assembled entirely from whitelabel config. `ASSAY_WHITELABEL_LOGIN_HEADLINE` turns it on;
-  `_SUBHEAD`, `_ROSTER_TITLE`, `_ROSTER` and `_NOTE` fill it, and `ASSAY_WHITELABEL_ACCENT`
-  re-colours the page from one variable. With no headline configured there is no story element and
-  the page keeps the centred card every existing deployment has today.
-
-  The roster rows are an illustration the operator writes (`Label:tone:Status`, capped at five),
-  never account data — assay styles three tones and reads no state to fill them, and the panel is
-  labelled as an illustration for assistive tech. An unknown tone degrades to `pending` and an
-  incomplete row is dropped, so a typo in env cannot take sign-in down.
-
-  The brand badge is a token now, so an operator with a real mark gets it rendered instead of an
-  initial in a coloured square.
-
-### Fixed
-
-- **The password-reset page showed both of its forms at once.** `recovery.js` swaps its request and
-  completion forms by toggling `hidden`, but an author `display` beats the UA's `[hidden]` rule and
-  `.password-login` declares one. Restored with an explicit rule.
-
-- Sign-in form details: fields gain hover and focus treatment, the error region reserves its space
-  so a failed attempt cannot shove the button down, the submit button reports that it is working,
-  and a reveal control flips the password field and re-masks it on failure. The recovery link moved
-  after the input in the DOM so a keyboard reaches the password field before the way around it.
-
-## assay-engine 0.5.14 — 2026-08-19
-
-### Changed
-
-- Ships assay-dashboard 0.5.0 (sign-in redesign above). No engine behaviour changes.
-
-## assay-vault 0.4.3 — 2026-08-16
-
-### Added
-
-- **A HashiCorp Vault / OpenBao read facade, so an estate adopts assay-vault by repointing a URL.**
-  Estates that already hold their secrets in Vault or OpenBao consume them through one dialect:
-  `X-Vault-Token` for auth, `/v1/{mount}/data/{path}` for a KV2 read, and a fixed response envelope.
-  External Secrets Operator's vault provider speaks it, ansible's `community.hashi_vault` speaks it,
-  `vault kv get` and curl speak it. Until now none of them could point at assay-vault, so adopting
-  it meant rewriting every `ExternalSecret` and every inventory lookup. The new `hashicorp_compat`
-  module serves that dialect on top of the existing KV store.
-
-  Read-only by construction: `GET /v1/{mount}/data/{path}` (with `?version=N`), `GET` and `LIST` on
-  `/v1/{mount}/metadata/{path}`, and `GET /v1/sys/health`. Writes, rotation, sealing, and token
-  issuance stay on the native `/api/v1/vault/*` surface where the policy and the audit trail already
-  live; any other method on a facade route answers `405`, and there is no `sys/mounts`, no auth
-  mount, and no token endpoint to find.
-
-  A Vault token IS an assay token — the facade presents `X-Vault-Token` to the embedder's existing
-  admin-bearer / trusted-JWT gate as the bearer it already checks, so there is no second token store
-  to keep in sync and one enforcement point rather than two. Answers speak Vault's vocabulary:
-  `403 {"errors":["permission denied"]}` for a rejected or absent token (Vault answers 403 for
-  both), `404 {"errors":[]}` for a missing path, `503` and a sealed `sys/health` when the engine is
-  sealed.
-
-  The mount is a label, not a namespace: it names the one logical KV2 mount an engine exposes
-  (`secrets` by default) and is stripped before the lookup, leaving the assay KV path verbatim, so
-  `secrets/data/platform/postgres` and `/api/v1/vault/kv/platform/postgres` are the same secret. Any
-  other mount name is a 404 rather than a quiet read of a different path. assay KV stores an opaque
-  UTF-8 payload per version where KV2 hands back an object, so a payload that parses as a JSON
-  object is served field-by-field and anything else is served as `{"value": …}` — an
-  `ExternalSecret` naming `property: password` works, and a single-string secret stays reachable.
-
-  Gated behind the `vault-hashicorp-compat` Cargo feature (in the default `vault` umbrella) and, in
-  the engine, behind config. Documented in `docs/vault-hashicorp-compat.md`.
-
-## assay-engine 0.5.13 — 2026-08-16
-
-### Added
-
-- **`[vault.hashicorp_compat]` mounts the Vault / OpenBao KV2 read facade at `/v1/*`.** Off by
-  default: serving a second dialect of the secret store at the engine root is a deliberate act, not
-  something an upgrade should switch on. `mount` (default `secrets`) names the logical KV2 mount, so
-  consumers keep the paths their old OpenBao used. The routes sit at the server root because Vault
-  clients hardcode `/v1/…` and cannot be told to use a prefix — point `VAULT_ADDR` or an ESO
-  `server:` at the engine's base URL. `GET /v1/sys/health` is unauthenticated, as Vault's is;
-  everything else carries the same admin-bearer gate as every other engine module surface.
+- **`assay.gleif` and `assay.edgar` — the first registry modules.** Company discovery kept
+  paying (or scraping) for facts that sit in open registries. GLEIF answers "does this legal
+  entity exist, where, under what status" for every jurisdiction with no key at all; EDGAR
+  answers the US public-company half — tickers, SIC, addresses, filings, full-text search —
+  behind nothing but an identifying User-Agent, which the client refuses to run without.
+  Both normalize to one flat registry shape and stamp provenance on every record, so a fact
+  fetched here stays auditable wherever it flows.
 
 ## assay-lua 0.19.1 — 2026-08-15
 
