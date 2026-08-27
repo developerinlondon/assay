@@ -101,6 +101,7 @@ const CATEGORIES: &[&str] = &[
     "comms",
     "host",
     "data",
+    "registries",
     "core",
 ];
 
