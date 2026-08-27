@@ -94,6 +94,33 @@ function M.person(provider, from, fields)
   }
 end
 
+--- One company, whoever supplied it. National registries and paid providers
+--- normalize to this, so a fact looked up for nothing and a fact bought are
+--- indistinguishable downstream except by provenance (NEP-0007 §10).
+---
+--- `domain` is the outreach-critical field: it is what joins a registry record
+--- to a prospect list, and most registries publish it as a bare hostname.
+function M.company(provider, from, fields)
+  fields = fields or {}
+  return {
+    registry_id = fields.registry_id,
+    name = fields.name,
+    domain = fields.domain,
+    status = fields.status,
+    legal_form = fields.legal_form,
+    jurisdiction = fields.jurisdiction,
+    city = fields.city,
+    country = fields.country,
+    industry = fields.industry,
+    industry_code = fields.industry_code,
+    employees = fields.employees,
+    phone = fields.phone,
+    founded_at = fields.founded_at,
+    registered_at = fields.registered_at,
+    provenance = M.provenance(provider, from),
+  }
+end
+
 --- `email_type` and `verification_status` are NEP-0007 §2's vocabulary. An
 --- adapter reports what the provider claims; it never promotes a claim to
 --- VERIFIED, which only a delivery can earn.

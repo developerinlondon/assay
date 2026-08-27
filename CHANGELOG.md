@@ -6,6 +6,17 @@ All notable changes to Assay are documented here.
 
 ### Added
 
+- **`assay.brreg` and `assay.cvr` — worldwide reach starts with the registries that are actually
+  open.** Norway's Enhetsregisteret and Denmark's CVR are keyless, and Brreg publishes two things
+  most national registries do not: the company website and a live employee count. That makes
+  `by_website` possible — _which legal entity owns this domain_ — which is the join a prospect list
+  actually needs, since the list holds domains and the registry holds companies. Normalisation
+  carries the weight: Norway's three distress booleans collapse to one status, an unreported
+  headcount stays absent rather than becoming zero, Denmark's `04/12 - 2013` becomes an ISO date,
+  and a website registered as `https://WWW.X.no/` reduces to a joinable host. `lead_provider` grows
+  a shared `company` shape, so a registry fact and a bought fact differ only by provenance (NEP-0007
+  §10).
+
 - **`assay.bettercontact` read the wrong field for the email verdict.** The vendor's field is
   `contact_email_address_status`, not `contact_email_status`, and its deliverable value is
   `deliverable`, not `valid` — `valid` is a counter in the summary object, not a per-contact
