@@ -6,6 +6,17 @@ All notable changes to Assay are documented here.
 
 ### Added
 
+- **`assay.lead_provider`, `assay.contactout`, `assay.bettercontact` — paid lookups get a gate they
+  cannot walk around.** The contract module carries the uniform person/email shapes with provenance,
+  so free registry facts and bought ones read identically downstream, and it owns the budget gate:
+  the spend ledger lives in the caller's database, so the context is injected, and a client cannot
+  be constructed without one. A declined budget means the provider is never called, and a call that
+  raised is never metered — the ledger answers what things cost, and a failed call bought nothing.
+  ContactOut wants the bare `token` header (not Authorization, no Bearer). BetterContact is
+  asynchronous and answers 202 with no data while a run is still going, so only its own `terminated`
+  status counts as finished. Neither adapter can promote a vendor's claim to VERIFIED; `valid` means
+  PROBABLE, because an assertion is not a delivery.
+
 - **`smtp_probe` — email verification finishes inside the binary.** The rung above DNS is now a
   compiled builtin rather than a service to run or a vendor to pay: connect, greeting, EHLO (falling
   back to HELO), MAIL FROM, a random-address RCPT that exposes catch-alls, the target RCPT, QUIT.
