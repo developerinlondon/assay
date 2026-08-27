@@ -25,18 +25,21 @@ local TERMINAL = { terminated = true }
 
 local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 
--- BetterContact reports its own verification outcome per contact. It is
--- mapped into NEP-0007's vocabulary and deliberately stops at PROBABLE:
--- a vendor's assertion is not a delivery, so it cannot earn VERIFIED.
+-- BetterContact reports its own verification outcome per contact, mapped into
+-- NEP-0007's vocabulary and deliberately stopping at PROBABLE: a vendor's
+-- assertion is not a delivery, so it cannot earn VERIFIED.
+--
+-- `catch_all_safe` is the vendor's opinion that a catch-all domain is worth
+-- sending to anyway. It stays CATCH_ALL, which never schedules — promoting it
+-- would let a vendor's guess about a domain decide who gets written to. The
+-- raw verdict is carried on the record so that nuance is not lost.
 local STATUS_MAP = {
-  valid = "PROBABLE",
   deliverable = "PROBABLE",
   catch_all = "CATCH_ALL",
-  ["catch-all"] = "CATCH_ALL",
+  catch_all_safe = "CATCH_ALL",
+  catch_all_not_safe = "CATCH_ALL",
   undeliverable = "INVALID",
-  invalid = "INVALID",
   not_found = "UNKNOWN",
-  unknown = "UNKNOWN",
 }
 
 local function to_person(record, from)
@@ -44,16 +47,19 @@ local function to_person(record, from)
   local emails = {}
   local address = trim(record.contact_email_address)
   if address ~= "" then
-    emails[1] = lp.email("bettercontact", from, {
+    local vendor_status = tostring(record.contact_email_address_status or ""):lower()
+    local email = lp.email("bettercontact", from, {
       address = address,
       email_type = "provider",
-      verification_status = STATUS_MAP[tostring(record.contact_email_status or ""):lower()]
-        or "UNKNOWN",
+      verification_status = STATUS_MAP[vendor_status] or "UNKNOWN",
     })
+    email.vendor_status = (vendor_status ~= "" and vendor_status or nil)
+    email.provider_used = record.contact_email_address_provider or record.email_provider
+    emails[1] = email
   end
   local first, last = record.contact_first_name, record.contact_last_name
-  local full = nil
-  if first or last then full = trim((first or "") .. " " .. (last or "")) end
+  local full = trim(record.contact_full_name)
+  if full == "" and (first or last) then full = trim((first or "") .. " " .. (last or "")) end
   return lp.person("bettercontact", from, {
     first_name = first,
     last_name = last,
