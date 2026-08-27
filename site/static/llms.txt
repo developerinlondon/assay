@@ -47,6 +47,7 @@
 - [assay.openbao](https://assay.rs/modules/openbao.html): OpenBao (Vault API-compatible)
 - [assay.certmanager](https://assay.rs/modules/certmanager.html): cert-manager certificates, issuers, ACME
 - [assay.edgar](https://assay.rs/modules/edgar.html): SEC EDGAR — US public-company registry: tickers, submissions, filings full-text search
+- [assay.email_verify](https://assay.rs/modules/email_verify.html): Free email verification — syntax, MX over DoH, pattern candidates
 - [assay.gleif](https://assay.rs/modules/gleif.html): GLEIF LEI registry — global legal-entity search, keyless and free
 - [assay.eso](https://assay.rs/modules/eso.html): External Secrets Operator
 - [assay.dex](https://assay.rs/modules/dex.html): Dex OIDC discovery, JWKS, health
