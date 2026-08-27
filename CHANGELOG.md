@@ -6,6 +6,12 @@ All notable changes to Assay are documented here.
 
 ### Added
 
+- **`assay.email_verify` — the waterfall's free rung.** Syntax that refuses what could never
+  deliver, MX lookups over DNS-over-HTTPS (keyless, deterministic, one mock in tests), and
+  the pattern candidates an executive address usually takes. Its vocabulary is deliberately
+  capped at INVALID and UNKNOWN — the statuses that let a pipeline reject cheaply without
+  ever inflating free evidence into a send-safe verdict.
+
 - **`assay.gleif` and `assay.edgar` — the first registry modules.** Company discovery kept
   paying (or scraping) for facts that sit in open registries. GLEIF answers "does this legal
   entity exist, where, under what status" for every jurisdiction with no key at all; EDGAR
