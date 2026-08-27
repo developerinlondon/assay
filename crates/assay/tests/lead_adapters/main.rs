@@ -220,9 +220,11 @@ async fn test_bettercontact_submits_then_reads_the_terminated_run() {
             "data": [{
                 "contact_first_name": "Jonathan",
                 "contact_last_name": "Church",
+                "contact_full_name": "Jonathan Church",
+                "contact_email_address_provider": "dropcontact",
                 "contact_job_title": "Managing Director",
                 "contact_email_address": "jonathan.church@cheaney.co.uk",
-                "contact_email_status": "valid",
+                "contact_email_address_status": "deliverable",
                 "company_name": "Joseph Cheaney & Sons",
                 "company_domain": "cheaney.co.uk",
                 "contact_location_country": "United Kingdom"
@@ -241,6 +243,9 @@ async fn test_bettercontact_submits_then_reads_the_terminated_run() {
         assert.eq(p.domain, "cheaney.co.uk")
         assert.eq(#p.emails, 1)
         assert.eq(p.emails[1].address, "jonathan.church@cheaney.co.uk")
+        assert.eq(p.emails[1].verification_status, "PROBABLE")
+        assert.eq(p.emails[1].vendor_status, "deliverable")
+        assert.eq(p.emails[1].provider_used, "dropcontact")
         assert.eq(p.provenance.provider, "bettercontact")
         assert.eq(spent[1], "find_person:0")
         "#,
@@ -254,8 +259,10 @@ async fn test_bettercontact_submits_then_reads_the_terminated_run() {
 #[tokio::test]
 async fn test_bettercontact_never_launders_a_vendor_claim_into_verified() {
     for (vendor, want) in [
-        ("valid", "PROBABLE"),
+        ("deliverable", "PROBABLE"),
         ("catch_all", "CATCH_ALL"),
+        ("catch_all_safe", "CATCH_ALL"),
+        ("catch_all_not_safe", "CATCH_ALL"),
         ("undeliverable", "INVALID"),
         ("not_found", "UNKNOWN"),
         ("something_new", "UNKNOWN"),
@@ -264,7 +271,7 @@ async fn test_bettercontact_never_launders_a_vendor_claim_into_verified() {
             200,
             json!({
                 "id": RUN_ID, "status": "terminated",
-                "data": [{ "contact_email_address": "a@b.com", "contact_email_status": vendor }]
+                "data": [{ "contact_email_address": "a@b.com", "contact_email_address_status": vendor }]
             }),
         )
         .await;

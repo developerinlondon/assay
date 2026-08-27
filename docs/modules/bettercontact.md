@@ -39,11 +39,28 @@ Only the submission is metered. **Polling is free and does not go through the ga
 
 BetterContact's own per-contact verdict maps into NEP-0007 §2's vocabulary, and stops at `PROBABLE`:
 
-| BetterContact                      | Recorded as |
-| ---------------------------------- | ----------- |
-| `valid`, `deliverable`             | `PROBABLE`  |
-| `catch_all`                        | `CATCH_ALL` |
-| `undeliverable`, `invalid`         | `INVALID`   |
-| `not_found`, anything unrecognised | `UNKNOWN`   |
+| `contact_email_address_status`                      | Recorded as |
+| --------------------------------------------------- | ----------- |
+| `deliverable`                                       | `PROBABLE`  |
+| `catch_all`, `catch_all_safe`, `catch_all_not_safe` | `CATCH_ALL` |
+| `undeliverable`                                     | `INVALID`   |
+| `not_found`, anything unrecognised                  | `UNKNOWN`   |
 
 A vendor asserting an address is good is not a delivery, so nothing here can reach `VERIFIED`.
+
+The field is `contact_email_address_status` — **not** `contact_email_status`, and the deliverable
+value is `deliverable`, not `valid` (`valid` is a counter in the `summary` object, not a per-contact
+verdict). The distinction matters more than it looks: reading the wrong name yields nil, which maps
+to `UNKNOWN`, and `UNKNOWN` never schedules under NEP-0007 §2. Every enriched address would be
+silently unusable rather than visibly broken, so two tests pin the real name.
+
+`catch_all_safe` is BetterContact's opinion that a catch-all domain is worth sending to anyway. It
+stays `CATCH_ALL`, which never schedules — promoting it would let a vendor's guess about a domain
+decide who gets written to. The raw verdict is preserved on the record as `vendor_status`, and the
+upstream source as `provider_used`, so the nuance is available without being laundered into the
+status.
+
+### Rate limit
+
+60 requests per minute per API key, shared across **all** endpoints rather than per endpoint —
+polling and submissions draw on the same budget.

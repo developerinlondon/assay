@@ -6,6 +6,15 @@ All notable changes to Assay are documented here.
 
 ### Added
 
+- **`assay.bettercontact` read the wrong field for the email verdict.** The vendor's field is
+  `contact_email_address_status`, not `contact_email_status`, and its deliverable value is
+  `deliverable`, not `valid` — `valid` is a counter in the summary object, not a per-contact
+  verdict. Reading the wrong name yielded nil, which mapped to UNKNOWN, and UNKNOWN never schedules
+  under NEP-0007 §2 — so every enriched address came back silently unusable rather than visibly
+  broken. The full documented enum is now covered, `catch_all_safe` stays CATCH_ALL rather than
+  being promoted on the vendor's say-so, and the raw verdict rides along as `vendor_status` so the
+  nuance survives without laundering.
+
 - **`assay.lead_provider`, `assay.contactout`, `assay.bettercontact` — paid lookups get a gate they
   cannot walk around.** The contract module carries the uniform person/email shapes with provenance,
   so free registry facts and bought ones read identically downstream, and it owns the budget gate:
