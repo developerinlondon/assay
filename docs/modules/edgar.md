@@ -1,5 +1,5 @@
 ---
-category: Cloud & AWS
+category: Registries
 tagline: SEC EDGAR — US public-company registry, filings and full-text search
 ---
 

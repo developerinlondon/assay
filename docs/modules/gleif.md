@@ -1,5 +1,5 @@
 ---
-category: Cloud & AWS
+category: Registries
 tagline: GLEIF LEI registry — global legal-entity search, keyless and free
 ---
 
