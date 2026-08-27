@@ -1,6 +1,6 @@
 ---
 name: assay
-description: Infrastructure scripting runtime — 67 modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one ~12 MB binary.
+description: Infrastructure scripting runtime — 68 modules for Kubernetes, ArgoCD, Vault, Prometheus, HTTP servers, AI agents, databases. Replaces kubectl, Python, Node.js, curl, jq in one ~12 MB binary.
 metadata:
   author: developerinlondon
   version: "0.6.1"
@@ -44,7 +44,7 @@ assay modules
 | `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
 | `assay exec script.lua`     | Run Lua file via exec subcommand              |
 | `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 66 modules (65 stdlib + builtins)    |
+| `assay modules`             | List all 66 modules (66 stdlib + builtins)    |
 | `assay modules --json`      | Same list as JSON with keywords/quickrefs     |
 
 **Read-only mode.** The global `--readonly` flag (or `ASSAY_READONLY=1`) disables every mutating
@@ -363,7 +363,7 @@ embedding assay inside another admin UI. Full table + theme tokens in
 
 ## Stdlib Modules Quick Reference
 
-All 65 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+All 66 stdlib modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module               | Description                                                                                                                                                      |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -635,7 +635,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 65 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: All 66 stdlib modules are embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use
