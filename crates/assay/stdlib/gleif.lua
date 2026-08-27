@@ -1,6 +1,6 @@
 --- @module assay.gleif
---- @description GLEIF LEI registry — search global legal entities by name, fetch a record by LEI, fuzzy-complete names. Free, keyless, every fact carries provenance.
---- @category Cloud & AWS
+--- @description GLEIF LEI registry — search global legal entities by name, fetch a record by LEI, fuzzy-complete names. Free, keyless, every record carries provenance.
+--- @category registries
 --- @icon building
 --- @keywords gleif, lei, legal entity, registry, company, prospect, lookup, ownership
 --- @quickref M.client(opts?) -> c | Client; base_url override for tests
@@ -10,13 +10,9 @@
 
 local M = {}
 
-local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
+local url = require("assay.url")
 
-local function urlencode(str)
-  return tostring(str):gsub("([^%w%-%.%_%~ ])", function(ch)
-    return string.format("%%%02X", string.byte(ch))
-  end):gsub(" ", "%%20")
-end
+local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 
 -- One JSON:API lei-record → the flat shape every registry module returns, so
 -- downstream code never learns per-registry envelopes.
@@ -44,32 +40,32 @@ function M.client(opts)
   local base_url = (opts.base_url or "https://api.gleif.org/api/v1"):gsub("/+$", "")
 
   local function api_get(path_str)
-    local url = base_url .. path_str
-    local resp = http.get(url, { headers = { Accept = "application/vnd.api+json" } })
-    if resp.status == 404 then return nil, url end
+    local target = base_url .. path_str
+    local resp = http.get(target, { headers = { Accept = "application/vnd.api+json" } })
+    if resp.status == 404 then return nil, target end
     if resp.status ~= 200 then
       error("gleif: GET " .. path_str .. " HTTP " .. resp.status .. ": " .. (resp.body or ""))
     end
-    return json.parse(resp.body), url
+    return json.parse(resp.body), target
   end
 
   local c = {}
 
   function c:search(name, o)
     o = o or {}
-    local path_str = "/lei-records?filter%5Bentity.legalName%5D=" .. urlencode(trim(name))
+    local path_str = "/lei-records?filter%5Bentity.legalName%5D=" .. url.encode(trim(name))
       .. "&page%5Bsize%5D=" .. tostring(o.limit or 10)
-    local body, url = api_get(path_str)
+    local body, from = api_get(path_str)
     local out = {}
     for _, record in ipairs(body and body.data or {}) do
-      out[#out + 1] = normalize(record, url)
+      out[#out + 1] = normalize(record, from)
     end
     return out
   end
 
   function c:fuzzy(name, o)
     o = o or {}
-    local path_str = "/fuzzycompletions?field=entity.legalName&q=" .. urlencode(trim(name))
+    local path_str = "/fuzzycompletions?field=entity.legalName&q=" .. url.encode(trim(name))
     local body = api_get(path_str)
     local out = {}
     for _, item in ipairs(body and body.data or {}) do
@@ -80,9 +76,13 @@ function M.client(opts)
   end
 
   function c:get(lei)
-    local body, url = api_get("/lei-records/" .. urlencode(trim(lei)))
-    if not body or not body.data then return nil end
-    return normalize(body.data, url)
+    lei = trim(lei)
+    -- An empty LEI would hit the collection endpoint, which answers 200 with a
+    -- page of records — a truthy garbage "hit" for a caller expecting nil.
+    if lei == "" then return nil end
+    local body, from = api_get("/lei-records/" .. url.encode(lei))
+    if not body or not body.data or not body.data.attributes then return nil end
+    return normalize(body.data, from)
   end
 
   return c

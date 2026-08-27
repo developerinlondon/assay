@@ -86,6 +86,20 @@ async fn test_gleif_get_unknown_lei_is_nil() {
 }
 
 #[tokio::test]
+async fn test_gleif_empty_lei_is_nil_not_collection() {
+    run_lua(
+        r#"
+        local gleif = require("assay.gleif")
+        local c = gleif.client({ base_url = "http://example.invalid" })
+        assert.eq(type(c:get("")), "nil")
+        assert.eq(type(c:get("   ")), "nil")
+    "#,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn test_gleif_fuzzy_returns_values() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

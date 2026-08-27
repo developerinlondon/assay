@@ -23,7 +23,7 @@ async fn test_edgar_tickers_and_find_send_user_agent() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/files/company_tickers.json"))
-        .and(header("User-Agent", "revenue-engine test@deepbrain.space"))
+        .and(header("User-Agent", "my-app contact@example.com"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "0": { "cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc." },
             "1": { "cik_str": 789019, "ticker": "MSFT", "title": "Microsoft Corp" }
@@ -34,7 +34,7 @@ async fn test_edgar_tickers_and_find_send_user_agent() {
         r#"
         local edgar = require("assay.edgar")
         local c = edgar.client({{
-            user_agent = "revenue-engine test@deepbrain.space",
+            user_agent = "my-app contact@example.com",
             www_url = "{u}", data_url = "{u}", efts_url = "{u}",
         }})
         local all = c:tickers()
@@ -48,6 +48,21 @@ async fn test_edgar_tickers_and_find_send_user_agent() {
     ))
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn test_edgar_find_refuses_empty_needle() {
+    let err = run_lua(
+        r#"
+        local edgar = require("assay.edgar")
+        local c = edgar.client({ user_agent = "t t@t.t", www_url = "http://example.invalid",
+            data_url = "http://example.invalid", efts_url = "http://example.invalid" })
+        c:find("   ")
+    "#,
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("non-empty"));
 }
 
 #[tokio::test]
