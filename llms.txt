@@ -51,6 +51,8 @@
 - [assay.certmanager](https://assay.rs/modules/certmanager.html): cert-manager certificates, issuers, ACME
 - [assay.edgar](https://assay.rs/modules/edgar.html): SEC EDGAR — US public-company registry: tickers, submissions, filings full-text search
 - [assay.bettercontact](https://assay.rs/modules/bettercontact.html): BetterContact waterfall enrichment — async submit/poll, verified emails and phones, budget-gated
+- [assay.brreg](https://assay.rs/modules/brreg.html): Norway's Enhetsregisteret — keyless company search, website reverse-lookup, live employee counts
+- [assay.cvr](https://assay.rs/modules/cvr.html): Denmark's CVR via cvrapi.dk — keyless lookup by name, VAT or phone
 - [assay.contactout](https://assay.rs/modules/contactout.html): ContactOut lead data — LinkedIn enrichment, email-to-profile, work-email lookup, budget-gated
 - [assay.lead_provider](https://assay.rs/modules/lead_provider.html): Lead-data contract — budget gate for paid calls (approve/meter), uniform person/email records with provenance
 - [assay.email_verify](https://assay.rs/modules/email_verify.html): Email verification — syntax, MX over DoH, disposable/role/typo signals, live SMTP probe (PROBABLE/CATCH_ALL/INVALID)
