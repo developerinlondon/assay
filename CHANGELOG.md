@@ -6,19 +6,30 @@ All notable changes to Assay are documented here.
 
 ### Added
 
-- **`assay.email_verify` — the waterfall's free rung.** Syntax that refuses what could never
-  deliver, MX lookups over DNS-over-HTTPS (keyless, deterministic, one mock in tests), and
-  the pattern candidates an executive address usually takes. Its vocabulary is deliberately
-  capped at INVALID and UNKNOWN — the statuses that let a pipeline reject cheaply without
-  ever inflating free evidence into a send-safe verdict.
+- **`smtp_probe` — email verification finishes inside the binary.** The rung above DNS is now a
+  compiled builtin rather than a service to run or a vendor to pay: connect, greeting, EHLO (falling
+  back to HELO), MAIL FROM, a random-address RCPT that exposes catch-alls, the target RCPT, QUIT.
+  DATA is never issued, so a probe cannot deliver anything. `email_verify` grows a `probe()` that
+  turns those replies into NEP-0007's vocabulary — PROBABLE for an accepted recipient, CATCH_ALL for
+  a host that accepts anyone, INVALID only when a server names the mailbox as absent — plus
+  disposable, role and typo signals carried as flags, never as a status, because INVALID is
+  permanent and a shortlist can be wrong. An accepted RCPT stops at PROBABLE on purpose: servers
+  accept at RCPT and bounce afterwards. The cost is tens of KB on networking already in the binary,
+  and the one-binary story is intact.
 
-- **`assay.gleif` and `assay.edgar` — the first registry modules.** Company discovery kept
-  paying (or scraping) for facts that sit in open registries. GLEIF answers "does this legal
-  entity exist, where, under what status" for every jurisdiction with no key at all; EDGAR
-  answers the US public-company half — tickers, SIC, addresses, filings, full-text search —
-  behind nothing but an identifying User-Agent, which the client refuses to run without.
-  Both normalize to one flat registry shape and stamp provenance on every record, so a fact
-  fetched here stays auditable wherever it flows.
+- **`assay.email_verify` — the waterfall's free rung.** Syntax that refuses what could never
+  deliver, MX lookups over DNS-over-HTTPS (keyless, deterministic, one mock in tests), and the
+  pattern candidates an executive address usually takes. Its vocabulary is deliberately capped at
+  INVALID and UNKNOWN — the statuses that let a pipeline reject cheaply without ever inflating free
+  evidence into a send-safe verdict.
+
+- **`assay.gleif` and `assay.edgar` — the first registry modules.** Company discovery kept paying
+  (or scraping) for facts that sit in open registries. GLEIF answers "does this legal entity exist,
+  where, under what status" for every jurisdiction with no key at all; EDGAR answers the US
+  public-company half — tickers, SIC, addresses, filings, full-text search — behind nothing but an
+  identifying User-Agent, which the client refuses to run without. Both normalize to one flat
+  registry shape and stamp provenance on every record, so a fact fetched here stays auditable
+  wherever it flows.
 
 ## assay-engine 0.5.15 — 2026-08-20
 
