@@ -22,6 +22,7 @@
 - [crypto, base64](https://assay.rs/modules/crypto.html): JWT signing/verification/decoding (PEM or JWKS), HMAC, hashing, random, base64
 - [regex](https://assay.rs/modules/regex.html): Regex match, find, replace
 - [db](https://assay.rs/modules/db.html): SQL database — Postgres, MySQL, SQLite — db.connect/query/execute
+- [smtp_probe](https://assay.rs/modules/email_verify.html): SMTP recipient probe — smtp_probe.check{email,mx,from} → catch_all/deliverable/greylisted; envelope only, never DATA
 - [ws](https://assay.rs/modules/ws.html): WebSocket client — ws.connect(url, opts?) with subprotocols/headers/insecure, send/send_binary/recv/protocol/close
 - [template](https://assay.rs/modules/template.html): Jinja2-compatible template rendering
 - [async](https://assay.rs/modules/async.html): Async task spawn and await
@@ -49,7 +50,7 @@
 - [assay.openbao](https://assay.rs/modules/openbao.html): OpenBao (Vault API-compatible)
 - [assay.certmanager](https://assay.rs/modules/certmanager.html): cert-manager certificates, issuers, ACME
 - [assay.edgar](https://assay.rs/modules/edgar.html): SEC EDGAR — US public-company registry: tickers, submissions, filings full-text search
-- [assay.email_verify](https://assay.rs/modules/email_verify.html): Free email verification — syntax, MX over DoH, pattern candidates
+- [assay.email_verify](https://assay.rs/modules/email_verify.html): Email verification — syntax, MX over DoH, disposable/role/typo signals, live SMTP probe (PROBABLE/CATCH_ALL/INVALID)
 - [assay.gleif](https://assay.rs/modules/gleif.html): GLEIF LEI registry — global legal-entity search, keyless and free
 - [assay.eso](https://assay.rs/modules/eso.html): External Secrets Operator
 - [assay.dex](https://assay.rs/modules/dex.html): Dex OIDC discovery, JWKS, health
