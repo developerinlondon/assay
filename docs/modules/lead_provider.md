@@ -54,3 +54,21 @@ later acts on.
 `email` defaults `verification_status` to `UNKNOWN`. An adapter reports what a provider claims and
 never promotes that claim to `VERIFIED` — under NEP-0007 §2 only a delivery earns it, and `PROBABLE`
 is the ceiling for an SMTP-level accept (see [`email_verify`](email_verify.html)).
+
+### Running the live smoke tests
+
+The adapters are tested against recorded shapes, which cannot catch the one thing that matters most:
+whether the vendor still sends the fields the adapter reads. BetterContact's verdict field was wrong
+once for exactly that reason — the fixture carried the same mistake the code did.
+
+The live tests are gated on a key being present and skip without one, so the suite stays green
+everywhere:
+
+```sh
+CONTACTOUT_TOKEN=… cargo test -p assay-lua --test lead_smoke
+BETTERCONTACT_API_KEY=… cargo test -p assay-lua --test lead_smoke
+```
+
+They look up a public figure at a public company deliberately: a smoke run must not spend credits on
+a real prospect, nor put a private individual's address in a CI log. One of them also proves a
+declined budget stops a call that would have cost money — against the real API, not a mock.
