@@ -8,6 +8,7 @@
 --- @quickref M.provenance(provider, from) -> table | Uniform {provider, retrieved_from, retrieved_at}
 --- @quickref M.person(provider, from, fields) -> person | Normalized person record
 --- @quickref M.email(provider, from, fields) -> email | Normalized email record
+--- @quickref M.bare_domain(value) -> string|nil | Registry website string to joinable apex
 --- @quickref M.OPERATIONS -> [string] | The four operations an adapter may expose
 
 local M = {}
@@ -24,6 +25,23 @@ local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "
 
 local function stamp()
   return os.date("!%Y-%m-%dT%H:%M:%SZ")
+end
+
+--- Reduce a registry's website string to the apex host a prospect list holds.
+---
+--- Registries publish a website as a bare hostname, sometimes with a scheme and
+--- almost always with the www. This lives here rather than in one registry
+--- module because `domain` is the field that joins a registry record to a
+--- prospect list, so every source that publishes one must reduce it the same
+--- way or the join silently misses.
+---
+--- An empty string returns nil: sources report "no website" both ways, and a
+--- blank claim must not survive as evidence.
+function M.bare_domain(value)
+  local d = trim(value):lower()
+  if d == "" then return nil end
+  d = d:gsub("^https?://", ""):gsub("^www%.", ""):gsub("/.*$", ""):gsub(":%d+$", "")
+  return d ~= "" and d or nil
 end
 
 --- Wrap a caller-supplied budget context.

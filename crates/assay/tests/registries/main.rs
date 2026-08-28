@@ -1,4 +1,4 @@
-//! Norwegian and Danish company registries against recorded response shapes.
+//! Norwegian, Danish and UK company registries against recorded response shapes.
 //!
 //! Fixtures are trimmed copies of real responses. What is pinned is the
 //! normalisation the registries do not do for us: a joinable domain, an ISO
@@ -319,4 +319,262 @@ async fn test_cvr_marks_a_closed_or_bankrupt_company() {
         .await
         .unwrap();
     }
+}
+
+// ---------------------------------------------------------------------------
+// United Kingdom
+// ---------------------------------------------------------------------------
+
+/// The search endpoint and the profile endpoint describe the same company
+/// under different field names. Both fixtures are the documented shapes.
+fn ch_search_item() -> serde_json::Value {
+    json!({
+        "company_number": "00445790",
+        "title": "TESCO PLC",
+        "company_status": "active",
+        "company_type": "plc",
+        "date_of_creation": "1947-11-27",
+        "address_snippet": "Welwyn Garden City, AL7 1GA",
+        "address": { "locality": "Welwyn Garden City", "country": "United Kingdom",
+                     "postal_code": "AL7 1GA", "address_line_1": "Shire Park" }
+    })
+}
+
+fn ch_profile() -> serde_json::Value {
+    json!({
+        "company_number": "00445790",
+        "company_name": "TESCO PLC",
+        "company_status": "active",
+        "type": "plc",
+        "date_of_creation": "1947-11-27",
+        "jurisdiction": "england-wales",
+        "sic_codes": ["47110", "47190"],
+        "has_been_liquidated": false,
+        "registered_office_address": { "locality": "Welwyn Garden City",
+                                       "country": "United Kingdom", "postal_code": "AL7 1GA" }
+    })
+}
+
+async fn ch(uri: &str, body: &str) -> Result<(), mlua::Error> {
+    run_lua(&format!(
+        "local ch = require(\"assay.companies_house\")\n\
+         local c = ch.client({{ base_url = \"{uri}\", api_key = \"testkey\" }})\n{body}"
+    ))
+    .await
+}
+
+/// The key is the Basic username with an empty password; the trailing colon is
+/// load-bearing, and getting it wrong reads as a bad key rather than a bad request.
+#[tokio::test]
+async fn test_companies_house_authenticates_with_the_key_as_basic_username() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/search/companies"))
+        // base64("testkey:")
+        .and(header("authorization", "Basic dGVzdGtleTo="))
+        .respond_with(ResponseTemplate::new(200)
+            .set_body_json(json!({ "items": [ch_search_item()], "total_results": 1 })))
+        .mount(&server)
+        .await;
+    ch(
+        &server.uri(),
+        r#"
+        local hits = c:search("tesco")
+        assert.eq(#hits, 1)
+        assert.eq(hits[1].name, "TESCO PLC")
+        "#,
+    )
+    .await
+    .unwrap();
+}
+
+/// Search returns `title`; the profile returns `company_name`. Reading only one
+/// yields a record with a nil name from the other endpoint.
+#[tokio::test]
+async fn test_companies_house_reads_the_name_from_both_endpoint_shapes() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/search/companies"))
+        .respond_with(ResponseTemplate::new(200)
+            .set_body_json(json!({ "items": [ch_search_item()] })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/company/00445790"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(ch_profile()))
+        .mount(&server)
+        .await;
+    ch(
+        &server.uri(),
+        r#"
+        local from_search = c:search("tesco")[1]
+        local from_profile = c:get("00445790")
+        assert.eq(from_search.name, "TESCO PLC")
+        assert.eq(from_profile.name, "TESCO PLC")
+        assert.eq(from_search.legal_form, "plc")
+        assert.eq(from_profile.legal_form, "plc")
+        assert.eq(from_search.city, "Welwyn Garden City")
+        assert.eq(from_profile.city, "Welwyn Garden City")
+        assert.eq(from_profile.registry_id, "00445790")
+        assert.eq(from_profile.status, "ACTIVE")
+        assert.eq(from_profile.jurisdiction, "GB")
+        assert.eq(from_profile.industry_code, "47110")
+        assert.eq(from_profile.founded_at, "1947-11-27")
+        assert.eq(from_profile.provenance.provider, "registry:companies_house")
+        assert.not_nil(from_profile.provenance.retrieved_at)
+        assert.not_nil(from_profile.provenance.retrieved_from)
+        "#,
+    )
+    .await
+    .unwrap();
+}
+
+/// Twelve registry statuses, one question: can this company be approached.
+#[tokio::test]
+async fn test_companies_house_buckets_the_registry_statuses() {
+    for (raw, want) in [
+        ("active", "ACTIVE"),
+        ("dissolved", "CLOSED"),
+        ("converted-closed", "CLOSED"),
+        ("liquidation", "LIQUIDATING"),
+        ("administration", "LIQUIDATING"),
+        ("voluntary-arrangement", "LIQUIDATING"),
+        // A status the registry adds later must not silently become ACTIVE.
+        ("some-new-status", "SOME_NEW_STATUS"),
+    ] {
+        let mut p = ch_profile();
+        p["company_status"] = json!(raw);
+        let s = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/company/00445790"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(p))
+            .mount(&s)
+            .await;
+        ch(
+            &s.uri(),
+            &format!(r#"assert.eq(c:get("00445790").status, "{want}")"#),
+        )
+        .await
+        .unwrap();
+    }
+}
+
+/// No hits is an answer, not a failure, and the envelope omits `items`.
+#[tokio::test]
+async fn test_companies_house_treats_no_hits_as_an_empty_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/search/companies"))
+        .respond_with(ResponseTemplate::new(200)
+            .set_body_json(json!({ "total_results": 0, "items_per_page": 20 })))
+        .mount(&server)
+        .await;
+    ch(&server.uri(), r#"assert.eq(#c:search("nothing at all"), 0)"#)
+        .await
+        .unwrap();
+}
+
+/// An unknown company number is absence; a rejected key or a throttle is a
+/// failure. A caller must be able to tell them apart.
+#[tokio::test]
+async fn test_companies_house_separates_absence_from_rejection_and_throttling() {
+    let missing = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/company/99999999"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&missing)
+        .await;
+    ch(&missing.uri(), r#"assert.eq(c:get("9999 9999"), nil)"#)
+        .await
+        .unwrap();
+
+    for (status, needle) in [(401u16, "rejected the api_key"), (429, "rate limited")] {
+        let s = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/company/00445790"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&s)
+            .await;
+        let err = ch(&s.uri(), r#"c:get("00445790")"#).await.unwrap_err().to_string();
+        assert!(err.contains(needle), "status {status}: {err}");
+    }
+}
+
+/// Companies House is the one registry module that needs a key. Failing at
+/// construction beats a 401 later that reads like an outage.
+#[tokio::test]
+async fn test_companies_house_refuses_to_construct_without_a_key() {
+    let err = run_lua(
+        r#"
+        local ch = require("assay.companies_house")
+        ch.client({ base_url = "http://x" })
+    "#,
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("api_key required"), "{err}");
+}
+
+/// The profile names the company; this names the person to write to. A
+/// resignation date is the only thing separating a contact from a dead lead,
+/// and the withheld day of birth must not become a fabricated one.
+#[tokio::test]
+async fn test_companies_house_officers_carry_appointment_and_partial_birth_date() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/company/00445790/officers"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "active_count": 1,
+            "resigned_count": 1,
+            "items": [
+                { "name": "SMITH, John", "officer_role": "director",
+                  "appointed_on": "2015-06-01", "nationality": "British",
+                  "occupation": "Company Director", "country_of_residence": "United Kingdom",
+                  "date_of_birth": { "month": 5, "year": 1980 } },
+                { "name": "JONES, Ada", "officer_role": "secretary",
+                  "appointed_on": "2010-01-04", "resigned_on": "2019-03-02" }
+            ]
+        })))
+        .mount(&server)
+        .await;
+    ch(
+        &server.uri(),
+        r#"
+        local all = c:officers("00445790")
+        assert.eq(#all, 2)
+        local d = all[1]
+        assert.eq(d.full_name, "SMITH, John")
+        assert.eq(d.officer_role, "director")
+        assert.eq(d.title, "Company Director")
+        assert.eq(d.appointed_on, "2015-06-01")
+        assert.eq(d.born_at, "1980-05")
+        assert.eq(d.active, true)
+        assert.eq(d.provenance.provider, "registry:companies_house")
+        assert.not_nil(d.provenance.retrieved_at)
+
+        local gone = all[2]
+        assert.eq(gone.active, false)
+        assert.eq(gone.resigned_on, "2019-03-02")
+        -- No date of birth reported means none is claimed.
+        assert.eq(gone.born_at, nil)
+
+        local serving = c:officers("00445790", { active_only = true })
+        assert.eq(#serving, 1)
+        assert.eq(serving[1].full_name, "SMITH, John")
+        "#,
+    )
+    .await
+    .unwrap();
+}
+
+/// An empty company number would hit the collection path and answer 200 with
+/// something that is not the company asked for.
+#[tokio::test]
+async fn test_companies_house_refuses_an_empty_company_number() {
+    let err = ch("http://example.invalid", r#"c:get("   ")"#)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("company number is required"), "{err}");
 }

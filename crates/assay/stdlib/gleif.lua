@@ -10,7 +10,10 @@
 
 local M = {}
 
+local lp = require("assay.lead_provider")
 local url = require("assay.url")
+
+local PROVIDER = "registry:gleif"
 
 local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 
@@ -22,8 +25,15 @@ local function normalize(record, from_url)
   local name = entity.legalName or {}
   local address = entity.legalAddress or {}
   local registration = a.registration or {}
-  return {
-    lei = a.lei or record.id,
+  -- GLEIF is the one registry that is not itself the register of record, so
+  -- registry_id is the national number it cites, not the LEI. It cites Equinor
+  -- as "923 609 016" where Brreg holds "923609016"; unstripped, the two
+  -- registries never join on the company they both describe.
+  local registered_as = entity.registeredAs and trim(entity.registeredAs):gsub("%s", "") or nil
+  if registered_as == "" then registered_as = nil end
+
+  local out = lp.company(PROVIDER, from_url, {
+    registry_id = registered_as,
     name = name.name,
     status = entity.status,
     jurisdiction = entity.jurisdiction,
@@ -31,8 +41,9 @@ local function normalize(record, from_url)
     city = address.city,
     country = address.country,
     registered_at = registration.initialRegistrationDate,
-    provenance = { provider = "registry:gleif", retrieved_from = from_url },
-  }
+  })
+  out.lei = a.lei or record.id
+  return out
 end
 
 function M.client(opts)

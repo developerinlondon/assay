@@ -18,15 +18,7 @@ local PROVIDER = "registry:brreg"
 
 local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 
--- Registries publish a website as a bare hostname, sometimes with a scheme and
--- almost always with the www. A prospect list holds the apex, so normalising
--- here is what makes the two joinable at all.
-local function bare_domain(value)
-  local d = trim(value):lower()
-  if d == "" then return nil end
-  d = d:gsub("^https?://", ""):gsub("^www%.", ""):gsub("/.*$", ""):gsub(":%d+$", "")
-  return d ~= "" and d or nil
-end
+local bare_domain = lp.bare_domain
 
 -- Norwegian registry status is spread across three booleans rather than one
 -- field. Collapsing them loses nothing a caller acts on: all three mean the
