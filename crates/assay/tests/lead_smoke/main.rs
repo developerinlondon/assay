@@ -137,3 +137,27 @@ async fn a_declined_budget_stops_a_real_paid_call() {
     .await
     .unwrap();
 }
+
+/// mails.so, live: the shape the adapter was written against is the shape the
+/// vendor sends. The subject is our own domain's postmaster — a smoke must not
+/// spend a credit resolving a stranger.
+#[tokio::test]
+async fn mails_so_answers_in_the_shape_the_adapter_expects() {
+    let Some(key) = key_or_skip("MAILS_SO_KEY") else { return };
+    run_lua(&format!(
+        r#"
+        {GATE}
+        local ms = require("assay.mails_so")
+        local c = ms.client(gate, {{ api_key = "{key}" }})
+        local r = c:verify_email("postmaster@deepbrain.space")
+        assert.not_nil(r.verification_status)
+        assert.eq(r.verification_status ~= "VERIFIED", true)
+        assert.not_nil(r.vendor_result)
+        assert.eq(r.provenance.provider, "mails_so")
+        assert.eq(#spent > 0, true)
+        log.info("mails_so smoke: " .. r.vendor_result .. " -> " .. r.verification_status)
+    "#
+    ))
+    .await
+    .unwrap();
+}
