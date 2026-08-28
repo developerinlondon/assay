@@ -17,6 +17,13 @@ All notable changes to Assay are documented here.
   a shared `company` shape, so a registry fact and a bought fact differ only by provenance (NEP-0007
   §10).
 
+- **Live smoke tests for the paid lead providers.** Gated on a key being present, so they skip
+  everywhere a key is absent and the suite stays green. They check the half a fixture cannot: that
+  the vendor still sends the fields the adapter reads. That mattered once already — BetterContact's
+  verdict field was wrong, and no fixture could catch it because the fixture carried the same
+  mistake. One of them proves a declined budget stops a call against the real API rather than a
+  mock.
+
 - **`assay.bettercontact` read the wrong field for the email verdict.** The vendor's field is
   `contact_email_address_status`, not `contact_email_status`, and its deliverable value is
   `deliverable`, not `valid` — `valid` is a counter in the summary object, not a per-contact
