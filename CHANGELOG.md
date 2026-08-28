@@ -17,6 +17,11 @@ All notable changes to Assay are documented here.
   one set yields a record with a nil name from the other endpoint. Twelve registry statuses bucket
   into the three the other registry modules answer in; a status the registry adds later is
   upper-cased rather than mapped to `ACTIVE`, which would be the one wrong answer.
+- **`assay.mails_so` — the paid verify_email rung.** One GET per address through the budget gate.
+  The vendor's "deliverable" lands as PROBABLE, never VERIFIED — only our own evidence verifies —
+  and a domain that accepts anything is CATCH_ALL whatever the vendor concluded. Raw verdict, score,
+  MX and reason ride along on the record. Gated live smoke arms itself when `MAILS_SO_KEY` is
+  present.
 
 ### Changed
 
