@@ -6,6 +6,41 @@ All notable changes to Assay are documented here.
 
 ### Added
 
+- **`assay.companies_house` — the UK register, and the first free source that still needs a key.**
+  Company search, full profiles, and the officers a profile does not name — which is the reason to
+  reach a registry for outreach at all, since the profile names the company and the officer list
+  names the person to write to. The key is free but issued per caller, so the client refuses to
+  construct without one rather than failing later with a `401` that reads like an outage; the key is
+  the Basic username with an empty password, and the trailing colon is load-bearing. Search hits and
+  company profiles describe the same entity under different names — `title`/`company_name`,
+  `company_type`/`type`, `address`/`registered_office_address` — and both are read, because reading
+  one set yields a record with a nil name from the other endpoint. Twelve registry statuses bucket
+  into the three the other registry modules answer in; a status the registry adds later is
+  upper-cased rather than mapped to `ACTIVE`, which would be the one wrong answer.
+
+### Changed
+
+- **`assay.gleif` and `assay.edgar` now answer in the shared company shape.** They predated
+  `lead_provider.company` and carried a hand-rolled provenance with no `retrieved_at`, so a fact
+  from the two oldest registry modules was not interchangeable with one from `brreg`, `cvr` or
+  `companies_house` — which is the whole claim of NEP-0007 §10. Both now normalize through the
+  shared constructor. `edgar:find` returns company records rather than raw index rows; `tickers()`
+  stays a lightweight index, since stamping ten thousand rows individually buys nothing.
+
+### Fixed
+
+- **Three field mappings that only a live response could disprove**, all found by running the
+  modules against the real APIs rather than against their own fixtures:
+  - `assay.gleif` cited Equinor's Norwegian number as `923 609 016` where Brreg holds `923609016`.
+    Unstripped, the two registries never joined on the company they both describe — which was the
+    entire point of putting a national `registry_id` on a GLEIF record.
+  - `assay.edgar` read a domestic filer's `stateOrCountry` as the country, turning Apple's
+    California into `CA` — indistinguishable from Canada. EDGAR states no country for domestic
+    filers and inverts the fields for foreign ones, so the two cases are now read separately.
+  - `assay.edgar` reported CIK `320193` from the ticker index and `"0000320193"` from submissions,
+    handing out two identities for one company and breaking any join between its own two surfaces.
+    It also passed EDGAR's empty-string `website` straight through as a blank domain claim.
+
 - **`assay.brreg` and `assay.cvr` — worldwide reach starts with the registries that are actually
   open.** Norway's Enhetsregisteret and Denmark's CVR are keyless, and Brreg publishes two things
   most national registries do not: the company website and a live employee count. That makes

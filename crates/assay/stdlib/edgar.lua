@@ -4,14 +4,17 @@
 --- @icon building
 --- @keywords edgar, sec, cik, filings, ticker, company, registry, prospect, 10-K
 --- @quickref M.client(opts) -> c | Client; user_agent required (or EDGAR_USER_AGENT)
---- @quickref c:tickers() -> [company] | Every registered ticker: cik, ticker, name
---- @quickref c:find(name) -> [company] | Ticker-table rows whose name contains the query
+--- @quickref c:tickers() -> [row] | The raw ticker index: cik, ticker, name
+--- @quickref c:find(name) -> [company] | Index rows whose name contains the query
 --- @quickref c:submissions(cik) -> company|nil | SIC, tickers, addresses, recent filing counts
 --- @quickref c:fulltext(q, opts?) -> [hit] | Full-text search over filings
 
 local M = {}
 
+local lp = require("assay.lead_provider")
 local url = require("assay.url")
+
+local PROVIDER = "registry:edgar"
 
 local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 
@@ -19,6 +22,23 @@ local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "
 local function pad_cik(cik)
   local digits = tostring(cik):gsub("%D", "")
   return string.rep("0", 10 - #digits) .. digits
+end
+
+-- The ticker index reports CIK 320193 and submissions reports "0000320193" for
+-- the same company. Left alone the module hands out two different identities
+-- for one entity, so both are reduced to the unpadded form a CRM stores.
+local function plain_cik(cik)
+  local digits = tostring(cik or ""):gsub("%D", ""):gsub("^0+", "")
+  return digits ~= "" and digits or nil
+end
+
+-- EDGAR does not publish a country for domestic filers: it puts a US state
+-- code in `stateOrCountry` and leaves `country` null, so reading the former as
+-- a country turns Apple's California into Canada. Foreign filers invert this
+-- and carry free text, which is passed through for want of a code.
+local function country_of(business)
+  if business.country and business.country ~= "" then return business.country end
+  return business.stateOrCountry and "US" or nil
 end
 
 function M.client(opts)
@@ -46,11 +66,14 @@ function M.client(opts)
 
   local c = {}
 
+  --- The raw ticker index: ten thousand rows, so it stays a lightweight
+  --- three-field row sharing one provenance table rather than ten thousand
+  --- separately stamped company records. `find` is what promotes a match.
   function c:tickers()
     if self._tickers then return self._tickers end
     local body, from = api_get(www_url, "/files/company_tickers.json")
     local out = {}
-    local provenance = { provider = "registry:edgar", retrieved_from = from }
+    local provenance = lp.provenance(PROVIDER, from)
     for _, row in pairs(body or {}) do
       out[#out + 1] = { cik = row.cik_str, ticker = row.ticker, name = row.title, provenance = provenance }
     end
@@ -64,7 +87,17 @@ function M.client(opts)
     if needle == "" then error("edgar: find requires a non-empty name") end
     local out = {}
     for _, row in ipairs(self:tickers()) do
-      if tostring(row.name):lower():find(needle, 1, true) then out[#out + 1] = row end
+      if tostring(row.name):lower():find(needle, 1, true) then
+        local record = lp.company(PROVIDER, row.provenance.retrieved_from, {
+          registry_id = plain_cik(row.cik),
+          name = row.name,
+          jurisdiction = "US",
+          country = "US",
+        })
+        record.cik = row.cik
+        record.ticker = row.ticker
+        out[#out + 1] = record
+      end
     end
     return out
   end
@@ -73,18 +106,29 @@ function M.client(opts)
     local body, from = api_get(data_url, "/submissions/CIK" .. pad_cik(cik) .. ".json")
     if not body then return nil end
     local recent = (body.filings or {}).recent or {}
-    return {
-      cik = body.cik,
+    local business = (body.addresses or {}).business or {}
+    local record = lp.company(PROVIDER, from, {
+      registry_id = plain_cik(body.cik),
       name = body.name,
-      sic = body.sic,
-      sic_description = body.sicDescription,
-      tickers = body.tickers,
-      exchanges = body.exchanges,
-      website = body.website,
-      addresses = body.addresses,
-      recent_filing_count = recent.form and #recent.form or 0,
-      provenance = { provider = "registry:edgar", retrieved_from = from },
-    }
+      -- EDGAR ships `website` as an empty string for the many registrants that
+      -- publish none, which would otherwise reach a prospect list as a blank
+      -- claim rather than an absent one.
+      domain = lp.bare_domain(body.website),
+      legal_form = body.entityType,
+      jurisdiction = body.stateOfIncorporation,
+      city = business.city,
+      country = country_of(business),
+      industry = body.sicDescription,
+      industry_code = body.sic,
+      phone = body.phone,
+    })
+    record.cik = body.cik
+    record.tickers = body.tickers
+    record.exchanges = body.exchanges
+    record.addresses = body.addresses
+    record.lei = body.lei
+    record.recent_filing_count = recent.form and #recent.form or 0
+    return record
   end
 
   function c:fulltext(q, o)
@@ -103,7 +147,7 @@ function M.client(opts)
         filed_at = src.file_date,
         company = src.display_names and src.display_names[1] or nil,
         ciks = src.ciks,
-        provenance = { provider = "registry:edgar", retrieved_from = from },
+        provenance = lp.provenance(PROVIDER, from),
       }
     end
     return out

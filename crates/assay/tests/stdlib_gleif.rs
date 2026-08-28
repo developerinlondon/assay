@@ -15,6 +15,8 @@ fn lei_record(lei: &str, name: &str, country: &str) -> serde_json::Value {
                 "status": "ACTIVE",
                 "jurisdiction": country,
                 "legalForm": { "id": "H0PO" },
+                // GLEIF cites national numbers spaced; Brreg holds them unspaced.
+                "registeredAs": "012 345 67",
                 "legalAddress": { "city": "Northampton", "country": country }
             },
             "registration": { "initialRegistrationDate": "2013-06-10T00:00:00Z" }
@@ -56,8 +58,14 @@ async fn test_gleif_search_normalizes_jsonapi() {
         assert.eq(out[1].name, "Joseph Cheaney & Sons Ltd")
         assert.eq(out[1].status, "ACTIVE")
         assert.eq(out[1].country, "GB")
+        -- GLEIF cites the national register rather than being it, so registry_id
+        -- is the number it cites and the LEI rides alongside.
+        assert.eq(out[1].registry_id, "01234567")
+        assert.eq(out[1].city, "Northampton")
+        assert.eq(out[1].legal_form, "H0PO")
         assert.eq(out[1].provenance.provider, "registry:gleif")
         assert.not_nil(out[1].provenance.retrieved_from)
+        assert.not_nil(out[1].provenance.retrieved_at)
     "#,
         server.uri()
     ))
