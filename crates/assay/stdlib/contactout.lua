@@ -33,6 +33,14 @@ local function as_list(value)
   return {}
 end
 
+-- The live enrich endpoint 400s on a string `company` — it must be an array,
+-- and an absent one must be omitted rather than sent empty.
+local function company_param(value)
+  local list = as_list(value)
+  if #list == 0 then return nil end
+  return list
+end
+
 -- ContactOut splits a name only sometimes, so `full_name` is authoritative and
 -- the parts are best-effort. Downstream code that needs both should prefer the
 -- parts it was given over anything re-derived here.
@@ -45,9 +53,20 @@ local function split_name(profile)
   return first, last, (full ~= "" and full or nil)
 end
 
+-- Live responses carry `company` as an object ({ name, domain, … }); older
+-- recorded shapes carry a bare string. Accept both.
+local function company_of(profile)
+  local company = profile.company
+  if type(company) == "table" then
+    return company.name, profile.company_domain or company.domain or company.email_domain
+  end
+  return company, profile.company_domain
+end
+
 local function to_person(profile, from)
   profile = profile or {}
   local first, last, full = split_name(profile)
+  local company_name, company_domain = company_of(profile)
   local emails = {}
   for _, address in ipairs(as_list(profile.work_email)) do
     emails[#emails + 1] = lp.email("contactout", from,
@@ -68,8 +87,8 @@ local function to_person(profile, from)
     last_name = last,
     full_name = full,
     title = profile.headline or profile.job_title,
-    company = profile.company,
-    domain = profile.company_domain,
+    company = company_name,
+    domain = company_domain,
     linkedin = profile.url or profile.linkedin,
     location = profile.location,
     emails = emails,
@@ -154,7 +173,7 @@ function M.client(gate, opts)
         full_name = spec.full_name,
         first_name = spec.first_name,
         last_name = spec.last_name,
-        company = spec.company,
+        company = company_param(spec.company),
         location = spec.location,
         linkedin_url = spec.linkedin_url,
         email = spec.email,
@@ -178,7 +197,7 @@ function M.client(gate, opts)
           full_name = spec.full_name,
           first_name = spec.first_name,
           last_name = spec.last_name,
-          company = spec.company,
+          company = company_param(spec.company),
           include = { "work_email" },
         })
       end

@@ -42,6 +42,11 @@ async fn contactout(uri: &str, body: &str) -> Result<(), mlua::Error> {
     run_lua(&script(OPEN_GATE, "contactout", "co", r#"token = "k""#, uri, body)).await
 }
 
+/// Runs a ContactOut script against the mock server and expects it to pass.
+async fn co_ok(server: &MockServer, body: &str) {
+    contactout(&server.uri(), body).await.unwrap();
+}
+
 async fn bettercontact(gate: &str, uri: &str, body: &str) -> Result<(), mlua::Error> {
     run_lua(&script(gate, "bettercontact", "bc", r#"api_key = "bc-key""#, uri, body)).await
 }
@@ -66,6 +71,10 @@ fn assert_says(err: mlua::Error, want: &str, ctx: &str) {
 // ContactOut
 // ---------------------------------------------------------------------------
 
+fn profile_response(profile: serde_json::Value) -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(json!({ "status_code": 200, "profile": profile }))
+}
+
 /// The header is the bare name `token` — not `Authorization`, no `Bearer`.
 /// Getting it wrong reads as an invalid key rather than a malformed request.
 #[tokio::test]
@@ -74,20 +83,17 @@ async fn test_contactout_sends_the_bare_token_header() {
     Mock::given(method("GET"))
         .and(path("/v1/linkedin/enrich"))
         .and(header("token", "k"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "status_code": 200,
-            "profile": {
-                "url": "https://www.linkedin.com/in/jchurch",
-                "full_name": "Jonathan Church",
-                "headline": "Managing Director",
-                "work_email": ["jonathan.church@cheaney.co.uk"],
-                "email": ["jonathan.church@cheaney.co.uk", "jc@personal.example"]
-            }
+        .respond_with(profile_response(json!({
+            "url": "https://www.linkedin.com/in/jchurch",
+            "full_name": "Jonathan Church",
+            "headline": "Managing Director",
+            "work_email": ["jonathan.church@cheaney.co.uk"],
+            "email": ["jonathan.church@cheaney.co.uk", "jc@personal.example"]
         })))
         .mount(&server)
         .await;
-    contactout(
-        &server.uri(),
+    co_ok(
+        &server,
         r#"
         local p = c:enrich_linkedin("https://www.linkedin.com/in/jchurch")
         assert.eq(p.full_name, "Jonathan Church")
@@ -102,8 +108,7 @@ async fn test_contactout_sends_the_bare_token_header() {
         assert.eq(spent[1], "find_person:0")
         "#,
     )
-    .await
-    .unwrap();
+    .await;
 }
 
 /// Work email leads even when the general list repeats it: outbound writes to
@@ -114,37 +119,100 @@ async fn test_contactout_puts_work_email_first_without_duplicating_it() {
     Mock::given(method("GET"))
         .and(path("/v1/people/person"))
         .and(query_param("email", "jc@cheaney.co.uk"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "status_code": 200,
-            "profile": {
-                "email": ["jc@cheaney.co.uk"],
-                "work_email": ["jc@cheaney.co.uk"],
-                "linkedin": "https://www.linkedin.com/in/jc"
-            }
+        .respond_with(profile_response(json!({
+            "email": ["jc@cheaney.co.uk"],
+            "work_email": ["jc@cheaney.co.uk"],
+            "linkedin": "https://www.linkedin.com/in/jc"
         })))
         .mount(&server)
         .await;
-    contactout(
-        &server.uri(),
+    co_ok(
+        &server,
         r#"
         local p = c:profile_by_email("jc@cheaney.co.uk")
         assert.eq(#p.emails, 1)
         assert.eq(p.linkedin, "https://www.linkedin.com/in/jc")
         "#,
     )
-    .await
-    .unwrap();
+    .await;
+}
+
+async fn mount_enrich_expecting(server: &MockServer, body: serde_json::Value) {
+    Mock::given(method("POST"))
+        .and(path("/v1/people/enrich"))
+        .and(wiremock::matchers::body_json(body))
+        .respond_with(profile_response(json!({ "full_name": "Jonathan Church" })))
+        .mount(server)
+        .await;
+}
+
+/// The live enrich endpoint 400s on a string `company` — it must be a JSON
+/// array, and an absent one must be omitted, not sent empty.
+#[tokio::test]
+async fn test_contactout_sends_company_as_an_array_and_omits_it_when_absent() {
+    let server = MockServer::start().await;
+    mount_enrich_expecting(
+        &server,
+        json!({
+            "full_name": "Jonathan Church",
+            "company": ["Joseph Cheaney & Sons"],
+            "include": ["work_email"]
+        }),
+    )
+    .await;
+    mount_enrich_expecting(
+        &server,
+        json!({ "full_name": "Jonathan Church", "include": ["work_email"] }),
+    )
+    .await;
+    co_ok(
+        &server,
+        r#"
+        local with = c:find_person({ full_name = "Jonathan Church", company = "Joseph Cheaney & Sons" })
+        assert.eq(with.full_name, "Jonathan Church")
+        local without = c:find_person({ full_name = "Jonathan Church" })
+        assert.eq(without.full_name, "Jonathan Church")
+        "#,
+    )
+    .await;
+}
+
+/// Live responses carry `company` as an object; the person must get its name
+/// and domain, not a table.
+#[tokio::test]
+async fn test_contactout_maps_the_company_object_to_name_and_domain() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/people/person"))
+        .respond_with(profile_response(json!({
+            "full_name": "Jonathan Church",
+            "company": {
+                "name": "Joseph Cheaney & Sons",
+                "domain": "cheaney.co.uk",
+                "email_domain": "cheaney.co.uk"
+            }
+        })))
+        .mount(&server)
+        .await;
+    co_ok(
+        &server,
+        r#"
+        local p = c:profile_by_email("jc@cheaney.co.uk")
+        assert.eq(p.company, "Joseph Cheaney & Sons")
+        assert.eq(p.domain, "cheaney.co.uk")
+        "#,
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn test_contactout_reports_an_unknown_person_as_nil_not_an_error() {
     let server = server_returning("GET", "/v1/linkedin/enrich", 404).await;
-    contactout(
-        &server.uri(),
+    co_ok(
+        &server,
         r#"assert.eq(c:enrich_linkedin("https://www.linkedin.com/in/nobody"), nil)"#,
     )
-    .await
-    .unwrap();
+    .await;
 }
 
 /// A rejected key and an exhausted quota must not read as "no such person".
