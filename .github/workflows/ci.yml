@@ -197,30 +197,38 @@ jobs:
         if: steps.targets.outputs.run_checks == 'true' && runner.environment == 'self-hosted'
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      # Keep self-hosted Cargo output off the runner checkout volume. On
-      # assay-runner-eda, /var/cache/runner-work is mounted from the
-      # dedicated cargo-targets LV and is owned by the runner user.
-      # Linux-only: the LV and its path exist on assay-runner-eda alone. The
-      # Mac runner keeps Cargo output in the checkout, where it persists
-      # between runs anyway.
+      # Keep self-hosted Cargo output OUTSIDE the checkout, on every
+      # self-hosted OS. `actions/checkout` defaults to `clean: true`, whose
+      # `git clean -ffdx` deletes gitignored paths — `target/` among them — so
+      # anything left in the workspace is gone before the next run starts.
+      # Measured on the Mac runner: 2.0 GB of target after a green run, 15 MB
+      # at the start of the next. A self-hosted runner's only advantage over a
+      # hosted one is that target dir surviving, so losing it made self-hosted
+      # macOS slower than GitHub-hosted (25m49s vs 17m46s).
+      #
+      # Linux uses /var/cache/runner-work, mounted from the dedicated
+      # cargo-targets LV on assay-runner-eda. macOS has no such LV, so it uses
+      # the runner user's home, which is equally outside the checkout.
       - name: Use dedicated Cargo target dir (self-hosted)
-        if: steps.targets.outputs.run_checks == 'true' && runner.environment == 'self-hosted' && runner.os == 'Linux'
+        if: steps.targets.outputs.run_checks == 'true' && runner.environment == 'self-hosted'
         run: |
-          mkdir -p /var/cache/runner-work/assay-target
-          echo "CARGO_TARGET_DIR=/var/cache/runner-work/assay-target" >> "$GITHUB_ENV"
-          # Incremental caches buy nothing here — every job compiles from a
-          # cold or near-cold target dir — but they are a large share of what
-          # fills the LV, and a full run exhausts it with "No space left on
-          # device" mid-link.
-          echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            target_dir=/var/cache/runner-work/assay-target
+            # Incremental output is a large share of what fills the LV, and a
+            # full run exhausts it with "No space left on device" mid-link.
+            echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
+          else
+            target_dir="$HOME/cargo-target/assay"
+          fi
+          mkdir -p "$target_dir"
+          echo "CARGO_TARGET_DIR=$target_dir" >> "$GITHUB_ENV"
           # The lua-test moon tasks invoke the built CLI via the conventional
-          # `target/release/assay` path. With CARGO_TARGET_DIR redirected to the
-          # dedicated LV that path is otherwise empty, so engine-lua:test (and
-          # the sysops/site/workflow-e2e lua tasks) fail with exit 127. Point
-          # `target` at the LV so the conventional path resolves to where cargo
-          # actually writes.
+          # `target/release/assay` path. With CARGO_TARGET_DIR redirected that
+          # path is otherwise empty, so engine-lua:test (and the
+          # sysops/site/workflow-e2e lua tasks) fail with exit 127. Point
+          # `target` at the real dir so the conventional path resolves.
           rm -rf target
-          ln -s /var/cache/runner-work/assay-target target
+          ln -s "$target_dir" target
 
       # mise's rust plugin defaults to the `minimal` profile (no clippy).
       - name: Install clippy component
