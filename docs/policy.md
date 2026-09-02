@@ -170,10 +170,28 @@ does not expect, and the real value will be sent there — to a host the policy 
 the secret and post it anywhere allowed, but it is not zero, and a policy whose `hosts` list is wide
 gives most of that back.
 
+## DNS
+
+The `dns` builtin has no section in the file. It is a global rather than a module, so
+`modules.allow` does not reach it, and there is no allowlist of names a script may resolve.
+
+One thing a policy does change: `opts.server`. With a policy installed, `dns.lookup` and `dns.dnsbl`
+refuse a caller-chosen nameserver — `opts.server is not allowed while a policy is installed` —
+rather than quietly falling back to the system one and answering a different question than the one
+that was asked.
+
+Resolution itself stays open, and that is worth stating plainly. A policed script can look up any
+name, and it chooses the name; a lookup of `<data>.attacker.example.com` reaches whoever runs that
+zone whatever `http.rules` says. `http.rules` bounds the HTTP form of this and nothing yet bounds
+the DNS form. Where that matters, point the host at a resolver that logs queries, or one that
+answers only for the names you expect.
+
 ## What it does not do
 
 - It does not revalidate redirects. Set `follow_redirects = false` on the client for now if that
   matters.
 - It does not restrict filesystem reads.
+- It does not restrict which names `dns` may resolve — only the choice of nameserver is refused. See
+  the DNS section above.
 - Credential fields resolve from environment keys only. There is no file or secret-manager source
   yet.

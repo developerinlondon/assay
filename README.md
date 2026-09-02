@@ -389,7 +389,7 @@ authorization-code flow out of the box — full Hydra parity in one process.
 
 ## Builtins API Reference
 
-All 17 Rust builtins are available globally in `.lua` scripts — no `require` needed.
+All 33 Rust builtins are available globally in `.lua` scripts — no `require` needed.
 
 ### HTTP & Networking
 
@@ -400,6 +400,8 @@ All 17 Rust builtins are available globally in `.lua` scripts — no `require` n
 | `http.put/patch/delete(url, ...)` | PUT, PATCH, DELETE                                                                                                                                                            |
 | `http.serve(port, routes)`        | HTTP server with async handlers + SSE streaming (header values can be strings or arrays — array values emit the header multiple times for `Set-Cookie`, `Link`, `Vary`, etc.) |
 | `ws.connect(url, opts?)`          | WebSocket client (`send`, `send_binary`, `recv`, `protocol`, `close`); `opts` = `{subprotocols, headers, insecure}`                                                            |
+| `dns.lookup(name, type, opts?)`   | DNS lookup — `A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`; `opts` = `{server, timeout_ms, tries}`                                                                                   |
+| `dns.dnsbl(domain, list, opts?)`  | Blacklist check, returns `{listed, codes}`                                                                                                                                     |
 
 ### Serialization
 

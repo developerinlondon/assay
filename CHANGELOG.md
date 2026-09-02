@@ -2,6 +2,42 @@
 
 All notable changes to Assay are documented here.
 
+## Unreleased
+
+### Added
+
+- **`dns` builtin — the record types `getaddrinfo` cannot ask for.** `dns.lookup(name, type, opts?)`
+  answers `A`, `AAAA`, `CNAME`, `MX`, `NS` and `TXT`, with `opts.{server, timeout_ms, tries}`;
+  `dns.dnsbl(domain, list, opts?)` asks a blacklist about a domain. Domain health was the case that
+  forced it — MX, SPF, DKIM, DMARC and blacklist hits are all questions the stub resolver has no way
+  to put — and it had been living in a bash script around `dig`, which cannot run inside an agent
+  that bakes assay modules. `examples/domain-health.lua` is that script, ported.
+
+  Three decisions in it are load-bearing rather than incidental. A `TXT` record's 255-byte chunks
+  are rejoined with nothing between them, because they are one value the wire format had to cut up
+  and a separator corrupts every DKIM key long enough to need two of them. `NXDOMAIN` is an empty
+  list while `SERVFAIL`, `REFUSED` and timeouts raise, because "nothing lists this domain" and
+  "nobody answered" look identical once failures collapse into an empty result, and they mean
+  opposite things to whoever is about to send mail. And `127.255.255.0/24` does **not** count as a
+  DNSBL listing: Spamhaus and SURBL return it to resolvers they do not serve, so reading it as a hit
+  marks every domain checked as blacklisted. It is still reported in `codes`, so a caller can tell
+  "not listed" from "not allowed to ask".
+
+  The protocol is spoken directly over UDP with TCP fallback rather than through a resolver crate —
+  no new dependency, and the wire format's awkward parts (chunk joining, MX ordering, RCODE meaning,
+  compression-pointer loops) are unit-testable as pure functions. Compression pointers must point
+  strictly backwards, so a self-referential message errors instead of hanging. Queries carry an
+  EDNS0 buffer of 1232 bytes, since the classic 512-byte limit truncates ordinary DKIM keys.
+
+  Nameservers come from `/etc/resolv.conf` in the order it lists them, with no public fallback: a
+  script that believes it is asking the corporate resolver should not silently ask someone else's.
+  `opts.server` overrides that, and is refused outright when a policy is installed — a caller-chosen
+  resolver is a directed egress channel, since a restricted script could carry data out in the names
+  it looks up. Resolution through the system resolver stays unbounded, though: a policy has no
+  allowlist of names, so a policed script can still reach an authoritative server of its choosing by
+  looking up a name under it. `docs/policy.md` says so under **DNS** rather than leaving it to be
+  discovered.
+
 ## assay-lua 0.19.2 — 2026-08-28
 
 ### Added

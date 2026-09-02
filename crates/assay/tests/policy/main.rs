@@ -320,6 +320,60 @@ async fn an_oversized_response_errors_rather_than_truncating() {
     assert!(err.contains("max_response_bytes"), "got: {err}");
 }
 
+// -------------------------------------------------------------------- dns
+
+// None of these reach a socket: the refusal happens before the query is built,
+// and the spec in the last is rejected before one could be sent.
+
+#[tokio::test]
+async fn a_caller_chosen_nameserver_is_refused_under_a_policy() {
+    let vm = vm("version: 1\n", ExecMode::Unrestricted);
+    let err = eval(
+        &vm,
+        r#"dns.lookup("example.com", "A", { server = "127.0.0.1:5353" }) return "resolved""#,
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("dns.lookup: opts.server is not allowed while a policy is installed"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn a_dnsbl_check_cannot_pick_its_own_nameserver_either() {
+    let vm = vm("version: 1\n", ExecMode::Unrestricted);
+    let err = eval(
+        &vm,
+        r#"dns.dnsbl("example.com", "bl.example.net", { server = "127.0.0.1:5353" })
+           return "asked""#,
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("dns.dnsbl: opts.server is not allowed while a policy is installed"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn without_a_policy_the_server_option_is_taken_rather_than_refused() {
+    // An unparseable server proves the option was read at all: the refusal
+    // above is the policy's doing, not the option being unsupported.
+    let vm = unpoliced();
+    let err = eval(
+        &vm,
+        r#"dns.lookup("example.com", "A", { server = "resolver.example.com" }) return "resolved""#,
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("is not a nameserver address"), "got: {err}");
+    assert!(!err.contains("not allowed"), "refused instead: {err}");
+}
+
 // ----------------------------------------------------------- file parsing
 
 #[test]

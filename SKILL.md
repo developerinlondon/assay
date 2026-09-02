@@ -209,6 +209,25 @@ String header values still work as before.
 
 URLs: `postgres://user:pass@host:5432/db`, `mysql://...`, `sqlite:///path/to/file.db`
 
+### DNS
+
+| Function                         | Description                                               |
+| -------------------------------- | --------------------------------------------------------- |
+| `dns.lookup(name, type, opts?)`  | Look up `A`, `AAAA`, `CNAME`, `MX`, `NS` or `TXT` records |
+| `dns.dnsbl(domain, list, opts?)` | Ask a DNS blacklist about a domain → `{listed, codes}`    |
+
+Options: `{ server = "1.1.1.1", timeout_ms = 5000, tries = 2 }` — the system resolver by default,
+and `server` is refused while a policy is installed.
+
+`MX` answers are `{preference, exchange}` tables sorted lowest-first; every other type is an array
+of strings, with a `TXT` record's 255-byte chunks rejoined into one. A name that does not exist is
+an empty array, while a timeout or `SERVFAIL` raises — "nothing lists this domain" and "nobody
+answered" mean opposite things and must not look alike.
+
+`dns.dnsbl` reads the `127.0.0.0/8` reply a list answers with, except the whole of
+`127.255.255.0/24`, which the big lists return to public resolvers to mean "you may not ask". That
+one is reported in `codes` but is not a listing.
+
 ### WebSocket and Templates
 
 | Function                          | Description                                                               |

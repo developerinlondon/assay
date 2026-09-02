@@ -24,6 +24,7 @@
 - [db](https://assay.rs/modules/db.html): SQL database — Postgres, MySQL, SQLite — db.connect/query/execute
 - [smtp_probe](https://assay.rs/modules/email_verify.html): SMTP recipient probe — smtp_probe.check{email,mx,from} → catch_all/deliverable/greylisted; envelope only, never DATA
 - [ws](https://assay.rs/modules/ws.html): WebSocket client — ws.connect(url, opts?) with subprotocols/headers/insecure, send/send_binary/recv/protocol/close
+- [dns](https://assay.rs/modules/dns.html): DNS — dns.lookup(name, type, opts?) for A/AAAA/CNAME/MX/NS/TXT (TXT chunks rejoined, MX sorted by preference, NXDOMAIN empty vs SERVFAIL raises); dns.dnsbl(domain, list) → {listed, codes} excluding the 127.255.255.0/24 public-resolver refusal
 - [template](https://assay.rs/modules/template.html): Jinja2-compatible template rendering
 - [async](https://assay.rs/modules/async.html): Async task spawn and await
 - [assert](https://assay.rs/modules/assert.html): Assertions — assert.eq/ne/gt/lt/contains/not_nil/matches

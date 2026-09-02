@@ -83,6 +83,8 @@ fn test_format_builtins_always_present() {
     assert!(output.contains("http.get(url, opts?)"));
     assert!(output.contains("json.parse(str)"));
     assert!(output.contains("env.get(key)"));
+    assert!(output.contains("dns.lookup(name, type, opts?)"));
+    assert!(output.contains("dns.dnsbl(domain, list, opts?)"));
 }
 
 #[test]
