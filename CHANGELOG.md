@@ -2,7 +2,7 @@
 
 All notable changes to Assay are documented here.
 
-## Unreleased
+## assay-lua 0.20.0 — 2026-09-02
 
 ### Added
 
