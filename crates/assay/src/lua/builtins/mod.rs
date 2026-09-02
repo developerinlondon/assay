@@ -9,6 +9,7 @@ mod crypto;
 #[cfg(feature = "db")]
 mod db;
 mod disk;
+mod dns;
 mod email;
 pub(crate) mod gated;
 pub mod http;
@@ -51,6 +52,7 @@ pub fn register_all(lua: &mlua::Lua, client: reqwest::Client) -> mlua::Result<()
     #[cfg(feature = "db")]
     db::register_db(lua)?;
     ws::register_ws(lua)?;
+    dns::register_dns(lua)?;
     email::register_smtp_probe(lua)?;
     template::register_template(lua)?;
     markdown::register_markdown(lua)?;

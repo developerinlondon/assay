@@ -87,6 +87,10 @@ fn push_builtins(output: &mut String) {
     output.push_str("db.execute(conn, sql, params?) -> count | db.close(conn)\n");
     output.push_str("ws.connect(url) -> conn | ws.send(conn, msg)\n");
     output.push_str("ws.recv(conn) -> msg | ws.close(conn)\n");
+    output.push_str(
+        "dns.lookup(name, type, opts?) -> [str] — A, AAAA, CNAME, MX, NS, TXT; MX gives [{preference, exchange}]\n",
+    );
+    output.push_str("dns.dnsbl(domain, list, opts?) -> {listed, codes}\n");
     output.push_str("template.render(path, vars) -> str\n");
     output.push_str("template.render_string(tmpl, vars) -> str\n");
     output.push_str("async.spawn(fn) -> handle | async.spawn_interval(fn, ms) -> handle\n");

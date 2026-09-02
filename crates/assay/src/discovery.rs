@@ -174,6 +174,28 @@ const BUILTINS: &[(&str, &str, &[&str], &str)] = &[
         "core",
     ),
     (
+        "dns",
+        "DNS lookups: A, AAAA, CNAME, MX, NS, TXT, plus DNSBL blacklist checks",
+        &[
+            "dns",
+            "resolve",
+            "resolver",
+            "lookup",
+            "nameserver",
+            "mx",
+            "txt",
+            "spf",
+            "dkim",
+            "dmarc",
+            "dnsbl",
+            "blacklist",
+            "blocklist",
+            "domain",
+            "deliverability",
+        ],
+        "core",
+    ),
+    (
         "template",
         "Jinja2-compatible templates: render file or string",
         &[
