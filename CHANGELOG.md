@@ -2,7 +2,7 @@
 
 All notable changes to Assay are documented here.
 
-## assay-lua 0.20.0 — 2026-09-02
+## assay-engine 0.5.16 — 2026-09-03
 
 ### Fixed
 
@@ -31,6 +31,8 @@ All notable changes to Assay are documented here.
   a registration no queue dispatched to until someone restarted the process — observed as a worker
   that went missing for thirty minutes and came back only on a pod restart. The endpoint answers
   `404` when the row is gone, and the Lua worker re-registers on it.
+
+## assay-lua 0.20.0 — 2026-09-02
 
 ### Added
 
