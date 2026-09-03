@@ -236,6 +236,32 @@ pub trait WorkflowStore: Send + Sync + 'static {
         failed: bool,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
+    /// Terminally settle an activity: write its status and result, append
+    /// the matching history event, and arm the workflow for dispatch — all
+    /// in one transaction. A `COMPLETED` activity whose workflow never got
+    /// the event (and so replays it as still pending) is not reachable
+    /// through this call.
+    ///
+    /// Idempotent, and the documented repair path: re-settling an activity
+    /// whose event is already durable re-applies only the dispatch arming,
+    /// which recovers a workflow task lost after the event landed. The
+    /// first settle wins the activity row — a later call never rewrites a
+    /// result the history already carries.
+    fn settle_activity(
+        &self,
+        settlement: &ActivitySettlement<'_>,
+    ) -> impl Future<Output = anyhow::Result<SettleOutcome>> + Send;
+
+    /// Activities that reached a terminal status while their workflow is
+    /// still live and their terminal history event is missing. Rows written
+    /// by an engine older than the transactional settle path, or by any
+    /// half-applied write, surface here so the engine can converge them.
+    /// Oldest first, bounded by `limit`.
+    fn list_unsettled_activities(
+        &self,
+        limit: i64,
+    ) -> impl Future<Output = anyhow::Result<Vec<WorkflowActivity>>> + Send;
+
     fn heartbeat_activity(
         &self,
         id: i64,
@@ -290,6 +316,16 @@ pub trait WorkflowStore: Send + Sync + 'static {
     fn send_signal(
         &self,
         signal: &WorkflowSignal,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send;
+
+    /// Record a signal, append its `SignalReceived` event and arm the
+    /// workflow for dispatch in one transaction, so a stored signal can
+    /// never be invisible to the workflow that has to react to it.
+    /// `payload_json` is the serialised event payload.
+    fn deliver_signal(
+        &self,
+        signal: &WorkflowSignal,
+        payload_json: &str,
     ) -> impl Future<Output = anyhow::Result<i64>> + Send;
 
     fn consume_signals(
@@ -365,11 +401,14 @@ pub trait WorkflowStore: Send + Sync + 'static {
         worker: &WorkflowWorker,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
+    /// Record a worker heartbeat. Returns false when no registration with
+    /// this id exists — the reaper removed it while the worker was silent,
+    /// and the worker has to register again to be dispatchable.
     fn heartbeat_worker(
         &self,
         id: &str,
         now: f64,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
     fn list_workers(
         &self,

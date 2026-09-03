@@ -10,7 +10,31 @@ pub mod sqlite;
 pub use assay_domain::store::WorkflowStore;
 pub use assay_domain::{NamespaceRecord, NamespaceStats, QueueStats};
 
-use assay_domain::RetryFailedActivityResult;
+use assay_domain::{RetryFailedActivityResult, SettleOutcome};
+
+/// Marks a history event as not recording any activity's current
+/// settlement: a payload the backfill could not read, or a settlement a
+/// retry has superseded. Distinct from NULL, which the backfill revisits.
+pub(crate) const NOT_A_SETTLEMENT: i64 = -1;
+
+/// The `activity_id` a terminal activity event carries in its payload, or
+/// `-1` when the payload predates the dedicated column or doesn't parse.
+/// No activity has a negative id, so the sentinel is a durable "looked, and
+/// there is nothing here" marker rather than a value the backfill revisits.
+pub(crate) fn payload_activity_id(payload: Option<&str>) -> i64 {
+    payload
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| value.get("activity_id").and_then(serde_json::Value::as_i64))
+        .unwrap_or(NOT_A_SETTLEMENT)
+}
+
+pub(crate) fn settle_outcome(was_terminal: bool, event_present: bool) -> SettleOutcome {
+    match (was_terminal, event_present) {
+        (false, _) => SettleOutcome::Settled,
+        (true, false) => SettleOutcome::Repaired,
+        (true, true) => SettleOutcome::AlreadySettled,
+    }
+}
 
 pub(crate) fn retry_denial(
     status: String,

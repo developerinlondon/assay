@@ -4,11 +4,15 @@ use anyhow::Result;
 use tokio::time::{Duration, interval};
 use tracing::{error, info, warn};
 
+use crate::activities::{failed_event_payload, settled_event_payload};
 use crate::store::WorkflowStore;
-use crate::types::WorkflowStatus;
+use crate::types::{ActivitySettlement, SettleOutcome, WorkflowActivity, WorkflowStatus};
 
 const HEALTH_CHECK_SECS: u64 = 30;
 const WORKER_TIMEOUT_SECS: f64 = 90.0;
+/// Upper bound on half-settled activities repaired per pass, so a backlog
+/// drains over successive passes instead of one long run of transactions.
+const RECONCILE_BATCH: i64 = 100;
 
 /// Detects dead workers and releases their claimed tasks.
 /// Detects timed-out activities and re-queues them for retry (terminal
@@ -88,7 +92,74 @@ pub async fn check_health_at<S: WorkflowStore>(store: &S, now: f64) -> Result<()
         }
     }
 
+    // 3. Converge activities that settled without their history event
+    reconcile_settled_activities(store).await?;
+
     Ok(())
+}
+
+/// Re-settle activities that reached a terminal status without their
+/// terminal history event. Deterministic replay reads such a workflow as
+/// still waiting on the activity, so the run sits RUNNING with nothing left
+/// to wake it. `settle_activity` closes that window for new completions;
+/// rows written by an older engine still need this pass. Returns the number
+/// repaired.
+pub async fn reconcile_settled_activities<S: WorkflowStore>(store: &S) -> Result<usize> {
+    let candidates = store.list_unsettled_activities(RECONCILE_BATCH).await?;
+    let mut repaired = 0;
+    for act in candidates {
+        let Some(id) = act.id else { continue };
+        let failed = act.status == "FAILED";
+        let payload = settlement_payload(&act, id, failed);
+        let outcome = store
+            .settle_activity(&ActivitySettlement {
+                activity_id: id,
+                workflow_id: &act.workflow_id,
+                result: act.result.as_deref(),
+                error: act.error.as_deref(),
+                failed,
+                event_type: if failed {
+                    "ActivityFailed"
+                } else {
+                    "ActivityCompleted"
+                },
+                payload: &payload,
+                now: timestamp_now(),
+            })
+            .await?;
+        if outcome == SettleOutcome::Repaired {
+            repaired += 1;
+            warn!(
+                "Activity {} (id {id}) was settled without its history event — \
+                 appended it and re-armed workflow {}",
+                act.name, act.workflow_id
+            );
+        }
+    }
+    Ok(repaired)
+}
+
+/// Rebuild the terminal event payload from the stored row, in the shape the
+/// live completion path would have written.
+fn settlement_payload(act: &WorkflowActivity, id: i64, failed: bool) -> String {
+    if failed {
+        failed_event_payload(
+            id,
+            act.seq,
+            &act.name,
+            act.error.as_deref().unwrap_or("activity failed"),
+            act.attempt,
+        )
+    } else {
+        settled_event_payload(
+            id,
+            act.seq,
+            &act.name,
+            act.result.as_deref(),
+            act.error.as_deref(),
+        )
+    }
+    .to_string()
 }
 
 fn timestamp_now() -> f64 {

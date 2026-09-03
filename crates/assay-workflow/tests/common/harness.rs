@@ -209,6 +209,20 @@ impl Harness {
         dispatch!(self, s => s.retry_failed_activity(workflow_id, requested_by, reason, requested_at).await)
     }
 
+    pub async fn settle_activity(
+        &self,
+        settlement: &ActivitySettlement<'_>,
+    ) -> anyhow::Result<SettleOutcome> {
+        dispatch!(self, s => s.settle_activity(settlement).await)
+    }
+
+    pub async fn list_unsettled_activities(
+        &self,
+        limit: i64,
+    ) -> anyhow::Result<Vec<WorkflowActivity>> {
+        dispatch!(self, s => s.list_unsettled_activities(limit).await)
+    }
+
     pub async fn complete_activity(
         &self,
         id: i64,
@@ -265,6 +279,14 @@ impl Harness {
 
     pub async fn send_signal(&self, signal: &WorkflowSignal) -> anyhow::Result<i64> {
         dispatch!(self, s => s.send_signal(signal).await)
+    }
+
+    pub async fn deliver_signal(
+        &self,
+        signal: &WorkflowSignal,
+        payload_json: &str,
+    ) -> anyhow::Result<i64> {
+        dispatch!(self, s => s.deliver_signal(signal, payload_json).await)
     }
 
     pub async fn consume_signals(
@@ -355,7 +377,7 @@ impl Harness {
         dispatch!(self, s => s.register_worker(worker).await)
     }
 
-    pub async fn heartbeat_worker(&self, id: &str, now: f64) -> anyhow::Result<()> {
+    pub async fn heartbeat_worker(&self, id: &str, now: f64) -> anyhow::Result<bool> {
         dispatch!(self, s => s.heartbeat_worker(id, now).await)
     }
 

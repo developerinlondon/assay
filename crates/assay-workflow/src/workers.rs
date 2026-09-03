@@ -11,7 +11,11 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         self.store.register_worker(worker).await
     }
 
-    pub async fn heartbeat_worker(&self, id: &str) -> Result<()> {
+    /// Record a worker heartbeat. Returns false when the registration is
+    /// gone — the reaper removed it while the worker was silent, and the
+    /// caller has to register again rather than keep heartbeating a row
+    /// that no longer exists.
+    pub async fn heartbeat_worker(&self, id: &str) -> Result<bool> {
         self.store.heartbeat_worker(id, timestamp_now()).await
     }
 

@@ -3,11 +3,16 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
 use crate::store::{
-    NamespaceRecord, NamespaceStats, QueueStats, RetryEvent, WorkflowStore, retry_denial,
+    NOT_A_SETTLEMENT, NamespaceRecord, NamespaceStats, QueueStats, RetryEvent, WorkflowStore,
+    payload_activity_id, retry_denial, settle_outcome,
 };
 use crate::types::*;
 
 const RETRY_ACTIVITY_SELECT: &str = "SELECT id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat FROM workflow.activities WHERE workflow_id = ? AND status = 'FAILED' ORDER BY seq DESC LIMIT 1";
+/// Terminal activities whose workflow is still live and whose terminal
+/// history event never landed — the half-settled state the transactional
+/// settle path can no longer create, and older rows can still be in.
+const UNSETTLED_ACTIVITY_SELECT: &str = "SELECT a.id, a.workflow_id, a.seq, a.name, a.task_queue, a.input, a.status, a.result, a.error, a.attempt, a.max_attempts, a.initial_interval_secs, a.backoff_coefficient, a.start_to_close_secs, a.heartbeat_timeout_secs, a.claimed_by, a.scheduled_at, a.started_at, a.completed_at, a.last_heartbeat FROM workflow.activities a JOIN workflow.workflows w ON w.id = a.workflow_id WHERE a.status IN ('COMPLETED', 'FAILED') AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT') AND w.archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM workflow.events e WHERE e.workflow_id = a.workflow_id AND e.activity_id = a.id AND e.event_type IN ('ActivityCompleted', 'ActivityFailed')) ORDER BY a.completed_at ASC LIMIT ?";
 const RETRY_ACTIVITY_UPDATE: &str = "UPDATE workflow.activities SET status = 'PENDING', result = NULL, error = NULL, attempt = 1, claimed_by = NULL, scheduled_at = ?, started_at = NULL, completed_at = NULL, last_heartbeat = NULL WHERE id = ? RETURNING id, workflow_id, seq, name, task_queue, input, status, result, error, attempt, max_attempts, initial_interval_secs, backoff_coefficient, start_to_close_secs, heartbeat_timeout_secs, claimed_by, scheduled_at, started_at, completed_at, last_heartbeat";
 
 /// Workflow-module DDL. v0.1.2 schema-qualifies every table to the
@@ -67,9 +72,14 @@ CREATE TABLE IF NOT EXISTS workflow.events (
     seq             INTEGER NOT NULL,
     event_type      TEXT NOT NULL,
     payload         TEXT,
+    -- Set on ActivityCompleted / ActivityFailed only. Answers "did this
+    -- activity's terminal event land" without parsing payload JSON, which
+    -- is what the settle transaction and the reconciler both need.
+    activity_id     INTEGER,
     timestamp       REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS workflow.idx_wf_events_lookup ON events(workflow_id, seq);
+CREATE INDEX IF NOT EXISTS workflow.idx_wf_events_activity ON events(activity_id);
 
 CREATE TABLE IF NOT EXISTS workflow.activities (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -390,8 +400,44 @@ impl SqliteStore {
                 sqlx::query(trimmed).execute(&self.pool).await?;
             }
         }
-        // Future additive migrations go here; see doc-comment above.
+        Self::add_column_if_missing(&self.pool, "workflow.events", "activity_id", "INTEGER")
+            .await?;
+        self.backfill_event_activity_ids().await?;
         Ok(())
+    }
+
+    /// Populate `events.activity_id` on terminal activity events written
+    /// before the column existed. Without it every pre-upgrade completion
+    /// reads as unsettled and the reconciler appends a duplicate event.
+    /// Payloads that carry no usable id are stamped `-1` (no activity has a
+    /// negative id) so the scan terminates instead of revisiting them.
+    async fn backfill_event_activity_ids(&self) -> Result<()> {
+        const BATCH: i64 = 500;
+        loop {
+            let rows: Vec<(i64, Option<String>)> = sqlx::query_as(
+                "SELECT id, payload FROM workflow.events
+                 WHERE activity_id IS NULL
+                   AND event_type IN ('ActivityCompleted', 'ActivityFailed')
+                 LIMIT ?",
+            )
+            .bind(BATCH)
+            .fetch_all(&self.pool)
+            .await?;
+            if rows.is_empty() {
+                return Ok(());
+            }
+            let batch_len = rows.len() as i64;
+            for (id, payload) in rows {
+                sqlx::query("UPDATE workflow.events SET activity_id = ? WHERE id = ?")
+                    .bind(payload_activity_id(payload.as_deref()))
+                    .bind(id)
+                    .execute(&self.pool)
+                    .await?;
+            }
+            if batch_len < BATCH {
+                return Ok(());
+            }
+        }
     }
 
     /// Add a column to an existing table if it's not already there.
@@ -400,19 +446,22 @@ impl SqliteStore {
     /// so we check via `pragma_table_info` before issuing the ALTER. Each
     /// call is idempotent across startups.
     ///
-    /// Currently unused — kept as the documented pattern for the first
-    /// additive migration after v0.11.3. Remove `#[allow(dead_code)]` when
-    /// a caller is added.
-    #[allow(dead_code)]
+    /// `table` may be schema-qualified (`workflow.events`); the schema is
+    /// passed to `pragma_table_info` as its attachment argument.
     async fn add_column_if_missing(
         pool: &SqlitePool,
         table: &str,
         column: &str,
         type_def: &str,
     ) -> Result<()> {
+        let (schema, bare) = match table.split_once('.') {
+            Some((schema, bare)) => (schema, bare),
+            None => ("main", table),
+        };
         let exists: Option<(String,)> =
-            sqlx::query_as("SELECT name FROM pragma_table_info(?) WHERE name = ?")
-                .bind(table)
+            sqlx::query_as("SELECT name FROM pragma_table_info(?, ?) WHERE name = ?")
+                .bind(bare)
+                .bind(schema)
                 .bind(column)
                 .fetch_optional(pool)
                 .await?;
@@ -943,6 +992,13 @@ impl WorkflowStore for SqliteStore {
             .bind(failed.id)
             .fetch_one(&mut *tx)
             .await?;
+        // The ActivityFailed event stays in history, but it no longer
+        // records this activity's settlement — the row is open again.
+        sqlx::query("UPDATE workflow.events SET activity_id = ? WHERE activity_id = ?")
+            .bind(NOT_A_SETTLEMENT)
+            .bind(failed.id)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query(
             "UPDATE workflow.workflows
              SET status = 'WAITING', result = NULL, error = NULL, completed_at = NULL,
@@ -1008,6 +1064,85 @@ impl WorkflowStore for SqliteStore {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    async fn settle_activity(&self, settlement: &ActivitySettlement<'_>) -> Result<SettleOutcome> {
+        let mut tx = self.pool.begin().await?;
+        let current: Option<(String,)> =
+            sqlx::query_as("SELECT status FROM workflow.activities WHERE id = ?")
+                .bind(settlement.activity_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        let Some((status,)) = current else {
+            return Ok(SettleOutcome::Unknown);
+        };
+        let settled = matches!(status.as_str(), "COMPLETED" | "FAILED");
+        let event_id: Option<(i64,)> = sqlx::query_as(
+            "SELECT id FROM workflow.events
+             WHERE workflow_id = ? AND activity_id = ?
+               AND event_type IN ('ActivityCompleted', 'ActivityFailed')
+             LIMIT 1",
+        )
+        .bind(settlement.workflow_id)
+        .bind(settlement.activity_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        if !settled {
+            sqlx::query(
+                "UPDATE workflow.activities
+                 SET status = ?, result = ?, error = ?, completed_at = ?
+                 WHERE id = ?",
+            )
+            .bind(if settlement.failed {
+                "FAILED"
+            } else {
+                "COMPLETED"
+            })
+            .bind(settlement.result)
+            .bind(settlement.error)
+            .bind(settlement.now)
+            .bind(settlement.activity_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        // An open activity always gets its event, even in the shape a
+        // superseded settlement event would otherwise mask: reaching a
+        // terminal status without the matching event is the defect.
+        if !settled || event_id.is_none() {
+            let seq: (i32,) = sqlx::query_as(
+                "SELECT COALESCE(MAX(seq), 0) + 1 FROM workflow.events WHERE workflow_id = ?",
+            )
+            .bind(settlement.workflow_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO workflow.events (workflow_id, seq, event_type, payload, activity_id, timestamp)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(settlement.workflow_id)
+            .bind(seq.0)
+            .bind(settlement.event_type)
+            .bind(settlement.payload)
+            .bind(settlement.activity_id)
+            .bind(settlement.now)
+            .execute(&mut *tx)
+            .await?;
+        }
+        sqlx::query("UPDATE workflow.workflows SET needs_dispatch = 1 WHERE id = ?")
+            .bind(settlement.workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(settle_outcome(settled, event_id.is_some()))
+    }
+
+    async fn list_unsettled_activities(&self, limit: i64) -> Result<Vec<WorkflowActivity>> {
+        let rows = sqlx::query_as::<_, SqliteActivityRow>(UNSETTLED_ACTIVITY_SELECT)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 
     async fn heartbeat_activity(&self, id: i64, _details: Option<&str>) -> Result<()> {
@@ -1126,6 +1261,42 @@ impl WorkflowStore for SqliteStore {
         .execute(&self.pool)
         .await?;
         Ok(res.last_insert_rowid())
+    }
+
+    async fn deliver_signal(&self, sig: &WorkflowSignal, payload_json: &str) -> Result<i64> {
+        let mut tx = self.pool.begin().await?;
+        let res = sqlx::query(
+            "INSERT INTO workflow.signals (workflow_id, name, payload, consumed, received_at) VALUES (?, ?, ?, 0, ?)",
+        )
+        .bind(&sig.workflow_id)
+        .bind(&sig.name)
+        .bind(&sig.payload)
+        .bind(sig.received_at)
+        .execute(&mut *tx)
+        .await?;
+        let signal_id = res.last_insert_rowid();
+        let seq: (i32,) = sqlx::query_as(
+            "SELECT COALESCE(MAX(seq), 0) + 1 FROM workflow.events WHERE workflow_id = ?",
+        )
+        .bind(&sig.workflow_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO workflow.events (workflow_id, seq, event_type, payload, timestamp)
+             VALUES (?, ?, 'SignalReceived', ?, ?)",
+        )
+        .bind(&sig.workflow_id)
+        .bind(seq.0)
+        .bind(payload_json)
+        .bind(sig.received_at)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE workflow.workflows SET needs_dispatch = 1 WHERE id = ?")
+            .bind(&sig.workflow_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(signal_id)
     }
 
     async fn consume_signals(&self, workflow_id: &str, name: &str) -> Result<Vec<WorkflowSignal>> {
@@ -1394,13 +1565,13 @@ impl WorkflowStore for SqliteStore {
         Ok(())
     }
 
-    async fn heartbeat_worker(&self, id: &str, now: f64) -> Result<()> {
-        sqlx::query("UPDATE workflow.workers SET last_heartbeat = ? WHERE id = ?")
+    async fn heartbeat_worker(&self, id: &str, now: f64) -> Result<bool> {
+        let res = sqlx::query("UPDATE workflow.workers SET last_heartbeat = ? WHERE id = ?")
             .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
-        Ok(())
+        Ok(res.rows_affected() > 0)
     }
 
     async fn list_workers(&self, namespace: &str) -> Result<Vec<WorkflowWorker>> {
