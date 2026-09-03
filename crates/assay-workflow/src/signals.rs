@@ -8,6 +8,10 @@ use crate::store::WorkflowStore;
 use crate::types::*;
 
 impl<S: WorkflowStore> WorkflowCtx<S> {
+    /// Deliver a signal to a workflow. The signal row, its `SignalReceived`
+    /// history event and the dispatch arming land in one store transaction,
+    /// so a stored signal is never invisible to the workflow that has to
+    /// react to it.
     pub async fn send_signal(
         &self,
         workflow_id: &str,
@@ -15,19 +19,6 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         payload: Option<&str>,
     ) -> Result<()> {
         let now = timestamp_now();
-
-        self.store
-            .send_signal(&WorkflowSignal {
-                id: None,
-                workflow_id: workflow_id.to_string(),
-                name: name.to_string(),
-                payload: payload.map(String::from),
-                consumed: false,
-                received_at: now,
-            })
-            .await?;
-
-        let seq = self.store.get_event_count(workflow_id).await? as i32 + 1;
         // Parse the incoming payload string back to a JSON value so the
         // event payload nests cleanly (otherwise the recorded payload is
         // a stringified JSON-inside-JSON and Lua workers would have to
@@ -35,22 +26,25 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         let payload_value: serde_json::Value = payload
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or(serde_json::Value::Null);
+        let event_payload =
+            serde_json::json!({ "signal": name, "payload": payload_value }).to_string();
+
         self.store
-            .append_event(&WorkflowEvent {
-                id: None,
-                workflow_id: workflow_id.to_string(),
-                seq,
-                event_type: "SignalReceived".to_string(),
-                payload: Some(
-                    serde_json::json!({ "signal": name, "payload": payload_value }).to_string(),
-                ),
-                timestamp: now,
-            })
+            .deliver_signal(
+                &WorkflowSignal {
+                    id: None,
+                    workflow_id: workflow_id.to_string(),
+                    name: name.to_string(),
+                    payload: payload.map(String::from),
+                    consumed: false,
+                    received_at: now,
+                },
+                &event_payload,
+            )
             .await?;
 
-        // so the worker can replay and notice the signal in history. The
-        // helper also emits WorkflowNeedsDispatch on the engine event bus.
-        self.mark_and_emit_needs_dispatch(workflow_id).await?;
+        // so the worker can replay and notice the signal in history.
+        self.emit_needs_dispatch(workflow_id).await;
 
         // Emit so the dashboard can refresh the run's row (signal
         // count bump, log-tail tick, etc.).

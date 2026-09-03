@@ -166,6 +166,12 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
     /// `ActivityCompleted` event to the workflow event log so a replaying
     /// workflow can pick up the cached result.
     ///
+    /// The row write, the history event and the dispatch arming land in one
+    /// store transaction: a `COMPLETED` activity whose workflow replays it
+    /// as still pending is not a reachable state. Re-calling with the same
+    /// id is the repair path for a workflow task lost after the event
+    /// landed — it re-arms dispatch and never rewrites the stored result.
+    ///
     /// `failed=true` is preserved for legacy callers that go straight
     /// through complete with a non-retry path; new code should call
     /// [`WorkflowCtx::fail_activity`] instead so retry policy is honored.
@@ -176,11 +182,8 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         error: Option<&str>,
         failed: bool,
     ) -> Result<()> {
-        self.store
-            .complete_activity(id, result, error, failed)
-            .await?;
-
-        // Look up the activity so we can attribute the event correctly
+        // Read before the write: the payload needs the activity's seq and
+        // name, and both are immutable once the row exists.
         let act = match self.store.get_activity(id).await? {
             Some(a) => a,
             None => return Ok(()),
@@ -191,27 +194,29 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         } else {
             "ActivityCompleted"
         };
-        let payload = serde_json::json!({
-            "activity_id": id,
-            "activity_seq": act.seq,
-            "name": act.name,
-            "result": result.and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()),
-            "error": error,
-        });
-        let event_seq = self.store.get_event_count(&act.workflow_id).await? as i32 + 1;
-        let workflow_id = act.workflow_id.clone();
-        self.store
-            .append_event(&WorkflowEvent {
-                id: None,
-                workflow_id: act.workflow_id,
-                seq: event_seq,
-                event_type: event_type.to_string(),
-                payload: Some(payload.to_string()),
-                timestamp: timestamp_now(),
+        let payload = settled_event_payload(id, act.seq, &act.name, result, error).to_string();
+        let outcome = self
+            .store
+            .settle_activity(&ActivitySettlement {
+                activity_id: id,
+                workflow_id: &act.workflow_id,
+                result,
+                error,
+                failed,
+                event_type,
+                payload: &payload,
+                now: timestamp_now(),
             })
             .await?;
+        if outcome == SettleOutcome::Repaired {
+            tracing::warn!(
+                activity_id = id,
+                workflow_id = %act.workflow_id,
+                "settled activity was missing its history event — repaired"
+            );
+        }
         // wake the workflow task back up.
-        self.mark_and_emit_needs_dispatch(&workflow_id).await?;
+        self.emit_needs_dispatch(&act.workflow_id).await;
         Ok(())
     }
 
@@ -240,34 +245,23 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             return Ok(());
         }
 
-        // Out of retries — mark FAILED and surface to the workflow
+        // Out of retries — mark FAILED and surface to the workflow. Row,
+        // event and dispatch arming settle in one store transaction.
+        let payload = failed_event_payload(id, act.seq, &act.name, error, act.attempt).to_string();
         self.store
-            .complete_activity(id, None, Some(error), true)
-            .await?;
-
-        let event_seq = self.store.get_event_count(&act.workflow_id).await? as i32 + 1;
-        let workflow_id = act.workflow_id.clone();
-        self.store
-            .append_event(&WorkflowEvent {
-                id: None,
-                workflow_id: act.workflow_id,
-                seq: event_seq,
-                event_type: "ActivityFailed".to_string(),
-                payload: Some(
-                    serde_json::json!({
-                        "activity_id": id,
-                        "activity_seq": act.seq,
-                        "name": act.name,
-                        "error": error,
-                        "final_attempt": act.attempt,
-                    })
-                    .to_string(),
-                ),
-                timestamp: timestamp_now(),
+            .settle_activity(&ActivitySettlement {
+                activity_id: id,
+                workflow_id: &act.workflow_id,
+                result: None,
+                error: Some(error),
+                failed: true,
+                event_type: "ActivityFailed",
+                payload: &payload,
+                now: timestamp_now(),
             })
             .await?;
         // Wake the workflow task — handler needs to see the failure.
-        self.mark_and_emit_needs_dispatch(&workflow_id).await?;
+        self.emit_needs_dispatch(&act.workflow_id).await;
         Ok(())
     }
 
@@ -290,4 +284,42 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
             .await?;
         Ok(())
     }
+}
+
+/// Payload of the `ActivityCompleted` / `ActivityFailed` event written when
+/// an activity settles. Shared with the reconciler so a repaired event is
+/// shaped exactly like one written inline.
+pub(crate) fn settled_event_payload(
+    activity_id: i64,
+    activity_seq: i32,
+    name: &str,
+    result: Option<&str>,
+    error: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "activity_id": activity_id,
+        "activity_seq": activity_seq,
+        "name": name,
+        "result": result.and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()),
+        "error": error,
+    })
+}
+
+/// Payload of the `ActivityFailed` event written when an activity exhausts
+/// its retry budget. Carries the attempt count the completion payload has
+/// no reason to.
+pub(crate) fn failed_event_payload(
+    activity_id: i64,
+    activity_seq: i32,
+    name: &str,
+    error: &str,
+    final_attempt: i32,
+) -> serde_json::Value {
+    serde_json::json!({
+        "activity_id": activity_id,
+        "activity_seq": activity_seq,
+        "name": name,
+        "error": error,
+        "final_attempt": final_attempt,
+    })
 }

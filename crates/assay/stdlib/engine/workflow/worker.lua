@@ -130,6 +130,38 @@ function M.poll_activity_task(client, queue)
   return true
 end
 
+--- Register the worker with the engine and record the assigned id on the
+--- client. Called on startup and again whenever the engine reports the
+--- registration is gone.
+function M.register(client, registration)
+  local wf_names, act_names = {}, {}
+  for name in pairs(client._workflows) do wf_names[#wf_names + 1] = name end
+  for name in pairs(client._activities) do act_names[#act_names + 1] = name end
+
+  -- Force JSON-array shape on both fields. The empty-table case
+  -- (worker that registers only workflows, or only activities) would
+  -- otherwise serialize as `{}` and fail the engine's `Option<Vec<_>>`
+  -- deserializer. See assay/src/lua/builtins/json.rs for the shape rules.
+  local resp = client._api("POST", "/workers/register", {
+    identity = registration.identity,
+    namespace = registration.namespace,
+    queue = registration.queue,
+    workflows = json.array(wf_names),
+    activities = json.array(act_names),
+    max_concurrent_workflows = registration.max_concurrent_workflows,
+    max_concurrent_activities = registration.max_concurrent_activities,
+  })
+  if resp.status ~= 200 then
+    error("engine.workflow.listen: registration failed: " .. (resp.body or "unknown"))
+  end
+  client._worker_id = json.parse(resp.body).worker_id
+  log.info(
+    "Registered as worker " .. client._worker_id ..
+      " on namespace '" .. registration.namespace .. "' queue '" .. registration.queue .. "'"
+  )
+  return client._worker_id
+end
+
 --- Start the worker. Registers as a worker on (namespace, queue) and
 --- polls until cancelled. Workflow tasks are polled before activity
 --- tasks (cheap orchestration first).
@@ -149,37 +181,28 @@ function M.listen(client, opts)
   local identity = opts.identity or
     ("assay-worker-" .. (os.hostname and os.hostname() or "unknown"))
 
-  local wf_names, act_names = {}, {}
-  for name in pairs(client._workflows) do wf_names[#wf_names + 1] = name end
-  for name in pairs(client._activities) do act_names[#act_names + 1] = name end
-
-  -- Force JSON-array shape on both fields. The empty-table case
-  -- (worker that registers only workflows, or only activities) would
-  -- otherwise serialize as `{}` and fail the engine's `Option<Vec<_>>`
-  -- deserializer. See assay/src/lua/builtins/json.rs for the shape rules.
-  local reg_resp = client._api("POST", "/workers/register", {
+  local registration = {
     identity = identity,
     namespace = namespace,
     queue = queue,
-    workflows = json.array(wf_names),
-    activities = json.array(act_names),
     max_concurrent_workflows = opts.max_concurrent_workflows or 10,
     max_concurrent_activities = opts.max_concurrent_activities or 20,
-  })
-  if reg_resp.status ~= 200 then
-    error("engine.workflow.listen: registration failed: " .. (reg_resp.body or "unknown"))
-  end
-  client._worker_id = json.parse(reg_resp.body).worker_id
-  log.info(
-    "Registered as worker " .. client._worker_id ..
-      " on namespace '" .. namespace .. "' queue '" .. queue .. "'"
-  )
+  }
+  M.register(client, registration)
 
   local idle_sleep = 0.5
   local backoff = LISTEN_BACKOFF_MIN_SECS
   while true do
     local hb_ok, hb_err = pcall(function()
-      client._api("POST", "/workers/heartbeat", { worker_id = client._worker_id })
+      local resp = client._api("POST", "/workers/heartbeat", { worker_id = client._worker_id })
+      -- The engine reaps a registration once heartbeats stop arriving for
+      -- long enough. Heartbeating the gone row never brings the worker
+      -- back, so a 404 means register again rather than keep polling
+      -- under an id no queue dispatches to.
+      if resp.status == 404 then
+        log.warn("engine.workflow.listen: registration expired, re-registering")
+        M.register(client, registration)
+      end
     end)
     if not hb_ok then
       log.warn(

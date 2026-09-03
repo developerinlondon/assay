@@ -135,19 +135,33 @@ impl<S: WorkflowStore> WorkflowCtx<S> {
         workflow_id: &str,
     ) -> anyhow::Result<()> {
         self.store.mark_workflow_dispatchable(workflow_id).await?;
-        if self.bus.is_some()
-            && let Some(wf) = self.store.get_workflow(workflow_id).await?
-        {
-            self.emit(
-                &wf.namespace,
-                WorkflowBusEvent::WorkflowNeedsDispatch {
-                    workflow_id: workflow_id.to_string(),
-                    task_queue: wf.task_queue,
-                },
-            )
-            .await;
-        }
+        self.emit_needs_dispatch(workflow_id).await;
         Ok(())
+    }
+
+    /// Emit `WorkflowNeedsDispatch` without touching the row — for callers
+    /// whose store method already armed the workflow inside its own
+    /// transaction. Like [`WorkflowCtx::emit`] this never fails the caller:
+    /// the arming is durable, so a missed wake-up costs a poll interval,
+    /// not the run.
+    pub(crate) async fn emit_needs_dispatch(&self, workflow_id: &str) {
+        if self.bus.is_none() {
+            return;
+        }
+        match self.store.get_workflow(workflow_id).await {
+            Ok(Some(wf)) => {
+                self.emit(
+                    &wf.namespace,
+                    WorkflowBusEvent::WorkflowNeedsDispatch {
+                        workflow_id: workflow_id.to_string(),
+                        task_queue: wf.task_queue,
+                    },
+                )
+                .await;
+            }
+            Ok(None) => {}
+            Err(e) => tracing::warn!(?e, "needs-dispatch emit lookup failed"),
+        }
     }
 }
 

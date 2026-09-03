@@ -95,14 +95,24 @@ pub struct HeartbeatRequest {
 #[utoipa::path(
     post, path = "/api/v1/engine/workflow/workers/heartbeat",
     tag = "tasks",
-    responses((status = 200, description = "Heartbeat recorded")),
+    responses(
+        (status = 200, description = "Heartbeat recorded"),
+        (status = 404, description = "Registration is gone — register again"),
+    ),
 )]
 pub async fn worker_heartbeat<S: WorkflowStore>(
     State(state): State<Arc<WorkflowCtx<S>>>,
     Json(req): Json<HeartbeatRequest>,
 ) -> Result<axum::http::StatusCode, AppError> {
-    state.heartbeat_worker(&req.worker_id).await?;
-    Ok(axum::http::StatusCode::OK)
+    // A silent worker's registration is reaped after WORKER_TIMEOUT_SECS.
+    // Answering 200 to a heartbeat for a row that no longer exists leaves
+    // the worker heartbeating into the void until someone restarts it; 404
+    // tells it to register again.
+    if state.heartbeat_worker(&req.worker_id).await? {
+        Ok(axum::http::StatusCode::OK)
+    } else {
+        Ok(axum::http::StatusCode::NOT_FOUND)
+    }
 }
 
 #[derive(Deserialize, ToSchema)]

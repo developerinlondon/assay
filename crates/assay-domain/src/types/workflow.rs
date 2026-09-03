@@ -369,3 +369,38 @@ pub struct QueueStats {
     pub running_activities: i64,
     pub workers: i64,
 }
+
+/// The writes that must land together when an activity reaches a terminal
+/// state: the activity row, the history event a replaying workflow reads,
+/// and the dispatch arming that wakes the workflow. Passed to
+/// [`crate::store::WorkflowStore::settle_activity`], which applies all three
+/// in one transaction.
+#[derive(Clone, Debug)]
+pub struct ActivitySettlement<'a> {
+    pub activity_id: i64,
+    pub workflow_id: &'a str,
+    pub result: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub failed: bool,
+    /// `ActivityCompleted` or `ActivityFailed`.
+    pub event_type: &'a str,
+    /// Serialised event payload, built by the caller.
+    pub payload: &'a str,
+    pub now: f64,
+}
+
+/// What [`crate::store::WorkflowStore::settle_activity`] found and did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettleOutcome {
+    /// The activity was open: status, history event and dispatch arming
+    /// all landed in this call.
+    Settled,
+    /// The activity was already terminal but carried no history event —
+    /// the event was appended and the workflow re-armed.
+    Repaired,
+    /// The activity and its event were already durable. Only the dispatch
+    /// arming was re-applied, which recovers a lost workflow task.
+    AlreadySettled,
+    /// No activity with this id.
+    Unknown,
+}

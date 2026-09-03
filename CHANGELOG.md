@@ -4,6 +4,34 @@ All notable changes to Assay are documented here.
 
 ## assay-lua 0.20.0 — 2026-09-02
 
+### Fixed
+
+- **Activity completion is one transaction: the row, the history event, and the workflow task.** The
+  engine wrote those three separately, so a slow disk could land the first and lose the rest —
+  `POST /tasks/{id}/complete` returned 200, the activity read `COMPLETED` with its result, and the
+  workflow's history showed the activity still scheduled. A deterministic workflow replays that
+  history, waits on an activity that already finished, and stays `RUNNING` forever. In the reported
+  case the only recovery was to re-post the identical completion by hand.
+
+  `WorkflowStore::settle_activity` now applies all three in one transaction, so `COMPLETED` without
+  the matching event is unreachable rather than unlikely. It is idempotent, which makes re-posting a
+  completion the documented repair path: an activity whose event is already durable re-arms the
+  dispatch flag and appends nothing, recovering a workflow task lost after the event landed — the
+  second shape the same disk produced. Signal delivery closes the same way: the signal row, its
+  `SignalReceived` event and the dispatch arming commit together, since a stored signal the workflow
+  cannot see is a run that waits on nothing.
+
+  Rows already half-settled by an earlier engine still needed a way out, so the health monitor now
+  re-settles them on its next pass. `workflow.events` carries an `activity_id` column to make "did
+  this activity's terminal event land" an indexed question rather than a scan of payload JSON;
+  existing terminal events are backfilled from their payloads at startup.
+
+- **A worker whose registration was reaped now registers again instead of polling a dead id.**
+  Heartbeating an id the reaper had already removed answered `200`, so the worker kept polling under
+  a registration no queue dispatched to until someone restarted the process — observed as a worker
+  that went missing for thirty minutes and came back only on a pod restart. The endpoint answers
+  `404` when the row is gone, and the Lua worker re-registers on it.
+
 ### Added
 
 - **`dns` builtin — the record types `getaddrinfo` cannot ask for.** `dns.lookup(name, type, opts?)`
