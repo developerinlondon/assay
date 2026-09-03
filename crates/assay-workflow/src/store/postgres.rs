@@ -70,7 +70,6 @@ CREATE TABLE IF NOT EXISTS workflow.events (
     timestamp       DOUBLE PRECISION NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_wf_events_lookup ON workflow.events(workflow_id, seq);
-CREATE INDEX IF NOT EXISTS idx_wf_events_activity ON workflow.events(activity_id);
 
 CREATE TABLE IF NOT EXISTS workflow.activities (
     id              BIGSERIAL PRIMARY KEY,
@@ -377,6 +376,11 @@ impl PostgresStore {
         sqlx::query("ALTER TABLE workflow.events ADD COLUMN IF NOT EXISTS activity_id BIGINT")
             .execute(&self.pool)
             .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_wf_events_activity ON workflow.events(activity_id)",
+        )
+        .execute(&self.pool)
+        .await?;
         self.backfill_event_activity_ids().await?;
         Ok(())
     }

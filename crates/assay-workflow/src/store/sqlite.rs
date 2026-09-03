@@ -79,7 +79,6 @@ CREATE TABLE IF NOT EXISTS workflow.events (
     timestamp       REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS workflow.idx_wf_events_lookup ON events(workflow_id, seq);
-CREATE INDEX IF NOT EXISTS workflow.idx_wf_events_activity ON events(activity_id);
 
 CREATE TABLE IF NOT EXISTS workflow.activities (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -402,6 +401,11 @@ impl SqliteStore {
         }
         Self::add_column_if_missing(&self.pool, "workflow.events", "activity_id", "INTEGER")
             .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS workflow.idx_wf_events_activity ON events(activity_id)",
+        )
+        .execute(&self.pool)
+        .await?;
         self.backfill_event_activity_ids().await?;
         Ok(())
     }

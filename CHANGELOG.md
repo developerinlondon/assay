@@ -2,6 +2,17 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.17 — 2026-09-03
+
+### Fixed
+
+- **0.5.16 exited at startup on every store created by an earlier engine.** The baseline schema
+  created the `events.activity_id` index before the migration added the column, so an existing
+  database failed on `no such column: activity_id` (SQLite) or `column "activity_id" does not
+  exist` (Postgres) and the engine never came up. Fresh databases were unaffected, which is why the
+  release tests passed. The index is now created after the column, and a schema-upgrade test opens
+  both stores on a pre-0.5.16 database.
+
 ## assay-engine 0.5.16 — 2026-09-03
 
 ### Fixed
