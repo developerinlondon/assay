@@ -743,3 +743,164 @@ async fn test_a_quote_without_a_domain_is_refused_before_the_call() {
         "an empty domain reached the vendor"
     );
 }
+
+// ─── provisioning: the calls that spend money ──────────────────────────────
+
+/// The vendor accepts a full address silently and stores it doubled —
+/// `ada@brand.test@brand.test` — a mailbox nothing can send from, which cannot
+/// be renamed afterwards and whose deletion tombstones the address for days.
+/// So it is refused here, before a slot is spent on it.
+#[tokio::test]
+async fn test_a_full_address_as_a_username_is_refused_rather_than_stored_doubled() {
+    let server = MockServer::start().await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local _, err = c:create_mailboxes("dom_x1", {
+          { username = "ada@brand.test", first_name = "Ada", last_name = "Lovelace" },
+        })
+        assert.eq(err.code, "config")
+        assert.contains(err.message, "local part")
+        "#
+    ))
+    .await
+    .unwrap();
+    // Nothing was sent: the refusal happened before the vendor was reached.
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// The vendor's own field names, and a signature it will accept. A box with no
+/// first name is refused by the vendor after the round trip; refused here it
+/// costs nothing.
+#[tokio::test]
+async fn test_creating_mailboxes_sends_the_vendors_field_names_and_the_local_part() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .and(header("x-primeforge-key", "k"))
+        .and(body_string_contains("primeforge_create_mailboxes_for_domain"))
+        .and(body_string_contains("\"username\":\"ada\""))
+        .and(body_string_contains("\"firstName\":\"Ada\""))
+        .and(body_string_contains("\"signature\":\"Ada Lovelace\""))
+        .and(body_string_contains("\"domainId\":\"dom_x1\""))
+        .respond_with(reply(json!({ "created": 1 })))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local made = c:create_mailboxes("dom_x1", {
+          { username = "Ada", first_name = "Ada", last_name = "Lovelace" },
+        })
+        assert.eq(made.created, 1)
+        local _, no_name = c:create_mailboxes("dom_x1", { { username = "ceo" } })
+        assert.eq(no_name.code, "config")
+        local _, none = c:create_mailboxes("dom_x1", {})
+        assert.eq(none.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A domain purchase charges a stored card, and the registry refuses a partial
+/// registrant. Finding that out after the attempt costs a round trip against
+/// money; the fields are checked first.
+#[tokio::test]
+async fn test_buying_a_domain_refuses_an_incomplete_registrant_before_charging() {
+    let server = MockServer::start().await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local _, no_contact = c:buy_domain("brand.test")
+        assert.eq(no_contact.code, "config")
+        local _, partial = c:buy_domain("brand.test", { firstName = "Ada", lastName = "L" })
+        assert.eq(partial.code, "config")
+        assert.contains(partial.message, "email")
+        local _, no_domain = c:buy_domain("", { firstName = "Ada" })
+        assert.eq(no_domain.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_buying_a_domain_sends_the_domain_and_the_whole_contact() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .and(body_string_contains("primeforge_buy_domains"))
+        .and(body_string_contains("\"brand.test\""))
+        .and(body_string_contains("\"country\":\"GB\""))
+        .respond_with(reply(json!({ "ok": true })))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local bought = c:buy_domain("Brand.TEST", {
+          firstName = "Ada", lastName = "Lovelace", email = "ada@brand.test",
+          phone = "+44.2000000000", address = "1 Road", city = "London",
+          state = "London", zip = "E1 1AA", country = "GB",
+        })
+        assert.eq(bought.domain, "brand.test")
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// An app password the vendor does not have yet is "not yet", never "". An
+/// empty string handed to an SMTP connect is refused for a reason that has
+/// nothing to do with the real one.
+#[tokio::test]
+async fn test_an_app_password_the_vendor_does_not_have_yet_is_not_an_empty_password() {
+    let server = MockServer::start().await;
+    mount_tool(
+        &server,
+        "x-primeforge-key",
+        "primeforge_get_mailbox",
+        json!({ "id": "mbx_x1", "status": "provisioning", "appPassword": "" }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local password, err = c:app_password("mbx_x1")
+        assert.eq(password, nil)
+        assert.eq(err.code, "not_ready")
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_an_app_password_the_vendor_has_comes_back_on_its_own() {
+    let server = MockServer::start().await;
+    mount_tool(
+        &server,
+        "x-primeforge-key",
+        "primeforge_get_mailbox",
+        json!({ "id": "mbx_x1", "status": "active", "appPassword": "abcd efgh ijkl mnop" }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        assert.eq(c:app_password("mbx_x1"), "abcd efgh ijkl mnop")
+        local _, blank = c:app_password("  ")
+        assert.eq(blank.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+}

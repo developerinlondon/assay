@@ -9,7 +9,7 @@ mod common;
 
 use common::run_lua;
 use serde_json::json;
-use wiremock::matchers::{header, method, path, query_param};
+use wiremock::matchers::{body_string_contains, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn script(uri: &str, body: &str) -> String {
@@ -837,4 +837,143 @@ async fn test_the_vendors_own_words_for_a_stopped_box_read_as_inactive() {
         .await
         .unwrap();
     }
+}
+
+// ─── ordering boxes on a domain you already own ────────────────────────────
+
+fn data(body: serde_json::Value) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .set_body_json(json!({ "success": true, "message": "ok", "data": body }))
+}
+
+/// `import: true` is what makes it a BYO order. Without it the vendor tries to
+/// sell the domain as well, which is a second charge nobody asked for.
+#[tokio::test]
+async fn test_an_order_on_an_owned_domain_is_an_import_and_carries_full_addresses() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/order"))
+        .and(header("x-api-key", "k"))
+        .and(body_string_contains("\"import\":true"))
+        .and(body_string_contains("\"domain_name\":\"brand.test\""))
+        .and(body_string_contains("\"username\":\"ada@brand.test\""))
+        .and(body_string_contains("\"first_name\":\"Ada\""))
+        .respond_with(data(json!({ "order_id": "ord_x1" })))
+        .mount(&server)
+        .await;
+    run_lua(&script(
+        &server.uri(),
+        r#"
+        local placed = c:order("Brand.TEST", {
+          { username = "Ada@Brand.TEST", first_name = "Ada", last_name = "Lovelace",
+            password = "app-pw" },
+        })
+        assert.eq(placed.order_id, "ord_x1")
+        "#,
+    ))
+    .await
+    .unwrap();
+}
+
+/// Clayinbox wants the FULL address where Primeforge wants the local part, and
+/// the two are one keystroke apart. A bare local part sent here becomes a box
+/// on a domain the vendor invents from it.
+#[tokio::test]
+async fn test_an_order_refuses_a_local_part_and_an_address_on_another_domain() {
+    let server = MockServer::start().await;
+    run_lua(&script(
+        &server.uri(),
+        r#"
+        local _, bare = c:order("brand.test", { { username = "ada", password = "p" } })
+        assert.eq(bare.code, "config")
+        assert.contains(bare.message, "full addresses")
+        local _, elsewhere = c:order("brand.test", {
+          { username = "ada@other.test", password = "p" },
+        })
+        assert.eq(elsewhere.code, "config")
+        assert.contains(elsewhere.message, "not on brand.test")
+        local _, no_pw = c:order("brand.test", { { username = "ada@brand.test" } })
+        assert.eq(no_pw.code, "config")
+        local _, none = c:order("brand.test", {})
+        assert.eq(none.code, "config")
+        "#,
+    ))
+    .await
+    .unwrap();
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// The app password appears some minutes AFTER the box goes active, and the
+/// endpoint answers 200 with an empty record until then. Read as a password,
+/// that empty string reaches an SMTP connect and is refused for a reason that
+/// has nothing to do with the real one.
+#[tokio::test]
+async fn test_an_empty_app_password_record_is_not_ready_and_never_a_password() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mailbox/mbx_x1/app-password"))
+        .and(header("x-api-key", "k"))
+        .respond_with(data(json!({})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/mailbox/mbx_x2/app-password"))
+        .and(header("x-api-key", "k"))
+        .respond_with(data(json!({ "app_password": "abcd efgh ijkl mnop" })))
+        .mount(&server)
+        .await;
+    run_lua(&script(
+        &server.uri(),
+        r#"
+        local password, err = c:app_password("mbx_x1")
+        assert.eq(password, nil)
+        assert.eq(err.code, "not_ready")
+        assert.eq(c:app_password("mbx_x2"), "abcd efgh ijkl mnop")
+        "#,
+    ))
+    .await
+    .unwrap();
+}
+
+/// The balance an order draws down, read before ordering rather than after
+/// being refused: the vendor answers an over-balance order generically, and an
+/// operator shown the balance knows to top up instead of retrying.
+#[tokio::test]
+async fn test_the_wallet_reads_the_same_balance_the_bill_is_drawn_against() {
+    let server = MockServer::start().await;
+    mount_wallet(&server, json!(12.5)).await;
+    run_lua(&script(
+        &server.uri(),
+        r#"
+        assert.eq(c:wallet().available_cents, 1250)
+        "#,
+    ))
+    .await
+    .unwrap();
+}
+
+/// A domain the workspace already owns reads as not available, which on the
+/// import path is the ordinary answer and not an error.
+#[tokio::test]
+async fn test_a_domain_quote_says_whether_it_is_for_sale_and_what_it_costs() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/domain/available"))
+        .and(query_param("domain", "brand.test"))
+        .respond_with(data(json!({ "available": true, "price": 10 })))
+        .mount(&server)
+        .await;
+    run_lua(&script(
+        &server.uri(),
+        r#"
+        local quote = c:available("Brand.TEST")
+        assert.eq(quote.domain, "brand.test")
+        assert.eq(quote.available, true)
+        assert.eq(quote.price_cents, 1000)
+        local _, blank = c:available("")
+        assert.eq(blank.code, "config")
+        "#,
+    ))
+    .await
+    .unwrap();
 }

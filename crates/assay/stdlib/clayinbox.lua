@@ -7,6 +7,10 @@
 --- @quickref c:mailboxes() -> [box], meta | nil, err | Every mailbox, paged; {address, domain, status, provider, raw}
 --- @quickref c:domains() -> [domain], meta | nil, err | Every domain with the vendor's DNS flags
 --- @quickref c:costs() -> {items, meta} | nil, err | What the active fleet bills, from the price on each mailbox row; whole cents
+--- @quickref c:available(domain) -> {domain, available, price_cents} | nil, err | Registration quote; a domain you already own is not available and needs no order
+--- @quickref c:wallet() -> {available_cents, raw} | nil, err | Credits an order is charged against; an order past the balance is refused by the vendor
+--- @quickref c:order(domain, boxes) -> {order_id, raw} | nil, err | Order mailboxes on a domain you already own (import). Usernames are FULL addresses
+--- @quickref c:app_password(id) -> password | nil, err | The Google app password, minutes after the box goes active; err.code "not_ready" until then
 --- @quickref item -> {kind, unit, ref, quantity, unit_price_cents, period, source} | Shared with assay.forge and assay.salesforge; an absent price or period is a fact the vendor withheld
 --- @quickref costs meta -> {priced, currency_known, unpriced, inactive, status_unknown, next_billing_date, wallet_available_cents, wallet_error, truncated, cap, seen} | unpriced, inactive and status_unknown are the three reasons a row went unbilled; currency_known is false because Clayinbox states no currency anywhere
 --- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
@@ -183,11 +187,126 @@ function M.client(opts)
     return out, { truncated = truncated, cap = MAX_PAGES * PAGE, seen = seen }
   end
 
+  --- A write. GET is not enough for these: the vendor takes an order as a POST
+  --- body, and Cloudflare refuses a client with no browser User-Agent outright.
+  local function send(method, path, body)
+    local ok, resp = pcall(http[method:lower()], base_url .. path, body and json.encode(body) or "", {
+      headers = {
+        ["x-api-key"] = api_key,
+        Accept = "application/json",
+        ["Content-Type"] = "application/json",
+        ["User-Agent"] = BROWSER_UA,
+      },
+    })
+    if not ok then
+      return fail("transport", nil, method .. " " .. path .. ": " .. tostring(resp))
+    end
+    if resp.status < 200 or resp.status >= 300 then return refused(method .. " " .. path, resp) end
+    local parsed_ok, parsed = pcall(json.parse, resp.body or "")
+    if not parsed_ok or type(parsed) ~= "table" then
+      return fail("unreadable", resp.status, method .. " " .. path .. " answered no object")
+    end
+    return parsed
+  end
+
   local c = {}
 
   function c:domains() return all("/domain", "domains", M.map_domain) end
 
   function c:mailboxes() return all("/mailbox", "mailboxes", M.map_box) end
+
+  --- What registering this domain would cost, and whether it is even for sale.
+  ---
+  --- A domain the workspace already owns reads as NOT available, which is the
+  --- ordinary answer on the import path and not an error: the caller is
+  --- ordering boxes on a domain it holds, and only needs the quote when it does
+  --- not hold one.
+  function c:available(domain)
+    local name = lower(domain)
+    if name == "" then return fail("config", nil, "available needs a domain") end
+    local data, err = get("/domain/available?domain=" .. name)
+    if not data then return nil, err end
+    return {
+      domain = name,
+      available = data.available == true,
+      price_cents = cost.to_cents(data.price),
+      raw = data,
+    }
+  end
+
+  --- The credit balance an order is charged against.
+  ---
+  --- Read before ordering rather than after being refused: the vendor answers
+  --- an over-balance order with a generic failure, and an operator who was
+  --- shown the balance first knows to top up instead of retrying.
+  function c:wallet()
+    local data, err = get("/wallet")
+    if not data then return nil, err end
+    -- The same field `costs` reads its balance from, so the number an operator
+    -- is shown before an order is the number the bill is drawn against.
+    return { available_cents = cost.to_cents(data.available), raw = data }
+  end
+
+  --- Order mailboxes on a domain this workspace already owns.
+  ---
+  --- `import` is what makes it a BYO order: without it the vendor tries to sell
+  --- the domain too. The username the vendor wants here is the FULL address,
+  --- unlike Primeforge's local part — mixing the two up silently produces
+  --- `user@domain@domain`, so this refuses a bare local part rather than
+  --- sending one.
+  function c:order(domain, boxes)
+    local name = lower(domain)
+    if name == "" then return fail("config", nil, "order needs a domain") end
+    if type(boxes) ~= "table" or #boxes == 0 then
+      return fail("config", nil, "order needs at least one mailbox")
+    end
+    local wanted = {}
+    for i, box in ipairs(boxes) do
+      local address = lower(box.username or box.address)
+      if not address:find("@", 1, true) then
+        return fail("config", nil, "order takes full addresses; box " .. i .. " is " .. address)
+      end
+      if address:match("@([^@]+)$") ~= name then
+        return fail("config", nil, address .. " is not on " .. name)
+      end
+      if trim(box.password) == "" then
+        return fail("config", nil, "no password for " .. address)
+      end
+      wanted[i] = {
+        username = address,
+        first_name = trim(box.first_name),
+        last_name = trim(box.last_name),
+        password = box.password,
+      }
+    end
+    local answer, err = send("POST", "/order", {
+      import = true,
+      data = { { domain_name = name, mailboxes = wanted } },
+    })
+    if not answer then return nil, err end
+    local data = type(answer.data) == "table" and answer.data or answer
+    return { order_id = data.order_id or data.id, raw = data }
+  end
+
+  --- The Google app password for a box, once the vendor has one.
+  ---
+  --- It appears some minutes AFTER the mailbox goes active, and until then the
+  --- endpoint answers 200 with an empty record. Read as a password that is an
+  --- empty string handed to an SMTP connect, which the vendor then refuses for
+  --- a reason that has nothing to do with the real one. So an empty record is
+  --- its own answer — `not_ready` — and never a password.
+  function c:app_password(id)
+    local box = trim(id)
+    if box == "" then return fail("config", nil, "app_password needs a mailbox id") end
+    local data, err = get("/mailbox/" .. box .. "/app-password")
+    if not data then return nil, err end
+    local password = type(data.app_password) == "string" and data.app_password
+      or (type(data) == "string" and data or nil)
+    if type(password) ~= "string" or trim(password) == "" then
+      return fail("not_ready", nil, "no app password for " .. box .. " yet")
+    end
+    return password
+  end
 
   -- What the live fleet bills.
   --

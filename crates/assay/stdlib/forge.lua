@@ -8,6 +8,9 @@
 --- @quickref p:domains() -> [domain], meta | nil, err | Name is sld and tld joined; the vendor sends no whole name
 --- @quickref p:mailboxes(domain_id?) -> [box], meta | nil, err | The vendor caps this at ten rows and cannot page
 --- @quickref p:domain_price(domain) -> {items, meta} | nil, err | Registration quote in whole cents for a year; the only price the forge answers, and it prices domains nobody has bought yet
+--- @quickref p:buy_domain(domain, contact) -> {domain, raw} | nil, err | Registers it and charges the stored card; the contact is the registrant the registry requires
+--- @quickref p:create_mailboxes(domain_id, boxes) -> {created, raw} | nil, err | username is the LOCAL PART; a full address is refused, not silently doubled
+--- @quickref p:app_password(id) -> password | nil, err | The box's Google app password; err.code "not_ready" while the vendor still has none
 --- @quickref primeforge costs -> quote only | No billing, subscription or slot tool: p:domain_price quotes a purchase, never the recurring spend
 --- @quickref item -> {kind, unit, ref, quantity, unit_price_cents, period, source} | Shared with assay.clayinbox and assay.salesforge; an absent price or period is a fact the vendor withheld
 --- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
@@ -38,6 +41,13 @@ local MAX_PAGES = 50
 -- offset 20 return the same ten ids. A vendor answering exactly its cap has
 -- told the caller nothing about what lies past it, so that reads as truncated.
 local PRIMEFORGE_CAP = 10
+
+-- What the registry wants before it will sell a domain. The vendor rejects a
+-- partial contact, and finding that out costs a round trip against a card.
+local REGISTRANT_FIELDS = {
+  "firstName", "lastName", "email", "phone",
+  "address", "city", "state", "zip", "country",
+}
 
 -- A Primeforge mailbox row carries the box's own password and its Google app
 -- password. `raw` is for the vendor's metadata; a credential riding along on it
@@ -365,6 +375,94 @@ function M.primeforge(opts)
         unpriced = unpriced,
       },
     }
+  end
+
+  --- Register a domain. This SPENDS: it charges the card Primeforge holds.
+  ---
+  --- The registry requires a full registrant contact and the vendor rejects a
+  --- partial one, so the fields are checked here rather than after the charge
+  --- attempt. Nothing about the price is decided here — `domain_price` is the
+  --- quote, and a caller that has not shown it to somebody is buying blind.
+  function p:buy_domain(domain, contact)
+    local fqdn = lower(domain)
+    if fqdn == "" or not fqdn:find(".", 1, true) then
+      return fail("config", nil, "buy_domain needs a domain")
+    end
+    if type(contact) ~= "table" then
+      return fail("config", nil, "buy_domain needs a registrant contact")
+    end
+    for _, field in ipairs(REGISTRANT_FIELDS) do
+      if trim(contact[field]) == "" then
+        return fail("config", nil, "buy_domain needs the registrant's " .. field)
+      end
+    end
+    local payload, err = call("primeforge_buy_domains", {
+      workspaceId = workspace,
+      domains = { fqdn },
+      contact = contact,
+    })
+    if not payload then return nil, err end
+    return { domain = fqdn, raw = payload }
+  end
+
+  --- Create mailboxes on a domain this workspace holds. This SPENDS: a box
+  --- occupies a slot, and slots are billed whether or not a box sits in one.
+  ---
+  --- `username` is the LOCAL PART. The vendor accepts a full address silently
+  --- and stores it doubled — `ada@brand.test@brand.test` — which is a mailbox
+  --- nothing can send from and which cannot be renamed afterwards, only
+  --- deleted, and a deleted address tombstones. So a full address is refused
+  --- here instead.
+  function p:create_mailboxes(domain_id, boxes)
+    local domain = trim(domain_id)
+    if domain == "" then return fail("config", nil, "create_mailboxes needs a domain id") end
+    if type(boxes) ~= "table" or #boxes == 0 then
+      return fail("config", nil, "create_mailboxes needs at least one mailbox")
+    end
+    local wanted = {}
+    for i, box in ipairs(boxes) do
+      local username = lower(box.username)
+      if username == "" then
+        return fail("config", nil, "no username for mailbox " .. i)
+      end
+      if username:find("@", 1, true) then
+        return fail("config", nil, "username is the local part, not an address: " .. username)
+      end
+      local first = trim(box.first_name)
+      local last = trim(box.last_name)
+      if first == "" then return fail("config", nil, "no first name for " .. username) end
+      wanted[i] = {
+        firstName = first,
+        lastName = last,
+        username = username,
+        signature = trim(box.signature) ~= "" and box.signature or trim(first .. " " .. last),
+        profilePictureUrl = box.profile_picture_url or "",
+      }
+    end
+    local payload, err = call("primeforge_create_mailboxes_for_domain", {
+      workspaceId = workspace,
+      domainId = domain,
+      mailboxes = wanted,
+    })
+    if not payload then return nil, err end
+    return { created = #wanted, raw = payload }
+  end
+
+  --- The box's Google app password, which is how it is wired to a sequencer.
+  ---
+  --- Absent until the vendor has finished provisioning. An empty one handed to
+  --- an SMTP connect is refused for a reason that has nothing to do with the
+  --- real one, so "not yet" is its own answer here and never a password.
+  function p:app_password(id)
+    local box = trim(id)
+    if box == "" then return fail("config", nil, "app_password needs a mailbox id") end
+    local payload, err = call("primeforge_get_mailbox", { id = box })
+    if not payload then return nil, err end
+    local password = type(payload) == "table" and payload.appPassword or nil
+    if type(password) ~= "string" or trim(password) == "" then
+      return fail("not_ready", nil, "no app password for " .. box .. " yet")
+    end
+    return password
   end
 
   return p
