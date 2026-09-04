@@ -1,12 +1,17 @@
 --- @module assay.clayinbox
---- @description Clayinbox mailbox provisioning (app.clayinbox.ai) — the domains a workspace holds and the Google mailboxes on them, listed to the last page. Read-only; the API key comes from the caller.
+--- @description Clayinbox mailbox provisioning (app.clayinbox.ai) — the domains a workspace holds, the Google mailboxes on them, and what those boxes bill, listed to the last page. Read-only; the API key comes from the caller.
 --- @category saas
 --- @icon inbox
 --- @keywords clayinbox, mailbox, cold email, domain, dns, spf, dkim, dmarc, deliverability, provisioning
 --- @quickref M.client(opts?) -> c | Key via opts.api_key or CLAYINBOX_API_KEY; opts.base_url overrides the endpoint
 --- @quickref c:mailboxes() -> [box], meta | nil, err | Every mailbox, paged; {address, domain, status, provider, raw}
 --- @quickref c:domains() -> [domain], meta | nil, err | Every domain with the vendor's DNS flags
+--- @quickref c:costs() -> {items, meta} | nil, err | What the active fleet bills, from the price on each mailbox row; whole cents
+--- @quickref item -> {kind, unit, ref, quantity, unit_price_cents, period, source} | Shared with assay.forge and assay.salesforge; an absent price or period is a fact the vendor withheld
+--- @quickref costs meta -> {priced, currency_known, unpriced, inactive, status_unknown, next_billing_date, wallet_available_cents, wallet_error, truncated, cap, seen} | unpriced, inactive and status_unknown are the three reasons a row went unbilled; currency_known is false because Clayinbox states no currency anywhere
 --- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
+
+local cost = require("assay.vendor_cost")
 
 local M = {}
 
@@ -25,6 +30,34 @@ local MAX_PAGES = 50
 -- read the fields this module does not map, and a credential riding along on it
 -- would reach every log that prints a row.
 local SECRET_KEYS = { password = true, app_password = true }
+
+-- The vendor writes the billing cycle in words. Anything outside this map is a
+-- cycle this module cannot price, and a row carrying one is counted rather than
+-- guessed at.
+local PERIOD = { MONTHLY = "month", YEARLY = "year", ANNUAL = "year", ANNUALLY = "year" }
+
+-- Only a live mailbox is a mailbox the vendor charges for. The status is read
+-- exactly as `M.map_box` reads it, so a row billed here is a row a caller can
+-- also find in the listing.
+local BILLABLE = { active = true }
+
+-- Statuses that plainly mean the vendor has stopped charging.
+--
+-- A row outside both lists — no status at all, or a word this module has never
+-- seen — is not evidence of anything. Counted as inactive it would say the
+-- vendor cancelled a box nobody cancelled; billed, it would charge for one that
+-- may already be gone. It is counted under its own name instead, so the bill
+-- under-reports by an amount the caller can see rather than by a reason that
+-- was made up.
+local NOT_BILLED = {
+  cancelled = true,
+  canceled = true,
+  suspended = true,
+  deleted = true,
+  inactive = true,
+  expired = true,
+  terminated = true,
+}
 
 local ERR = { __tostring = function(e) return "clayinbox: " .. e.message end }
 
@@ -155,6 +188,90 @@ function M.client(opts)
   function c:domains() return all("/domain", "domains", M.map_domain) end
 
   function c:mailboxes() return all("/mailbox", "mailboxes", M.map_box) end
+
+  -- What the live fleet bills.
+  --
+  -- The vendor publishes no invoice, order or price endpoint — every one of
+  -- those paths 404s — and puts the price on the mailbox row itself, so the
+  -- bill is the rows added up. Rows sharing a price and a cycle collapse into
+  -- one item, which is what makes `quantity` mean anything; the cycle is part
+  -- of the grouping key, so a yearly box never lands in a monthly line at the
+  -- same number.
+  --
+  -- The walk is over raw rows rather than mapped ones: a row `map_box` drops
+  -- for an unreadable address is still a row the vendor charges for, and
+  -- dropping it here would understate the bill.
+  --
+  -- A row is set aside for exactly one reason, and the counters say which:
+  -- `inactive` for a box the vendor said it has stopped charging for,
+  -- `status_unknown` for one whose status it did not say at all, and `unpriced`
+  -- for a live box whose price or cycle this module cannot read. Status is
+  -- checked first, so a cancelled box with an unreadable price counts once.
+  function c:costs()
+    local rows, meta = all("/mailbox", "mailboxes", function(raw) return raw end)
+    if not rows then return nil, meta end
+
+    local groups, order = {}, {}
+    local unpriced, inactive, status_unknown, next_billing = 0, 0, 0, nil
+    for _, raw in ipairs(rows) do
+      local status = raw.status ~= nil and lower(raw.status) or ""
+      local cents = cost.to_cents(raw.cost)
+      local period = PERIOD[trim(raw.billing_cycle):upper()]
+      if not BILLABLE[status] then
+        if NOT_BILLED[status] then
+          inactive = inactive + 1
+        else
+          status_unknown = status_unknown + 1
+        end
+      elseif cents and period then
+        local key = cents .. "/" .. period
+        if not groups[key] then
+          groups[key] = cost.item({
+            kind = "box",
+            unit = "mailbox",
+            quantity = 0,
+            unit_price_cents = cents,
+            period = period,
+          })
+          order[#order + 1] = key
+        end
+        groups[key].quantity = groups[key].quantity + 1
+        -- The dates are the vendor's own ISO-8601 UTC strings, which sort in
+        -- the order they happen, so the earliest is the smallest.
+        local due = trim(raw.next_billing_date)
+        if due ~= "" and (next_billing == nil or due < next_billing) then next_billing = due end
+      else
+        unpriced = unpriced + 1
+      end
+    end
+
+    local items = {}
+    for _, key in ipairs(order) do items[#items + 1] = groups[key] end
+
+    -- The wallet is the prepaid balance these charges draw down, not a charge
+    -- itself. It is fetched second and separately: a wallet the vendor refuses
+    -- leaves the bill intact, and the whole typed error is kept rather than
+    -- its code alone, because a 401 and a 500 need different answers from the
+    -- caller and a nil balance says neither on its own.
+    local wallet, wallet_err = get("/wallet")
+    return {
+      items = items,
+      meta = {
+        priced = true,
+        -- Not on a mailbox row, not on a domain row, not on the wallet.
+        currency_known = false,
+        unpriced = unpriced,
+        inactive = inactive,
+        status_unknown = status_unknown,
+        next_billing_date = next_billing,
+        truncated = meta.truncated,
+        cap = meta.cap,
+        seen = meta.seen,
+        wallet_available_cents = wallet and cost.to_cents(wallet.available) or nil,
+        wallet_error = wallet_err,
+      },
+    }
+  end
 
   return c
 end

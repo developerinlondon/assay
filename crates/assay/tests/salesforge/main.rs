@@ -755,3 +755,281 @@ async fn test_a_blank_id_or_a_non_list_is_refused_before_any_request() {
         "a malformed sequence write reached the vendor"
     );
 }
+
+const CREDS: &str = ", email = \"ops@example.test\", password = \"pw\"";
+
+/// The shape the web app's own `/me` answers: the plan is nested two deep, under
+/// the user's account, and the credit pools sit beside it on the account rather
+/// than on the plan. A trial states no billing cycle anywhere.
+fn me_body() -> serde_json::Value {
+    json!({
+        "user": {
+            "id": "usr_xa1", "firstName": "Ada", "lastName": "Person",
+            "email": "ops@example.test", "accountId": "acc_xa1",
+            "account": {
+                "id": "acc_xa1", "name": "Example Ltd",
+                "activePlanId": "plan_trial",
+                "activePlan": {
+                    "id": "plan_trial", "name": "Trial",
+                    "activatedLeadsPerMonthLimit": 50, "emailsPerMonthLimit": 100,
+                    "validationsPerMonthLimit": 50, "personalizationsPerMonthLimit": 50,
+                    "socialActionsPerMonthLimit": 50, "linkedInProfilesLimit": 1,
+                },
+                "planStartedAt": "2026-08-31T09:12:48.185965Z",
+                "subscriptionStatus": "active",
+                "freeTrialExpiresAt": "2026-09-14T09:12:48.185965Z",
+                "emailCreditsLeft": 100, "leadCreditsLeft": 50,
+                "emailValidationCreditsLeft": 50, "personalizationCreditsLeft": 50,
+                "socialActionCreditsLeft": 50,
+                "StripeCustomerID": serde_json::Value::Null,
+            },
+        },
+    })
+}
+
+async fn mount_me(server: &MockServer, status: u16, body: serde_json::Value) {
+    Mock::given(method("GET"))
+        .and(path("/me"))
+        .and(header("authorization", "Bearer tok_x1"))
+        .respond_with(ResponseTemplate::new(status).set_body_json(body))
+        .mount(server)
+        .await;
+}
+
+/// The plan and its ceilings live only on the internal `/me`. Every plan,
+/// billing, usage and limits path under the public workspace is a flat 404, and
+/// the internal subscription route holds nothing for an account that never
+/// bought one.
+#[tokio::test]
+async fn test_the_plan_and_its_limits_come_off_the_internal_me_endpoint() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    mount_me(&server, 200, me_body()).await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), CREDS),
+        r#"
+        local out = c:costs()
+        assert.eq(#out.items, 1)
+        assert.eq(out.items[1].kind, "plan")
+        assert.eq(out.items[1].unit, "plan")
+        assert.eq(out.items[1].ref, "Trial")
+        assert.eq(out.items[1].quantity, 1)
+        assert.eq(out.items[1].source, "vendor")
+        assert.eq(out.meta.plan.id, "plan_trial")
+        assert.eq(out.meta.plan.status, "active")
+        assert.eq(out.meta.plan.trial_expires_at, "2026-09-14T09:12:48.185965Z")
+        assert.eq(out.meta.limits.emails_per_month, 100)
+        assert.eq(out.meta.limits.linkedin_profiles, 1)
+        assert.eq(out.meta.credits_left.emails, 100)
+        assert.eq(out.meta.credits_left.validations, 50)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// The vendor names no money anywhere on the plan it says you are on. An absent
+/// price read as free would put the sequencer's cost at nothing, so the item
+/// carries no price and `meta.priced` says why.
+#[tokio::test]
+async fn test_the_vendor_names_no_price_so_costs_says_so_rather_than_reading_as_free() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    mount_me(&server, 200, me_body()).await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), CREDS),
+        r#"
+        local out = c:costs()
+        assert.eq(out.items[1].unit_price_cents, nil)
+        assert.eq(out.items[1].currency, nil)
+        assert.eq(out.meta.priced, false)
+        assert.eq(out.meta.currency_known, false)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A trial states no billing cycle in any field. A period of "month" here would
+/// be this module's guess wearing the vendor's name, so there is none — the
+/// same way the absent price is absent rather than zero.
+#[tokio::test]
+async fn test_a_plan_whose_cycle_the_vendor_never_states_carries_no_period() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    mount_me(&server, 200, me_body()).await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), CREDS),
+        r#"
+        local out = c:costs()
+        assert.eq(out.items[1].period, nil)
+        -- The ceilings stay monthly whatever the plan bills on; that is the
+        -- vendor's own field naming, not a cycle.
+        assert.eq(out.meta.limits.emails_per_month, 100)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// An annual plan reads as a year. The vendor writes the cycle on the plan on
+/// some accounts and on the account on others, so all three fields are read.
+#[tokio::test]
+async fn test_an_annual_plan_reads_as_a_year_wherever_the_vendor_states_it() {
+    let cases = [
+        json!({ "activePlanId": "plan_growth",
+                "activePlan": { "name": "Growth", "interval": "year" } }),
+        json!({ "activePlanId": "plan_growth",
+                "activePlan": { "name": "Growth", "billingPeriod": "YEARLY" } }),
+        json!({ "activePlanId": "plan_growth", "billingCycle": "ANNUAL",
+                "activePlan": { "name": "Growth" } }),
+    ];
+    for account in cases {
+        let server = MockServer::start().await;
+        mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+        mount_me(&server, 200, json!({ "user": { "account": account } })).await;
+        run_lua(&format!(
+            "{}{}",
+            client(&server.uri(), CREDS),
+            r#"
+            local out = c:costs()
+            assert.eq(out.items[1].period, "year")
+            assert.eq(out.items[1].ref, "Growth")
+            "#
+        ))
+        .await
+        .unwrap();
+    }
+}
+
+/// A monthly plan reads as a month when the vendor is the one saying so.
+#[tokio::test]
+async fn test_a_monthly_plan_reads_as_a_month_when_the_vendor_states_it() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    mount_me(
+        &server,
+        200,
+        json!({ "user": { "account": {
+            "activePlanId": "plan_growth", "billingCycle": "MONTHLY",
+            "activePlan": { "name": "Growth" },
+        } } }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), CREDS),
+        r#"
+        local out = c:costs()
+        assert.eq(out.items[1].period, "month")
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A `/me` the vendor refuses reads as a refusal. Answering a plan of "unknown"
+/// with empty limits would look like an account entitled to nothing.
+#[tokio::test]
+async fn test_a_refused_me_reads_as_an_error_not_as_an_account_entitled_to_nothing() {
+    for (status, code) in [
+        (401u16, "auth"),
+        (402, "plan"),
+        (429, "rate_limit"),
+        (500, "server"),
+    ] {
+        let server = MockServer::start().await;
+        mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+        mount_me(&server, status, json!({ "message": "no" })).await;
+        let body = format!(
+            r#"
+            local out, err = c:costs()
+            assert.eq(out, nil)
+            assert.eq(err.code, "{code}")
+            assert.eq(err.status, {status})
+            "#
+        );
+        run_lua(&format!("{}{}", client(&server.uri(), CREDS), body))
+            .await
+            .unwrap();
+    }
+}
+
+/// A 200 carrying nothing, a bare JSON scalar and a JSON `null` all arrive as
+/// something that is not an account. Indexed they crash the caller; read as an
+/// empty account they report a workspace entitled to nothing, which is a plan
+/// downgrade that never happened.
+#[tokio::test]
+async fn test_a_me_that_is_not_an_account_object_is_a_typed_read_error() {
+    let bodies = ["", "true", "null", "\"nope\"", "[]"];
+    for raw in bodies {
+        let server = MockServer::start().await;
+        mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+        Mock::given(method("GET"))
+            .and(path("/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(raw))
+            .mount(&server)
+            .await;
+        run_lua(&format!(
+            "{}{}",
+            client(&server.uri(), CREDS),
+            r#"
+            local out, err = c:costs()
+            assert.eq(out, nil)
+            assert.eq(type(err), "table")
+            assert.contains(tostring(err), "salesforge: ")
+            "#
+        ))
+        .await
+        .unwrap();
+    }
+}
+
+/// Costing needs the internal API, so a sign-in that fails stops it with the
+/// sign-in error rather than a half-read plan.
+#[tokio::test]
+async fn test_costs_without_a_sign_in_is_a_typed_sign_in_error() {
+    let server = MockServer::start().await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local out, err = c:costs()
+        assert.eq(out, nil)
+        assert.eq(err.code, "sign_in")
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// An account the vendor answers without a plan object is an account whose plan
+/// this module could not read. It names the plan id it does have rather than
+/// inventing limits.
+#[tokio::test]
+async fn test_an_account_with_no_plan_object_falls_back_to_the_plan_id() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    mount_me(
+        &server,
+        200,
+        json!({ "user": { "account": { "activePlanId": "plan_growth" } } }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), CREDS),
+        r#"
+        local out = c:costs()
+        assert.eq(out.items[1].ref, "plan_growth")
+        assert.eq(out.items[1].period, nil)
+        assert.eq(out.meta.limits.emails_per_month, nil)
+        assert.eq(out.meta.credits_left.emails, nil)
+        "#
+    ))
+    .await
+    .unwrap();
+}

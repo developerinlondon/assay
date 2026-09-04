@@ -1,5 +1,5 @@
 --- @module assay.salesforge
---- @description Salesforge sequencer — the public REST API for workspaces, mailboxes, sequences, contacts, do-not-contact and replies, plus the web app's own API for the warm-up state the public one does not carry. Credentials come from the caller.
+--- @description Salesforge sequencer — the public REST API for workspaces, mailboxes, sequences, contacts, do-not-contact and replies, plus the web app's own API for the warm-up state and the plan the public one does not carry. Credentials come from the caller.
 --- @category saas
 --- @icon send
 --- @keywords salesforge, sequencer, cold email, sequence, contact, enrol, dnc, mailbox, warmup, reply
@@ -17,7 +17,11 @@
 --- @quickref c:set_sequence_status(sequence_id, status) -> true | nil, err | "paused" or "active"; c:sequence(id) reads it back
 --- @quickref c:sign_in() -> true | nil, err | Firebase password sign-in for the internal API; memoised, token never returned
 --- @quickref c:mailboxes_internal() -> [box], meta | nil, err | Warm-up state: warmupActivated, daysUntilWarm, heat
+--- @quickref c:costs() -> {items, meta} | nil, err | The plan, its monthly limits and the credits left; the vendor names no price at all, and meta.priced says so
+--- @quickref item -> {kind, unit, ref, quantity, unit_price_cents, period, source} | Shared with assay.clayinbox and assay.forge; an absent price or period is a fact the vendor withheld
 --- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
+
+local cost = require("assay.vendor_cost")
 
 local M = {}
 
@@ -37,6 +41,38 @@ local SEQUENCE_STATUS = { paused = true, active = true }
 local PAGE = 100
 local INTERNAL_PAGE = 50
 local MAX_PAGES = 20
+
+-- The plan's monthly ceilings and the credit pools they refill, under the names
+-- the vendor gives them. Both are entitlements rather than charges, so they
+-- ride in `meta` instead of being dressed up as priced items.
+local PLAN_LIMITS = {
+  { field = "emailsPerMonthLimit", name = "emails_per_month" },
+  { field = "activatedLeadsPerMonthLimit", name = "activated_leads_per_month" },
+  { field = "validationsPerMonthLimit", name = "validations_per_month" },
+  { field = "personalizationsPerMonthLimit", name = "personalizations_per_month" },
+  { field = "socialActionsPerMonthLimit", name = "social_actions_per_month" },
+  { field = "linkedInProfilesLimit", name = "linkedin_profiles" },
+}
+
+-- The words the vendor uses for a billing cycle, wherever it happens to put
+-- one. A plan carrying none is a plan whose cycle the vendor never stated, and
+-- the item then carries no period at all rather than a guessed month.
+local PLAN_PERIOD = {
+  MONTH = "month",
+  MONTHLY = "month",
+  YEAR = "year",
+  YEARLY = "year",
+  ANNUAL = "year",
+  ANNUALLY = "year",
+}
+
+local PLAN_CREDITS = {
+  { field = "emailCreditsLeft", name = "emails" },
+  { field = "leadCreditsLeft", name = "leads" },
+  { field = "emailValidationCreditsLeft", name = "validations" },
+  { field = "personalizationCreditsLeft", name = "personalizations" },
+  { field = "socialActionCreditsLeft", name = "social_actions" },
+}
 
 local ERR = { __tostring = function(e) return "salesforge: " .. e.message end }
 
@@ -162,6 +198,18 @@ function M.client(opts)
   local function public_headers()
     return {
       Authorization = api_key,
+      Accept = "application/json",
+      ["Content-Type"] = "application/json",
+      ["User-Agent"] = BROWSER_UA,
+    }
+  end
+
+  -- The internal API takes the Firebase id token as a bearer, which is the
+  -- opposite of the public one's bare apiKey. Both internal callers build the
+  -- same header set, and only after `sign_in` has filled `token`.
+  local function internal_headers()
+    return {
+      Authorization = "Bearer " .. token,
       Accept = "application/json",
       ["Content-Type"] = "application/json",
       ["User-Agent"] = BROWSER_UA,
@@ -342,12 +390,7 @@ function M.client(opts)
   function c:mailboxes_internal()
     local signed, err = self:sign_in()
     if not signed then return nil, err end
-    local headers = {
-      Authorization = "Bearer " .. token,
-      Accept = "application/json",
-      ["Content-Type"] = "application/json",
-      ["User-Agent"] = BROWSER_UA,
-    }
+    local headers = internal_headers()
     local out = {}
     local seen = 0
     local truncated = true
@@ -374,6 +417,87 @@ function M.client(opts)
       if trim(pagination.next) == "" then truncated = false break end
     end
     return out, { truncated = truncated, cap = MAX_PAGES * INTERNAL_PAGE, seen = seen }
+  end
+
+  --- The billing cycle the vendor states, in whichever field it states it.
+  ---
+  --- Salesforge writes it on the plan on some accounts and on the account on
+  --- others, and on a trial it writes it nowhere. Nothing is nothing: a plan
+  --- with no stated cycle gets no period, because "month" here would be this
+  --- module's guess presented as the vendor's answer.
+  local function plan_period(account, plan)
+    local sources = { plan.interval, plan.billingPeriod, account.billingCycle }
+    for i = 1, 3 do
+      local mapped = PLAN_PERIOD[trim(sources[i]):upper()]
+      if mapped then return mapped end
+    end
+    return nil
+  end
+
+  --- The plan the account is on, and what it entitles.
+  ---
+  --- Only the web app's own `/me` carries any of this. The public API answers a
+  --- workspace with a name, an id and nothing else, and every plan, billing,
+  --- usage and limits path under it is a flat 404. The internal
+  --- `/workspaces/{id}/subscription` route does exist — it answers "growth
+  --- subscription not found" rather than the generic "Not Found" — but it holds
+  --- nothing for an account that has never bought one.
+  ---
+  --- The vendor names no money anywhere on any of it: no amount, no currency,
+  --- no price on the plan it says you are on. So the plan item carries no
+  --- `unit_price_cents` and `meta.priced` is false outright. A caller that read
+  --- the absent price as free would put the sequencer's cost at nothing.
+  function c:costs()
+    local signed, err = self:sign_in()
+    if not signed then return nil, err end
+    local body, call_err = request("GET", internal_base .. "/me", nil, internal_headers())
+    if call_err then return nil, call_err end
+    -- A 204, an empty body, a JSON scalar and an array all reach here as
+    -- something that is not an account. Indexed, they crash; read as an empty
+    -- account they would report a workspace entitled to nothing, which is a
+    -- plan downgrade that never happened. An account whose `activePlan` is
+    -- missing is a different thing — the account is real and names its plan by
+    -- id — so the line is drawn at the account, not at the plan.
+    local user = type(body) == "table" and type(body.user) == "table" and body.user or nil
+    local account = user and type(user.account) == "table" and user.account or nil
+    if not account then
+      return fail("unreadable", nil, "GET /me answered without an account object")
+    end
+    local plan = type(account.activePlan) == "table" and account.activePlan or {}
+
+    local limits, credits = {}, {}
+    for _, entry in ipairs(PLAN_LIMITS) do
+      if type(plan[entry.field]) == "number" then limits[entry.name] = plan[entry.field] end
+    end
+    for _, entry in ipairs(PLAN_CREDITS) do
+      if type(account[entry.field]) == "number" then credits[entry.name] = account[entry.field] end
+    end
+
+    return {
+      items = { cost.item({
+        kind = "plan",
+        unit = "plan",
+        ref = plan.name or account.activePlanId,
+        quantity = 1,
+        period = plan_period(account, plan),
+      }) },
+      meta = {
+        -- No amount and no currency on any field of any of it.
+        priced = false,
+        currency_known = false,
+        plan = {
+          id = account.activePlanId,
+          name = plan.name,
+          status = account.subscriptionStatus,
+          started_at = account.planStartedAt,
+          trial_expires_at = account.freeTrialExpiresAt,
+        },
+        -- The ceilings are stated per month by the vendor's own field names,
+        -- whatever cycle the plan bills on.
+        limits = limits,
+        credits_left = credits,
+      },
+    }
   end
 
   return c
