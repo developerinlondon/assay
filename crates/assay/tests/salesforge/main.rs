@@ -1033,3 +1033,304 @@ async fn test_an_account_with_no_plan_object_falls_back_to_the_plan_id() {
     .await
     .unwrap();
 }
+
+// ─── connecting a mailbox, and switching its warm-up on ────────────────────
+
+const INTERNAL_AUTH: &str = "Bearer tok_x1";
+
+async fn mount_internal_listing(server: &MockServer, rows: serde_json::Value) {
+    Mock::given(method("GET"))
+        .and(path(format!("/workspaces/{WS}/mailboxes")))
+        .and(header("authorization", INTERNAL_AUTH))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": rows,
+            "pagination": { "totalPages": 1, "next": "" },
+        })))
+        .mount(server)
+        .await;
+}
+
+fn account(uri: &str) -> String {
+    client(uri, ", email = \"ops@example.test\", password = \"pw\"")
+}
+
+/// The body the vendor documents, and the only shape it accepts: one password
+/// carried into both transport blocks, the address as the username on each.
+#[tokio::test]
+async fn test_connect_smtp_sends_the_transport_blocks_the_vendor_asks_for() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/public/v2/workspaces/{WS}/mailboxes")))
+        .and(header("authorization", "k"))
+        .and(body_string_contains("\"address\":\"ada@example.test\""))
+        .and(body_string_contains("\"host\":\"smtp.gmail.com\""))
+        .and(body_string_contains("\"port\":587"))
+        .and(body_string_contains("\"host\":\"imap.gmail.com\""))
+        .and(body_string_contains("\"port\":993"))
+        .and(body_string_contains("\"username\":\"ada@example.test\""))
+        .and(body_string_contains("\"password\":\"app-pw\""))
+        .and(body_string_contains("\"firstName\":\"Ada\""))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+            "id": "mbx_new", "address": "ada@example.test", "status": "PENDING",
+        })))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local box = c:connect_smtp("Ada@Example.TEST", "app-pw", { first = "Ada", last = "Person" })
+        assert.eq(box.address, "ada@example.test")
+        assert.eq(box.provider_ref, "mbx_new")
+        assert.eq(box.status, "pending")
+        -- The vendor verifies the credentials afterwards, so a box it has only
+        -- accepted is not a box anything can send from yet.
+        assert.eq(box.connected, false)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// The password this call sends must never come back out of it.
+///
+/// `raw` is handed back whole so a caller can read metadata this module does
+/// not map. On the connect path that whole is the answer to a body containing
+/// the mailbox password, so a vendor that echoed the transport blocks — which
+/// it does not today — would put a plaintext credential into every caller that
+/// prints a row. The keys come off rather than being trusted not to appear.
+#[tokio::test]
+async fn test_a_create_response_that_echoes_the_transport_blocks_carries_no_password_out() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/public/v2/workspaces/{WS}/mailboxes")))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+            "id": "mbx_new",
+            "address": "ada@example.test",
+            "status": "ACTIVE",
+            "dailyEmailLimit": 30,
+            // The hypothetical: the vendor hands the submitted blocks back.
+            "smtp": { "host": "smtp.gmail.com", "port": 587,
+                      "username": "ada@example.test", "password": "app-pw-secret" },
+            "imap": { "host": "imap.gmail.com", "port": 993,
+                      "username": "ada@example.test", "password": "app-pw-secret" },
+            "password": "app-pw-secret",
+        })))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local box = c:connect_smtp("ada@example.test", "app-pw-secret")
+        assert.eq(box.address, "ada@example.test")
+        assert.eq(box.connected, true)
+        -- Nothing anywhere in the returned table, however a caller walks it.
+        assert.eq(box.raw.smtp, nil)
+        assert.eq(box.raw.imap, nil)
+        assert.eq(box.raw.password, nil)
+        assert.contains(json.encode(box), "mbx_new")
+        assert.eq(json.encode(box):find("app-pw-secret", 1, true), nil)
+        -- The metadata `raw` exists for is still there.
+        assert.eq(box.raw.dailyEmailLimit, 30)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A vendor that already says `active` is the one case where the box IS wired.
+#[tokio::test]
+async fn test_connect_smtp_reports_connected_only_when_the_vendor_already_says_active() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/public/v2/workspaces/{WS}/mailboxes")))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+            "id": "mbx_new", "address": "ada@example.test", "status": "ACTIVE",
+        })))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local box = c:connect_smtp("ada@example.test", "app-pw")
+        assert.eq(box.status, "active")
+        assert.eq(box.connected, true)
+        -- No name given: the local part beats a refused request, and the vendor
+        -- rejects a body with no first name at all.
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// The vendor answers 2xx with its own refusal in the body when the credentials
+/// do not verify. Read as a created mailbox that is a box nothing can send
+/// from, reported as connected.
+#[tokio::test]
+async fn test_a_two_hundred_carrying_a_refusal_is_an_error_and_never_a_mailbox() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/public/v2/workspaces/{WS}/mailboxes")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "message": "failed to verify mailbox credentials",
+        })))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local box, err = c:connect_smtp("ada@example.test", "dead-pw")
+        assert.eq(box, nil)
+        assert.eq(err.code, "refused")
+        assert.contains(err.message, "failed to verify mailbox credentials")
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// Refused here rather than at the vendor: a call with no password would reach
+/// the API as a mailbox connected to nothing.
+#[tokio::test]
+async fn test_connect_smtp_refuses_a_bad_address_or_an_empty_password_before_calling() {
+    let server = MockServer::start().await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local _, no_at = c:connect_smtp("not-an-address", "pw")
+        assert.eq(no_at.code, "config")
+        local _, no_pw = c:connect_smtp("ada@example.test", "   ")
+        assert.eq(no_pw.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+    // Nothing was sent: an unmounted server answers 404, and either call would
+    // have come back as an http error rather than a config one.
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// The read-back is the whole point. The PUT answers exactly what it was asked
+/// for; only the GET afterwards says what the vendor actually holds.
+#[tokio::test]
+async fn test_set_warmup_reports_what_the_vendor_holds_and_not_what_it_was_asked_for() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    Mock::given(method("PUT"))
+        .and(path(format!("/workspaces/{WS}/mailboxes/mbx_xa1")))
+        .and(header("authorization", INTERNAL_AUTH))
+        .and(body_string_contains("\"warmupActivated\":true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "mbx_xa1", "address": "ada@example.test", "warmupActivated": true,
+        })))
+        .mount(&server)
+        .await;
+    // …and the box the vendor then hands back still has it off.
+    Mock::given(method("GET"))
+        .and(path(format!("/workspaces/{WS}/mailboxes/mbx_xa1")))
+        .and(header("authorization", INTERNAL_AUTH))
+        .respond_with(ResponseTemplate::new(200).set_body_json(internal_row(false)))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        account(&server.uri()),
+        r#"
+        local box = c:set_warmup("mbx_xa1", true)
+        assert.eq(box.address, "ada@example.test")
+        -- Not `warmup.activated == true`: the PUT said so and the box does not.
+        assert.eq(box.warmup, nil)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// The switch on, read back on: days and heat come off the row the GET returned.
+#[tokio::test]
+async fn test_set_warmup_on_reads_the_curve_back_off_the_vendors_own_row() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    Mock::given(method("PUT"))
+        .and(path(format!("/workspaces/{WS}/mailboxes/mbx_xa1")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": "mbx_xa1" })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/workspaces/{WS}/mailboxes/mbx_xa1")))
+        // Some of these routes wrap the object; both shapes read the same.
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": internal_row(true),
+        })))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        account(&server.uri()),
+        r#"
+        local box = c:set_warmup("mbx_xa1", true)
+        assert.eq(box.warmup.activated, true)
+        assert.eq(box.warmup.days_until_warm, 5)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// An operator holds addresses; these endpoints take ids. The address is
+/// resolved on the internal listing, which is also the only one that could have
+/// answered for the warm-up.
+#[tokio::test]
+async fn test_set_warmup_takes_the_address_an_operator_actually_has() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    mount_internal_listing(&server, json!([internal_row(false)])).await;
+    Mock::given(method("PUT"))
+        .and(path(format!("/workspaces/{WS}/mailboxes/mbx_xa1")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": "mbx_xa1" })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/workspaces/{WS}/mailboxes/mbx_xa1")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(internal_row(true)))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        account(&server.uri()),
+        r#"
+        assert.eq(c:mailbox_id("mbx_xa1"), "mbx_xa1")
+        local box = c:set_warmup("Ada@Example.TEST", true)
+        assert.eq(box.warmup.activated, true)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A box this workspace does not hold is a named refusal, never a PUT against
+/// an address the vendor would read as an id.
+#[tokio::test]
+async fn test_an_address_the_workspace_does_not_hold_is_refused_by_name() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    mount_internal_listing(&server, json!([internal_row(true)])).await;
+    run_lua(&format!(
+        "{}{}",
+        account(&server.uri()),
+        r#"
+        local box, err = c:set_warmup("stranger@example.test", true)
+        assert.eq(box, nil)
+        assert.eq(err.code, "not_found")
+        assert.contains(err.message, "stranger@example.test")
+        local _, bad = c:set_warmup("mbx_xa1", "yes")
+        assert.eq(bad.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+}
