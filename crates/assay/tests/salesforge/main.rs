@@ -305,6 +305,35 @@ async fn test_an_absent_account_is_a_sign_in_error_not_a_crash() {
 /// request: the public API is Growth-only and answers 402 when it is not.
 #[tokio::test]
 async fn test_auth_plan_and_rate_limits_read_as_themselves() {
+    // Every verb the client uses, not just the reads.
+    //
+    // A refused write is the case worth driving: if the HTTP builtin threw on a
+    // 4xx PUT instead of answering with one, the client's `pcall` would catch
+    // it and report `code = "transport"` with no status at all. Asserting the
+    // status-derived code and the status itself is what tells those two apart,
+    // so a vendor saying "no" stays legible as the "no" it is.
+    let calls: [(&str, String, &str); 4] = [
+        (
+            "GET",
+            format!("/public/v2/workspaces/{WS}/mailboxes"),
+            "c:mailboxes()",
+        ),
+        (
+            "PUT",
+            format!("/public/v2/workspaces/{WS}/sequences/seq_xa1/mailboxes"),
+            r#"c:set_rotation("seq_xa1", { "mbx_xa1" })"#,
+        ),
+        (
+            "PUT",
+            format!("/public/v2/workspaces/{WS}/sequences/seq_xa1/status"),
+            r#"c:set_sequence_status("seq_xa1", "paused")"#,
+        ),
+        (
+            "PUT",
+            format!("/public/v2/workspaces/{WS}/sequences/seq_xa1/contacts"),
+            r#"c:enrol("seq_xa1", { "con_xa1" })"#,
+        ),
+    ];
     for (status, code) in [
         (401u16, "auth"),
         (403, "auth"),
@@ -312,23 +341,26 @@ async fn test_auth_plan_and_rate_limits_read_as_themselves() {
         (429, "rate_limit"),
         (500, "server"),
     ] {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path(format!("/public/v2/workspaces/{WS}/mailboxes")))
-            .respond_with(ResponseTemplate::new(status))
-            .mount(&server)
-            .await;
-        let check = format!(
-            r#"
-            local rows, err = c:mailboxes()
-            assert.eq(rows, nil)
-            assert.eq(err.code, "{code}")
-            assert.eq(err.status, {status})
-            "#
-        );
-        run_lua(&format!("{}{check}", client(&server.uri(), "")))
-            .await
-            .unwrap();
+        for (verb, route, call) in &calls {
+            let server = MockServer::start().await;
+            Mock::given(method(*verb))
+                .and(path(route.clone()))
+                .respond_with(ResponseTemplate::new(status))
+                .mount(&server)
+                .await;
+            let check = format!(
+                r#"
+                local out, err = {call}
+                assert.eq(out, nil)
+                assert.eq(err.code, "{code}")
+                assert.eq(err.status, {status})
+                assert.contains(tostring(err), "salesforge: ")
+                "#
+            );
+            run_lua(&format!("{}{check}", client(&server.uri(), "")))
+                .await
+                .unwrap_or_else(|e| panic!("{verb} {route} on {status}: {e}"));
+        }
     }
 }
 
