@@ -13,7 +13,7 @@
 --- @quickref c:enrol(sequence_id, contact_ids) -> true | nil, err | Assign contacts to a sequence
 --- @quickref c:dnc(addresses) -> true | nil, err | Stop writing to these addresses
 --- @quickref c:reply(mailbox_id, email_id, body) -> true | nil, err | Reply on an existing thread
---- @quickref c:set_rotation(sequence_id, mailbox_ids) -> true | nil, err | Replace which mailboxes a sequence sends from
+--- @quickref c:set_rotation(sequence_id, mailbox_ids) -> true | nil, err | Replace which mailboxes a sequence sends from; an empty list clears it
 --- @quickref c:set_sequence_status(sequence_id, status) -> true | nil, err | "paused" or "active"; c:sequence(id) reads it back
 --- @quickref c:sign_in() -> true | nil, err | Firebase password sign-in for the internal API; memoised, token never returned
 --- @quickref c:mailboxes_internal() -> [box], meta | nil, err | Warm-up state: warmupActivated, daysUntilWarm, heat
@@ -260,19 +260,25 @@ function M.client(opts)
   end
 
   -- The rotation is replaced wholesale rather than added to, so a caller taking
-  -- one domain out sends back the ids it means to keep. An empty list is
-  -- refused rather than sent: it would encode as a JSON object, and a sequence
-  -- with no mailboxes has nothing to send from.
+  -- one domain out sends back the ids it means to keep. An empty list is a real
+  -- instruction — a sequence whose every mailbox was pulled has none, and that
+  -- is the truthful state rather than a reason to leave a stale box sending.
+  --
+  -- The ids are copied onto a table carrying `__jsontype = "array"` because an
+  -- empty Lua table would otherwise encode as `{}`, and the vendor wants `[]`.
+  -- The copy is what keeps the marker off the caller's own table.
   function c:set_rotation(sequence_id, mailbox_ids)
     if not sequence_id or trim(sequence_id) == "" then
       return fail("config", nil, "set_rotation needs a sequence id")
     end
-    if type(mailbox_ids) ~= "table" or #mailbox_ids == 0 then
-      return fail("config", nil, "set_rotation needs at least one mailbox id")
+    if type(mailbox_ids) ~= "table" then
+      return fail("config", nil, "set_rotation needs a list of mailbox ids")
     end
+    local ids = setmetatable({}, { __jsontype = "array" })
+    for i, id in ipairs(mailbox_ids) do ids[i] = id end
     return request("PUT",
       "/workspaces/" .. workspace .. "/sequences/" .. trim(sequence_id) .. "/mailboxes",
-      { mailboxIds = mailbox_ids })
+      { mailboxIds = ids })
   end
 
   -- The vendor takes two statuses and answers 400 for anything else. Checking
