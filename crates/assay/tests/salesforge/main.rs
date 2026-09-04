@@ -305,6 +305,35 @@ async fn test_an_absent_account_is_a_sign_in_error_not_a_crash() {
 /// request: the public API is Growth-only and answers 402 when it is not.
 #[tokio::test]
 async fn test_auth_plan_and_rate_limits_read_as_themselves() {
+    // Every verb the client uses, not just the reads.
+    //
+    // A refused write is the case worth driving: if the HTTP builtin threw on a
+    // 4xx PUT instead of answering with one, the client's `pcall` would catch
+    // it and report `code = "transport"` with no status at all. Asserting the
+    // status-derived code and the status itself is what tells those two apart,
+    // so a vendor saying "no" stays legible as the "no" it is.
+    let calls: [(&str, String, &str); 4] = [
+        (
+            "GET",
+            format!("/public/v2/workspaces/{WS}/mailboxes"),
+            "c:mailboxes()",
+        ),
+        (
+            "PUT",
+            format!("/public/v2/workspaces/{WS}/sequences/seq_xa1/mailboxes"),
+            r#"c:set_rotation("seq_xa1", { "mbx_xa1" })"#,
+        ),
+        (
+            "PUT",
+            format!("/public/v2/workspaces/{WS}/sequences/seq_xa1/status"),
+            r#"c:set_sequence_status("seq_xa1", "paused")"#,
+        ),
+        (
+            "PUT",
+            format!("/public/v2/workspaces/{WS}/sequences/seq_xa1/contacts"),
+            r#"c:enrol("seq_xa1", { "con_xa1" })"#,
+        ),
+    ];
     for (status, code) in [
         (401u16, "auth"),
         (403, "auth"),
@@ -312,23 +341,26 @@ async fn test_auth_plan_and_rate_limits_read_as_themselves() {
         (429, "rate_limit"),
         (500, "server"),
     ] {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path(format!("/public/v2/workspaces/{WS}/mailboxes")))
-            .respond_with(ResponseTemplate::new(status))
-            .mount(&server)
-            .await;
-        let check = format!(
-            r#"
-            local rows, err = c:mailboxes()
-            assert.eq(rows, nil)
-            assert.eq(err.code, "{code}")
-            assert.eq(err.status, {status})
-            "#
-        );
-        run_lua(&format!("{}{check}", client(&server.uri(), "")))
-            .await
-            .unwrap();
+        for (verb, route, call) in &calls {
+            let server = MockServer::start().await;
+            Mock::given(method(*verb))
+                .and(path(route.clone()))
+                .respond_with(ResponseTemplate::new(status))
+                .mount(&server)
+                .await;
+            let check = format!(
+                r#"
+                local out, err = {call}
+                assert.eq(out, nil)
+                assert.eq(err.code, "{code}")
+                assert.eq(err.status, {status})
+                assert.contains(tostring(err), "salesforge: ")
+                "#
+            );
+            run_lua(&format!("{}{check}", client(&server.uri(), "")))
+                .await
+                .unwrap_or_else(|e| panic!("{verb} {route} on {status}: {e}"));
+        }
     }
 }
 
@@ -559,4 +591,167 @@ async fn test_every_quickref_parses_and_the_env_vars_are_among_them() {
             "{var} is read but no parsing quickref names it, so `assay context` never shows it"
         );
     }
+}
+
+/// The rotation is replaced wholesale: a caller taking one domain out sends
+/// back the ids it means to keep, under the vendor's own `mailboxIds` key.
+#[tokio::test]
+async fn test_setting_a_rotation_sends_the_vendors_own_key_and_accepts_a_204() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(header("authorization", "k"))
+        .and(path(format!(
+            "/public/v2/workspaces/{WS}/sequences/seq_xa1/mailboxes"
+        )))
+        .and(body_string_contains("mailboxIds"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        assert.eq(c:set_rotation("seq_xa1", { "mbx_xa1", "mbx_xa2" }), true)
+        "#
+    ))
+    .await
+    .unwrap();
+    let sent = &server.received_requests().await.unwrap()[0];
+    let body = String::from_utf8(sent.body.clone()).unwrap();
+    assert_eq!(
+        body, r#"{"mailboxIds":["mbx_xa1","mbx_xa2"]}"#,
+        "rotation body was {body}"
+    );
+}
+
+/// The vendor takes two statuses. Constraining them here makes a typo a config
+/// error the caller can read rather than a 400 it has to interpret.
+#[tokio::test]
+async fn test_a_sequence_status_is_one_of_two_words_and_a_typo_never_leaves_the_process() {
+    let server = MockServer::start().await;
+    for state in ["paused", "active"] {
+        Mock::given(method("PUT"))
+            .and(header("authorization", "k"))
+            .and(path(format!(
+                "/public/v2/workspaces/{WS}/sequences/seq_xa1/status"
+            )))
+            .and(body_string_contains(state))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+    }
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        assert.eq(c:set_sequence_status("seq_xa1", "paused"), true)
+        assert.eq(c:set_sequence_status("seq_xa1", "active"), true)
+        -- Case is the caller's business, not the vendor's.
+        assert.eq(c:set_sequence_status("seq_xa1", "PAUSED"), true)
+        local ok, err = c:set_sequence_status("seq_xa1", "pasued")
+        assert.eq(ok, nil)
+        assert.eq(err.code, "config")
+        assert.contains(err.message, "paused")
+        local ok2, err2 = c:set_sequence_status("seq_xa1", nil)
+        assert.eq(ok2, nil)
+        assert.eq(err2.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+    // Three good calls reached the vendor; neither bad one did.
+    assert_eq!(server.received_requests().await.unwrap().len(), 3);
+}
+
+/// Clearing a rotation is a real instruction, not a malformed one.
+///
+/// Pulling a paused domain's boxes can legitimately leave a sequence with none,
+/// and that is the truthful state — it then cannot send, which is what
+/// `set_sequence_status` is for. The caller must be able to say it rather than
+/// being forced to leave a stale mailbox in the rotation.
+///
+/// The body is the whole point: a bare empty Lua table encodes as `{}`, which
+/// the vendor reads as a malformed object, so the ids ride a table marked as a
+/// JSON array and the wire form is `[]`.
+#[tokio::test]
+async fn test_an_empty_rotation_clears_it_and_sends_an_array_not_an_object() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path(format!(
+            "/public/v2/workspaces/{WS}/sequences/seq_xa1/mailboxes"
+        )))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        assert.eq(c:set_rotation("seq_xa1", {}), true)
+        "#
+    ))
+    .await
+    .unwrap();
+    let sent = &server.received_requests().await.unwrap()[0];
+    let body = String::from_utf8(sent.body.clone()).unwrap();
+    assert_eq!(
+        body, r#"{"mailboxIds":[]}"#,
+        "empty rotation body was {body}"
+    );
+}
+
+/// The caller's own table must come back unmarked: the array marker rides a
+/// copy, so passing the same list to something else afterwards is unaffected.
+#[tokio::test]
+async fn test_the_array_marker_does_not_touch_the_callers_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path(format!(
+            "/public/v2/workspaces/{WS}/sequences/seq_xa1/mailboxes"
+        )))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local ids = {}
+        assert.eq(c:set_rotation("seq_xa1", ids), true)
+        assert.eq(getmetatable(ids), nil)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A blank sequence id would address the workspace itself, and a non-table is
+/// not a list at all. Neither leaves this process.
+#[tokio::test]
+async fn test_a_blank_id_or_a_non_list_is_refused_before_any_request() {
+    let server = MockServer::start().await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local ok, err = c:set_rotation("", { "mbx_xa1" })
+        assert.eq(ok, nil)
+        assert.eq(err.code, "config")
+        local ok2, err2 = c:set_rotation("seq_xa1", "mbx_xa1")
+        assert.eq(ok2, nil)
+        assert.eq(err2.code, "config")
+        local ok3, err3 = c:set_rotation("seq_xa1", nil)
+        assert.eq(ok3, nil)
+        assert.eq(err3.code, "config")
+        local ok4, err4 = c:set_sequence_status("", "paused")
+        assert.eq(ok4, nil)
+        assert.eq(err4.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "a malformed sequence write reached the vendor"
+    );
 }

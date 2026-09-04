@@ -2,6 +2,31 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.2 — 2026-09-04
+
+### Added
+
+- **`assay.salesforge` can set a sequence's mailbox rotation and its status.** The two write calls
+  the sequencer seam needs and 0.20.1 left out. Without them the caller has to keep the vendor's
+  host name and its own HTTP client, which is the coupling these modules exist to remove.
+
+  `c:set_rotation(sequence_id, mailbox_ids)` replaces which mailboxes a sequence sends from, so a
+  caller taking one domain out of the rotation sends back the ids it means to keep.
+  `c:set_sequence_status(sequence_id, status)` takes `"paused"` or `"active"`. Both answer `(true)`
+  or `(nil, err)` like `c:enrol` and `c:dnc`, and `c:sequence(id)` already reads both back.
+
+  An empty rotation is a real instruction rather than an error. Pulling a paused domain's mailboxes
+  can leave a sequence with none, and that is the truthful state — it then cannot send, which is
+  what `c:set_sequence_status` is beside it for. Forcing the caller to keep one stale mailbox in the
+  rotation to express "none" would be worse. The ids are copied onto a table marked
+  `__jsontype = "array"` so an empty list reaches the vendor as `[]`; a bare Lua table would encode
+  as `{}` and be read as a malformed object. The copy keeps the marker off the caller's own table.
+
+  Two things are still refused before a request is made rather than after the vendor rejects one: a
+  blank sequence id, which would address the workspace itself, and any status outside the two the
+  vendor accepts, so a typo reads as a config error the caller can act on instead of a 400 it has to
+  interpret. A `mailbox_ids` that is not a table is refused for the same reason — it is not a list.
+
 ## assay-lua 0.20.1 — 2026-09-04
 
 ### Added
