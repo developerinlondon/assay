@@ -31,10 +31,18 @@ All notable changes to Assay are documented here.
   object where a list belongs. Auth, rate limiting, the Growth-plan gate and a Cloudflare block page
   served under an HTTP 200 all read as themselves rather than as an empty fleet.
 
-  Errors are returned, not thrown: every method answers `(result)` or `(nil, err)` where `err`
-  carries `code`, `status` and `message` and prints as its message. `raw` on a mapped row is the
+  Errors are returned, not thrown: every vendor call answers `(result)` or `(nil, err)` where `err`
+  carries `code`, `status` and `message` and prints as its message. The constructors are the
+  exception and throw, matching the rest of the stdlib — a client built without a key or a
+  workspace is a programming error rather than a vendor answer. `raw` on a mapped row is the
   vendor's own record with credentials removed, since both Clayinbox and Primeforge put a mailbox
   password on a list row.
+
+  Every list call also answers a second value, `meta = {truncated, cap, seen}`. `truncated` means a
+  cap stopped the walk rather than the vendor running out of rows, so no list can come back short in
+  silence. It matters most on Primeforge, where a domain filter is applied to a ten-row window: an
+  empty result there means either that the domain has no mailboxes or that its mailboxes fall
+  outside the window, and only `meta` tells the two apart.
 
   One limit is the vendor's rather than the module's: `primeforge_list_mailboxes` accepts
   `workspaceId` and nothing else, and answers ten rows whatever `limit` and `offset` say — offset 10

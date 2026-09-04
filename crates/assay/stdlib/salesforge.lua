@@ -4,16 +4,18 @@
 --- @icon send
 --- @keywords salesforge, sequencer, cold email, sequence, contact, enrol, dnc, mailbox, warmup, reply
 --- @quickref M.client(opts) -> c | Key via opts.api_key or SALESFORGE_API_KEY; opts.workspace_id required
---- @quickref c:workspaces() -> [workspace] | nil, err | Every workspace the key can see
---- @quickref c:mailboxes() -> [box] | nil, err | Connected mailboxes; the public API carries no warm-up state
---- @quickref c:sequences() -> [sequence] | nil, err | Every sequence in the workspace
+--- @quickref M.client{email, password} -> c | Or SALESFORGE_EMAIL and SALESFORGE_PASSWORD; only the internal API uses them
+--- @quickref c:workspaces() -> [workspace], meta | nil, err | Every workspace the key can see
+--- @quickref c:mailboxes() -> [box], meta | nil, err | Connected mailboxes; the public API carries no warm-up state
+--- @quickref c:sequences() -> [sequence], meta | nil, err | Every sequence in the workspace
 --- @quickref c:sequence(id) -> sequence | nil, err | One sequence, with its mailbox rotation
 --- @quickref c:create_contact(fields) -> contact | nil, err | firstName is required by the vendor
 --- @quickref c:enrol(sequence_id, contact_ids) -> true | nil, err | Assign contacts to a sequence
 --- @quickref c:dnc(addresses) -> true | nil, err | Stop writing to these addresses
 --- @quickref c:reply(mailbox_id, email_id, body) -> true | nil, err | Reply on an existing thread
 --- @quickref c:sign_in() -> true | nil, err | Firebase password sign-in for the internal API; memoised, token never returned
---- @quickref c:mailboxes_internal() -> [box] | nil, err | Warm-up state: warmupActivated, daysUntilWarm, heat
+--- @quickref c:mailboxes_internal() -> [box], meta | nil, err | Warm-up state: warmupActivated, daysUntilWarm, heat
+--- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
 
 local M = {}
 
@@ -180,30 +182,37 @@ function M.client(opts)
     return parsed
   end
 
-  --- Every row across pages.
+  --- Every row across pages, with the walk's own account of itself.
   ---
   --- An empty list arrives as a JSON object rather than an array — a workspace
   --- with no sequences answers `{"data": {}, "total": 0}` — so a `data` that is
   --- not a list is an empty page and never a read error.
+  ---
+  --- `meta.truncated` means the page cap stopped the walk rather than the
+  --- vendor running out of rows. A caller that ignores it reads a capped list
+  --- as the whole workspace.
   local function all(path, map)
     local out = {}
+    local seen = 0
+    local truncated = true
     for page = 0, MAX_PAGES - 1 do
       local sep = path:find("?", 1, true) and "&" or "?"
       local body, err = request("GET", path .. sep .. "limit=" .. PAGE .. "&offset=" .. (page * PAGE))
       if not body then return nil, err end
-      if type(body) ~= "table" then break end
+      if type(body) ~= "table" then truncated = false break end
       local rows = type(body.data) == "table" and body.data or {}
-      local seen = 0
+      local on_page = 0
       for _, raw in ipairs(rows) do
-        seen = seen + 1
+        on_page = on_page + 1
         local row = map and map(raw) or raw
         if row then out[#out + 1] = row end
       end
+      seen = seen + on_page
       local total = body.total
-      if seen == 0 or seen < PAGE then break end
-      if type(total) == "number" and (page + 1) * PAGE >= total then break end
+      if on_page == 0 or on_page < PAGE then truncated = false break end
+      if type(total) == "number" and (page + 1) * PAGE >= total then truncated = false break end
     end
-    return out
+    return out, { truncated = truncated, cap = MAX_PAGES * PAGE, seen = seen }
   end
 
   local c = {}
@@ -297,25 +306,31 @@ function M.client(opts)
       ["User-Agent"] = BROWSER_UA,
     }
     local out = {}
+    local seen = 0
+    local truncated = true
     for page = 1, MAX_PAGES do
       local target = internal_base .. "/workspaces/" .. workspace
         .. "/mailboxes?page=" .. page .. "&size=" .. INTERNAL_PAGE
       local body, call_err = request("GET", target, nil, headers)
       if not body then return nil, call_err end
-      if type(body) ~= "table" then break end
+      if type(body) ~= "table" then truncated = false break end
       local rows = type(body.data) == "table" and body.data or {}
-      local seen = 0
+      local on_page = 0
       for _, raw in ipairs(rows) do
-        seen = seen + 1
+        on_page = on_page + 1
         local row = M.map_internal_box(raw)
         if row then out[#out + 1] = row end
       end
+      seen = seen + on_page
       local pagination = type(body.pagination) == "table" and body.pagination or {}
-      if seen == 0 then break end
-      if type(pagination.totalPages) == "number" and page >= pagination.totalPages then break end
-      if trim(pagination.next) == "" then break end
+      if on_page == 0 then truncated = false break end
+      if type(pagination.totalPages) == "number" and page >= pagination.totalPages then
+        truncated = false
+        break
+      end
+      if trim(pagination.next) == "" then truncated = false break end
     end
-    return out
+    return out, { truncated = truncated, cap = MAX_PAGES * INTERNAL_PAGE, seen = seen }
   end
 
   return c

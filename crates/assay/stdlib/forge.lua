@@ -5,10 +5,11 @@
 --- @keywords primeforge, warmforge, forge, mcp, mailbox, warmup, heat score, placement, blacklist, spf, dkim, dmarc, cold email
 --- @quickref M.mcp(product, key, tool, args?, opts?) -> payload | nil, err | One JSON-RPC tools/call; product is "primeforge" or "warmforge"
 --- @quickref M.primeforge(opts) -> p | Key via opts.api_key or PRIMEFORGE_API_KEY; opts.workspace_id required
---- @quickref p:domains() -> [domain] | nil, err | Name is sld and tld joined; the vendor sends no whole name
---- @quickref p:mailboxes(domain_id?) -> [box] | nil, err | The vendor caps this at ten rows and cannot page
+--- @quickref p:domains() -> [domain], meta | nil, err | Name is sld and tld joined; the vendor sends no whole name
+--- @quickref p:mailboxes(domain_id?) -> [box], meta | nil, err | The vendor caps this at ten rows and cannot page
+--- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
 --- @quickref M.warmforge(opts) -> w | Key via opts.api_key or WARMFORGE_API_KEY; opts.workspace_id required
---- @quickref w:mailboxes() -> [box] | nil, err | Every page, by totalPages
+--- @quickref w:mailboxes() -> [box], meta | nil, err | Every page, by totalPages
 --- @quickref w:warmup(address) -> {day, total_days, heat, enabled} | nil, err | Position on the curve
 --- @quickref w:placement(address) -> {inbox, spam, promotions} | nil | nil, err | Latest placement test; nil when none has run
 --- @quickref w:health(address) -> {spf, dkim, dmarc, mx, heat, blacklists} | nil, err | Each check reads valid, invalid or unknown
@@ -25,6 +26,12 @@ local BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Fir
 
 local WARMFORGE_PAGE = 50
 local MAX_PAGES = 50
+
+-- Primeforge's list tools answer ten rows and offer no way to ask for an
+-- eleventh: probed live, `limit` and `offset` are ignored and offset 10 and
+-- offset 20 return the same ten ids. A vendor answering exactly its cap has
+-- told the caller nothing about what lies past it, so that reads as truncated.
+local PRIMEFORGE_CAP = 10
 
 -- A Primeforge mailbox row carries the box's own password and its Google app
 -- password. `raw` is for the vendor's metadata; a credential riding along on it
@@ -269,29 +276,31 @@ function M.primeforge(opts)
   function p:domains()
     local payload, err = call("primeforge_list_domains", { workspaceId = workspace })
     if not payload then return nil, err end
+    local rows = M.rows(payload)
     local out = {}
-    for _, raw in ipairs(M.rows(payload)) do
+    for _, raw in ipairs(rows) do
       local row = M.map_domain(raw)
       if row then out[#out + 1] = row end
     end
-    return out
+    return out, { truncated = #rows == PRIMEFORGE_CAP, cap = PRIMEFORGE_CAP, seen = #rows }
   end
 
-  -- `primeforge_list_mailboxes` accepts `workspaceId` and nothing else. Probed
-  -- live on 2026-09-04 it answers ten rows and ignores `limit` and `offset`
-  -- entirely — offset 10 and offset 20 return the same ten ids — so there is no
-  -- domain filter to send and no way to reach an eleventh row. The filter here
-  -- is applied to what the vendor gives, and a workspace with more than ten
-  -- mailboxes cannot be listed in full through this tool.
+  -- `primeforge_list_mailboxes` accepts `workspaceId` and nothing else, so the
+  -- domain filter is applied to what the vendor gives rather than sent. That
+  -- makes an empty result ambiguous — the domain may have no boxes, or its
+  -- boxes may sit outside the ten-row window — which is exactly what `meta`
+  -- exists to disambiguate. A caller that ignores it can read a truncated
+  -- window as a domain with nothing on it.
   function p:mailboxes(domain_id)
     local payload, err = call("primeforge_list_mailboxes", { workspaceId = workspace })
     if not payload then return nil, err end
+    local rows = M.rows(payload)
     local out = {}
-    for _, raw in ipairs(M.rows(payload)) do
+    for _, raw in ipairs(rows) do
       local row = M.map_box(raw, "primeforge")
       if row and (domain_id == nil or raw.domainId == domain_id) then out[#out + 1] = row end
     end
-    return out
+    return out, { truncated = #rows == PRIMEFORGE_CAP, cap = PRIMEFORGE_CAP, seen = #rows }
   end
 
   return p
@@ -301,7 +310,7 @@ end
 function M.warmforge(opts)
   local key, workspace, o = config("warmforge", opts, "WARMFORGE_API_KEY")
   local w = {}
-  local cached
+  local cached, cached_meta
 
   local function call(tool, args)
     return M.mcp("warmforge", key, tool, args, o)
@@ -311,8 +320,9 @@ function M.warmforge(opts)
   -- `totalPages` is the stop condition, and the page cap bounds a vendor whose
   -- count never runs out.
   local function raw_rows()
-    if cached then return cached end
+    if cached then return cached, cached_meta end
     local out = {}
+    local truncated = true
     for page = 1, MAX_PAGES do
       local payload, err = call("warmforge_list_mailboxes", {
         workspaceId = workspace,
@@ -326,36 +336,43 @@ function M.warmforge(opts)
       -- before the last one would otherwise stop the walk early. Only a vendor
       -- that reports no count at all falls back to the short-page rule.
       local pages = type(payload) == "table" and payload.totalPages
-      if #rows == 0 then break end
+      if #rows == 0 then truncated = false break end
       if type(pages) == "number" then
-        if page >= pages then break end
+        if page >= pages then truncated = false break end
       elseif #rows < WARMFORGE_PAGE then
+        truncated = false
         break
       end
     end
     cached = out
-    return out
+    cached_meta = { truncated = truncated, cap = MAX_PAGES * WARMFORGE_PAGE, seen = #out }
+    return out, cached_meta
   end
 
+  -- An address missing from a truncated window is not an address the workspace
+  -- lacks, so the error says which of the two happened rather than letting a
+  -- short list read as a deleted mailbox.
   local function row_for(address)
-    local rows, err = raw_rows()
-    if not rows then return nil, err end
+    local rows, meta = raw_rows()
+    if not rows then return nil, meta end
     local wanted = lower(address)
     for _, raw in ipairs(rows) do
       if lower(raw.address) == wanted then return raw end
     end
-    return fail("not_found", nil, "no mailbox " .. wanted .. " in workspace " .. workspace)
+    local why = meta.truncated and " (the listing was truncated at " .. meta.seen .. " rows)" or ""
+    return fail("not_found", nil,
+      "no mailbox " .. wanted .. " in workspace " .. workspace .. why)
   end
 
   function w:mailboxes()
-    local rows, err = raw_rows()
-    if not rows then return nil, err end
+    local rows, meta = raw_rows()
+    if not rows then return nil, meta end
     local out = {}
     for _, raw in ipairs(rows) do
       local row = M.map_box(raw, "warmforge")
       if row then out[#out + 1] = row end
     end
-    return out
+    return out, meta
   end
 
   function w:warmup(address)

@@ -116,9 +116,11 @@ async fn test_an_empty_list_arriving_as_an_object_is_an_empty_list() {
         "{}{}",
         client(&server.uri(), ""),
         r#"
-        local rows, err = c:sequences()
-        assert.eq(err, nil)
+        local rows, meta = c:sequences()
         assert.eq(#rows, 0)
+        -- An empty answer is a real one, not a walk that got cut short.
+        assert.eq(meta.truncated, false)
+        assert.eq(meta.seen, 0)
         "#
     ))
     .await
@@ -418,5 +420,143 @@ async fn test_a_client_refuses_to_build_without_a_key_or_a_workspace() {
         .unwrap_err()
         .to_string();
         assert!(err.contains("required"), "gave {err}");
+    }
+}
+
+/// A walk the vendor ended by running out of rows has the whole workspace.
+#[tokio::test]
+async fn test_a_walk_the_vendor_ended_is_not_truncated() {
+    let server = MockServer::start().await;
+    mount_public(
+        &server,
+        &format!("/workspaces/{WS}/mailboxes"),
+        json!([public_row()]),
+        1,
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local rows, meta = c:mailboxes()
+        assert.eq(#rows, 1)
+        assert.eq(meta.truncated, false)
+        assert.eq(meta.cap, 2000)
+        assert.eq(meta.seen, 1)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A vendor answering full pages against a total it never reaches walks into
+/// the page cap. Read without `meta` that is a workspace two thousand mailboxes
+/// wide reported as if it were the whole thing.
+#[tokio::test]
+async fn test_a_public_walk_stopped_by_the_page_cap_says_it_is_truncated() {
+    let server = MockServer::start().await;
+    let full: Vec<serde_json::Value> = (0..100)
+        .map(|n| json!({ "id": format!("mbx_x{n}"), "address": format!("p{n}@example.test") }))
+        .collect();
+    Mock::given(method("GET"))
+        .and(path(format!("/public/v2/workspaces/{WS}/mailboxes")))
+        .respond_with(page(json!(full), 999_999))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local rows, meta = c:mailboxes()
+        assert.eq(meta.truncated, true)
+        assert.eq(meta.cap, 2000)
+        assert.eq(meta.seen, 2000)
+        assert.eq(#rows, 2000)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// The internal API pages by a `next` link, so a vendor that always offers one
+/// walks into the same cap. Its warm-up list can be short for the same reason.
+#[tokio::test]
+async fn test_an_internal_walk_stopped_by_the_page_cap_says_it_is_truncated() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    let full: Vec<serde_json::Value> = (0..50)
+        .map(|n| {
+            json!({ "id": format!("mbx_x{n}"), "address": format!("p{n}@example.test"),
+                    "warmupActivated": true, "daysUntilWarm": 5 })
+        })
+        .collect();
+    Mock::given(method("GET"))
+        .and(path(format!("/workspaces/{WS}/mailboxes")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": full,
+            "pagination": { "currentPage": 1, "pageSize": 50, "next": "?page=2&size=50" },
+        })))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(
+            &server.uri(),
+            ", email = \"ops@example.test\", password = \"pw\""
+        ),
+        r#"
+        local rows, meta = c:mailboxes_internal()
+        assert.eq(meta.truncated, true)
+        assert.eq(meta.cap, 1000)
+        assert.eq(meta.seen, 1000)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// Every environment variable a module reads has to reach `assay context`, and
+/// a quickref only gets there if it parses.
+///
+/// `parse_quickref` wants `signature -> return_hint | description` and silently
+/// drops anything else, so a malformed line is not a formatting nit: the method
+/// or the variable it documents simply never appears. Two lines were lost that
+/// way before this test existed.
+#[tokio::test]
+async fn test_every_quickref_parses_and_the_env_vars_are_among_them() {
+    let modules = ["clayinbox", "forge", "salesforge"];
+    let mut salesforge_refs = String::new();
+    for name in modules {
+        let path = format!("{}/stdlib/{name}.lua", env!("CARGO_MANIFEST_DIR"));
+        let source = std::fs::read_to_string(&path).unwrap();
+        let mut parsed = 0;
+        for line in source.lines().take_while(|l| l.starts_with("---")) {
+            let Some(value) = line.strip_prefix("--- @quickref ") else {
+                continue;
+            };
+            // The parser's own rule, mirrored: split on " -> ", then on " | ".
+            let rest = value
+                .split_once(" -> ")
+                .unwrap_or_else(|| panic!("{name}: quickref has no ` -> `: {value}"))
+                .1;
+            rest.split_once(" | ")
+                .unwrap_or_else(|| panic!("{name}: quickref has no ` | `: {value}"));
+            parsed += 1;
+            if name == "salesforge" {
+                salesforge_refs.push_str(value);
+                salesforge_refs.push('\n');
+            }
+        }
+        assert!(parsed > 0, "{name} declares no quickrefs at all");
+    }
+    for var in [
+        "SALESFORGE_API_KEY",
+        "SALESFORGE_EMAIL",
+        "SALESFORGE_PASSWORD",
+    ] {
+        assert!(
+            salesforge_refs.contains(var),
+            "{var} is read but no parsing quickref names it, so `assay context` never shows it"
+        );
     }
 }

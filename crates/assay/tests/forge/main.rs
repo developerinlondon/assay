@@ -11,7 +11,7 @@ mod common;
 
 use common::run_lua;
 use serde_json::json;
-use wiremock::matchers::{body_string_contains, header, method, path};
+use wiremock::matchers::{body_string_contains, header, headers, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const WS: &str = "wks_xa1";
@@ -37,6 +37,15 @@ async fn mount_tool(server: &MockServer, key_header: &str, tool: &str, payload: 
     Mock::given(method("POST"))
         .and(path("/"))
         .and(header(key_header, "k"))
+        // A Streamable-HTTP endpoint decides between a JSON body and an SSE
+        // stream from this header. Sending only one of the two would leave the
+        // module unable to read half of what the server may legally answer, so
+        // both media types are pinned, in order.
+        .and(headers(
+            "accept",
+            vec!["application/json", "text/event-stream"],
+        ))
+        .and(header("content-type", "application/json"))
         .and(body_string_contains(tool))
         .respond_with(reply(payload))
         .mount(server)
@@ -122,12 +131,16 @@ async fn test_primeforge_filters_mailboxes_by_domain_without_sending_a_filter() 
         client("primeforge", &server.uri()),
         r#"
         assert.eq(#c:mailboxes(), 2)
-        local rows = c:mailboxes("dom_xa1")
+        local rows, meta = c:mailboxes("dom_xa1")
         assert.eq(#rows, 1)
         assert.eq(rows[1].address, "ada@example.test")
         assert.eq(rows[1].domain, "example.test")
         assert.eq(rows[1].raw.password, "[redacted]")
         assert.eq(rows[1].raw.appPassword, "[redacted]")
+        -- Two rows is under the cap, so this window really is everything.
+        assert.eq(meta.truncated, false)
+        assert.eq(meta.cap, 10)
+        assert.eq(meta.seen, 2)
         "#
     ))
     .await
@@ -441,6 +454,127 @@ async fn test_a_client_refuses_to_build_without_a_key_or_a_workspace() {
         assert.eq(err.code, "product")
         "#,
     )
+    .await
+    .unwrap();
+}
+
+/// The vendor answering exactly its cap has said nothing about what lies past
+/// it. A domain whose boxes fall outside that window returns no rows and no
+/// error, so without `meta` the caller reads a truncated window as a domain
+/// with nothing on it.
+#[tokio::test]
+async fn test_a_full_primeforge_window_reports_itself_as_truncated() {
+    let server = MockServer::start().await;
+    let ten: Vec<serde_json::Value> = (0..10)
+        .map(|n| {
+            json!({ "id": format!("mbx_x{n}"), "address": format!("p{n}@example.test"),
+                    "domainId": "dom_xa1", "status": "active" })
+        })
+        .collect();
+    mount_tool(
+        &server,
+        "X-Primeforge-Key",
+        "primeforge_list_mailboxes",
+        json!({ "results": ten, "pagination": { "limit": 10, "offset": 0 } }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local rows, meta = c:mailboxes()
+        assert.eq(#rows, 10)
+        assert.eq(meta.truncated, true)
+        assert.eq(meta.cap, 10)
+        assert.eq(meta.seen, 10)
+        -- The silent case the signal exists for: a domain with no rows in this
+        -- window looks identical to a domain with no mailboxes at all.
+        local none, none_meta = c:mailboxes("dom_elsewhere")
+        assert.eq(#none, 0)
+        assert.eq(none_meta.truncated, true)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A short answer is the vendor running out of rows, which is the whole set.
+#[tokio::test]
+async fn test_a_short_primeforge_domain_list_is_not_truncated() {
+    let server = MockServer::start().await;
+    mount_tool(
+        &server,
+        "X-Primeforge-Key",
+        "primeforge_list_domains",
+        json!({ "results": [{ "id": "dom_xa1", "sld": "example", "tld": "test" }] }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local rows, meta = c:domains()
+        assert.eq(#rows, 1)
+        assert.eq(meta.truncated, false)
+        assert.eq(meta.seen, 1)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// An address missing from a truncated window is not an address the workspace
+/// lacks, and the error has to say which of the two it is.
+#[tokio::test]
+async fn test_a_miss_inside_a_truncated_window_says_so() {
+    let server = MockServer::start().await;
+    let full: Vec<serde_json::Value> = (0..50)
+        .map(|n| json!({ "id": format!("mbx_x{n}"), "address": format!("p{n}@example.test") }))
+        .collect();
+    // Every page answers full and the vendor names no `totalPages`, so the walk
+    // can only ever stop at the page cap.
+    Mock::given(method("POST"))
+        .respond_with(reply(json!({ "mailboxes": full })))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client("warmforge", &server.uri()),
+        r#"
+        local rows, meta = c:mailboxes()
+        assert.eq(meta.truncated, true)
+        assert.eq(meta.cap, 2500)
+        local missing, err = c:warmup("nobody@example.test")
+        assert.eq(missing, nil)
+        assert.eq(err.code, "not_found")
+        assert.contains(err.message, "truncated")
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A walk that stopped because the vendor said `totalPages` has everything.
+#[tokio::test]
+async fn test_a_warmforge_walk_that_reaches_total_pages_is_not_truncated() {
+    let server = MockServer::start().await;
+    mount_tool(
+        &server,
+        "X-Warmforge-Key",
+        "warmforge_list_mailboxes",
+        json!({ "mailboxes": [warmforge_row()], "page": 1, "pageSize": 50, "totalPages": 1 }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client("warmforge", &server.uri()),
+        r#"
+        local rows, meta = c:mailboxes()
+        assert.eq(#rows, 1)
+        assert.eq(meta.truncated, false)
+        assert.eq(meta.seen, 1)
+        "#
+    ))
     .await
     .unwrap();
 }
