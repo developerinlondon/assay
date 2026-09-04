@@ -4,6 +4,8 @@
 //! by limit and offset, the public API carrying no warm-up state while the
 //! internal one does, a failed sign-in reading as a typed sign_in error that
 //! leaves the public API working, and 401, 402 and 429 reading as themselves.
+//! Webhooks are the one family with no REST route at any version, so they go
+//! over the MCP endpoint and are pinned here as such.
 
 #[path = "../common/mod.rs"]
 mod common;
@@ -1333,4 +1335,263 @@ async fn test_an_address_the_workspace_does_not_hold_is_refused_by_name() {
     ))
     .await
     .unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks. The vendor's REST API answers 404 for /webhooks at every version,
+// so these three ride the MCP endpoint with the Salesforge key header. What is
+// pinned: the header, one event per hook, the signing secret coming back from a
+// create and never from a read, and a tool-level refusal reading as an error.
+// ---------------------------------------------------------------------------
+
+/// The tool's payload arrives as a JSON string nested in the reply's text part.
+fn mcp_reply(payload: serde_json::Value) -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": { "content": [{ "type": "text", "text": payload.to_string() }] },
+    }))
+}
+
+async fn mount_mcp(server: &MockServer, tool: &str, payload: serde_json::Value) {
+    Mock::given(method("POST"))
+        .and(path("/mcp"))
+        // The key rides its own product header, which is the whole of what
+        // tells this endpoint which forge is calling.
+        .and(header("x-salesforge-key", "k"))
+        .and(body_string_contains(tool))
+        .respond_with(mcp_reply(payload))
+        .mount(server)
+        .await;
+}
+
+fn mcp_client(uri: &str) -> String {
+    client(uri, &format!(", mcp_base_url = \"{uri}/mcp\""))
+}
+
+#[tokio::test]
+async fn test_webhooks_are_listed_from_the_mcp_endpoint() {
+    let server = MockServer::start().await;
+    mount_mcp(
+        &server,
+        "list_webhooks",
+        json!({ "total": 1, "data": [{
+            "id": "rwh_xa1", "name": "replies", "type": "email_replied",
+            "url": "https://x.test/api/hooks/salesforge?token=t", "sentCount": 0,
+        }] }),
+    )
+    .await;
+
+    let script = format!(
+        "{}local hooks = c:webhooks()\n\
+         assert.eq(#hooks, 1)\n\
+         assert.eq(hooks[1].id, \"rwh_xa1\")\n\
+         assert.eq(hooks[1].type, \"email_replied\")",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+/// An empty list is a list. A workspace that has never registered one is the
+/// normal case, and it must not read as a failure.
+#[tokio::test]
+async fn test_no_webhooks_is_an_empty_list_and_not_an_error() {
+    let server = MockServer::start().await;
+    mount_mcp(&server, "list_webhooks", json!({ "total": 0, "data": [] })).await;
+    let script = format!(
+        "{}local hooks, meta = c:webhooks()\n\
+         assert.not_nil(hooks)\n\
+         assert.eq(#hooks, 0)\n\
+         assert.eq(meta.truncated, false)",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+/// The signing secret is returned once, by the create, and by nothing else. A
+/// caller that does not store it here can never verify a delivery.
+#[tokio::test]
+async fn test_creating_a_webhook_returns_the_signing_secret_once() {
+    let server = MockServer::start().await;
+    mount_mcp(
+        &server,
+        "create_webhook",
+        json!({
+            "id": "rwh_xa2", "name": "replies", "type": "email_replied",
+            "url": "https://x.test/api/hooks/salesforge?token=t",
+            "sentCount": 0, "signingSecret": "whsec_abc",
+        }),
+    )
+    .await;
+
+    let script = format!(
+        "{}local hook = c:create_webhook({{\n\
+           url = \"https://x.test/api/hooks/salesforge?token=t\",\n\
+           event = \"email_replied\", name = \"replies\",\n\
+         }})\n\
+         assert.eq(hook.id, \"rwh_xa2\")\n\
+         assert.eq(hook.signingSecret, \"whsec_abc\")",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+/// A read never carries the secret back, which is why the create is the only
+/// chance to keep it.
+#[tokio::test]
+async fn test_reading_a_webhook_never_carries_the_secret() {
+    let server = MockServer::start().await;
+    mount_mcp(
+        &server,
+        "get_webhook",
+        json!({
+            "id": "rwh_xa2", "name": "replies", "type": "email_replied",
+            "url": "https://x.test/api/hooks/salesforge?token=t", "sentCount": 3,
+        }),
+    )
+    .await;
+
+    let script = format!(
+        "{}local hook = c:webhook(\"rwh_xa2\")\n\
+         assert.eq(hook.sentCount, 3)\n\
+         assert.eq(hook.signingSecret, nil)",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+/// Both are the caller's mistake and neither reaches the vendor.
+/// The tool answers ten and ignores limit and offset, so a workspace past ten
+/// loses rows with nothing to say it did. A full window is the only signal
+/// there is, and it reads as truncated rather than as a complete list of ten.
+#[tokio::test]
+async fn test_a_full_window_of_webhooks_reads_as_truncated() {
+    let server = MockServer::start().await;
+    let rows: Vec<serde_json::Value> = (0..10)
+        .map(|i| {
+            json!({
+                "id": format!("rwh_{i}"), "name": "replies", "type": "email_replied",
+                "url": "https://x.test/h?token=t", "sentCount": 0,
+            })
+        })
+        .collect();
+    mount_mcp(
+        &server,
+        "list_webhooks",
+        json!({ "total": 10, "data": rows }),
+    )
+    .await;
+
+    let script = format!(
+        "{}local hooks, meta = c:webhooks()
+         assert.eq(#hooks, 10)
+         assert.eq(meta.truncated, true)
+         assert.eq(meta.cap, 10)
+         assert.eq(meta.seen, 10)",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+/// Short of the cap the vendor has shown everything it holds.
+#[tokio::test]
+async fn test_a_short_window_of_webhooks_is_the_whole_list() {
+    let server = MockServer::start().await;
+    mount_mcp(
+        &server,
+        "list_webhooks",
+        json!({ "total": 2, "data": [
+            { "id": "rwh_1", "type": "email_replied", "url": "https://x.test/h" },
+            { "id": "rwh_2", "type": "email_bounced", "url": "https://x.test/h" },
+        ] }),
+    )
+    .await;
+
+    let script = format!(
+        "{}local hooks, meta = c:webhooks()
+         assert.eq(#hooks, 2)
+         assert.eq(meta.truncated, false)
+         assert.eq(meta.seen, 2)",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+/// An empty list still carries its meta, so a caller reading `truncated` on
+/// every answer never finds it nil.
+#[tokio::test]
+async fn test_an_empty_webhook_list_still_carries_meta() {
+    let server = MockServer::start().await;
+    mount_mcp(&server, "list_webhooks", json!({ "total": 0, "data": [] })).await;
+    let script = format!(
+        "{}local hooks, meta = c:webhooks()
+         assert.eq(#hooks, 0)
+         assert.eq(meta.truncated, false)
+         assert.eq(meta.cap, 10)",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+/// `tostring` on a table sends the vendor "table: 0x…" as an event name, and
+/// its refusal arrives seconds later in words nobody can act on.
+#[tokio::test]
+async fn test_a_url_or_event_that_is_not_a_string_is_refused_here() {
+    let server = MockServer::start().await;
+    let script = format!(
+        "{}local a, e1 = c:create_webhook({{ url = \"https://x.test/h\", event = {{}} }})\n\
+         assert.eq(a, nil)\n\
+         assert.eq(e1.code, \"config\")\n\
+         assert.contains(e1.message, \"string\")\n\
+         local b, e2 = c:create_webhook({{ url = {{}}, event = \"email_replied\" }})\n\
+         assert.eq(b, nil)\n\
+         assert.eq(e2.code, \"config\")",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_a_webhook_needs_a_url_and_an_event() {
+    let server = MockServer::start().await;
+    let script = format!(
+        "{}local a, e1 = c:create_webhook({{ event = \"email_replied\" }})\n\
+         assert.eq(a, nil)\n\
+         assert.eq(e1.code, \"config\")\n\
+         local b, e2 = c:create_webhook({{ url = \"https://x.test/h\" }})\n\
+         assert.eq(b, nil)\n\
+         assert.eq(e2.code, \"config\")",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
+}
+
+/// The vendor refuses inside a 200, in an ordinary-looking result. Read as a
+/// payload it becomes a success carrying the word "Error", which is how a
+/// caller ends up acting on a call that did nothing.
+#[tokio::test]
+async fn test_a_refusal_the_tool_made_reads_as_an_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mcp"))
+        .and(header("x-salesforge-key", "k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "isError": true,
+                "content": [{ "type": "text", "text": "Error: Salesforge API error 400: taken" }],
+            },
+        })))
+        .mount(&server)
+        .await;
+
+    let script = format!(
+        "{}local hook, err = c:create_webhook({{ url = \"https://x.test/h\", event = \"email_replied\" }})\n\
+         assert.eq(hook, nil)\n\
+         assert.eq(err.code, \"tool\")\n\
+         assert.contains(err.message, \"400\")",
+        mcp_client(&server.uri())
+    );
+    run_lua(&script).await.unwrap();
 }
