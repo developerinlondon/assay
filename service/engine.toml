@@ -3,6 +3,8 @@ bind_addr = "0.0.0.0:8080"
 public_url = "https://engine.assay.rs"
 allowed_hosts = ["auth.assay.rs", "engine.assay.rs"]
 
+# The engine owns the engine/workflow/auth/vault schemas in whatever
+# database this points at. Give it one of its own.
 [backend]
 type = "postgres"
 url = "${DATABASE_URL}"

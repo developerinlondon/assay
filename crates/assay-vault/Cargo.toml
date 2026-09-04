@@ -1,6 +1,6 @@
 [package]
 name = "assay-vault"
-version = "0.4.3"
+version = "0.4.4"
 categories = ["cryptography", "asynchronous", "database"]
 edition = "2024"
 keywords = ["vault", "secrets", "kv", "transit", "biscuit"]
@@ -65,7 +65,7 @@ vault-dynamic-aws = ["dep:reqwest", "dep:hmac"]
 vault-dynamic-gcp = ["dep:reqwest", "dep:jsonwebtoken"]
 vault-dynamic-kubernetes = ["dep:reqwest"]
 
-backend-postgres = ["dep:sqlx", "sqlx/postgres"]
+backend-postgres = ["dep:sqlx", "sqlx/postgres", "assay-domain/backend-postgres"]
 backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 
 [dependencies]
@@ -75,7 +75,7 @@ backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 # vault crate has no dependency on the auth crate — making vault
 # genuinely standalone for non-BW deployments.
 assay-auth = { path = "../assay-auth", version = "0.6", optional = true }
-assay-domain = { path = "../assay-domain", version = "0.2" }
+assay-domain = { path = "../assay-domain", version = "0.2.5" }
 
 # Phase 0 holds the dep set deliberately small: just what the schema
 # bootstrap, ctx skeleton, and smoke test need. Subsequent phases

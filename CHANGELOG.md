@@ -27,6 +27,138 @@ All notable changes to Assay are documented here.
   vendor accepts, so a typo reads as a config error the caller can act on instead of a 400 it has to
   interpret. A `mailbox_ids` that is not a table is refused for the same reason — it is not a list.
 
+## assay-engine 0.5.18 — 2026-09-04
+
+### Added
+
+- **`assay-engine migrate` moves a store from SQLite to Postgres.** The engine could be pointed at
+  either backend but never carried one to the other, so a deployment that outgrew its volume had to
+  start over. What it would have thrown away is not only workflow history: the same store holds the
+  auth module — users, password hashes, sessions, passkeys, JWT signing keys, OIDC clients, Zanzibar
+  tuples — and the vault, whose master KEK is a row in `vault.kek_metadata` rather than an
+  environment variable. Copying that row is what lets the ciphertext in `vault.kv` decrypt on the
+  other side, and a migration that moved the secrets without it would have produced a store that
+  looked intact and could not be read.
+
+  `--from sqlite:<data-dir> --to postgres://…` copies every table of every schema the engine owns,
+  preserving ids and timestamps, so a reference to a run still resolves afterwards. The table list
+  comes from `sqlite_master` and the Postgres catalog rather than from a list in the code, so a
+  module that adds a table is carried without an edit here. Generated-id sequences are re-pointed
+  past the copied rows, because rows that already own ids 1..N leave a sequence at 1 handing the
+  next write a collision.
+
+  A target that already holds engine rows is refused by name before anything is written: merging two
+  stores would have to reconcile ids that were only ever unique within one of them. A column the
+  source has and the target does not is an error rather than a silent drop; the reverse takes its
+  default. `--dry-run` prints the plan and the source's row counts and writes nothing. Both modes
+  print a row count per table. `engine.lock` is skipped and said so — SQLite serialises
+  single-instance access through that table where Postgres uses an advisory lock — as is any other
+  source table with no Postgres counterpart, reported with the rows it held.
+
+  Order of operations, and how to verify the result before keeping it, are in
+  [`docs/engine-store-migration.md`](docs/engine-store-migration.md).
+
+
+- **`ASSAY_VAULT_SEAL_KEY` encrypts the vault's master key at rest.** The KEK was stored as raw
+  bytes in `vault.kek_metadata`, so the row protecting every secret sat beside the secrets it
+  protects. On a volume that was one exposure; with the store in Postgres the nightly dump becomes
+  a plaintext copy of the whole vault, and so does every backup of it.
+
+  Set the variable to any string of at least 32 characters and the KEK is sealed with
+  AES-256-GCM-SIV instead — a version byte, a nonce, and the encrypted key, with the key id as
+  additional authenticated data so a blob copied onto another row does not open. The cipher key is
+  derived from the value with SHA-256 over a fixed label rather than decoded from it, so base64,
+  hex and a passphrase all work and nothing depends on the encoding a chart happens to emit.
+  A store already holding a plaintext KEK is
+  re-sealed in place on the first boot that has the key, which makes turning it on a restart rather
+  than a migration, and logs that backups taken before then still hold the unsealed key. Re-running
+  is a no-op. Rotation keeps the sealing rather than writing the next KEK in the clear.
+
+  Losing the key is not recoverable, so a sealed store with the wrong key or none at all refuses to
+  start rather than minting a fresh KEK and orphaning every secret the old one wraps. Without the
+  variable behaviour is exactly as before, warning as it always did.
+  [`docs/vault-sealing.md`](docs/vault-sealing.md) covers the trade and the failure modes.
+
+### Fixed
+
+- **The engine no longer takes tables it did not create.** Its v0.13.1 upgrade step ran on every
+  boot and moved `public.workflows` and `public.namespaces` into the `workflow` schema, and dropped
+  `public.api_keys` with `CASCADE`, on nothing more than the names matching. Pointed at a database
+  a host application also uses, it took that application's tables: 30 rows and their own columns
+  relocated under the engine, the application's reads failing with `relation "public.workflows"
+  does not exist`, and `public.api_keys` gone for good. The engine broke too, since the tables it
+  had adopted were not the shape it expected. `ALTER TABLE ... SET SCHEMA` is not undone by
+  reverting a deploy.
+
+  The move now requires proof the tables are the engine's own. `public.workflow_events` is the
+  marker — every v0.13.1 store has it, no application is holding a table by that name, and it moves
+  in the same transaction as the rest. Without it nothing moves. With it, the two ambiguously named
+  tables must also carry the columns the engine's own versions always had. Anything failing either
+  check is left alone and named in the log, and `public.api_keys` is now reported rather than
+  dropped, because an orphaned table costs nothing and an unrecoverable drop does not.
+
+  Run the engine in its own database regardless. It owns four schemas, and the default config
+  example says so.
+
+
+- **Engines starting together on an empty Postgres no longer kill each other.**
+  `CREATE ... IF NOT
+  EXISTS` is not atomic: Postgres runs the existence check before the catalog
+  insert, so two engines booting at the same instant both passed the check and one lost with
+  `duplicate key value violates
+  unique constraint "pg_type_typname_nsp_index"` — or
+  `pg_namespace_nspname_index` for a schema — and exited instead of serving. Ten engines started
+  together on a fresh database lost nine.
+
+  The engine-core schema had already been serialised behind `pg_advisory_xact_lock`, and its doc
+  comment named this exact behaviour, but the auth, vault and workflow migrations and the engine's
+  own `CREATE SCHEMA` loop each ran their DDL outside it. All four now take the same
+  transaction-scoped advisory lock, so concurrent boots serialise rather than race. Transaction
+  scope means commit, rollback and a dropped connection all release it, so a migration that dies
+  cannot strand the lock. A schema setup that still loses a catalog race — a caller reaching
+  Postgres without the lock — retries instead of failing, on the three codes the catalog raises for
+  it. A test boots ten engines at once on a fresh database, five times over.
+
+## assay-workflow 0.4.7 — 2026-09-04
+
+### Fixed
+
+- Postgres schema migration runs inside one advisory-locked transaction, so concurrent first boots
+  serialise their DDL instead of racing `CREATE TABLE IF NOT EXISTS` and losing one caller to a
+  catalog unique violation, and retries when it loses one anyway.
+- The v0.13.1 relocation moves a table only once the database proves it is the engine's own, and
+  reports rather than drops the retired `public.api_keys`.
+
+## assay-auth 0.6.3 — 2026-09-04
+
+### Fixed
+
+- Same advisory lock around `schema::migrate_postgres`. The `backend-postgres` feature now also
+  enables `assay-domain/backend-postgres`, which it had always needed transitively.
+
+## assay-vault 0.4.4 — 2026-09-04
+
+### Added
+
+- `crypto::env_seal` seals the master KEK under a key derived by SHA-256 from an environment
+  string of at least 32 characters, and
+  `kek_store::load_or_init_*_sealed` load, re-seal and refuse accordingly. `SealingMethod::EnvKey`
+  and `VaultCtx::with_kek_method` carry the method through to `/sys/seal-status`, which reported
+  every store as plaintext before.
+
+### Fixed
+
+- Same advisory lock around `schema::migrate_postgres`, and the same `backend-postgres` feature fix.
+
+## assay-domain 0.2.5 — 2026-09-04
+
+### Added
+
+- `engine::SCHEMA_MIGRATION_LOCK` and `engine::acquire_schema_lock`, the one advisory-lock id every
+  Postgres schema migration in the workspace holds while it runs DDL. Modules share one id rather
+  than taking their own because they share the `CREATE SCHEMA` statements even where their tables
+  are disjoint. `engine::retry_ddl` re-runs a migration that lost a catalog race regardless.
+
 ## assay-lua 0.20.1 — 2026-09-04
 
 ### Added

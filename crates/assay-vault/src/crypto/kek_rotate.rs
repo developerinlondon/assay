@@ -30,6 +30,8 @@
 //! after restart.
 
 use crate::crypto::aead::{KEY_LEN, random_dek};
+use crate::crypto::env_seal::{METHOD_ENV, SealKey};
+use crate::crypto::kek_store::METHOD_PLAINTEXT;
 use crate::crypto::kek::{KekHandle, WrappedDek};
 use crate::crypto::seal_state::SealState;
 use crate::crypto::sealing::SealingMethod;
@@ -50,6 +52,7 @@ pub struct RotationReport {
 pub async fn rotate_postgres(
     pool: &sqlx::PgPool,
     seal_state: &SealState,
+    seal: Option<&SealKey>,
 ) -> Result<RotationReport> {
     let old_kek = seal_state.require_unsealed()?;
 
@@ -58,6 +61,7 @@ pub async fn rotate_postgres(
     let new_key = random_dek();
     let new_kid = mint_kid(&new_key);
     let new_kek = KekHandle::from_bytes(new_kid.clone(), new_key);
+    let (method, blob) = seal_new_kek(&new_kid, &new_key, seal)?;
 
     sqlx::query(
         "INSERT INTO vault.kek_metadata
@@ -65,8 +69,8 @@ pub async fn rotate_postgres(
          VALUES ($1, $2, FALSE, $3, NULL, EXTRACT(EPOCH FROM NOW()))",
     )
     .bind(&new_kid)
-    .bind("plaintext") // rotation preserves sealing topology — caller re-keys via /sys/init for cross-method changes
-    .bind(new_key.as_slice())
+    .bind(method)
+    .bind(blob)
     .execute(pool)
     .await
     .map_err(|e| VaultError::Backend(anyhow::anyhow!("insert new kek_metadata: {e}")))?;
@@ -93,6 +97,21 @@ pub async fn rotate_postgres(
         kv_rewrapped,
         transit_rewrapped,
     })
+}
+
+
+/// How a rotated KEK is stored. Rotation must not silently downgrade a
+/// sealed store to plaintext, so the new row is sealed whenever the
+/// caller holds the seal key.
+fn seal_new_kek(
+    kid: &str,
+    key: &[u8; crate::crypto::aead::KEY_LEN],
+    seal: Option<&SealKey>,
+) -> Result<(&'static str, Vec<u8>)> {
+    match seal {
+        Some(seal) => Ok((METHOD_ENV, seal.seal(kid, key)?)),
+        None => Ok((METHOD_PLAINTEXT, key.to_vec())),
+    }
 }
 
 #[cfg(feature = "backend-postgres")]
@@ -182,12 +201,14 @@ async fn rewrap_transit_postgres(
 pub async fn rotate_sqlite(
     pool: &sqlx::SqlitePool,
     seal_state: &SealState,
+    seal: Option<&SealKey>,
 ) -> Result<RotationReport> {
     let old_kek = seal_state.require_unsealed()?;
     let new_key = random_dek();
     let new_kid = mint_kid(&new_key);
     let new_kek = KekHandle::from_bytes(new_kid.clone(), new_key);
 
+    let (method, blob) = seal_new_kek(&new_kid, &new_key, seal)?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -198,8 +219,8 @@ pub async fn rotate_sqlite(
          VALUES (?, ?, 0, ?, NULL, ?, ?)",
     )
     .bind(&new_kid)
-    .bind("plaintext")
-    .bind(new_key.as_slice())
+    .bind(method)
+    .bind(blob)
     .bind(now)
     .bind(now)
     .execute(pool)
@@ -378,7 +399,7 @@ mod tests {
         svc.put("k2", b"v2", serde_json::json!({})).await.unwrap();
         svc.put("k3", b"v3", serde_json::json!({})).await.unwrap();
         // Rotate.
-        let report = rotate_sqlite(&pool, &seal_state).await.unwrap();
+        let report = rotate_sqlite(&pool, &seal_state, None).await.unwrap();
         assert_eq!(report.kv_rewrapped, 3);
         assert_ne!(report.old_kid, report.new_kid);
         // Reads still succeed (the seal_state was updated to the new KEK).

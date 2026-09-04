@@ -30,6 +30,19 @@ enum Command {
         #[arg(long, short, env = "ASSAY_ENGINE_CONFIG")]
         config: PathBuf,
     },
+    /// Copy a stopped SQLite store into an empty Postgres one.
+    #[cfg(all(feature = "backend-postgres", feature = "backend-sqlite"))]
+    Migrate {
+        /// SQLite data directory, as `sqlite:<dir>` or a bare path.
+        #[arg(long)]
+        from: String,
+        /// Target Postgres URL, holding no engine data.
+        #[arg(long)]
+        to: String,
+        /// Print the plan and row counts; write nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[tokio::main]
@@ -51,6 +64,38 @@ async fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
             ExitCode::SUCCESS
+        }
+        #[cfg(all(feature = "backend-postgres", feature = "backend-sqlite"))]
+        Command::Migrate { from, to, dry_run } => migrate(&from, &to, dry_run).await,
+    }
+}
+
+#[cfg(all(feature = "backend-postgres", feature = "backend-sqlite"))]
+async fn migrate(from: &str, to: &str, dry_run: bool) -> ExitCode {
+    use assay_engine::migrate::{Plan, parse_source, parse_target};
+
+    // The report is the output; sqlx logs every `IF NOT EXISTS` notice
+    // the schema bootstrap raises, which is noise around it.
+    init_tracing("info,sqlx=warn", "pretty");
+    let plan = match (parse_source(from), parse_target(to)) {
+        (Ok(source_dir), Ok(target_url)) => Plan {
+            source_dir,
+            target_url,
+            dry_run,
+        },
+        (Err(e), _) | (_, Err(e)) => {
+            eprintln!("migrate: {e:#}");
+            return ExitCode::from(2);
+        }
+    };
+    match assay_engine::migrate::run(plan).await {
+        Ok(report) => {
+            print!("{}", report.render());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("migrate failed: {e:#}");
+            ExitCode::from(1)
         }
     }
 }

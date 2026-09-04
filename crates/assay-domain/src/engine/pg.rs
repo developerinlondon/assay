@@ -37,15 +37,8 @@ impl PgEngineSchema {
     /// find the schema already present pay one fast SELECT for the
     /// lock then a no-op pass through every `IF NOT EXISTS`.
     pub async fn migrate(&self) -> Result<()> {
-        // Stable lock id — hash of "assay-engine-schema-migration"
-        // truncated to i64. Different from any other advisory lock id
-        // the engine uses (workflow uses 1; this is namespaced).
-        const ENGINE_MIGRATION_LOCK: i64 = 0x6173_7361_795f_656e; // "assay_en"
-
         let mut tx = self.pool.begin().await.context("begin migrate tx")?;
-        sqlx::query("SELECT pg_advisory_xact_lock($1)")
-            .bind(ENGINE_MIGRATION_LOCK)
-            .execute(&mut *tx)
+        super::acquire_schema_lock(&mut tx)
             .await
             .context("acquire engine migration advisory lock")?;
 

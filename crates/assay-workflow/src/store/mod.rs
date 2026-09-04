@@ -5,6 +5,7 @@
 //! unchanged.
 
 pub mod postgres;
+pub(crate) mod relocation;
 pub mod sqlite;
 
 pub use assay_domain::store::WorkflowStore;

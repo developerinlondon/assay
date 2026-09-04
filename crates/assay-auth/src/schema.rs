@@ -655,13 +655,22 @@ pub const SQLITE_DDL_V6: &[(&str, &str)] = &[
 /// `engine.migrations`. Idempotent — every CREATE uses `IF NOT EXISTS`.
 #[cfg(feature = "backend-postgres")]
 pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    assay_domain::engine::retry_ddl(3, || migrate_postgres_once(pool)).await
+}
+
+#[cfg(feature = "backend-postgres")]
+async fn migrate_postgres_once(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     use anyhow::Context;
+    let mut tx = pool.begin().await.context("begin auth migrate tx")?;
+    assay_domain::engine::acquire_schema_lock(&mut tx)
+        .await
+        .context("acquire schema migration advisory lock")?;
     for ddl in [
         PG_DDL_V1, PG_DDL_V2, PG_DDL_V3, PG_DDL_V4, PG_DDL_V5, PG_DDL_V6,
     ] {
         for stmt in split_pg_statements(ddl) {
             sqlx::query(&stmt)
-                .execute(pool)
+                .execute(&mut *tx)
                 .await
                 .with_context(|| format!("auth pg migrate: {}", first_line(&stmt)))?;
         }
@@ -672,9 +681,10 @@ pub async fn migrate_postgres(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     )
     .bind(MODULE_NAME)
     .bind(MIGRATION_VERSION)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .context("record auth migration in engine.migrations")?;
+    tx.commit().await.context("commit auth migrate tx")?;
     Ok(())
 }
 
