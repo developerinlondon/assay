@@ -1,5 +1,5 @@
 --- @module assay.forge
---- @description Primeforge and Warmforge over the shared forge MCP endpoint — domains, mailboxes, warm-up progress, placement tests and the DNS health report. Read-only; keys and workspace come from the caller.
+--- @description Primeforge and Warmforge over the shared forge MCP endpoint — domains, mailboxes, warm-up progress, placement tests, the DNS health report, and Primeforge's registration quote. Neither product has a billing endpoint, so callers price the recurring spend from configuration. Read-only; keys and workspace come from the caller.
 --- @category saas
 --- @icon flame
 --- @keywords primeforge, warmforge, forge, mcp, mailbox, warmup, heat score, placement, blacklist, spf, dkim, dmarc, cold email
@@ -7,12 +7,18 @@
 --- @quickref M.primeforge(opts) -> p | Key via opts.api_key or PRIMEFORGE_API_KEY; opts.workspace_id required
 --- @quickref p:domains() -> [domain], meta | nil, err | Name is sld and tld joined; the vendor sends no whole name
 --- @quickref p:mailboxes(domain_id?) -> [box], meta | nil, err | The vendor caps this at ten rows and cannot page
+--- @quickref p:domain_price(domain) -> {items, meta} | nil, err | Registration quote in whole cents for a year; the only price the forge answers, and it prices domains nobody has bought yet
+--- @quickref primeforge costs -> quote only | No billing, subscription or slot tool: p:domain_price quotes a purchase, never the recurring spend
+--- @quickref item -> {kind, unit, ref, quantity, unit_price_cents, period, source} | Shared with assay.clayinbox and assay.salesforge; an absent price or period is a fact the vendor withheld
 --- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
 --- @quickref M.warmforge(opts) -> w | Key via opts.api_key or WARMFORGE_API_KEY; opts.workspace_id required
 --- @quickref w:mailboxes() -> [box], meta | nil, err | Every page, by totalPages
 --- @quickref w:warmup(address) -> {day, total_days, heat, enabled} | nil, err | Position on the curve
 --- @quickref w:placement(address) -> {inbox, spam, promotions} | nil | nil, err | Latest placement test; nil when none has run
 --- @quickref w:health(address) -> {spf, dkim, dmarc, mx, heat, blacklists} | nil, err | Each check reads valid, invalid or unknown
+--- @quickref warmforge costs -> none | Warmforge has no billing endpoint at all: no subscription, slot or price data; callers price warm-up from configuration
+
+local cost = require("assay.vendor_cost")
 
 local M = {}
 
@@ -42,6 +48,10 @@ local SECRET_KEYS = { password = true, appPassword = true, app_password = true }
 -- a failure tells an operator a record they published is missing, so an absent
 -- or unreadable check is "unknown" and never "invalid".
 local PASSED = { valid = true, ok = true, passed = true, success = true }
+
+-- A Primeforge domain's `expiresAt` lands one year after its `createdAt`, so
+-- the registration the quote prices is a year of it.
+local DOMAIN_PERIOD = "year"
 
 local ERR = { __tostring = function(e) return "forge: " .. e.message end }
 
@@ -301,6 +311,60 @@ function M.primeforge(opts)
       if row and (domain_id == nil or raw.domainId == domain_id) then out[#out + 1] = row end
     end
     return out, { truncated = #rows == PRIMEFORGE_CAP, cap = PRIMEFORGE_CAP, seen = #rows }
+  end
+
+  -- What Primeforge would charge to register a domain.
+  --
+  -- This is the only price either product answers. There is no billing,
+  -- subscription or slot tool on the endpoint, and a domain already bought
+  -- carries no price on its row — so this quotes what is still for sale and
+  -- says nothing about what the workspace is being charged today.
+  --
+  -- The search answers the name asked for plus prefixed alternatives, and each
+  -- carries its own price. A row is set aside for exactly one reason and the
+  -- counters say which: `unavailable` for a name nobody can buy, since a price
+  -- for that is not a cost anyone can incur, and `unpriced` for a name that is
+  -- for sale but that the vendor quoted with nothing readable. Collapsing the
+  -- two would report a domain as sold when it is only unquoted.
+  function p:domain_price(domain)
+    local fqdn = lower(domain)
+    if fqdn == "" then return fail("config", nil, "domain_price needs a domain") end
+    local payload, err = call("primeforge_search_domains", { domain = fqdn })
+    if not payload then return nil, err end
+    local rows = (type(payload) == "table" and type(payload.domains) == "table")
+      and payload.domains or {}
+    local items, unavailable, unpriced = {}, 0, 0
+    for _, raw in ipairs(rows) do
+      local name = lower(raw.name)
+      if name ~= "" then
+        local cents = cost.to_cents(raw.price)
+        if raw.available ~= true then
+          unavailable = unavailable + 1
+        elseif cents then
+          items[#items + 1] = cost.item({
+            kind = "domain",
+            unit = "domain",
+            ref = name,
+            quantity = 1,
+            unit_price_cents = cents,
+            period = DOMAIN_PERIOD,
+          })
+        else
+          unpriced = unpriced + 1
+        end
+      end
+    end
+    return {
+      items = items,
+      meta = {
+        priced = true,
+        -- The quote is a bare number with no currency beside it.
+        currency_known = false,
+        seen = #rows,
+        unavailable = unavailable,
+        unpriced = unpriced,
+      },
+    }
   end
 
   return p

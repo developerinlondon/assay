@@ -2,6 +2,58 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.3 — 2026-09-04
+
+### Added
+
+- **The vendor modules report what the fleet costs, where the vendor will say.** A caller pricing a
+  mailbox fleet had to keep a price list beside these modules and trust it still matched what the
+  vendor was charging. Three of the four surfaces now answer for themselves; the fourth says
+  outright that it will not.
+
+  `assay.clayinbox` gains `c:costs()`. The price rides on the mailbox row — `cost` as a decimal
+  string, beside the cycle it repeats on — because every invoice, order and price path the vendor
+  might have put it behind answers 404. Rows sharing a price and a cycle collapse into one item, so
+  `quantity` means something, and the cycle is part of the grouping key: a yearly box never lands in
+  a monthly line at the same number. Only a live mailbox is billed: a box the vendor stopped
+  charging for inflates the bill with spend nobody is making, so a cancelled or suspended one is
+  counted in `meta.inactive`. A row whose status the vendor did not state at all is counted in
+  `meta.status_unknown` instead, because calling it inactive would report a cancellation nobody
+  made. Between them and `meta.unpriced`, every row that went unbilled says which of the three
+  reasons it was.
+
+  `assay.salesforge` gains `c:costs()`, off the web app's own `/me` — the only surface that carries
+  the plan at all. Every plan, billing, usage and limits path under the public workspace is a flat
+  404, and the internal subscription route answers "growth subscription not found" for an account
+  that never bought one. The vendor names no money anywhere on it, so the plan item carries no price
+  and `meta.priced` is false outright rather than letting an absent price read as free. `meta`
+  carries the plan's monthly ceilings and the credit pools beside them.
+
+  `assay.forge` gains `p:domain_price(domain)`, the only price either forge product answers. It
+  quotes registration for a year — a bought domain's `expiresAt` lands a year after its `createdAt`
+  — and says nothing about what the workspace is charged today. Neither product has a billing
+  endpoint, and the module description says so.
+
+- **`assay.vendor_cost`, the contract those three answer with.** One item shape and one money
+  conversion, so the three modules cannot drift apart on either.
+
+  An item is `{kind, unit, ref, quantity, unit_price_cents, period, source}`. `unit` is the unit of
+  measure — `"mailbox"`, `"domain"`, `"plan"` — and `ref` names the instance a line applies to,
+  which a line covering a group of them does not have. A price or a period the vendor never stated
+  is an absent key, never a zero: `meta.priced` says whether any line carries money at all, and
+  `meta.currency_known` is false on all three, because not one of these vendors states a currency
+  anywhere.
+
+  Money is whole cents, converted once. A fleet priced in floats accumulates a rounding error across
+  every row, and `19.99` landing at 1998 rather than 1999 is pinned by a test. `tonumber` reads
+  `"0x10"` as 16 and `"1e2"` as 100, so a price is digits with at most one decimal point and
+  anything else is counted as unpriced rather than billed at sixteen hundred cents.
+
+  A refused key reads as a typed error rather than as an empty item list. A costing that answers
+  "nothing" when the credential is wrong is the most expensive way this can fail, so 401, 402, 429
+  and 5xx each read as themselves, and a `/me` that is not an account object is a read error rather
+  than a workspace entitled to nothing.
+
 ## assay-lua 0.20.2 — 2026-09-04
 
 ### Added

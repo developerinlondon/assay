@@ -578,3 +578,168 @@ async fn test_a_warmforge_walk_that_reaches_total_pages_is_not_truncated() {
     .await
     .unwrap();
 }
+
+/// The search answers the name asked for plus prefixed alternatives, each with
+/// its own price as a bare number of currency units.
+fn quote_row(name: &str, price: serde_json::Value, available: bool) -> serde_json::Value {
+    json!({
+        "name": name, "price": price, "available": available, "is_premium": false,
+        "banned": false, "google_workspace_available": true, "ms365_workspace_available": false,
+    })
+}
+
+/// A registered domain's `expiresAt` lands a year after its `createdAt`, so the
+/// registration the quote prices is a year of it. The price is whole cents:
+/// `14` is 1400, not 14. Each line names the domain it prices in `ref`, because
+/// a quote for one name says nothing about another.
+#[tokio::test]
+async fn test_a_domain_quote_prices_a_year_in_whole_cents() {
+    let server = MockServer::start().await;
+    mount_tool(
+        &server,
+        "X-Primeforge-Key",
+        "primeforge_search_domains",
+        json!({ "domains": [
+            quote_row("example.test", json!(14), true),
+            quote_row("tryexample.test", json!(19.99), true),
+        ] }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local out = c:domain_price("Example.TEST")
+        assert.eq(#out.items, 2)
+        assert.eq(out.items[1].kind, "domain")
+        assert.eq(out.items[1].unit, "domain")
+        assert.eq(out.items[1].ref, "example.test")
+        assert.eq(out.items[1].quantity, 1)
+        assert.eq(out.items[1].unit_price_cents, 1400)
+        assert.eq(out.items[1].period, "year")
+        assert.eq(out.items[1].source, "vendor")
+        assert.eq(out.items[2].ref, "tryexample.test")
+        assert.eq(out.items[2].unit_price_cents, 1999)
+        -- The vendor states no currency beside the number.
+        assert.eq(out.items[1].currency, nil)
+        assert.eq(out.meta.currency_known, false)
+        assert.eq(out.meta.priced, true)
+        assert.eq(out.meta.seen, 2)
+        assert.eq(out.meta.unavailable, 0)
+        assert.eq(out.meta.unpriced, 0)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A price for a domain nobody can buy is not a cost anyone can incur, so it is
+/// counted rather than itemised. Itemised, it would price a purchase that
+/// cannot happen.
+#[tokio::test]
+async fn test_a_domain_nobody_can_buy_is_counted_rather_than_priced() {
+    let server = MockServer::start().await;
+    mount_tool(
+        &server,
+        "X-Primeforge-Key",
+        "primeforge_search_domains",
+        json!({ "domains": [
+            quote_row("taken.test", json!(14), false),
+            quote_row("free.test", json!(14), true),
+        ] }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local out = c:domain_price("taken.test")
+        assert.eq(#out.items, 1)
+        assert.eq(out.items[1].ref, "free.test")
+        assert.eq(out.meta.seen, 2)
+        assert.eq(out.meta.unavailable, 1)
+        assert.eq(out.meta.unpriced, 0)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A domain that is for sale but quoted with nothing readable is unpriced, not
+/// unavailable. Collapsed into one counter, an unquoted name would read as sold
+/// and a caller would stop looking for a price that is simply missing.
+#[tokio::test]
+async fn test_an_available_domain_with_no_readable_price_is_unpriced_not_unavailable() {
+    let server = MockServer::start().await;
+    mount_tool(
+        &server,
+        "X-Primeforge-Key",
+        "primeforge_search_domains",
+        json!({ "domains": [
+            quote_row("free.test", serde_json::Value::Null, true),
+            quote_row("hex.test", json!("0x10"), true),
+            quote_row("taken.test", json!(14), false),
+        ] }),
+    )
+    .await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local out = c:domain_price("free.test")
+        assert.eq(#out.items, 0)
+        assert.eq(out.meta.seen, 3)
+        assert.eq(out.meta.unavailable, 1)
+        assert.eq(out.meta.unpriced, 2)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A quote the vendor refuses reads as a refusal. An empty item list would say
+/// the domain is free, which is the wrong way for a pricing call to fail.
+#[tokio::test]
+async fn test_a_refused_quote_reads_as_an_error_not_as_a_free_domain() {
+    for (status, code) in [(401u16, "auth"), (429, "rate_limit"), (500, "server")] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+        let body = format!(
+            r#"
+            local out, err = c:domain_price("example.test")
+            assert.eq(out, nil)
+            assert.eq(err.code, "{code}")
+            assert.eq(err.status, {status})
+            "#
+        );
+        run_lua(&format!("{}{}", client("primeforge", &server.uri()), body))
+            .await
+            .unwrap();
+    }
+}
+
+/// A quote for no domain at all is a caller's mistake, not a vendor answer, and
+/// never reaches the endpoint.
+#[tokio::test]
+async fn test_a_quote_without_a_domain_is_refused_before_the_call() {
+    let server = MockServer::start().await;
+    run_lua(&format!(
+        "{}{}",
+        client("primeforge", &server.uri()),
+        r#"
+        local out, err = c:domain_price("")
+        assert.eq(out, nil)
+        assert.eq(err.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "an empty domain reached the vendor"
+    );
+}
