@@ -2,6 +2,34 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.5 — 2026-09-04
+
+### Added
+
+- **`assay.salesforge` can connect a mailbox and switch its warm-up on.** The module could read
+  what a workspace holds and what its warm-up is doing, and change neither. Wiring a fleet into
+  the sequencer therefore stayed a thing done by hand in the web app, seventeen boxes at a time.
+
+  `c:connect_smtp(address, password, opts)` posts the transport blocks the public API asks for —
+  one password carried into both, the address as the username on each, `smtp.gmail.com:587` and
+  `imap.gmail.com:993` unless `opts.smtp`/`opts.imap` say otherwise. The vendor verifies the
+  credentials afterwards, so what comes back is `pending` and `connected` is true only where the
+  vendor already said `active`: a caller that needs the verdict reads the box again rather than
+  being told a verification that has not happened yet succeeded. A 2xx carrying the vendor's own
+  refusal in the body — "failed to verify mailbox credentials" — is a typed `refused` error and
+  never a mailbox, because read as one it is a box nothing can send from, reported as connected.
+
+  `c:set_warmup(id_or_address, on)` sets the switch on the web app's own API and then **reads the
+  box back**. That is the point of it: a box created through the public API arrives with warm-up
+  off despite the vendor documenting that a connected box warms automatically, and a PUT that
+  answers 200 while the flag stays false is the failure this exists to catch. What comes back is
+  what the vendor now holds, not what it was asked for. An address is resolved to the vendor's id
+  on the internal listing, so an operator passes the address they actually have; anything without
+  an `@` is already an id, because the vendor's prefix has changed before.
+
+  `c:mailbox_internal(id)` and `c:mailbox_id(id_or_address)` are the two reads underneath, exposed
+  because a caller connecting a whole fleet needs both.
+
 ## assay-lua 0.20.4 — 2026-09-04
 
 ### Added

@@ -17,6 +17,10 @@
 --- @quickref c:set_sequence_status(sequence_id, status) -> true | nil, err | "paused" or "active"; c:sequence(id) reads it back
 --- @quickref c:sign_in() -> true | nil, err | Firebase password sign-in for the internal API; memoised, token never returned
 --- @quickref c:mailboxes_internal() -> [box], meta | nil, err | Warm-up state: warmupActivated, daysUntilWarm, heat
+--- @quickref c:mailbox_internal(id) -> box | nil, err | One box with its warm-up state, read from the web app's API
+--- @quickref c:mailbox_id(id_or_address) -> id | nil, err | The vendor's id behind an address; an id passes through
+--- @quickref c:connect_smtp(address, password, opts) -> box | nil, err | Connect a mailbox over SMTP/IMAP; opts.first/last/smtp/imap/daily_limit
+--- @quickref c:set_warmup(id_or_address, on) -> box | nil, err | Switch warm-up on or off and read the vendor's answer back
 --- @quickref c:costs() -> {items, meta} | nil, err | The plan, its monthly limits and the credits left; the vendor names no price at all, and meta.priced says so
 --- @quickref item -> {kind, unit, ref, quantity, unit_price_cents, period, source} | Shared with assay.clayinbox and assay.forge; an absent price or period is a fact the vendor withheld
 --- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
@@ -37,6 +41,13 @@ local FIREBASE_WEB_API_KEY = "AIzaSyCSvPu4xQeXnowWbgt2uRFGwAuMhkbJo-o"
 local BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
 
 local SEQUENCE_STATUS = { paused = true, active = true }
+
+-- Where a mailbox is reached when the caller does not say. Every box the fleet
+-- vendors hand out is Google Workspace and Salesforge stores whatever host it
+-- is given, so this is a default for the common case rather than a fact about
+-- an address. A box anywhere else names its own host.
+local DEFAULT_SMTP = { host = "smtp.gmail.com", port = 587 }
+local DEFAULT_IMAP = { host = "imap.gmail.com", port = 993 }
 
 local PAGE = 100
 local INTERNAL_PAGE = 50
@@ -131,6 +142,26 @@ function M.map_internal_box(raw)
     warmup = warmup,
     raw = raw,
   }
+end
+
+-- What a mailbox is reached at. The vendor's documented mailbox object carries
+-- none of these back, but the create call SENDS them, and a row that echoed
+-- what it was given would carry a plaintext password out through `raw`.
+local TRANSPORT_KEYS = { smtp = true, imap = true, password = true, appPassword = true }
+
+--- A vendor row with anything that could carry a credential removed.
+---
+--- `raw` exists so a caller can read metadata this module does not map, and it
+--- is handed back whole. On the connect path that whole is a response to a body
+--- containing the mailbox password, so the transport blocks come off it here
+--- rather than being trusted not to appear.
+function M.without_transport(raw)
+  if type(raw) ~= "table" then return raw end
+  local out = {}
+  for k, v in pairs(raw) do
+    if not TRANSPORT_KEYS[k] then out[k] = v end
+  end
+  return out
 end
 
 --- A heat score outside 0..100, or not a number at all, is not a reading.
@@ -417,6 +448,129 @@ function M.client(opts)
       if trim(pagination.next) == "" then truncated = false break end
     end
     return out, { truncated = truncated, cap = MAX_PAGES * INTERNAL_PAGE, seen = seen }
+  end
+
+  --- One mailbox as the web app's own API holds it, warm-up state and all.
+  function c:mailbox_internal(id)
+    if not id or trim(id) == "" then return fail("config", nil, "mailbox id required") end
+    local signed, err = self:sign_in()
+    if not signed then return nil, err end
+    local body, call_err = request("GET",
+      internal_base .. "/workspaces/" .. workspace .. "/mailboxes/" .. trim(id),
+      nil, internal_headers())
+    if not body then return nil, call_err end
+    local raw = type(body) == "table" and (type(body.data) == "table" and body.data or body) or nil
+    local row = raw and M.map_internal_box(raw) or nil
+    if not row then
+      return fail("unreadable", nil, "GET mailbox " .. trim(id) .. " answered no readable mailbox")
+    end
+    return row
+  end
+
+  --- The vendor's id behind an address; an id passes straight through.
+  ---
+  --- An operator holds addresses and these endpoints take ids. Resolved on the
+  --- internal listing rather than the public one because both APIs answer the
+  --- same box under the same id and only one of them can also say what its
+  --- warm-up is doing. Anything without an `@` is already an id: the vendor's
+  --- prefix has changed before and matching on one would break silently.
+  function c:mailbox_id(id_or_address)
+    local given = trim(id_or_address)
+    if given == "" then return fail("config", nil, "mailbox id or address required") end
+    if not given:find("@", 1, true) then return given end
+    local wanted = lower(given)
+    local rows, err = self:mailboxes_internal()
+    if not rows then return nil, err end
+    for _, row in ipairs(rows) do
+      if row.address == wanted then return row.provider_ref end
+    end
+    return fail("not_found", nil, "no mailbox " .. wanted .. " in this workspace")
+  end
+
+  --- Connect a mailbox to the sequencer over SMTP and IMAP.
+  ---
+  --- The vendor verifies the credentials asynchronously: what comes back is
+  --- `pending`, and it becomes `active` — or `failed` — seconds later. So this
+  --- returns what the vendor said at the moment it said it, and `connected` is
+  --- true only where the vendor already said `active`. A caller that needs the
+  --- verdict reads the box again rather than being told a verification that has
+  --- not happened yet succeeded.
+  ---
+  --- Warm-up is NOT switched on here, even though the vendor documents that a
+  --- connected box warms automatically. A box created through this API arrives
+  --- with `warmupActivated` false — that is what `set_warmup` is for, and the
+  --- two are separate calls because they are separate APIs and either can fail
+  --- while the other stands.
+  function c:connect_smtp(address, password, opts)
+    opts = opts or {}
+    local addr = lower(address)
+    if addr == "" or not addr:find("@", 1, true) then
+      return fail("config", nil, "connect_smtp needs an email address")
+    end
+    if not password or trim(password) == "" then
+      return fail("config", nil, "connect_smtp needs the mailbox password")
+    end
+    local smtp = opts.smtp or DEFAULT_SMTP
+    local imap = opts.imap or DEFAULT_IMAP
+    -- The vendor requires a first name and rejects a body without one. The
+    -- local part is a poor name and a better one than a refused request.
+    local first = trim(opts.first)
+    local body = {
+      firstName = first ~= "" and first or addr:match("^([^@]+)"),
+      lastName = trim(opts.last),
+      address = addr,
+      smtp = {
+        host = smtp.host, port = smtp.port,
+        username = smtp.username or addr, password = password,
+      },
+      imap = {
+        host = imap.host, port = imap.port,
+        username = imap.username or addr, password = password,
+      },
+    }
+    if type(opts.daily_limit) == "number" then body.dailyEmailLimit = opts.daily_limit end
+    local created, err = request("POST", "/workspaces/" .. workspace .. "/mailboxes", body)
+    if not created then return nil, err end
+    local row = type(created) == "table" and M.map_box(created) or nil
+    if not row then
+      -- The vendor answers 2xx with its own refusal in the body when the
+      -- credentials do not verify. Read as a created mailbox that is a box
+      -- nothing can send from, reported as connected.
+      local said = type(created) == "table" and type(created.message) == "string"
+        and created.message or "no address in the answer"
+      return fail("refused", nil, "connect refused: " .. said)
+    end
+    -- `connected` on a listed box means the workspace holds it. This one has
+    -- not been verified yet, so it says what the vendor said and nothing more.
+    row.connected = row.status == "active"
+    -- The password this call just sent must not come back out of it. The
+    -- vendor does not echo the transport blocks today; a row that carried them
+    -- would put a plaintext credential into every caller that prints `raw`.
+    row.raw = M.without_transport(created)
+    return row
+  end
+
+  --- Switch warm-up on or off, and read the vendor's answer back.
+  ---
+  --- The read-back is the point. A box created through the public API arrives
+  --- with warm-up off despite the vendor's own docs, and a PUT that answers 200
+  --- while the flag stays false is exactly the failure this exists to catch —
+  --- seventeen boxes sat cold for two hours behind one. So the switch is set,
+  --- the box is read AGAIN, and what comes back is what the vendor now holds
+  --- rather than what it was asked for.
+  function c:set_warmup(id_or_address, on)
+    if type(on) ~= "boolean" then
+      return fail("config", nil, "set_warmup needs true or false")
+    end
+    local id, err = self:mailbox_id(id_or_address)
+    if not id then return nil, err end
+    local signed, sign_err = self:sign_in()
+    if not signed then return nil, sign_err end
+    local put, put_err = request("PUT",
+      internal_base .. "/workspaces/" .. workspace .. "/mailboxes/" .. id,
+      { warmupActivated = on }, internal_headers())
+    if not put then return nil, put_err end
+    return self:mailbox_internal(id)
   end
 
   --- The billing cycle the vendor states, in whichever field it states it.
