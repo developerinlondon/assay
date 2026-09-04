@@ -2,6 +2,35 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.6 — 2026-09-04
+
+### Added
+
+- **`assay.forge` and `assay.clayinbox` can provision, not only read.** Both modules could list
+  what a workspace holds and price it, and buy none of it, so every domain and mailbox was still
+  bought by hand.
+
+  Primeforge gains `p:buy_domain(domain, contact)`, `p:create_mailboxes(domain_id, boxes)` and
+  `p:app_password(id)`. `username` is the LOCAL PART and a full address is refused rather than
+  sent: the vendor accepts one silently and stores it doubled — `ada@brand.test@brand.test` — a
+  mailbox nothing can send from, which cannot be renamed and whose deletion tombstones the
+  address for days. A domain purchase charges a stored card and the registry refuses a partial
+  registrant, so the nine contact fields are checked before the call rather than after it.
+
+  Clayinbox gains `c:order(domain, boxes)`, `c:available(domain)`, `c:wallet()` and
+  `c:app_password(id)`. The order carries `import: true`, which is what makes it a BYO order
+  rather than one that also buys the domain, and it wants the FULL address where Primeforge wants
+  the local part — one keystroke apart, so a bare local part is refused, as is an address on
+  another domain.
+
+  Both `app_password` calls answer `not_ready` rather than an empty string. Clayinbox's endpoint
+  returns 200 with an empty record for some minutes after the box goes active, and Primeforge's
+  row carries no password until provisioning finishes; an empty string handed to an SMTP connect
+  is refused for a reason that has nothing to do with the real one.
+
+  Nothing here decides a price. `p:domain_price` and `c:available` are the quotes, and a caller
+  that has not shown one to somebody is buying blind.
+
 ## assay-lua 0.20.5 — 2026-09-04
 
 ### Added
