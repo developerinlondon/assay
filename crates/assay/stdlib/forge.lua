@@ -3,7 +3,7 @@
 --- @category saas
 --- @icon flame
 --- @keywords primeforge, warmforge, forge, mcp, mailbox, warmup, heat score, placement, blacklist, spf, dkim, dmarc, cold email
---- @quickref M.mcp(product, key, tool, args?, opts?) -> payload | nil, err | One JSON-RPC tools/call; product is "primeforge" or "warmforge"
+--- @quickref M.mcp(product, key, tool, args?, opts?) -> payload | nil, err | One JSON-RPC tools/call; product is "primeforge", "warmforge" or "salesforge"
 --- @quickref M.primeforge(opts) -> p | Key via opts.api_key or PRIMEFORGE_API_KEY; opts.workspace_id required
 --- @quickref p:domains() -> [domain], meta | nil, err | Name is sld and tld joined; the vendor sends no whole name
 --- @quickref p:mailboxes(domain_id?) -> [box], meta | nil, err | The vendor caps this at ten rows and cannot page
@@ -27,8 +27,14 @@ local M = {}
 
 local ENDPOINT = "https://mcp.salesforge.ai/mcp"
 
--- One endpoint, two products; the header is the whole of the difference.
-local HEADER = { primeforge = "X-Primeforge-Key", warmforge = "X-Warmforge-Key" }
+-- One endpoint, three products; the header is the whole of the difference.
+-- Salesforge's own module borrows this caller for the tools its REST API has
+-- no route for at all, webhooks among them.
+local HEADER = {
+  primeforge = "X-Primeforge-Key",
+  warmforge = "X-Warmforge-Key",
+  salesforge = "X-Salesforge-Key",
+}
 
 -- Cloudflare answers a client with no browser User-Agent with error 1010.
 local BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
@@ -153,6 +159,12 @@ function M.mcp(product, key, tool, args, opts)
   local text = type(content) == "table" and type(content[1]) == "table" and content[1].text
   if type(text) ~= "string" then
     return fail("unreadable", resp.status, tool .. ": the reply carried no content")
+  end
+  -- A refusal the tool itself made. It arrives at HTTP 200 inside a normal
+  -- result, so read as a payload it becomes a success carrying the word
+  -- "Error" — which is how a caller ends up acting on a call that did nothing.
+  if reply.result.isError then
+    return fail("tool", resp.status, tool .. ": " .. text)
   end
   local parsed_ok, parsed = pcall(json.parse, text)
   if parsed_ok then return parsed end

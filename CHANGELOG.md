@@ -2,6 +2,45 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.7 — 2026-09-04
+
+### Added
+
+- **`assay.salesforge` can register a webhook.** Reading a workspace's webhooks, and creating
+  one, had no route in the module at all — so pointing a sequencer at a receiver stayed a thing
+  done by hand in the web app, and an instance whose registration was simply missing looked
+  exactly like one whose vendor had gone quiet. That is not a hypothetical: a live workspace was
+  found holding zero webhooks, which meant no reply, bounce or unsubscribe event had ever reached
+  its receiver.
+
+  `c:webhooks()` lists them, `c:webhook(id)` reads one, and `c:create_webhook{ url, event }`
+  registers one. Two things about the vendor are worth knowing before calling them. **A webhook
+  subscribes to exactly one event**, so replies and bounces and unsubscribes are three
+  registrations rather than one with three types. And **the signing secret comes back once, from
+  the create, and from nothing else** — a read never carries it, so a caller that does not store
+  it at creation can never verify a delivery afterwards.
+
+  `c:webhooks()` answers rows and a `meta` like every other list here. The tool caps at ten and
+  ignores `limit` and `offset` — the same shape `assay.forge` already handles for Primeforge — so
+  a full window reads as **truncated** rather than as a complete list that happens to be ten
+  long, and a workspace past ten does not lose rows in silence. A `url` or an `event` that is not
+  a string is refused where it was typed, because `tostring` on a table sends the vendor
+  `table: 0x…` as an event name and its refusal arrives a network hop later in words nobody can
+  act on.
+
+  These three ride the MCP endpoint rather than the REST API the rest of the module uses, because
+  the REST API has no webhooks route at any version: it answers 404. `assay.forge`'s JSON-RPC
+  caller already spoke to that endpoint, so it gained the Salesforge key header rather than a
+  second copy of the envelope handling.
+
+### Fixed
+
+- **A tool that refuses now reads as an error.** The MCP endpoint reports a tool's own refusal
+  inside an ordinary HTTP 200 result, flagged only by `isError`. `assay.forge`'s caller did not
+  look at that flag, so a refusal came back as a successful payload whose text happened to begin
+  "Error:" — and a caller acted on a call that had done nothing. It is a typed `tool` error now,
+  carrying the vendor's message.
+
 ## assay-lua 0.20.6 — 2026-09-04
 
 ### Added

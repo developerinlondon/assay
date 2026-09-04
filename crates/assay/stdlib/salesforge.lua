@@ -21,13 +21,20 @@
 --- @quickref c:mailbox_id(id_or_address) -> id | nil, err | The vendor's id behind an address; an id passes through
 --- @quickref c:connect_smtp(address, password, opts) -> box | nil, err | Connect a mailbox over SMTP/IMAP; opts.first/last/smtp/imap/daily_limit
 --- @quickref c:set_warmup(id_or_address, on) -> box | nil, err | Switch warm-up on or off and read the vendor's answer back
+--- @quickref c:webhooks() -> [webhook], meta | nil, err | Webhooks; the vendor caps this at ten rows and cannot page
+--- @quickref c:webhook(id) -> webhook | nil, err | One webhook; the signing secret is NOT returned after creation
+--- @quickref c:create_webhook(spec) -> webhook | nil, err | spec.url and spec.event; the signingSecret comes back once and only here
+--- @quickref webhook events -> one per hook | The vendor subscribes a hook to exactly ONE event; several events means several hooks
 --- @quickref c:costs() -> {items, meta} | nil, err | The plan, its monthly limits and the credits left; the vendor names no price at all, and meta.priced says so
 --- @quickref item -> {kind, unit, ref, quantity, unit_price_cents, period, source} | Shared with assay.clayinbox and assay.forge; an absent price or period is a fact the vendor withheld
 --- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
 
 local cost = require("assay.vendor_cost")
+local forge = require("assay.forge")
 
 local M = {}
+
+local WEBHOOK_CAP = 10
 
 local PUBLIC_BASE = "https://api.salesforge.ai/public/v2"
 local INTERNAL_BASE = "https://api.salesforge.ai"
@@ -601,6 +608,67 @@ function M.client(opts)
   --- no price on the plan it says you are on. So the plan item carries no
   --- `unit_price_cents` and `meta.priced` is false outright. A caller that read
   --- the absent price as free would put the sequencer's cost at nothing.
+  -- Webhooks live only on the vendor's MCP endpoint: its public REST API
+  -- answers 404 for /webhooks at every version. So these three borrow
+  -- assay.forge's JSON-RPC caller rather than this module's REST one.
+  local function hook_call(tool, args)
+    return forge.mcp("salesforge", api_key, tool, args, { base_url = opts.mcp_base_url })
+  end
+
+  --- Every webhook the workspace holds, and whether that is all of them.
+  ---
+  --- The tool answers ten rows and offers no way to ask for an eleventh: probed
+  --- live, `limit` and `offset` are ignored. A vendor answering exactly its cap
+  --- has told the caller nothing about what lies past it, so that reads as
+  --- truncated rather than as a complete list that happens to be ten long.
+  function c:webhooks()
+    local payload, err = hook_call("list_webhooks", { workspaceId = workspace })
+    if payload == nil then return nil, err end
+    local rows = type(payload.data) == "table" and payload.data or {}
+    return rows, { truncated = #rows == WEBHOOK_CAP, cap = WEBHOOK_CAP, seen = #rows }
+  end
+
+  --- One webhook by id. The signing secret is not among the fields: the vendor
+  --- shows it once, at creation, and never again.
+  function c:webhook(id)
+    if not id or trim(id) == "" then return fail("config", nil, "webhook needs an id") end
+    return hook_call("get_webhook", { workspaceId = workspace, webhookId = trim(id) })
+  end
+
+  --- Register one webhook, for ONE event.
+  ---
+  --- The vendor subscribes a hook to a single event type, so a caller wanting
+  --- replies and bounces and unsubscribes creates three. The reply carries a
+  --- `signingSecret` that is never readable again; a caller that does not store
+  --- it here cannot verify a delivery later.
+  function c:create_webhook(spec)
+    spec = spec or {}
+    if spec.url ~= nil and type(spec.url) ~= "string" then
+      return fail("config", nil, "create_webhook url must be a string")
+    end
+    local url = trim(spec.url)
+    if url == "" then return fail("config", nil, "create_webhook needs a url") end
+    local raw_event = spec.event or spec.type
+    -- Typed rather than coerced: `tostring` on a table sends the vendor
+    -- "table: 0x…" as an event name, which it refuses in words nobody can act
+    -- on, several seconds and one network hop away from the mistake.
+    if raw_event ~= nil and type(raw_event) ~= "string" then
+      return fail("config", nil, "create_webhook event must be a string")
+    end
+    local event = trim(raw_event)
+    if event == "" then return fail("config", nil, "create_webhook needs an event") end
+    local args = {
+      workspaceId = workspace,
+      name = trim(spec.name) ~= "" and trim(spec.name) or (event .. " -> " .. url),
+      url = url,
+      type = event,
+    }
+    if spec.sequence_id and trim(spec.sequence_id) ~= "" then
+      args.sequenceId = trim(spec.sequence_id)
+    end
+    return hook_call("create_webhook", args)
+  end
+
   function c:costs()
     local signed, err = self:sign_in()
     if not signed then return nil, err end
