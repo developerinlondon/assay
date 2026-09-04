@@ -2,6 +2,25 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.2 — 2026-09-04
+
+### Added
+
+- **`assay.salesforge` can set a sequence's mailbox rotation and its status.** The two write calls
+  the sequencer seam needs and 0.20.1 left out. Without them the caller has to keep the vendor's
+  host name and its own HTTP client, which is the coupling these modules exist to remove.
+
+  `c:set_rotation(sequence_id, mailbox_ids)` replaces which mailboxes a sequence sends from, so a
+  caller taking one domain out of the rotation sends back the ids it means to keep.
+  `c:set_sequence_status(sequence_id, status)` takes `"paused"` or `"active"`. Both answer `(true)`
+  or `(nil, err)` like `c:enrol` and `c:dnc`, and `c:sequence(id)` already reads both back.
+
+  Three things are refused before a request is made rather than after the vendor rejects one: an
+  empty rotation, because an empty Lua table encodes as a JSON object and a sequence with no
+  mailboxes has nothing to send from; a blank sequence id, which would address the workspace
+  itself; and any status outside the two the vendor accepts, so a typo reads as a config error the
+  caller can act on instead of a 400 it has to interpret.
+
 ## assay-lua 0.20.1 — 2026-09-04
 
 ### Added
