@@ -29,6 +29,9 @@ use crate::error::{Result, VaultError};
 pub enum SealingMethod {
     /// Phase-1 placeholder. Blob IS the raw 32 bytes. WARN-logged.
     Plaintext,
+    /// KEK sealed with a 32-byte key supplied by the environment, so a
+    /// database dump carries ciphertext rather than the key itself.
+    EnvKey,
     /// Shamir Secret Sharing — KEK split into N shares; threshold K
     /// shares reconstruct on unseal. Phase 2 default for non-cloud.
     Shamir { threshold: u8, shares_count: u8 },
@@ -49,6 +52,7 @@ impl SealingMethod {
     pub fn as_column(&self) -> &'static str {
         match self {
             Self::Plaintext => "plaintext",
+            Self::EnvKey => crate::crypto::env_seal::METHOD_ENV,
             Self::Shamir { .. } => "shamir",
             Self::KmsAws { .. } => "kms-aws",
             Self::KmsGcp { .. } => "kms-gcp",
@@ -58,6 +62,7 @@ impl SealingMethod {
     pub fn parse(s: &str) -> Result<Self> {
         match s {
             "plaintext" => Ok(Self::Plaintext),
+            crate::crypto::env_seal::METHOD_ENV => Ok(Self::EnvKey),
             // Shamir + KMS variants need their parameters from
             // surrounding columns (share_threshold, share_count, KMS
             // config from engine.toml). The store layer hands the

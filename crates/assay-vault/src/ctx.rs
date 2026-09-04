@@ -123,9 +123,15 @@ impl VaultCtx {
     /// after `crypto::kek_store::load_or_init_*` returns. Initialises
     /// the seal state to `unsealed` with method = Plaintext (Phase-1
     /// shape). For shamir installs use [`Self::with_sealed_shamir`].
-    pub fn with_kek(mut self, kek: KekHandle) -> Self {
-        let seal_state =
-            SealState::unsealed(SealingMethod::Plaintext, kek.kid().to_string(), kek.clone());
+    pub fn with_kek(self, kek: KekHandle) -> Self {
+        self.with_kek_method(kek, SealingMethod::Plaintext)
+    }
+
+    /// As [`Self::with_kek`], but records how the KEK is sealed at rest
+    /// so `/sys/seal-status` reports what the store actually holds
+    /// rather than always claiming plaintext.
+    pub fn with_kek_method(mut self, kek: KekHandle, method: SealingMethod) -> Self {
+        let seal_state = SealState::unsealed(method, kek.kid().to_string(), kek.clone());
         self.kek = kek;
         self.seal_state = seal_state;
         self

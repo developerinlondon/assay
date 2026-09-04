@@ -43,6 +43,8 @@ pub mod config;
 pub mod embedded;
 pub mod engine_api;
 pub mod init;
+#[cfg(all(feature = "backend-postgres", feature = "backend-sqlite"))]
+pub mod migrate;
 pub mod server;
 pub mod state;
 
@@ -69,6 +71,25 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
     server::bind_and_serve(&bind_addr, engine.router).await
 }
 
+/// The seal key for the vault's master KEK, from the environment.
+/// A malformed value fails boot rather than quietly leaving the vault
+/// unsealed at rest.
+#[cfg(feature = "vault")]
+fn vault_seal_key() -> anyhow::Result<Option<assay_vault::crypto::env_seal::SealKey>> {
+    assay_vault::crypto::env_seal::SealKey::from_env()
+        .map_err(|e| anyhow::anyhow!("read {}: {e}", assay_vault::crypto::env_seal::ENV_VAR))
+}
+
+#[cfg(feature = "vault")]
+fn seal_method(
+    seal: &Option<assay_vault::crypto::env_seal::SealKey>,
+) -> assay_vault::crypto::SealingMethod {
+    match seal {
+        Some(_) => assay_vault::crypto::SealingMethod::EnvKey,
+        None => assay_vault::crypto::SealingMethod::Plaintext,
+    }
+}
+
 /// Build the vault context iff the runtime `engine.modules.vault.enabled`
 /// row is TRUE. Loads the master KEK from `vault.kek_metadata` (or seeds
 /// a fresh one on first boot) and composes the per-feature stores
@@ -81,14 +102,15 @@ async fn build_vault_ctx_pg(
     if !modules.iter().any(|m| m == "vault") {
         return Ok(None);
     }
-    let kek = assay_vault::crypto::kek_store::load_or_init_postgres(pool)
+    let seal = vault_seal_key()?;
+    let kek = assay_vault::crypto::kek_store::load_or_init_postgres_sealed(pool, seal.as_ref())
         .await
         .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (pg): {e}"))?;
     // The `vault` umbrella feature on assay-vault implies vault-kv +
     // vault-transit, so the with_* methods are unconditionally
     // available here.
     let mut ctx = assay_vault::VaultCtx::new()
-        .with_kek(kek)
+        .with_kek_method(kek, seal_method(&seal))
         .with_kv(assay_vault::store::postgres::PgKvStore::new(pool.clone()))
         .with_transit(assay_vault::store::postgres::PgTransitStore::new(
             pool.clone(),
@@ -147,11 +169,12 @@ async fn build_vault_ctx_sqlite(
     if !modules.iter().any(|m| m == "vault") {
         return Ok(None);
     }
-    let kek = assay_vault::crypto::kek_store::load_or_init_sqlite(pool)
+    let seal = vault_seal_key()?;
+    let kek = assay_vault::crypto::kek_store::load_or_init_sqlite_sealed(pool, seal.as_ref())
         .await
         .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (sqlite): {e}"))?;
     let mut ctx = assay_vault::VaultCtx::new()
-        .with_kek(kek)
+        .with_kek_method(kek, seal_method(&seal))
         .with_kv(assay_vault::store::sqlite::SqliteKvStore::new(pool.clone()))
         .with_transit(assay_vault::store::sqlite::SqliteTransitStore::new(
             pool.clone(),

@@ -173,116 +173,6 @@ CREATE INDEX IF NOT EXISTS idx_engine_events_ts_prune ON engine.events(ts);
 
 "#;
 
-/// One-shot relocation: moves v0.13.1's prefixed `public.workflow_*`
-/// tables into the `workflow` schema. Idempotent — each step gates on
-/// `to_regclass(public.<old>) IS NOT NULL` so fresh installs and
-/// already-migrated DBs are no-ops.
-///
-/// SCHEMA above already created empty `workflow.*` tables; we DROP
-/// them with CASCADE here before ALTER TABLE … SET SCHEMA so the move
-/// has somewhere to land. RESTRICT would fail on the FKs between
-/// workflow.events / .activities / .timers / .signals / .snapshots
-/// and workflow.workflows.
-const V0_13_2_RELOCATION_SQL: &str = r#"
-DO $$
-DECLARE
-    has_old BOOLEAN;
-BEGIN
-    -- Each table: if the legacy public.<old> exists, drop the empty
-    -- schema-qualified twin (created above by SCHEMA) and move the
-    -- legacy table into its new home.
-
-    -- workflows
-    SELECT to_regclass('public.workflows') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS workflow.workflows CASCADE;
-        ALTER TABLE public.workflows SET SCHEMA workflow;
-    END IF;
-
-    -- workflow_events → workflow.events
-    SELECT to_regclass('public.workflow_events') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS workflow.events CASCADE;
-        ALTER TABLE public.workflow_events SET SCHEMA workflow;
-        ALTER TABLE workflow.workflow_events RENAME TO events;
-    END IF;
-
-    -- workflow_activities → workflow.activities
-    SELECT to_regclass('public.workflow_activities') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS workflow.activities CASCADE;
-        ALTER TABLE public.workflow_activities SET SCHEMA workflow;
-        ALTER TABLE workflow.workflow_activities RENAME TO activities;
-    END IF;
-
-    -- workflow_timers → workflow.timers
-    SELECT to_regclass('public.workflow_timers') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS workflow.timers CASCADE;
-        ALTER TABLE public.workflow_timers SET SCHEMA workflow;
-        ALTER TABLE workflow.workflow_timers RENAME TO timers;
-    END IF;
-
-    -- workflow_signals → workflow.signals
-    SELECT to_regclass('public.workflow_signals') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS workflow.signals CASCADE;
-        ALTER TABLE public.workflow_signals SET SCHEMA workflow;
-        ALTER TABLE workflow.workflow_signals RENAME TO signals;
-    END IF;
-
-    -- workflow_snapshots → workflow.snapshots
-    SELECT to_regclass('public.workflow_snapshots') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS workflow.snapshots CASCADE;
-        ALTER TABLE public.workflow_snapshots SET SCHEMA workflow;
-        ALTER TABLE workflow.workflow_snapshots RENAME TO snapshots;
-    END IF;
-
-    -- workflow_schedules → workflow.schedules
-    SELECT to_regclass('public.workflow_schedules') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS workflow.schedules CASCADE;
-        ALTER TABLE public.workflow_schedules SET SCHEMA workflow;
-        ALTER TABLE workflow.workflow_schedules RENAME TO schedules;
-    END IF;
-
-    -- workflow_workers → workflow.workers
-    SELECT to_regclass('public.workflow_workers') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS workflow.workers CASCADE;
-        ALTER TABLE public.workflow_workers SET SCHEMA workflow;
-        ALTER TABLE workflow.workflow_workers RENAME TO workers;
-    END IF;
-
-    -- namespaces → workflow.namespaces
-    SELECT to_regclass('public.namespaces') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS workflow.namespaces CASCADE;
-        ALTER TABLE public.namespaces SET SCHEMA workflow;
-    END IF;
-
-    -- public.api_keys: retired in plan-15 slice 3 (workflow REST API
-    -- auth moved to the auth module — see CHANGELOG). Drop any
-    -- orphaned legacy table so an upgraded v0.13.1 install doesn't
-    -- carry it forward.
-    SELECT to_regclass('public.api_keys') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE public.api_keys CASCADE;
-    END IF;
-
-    -- engine_events → engine.events (notification outbox; preserves the
-    -- v0.13.1 publish-on-commit guarantee since the new INSERT into
-    -- engine.events sits in the same transaction as the pg_notify call).
-    SELECT to_regclass('public.engine_events') IS NOT NULL INTO has_old;
-    IF has_old THEN
-        DROP TABLE IF EXISTS engine.events CASCADE;
-        ALTER TABLE public.engine_events SET SCHEMA engine;
-        ALTER TABLE engine.engine_events RENAME TO events;
-    END IF;
-END
-$$;
-"#;
 
 /// Split a Postgres DDL script into individual statements ready for `sqlx::query`.
 ///
@@ -342,20 +232,18 @@ impl PostgresStore {
     }
 
     async fn migrate(&self) -> Result<()> {
-        // Apply the base schema (tables + indexes) statement-by-statement.
-        // This creates the workflow + engine schemas and the v0.13.2
-        // schema-qualified tables. On a fresh install this is the only
-        // step that runs; on an upgrade from v0.13.1 the empty new
-        // tables are dropped + replaced by the legacy public.* tables
-        // in the relocation block below.
+        assay_domain::engine::retry_ddl(3, || self.migrate_once()).await
+    }
+
+    async fn migrate_once(&self) -> Result<()> {
+        // One advisory-locked transaction so concurrent first boots
+        // serialise instead of racing the catalog inserts.
+        let mut tx = self.pool.begin().await?;
+        assay_domain::engine::acquire_schema_lock(&mut tx).await?;
         for statement in sanitise_schema(SCHEMA) {
-            sqlx::query(&statement).execute(&self.pool).await?;
+            sqlx::query(&statement).execute(&mut *tx).await?;
         }
-        // v0.13.1 → v0.13.2 relocation. Idempotent: on fresh installs
-        // the public.* tables don't exist and every branch is a no-op.
-        sqlx::raw_sql(V0_13_2_RELOCATION_SQL)
-            .execute(&self.pool)
-            .await?;
+        super::relocation::run(&mut tx).await?;
         // Drop the v0.13.0 LISTEN/NOTIFY triggers if they still exist on
         // the target database. The Rust-managed CDC outbox in
         // assay_domain::events is the replacement; leaving stale
@@ -371,16 +259,17 @@ impl PostgresStore {
             DROP FUNCTION IF EXISTS assay_notify_task();
             "#,
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
         sqlx::query("ALTER TABLE workflow.events ADD COLUMN IF NOT EXISTS activity_id BIGINT")
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_wf_events_activity ON workflow.events(activity_id)",
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
         self.backfill_event_activity_ids().await?;
         Ok(())
     }

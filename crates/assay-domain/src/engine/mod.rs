@@ -28,6 +28,73 @@ pub mod sqlite;
 #[cfg(feature = "backend-sqlite")]
 pub use sqlite::SqliteEngineSchema;
 
+/// Advisory-lock id held by every Postgres schema migration here.
+///
+/// `CREATE ... IF NOT EXISTS` is not atomic in Postgres: the existence
+/// check precedes the catalog insert, so concurrent boots both pass the
+/// check and one loses on `pg_namespace_nspname_index`. Modules share
+/// one id because they share the `CREATE SCHEMA` statements.
+#[cfg(feature = "backend-postgres")]
+pub const SCHEMA_MIGRATION_LOCK: i64 = 0x6173_7361_795f_656e;
+
+/// Take [`SCHEMA_MIGRATION_LOCK`] for the rest of `conn`'s transaction.
+/// Transaction-scoped, so commit, rollback and a dropped connection all
+/// release it. Callers must run their DDL on the same transaction.
+#[cfg(feature = "backend-postgres")]
+pub async fn acquire_schema_lock(conn: &mut sqlx::PgConnection) -> sqlx::Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(SCHEMA_MIGRATION_LOCK)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// Postgres codes for "this object was created while I was creating it":
+/// unique violation on a catalog index, duplicate table, duplicate object.
+#[cfg(feature = "backend-postgres")]
+const DDL_CONFLICT_CODES: &[&str] = &["23505", "42P07", "42710"];
+
+/// Whether `err` is Postgres refusing DDL because something else won the
+/// same `CREATE ... IF NOT EXISTS`.
+#[cfg(feature = "backend-postgres")]
+pub fn is_ddl_conflict(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<sqlx::Error>()
+            .and_then(|e| e.as_database_error())
+            .and_then(|db| db.code())
+            .is_some_and(|code| DDL_CONFLICT_CODES.contains(&code.as_ref()))
+    })
+}
+
+/// Run a schema migration, retrying when a concurrent one beat it to an
+/// object. [`acquire_schema_lock`] is the real defence; this covers
+/// callers that reach the catalog without it. A conflict aborts the
+/// whole transaction, so the retry re-runs the closure from the top.
+#[cfg(feature = "backend-postgres")]
+pub async fn retry_ddl<F, Fut, T>(attempts: usize, mut migrate: F) -> anyhow::Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let mut last: Option<anyhow::Error> = None;
+    for attempt in 1..=attempts.max(1) {
+        match migrate().await {
+            Ok(value) => return Ok(value),
+            Err(err) if is_ddl_conflict(&err) && attempt < attempts => {
+                tracing::warn!(
+                    attempt,
+                    error = %err,
+                    "another engine created this object first; retrying schema setup"
+                );
+                last = Some(err);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Err(last.expect("the loop runs at least once"))
+}
+
 /// A row from the `engine.modules` table — the boot manifest.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleRecord {

@@ -1,6 +1,6 @@
 [package]
 name = "assay-auth"
-version = "0.6.2"
+version = "0.6.3"
 categories = ["authentication", "cryptography", "asynchronous"]
 edition = "2024"
 keywords = ["oidc", "zanzibar", "passkey", "biscuit", "auth"]
@@ -50,11 +50,11 @@ auth-jwt = ["dep:jsonwebtoken", "dep:ed25519-dalek", "dep:rand_core_06"]
 auth-session = []
 auth-zanzibar = []
 
-backend-postgres = ["dep:sqlx", "sqlx/postgres"]
+backend-postgres = ["dep:sqlx", "sqlx/postgres", "assay-domain/backend-postgres"]
 backend-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 
 [dependencies]
-assay-domain = { path = "../assay-domain", version = "0.2" }
+assay-domain = { path = "../assay-domain", version = "0.2.5" }
 
 # Shared primitives — small, used unconditionally
 anyhow = "1"

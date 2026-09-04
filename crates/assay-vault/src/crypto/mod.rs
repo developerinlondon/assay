@@ -12,6 +12,7 @@
 //! which matters for transit's deterministic per-version nonces.
 
 pub mod aead;
+pub mod env_seal;
 pub mod kek;
 pub mod seal_state;
 pub mod sealing;
