@@ -2,6 +2,54 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.1 — 2026-09-04
+
+### Added
+
+- **`assay.clayinbox`, `assay.forge` and `assay.salesforge` — the cold-email vendor stack as stdlib
+  modules.** The logic had been living twice: once in an ops script that reads OpenBao itself, and
+  once in a TypeScript adapter inside one product. Neither is reachable from an agent that bakes
+  assay modules as tools. All three take their credentials from the caller (`opts`, or a documented
+  environment variable) and read no secret store, so the same module serves a script, a service and
+  an agent.
+
+  `assay.clayinbox` lists the domains a workspace holds and the mailboxes on them, paged to the
+  last row. `assay.forge` speaks the shared forge MCP endpoint for both Primeforge and Warmforge —
+  domains, mailboxes, warm-up position, placement tests and the DNS health report. `assay.salesforge`
+  covers the public REST API (workspaces, mailboxes, sequences, contacts, do-not-contact, replies)
+  and the web app's own Firebase-authenticated API, which is the only place the warm-up state
+  appears.
+
+  Six vendor behaviours are pinned by tests because each one has already cost someone a wrong
+  answer. A Primeforge domain arrives as `sld` and `tld` and never as a whole name, so a reader
+  looking for one finds no domains at all. A Warmforge health check the report omits is `unknown`
+  and never `invalid`, because reading an omitted check as a failure tells an operator a record
+  they published is missing. Warm-up length is the sum of the days done and the days left rather
+  than a constant kept in step with the vendor's. A placement row carrying no folder counts is a
+  test nobody ran, not a placement of zero. The Salesforge public key rides bare in `Authorization`
+  — an apiKey scheme, not a bearer one — and a workspace with no sequences answers with a JSON
+  object where a list belongs. Auth, rate limiting, the Growth-plan gate and a Cloudflare block page
+  served under an HTTP 200 all read as themselves rather than as an empty fleet.
+
+  Errors are returned, not thrown: every vendor call answers `(result)` or `(nil, err)` where `err`
+  carries `code`, `status` and `message` and prints as its message. The constructors are the
+  exception and throw, matching the rest of the stdlib — a client built without a key or a
+  workspace is a programming error rather than a vendor answer. `raw` on a mapped row is the
+  vendor's own record with credentials removed, since both Clayinbox and Primeforge put a mailbox
+  password on a list row.
+
+  Every list call also answers a second value, `meta = {truncated, cap, seen}`. `truncated` means a
+  cap stopped the walk rather than the vendor running out of rows, so no list can come back short in
+  silence. It matters most on Primeforge, where a domain filter is applied to a ten-row window: an
+  empty result there means either that the domain has no mailboxes or that its mailboxes fall
+  outside the window, and only `meta` tells the two apart.
+
+  One limit is the vendor's rather than the module's: `primeforge_list_mailboxes` accepts
+  `workspaceId` and nothing else, and answers ten rows whatever `limit` and `offset` say — offset 10
+  and offset 20 return the same ten ids. A workspace holding more than ten mailboxes cannot be
+  listed in full through that tool, so `p:mailboxes(domain_id)` filters what the vendor gives rather
+  than sending a filter the tool would ignore.
+
 ## assay-engine 0.5.17 — 2026-09-03
 
 ### Fixed
