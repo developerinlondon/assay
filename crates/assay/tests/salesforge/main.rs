@@ -631,23 +631,84 @@ async fn test_a_sequence_status_is_one_of_two_words_and_a_typo_never_leaves_the_
     assert_eq!(server.received_requests().await.unwrap().len(), 3);
 }
 
-/// An empty list encodes as a JSON object rather than an empty array, so it
-/// would reach the vendor malformed. A blank sequence id would address the
-/// workspace itself. Neither leaves this process.
+/// Clearing a rotation is a real instruction, not a malformed one.
+///
+/// Pulling a paused domain's boxes can legitimately leave a sequence with none,
+/// and that is the truthful state — it then cannot send, which is what
+/// `set_sequence_status` is for. The caller must be able to say it rather than
+/// being forced to leave a stale mailbox in the rotation.
+///
+/// The body is the whole point: a bare empty Lua table encodes as `{}`, which
+/// the vendor reads as a malformed object, so the ids ride a table marked as a
+/// JSON array and the wire form is `[]`.
 #[tokio::test]
-async fn test_an_empty_rotation_or_a_blank_id_is_refused_before_any_request() {
+async fn test_an_empty_rotation_clears_it_and_sends_an_array_not_an_object() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path(format!(
+            "/public/v2/workspaces/{WS}/sequences/seq_xa1/mailboxes"
+        )))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        assert.eq(c:set_rotation("seq_xa1", {}), true)
+        "#
+    ))
+    .await
+    .unwrap();
+    let sent = &server.received_requests().await.unwrap()[0];
+    let body = String::from_utf8(sent.body.clone()).unwrap();
+    assert_eq!(
+        body, r#"{"mailboxIds":[]}"#,
+        "empty rotation body was {body}"
+    );
+}
+
+/// The caller's own table must come back unmarked: the array marker rides a
+/// copy, so passing the same list to something else afterwards is unaffected.
+#[tokio::test]
+async fn test_the_array_marker_does_not_touch_the_callers_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path(format!(
+            "/public/v2/workspaces/{WS}/sequences/seq_xa1/mailboxes"
+        )))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local ids = {}
+        assert.eq(c:set_rotation("seq_xa1", ids), true)
+        assert.eq(getmetatable(ids), nil)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A blank sequence id would address the workspace itself, and a non-table is
+/// not a list at all. Neither leaves this process.
+#[tokio::test]
+async fn test_a_blank_id_or_a_non_list_is_refused_before_any_request() {
     let server = MockServer::start().await;
     run_lua(&format!(
         "{}{}",
         client(&server.uri(), ""),
         r#"
-        local ok, err = c:set_rotation("seq_xa1", {})
+        local ok, err = c:set_rotation("", { "mbx_xa1" })
         assert.eq(ok, nil)
         assert.eq(err.code, "config")
-        local ok2, err2 = c:set_rotation("", { "mbx_xa1" })
+        local ok2, err2 = c:set_rotation("seq_xa1", "mbx_xa1")
         assert.eq(ok2, nil)
         assert.eq(err2.code, "config")
-        local ok3, err3 = c:set_rotation("seq_xa1", "mbx_xa1")
+        local ok3, err3 = c:set_rotation("seq_xa1", nil)
         assert.eq(ok3, nil)
         assert.eq(err3.code, "config")
         local ok4, err4 = c:set_sequence_status("", "paused")

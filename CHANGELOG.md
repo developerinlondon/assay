@@ -15,11 +15,17 @@ All notable changes to Assay are documented here.
   `c:set_sequence_status(sequence_id, status)` takes `"paused"` or `"active"`. Both answer `(true)`
   or `(nil, err)` like `c:enrol` and `c:dnc`, and `c:sequence(id)` already reads both back.
 
-  Three things are refused before a request is made rather than after the vendor rejects one: an
-  empty rotation, because an empty Lua table encodes as a JSON object and a sequence with no
-  mailboxes has nothing to send from; a blank sequence id, which would address the workspace
-  itself; and any status outside the two the vendor accepts, so a typo reads as a config error the
-  caller can act on instead of a 400 it has to interpret.
+  An empty rotation is a real instruction rather than an error. Pulling a paused domain's mailboxes
+  can leave a sequence with none, and that is the truthful state — it then cannot send, which is
+  what `c:set_sequence_status` is beside it for. Forcing the caller to keep one stale mailbox in the
+  rotation to express "none" would be worse. The ids are copied onto a table marked
+  `__jsontype = "array"` so an empty list reaches the vendor as `[]`; a bare Lua table would encode
+  as `{}` and be read as a malformed object. The copy keeps the marker off the caller's own table.
+
+  Two things are still refused before a request is made rather than after the vendor rejects one: a
+  blank sequence id, which would address the workspace itself, and any status outside the two the
+  vendor accepts, so a typo reads as a config error the caller can act on instead of a 400 it has to
+  interpret. A `mailbox_ids` that is not a table is refused for the same reason — it is not a list.
 
 ## assay-lua 0.20.1 — 2026-09-04
 
