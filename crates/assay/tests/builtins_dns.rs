@@ -166,13 +166,17 @@ where
 /// One loopback port, bound on both protocols.
 ///
 /// UDP and TCP are independent port spaces, so a port the kernel hands out as
-/// free on one says nothing about the other. Binding UDP first and then
-/// assuming the same number is free on TCP is a race that fails the test
-/// outright when anything already holds that TCP port. The TCP listener is
-/// bound first because it is the half that cannot be moved — the resolver
-/// retries a truncated answer at the address it already used — and UDP is then
-/// bound to the port TCP was given. A number free on one and taken on the other
-/// costs another attempt rather than a failed test.
+/// free on one says nothing about the other. The earlier version bound UDP,
+/// then bound TCP on that same number and unwrapped it, which fails outright
+/// the moment anything holds that TCP port.
+///
+/// The order carries no weight: binding UDP first and retrying the TCP half
+/// would be exactly as correct. Two other things are what make this work. The
+/// first socket stays bound while the second is attempted, so nothing can take
+/// the candidate port in between and the pair is acquired or abandoned as a
+/// unit. And a failed attempt is discarded whole, so each retry asks the kernel
+/// for a fresh candidate rather than going back to a port already known to be
+/// contended.
 async fn bound_on_both() -> (UdpSocket, TcpListener, SocketAddr) {
     const ATTEMPTS: usize = 64;
     for _ in 0..ATTEMPTS {
