@@ -13,6 +13,8 @@
 --- @quickref c:enrol(sequence_id, contact_ids) -> true | nil, err | Assign contacts to a sequence
 --- @quickref c:dnc(addresses) -> true | nil, err | Stop writing to these addresses
 --- @quickref c:reply(mailbox_id, email_id, body) -> true | nil, err | Reply on an existing thread
+--- @quickref c:set_rotation(sequence_id, mailbox_ids) -> true | nil, err | Replace which mailboxes a sequence sends from
+--- @quickref c:set_sequence_status(sequence_id, status) -> true | nil, err | "paused" or "active"; c:sequence(id) reads it back
 --- @quickref c:sign_in() -> true | nil, err | Firebase password sign-in for the internal API; memoised, token never returned
 --- @quickref c:mailboxes_internal() -> [box], meta | nil, err | Warm-up state: warmupActivated, daysUntilWarm, heat
 --- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
@@ -29,6 +31,8 @@ local FIREBASE_WEB_API_KEY = "AIzaSyCSvPu4xQeXnowWbgt2uRFGwAuMhkbJo-o"
 
 -- Cloudflare answers a client with no browser User-Agent with error 1010.
 local BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
+
+local SEQUENCE_STATUS = { paused = true, active = true }
 
 local PAGE = 100
 local INTERNAL_PAGE = 50
@@ -253,6 +257,39 @@ function M.client(opts)
       return fail("config", nil, "dnc needs at least one address")
     end
     return request("POST", "/workspaces/" .. workspace .. "/dnc/bulk", { dncs = addresses })
+  end
+
+  -- The rotation is replaced wholesale rather than added to, so a caller taking
+  -- one domain out sends back the ids it means to keep. An empty list is
+  -- refused rather than sent: it would encode as a JSON object, and a sequence
+  -- with no mailboxes has nothing to send from.
+  function c:set_rotation(sequence_id, mailbox_ids)
+    if not sequence_id or trim(sequence_id) == "" then
+      return fail("config", nil, "set_rotation needs a sequence id")
+    end
+    if type(mailbox_ids) ~= "table" or #mailbox_ids == 0 then
+      return fail("config", nil, "set_rotation needs at least one mailbox id")
+    end
+    return request("PUT",
+      "/workspaces/" .. workspace .. "/sequences/" .. trim(sequence_id) .. "/mailboxes",
+      { mailboxIds = mailbox_ids })
+  end
+
+  -- The vendor takes two statuses and answers 400 for anything else. Checking
+  -- here makes a typo a config error the caller can read rather than a rejected
+  -- request it has to interpret.
+  function c:set_sequence_status(sequence_id, status)
+    if not sequence_id or trim(sequence_id) == "" then
+      return fail("config", nil, "set_sequence_status needs a sequence id")
+    end
+    local wanted = lower(status)
+    if not SEQUENCE_STATUS[wanted] then
+      return fail("config", nil,
+        "sequence status must be \"paused\" or \"active\", not " .. tostring(status))
+    end
+    return request("PUT",
+      "/workspaces/" .. workspace .. "/sequences/" .. trim(sequence_id) .. "/status",
+      { status = wanted })
   end
 
   function c:reply(mailbox_id, email_id, body)

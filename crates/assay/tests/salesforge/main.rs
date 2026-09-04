@@ -560,3 +560,105 @@ async fn test_every_quickref_parses_and_the_env_vars_are_among_them() {
         );
     }
 }
+
+/// The rotation is replaced wholesale: a caller taking one domain out sends
+/// back the ids it means to keep, under the vendor's own `mailboxIds` key.
+#[tokio::test]
+async fn test_setting_a_rotation_sends_the_vendors_own_key_and_accepts_a_204() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(header("authorization", "k"))
+        .and(path(format!(
+            "/public/v2/workspaces/{WS}/sequences/seq_xa1/mailboxes"
+        )))
+        .and(body_string_contains("mailboxIds"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        assert.eq(c:set_rotation("seq_xa1", { "mbx_xa1", "mbx_xa2" }), true)
+        "#
+    ))
+    .await
+    .unwrap();
+    let sent = &server.received_requests().await.unwrap()[0];
+    let body = String::from_utf8(sent.body.clone()).unwrap();
+    assert_eq!(
+        body, r#"{"mailboxIds":["mbx_xa1","mbx_xa2"]}"#,
+        "rotation body was {body}"
+    );
+}
+
+/// The vendor takes two statuses. Constraining them here makes a typo a config
+/// error the caller can read rather than a 400 it has to interpret.
+#[tokio::test]
+async fn test_a_sequence_status_is_one_of_two_words_and_a_typo_never_leaves_the_process() {
+    let server = MockServer::start().await;
+    for state in ["paused", "active"] {
+        Mock::given(method("PUT"))
+            .and(header("authorization", "k"))
+            .and(path(format!(
+                "/public/v2/workspaces/{WS}/sequences/seq_xa1/status"
+            )))
+            .and(body_string_contains(state))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+    }
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        assert.eq(c:set_sequence_status("seq_xa1", "paused"), true)
+        assert.eq(c:set_sequence_status("seq_xa1", "active"), true)
+        -- Case is the caller's business, not the vendor's.
+        assert.eq(c:set_sequence_status("seq_xa1", "PAUSED"), true)
+        local ok, err = c:set_sequence_status("seq_xa1", "pasued")
+        assert.eq(ok, nil)
+        assert.eq(err.code, "config")
+        assert.contains(err.message, "paused")
+        local ok2, err2 = c:set_sequence_status("seq_xa1", nil)
+        assert.eq(ok2, nil)
+        assert.eq(err2.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+    // Three good calls reached the vendor; neither bad one did.
+    assert_eq!(server.received_requests().await.unwrap().len(), 3);
+}
+
+/// An empty list encodes as a JSON object rather than an empty array, so it
+/// would reach the vendor malformed. A blank sequence id would address the
+/// workspace itself. Neither leaves this process.
+#[tokio::test]
+async fn test_an_empty_rotation_or_a_blank_id_is_refused_before_any_request() {
+    let server = MockServer::start().await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local ok, err = c:set_rotation("seq_xa1", {})
+        assert.eq(ok, nil)
+        assert.eq(err.code, "config")
+        local ok2, err2 = c:set_rotation("", { "mbx_xa1" })
+        assert.eq(ok2, nil)
+        assert.eq(err2.code, "config")
+        local ok3, err3 = c:set_rotation("seq_xa1", "mbx_xa1")
+        assert.eq(ok3, nil)
+        assert.eq(err3.code, "config")
+        local ok4, err4 = c:set_sequence_status("", "paused")
+        assert.eq(ok4, nil)
+        assert.eq(err4.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "a malformed sequence write reached the vendor"
+    );
+}
