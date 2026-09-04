@@ -275,3 +275,51 @@ async fn test_a_client_refuses_to_build_without_a_key() {
             .to_string();
     assert!(err.contains("api key required"), "gave {err}");
 }
+
+/// A walk that stopped because the vendor ran out of rows has the whole set.
+#[tokio::test]
+async fn test_a_walk_the_vendor_ended_is_not_truncated() {
+    let server = MockServer::start().await;
+    mount(&server, "/mailbox", "mailboxes", json!([mailbox_row()]), 1).await;
+    run_lua(&script(
+        &server.uri(),
+        r#"
+        local rows, meta = c:mailboxes()
+        assert.eq(#rows, 1)
+        assert.eq(meta.truncated, false)
+        assert.eq(meta.cap, 5000)
+        assert.eq(meta.seen, 1)
+        "#,
+    ))
+    .await
+    .unwrap();
+}
+
+/// A vendor that keeps answering with a full page and a `total_count` it never
+/// reaches walks into the page cap. The list is then short, and saying so is
+/// the difference between a partial fleet and a fleet that lost rows.
+#[tokio::test]
+async fn test_a_walk_stopped_by_the_page_cap_says_it_is_truncated() {
+    let server = MockServer::start().await;
+    let full: Vec<serde_json::Value> = (0..100)
+        .map(|n| json!({ "id": format!("mbx_x{n}"), "username": format!("p{n}@example.test") }))
+        .collect();
+    // Every page is full and the total is never reached, so only the cap stops it.
+    Mock::given(method("GET"))
+        .and(path("/mailbox"))
+        .respond_with(envelope("mailboxes", json!(full), 999_999))
+        .mount(&server)
+        .await;
+    run_lua(&script(
+        &server.uri(),
+        r#"
+        local rows, meta = c:mailboxes()
+        assert.eq(meta.truncated, true)
+        assert.eq(meta.cap, 5000)
+        assert.eq(meta.seen, 5000)
+        assert.eq(#rows, 5000)
+        "#,
+    ))
+    .await
+    .unwrap();
+}

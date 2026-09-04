@@ -4,8 +4,9 @@
 --- @icon inbox
 --- @keywords clayinbox, mailbox, cold email, domain, dns, spf, dkim, dmarc, deliverability, provisioning
 --- @quickref M.client(opts?) -> c | Key via opts.api_key or CLAYINBOX_API_KEY; opts.base_url overrides the endpoint
---- @quickref c:mailboxes() -> [box] | nil, err | Every mailbox, paged; {address, domain, status, provider, raw}
---- @quickref c:domains() -> [domain] | nil, err | Every domain with the vendor's DNS flags
+--- @quickref c:mailboxes() -> [box], meta | nil, err | Every mailbox, paged; {address, domain, status, provider, raw}
+--- @quickref c:domains() -> [domain], meta | nil, err | Every domain with the vendor's DNS flags
+--- @quickref meta -> {truncated, cap, seen} | On every list call; truncated means a cap stopped the walk and rows may be missing
 
 local M = {}
 
@@ -123,23 +124,30 @@ function M.client(opts)
     return parsed.data
   end
 
+  -- The second return is the walk's own account of itself. `truncated` means
+  -- the page cap stopped the walk rather than the vendor running out of rows,
+  -- so the list is short and the caller is told rather than left to assume it
+  -- has everything.
   local function all(path, key, map)
     local out = {}
+    local seen = 0
+    local truncated = true
     for page = 1, MAX_PAGES do
       local data, err = get(path .. "?limit=" .. PAGE .. "&page=" .. page)
       if not data then return nil, err end
       local rows = type(data[key]) == "table" and data[key] or {}
-      local seen = 0
+      local on_page = 0
       for _, raw in ipairs(rows) do
-        seen = seen + 1
+        on_page = on_page + 1
         local row = map(raw)
         if row then out[#out + 1] = row end
       end
+      seen = seen + on_page
       local total = data.total_count
-      if seen == 0 or seen < PAGE then break end
-      if type(total) == "number" and page * PAGE >= total then break end
+      if on_page == 0 or on_page < PAGE then truncated = false break end
+      if type(total) == "number" and page * PAGE >= total then truncated = false break end
     end
-    return out
+    return out, { truncated = truncated, cap = MAX_PAGES * PAGE, seen = seen }
   end
 
   local c = {}
