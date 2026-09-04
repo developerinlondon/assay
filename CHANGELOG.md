@@ -2,6 +2,54 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.4 — 2026-09-04
+
+### Added
+
+- **`assay.email_triage` reads what a message says about itself.** `M.categorize` buckets by
+  matching a fixed keyword list against the subject and nothing else. Probed on 0.20.2 it misses a
+  keyword anywhere but the subject, and "unsubscribe please" lands in `needs_reply`, which is the
+  opposite of what it is. A reply-reading lane needs a pass that costs nothing and is not a guess,
+  so a message it can read never reaches a model at all.
+
+  `M.signals(msg)` takes `{headers, subject, text, html?}` and answers five independent readings —
+  `auto_reply`, `bounce`, `out_of_office`, `unsubscribe`, `referral` — each `{present, evidence}`
+  where the evidence is the header or the sentence that decided it. None of the five ranks the
+  others: a message can be an away notice that also asks to be left alone, and which of those wins
+  is the caller's policy rather than this module's. Every signal is in the answer whether or not it
+  fired, so `s.bounce.present` reads without a nil check first.
+
+  **Only the sender's own words are searched.** Cold outreach carries an unsubscribe line on every
+  send, and a reply quotes it underneath. Matched there, every reply anyone ever sends reads as
+  somebody asking to be left alone. `M.own_words` cuts at the first quote marker in four languages,
+  and at forty lines regardless. A client that quotes with no marker leaves a header block instead,
+  written in whatever language it runs in; that counts as a quote only where the sender line carries
+  an address and a second header follows it within four lines, so a reply opening "From: our end,
+  this looks fine" keeps everything it went on to say. The two word lists behind that are exported
+  as `M.HEADER_FROM_WORDS` and `M.HEADER_NEXT_WORDS`, and hold what Neutron's own reader holds. A
+  cut that would leave nothing found the whole message rather than a quote — a forward typed out by
+  hand — and keeps it. A bounce is the one exception and reads the whole body, because a delivery
+  report has no quoted reply to cut at.
+
+  **A return date with no year is the next occurrence of it.** Read as this year, a December message
+  naming January lands in the past and the follow-up goes out the same day, into an inbox nobody is
+  reading. A day that is today is today. A date the calendar does not have is no date at all, so "31
+  February" reads as nothing rather than rolling forward to the first of March.
+
+  **`List-Unsubscribe` is noted and never counted.** It is a header put on outbound mail, so a reply
+  quoting the letter carries it back; counted, every reply to a compliant campaign would read as an
+  opt-out. `Precedence: bulk` is reported the same way, beside the verdict rather than as one,
+  because bulk is what a mailing list sets and a person can write from a list.
+
+  English, German, French and Spanish, through `M.fold`: `string.lower` is byte-wise ASCII, so
+  "BÜRO" lowercases to something that never matches "buro". Both cases of every accented letter the
+  phrase lists use are folded, along with the curly apostrophe mail clients substitute silently. The
+  phrase lists are exported, so a caller adding a language extends them rather than forking the
+  reader.
+
+  `M.categorize` and `M.categorize_llm` are untouched and still exported. This is a function beside
+  them, not a replacement.
+
 ## assay-lua 0.20.3 — 2026-09-04
 
 ### Added
