@@ -105,14 +105,13 @@ fn a(address: &str) -> Vec<u8> {
         .collect()
 }
 
-/// A nameserver on loopback. `reply` returning `None` leaves the query
-/// unanswered, which is how the timeout and retry paths are reached.
-async fn nameserver<F>(reply: F) -> SocketAddr
+/// Answer UDP queries on an already-bound socket. `reply` returning `None`
+/// leaves the query unanswered, which is how the timeout and retry paths are
+/// reached.
+fn serve_udp<F>(socket: UdpSocket, reply: F)
 where
     F: Fn(&[u8]) -> Option<Vec<u8>> + Send + 'static,
 {
-    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let addr = socket.local_addr().unwrap();
     tokio::spawn(async move {
         let mut buf = vec![0u8; 4096];
         loop {
@@ -124,16 +123,14 @@ where
             }
         }
     });
-    addr
 }
 
-/// The TCP half of a nameserver, for the truncation retry. Messages here
-/// carry their own two-byte length.
-async fn nameserver_tcp<F>(port: u16, reply: F)
+/// Answer TCP queries on an already-bound listener. Messages here carry their
+/// own two-byte length.
+fn serve_tcp<F>(listener: TcpListener, reply: F)
 where
     F: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
-    let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
     tokio::spawn(async move {
         loop {
             let Ok((mut sock, _)) = listener.accept().await else {
@@ -153,6 +150,56 @@ where
             let _ = sock.write_all(&framed).await;
         }
     });
+}
+
+/// A nameserver on loopback, answering UDP only.
+async fn nameserver<F>(reply: F) -> SocketAddr
+where
+    F: Fn(&[u8]) -> Option<Vec<u8>> + Send + 'static,
+{
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let addr = socket.local_addr().unwrap();
+    serve_udp(socket, reply);
+    addr
+}
+
+/// One loopback port, bound on both protocols.
+///
+/// UDP and TCP are independent port spaces, so a port the kernel hands out as
+/// free on one says nothing about the other. The earlier version bound UDP,
+/// then bound TCP on that same number and unwrapped it, which fails outright
+/// the moment anything holds that TCP port.
+///
+/// The order carries no weight: binding UDP first and retrying the TCP half
+/// would be exactly as correct. Two other things are what make this work. The
+/// first socket stays bound while the second is attempted, so nothing can take
+/// the candidate port in between and the pair is acquired or abandoned as a
+/// unit. And a failed attempt is discarded whole, so each retry asks the kernel
+/// for a fresh candidate rather than going back to a port already known to be
+/// contended.
+async fn bound_on_both() -> (UdpSocket, TcpListener, SocketAddr) {
+    const ATTEMPTS: usize = 64;
+    for _ in 0..ATTEMPTS {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        if let Ok(socket) = UdpSocket::bind(addr).await {
+            return (socket, listener, addr);
+        }
+    }
+    panic!("no loopback port free on both UDP and TCP in {ATTEMPTS} attempts");
+}
+
+/// A nameserver answering both protocols at one address, for the truncation
+/// retry: the UDP half truncates and the TCP half carries the full answer.
+async fn nameserver_both<U, T>(udp_reply: U, tcp_reply: T) -> SocketAddr
+where
+    U: Fn(&[u8]) -> Option<Vec<u8>> + Send + 'static,
+    T: Fn(&[u8]) -> Vec<u8> + Send + 'static,
+{
+    let (socket, listener, addr) = bound_on_both().await;
+    serve_udp(socket, udp_reply);
+    serve_tcp(listener, tcp_reply);
+    addr
 }
 
 #[tokio::test]
@@ -298,13 +345,15 @@ async fn a_dropped_query_is_asked_again() {
 
 #[tokio::test]
 async fn a_truncated_answer_is_asked_again_over_tcp() {
-    let server = nameserver(|q| Some(truncated(q))).await;
     let key = "k".repeat(300);
     let over_tcp = key.clone();
-    nameserver_tcp(server.port(), move |q| {
-        let (head, tail) = over_tcp.split_at(255);
-        answer(q, 0, &[(TYPE_TXT, txt(&[head, tail]))])
-    })
+    let server = nameserver_both(
+        |q| Some(truncated(q)),
+        move |q| {
+            let (head, tail) = over_tcp.split_at(255);
+            answer(q, 0, &[(TYPE_TXT, txt(&[head, tail]))])
+        },
+    )
     .await;
 
     let script = format!(
