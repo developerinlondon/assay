@@ -40,7 +40,9 @@ async fn write_secret(dir: &Path, data_dir: &Path, tag: &str, seal: Option<&str>
 /// Read the one `vault.kek_metadata` row straight off the SQLite file.
 async fn kek_row(data_dir: &Path) -> (String, Vec<u8>) {
     let url = format!("sqlite://{}/vault.db", data_dir.display());
-    let pool = sqlx::SqlitePool::connect(&url).await.expect("open vault.db");
+    let pool = sqlx::SqlitePool::connect(&url)
+        .await
+        .expect("open vault.db");
     let row: (String, Vec<u8>) =
         sqlx::query_as("SELECT sealing_method, sealed_blob FROM kek_metadata LIMIT 1")
             .fetch_one(&pool)
@@ -111,7 +113,10 @@ async fn an_existing_plaintext_store_is_resealed_and_keeps_its_secrets() {
     assert_eq!(method, "plaintext", "precondition: stored in the clear");
 
     let value = read_secret(dir.path(), &data, "reseal", Some(SEAL_KEY_A)).await;
-    assert_eq!(value, SECRET, "secrets written before sealing must still read");
+    assert_eq!(
+        value, SECRET,
+        "secrets written before sealing must still read"
+    );
 
     let (method, blob) = kek_row(&data).await;
     assert_eq!(method, "env-aes-gcm", "the KEK should have been re-sealed");

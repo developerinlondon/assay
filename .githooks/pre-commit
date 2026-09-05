@@ -2,7 +2,7 @@
 # Pre-commit hook:
 #   1. Regenerate README stdlib table when docs/modules/*.md or
 #      stdlib/*.lua entries are added/removed/renamed and verify it's in sync.
-#   2. Enforce that staged Rust files are cleanly formatted (cargo fmt).
+#   2. Enforce that the staged Rust files are cleanly formatted (rustfmt).
 #   3. Enforce that staged dprint-owned files are cleanly formatted.
 #
 # Enable with:
@@ -60,25 +60,64 @@ if echo "$STAGED" | grep -qE '^(docs/modules/|crates/assay/stdlib/)'; then
 fi
 
 # ── 2. cargo fmt enforcement ───────────────────────────────────────────
-if echo "$STAGED" | grep -qE '\.rs$'; then
-    if command -v cargo >/dev/null 2>&1 && [[ -f Cargo.toml ]]; then
-        if ! cargo fmt --all -- --check >/dev/null 2>&1; then
-            echo "pre-commit: cargo fmt check failed." >&2
-            echo "pre-commit: run \`cargo fmt --all\` and re-stage." >&2
-            echo "pre-commit: bypass with \`git commit --no-verify\` if intentional." >&2
-            exit 1
+#
+# The STAGED files only. `cargo fmt --all --check` fails on any dirty file in
+# the workspace, so one unformatted file nobody is touching blocks every commit
+# in the repo until somebody reformats it inside an unrelated change. What a
+# commit is answerable for is what it stages. CI keeps the whole workspace
+# honest.
+STAGED_RS="$(echo "$STAGED" | grep -E '\.rs$' || true)"
+if [[ -n "$STAGED_RS" ]]; then
+    # rustfmt rather than `cargo fmt`: the wrapper has no way to be given a
+    # list of files, and a list of files is the whole point here.
+    if command -v rustfmt >/dev/null 2>&1 && [[ -f Cargo.toml ]]; then
+        # Deleted-then-recreated paths and renames are already filtered by
+        # --diff-filter=ACMR above, but a file staged for deletion in the same
+        # commit would still be listed by an earlier filter — check what exists.
+        EXISTING=()
+        while IFS= read -r f; do
+            [[ -f "$f" ]] && EXISTING+=("$f")
+        done <<< "$STAGED_RS"
+        if ((${#EXISTING[@]} > 0)); then
+            if ! rustfmt --edition 2024 --check "${EXISTING[@]}" >/dev/null 2>&1; then
+                echo "pre-commit: these staged files are not formatted:" >&2
+                # `|| true`: both rustfmt and the grep exit non-zero here,
+                # and under `set -e` that would end the hook before it says
+                # what to do about it.
+                rustfmt --edition 2024 --check "${EXISTING[@]}" 2>&1 \
+                    | grep -E '^Diff in' | sed 's/^/pre-commit:   /' >&2 || true
+                echo "pre-commit: run \`cargo fmt --all\` and re-stage." >&2
+                echo "pre-commit: bypass with \`git commit --no-verify\` if intentional." >&2
+                exit 1
+            fi
         fi
     fi
 fi
 
 # ── 3. dprint enforcement ──────────────────────────────────────────────
-if echo "$STAGED" | grep -qE '\.(md|ya?ml|json|toml|lua)$'; then
+#
+# Staged files only, for the same reason as above: a bare `dprint check` reads
+# the whole workspace, and main carries dirty files that no commit here is
+# answerable for.
+STAGED_FMT="$(echo "$STAGED" | grep -E '\.(md|ya?ml|json|toml|lua)$' || true)"
+if [[ -n "$STAGED_FMT" ]]; then
     if command -v dprint >/dev/null 2>&1 && [[ -f dprint.json ]]; then
-        if ! dprint check >/dev/null 2>&1; then
-            echo "pre-commit: dprint check failed." >&2
-            echo "pre-commit: run \`dprint fmt\` and re-stage." >&2
-            echo "pre-commit: bypass with \`git commit --no-verify\` if intentional." >&2
-            exit 1
+        EXISTING=()
+        while IFS= read -r f; do
+            [[ -f "$f" ]] && EXISTING+=("$f")
+        done <<< "$STAGED_FMT"
+        if ((${#EXISTING[@]} > 0)); then
+            if ! dprint check "${EXISTING[@]}" >/dev/null 2>&1; then
+                echo "pre-commit: these staged files are not formatted:" >&2
+                # dprint colours its output, so the path is not adjacent to
+                # the word that introduces it until the escapes are stripped.
+                dprint check "${EXISTING[@]}" 2>&1 \
+                    | sed $'s/\033\[[0-9;]*m//g' \
+                    | grep -oE '^from .+:$' | sed 's/^from /pre-commit:   /' >&2 || true
+                echo "pre-commit: run \`dprint fmt\` and re-stage." >&2
+                echo "pre-commit: bypass with \`git commit --no-verify\` if intentional." >&2
+                exit 1
+            fi
         fi
     fi
 fi

@@ -247,10 +247,7 @@ fn resolve<'a>(
     if requested != mount.name() {
         return Err(Box::new(not_found()));
     }
-    vault
-        .kv
-        .as_ref()
-        .ok_or_else(|| Box::new(kv_unconfigured()))
+    vault.kv.as_ref().ok_or_else(|| Box::new(kv_unconfigured()))
 }
 
 #[cfg(test)]

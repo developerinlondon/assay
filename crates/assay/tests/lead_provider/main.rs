@@ -12,7 +12,10 @@ async fn test_a_gate_cannot_be_built_without_a_usable_budget() {
         ("nil", "budget context is required"),
         ("\"not a table\"", "budget context is required"),
         ("{}", "approve(op, cents) and meter"),
-        ("{ approve = function() return true end }", "approve(op, cents) and meter"),
+        (
+            "{ approve = function() return true end }",
+            "approve(op, cents) and meter",
+        ),
         ("{ meter = function() end }", "approve(op, cents) and meter"),
     ] {
         let err = run_lua(&format!(

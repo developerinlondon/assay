@@ -123,14 +123,24 @@ mod tests {
     fn a_sealed_kek_comes_back_unchanged() {
         let kek = [42u8; KEY_LEN];
         let blob = key().seal("kek-abc", &kek).unwrap();
-        assert_ne!(&blob[1 + NONCE_LEN..], &kek[..], "the blob must be ciphertext");
+        assert_ne!(
+            &blob[1 + NONCE_LEN..],
+            &kek[..],
+            "the blob must be ciphertext"
+        );
         assert_eq!(key().unseal("kek-abc", &blob).unwrap(), kek);
     }
 
     #[test]
     fn the_same_string_always_derives_the_same_key() {
-        let blob = SealKey::derive(RAW).unwrap().seal("kek-abc", &[7u8; KEY_LEN]).unwrap();
-        let reopened = SealKey::derive(RAW).unwrap().unseal("kek-abc", &blob).unwrap();
+        let blob = SealKey::derive(RAW)
+            .unwrap()
+            .seal("kek-abc", &[7u8; KEY_LEN])
+            .unwrap();
+        let reopened = SealKey::derive(RAW)
+            .unwrap()
+            .unseal("kek-abc", &blob)
+            .unwrap();
         assert_eq!(reopened, [7u8; KEY_LEN]);
     }
 
@@ -139,12 +149,18 @@ mod tests {
     fn one_character_of_difference_opens_nothing() {
         assert_eq!(RAW.len(), OTHER.len());
         assert_eq!(
-            RAW.chars().zip(OTHER.chars()).filter(|(a, b)| a != b).count(),
+            RAW.chars()
+                .zip(OTHER.chars())
+                .filter(|(a, b)| a != b)
+                .count(),
             1,
             "the fixtures must differ in exactly one character"
         );
         let blob = key().seal("kek-abc", &[42u8; KEY_LEN]).unwrap();
-        let err = SealKey::derive(OTHER).unwrap().unseal("kek-abc", &blob).unwrap_err();
+        let err = SealKey::derive(OTHER)
+            .unwrap()
+            .unseal("kek-abc", &blob)
+            .unwrap_err();
         assert!(err.to_string().contains(ENV_VAR), "{err}");
     }
 
@@ -158,8 +174,14 @@ mod tests {
     #[test]
     fn the_encoding_is_irrelevant_so_a_passphrase_works() {
         let phrase = "correct horse battery staple correct horse";
-        let blob = SealKey::derive(phrase).unwrap().seal("kek-abc", &[5u8; KEY_LEN]).unwrap();
-        let out = SealKey::derive(phrase).unwrap().unseal("kek-abc", &blob).unwrap();
+        let blob = SealKey::derive(phrase)
+            .unwrap()
+            .seal("kek-abc", &[5u8; KEY_LEN])
+            .unwrap();
+        let out = SealKey::derive(phrase)
+            .unwrap()
+            .unseal("kek-abc", &blob)
+            .unwrap();
         assert_eq!(out, [5u8; KEY_LEN]);
     }
 

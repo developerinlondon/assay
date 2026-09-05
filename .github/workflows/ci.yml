@@ -149,7 +149,7 @@ jobs:
           targets=()
 
           if [[ "$ASSAY_RUST" == "true" ]]; then
-            targets+=(assay-lua:lint assay-lua:build assay-lua:test)
+            targets+=(assay-lua:fmt assay-lua:lint assay-lua:build assay-lua:test)
           elif [[ "$ASSAY_LUA_TESTS" == "true" ]]; then
             targets+=(assay-lua:test-lua-stdlib)
           fi
@@ -222,10 +222,13 @@ jobs:
           rm -rf target
           ln -s /var/cache/runner-work/assay-target target
 
-      # mise's rust plugin defaults to the `minimal` profile (no clippy).
-      - name: Install clippy component
+      # mise's rust plugin defaults to the `minimal` profile, which carries
+      # neither clippy nor rustfmt. rust-toolchain.toml names both, but mise
+      # installs the toolchain itself rather than letting rustup resolve that
+      # file, so the components are still added here.
+      - name: Install clippy and rustfmt components
         if: steps.targets.outputs.run_checks == 'true' && needs.changes.outputs.assay_rust == 'true'
-        run: rustup component add clippy
+        run: rustup component add clippy rustfmt
 
       # Swatinem/rust-cache@v2 with a Cargo.lock-keyed cache. The
       # `key` input ties saves to the locked dep graph, so unchanged

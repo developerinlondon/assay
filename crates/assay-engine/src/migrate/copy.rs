@@ -25,8 +25,7 @@ pub async fn copy_table(
         bail!("{table} has no columns in common between the two stores");
     }
 
-    let rows_per_batch =
-        (PARAMS_PER_BATCH / columns.len()).clamp(1, MAX_ROWS_PER_BATCH);
+    let rows_per_batch = (PARAMS_PER_BATCH / columns.len()).clamp(1, MAX_ROWS_PER_BATCH);
     let select = format!(
         "SELECT rowid, {} FROM {} WHERE rowid > ? ORDER BY rowid LIMIT {}",
         columns
@@ -56,7 +55,11 @@ pub async fn copy_table(
             for (offset, column) in columns.iter().enumerate() {
                 let cell = read_cell(row, offset + 1)
                     .with_context(|| format!("{table}.{}", column.name))?;
-                bounds.push(coerce(cell, &column.udt, &format!("{table}.{}", column.name))?);
+                bounds.push(coerce(
+                    cell,
+                    &column.udt,
+                    &format!("{table}.{}", column.name),
+                )?);
             }
         }
 

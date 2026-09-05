@@ -169,7 +169,9 @@ async fn migrate_refuses_a_target_that_holds_data_pg() {
     };
 
     assert!(
-        run_migrate(&fx.data_dir, &fx.db.url(), &[]).status.success(),
+        run_migrate(&fx.data_dir, &fx.db.url(), &[])
+            .status
+            .success(),
         "first migration should succeed"
     );
 

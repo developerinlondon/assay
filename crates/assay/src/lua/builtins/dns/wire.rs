@@ -238,12 +238,7 @@ fn collect(
     Ok(())
 }
 
-fn parse_rdata(
-    buf: &[u8],
-    qtype: u16,
-    start: usize,
-    len: usize,
-) -> Result<Option<Answer>, String> {
+fn parse_rdata(buf: &[u8], qtype: u16, start: usize, len: usize) -> Result<Option<Answer>, String> {
     let rdata = &buf[start..start + len];
     match qtype {
         TYPE_A => {
@@ -309,7 +304,9 @@ fn read_name(buf: &[u8], pos: &mut usize) -> Result<String, String> {
     let mut total = 1; // the root label
 
     loop {
-        let len = *buf.get(cursor).ok_or("name runs past the end of the message")? as usize;
+        let len = *buf
+            .get(cursor)
+            .ok_or("name runs past the end of the message")? as usize;
         cursor += 1;
 
         match len & 0xC0 {
@@ -352,7 +349,9 @@ fn read_name(buf: &[u8], pos: &mut usize) -> Result<String, String> {
                 }
                 jumps += 1;
                 if jumps > MAX_POINTER_JUMPS {
-                    return Err(format!("more than {MAX_POINTER_JUMPS} compression pointers"));
+                    return Err(format!(
+                        "more than {MAX_POINTER_JUMPS} compression pointers"
+                    ));
                 }
                 cursor = target;
             }
@@ -421,7 +420,10 @@ mod tests {
         let msg = response(
             0x8180,
             ("example.com", TYPE_TXT),
-            &[(TYPE_TXT, txt_rdata(&["v=spf1 include:_spf.", "example.com ~all"]))],
+            &[(
+                TYPE_TXT,
+                txt_rdata(&["v=spf1 include:_spf.", "example.com ~all"]),
+            )],
         );
         let out = decode_response(&msg, TYPE_TXT).unwrap();
         assert_eq!(

@@ -1,0 +1,11 @@
+# The compiler this workspace is built and formatted with.
+#
+# .mise.toml is the source of truth for tool versions and must carry the same
+# number; this file exists so a checkout without mise — a contributor with only
+# rustup, a container, an agent shelling into the repo — gets that toolchain and
+# its rustfmt rather than whatever `stable` happens to be that week. rustfmt
+# output changes between releases, so an unpinned formatter is a diff nobody
+# agreed to.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]

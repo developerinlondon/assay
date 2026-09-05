@@ -779,7 +779,9 @@ async fn test_creating_mailboxes_sends_the_vendors_field_names_and_the_local_par
     Mock::given(method("POST"))
         .and(path("/"))
         .and(header("x-primeforge-key", "k"))
-        .and(body_string_contains("primeforge_create_mailboxes_for_domain"))
+        .and(body_string_contains(
+            "primeforge_create_mailboxes_for_domain",
+        ))
         .and(body_string_contains("\"username\":\"ada\""))
         .and(body_string_contains("\"firstName\":\"Ada\""))
         .and(body_string_contains("\"signature\":\"Ada Lovelace\""))

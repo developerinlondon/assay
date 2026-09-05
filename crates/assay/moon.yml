@@ -30,6 +30,18 @@ dependsOn:
   - "assay-engine"
 
 tasks:
+  fmt:
+    # Formatting is a property of the workspace, not of a crate: one rustfmt
+    # over one Cargo.toml, so a file cannot be clean in one target and dirty in
+    # another. The pre-commit hook checks only what a commit stages, which
+    # leaves this as the thing that keeps main clean.
+    command: "cargo fmt --all -- --check"
+    inputs:
+      - "@group(rust-sources)"
+    options:
+      cache: true
+      runInCI: true
+
   lint:
     command: "cargo clippy --workspace --tests -- -D warnings"
     inputs:

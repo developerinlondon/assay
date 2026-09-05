@@ -31,8 +31,8 @@
 
 use crate::crypto::aead::{KEY_LEN, random_dek};
 use crate::crypto::env_seal::{METHOD_ENV, SealKey};
-use crate::crypto::kek_store::METHOD_PLAINTEXT;
 use crate::crypto::kek::{KekHandle, WrappedDek};
+use crate::crypto::kek_store::METHOD_PLAINTEXT;
 use crate::crypto::seal_state::SealState;
 use crate::crypto::sealing::SealingMethod;
 use crate::error::{Result, VaultError};
@@ -98,7 +98,6 @@ pub async fn rotate_postgres(
         transit_rewrapped,
     })
 }
-
 
 /// How a rotated KEK is stored. Rotation must not silently downgrade a
 /// sealed store to plaintext, so the new row is sealed whenever the

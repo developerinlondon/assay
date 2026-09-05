@@ -202,12 +202,13 @@ pub async fn resync_sequences(pool: &sqlx::PgPool, tables: &[Table]) -> Result<u
     for table in tables {
         for column in target_columns(pool, table).await? {
             let qualified = format!(r#""{}"."{}""#, table.schema, table.name);
-            let sequence: Option<String> = sqlx::query_scalar("SELECT pg_get_serial_sequence($1, $2)")
-                .bind(&qualified)
-                .bind(&column.name)
-                .fetch_one(pool)
-                .await
-                .with_context(|| format!("resolve sequence for {table}.{}", column.name))?;
+            let sequence: Option<String> =
+                sqlx::query_scalar("SELECT pg_get_serial_sequence($1, $2)")
+                    .bind(&qualified)
+                    .bind(&column.name)
+                    .fetch_one(pool)
+                    .await
+                    .with_context(|| format!("resolve sequence for {table}.{}", column.name))?;
             let Some(sequence) = sequence else { continue };
             let sql = format!(
                 r#"SELECT setval('{sequence}', COALESCE((SELECT MAX("{}") FROM {qualified}), 0) + 1, false)"#,

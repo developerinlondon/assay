@@ -47,7 +47,9 @@ const SUBJECT: &str = r#"{ first_name = "Satya", last_name = "Nadella", company 
 
 #[tokio::test]
 async fn contactout_answers_in_the_shape_the_adapter_expects() {
-    let Some(token) = key_or_skip("CONTACTOUT_TOKEN") else { return };
+    let Some(token) = key_or_skip("CONTACTOUT_TOKEN") else {
+        return;
+    };
     run_lua(&format!(
         r#"
         {GATE}
@@ -79,7 +81,9 @@ async fn contactout_answers_in_the_shape_the_adapter_expects() {
 
 #[tokio::test]
 async fn bettercontact_answers_in_the_shape_the_adapter_expects() {
-    let Some(api_key) = key_or_skip("BETTERCONTACT_API_KEY") else { return };
+    let Some(api_key) = key_or_skip("BETTERCONTACT_API_KEY") else {
+        return;
+    };
     run_lua(&format!(
         r#"
         {GATE}
@@ -119,7 +123,9 @@ async fn bettercontact_answers_in_the_shape_the_adapter_expects() {
 /// test proving a decline stops a call that would have cost money.
 #[tokio::test]
 async fn a_declined_budget_stops_a_real_paid_call() {
-    let Some(token) = key_or_skip("CONTACTOUT_TOKEN") else { return };
+    let Some(token) = key_or_skip("CONTACTOUT_TOKEN") else {
+        return;
+    };
     run_lua(&format!(
         r#"
         local lp = require("assay.lead_provider")
@@ -143,7 +149,9 @@ async fn a_declined_budget_stops_a_real_paid_call() {
 /// spend a credit resolving a stranger.
 #[tokio::test]
 async fn mails_so_answers_in_the_shape_the_adapter_expects() {
-    let Some(key) = key_or_skip("MAILS_SO_KEY") else { return };
+    let Some(key) = key_or_skip("MAILS_SO_KEY") else {
+        return;
+    };
     run_lua(&format!(
         r#"
         {GATE}

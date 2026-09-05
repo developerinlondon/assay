@@ -31,6 +31,10 @@ run = 'moon run engine-lua:test'
 description = 'Build the assay release binary'
 run = 'moon run assay-lua:build'
 
+[tasks.fmt]
+description = 'Check the workspace is formatted (what CI gates on)'
+run = 'moon run assay-lua:fmt'
+
 [tasks.lint]
 description = 'Run cargo clippy across the workspace (warnings = errors)'
 run = 'moon run assay-lua:lint'

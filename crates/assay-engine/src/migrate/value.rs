@@ -37,7 +37,8 @@ pub fn read_cell(row: &SqliteRow, idx: usize) -> Result<Cell> {
         return Ok(Cell::Null);
     }
     let kind = raw.type_info().name().to_owned();
-    let decode_err = |e: sqlx::error::BoxDynError| anyhow!("decode sqlite {kind} at column {idx}: {e}");
+    let decode_err =
+        |e: sqlx::error::BoxDynError| anyhow!("decode sqlite {kind} at column {idx}: {e}");
     match kind.as_str() {
         "TEXT" => Ok(Cell::Text(
             <String as Decode<Sqlite>>::decode(raw).map_err(decode_err)?,

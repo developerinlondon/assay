@@ -39,7 +39,15 @@ fn script(gate: &str, module: &str, alias: &str, ctor: &str, uri: &str, body: &s
 }
 
 async fn contactout(uri: &str, body: &str) -> Result<(), mlua::Error> {
-    run_lua(&script(OPEN_GATE, "contactout", "co", r#"token = "k""#, uri, body)).await
+    run_lua(&script(
+        OPEN_GATE,
+        "contactout",
+        "co",
+        r#"token = "k""#,
+        uri,
+        body,
+    ))
+    .await
 }
 
 /// Runs a ContactOut script against the mock server and expects it to pass.
@@ -48,7 +56,15 @@ async fn co_ok(server: &MockServer, body: &str) {
 }
 
 async fn bettercontact(gate: &str, uri: &str, body: &str) -> Result<(), mlua::Error> {
-    run_lua(&script(gate, "bettercontact", "bc", r#"api_key = "bc-key""#, uri, body)).await
+    run_lua(&script(
+        gate,
+        "bettercontact",
+        "bc",
+        r#"api_key = "bc-key""#,
+        uri,
+        body,
+    ))
+    .await
 }
 
 async fn server_returning(m: &str, p: &str, status: u16) -> MockServer {
@@ -58,7 +74,9 @@ async fn server_returning(m: &str, p: &str, status: u16) -> MockServer {
     } else {
         Mock::given(method("GET")).and(path(p.to_string()))
     };
-    mock.respond_with(ResponseTemplate::new(status)).mount(&server).await;
+    mock.respond_with(ResponseTemplate::new(status))
+        .mount(&server)
+        .await;
     server
 }
 

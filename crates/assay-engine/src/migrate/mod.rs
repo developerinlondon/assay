@@ -252,7 +252,11 @@ impl Report {
         out.push_str(&format!("{}  {}\n", "-".repeat(width), "-".repeat(10)));
         let mut total = 0;
         for count in &self.counts {
-            let rows = if self.dry_run { count.source } else { count.target };
+            let rows = if self.dry_run {
+                count.source
+            } else {
+                count.target
+            };
             total += rows;
             out.push_str(&format!(
                 "{:<width$}  {rows:>10}\n",
@@ -288,8 +292,14 @@ mod tests {
 
     #[test]
     fn source_accepts_a_url_or_a_bare_directory() {
-        assert_eq!(parse_source("sqlite:/var/lib/assay").unwrap(), "/var/lib/assay");
-        assert_eq!(parse_source("sqlite:///var/lib/assay").unwrap(), "/var/lib/assay");
+        assert_eq!(
+            parse_source("sqlite:/var/lib/assay").unwrap(),
+            "/var/lib/assay"
+        );
+        assert_eq!(
+            parse_source("sqlite:///var/lib/assay").unwrap(),
+            "/var/lib/assay"
+        );
         assert_eq!(parse_source("./data").unwrap(), "./data");
     }
 

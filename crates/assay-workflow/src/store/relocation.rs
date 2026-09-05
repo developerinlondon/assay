@@ -33,7 +33,12 @@ const AMBIGUOUS: &[(&str, &str, &str, &[&str])] = &[
         "workflows",
         &["id", "run_id", "workflow_type", "task_queue", "status"],
     ),
-    ("namespaces", "workflow", "namespaces", &["name", "created_at"]),
+    (
+        "namespaces",
+        "workflow",
+        "namespaces",
+        &["name", "created_at"],
+    ),
 ];
 
 /// Presence of this table is what marks the database as a v0.13.1 engine

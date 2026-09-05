@@ -173,7 +173,6 @@ CREATE INDEX IF NOT EXISTS idx_engine_events_ts_prune ON engine.events(ts);
 
 "#;
 
-
 /// Split a Postgres DDL script into individual statements ready for `sqlx::query`.
 ///
 /// Drops pure-comment lines (those starting with `--` after optional whitespace)

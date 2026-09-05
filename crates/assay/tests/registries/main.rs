@@ -107,7 +107,10 @@ async fn test_brreg_collapses_the_three_distress_flags_into_one_status() {
     for (flag, want) in [
         ("konkurs", "BANKRUPT"),
         ("underAvvikling", "LIQUIDATING"),
-        ("underTvangsavviklingEllerTvangsopplosning", "COMPULSORY_LIQUIDATION"),
+        (
+            "underTvangsavviklingEllerTvangsopplosning",
+            "COMPULSORY_LIQUIDATION",
+        ),
     ] {
         let mut e = equinor();
         e[flag] = json!(true);
@@ -131,9 +134,12 @@ async fn test_brreg_reports_an_unreported_headcount_as_absent_not_zero() {
     e["antallAnsatte"] = json!(0);
     let server = MockServer::start().await;
     brreg_search(&server, json!({ "_embedded": { "enheter": [e] } })).await;
-    brreg(&server.uri(), r#"assert.eq(c:search("x")[1].employees, nil)"#)
-        .await
-        .unwrap();
+    brreg(
+        &server.uri(),
+        r#"assert.eq(c:search("x")[1].employees, nil)"#,
+    )
+    .await
+    .unwrap();
 }
 
 /// A search with no hits omits `_embedded` entirely rather than returning an
@@ -159,8 +165,10 @@ async fn test_brreg_reverse_lookup_retries_the_www_form() {
     Mock::given(method("GET"))
         .and(path("/enheter"))
         .and(query_param("hjemmeside", "www.equinor.com"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(json!({ "_embedded": { "enheter": [equinor()] } })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "_embedded": { "enheter": [equinor()] } })),
+        )
         .mount(&server)
         .await;
     brreg(
@@ -279,7 +287,10 @@ async fn test_cvr_separates_absence_from_being_throttled() {
         .respond_with(ResponseTemplate::new(429))
         .mount(&limited)
         .await;
-    let err = cvr(&limited.uri(), r#"c:search("x")"#).await.unwrap_err().to_string();
+    let err = cvr(&limited.uri(), r#"c:search("x")"#)
+        .await
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("rate limited"), "{err}");
 }
 
@@ -289,8 +300,10 @@ async fn test_cvr_treats_an_error_body_as_absence() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(json!({ "error": "NOT_FOUND", "message": "no result" })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "error": "NOT_FOUND", "message": "no result" })),
+        )
         .mount(&server)
         .await;
     cvr(&server.uri(), r#"assert.eq(c:get("00000000"), nil)"#)
@@ -372,8 +385,10 @@ async fn test_companies_house_authenticates_with_the_key_as_basic_username() {
         .and(path("/search/companies"))
         // base64("testkey:")
         .and(header("authorization", "Basic dGVzdGtleTo="))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(json!({ "items": [ch_search_item()], "total_results": 1 })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "items": [ch_search_item()], "total_results": 1 })),
+        )
         .mount(&server)
         .await;
     ch(
@@ -395,8 +410,9 @@ async fn test_companies_house_reads_the_name_from_both_endpoint_shapes() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/search/companies"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(json!({ "items": [ch_search_item()] })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "items": [ch_search_item()] })),
+        )
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -465,13 +481,18 @@ async fn test_companies_house_treats_no_hits_as_an_empty_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/search/companies"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(json!({ "total_results": 0, "items_per_page": 20 })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "total_results": 0, "items_per_page": 20 })),
+        )
         .mount(&server)
         .await;
-    ch(&server.uri(), r#"assert.eq(#c:search("nothing at all"), 0)"#)
-        .await
-        .unwrap();
+    ch(
+        &server.uri(),
+        r#"assert.eq(#c:search("nothing at all"), 0)"#,
+    )
+    .await
+    .unwrap();
 }
 
 /// An unknown company number is absence; a rejected key or a throttle is a
@@ -495,7 +516,10 @@ async fn test_companies_house_separates_absence_from_rejection_and_throttling() 
             .respond_with(ResponseTemplate::new(status))
             .mount(&s)
             .await;
-        let err = ch(&s.uri(), r#"c:get("00445790")"#).await.unwrap_err().to_string();
+        let err = ch(&s.uri(), r#"c:get("00445790")"#)
+            .await
+            .unwrap_err()
+            .to_string();
         assert!(err.contains(needle), "status {status}: {err}");
     }
 }

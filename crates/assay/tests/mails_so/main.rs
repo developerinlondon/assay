@@ -121,8 +121,12 @@ async fn test_undeliverable_is_invalid_and_risky_is_unknown() {
         json!({ "result": "undeliverable", "reason": "rejected_email", "isv_nocatchall": true }),
     )
     .await;
-    mount_validate(&server, "meh@x.example", json!({ "result": "risky", "isv_nocatchall": true }))
-        .await;
+    mount_validate(
+        &server,
+        "meh@x.example",
+        json!({ "result": "risky", "isv_nocatchall": true }),
+    )
+    .await;
     run_lua(&script(
         OPEN_GATE,
         &server.uri(),
@@ -170,9 +174,13 @@ async fn test_auth_and_rate_limit_read_as_themselves() {
             .respond_with(ResponseTemplate::new(status))
             .mount(&server)
             .await;
-        let err = run_lua(&script(OPEN_GATE, &server.uri(), r#"c:verify_email("a@b.example")"#))
-            .await
-            .unwrap_err();
+        let err = run_lua(&script(
+            OPEN_GATE,
+            &server.uri(),
+            r#"c:verify_email("a@b.example")"#,
+        ))
+        .await
+        .unwrap_err();
         assert_says(err, want, &format!("HTTP {status}"));
     }
 }
@@ -188,9 +196,13 @@ async fn test_an_in_band_api_error_is_an_error_not_a_verdict() {
         })))
         .mount(&server)
         .await;
-    let err = run_lua(&script(OPEN_GATE, &server.uri(), r#"c:verify_email("nope")"#))
-        .await
-        .unwrap_err();
+    let err = run_lua(&script(
+        OPEN_GATE,
+        &server.uri(),
+        r#"c:verify_email("nope")"#,
+    ))
+    .await
+    .unwrap_err();
     assert_says(err, "invalid email parameter", "in-band error");
 }
 
