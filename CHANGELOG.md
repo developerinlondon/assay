@@ -13,25 +13,30 @@ All notable changes to Assay are documented here.
   whole file. That rules out reading a GitLab CI pipeline definition, where `!reference` is
   first-class syntax, and any manifest carrying a vendor tag.
 
-  Parsing now runs through a YAML value, so a tag is data rather than a refusal. A local or custom
-  tag becomes a one-key table keyed by the tag text with its bang — `!reference [.anchor, script]`
-  reads as `{ ["!reference"] = { ".anchor", "script" } }` — and the payload is converted recursively
-  whether it is a scalar, a sequence or a mapping, so a script can act on the tag, on what it wraps,
-  or on both. Standard tags keep their scalar meaning rather than being wrapped: `!!str 1` is the
-  string `"1"`, `!!int`, `!!float`, `!!bool` and `!!null` resolve to their scalar, and the
-  `tag:yaml.org,2002:` long forms behave the same. `!!binary` and `!!timestamp` yield the scalar
-  text as written.
+  A local or custom tag now becomes a one-key table keyed by the tag text with its bang —
+  `!reference [.anchor, script]` reads as `{ ["!reference"] = { ".anchor", "script" } }` — and the
+  payload is converted recursively whether it is a scalar, a sequence or a mapping, so a script can
+  act on the tag, on what it wraps, or on both. A tag over an empty payload wraps with the empty
+  string, since a Lua table cannot hold a nil value. Standard tags keep their scalar meaning rather
+  than being wrapped: `!!str 1` is the string `"1"`, `!!int`, `!!float`, `!!bool` and `!!null`
+  resolve to their scalar, and the `tag:yaml.org,2002:` long forms behave the same. `!!binary` and
+  `!!timestamp` yield the scalar text as written.
 
-  `yaml.encode` is the inverse: a one-key table whose sole key opens with `!` encodes back to a
-  tagged node, so a parsed tag round-trips. Untagged documents parse and encode exactly as they did
-  before, key order included.
+  Untagged documents are untouched, down to the byte. Mapping keys still arrive as the text the
+  document wrote, so `9000`, `~`, `TRUE` and `1.50` are still the string keys `"9000"`, `"~"`,
+  `"TRUE"` and `"1.50"`; a repeated key still keeps its last value; anchors, merge keys, non-finite
+  floats and integer widening are unchanged; and `yaml.encode` without options emits exactly what it
+  emitted before for every input, a key that happens to start with `!` included.
 
 ### Added
 
-- **`yaml.parse` and `yaml.parse_all` take an options table that chooses what a tag becomes.**
-  `{ tags = "wrap" }` is the default and gives the one-key table above. `{ tags = "strip" }` gives
-  the payload alone, as if the node carried no tag, for a caller that wants the data and not the
-  annotation. Any other value is refused by name, saying which two are accepted.
+- **`yaml.parse`, `yaml.parse_all` and `yaml.encode` take an options table choosing what a tag
+  becomes.** On the way in, `{ tags = "wrap" }` is the default and gives the one-key table above,
+  while `{ tags = "strip" }` gives the payload alone for a caller that wants the data without the
+  annotation. On the way out the default is the other one, `{ tags = "strip" }`, so that a key
+  beginning with `!` stays an ordinary mapping key and no existing caller's table encodes
+  differently than before; pass `{ tags = "wrap" }` to turn a wrapped tag back into a tagged node
+  and round-trip a parse. Any other value is refused by name, saying which two are accepted.
 
 ## assay-lua 0.20.8 — 2026-09-14
 

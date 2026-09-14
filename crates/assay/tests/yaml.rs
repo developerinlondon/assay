@@ -237,16 +237,90 @@ async fn test_yaml_parse_all_with_tagged_document() {
 #[tokio::test]
 async fn test_yaml_encode_roundtrips_a_wrapped_tag() {
     let script = r#"
-        local encoded = yaml.encode({ ["!reference"] = { ".anchor", "script" } })
+        local encoded = yaml.encode({ ["!reference"] = { ".anchor", "script" } }, { tags = "wrap" })
         assert.eq(encoded, "!reference\n- '.anchor'\n- script\n")
         local back = yaml.parse(encoded)
         assert.eq(back["!reference"][1], ".anchor")
         assert.eq(back["!reference"][2], "script")
 
         local nested = yaml.parse("job:\n  script:\n    - !reference [.anchor, script]\n")
-        local again = yaml.parse(yaml.encode(nested))
+        local again = yaml.parse(yaml.encode(nested, { tags = "wrap" }))
         assert.eq(again.job.script[1]["!reference"][1], ".anchor")
         assert.eq(again.job.script[1]["!reference"][2], "script")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_yaml_encode_leaves_bang_keys_alone_by_default() {
+    let script = r#"
+        assert.eq(yaml.encode({ ["!weird"] = 1 }), "'!weird': 1\n")
+        assert.eq(yaml.encode({ ["!weird"] = 1 }, { tags = "strip" }), "'!weird': 1\n")
+        assert.eq(yaml.encode({ ["!weird"] = 1 }, { tags = "wrap" }), "!weird 1\n")
+        assert.eq(yaml.encode({ ["!weird"] = 1, other = 2 }), "'!weird': 1\nother: 2\n")
+        assert.eq(yaml.encode({ ["!weird"] = 1, other = 2 }, { tags = "wrap" }), "'!weird': 1\nother: 2\n")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_yaml_encode_rejects_unknown_tags_option() {
+    let script = r#"
+        local ok, err = pcall(yaml.encode, { a = 1 }, { tags = "keep" })
+        assert.eq(ok, false)
+        assert.contains(tostring(err), "yaml.encode: tags must be \"wrap\" or \"strip\"")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_yaml_parse_tag_without_a_payload() {
+    let script = r#"
+        local data = yaml.parse("a: !foo\nb: !bar null\n")
+        assert.eq(data.a["!foo"], "")
+        assert.eq(data.b["!bar"], "")
+
+        local again = yaml.parse(yaml.encode(data, { tags = "wrap" }))
+        assert.eq(again.a["!foo"], "")
+        assert.eq(again.b["!bar"], "")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_yaml_parse_keeps_non_string_mapping_keys_as_written() {
+    let script = r#"
+        local data = yaml.parse("9000: a\n-3: b\n+5: c\n0x1f: d\n1.5: e\n1.50: f\n1e3: g\n")
+        assert.eq(data["9000"], "a")
+        assert.eq(data["-3"], "b")
+        assert.eq(data["+5"], "c")
+        assert.eq(data["0x1f"], "d")
+        assert.eq(data["1.5"], "e")
+        assert.eq(data["1.50"], "f")
+        assert.eq(data["1e3"], "g")
+
+        local flags = yaml.parse("true: a\nTRUE: b\nFalse: c\nnull: d\n~: e\nNull: f\n")
+        assert.eq(flags["true"], "a")
+        assert.eq(flags["TRUE"], "b")
+        assert.eq(flags["False"], "c")
+        assert.eq(flags["null"], "d")
+        assert.eq(flags["~"], "e")
+        assert.eq(flags["Null"], "f")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_yaml_parse_duplicate_keys_keep_the_last() {
+    let script = r#"
+        assert.eq(yaml.parse("a: 1\na: 2\n").a, 2)
+        assert.eq(yaml.parse("a: 1\na: 2\na: 3\n").a, 3)
+        assert.eq(yaml.parse("a: 1\na: null\n").a, nil)
+        assert.eq(yaml.parse("m:\n  k: 1\n  k: 2\n").m.k, 2)
+
+        local docs = yaml.parse_all("a: 1\na: 2\n---\nb: 1\n")
+        assert.eq(docs[1].a, 2)
+        assert.eq(docs[2].b, 1)
     "#;
     run_lua(script).await.unwrap();
 }
@@ -280,11 +354,20 @@ async fn test_yaml_parse_untagged_document_is_unchanged() {
 }
 
 #[tokio::test]
-async fn test_yaml_parse_rejects_non_string_mapping_key() {
+async fn test_yaml_parse_untagged_anchors_and_merge_keys_are_unchanged() {
     let script = r#"
-        local ok, err = pcall(yaml.parse, "1: a\n")
-        assert.eq(ok, false)
-        assert.contains(tostring(err), "yaml.parse: unsupported YAML mapping key")
+        local data = yaml.parse("base: &b\n  x: 1\n  y: two\nuse: *b\n")
+        assert.eq(data.use.x, 1)
+        assert.eq(data.use.y, "two")
+
+        local merged = yaml.parse("base: &b\n  x: 1\n  y: 2\nderived:\n  <<: *b\n  y: 3\n")
+        assert.eq(merged.derived["<<"].x, 1)
+        assert.eq(merged.derived.y, 3)
+
+        local specials = yaml.parse("a: .inf\nb: .nan\nc: 18446744073709551615\n")
+        assert.eq(specials.a, nil)
+        assert.eq(specials.b, nil)
+        assert.eq(type(specials.c), "number")
     "#;
     run_lua(script).await.unwrap();
 }

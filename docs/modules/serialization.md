@@ -37,7 +37,7 @@ YAML serialization. No `require()` needed.
 - `yaml.parse(str, opts?)` → table — Parse YAML string to Lua table
 - `yaml.parse_all(str, opts?)` → table[] — Parse a YAML stream into a Lua array, skipping empty
   documents
-- `yaml.encode(table)` → string — Encode Lua table to YAML string
+- `yaml.encode(table, opts?)` → string — Encode Lua table to YAML string
 
 ### Tagged nodes
 
@@ -55,7 +55,10 @@ the string `"1"`, `!!int "5"` is `5`, and `!!bool`, `!!float` and `!!null` behav
 the `tag:yaml.org,2002:` long forms. `!!binary` and `!!timestamp` yield the scalar text as written —
 neither is decoded or parsed.
 
-`opts.tags` picks the shape:
+A tag over an empty payload (`a: !foo`) wraps with the empty string, because a Lua table cannot hold
+a nil value and the tag would otherwise be lost.
+
+`opts.tags` on `yaml.parse` and `yaml.parse_all` picks the shape:
 
 - `"wrap"` (default) — the one-key table above, so a script can act on the tag or on its payload
 - `"strip"` — the payload alone, as if the node carried no tag
@@ -65,12 +68,24 @@ yaml.parse("a: !custom {x: 1}\n") -- { a = { ["!custom"] = { x = 1 } } }
 yaml.parse("a: !custom {x: 1}\n", { tags = "strip" }) -- { a = { x = 1 } }
 ```
 
-Any other value for `tags` is a runtime error. `yaml.encode` is the inverse of `"wrap"`: a one-key
-table whose sole key starts with `!` encodes back to a tagged node, so a wrapped parse round-trips.
+`yaml.encode` takes the same option and **defaults to `"strip"`**: a key starting with `!` is an
+ordinary mapping key unless you ask for tags. Pass `{ tags = "wrap" }` to turn a one-key table whose
+sole key starts with `!` back into a tagged node, which is what round-trips a wrapped parse.
 
 ```lua
-yaml.encode({ ["!reference"] = { ".anchor", "script" } }) -- "!reference\n- '.anchor'\n- script\n"
+yaml.encode({ ["!reference"] = { ".anchor", "script" } }) -- "'!reference':\n- '.anchor'\n- script\n"
+yaml.encode({ ["!reference"] = { ".anchor", "script" } }, { tags = "wrap" })
+-- "!reference\n- '.anchor'\n- script\n"
 ```
+
+Any other value for `tags` is a runtime error, in either direction.
+
+### Untagged documents
+
+Nothing about an untagged document changed when tags were understood, and that is enforced by test.
+Mapping keys arrive as the text the document wrote — `9000`, `~`, `TRUE` and `1.50` are the Lua
+string keys `"9000"`, `"~"`, `"TRUE"` and `"1.50"` — a repeated key keeps its last value, anchors
+and aliases expand, a `<<` merge key stays a literal key, and `.inf` / `.nan` are `nil`.
 
 ## toml
 

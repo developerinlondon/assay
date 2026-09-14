@@ -408,7 +408,7 @@ All 33 Rust builtins are available globally in `.lua` scripts — no `require` n
 | Function                                    | Description |
 | ------------------------------------------- | ----------- |
 | `json.parse(str)` / `json.encode(tbl)`      | JSON        |
-| `yaml.parse(str, opts?)` / `yaml.parse_all(str, opts?)` / `yaml.encode(tbl)` | YAML stream/documents; `opts.tags` is `"wrap"` (default) or `"strip"` |
+| `yaml.parse(str, opts?)` / `yaml.parse_all(str, opts?)` / `yaml.encode(tbl, opts?)` | YAML stream/documents; `opts.tags` is `"wrap"` or `"strip"` |
 | `toml.parse(str)` / `toml.encode(tbl)`      | TOML        |
 | `base64.encode(str)` / `base64.decode(str)` | Base64      |
 
