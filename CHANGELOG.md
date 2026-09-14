@@ -2,6 +2,37 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.9 — 2026-09-14
+
+### Fixed
+
+- **`yaml.parse` and `yaml.parse_all` refused every document that carried a YAML tag.** Both
+  deserialized straight into a JSON value, and JSON has no representation for a tagged node, so a
+  file holding `!reference`, `!custom` or any other local tag came back as an `invalid type: enum`
+  refusal — and nothing else in the document was reachable either, so one tag anywhere lost the
+  whole file. That rules out reading a GitLab CI pipeline definition, where `!reference` is
+  first-class syntax, and any manifest carrying a vendor tag.
+
+  Parsing now runs through a YAML value, so a tag is data rather than a refusal. A local or custom
+  tag becomes a one-key table keyed by the tag text with its bang — `!reference [.anchor, script]`
+  reads as `{ ["!reference"] = { ".anchor", "script" } }` — and the payload is converted recursively
+  whether it is a scalar, a sequence or a mapping, so a script can act on the tag, on what it wraps,
+  or on both. Standard tags keep their scalar meaning rather than being wrapped: `!!str 1` is the
+  string `"1"`, `!!int`, `!!float`, `!!bool` and `!!null` resolve to their scalar, and the
+  `tag:yaml.org,2002:` long forms behave the same. `!!binary` and `!!timestamp` yield the scalar
+  text as written.
+
+  `yaml.encode` is the inverse: a one-key table whose sole key opens with `!` encodes back to a
+  tagged node, so a parsed tag round-trips. Untagged documents parse and encode exactly as they did
+  before, key order included.
+
+### Added
+
+- **`yaml.parse` and `yaml.parse_all` take an options table that chooses what a tag becomes.**
+  `{ tags = "wrap" }` is the default and gives the one-key table above. `{ tags = "strip" }` gives
+  the payload alone, as if the node carried no tag, for a caller that wants the data and not the
+  annotation. Any other value is refused by name, saying which two are accepted.
+
 ## assay-lua 0.20.8 — 2026-09-14
 
 ### Fixed

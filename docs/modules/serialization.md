@@ -34,9 +34,43 @@ anything else as objects. The helpers only matter when you need to override that
 
 YAML serialization. No `require()` needed.
 
-- `yaml.parse(str)` → table — Parse YAML string to Lua table
-- `yaml.parse_all(str)` → table[] — Parse a YAML stream into a Lua array, skipping empty documents
+- `yaml.parse(str, opts?)` → table — Parse YAML string to Lua table
+- `yaml.parse_all(str, opts?)` → table[] — Parse a YAML stream into a Lua array, skipping empty
+  documents
 - `yaml.encode(table)` → string — Encode Lua table to YAML string
+
+### Tagged nodes
+
+A local or custom tag — `!reference`, `!custom`, `!Ref`, anything the YAML core schema does not
+resolve — becomes a one-key table keyed by the tag text, bang included, with the payload converted
+recursively. A scalar, a sequence and a mapping all wrap the same way.
+
+```lua
+local data = yaml.parse("job:\n  script:\n    - !reference [.anchor, script]\n")
+data.job.script[1]["!reference"] -- { ".anchor", "script" }
+```
+
+Standard tags resolve to their scalar meaning rather than being wrapped, in both modes: `!!str 1` is
+the string `"1"`, `!!int "5"` is `5`, and `!!bool`, `!!float` and `!!null` behave the same, as do
+the `tag:yaml.org,2002:` long forms. `!!binary` and `!!timestamp` yield the scalar text as written —
+neither is decoded or parsed.
+
+`opts.tags` picks the shape:
+
+- `"wrap"` (default) — the one-key table above, so a script can act on the tag or on its payload
+- `"strip"` — the payload alone, as if the node carried no tag
+
+```lua
+yaml.parse("a: !custom {x: 1}\n") -- { a = { ["!custom"] = { x = 1 } } }
+yaml.parse("a: !custom {x: 1}\n", { tags = "strip" }) -- { a = { x = 1 } }
+```
+
+Any other value for `tags` is a runtime error. `yaml.encode` is the inverse of `"wrap"`: a one-key
+table whose sole key starts with `!` encodes back to a tagged node, so a wrapped parse round-trips.
+
+```lua
+yaml.encode({ ["!reference"] = { ".anchor", "script" } }) -- "!reference\n- '.anchor'\n- script\n"
+```
 
 ## toml
 
