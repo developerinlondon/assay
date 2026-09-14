@@ -17,6 +17,53 @@ local M = {}
 
 local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 
+-- A mailbox never holds the accented letter, so a candidate must guess an
+-- ASCII spelling instead of silently dropping it. This is the single-letter
+-- convention (Danish/Norwegian/Swedish/German): the digraph "ae" for æ, the
+-- base vowel for the rest.
+local TRANSLIT_PRIMARY = {
+  ["æ"] = "ae", ["Æ"] = "ae",
+  ["ø"] = "o", ["Ø"] = "o",
+  ["å"] = "a", ["Å"] = "a",
+  ["ä"] = "a", ["Ä"] = "a",
+  ["ö"] = "o", ["Ö"] = "o",
+  ["ü"] = "u", ["Ü"] = "u",
+  ["ß"] = "ss",
+  ["á"] = "a", ["à"] = "a", ["â"] = "a", ["ã"] = "a",
+  ["é"] = "e", ["è"] = "e", ["ê"] = "e", ["ë"] = "e",
+  ["í"] = "i", ["ì"] = "i", ["î"] = "i", ["ï"] = "i",
+  ["ó"] = "o", ["ò"] = "o", ["ô"] = "o", ["õ"] = "o",
+  ["ú"] = "u", ["ù"] = "u", ["û"] = "u",
+  ["ý"] = "y", ["ÿ"] = "y",
+  ["ñ"] = "n", ["ç"] = "c",
+}
+
+-- The digraph convention some mailboxes use instead of the stripped form
+-- above (the German "ae/oe/ue" ASCII substitution, also common in Nordic
+-- names). Applied as extra candidates alongside the primary spelling, never
+-- in place of it.
+local TRANSLIT_ALT = {
+  ["ø"] = "oe", ["Ø"] = "oe",
+  ["å"] = "aa", ["Å"] = "aa",
+  ["ä"] = "ae", ["Ä"] = "ae",
+  ["ö"] = "oe", ["Ö"] = "oe",
+  ["ü"] = "ue", ["Ü"] = "ue",
+}
+
+local function transliterate(s, map)
+  for from, to in pairs(map) do
+    s = s:gsub(from, to)
+  end
+  return s
+end
+
+local function has_alt_spelling(s)
+  for from in pairs(TRANSLIT_ALT) do
+    if s:find(from, 1, true) then return true end
+  end
+  return false
+end
+
 -- Deliberately stricter than RFC 5322's outer bounds: the grammar here is the
 -- shape real business addresses take, and anything outside it is a guess we
 -- would never send to anyway.
@@ -41,23 +88,36 @@ end
 -- Most-common-first, per the executive-email conventions the operator's own
 -- workbooks record. The caller owns dedup against addresses already known.
 function M.candidates(first, last, domain)
-  first = trim(first):lower():gsub("[^%a]", "")
-  last = trim(last):lower():gsub("[^%a]", "")
   domain = trim(domain):lower():gsub("^www%.", "")
-  if first == "" or last == "" or domain == "" then return {} end
-  local f, l = first:sub(1, 1), last:sub(1, 1)
-  local shapes = {
-    first .. "." .. last, first .. last, first, f .. last,
-    first .. "_" .. last, f .. "." .. last, first .. "." .. l, last,
-  }
+  local raw_first, raw_last = trim(first):lower(), trim(last):lower()
+  local first_ascii = transliterate(raw_first, TRANSLIT_PRIMARY):gsub("[^%a]", "")
+  local last_ascii = transliterate(raw_last, TRANSLIT_PRIMARY):gsub("[^%a]", "")
+  if first_ascii == "" or last_ascii == "" or domain == "" then return {} end
+
   local out, seen = {}, {}
-  for _, shape in ipairs(shapes) do
-    local addr = shape .. "@" .. domain
-    if not seen[addr] then
-      seen[addr] = true
-      out[#out + 1] = addr
+  local function add_shapes(first, last)
+    local f, l = first:sub(1, 1), last:sub(1, 1)
+    local shapes = {
+      first .. "." .. last, first .. last, first, f .. last,
+      first .. "_" .. last, f .. "." .. last, first .. "." .. l, last,
+    }
+    for _, shape in ipairs(shapes) do
+      local addr = shape .. "@" .. domain
+      if not seen[addr] then
+        seen[addr] = true
+        out[#out + 1] = addr
+      end
     end
   end
+
+  add_shapes(first_ascii, last_ascii)
+
+  if has_alt_spelling(raw_first) or has_alt_spelling(raw_last) then
+    local first_alt = transliterate(transliterate(raw_first, TRANSLIT_ALT), TRANSLIT_PRIMARY):gsub("[^%a]", "")
+    local last_alt = transliterate(transliterate(raw_last, TRANSLIT_ALT), TRANSLIT_PRIMARY):gsub("[^%a]", "")
+    add_shapes(first_alt, last_alt)
+  end
+
   return out
 end
 

@@ -2,6 +2,18 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.8 — 2026-09-14
+
+### Fixed
+
+- **`assay.email_verify`'s `candidates()` dropped every accented letter instead of guessing an ASCII
+  spelling for it.** A name holding a Nordic or German letter (æ, ø, å, ä, ö, ü, and other accented
+  Latin vowels) had that letter stripped outright rather than transliterated, so the top-ranked
+  guess — the only one the paid verification rung ever tries — was an address no mailbox could hold.
+  The primary guess now transliterates per the single-letter convention (æ→ae, ø→o, å→a, ä→a, ö→o,
+  ü→u, é→e, and so on); when a name holds a letter with a common digraph alternate (ø, å, ä, ö, ü),
+  the digraph spelling (oe, aa, ae, oe, ue) is appended as an extra candidate after the primary set.
+
 ## assay-lua 0.20.7 — 2026-09-04
 
 ### Added

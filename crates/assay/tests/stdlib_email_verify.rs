@@ -44,6 +44,28 @@ async fn test_candidates_common_shapes_first() {
 }
 
 #[tokio::test]
+async fn test_candidates_transliterate_nordic_and_german_letters() {
+    run_lua(
+        r#"
+        local ev = require("assay.email_verify")
+
+        local c = ev.candidates("Mette", "Skjærbæk", "karmameju.com")
+        assert.eq(c[1], "mette.skjaerbaek@karmameju.com")
+
+        local c2 = ev.candidates("Søren", "Schriver", "karmameju.com")
+        assert.eq(c2[1], "soren.schriver@karmameju.com")
+        assert.contains(table.concat(c2, " "), "soeren.schriver@karmameju.com")
+
+        local c3 = ev.candidates("Jürgen", "Müller", "beispiel.de")
+        assert.eq(c3[1], "jurgen.muller@beispiel.de")
+        assert.contains(table.concat(c3, " "), "juergen.mueller@beispiel.de")
+    "#,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn test_verify_mx_present_is_unknown_never_more() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
