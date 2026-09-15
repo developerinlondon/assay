@@ -2,10 +2,11 @@
 #
 # .mise.toml is the source of truth for tool versions and must carry the same
 # number; this file exists so a checkout without mise — a contributor with only
-# rustup, a container, an agent shelling into the repo — gets that toolchain and
-# its rustfmt rather than whatever `stable` happens to be that week. rustfmt
-# output changes between releases, so an unpinned formatter is a diff nobody
-# agreed to.
+# rustup, a container, an agent shelling into the repo — gets that toolchain
+# rather than whatever `stable` happens to be that week. rustfmt output changes
+# between releases, so an unpinned formatter is a diff nobody agreed to.
+# No `components` here: rustup would install them on every cargo call, which a
+# read-only toolchain directory (the coding verifier) refuses; the default
+# profile carries rustfmt and clippy, and minimal images add them explicitly.
 [toolchain]
 channel = "1.97.1"
-components = ["rustfmt", "clippy"]
