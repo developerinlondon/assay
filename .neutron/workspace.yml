@@ -1,4 +1,4 @@
-image: rust:1
+image: rust:1.97.1
 resources:
   cpu: "16"
   memory: 16Gi
