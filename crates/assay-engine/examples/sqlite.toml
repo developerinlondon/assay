@@ -22,6 +22,25 @@ enabled = true
 [dashboard]
 enabled = true
 
+# The vault module holds every secret under one master key, and that key
+# has to be encrypted at rest by something. Without unseal material the
+# engine refuses to start rather than write the key beside the secrets it
+# protects, where a copy of the store is a copy of the vault.
+#
+# The default source is the ASSAY_VAULT_SEAL_KEY environment variable, so
+# this section can be omitted entirely once that is set. Reading the key
+# from a file instead keeps it out of `/proc/<pid>/environ` and out of
+# core dumps:
+#
+# [vault.sealing]
+# source = "file"
+# path = "/run/secrets/vault-seal-key"   # must be mode 0600
+#
+# This example is the local-development shape, which logs at ERROR on
+# every boot. See docs/vault-sealing.md.
+[vault.sealing]
+allow_plaintext_kek = true
+
 [logging]
 level = "info"
 format = "pretty"

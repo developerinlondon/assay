@@ -1,25 +1,40 @@
 //! KEK persistence — load the active KEK from `vault.kek_metadata` or
 //! generate a fresh one on first boot.
 //!
-//! ## Phase 1 stance
+//! ## Nothing here decides whether plaintext is acceptable
 //!
-//! Phase 1 ships `sealing_method = 'plaintext'` only — the KEK lives in
-//! `kek_metadata.sealed_blob` as raw bytes. Engine boot logs a WARN so
-//! operators know vault is running unsealed and that Phase 2 is the path
-//! to real sealing.
+//! The loaders take an already-resolved
+//! [`crate::crypto::seal_policy::Unseal`] rather than an
+//! `Option<&SealKey>`, so "there is no seal key" cannot reach this
+//! module as a bare `None` that silently means "write it in the clear".
+//! By the time a call gets here, an operator has either supplied unseal
+//! material or explicitly accepted a plaintext KEK — that decision
+//! belongs to [`crate::crypto::seal_policy::SealPolicy`], which fails
+//! boot when neither happened.
+//!
+//! ## Re-sealing is one-way and is asked about
+//!
+//! A store holding a plaintext row, booted with a seal key, used to be
+//! rewritten in place on the spot. Afterwards the KEK exists only under
+//! that key, so an operator who loses it has lost every secret the vault
+//! wraps with no plaintext copy left to fall back on. The rewrite now
+//! needs consent, and refusing names the backup to take first. That
+//! consent rides on the [`Unseal`] the caller already had to resolve, so
+//! there is exactly one place to say yes to it.
 //!
 //! ## Phase 2 plug-in shape
 //!
-//! Phase 2 will add `load_with_unseal` variants that take an
-//! `UnsealMaterial` enum (Shamir shares, KMS handle, HSM session). The
-//! Phase 1 loader stays usable for the plaintext path indefinitely so
-//! tests don't need to set up KMS.
+//! Phase 2 will add `load_with_unseal` variants that take the full
+//! unseal-material enum (Shamir shares, KMS handle, HSM session). The
+//! loaders here stay the env-key and plaintext path.
 
 use anyhow::Context;
+use zeroize::Zeroizing;
 
 use crate::crypto::aead::{KEY_LEN, random_dek};
-use crate::crypto::env_seal::{ENV_VAR, METHOD_ENV, SealKey};
-use crate::crypto::kek::KekHandle;
+use crate::crypto::env_seal::{ENV_VAR, METHOD_ENV};
+use crate::crypto::kek::{KEK_TABLE, KekHandle};
+use crate::crypto::seal_policy::{CFG_ALLOW_PLAINTEXT_KEK, CFG_ALLOW_PLAINTEXT_MIGRATION, Unseal};
 
 /// Sealing method — the column value in `vault.kek_metadata`.
 pub const METHOD_PLAINTEXT: &str = "plaintext";
@@ -43,28 +58,21 @@ pub enum ActiveKek {
 #[cfg(feature = "vault-sealing-shamir")]
 use crate::crypto::sealing::shamir::{Share, split_kek};
 
-/// Load the active KEK or generate one on first boot.
+/// Load the active KEK, or mint one on first boot, under `unseal`.
 ///
-/// "Active" = the row with the most recent `created_at`. If no row
-/// exists, a fresh 32-byte KEK is minted, persisted with
-/// `sealing_method = 'plaintext'`, and returned.
-///
-/// The returned handle holds the unsealed bytes in memory; persisting
-/// them in plaintext is the explicit Phase 1 trade-off.
-#[cfg(feature = "backend-postgres")]
-pub async fn load_or_init_postgres(pool: &sqlx::PgPool) -> anyhow::Result<KekHandle> {
-    load_or_init_postgres_sealed(pool, None).await
-}
-
-/// Load the active KEK, sealing it under `seal` when one is supplied.
+/// "Active" = the row with the most recent `created_at`. A fresh KEK is
+/// sealed under the supplied material, or — only when the operator set
+/// `allow_plaintext_kek` — written in the clear.
 ///
 /// A store already holding a plaintext KEK is re-sealed in place on the
 /// first boot that has a seal key, so turning sealing on is a restart
-/// rather than a migration. Re-running with the same key is a no-op.
+/// rather than a migration. Because that rewrite is one-way it happens
+/// only when the `Unseal` carries consent for it. Re-running with the
+/// same key is a no-op.
 #[cfg(feature = "backend-postgres")]
 pub async fn load_or_init_postgres_sealed(
     pool: &sqlx::PgPool,
-    seal: Option<&SealKey>,
+    unseal: &Unseal,
 ) -> anyhow::Result<KekHandle> {
     let existing: Option<(String, String, Vec<u8>)> = sqlx::query_as(
         "SELECT kid, sealing_method, sealed_blob
@@ -77,10 +85,11 @@ pub async fn load_or_init_postgres_sealed(
     .context("read vault.kek_metadata")?;
 
     if let Some((kid, method, blob)) = existing {
-        let key = open_stored_kek(&kid, &method, &blob, seal)?;
-        if let Some(seal) = seal
+        let key = open_stored_kek(&kid, &method, &blob, unseal)?;
+        if let Some(seal) = unseal.seal_key()
             && method == METHOD_PLAINTEXT
         {
+            require_migration_consent(&kid, unseal.may_migrate_plaintext())?;
             let resealed = seal.seal(&kid, &key)?;
             sqlx::query(
                 "UPDATE vault.kek_metadata
@@ -95,12 +104,12 @@ pub async fn load_or_init_postgres_sealed(
             .context("re-seal vault.kek_metadata")?;
             warn_resealed(&kid);
         }
-        return Ok(KekHandle::from_bytes(kid, key));
+        return Ok(KekHandle::from_bytes(kid, *key));
     }
 
-    let key = random_dek();
-    let handle = KekHandle::from_bytes(content_addressed_kid(&key), key);
-    let (method, blob) = seal_for_storage(handle.kid(), &key, seal)?;
+    let key = Zeroizing::new(random_dek());
+    let handle = KekHandle::from_bytes(content_addressed_kid(&key), *key);
+    let (method, blob) = seal_for_storage(handle.kid(), &key, unseal)?;
     sqlx::query(
         "INSERT INTO vault.kek_metadata
             (kid, sealing_method, sealed, sealed_blob, sealed_at, unsealed_at)
@@ -115,17 +124,11 @@ pub async fn load_or_init_postgres_sealed(
     Ok(handle)
 }
 
-/// SQLite mirror of [`load_or_init_postgres`].
-#[cfg(feature = "backend-sqlite")]
-pub async fn load_or_init_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<KekHandle> {
-    load_or_init_sqlite_sealed(pool, None).await
-}
-
 /// SQLite mirror of [`load_or_init_postgres_sealed`].
 #[cfg(feature = "backend-sqlite")]
 pub async fn load_or_init_sqlite_sealed(
     pool: &sqlx::SqlitePool,
-    seal: Option<&SealKey>,
+    unseal: &Unseal,
 ) -> anyhow::Result<KekHandle> {
     let existing: Option<(String, String, Vec<u8>)> = sqlx::query_as(
         "SELECT kid, sealing_method, sealed_blob
@@ -138,10 +141,11 @@ pub async fn load_or_init_sqlite_sealed(
     .context("read vault.kek_metadata")?;
 
     if let Some((kid, method, blob)) = existing {
-        let key = open_stored_kek(&kid, &method, &blob, seal)?;
-        if let Some(seal) = seal
+        let key = open_stored_kek(&kid, &method, &blob, unseal)?;
+        if let Some(seal) = unseal.seal_key()
             && method == METHOD_PLAINTEXT
         {
+            require_migration_consent(&kid, unseal.may_migrate_plaintext())?;
             let resealed = seal.seal(&kid, &key)?;
             sqlx::query(
                 "UPDATE vault.kek_metadata
@@ -156,12 +160,12 @@ pub async fn load_or_init_sqlite_sealed(
             .context("re-seal vault.kek_metadata")?;
             warn_resealed(&kid);
         }
-        return Ok(KekHandle::from_bytes(kid, key));
+        return Ok(KekHandle::from_bytes(kid, *key));
     }
 
-    let key = random_dek();
-    let handle = KekHandle::from_bytes(content_addressed_kid(&key), key);
-    let (method, blob) = seal_for_storage(handle.kid(), &key, seal)?;
+    let key = Zeroizing::new(random_dek());
+    let handle = KekHandle::from_bytes(content_addressed_kid(&key), *key);
+    let (method, blob) = seal_for_storage(handle.kid(), &key, unseal)?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -186,51 +190,73 @@ pub async fn load_or_init_sqlite_sealed(
 ///
 /// An env-sealed row without a seal key is a hard error: booting on
 /// would mint a second KEK and orphan every secret the first one wraps.
+/// `allow_plaintext_kek` does not help here — it gates *minting* a key
+/// in the clear, never *opening* a store that is already sealed.
 fn open_stored_kek(
     kid: &str,
     method: &str,
     blob: &[u8],
-    seal: Option<&SealKey>,
-) -> anyhow::Result<[u8; KEY_LEN]> {
+    unseal: &Unseal,
+) -> anyhow::Result<Zeroizing<[u8; KEY_LEN]>> {
     match method {
         METHOD_PLAINTEXT => {
             let key = parse_plaintext_blob(method, blob)
                 .with_context(|| format!("unwrap KEK kid={kid}"))?;
-            if seal.is_none() {
+            if !unseal.is_sealed() {
                 warn_if_plaintext(kid, method);
             }
             Ok(key)
         }
         METHOD_ENV => {
-            let seal = seal.ok_or_else(|| {
+            let seal = unseal.seal_key().ok_or_else(|| {
                 anyhow::anyhow!(
-                    "vault KEK kid={kid} is sealed with {METHOD_ENV} but {ENV_VAR} is not set; \
-                     set it to the key this store was sealed with"
+                    "vault KEK kid={kid} is sealed with {METHOD_ENV} but no unseal material is \
+                     configured — {ENV_VAR} is not set and `[vault.sealing]` names no other \
+                     source that produced a key. Set it to the key this store was sealed with; \
+                     `{CFG_ALLOW_PLAINTEXT_KEK}` does not open a sealed store."
                 )
             })?;
-            Ok(seal.unseal(kid, blob)?)
+            Ok(Zeroizing::new(seal.unseal(kid, blob)?))
         }
         other => anyhow::bail!("unsupported vault sealing_method '{other}' for kid={kid}"),
     }
+}
+
+/// Gate the one-way rewrite of a plaintext row into a sealed one.
+///
+/// The refusal has to leave an operator able to act: what to back up,
+/// and what they are accepting by proceeding.
+fn require_migration_consent(kid: &str, allowed: bool) -> anyhow::Result<()> {
+    if allowed {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "vault KEK kid={kid} is stored in the clear and unseal material is now configured, but \
+         re-sealing it is one-way: afterwards the key exists only under that material, and losing \
+         the material loses every secret the vault wraps, with no plaintext copy left to fall back \
+         on. Back up {KEK_TABLE} first, then set `{CFG_ALLOW_PLAINTEXT_MIGRATION} = true` to let \
+         this boot re-seal it. To carry on unsealed for now, remove the unseal material instead."
+    )
 }
 
 /// The method name and blob to persist for a freshly minted KEK.
 fn seal_for_storage(
     kid: &str,
     key: &[u8; KEY_LEN],
-    seal: Option<&SealKey>,
+    unseal: &Unseal,
 ) -> anyhow::Result<(&'static str, Vec<u8>)> {
-    match seal {
-        Some(seal) => {
+    match unseal {
+        Unseal::Sealed { key: seal, .. } => {
             tracing::info!(
                 target: "assay-vault",
                 kid = %kid,
-                "first-boot KEK sealed with the environment seal key"
+                source = %seal.origin(),
+                "first-boot KEK sealed with the configured unseal material"
             );
             Ok((METHOD_ENV, seal.seal(kid, key)?))
         }
-        None => {
-            warn_first_boot_plaintext(kid);
+        Unseal::PlaintextPermitted => {
+            error_first_boot_plaintext(kid);
             Ok((METHOD_PLAINTEXT, key.to_vec()))
         }
     }
@@ -240,12 +266,12 @@ fn warn_resealed(kid: &str) {
     tracing::warn!(
         target: "assay-vault",
         kid = %kid,
-        "vault KEK was stored in plaintext and has been re-sealed with {ENV_VAR}; \
+        "vault KEK was stored in plaintext and has been re-sealed; \
          database backups taken before now still contain the unsealed key"
     );
 }
 
-fn parse_plaintext_blob(method: &str, blob: &[u8]) -> anyhow::Result<[u8; KEY_LEN]> {
+fn parse_plaintext_blob(method: &str, blob: &[u8]) -> anyhow::Result<Zeroizing<[u8; KEY_LEN]>> {
     if method != METHOD_PLAINTEXT {
         anyhow::bail!(
             "parse_plaintext_blob called for sealing_method = '{method}'; \
@@ -258,7 +284,7 @@ fn parse_plaintext_blob(method: &str, blob: &[u8]) -> anyhow::Result<[u8; KEY_LE
             blob.len()
         );
     }
-    let mut key = [0u8; KEY_LEN];
+    let mut key = Zeroizing::new([0u8; KEY_LEN]);
     key.copy_from_slice(blob);
     Ok(key)
 }
@@ -298,7 +324,7 @@ pub async fn load_active_sqlite(pool: &sqlx::SqlitePool) -> anyhow::Result<Optio
             warn_if_plaintext(&kid, &method);
             Ok(Some(ActiveKek::Plaintext {
                 kid: kid.clone(),
-                handle: KekHandle::from_bytes(kid, key),
+                handle: KekHandle::from_bytes(kid, *key),
             }))
         }
         METHOD_SHAMIR => {
@@ -343,7 +369,7 @@ pub async fn load_active_postgres(pool: &sqlx::PgPool) -> anyhow::Result<Option<
             warn_if_plaintext(&kid, &method);
             Ok(Some(ActiveKek::Plaintext {
                 kid: kid.clone(),
-                handle: KekHandle::from_bytes(kid, key),
+                handle: KekHandle::from_bytes(kid, *key),
             }))
         }
         METHOD_SHAMIR => {
@@ -513,18 +539,24 @@ fn warn_if_plaintext(kid: &str, method: &str) {
         tracing::warn!(
             target: "assay-vault",
             kid, method,
-            "vault running with plaintext KEK at rest. Move to shamir / kms / hsm sealing in Phase 2 — \
-             see plan 17 §S7."
+            "vault running with a plaintext KEK at rest. Configure `[vault.sealing]` and set \
+             `{CFG_ALLOW_PLAINTEXT_MIGRATION} = true` once {KEK_TABLE} is backed up, to seal it."
         );
     }
 }
 
-fn warn_first_boot_plaintext(kid: &str) {
-    tracing::warn!(
+/// ERROR rather than WARN: this is a deployment running without the
+/// protection sealing exists to give, and it only happens because an
+/// operator asked for it in config. It should be visible in a log the
+/// way an incident is, not the way a deprecation notice is.
+fn error_first_boot_plaintext(kid: &str) {
+    tracing::error!(
         target: "assay-vault",
         kid,
-        "first-boot plaintext KEK persisted. Phase 1 placeholder; rotate to a real sealing method as \
-         Phase 2 lands."
+        table = KEK_TABLE,
+        "first-boot vault KEK written to {KEK_TABLE} in the clear, because \
+         `{CFG_ALLOW_PLAINTEXT_KEK}` is set. A dump of this database is a copy of every secret \
+         the vault will hold."
     );
 }
 
@@ -578,11 +610,33 @@ mod tests {
         pool
     }
 
+    /// The permitted-plaintext path, which is what the old no-argument
+    /// convenience wrapper did implicitly. Spelling it out per call is
+    /// the point: a test that wants a key in the clear now says so.
+    async fn load_plaintext(pool: &sqlx::SqlitePool) -> anyhow::Result<KekHandle> {
+        load_or_init_sqlite_sealed(pool, &Unseal::PlaintextPermitted).await
+    }
+
+    async fn load_sealed(
+        pool: &sqlx::SqlitePool,
+        raw: &str,
+        migrate: bool,
+    ) -> anyhow::Result<KekHandle> {
+        let key = crate::crypto::env_seal::SealKey::derive(raw)?;
+        let unseal = Unseal::Sealed {
+            key,
+            migrate_plaintext: migrate,
+        };
+        load_or_init_sqlite_sealed(pool, &unseal).await
+    }
+
+    const SEAL_A: &str = "YzBmZTFhMmIzYzRkNWU2ZjcwODE5MmEzYjRjNWQ2ZTc=";
+
     #[tokio::test]
     async fn first_boot_seeds_kek() {
         let pool = boot_pool().await;
-        let h1 = load_or_init_sqlite(&pool).await.unwrap();
-        let h2 = load_or_init_sqlite(&pool).await.unwrap();
+        let h1 = load_plaintext(&pool).await.unwrap();
+        let h2 = load_plaintext(&pool).await.unwrap();
         // Same kid both times — second call loads, doesn't re-seed.
         assert_eq!(h1.kid(), h2.kid());
         let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM vault.kek_metadata")
@@ -603,7 +657,7 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        let res = load_or_init_sqlite(&pool).await;
+        let res = load_plaintext(&pool).await;
         assert!(
             res.is_err(),
             "non-plaintext sealing must be rejected in Phase 1"
@@ -621,6 +675,79 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        assert!(load_or_init_sqlite(&pool).await.is_err());
+        assert!(load_plaintext(&pool).await.is_err());
+    }
+
+    /// Re-sealing destroys the only plaintext copy, so it waits to be
+    /// asked — and the refusal has to say what to back up.
+    #[tokio::test]
+    async fn a_plaintext_store_is_not_resealed_without_consent() {
+        let pool = boot_pool().await;
+        load_plaintext(&pool).await.unwrap();
+
+        let err = load_sealed(&pool, SEAL_A, false).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains(KEK_TABLE), "name the backup to take: {msg}");
+        assert!(msg.contains(CFG_ALLOW_PLAINTEXT_MIGRATION), "{msg}");
+
+        let method: (String,) =
+            sqlx::query_as("SELECT sealing_method FROM vault.kek_metadata LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(method.0, METHOD_PLAINTEXT, "the row must be untouched");
+    }
+
+    #[tokio::test]
+    async fn consent_lets_the_reseal_through_and_keeps_the_same_key() {
+        let pool = boot_pool().await;
+        let before = load_plaintext(&pool).await.unwrap();
+
+        let after = load_sealed(&pool, SEAL_A, true).await.unwrap();
+        assert_eq!(
+            before.kid(),
+            after.kid(),
+            "re-sealing must keep the key it already had, not mint a new one"
+        );
+
+        let method: (String,) =
+            sqlx::query_as("SELECT sealing_method FROM vault.kek_metadata LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(method.0, METHOD_ENV);
+    }
+
+    /// The escape hatch gates minting a key in the clear. It must not
+    /// become a way past a store that is already sealed — that would
+    /// mint a second KEK and orphan every secret the first one wraps.
+    #[tokio::test]
+    async fn permitted_plaintext_does_not_open_a_sealed_store() {
+        let pool = boot_pool().await;
+        load_sealed(&pool, SEAL_A, false).await.unwrap();
+
+        let err = load_plaintext(&pool).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("is not set"), "{msg}");
+        assert!(
+            msg.contains(CFG_ALLOW_PLAINTEXT_KEK),
+            "say plainly that the hatch does not help here: {msg}"
+        );
+
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM vault.kek_metadata")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count.0, 1, "no second KEK may be minted");
+    }
+
+    #[tokio::test]
+    async fn the_wrong_key_does_not_open_a_sealed_store() {
+        let pool = boot_pool().await;
+        load_sealed(&pool, SEAL_A, false).await.unwrap();
+
+        let other = "ZzBmZTFhMmIzYzRkNWU2ZjcwODE5MmEzYjRjNWQ2ZTc=";
+        let err = load_sealed(&pool, other, false).await.unwrap_err();
+        assert!(err.to_string().contains("does not decrypt"), "{err}");
     }
 }

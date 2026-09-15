@@ -82,12 +82,28 @@ impl SealingMethod {
 pub mod shamir {
     use super::*;
     use crate::crypto::aead::KEY_LEN;
+    use zeroize::{ZeroizeOnDrop, Zeroizing};
 
     /// One unseal share — the wire format an operator passes back to
     /// `unseal`. Internally it's the byte representation `sharks`
     /// produces.
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    ///
+    /// `threshold` of these reconstruct the master KEK, so a share is
+    /// key material and is treated as such: scrubbed on drop, and
+    /// redacted rather than derived in `Debug` so that a containing
+    /// struct cannot start printing shares by adding a derive.
+    ///
+    /// `PartialEq`/`Eq` are byte-wise and not constant-time. They exist
+    /// for round-trip assertions in tests; nothing on the unseal path
+    /// compares shares, and nothing should start.
+    #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
     pub struct Share(pub Vec<u8>);
+
+    impl std::fmt::Debug for Share {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Share(redacted, {} bytes)", self.0.len())
+        }
+    }
 
     impl Share {
         pub fn from_bytes(b: Vec<u8>) -> Self {
@@ -137,9 +153,10 @@ pub mod shamir {
                     .map_err(|e| VaultError::Crypto(format!("bad share: {e}")))
             })
             .collect::<Result<Vec<_>>>()?;
-        let secret = s
-            .recover(&parsed)
-            .map_err(|e| VaultError::Crypto(format!("shamir recover: {e}")))?;
+        let secret = Zeroizing::new(
+            s.recover(&parsed)
+                .map_err(|e| VaultError::Crypto(format!("shamir recover: {e}")))?,
+        );
         if secret.len() != KEY_LEN {
             return Err(VaultError::Crypto(format!(
                 "recovered secret is {} bytes; expected {KEY_LEN}",
@@ -183,6 +200,20 @@ pub mod shamir {
             assert!(split_kek(&kek, 0, 3).is_err());
             assert!(split_kek(&kek, 3, 0).is_err());
             assert!(split_kek(&kek, 5, 3).is_err());
+        }
+
+        /// A share is `threshold`-of-N of the master key, so it must not
+        /// turn up in a log line because something upstream derived
+        /// `Debug`.
+        #[test]
+        fn debug_never_prints_share_bytes() {
+            let shares = split_kek(&[0x5Au8; KEY_LEN], 2, 3).unwrap();
+            let rendered = format!("{:?}", shares[0]);
+            assert!(rendered.contains("redacted"), "{rendered}");
+            // A derived Debug over the inner Vec would print the byte
+            // list, brackets and all. This one prints only a length.
+            assert!(!rendered.contains('['), "{rendered}");
+            assert!(rendered.contains(&shares[0].as_bytes().len().to_string()));
         }
 
         #[test]

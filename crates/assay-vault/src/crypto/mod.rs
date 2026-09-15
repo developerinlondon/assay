@@ -14,6 +14,8 @@
 pub mod aead;
 pub mod env_seal;
 pub mod kek;
+pub mod seal_policy;
+pub mod seal_source;
 pub mod seal_state;
 pub mod sealing;
 
@@ -24,6 +26,8 @@ pub mod kek_rotate;
 pub mod kek_store;
 
 pub use aead::{NONCE_LEN, decrypt, encrypt, random_dek, random_nonce};
-pub use kek::KekHandle;
+pub use kek::{KEK_TABLE, KekHandle};
+pub use seal_policy::{SealPolicy, Unseal};
+pub use seal_source::SealSource;
 pub use seal_state::{SealState, SealStatus};
 pub use sealing::{KmsSeal, SealStore, SealingMethod};

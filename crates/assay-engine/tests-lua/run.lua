@@ -64,6 +64,13 @@ data_dir = "%s"
 [auth]
 admin_api_keys = ["%s"]
 
+# The vault module is on by default and refuses to boot without unseal
+# material, rather than write its master key to the store in the clear.
+# This harness is throwaway and does not exercise sealing, so it takes
+# the documented local-development path.
+[vault.sealing]
+allow_plaintext_kek = true
+
 [logging]
 level = "warn"
 format = "pretty"

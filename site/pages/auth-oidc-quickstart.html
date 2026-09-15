@@ -38,9 +38,23 @@ issuer = "https://auth.example.com/auth"
 admin_api_keys = ["sk_admin_replace_me"]
 
 [auth.oidc_provider]
-enabled = true</code></pre>
+enabled = true
 
-    <pre><code>assay-engine serve --config engine.toml</code></pre>
+# The vault module is on by default and holds every secret under one
+# master key. Without unseal material the engine refuses to start rather
+# than write that key into the same database as the secrets it protects.
+# ASSAY_VAULT_SEAL_KEY is the default source, so no section is needed
+# here. To read the key from a file instead, uncomment:
+#
+# [vault.sealing]
+# source = "file"
+# path = "/run/secrets/vault-seal-key"   # must be mode 0600
+#
+# See docs/vault-sealing.md for the other sources.</code></pre>
+
+    <pre><code># Any string of at least 32 characters. Not recoverable — back it up.
+export ASSAY_VAULT_SEAL_KEY="$(openssl rand -base64 32)"
+assay-engine serve --config engine.toml</code></pre>
 
     <p>Verify the discovery doc is live:</p>
     <pre><code>curl https://auth.example.com/.well-known/openid-configuration | jq .

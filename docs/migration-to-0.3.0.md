@@ -130,7 +130,12 @@ with `assay.ory.*`). The `assay.openbao` alias still loads through the renamed m
 ### Binary users
 
 ```toml
-# engine.toml — no required edits. Vault module is enabled by default.
+# engine.toml — the vault module is enabled by default, and since
+# assay-engine 0.5.20 a vault-enabled engine refuses to boot with no
+# unseal material. Supply ASSAY_VAULT_SEAL_KEY, point [vault.sealing] at
+# another source, or write the local-development hatch down:
+[vault.sealing]
+allow_plaintext_kek = true
 ```
 
 PG deployments: the `vault` schema is created automatically. SQLite deployments: `./data/vault.db`
@@ -161,10 +166,11 @@ the assay-engine's own vault surface.
 
 #### Master KEK
 
-On first v0.3.0 boot, the engine generates a fresh 32-byte KEK and persists it in
-`vault.kek_metadata` with `sealing_method =
-'plaintext'`. The plaintext stance is a Phase-1
-placeholder; engine boot logs a WARN.
+On first v0.3.0 boot, the engine generated a fresh 32-byte KEK and persisted it in
+`vault.kek_metadata` with `sealing_method = 'plaintext'`, logging a WARN. That is no longer what
+happens: from assay-engine 0.5.20 a boot with no unseal material fails rather than minting a key in
+the clear, and minting one anyway requires `[vault.sealing] allow_plaintext_kek = true`. See
+[`docs/vault-sealing.md`](vault-sealing.md).
 
 To migrate to Shamir Secret Sharing:
 

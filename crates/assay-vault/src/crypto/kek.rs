@@ -7,11 +7,15 @@
 //! At rest the KEK lives in `vault.kek_metadata.sealed_blob`; how the
 //! blob maps back to raw bytes depends on `sealing_method`:
 //!
-//! - `plaintext` (Phase 1 placeholder): blob *is* the 32 raw bytes.
-//!   Engine boot logs a warning at INFO level so operators know to
-//!   migrate to a real sealing method as Phase 2 lands.
-//! - `shamir` / `kms-*` / `hsm` (Phase 2): real sealing — the unsealed
-//!   bytes never touch disk; this handle holds them in memory only.
+//! - `env-aes-gcm`: blob is the KEK under AES-GCM with a key derived
+//!   from the configured unseal material. This is what a store gets
+//!   when `[vault.sealing]` resolves to any source.
+//! - `plaintext`: blob *is* the 32 raw bytes. Only reachable with
+//!   `[vault.sealing] allow_plaintext_kek = true`, which is logged at
+//!   ERROR on every boot; without it a vault-enabled engine refuses to
+//!   start rather than mint a key in the clear.
+//! - `shamir` / `kms-*` / `hsm`: real sealing — the unsealed bytes
+//!   never touch disk; this handle holds them in memory only.
 //!
 //! The handle exposes envelope ops (wrap / unwrap a DEK) but never
 //! exposes the raw bytes — every consumer goes through the wrap/unwrap
@@ -19,8 +23,15 @@
 
 use std::sync::Arc;
 
+use zeroize::Zeroize;
+
 use crate::crypto::aead::{KEY_LEN, NONCE_LEN, decrypt, encrypt, random_nonce};
 use crate::error::{Result, VaultError};
+
+/// The table the KEK lives in at rest. Named as a constant so the
+/// operator-facing messages that tell someone to back it up before an
+/// irreversible re-seal cannot drift from the schema.
+pub const KEK_TABLE: &str = "vault.kek_metadata";
 
 /// In-memory KEK material. Cheap to clone — the inner Arc shares the
 /// raw bytes across consumers without re-allocating.
@@ -30,9 +41,27 @@ pub struct KekHandle {
     inner: Arc<KekInner>,
 }
 
+/// Hand-written rather than derived: a derived `Debug` would print the
+/// key, and the whole point of confining the bytes to this file is that
+/// no containing struct can start logging them by adding a derive.
+impl std::fmt::Debug for KekHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "KekHandle {{ kid: {:?}, key: redacted }}", self.kid())
+    }
+}
+
 struct KekInner {
     kid: String,
     key: [u8; KEY_LEN],
+}
+
+/// Scrub the KEK when the last handle goes. The `Arc` means this runs
+/// exactly once, on the final drop, rather than every time a cheap
+/// clone falls out of scope.
+impl Drop for KekInner {
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 /// Fully-resolved wrapped DEK — the bytes the storage layer puts on
@@ -112,7 +141,7 @@ impl KekHandle {
         nonce.copy_from_slice(&bytes[..NONCE_LEN]);
         let ct = &bytes[NONCE_LEN..];
         let aad = self.inner.kid.as_bytes();
-        let pt = decrypt(&self.inner.key, &nonce, aad, ct)?;
+        let pt = zeroize::Zeroizing::new(decrypt(&self.inner.key, &nonce, aad, ct)?);
         if pt.len() != KEY_LEN {
             return Err(VaultError::Crypto(format!(
                 "wrapped DEK plaintext is {} bytes; expected {}",
@@ -188,6 +217,19 @@ mod tests {
         let kek = KekHandle::generate_ephemeral();
         let wrapped = WrappedDek(vec![0u8; 5]);
         assert!(kek.unwrap_dek(&wrapped).is_err());
+    }
+
+    /// A KEK that reaches a log line is a KEK in the log. The handle
+    /// prints its kid, which is public and greppable, and nothing else.
+    #[test]
+    fn debug_prints_the_kid_and_not_the_key() {
+        let key = [0xABu8; KEY_LEN];
+        let kek = KekHandle::from_bytes("kek-visible", key);
+        let rendered = format!("{kek:?}");
+        assert!(rendered.contains("kek-visible"), "{rendered}");
+        assert!(rendered.contains("redacted"), "{rendered}");
+        assert!(!rendered.contains("171"), "{rendered}");
+        assert!(!rendered.contains("ab"), "{rendered}");
     }
 
     #[test]

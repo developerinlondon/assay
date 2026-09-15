@@ -40,6 +40,20 @@ starttls = true
 enabled = true
 auto_provision = true
 
+# This store already holds its vault master key in the clear, from
+# before sealing existed. Sealing it is a one-way rewrite: afterwards the
+# key exists only under the unseal material, and losing that material
+# loses every secret the vault wraps, with no plaintext copy left to fall
+# back on. That is an operator act with a backup in front of it, not
+# something a config file should do on the next deploy — so this keeps
+# the at-rest state exactly as it is today, and the engine says so at
+# ERROR on every boot.
+#
+# Turning sealing on is a deliberate, one-time procedure: README.md,
+# "Sealing the vault master key".
+[vault.sealing]
+allow_plaintext_kek = true
+
 [dashboard]
 enabled = true
 operator_enabled = false

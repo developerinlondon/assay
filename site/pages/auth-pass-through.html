@@ -87,7 +87,20 @@ jwks_refresh_secs = 3600       # default; minimum 60
 # Multiple issuers? Add more blocks. Tokens are routed by `iss` claim.
 [[auth.external_issuers]]
 issuer_url = "https://login.partner.example.com/"
-audience = ["my-app", "shared-with-partner"]</code></pre>
+audience = ["my-app", "shared-with-partner"]
+
+# The vault module is on by default and holds every secret under one
+# master key. Without unseal material the engine refuses to start rather
+# than write that key into the same database as the secrets it protects.
+# Set ASSAY_VAULT_SEAL_KEY to any string of at least 32 characters — it
+# is the default source, so no section is needed here. To read the key
+# from a file instead, uncomment:
+#
+# [vault.sealing]
+# source = "file"
+# path = "/run/secrets/vault-seal-key"   # must be mode 0600
+#
+# See docs/vault-sealing.md for the other sources.</code></pre>
 
     <p>
       When <code>[[auth.external_issuers]]</code> is non-empty, the engine boots without

@@ -473,7 +473,10 @@ mod sealing {
                 crate::crypto::kek_store::init_shamir_postgres(&self.pool, threshold, shares_count)
                     .await
                     .map_err(|e| VaultError::Backend(anyhow::anyhow!("seal init_shamir: {e}")))?;
-            Ok((kid, shares.into_iter().map(|s| s.0).collect()))
+            // Copied out rather than moved: a Share zeroizes on drop, so its
+            // buffer cannot be moved out of it. The caller hands these to the
+            // operator once and the engine keeps no copy.
+            Ok((kid, shares.iter().map(|s| s.as_bytes().to_vec()).collect()))
         }
 
         async fn set_sealed(&self, kid: &str, sealed: bool) -> VaultResult<()> {

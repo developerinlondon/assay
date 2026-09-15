@@ -234,8 +234,11 @@ CREATE INDEX IF NOT EXISTS idx_vault_biscuit_root_active
 -- finishes.
 -- `sealed_blob` holds the master KEK material at rest. The interpretation
 -- depends on `sealing_method`:
---   plaintext       — Phase 1 placeholder; blob IS the raw 32-byte KEK.
---                     Tracked in kek_metadata so Phase 2 can re-wrap.
+--   env-aes-gcm     — blob is the KEK encrypted under AES-GCM with a key
+--                     derived from the configured unseal material.
+--   plaintext       — blob IS the raw 32-byte KEK. Only written when an
+--                     operator sets allow_plaintext_kek; re-sealing such
+--                     a row needs allow_plaintext_migration.
 --   shamir          — blob is empty; the KEK is split into rows in
 --                     vault.unseal_shares and reconstituted on unseal.
 --   kms-aws / kms-gcp — blob is the cloud-KMS-encrypted KEK; auto-unseal

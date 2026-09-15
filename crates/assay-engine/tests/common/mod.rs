@@ -97,16 +97,32 @@ pub struct EngineProcess {
     stdout: PathBuf,
 }
 
+/// The `[vault.sealing]` section for a test that does not care about
+/// sealing. The vault module is enabled by default, and a vault-enabled
+/// engine with no unseal material refuses to boot — so every harness
+/// that just wants a running engine has to say which way it wants that
+/// resolved. Saying it here, once, keeps the choice visible: these
+/// engines run the documented local-development path.
+pub const DEV_SEALING: &str = "[vault.sealing]\nallow_plaintext_kek = true\n";
+
 impl EngineProcess {
     /// Spawn `assay-engine serve` on a kernel-chosen port against
-    /// `backend`, a rendered `[backend]` TOML section.
+    /// `backend`, a rendered `[backend]` TOML section, with the vault
+    /// permitted to hold its master key in the clear.
     pub fn spawn(dir: &Path, tag: &str, backend: &str) -> Self {
-        Self::spawn_with_env(dir, tag, backend, None)
+        Self::spawn_with_vault(dir, tag, backend, DEV_SEALING, None)
     }
 
-    /// As [`Self::spawn`], with an optional vault seal key in the
-    /// engine's environment.
-    pub fn spawn_with_env(dir: &Path, tag: &str, backend: &str, seal_key: Option<&str>) -> Self {
+    /// The general form: a rendered `[vault.sealing]` section (which may
+    /// be empty, the shape a deployment gets when it configures nothing)
+    /// alongside an optional seal key in the environment.
+    pub fn spawn_with_vault(
+        dir: &Path,
+        tag: &str,
+        backend: &str,
+        vault_sealing: &str,
+        seal_key: Option<&str>,
+    ) -> Self {
         let cfg_path = dir.join(format!("engine-{tag}.toml"));
         let stderr = dir.join(format!("engine-{tag}.log"));
         let stdout = dir.join(format!("engine-{tag}.out"));
@@ -126,6 +142,8 @@ bind_addr = "127.0.0.1:0"
 
 [auth]
 admin_api_keys = ["{ADMIN_KEY}"]
+
+{vault_sealing}
 
 [logging]
 level = "info"
@@ -227,7 +245,18 @@ format = "pretty"
                 return Ok(port);
             }
             if let Some(status) = self.exited() {
-                return Err(format!("exited {status}: {}", self.log()));
+                // Re-read once the exit is known: the child can write
+                // its listening line and die before the read above, and
+                // a port that was discoverable must not be lost to that
+                // ordering.
+                if let Some(port) = listening_port(&self.tracing_log()) {
+                    return Ok(port);
+                }
+                return Err(format!(
+                    "exited {status}\n--- stdout ---\n{}--- stderr ---\n{}",
+                    self.tracing_log(),
+                    self.log()
+                ));
             }
             if Instant::now() >= deadline {
                 return Err(format!(

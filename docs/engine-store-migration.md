@@ -76,9 +76,22 @@ kubectl scale deploy/assay-engine --replicas=1
 ```
 
 The vault's master key travels with the rest of the store, so migrated secrets decrypt on the other
-side with nothing carried by hand. It also arrives in the clear, which is what it was on SQLite —
-and a Postgres store gets dumped nightly where a volume did not. Set `ASSAY_VAULT_SEAL_KEY` on that
-first Postgres boot and the key is encrypted at rest instead. See
+side with nothing carried by hand. A key that was plaintext on SQLite arrives plaintext on Postgres,
+and a Postgres store gets dumped nightly where a volume did not, so this is the moment to seal it.
+
+Sealing it is a separate, deliberate step. Supplying `ASSAY_VAULT_SEAL_KEY` on that first Postgres
+boot is not enough on its own: re-sealing a plaintext key rewrites the row one way, and afterwards
+the key exists only under that material. The engine refuses rather than do that unasked, so back up
+`vault.kek_metadata`, then boot once with both the material and the consent:
+
+```toml
+[vault.sealing]
+allow_plaintext_migration = true
+```
+
+Take the flag back out after that boot. A store that is already sealed never reaches this path, so
+leaving it set does nothing for this engine — but removing it means a future downgrade to a
+plaintext key is caught rather than quietly rewritten. See
 [`docs/vault-sealing.md`](vault-sealing.md).
 
 `--from` takes the data directory, as `sqlite:<dir>`, `sqlite://<dir>`, or a bare path — whichever

@@ -127,9 +127,22 @@ password = "${SMTP_PASSWORD}"
 from = "Acme Identity <noreply@example.com>"
 
 [auth.oidc_provider]
-enabled = true</code></pre>
+enabled = true
 
-    <pre><code>assay-engine serve --config engine.toml
+# The vault module is on by default and holds every secret under one
+# master key. Without unseal material the engine refuses to start rather
+# than write that key into the same database as the secrets it protects.
+# ASSAY_VAULT_SEAL_KEY is the default source, so no section is needed
+# here. To read the key from a file instead — which keeps it out of
+# /proc/&lt;pid&gt;/environ and out of core dumps — uncomment:
+#
+# [vault.sealing]
+# source = "file"
+# path = "/run/secrets/vault-seal-key"   # must be mode 0600</code></pre>
+
+    <pre><code># Any string of at least 32 characters. Not recoverable — back it up.
+export ASSAY_VAULT_SEAL_KEY="$(openssl rand -base64 32)"
+assay-engine serve --config engine.toml
 #   /auth/console                          → admin SPA
 #   /.well-known/openid-configuration      → OIDC discovery (Hydra-equivalent)
 #   /auth/login, /auth/recovery             → password auth and recovery pages
