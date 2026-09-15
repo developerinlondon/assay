@@ -2,6 +2,29 @@
 
 All notable changes to Assay are documented here.
 
+## assay-auth 0.6.4 — 2026-09-15
+
+### Fixed
+
+- **A token from an external issuer chose the algorithm its own signature was checked with.**
+  `ExternalJwtVerifier::verify` built its validation from `header.alg`, the one field of a JWT an
+  attacker writes freely, so the key matched by `kid` was handed to whatever verifier the token
+  asked for. Point an RSA verification key at an HS256 token and that public key becomes the HMAC
+  secret, and a public secret forges. `alg: none` had the same reach. The path gates the admin,
+  workflow and vault APIs; the internal `jwt.rs` path already keyed the algorithm off the stored
+  key, so external issuers were the exposed half.
+
+  The acceptable algorithms now come from the matched JWK and nothing else: its declared `alg` when
+  it has one, otherwise its key type and curve. P-256 gives ES256, P-384 gives ES384, Ed25519 gives
+  EdDSA, and an RSA key gives the RS and PS family, whose signature math binds the concrete choice.
+  A header alg outside that set is refused before the token is decoded, and `validation.algorithms`
+  is pinned to the same set, so either check alone would hold. Symmetric keys are refused outright
+  for external issuers, because a public JWKS carrying an `oct` entry is publishing the signing
+  secret, which is the confusion primitive itself. `alg: none` can never enter the set.
+
+  An issuer publishing a curve outside that list, P-521 being the one in practice, now fails closed
+  rather than verifying under an algorithm nobody chose.
+
 ## assay-lua 0.20.10 — 2026-09-15
 
 ### Fixed
