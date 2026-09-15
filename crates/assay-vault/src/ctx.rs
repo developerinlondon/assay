@@ -114,15 +114,20 @@ impl Default for VaultCtx {
 impl VaultCtx {
     /// Construct an empty context with a fresh ephemeral KEK. Useful
     /// for tests + boot paths that haven't loaded the persistent KEK
-    /// yet (engine boot replaces this via [`Self::with_kek`]).
+    /// yet (engine boot replaces this via [`Self::with_kek_method`]).
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Construct from an explicit KEK handle. Engine boot calls this
-    /// after `crypto::kek_store::load_or_init_*` returns. Initialises
-    /// the seal state to `unsealed` with method = Plaintext (Phase-1
-    /// shape). For shamir installs use [`Self::with_sealed_shamir`].
+    /// Construct from an explicit KEK handle, reporting the store as
+    /// holding its key in the clear.
+    ///
+    /// Only correct when the key really is plaintext. Engine boot uses
+    /// [`Self::with_kek_method`] with what
+    /// `crypto::kek_store::load_or_init_*_sealed` reports, because a
+    /// sealed store described by this builder tells `/sys/seal-status`
+    /// it is unsealed when it is not. For shamir installs use
+    /// [`Self::with_sealed_shamir`].
     pub fn with_kek(self, kek: KekHandle) -> Self {
         self.with_kek_method(kek, SealingMethod::Plaintext)
     }

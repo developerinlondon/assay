@@ -2,6 +2,106 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.20 — 2026-09-15
+
+### Breaking
+
+- **A vault-enabled engine with no unseal material now refuses to start.** Sealing the master key
+  arrived as an environment variable you could set, and the engine carried on without it: a
+  deployment that never set `ASSAY_VAULT_SEAL_KEY` minted a fresh key, wrote it into
+  `vault.kek_metadata` as raw bytes, logged one warning, and served. The row protecting every secret
+  sat beside the secrets it protects, so a database dump was a plaintext copy of the vault — which
+  is exactly the property sealing exists to remove. Sealing that is opt-in by environment variable
+  is sealing most deployments will not have, and one line in a boot log is not a control.
+
+  Boot now fails closed, naming what to set. The vault module is on by default, so **an existing
+  deployment that has not set `ASSAY_VAULT_SEAL_KEY` will not start after this upgrade** until it
+  either supplies material or writes the escape hatch down:
+
+  ```toml
+  [vault.sealing]
+  allow_plaintext_kek = true # local development; logged at ERROR on every boot
+  ```
+
+  That hatch is config-only — there is deliberately no environment variable for it, because a
+  variable is the kind of thing that gets copied into a deployment template and quietly turns
+  sealing off in production. It permits _minting_ a key in the clear and never opens a store that is
+  already sealed: a sealed store with no material still refuses to boot rather than mint a second
+  key and orphan every secret the first one wraps.
+
+- **Re-sealing a store that holds a plaintext key now waits to be asked.** The first boot with a
+  seal key used to rewrite that row in place and log what it had done. The write is one-way:
+  afterwards the key exists only under that material, and an operator who loses it has lost every
+  secret the vault wraps, with no plaintext copy left to fall back on. Nobody was asked first. It
+  now needs `[vault.sealing] allow_plaintext_migration = true`, and the refusal names
+  `vault.kek_metadata` as the thing to back up before setting it.
+
+### Added
+
+- **`[vault.sealing]` takes the seal key from somewhere other than the environment.** A secret in
+  the process environment is readable from `/proc/<pid>/environ`, is carried into core dumps, and
+  shows up in `systemctl show -p Environment`, so a deployment that keeps its secrets in files had
+  nowhere to put one. Four sources now: `env` (the default, still `ASSAY_VAULT_SEAL_KEY`, and the
+  variable name is itself configurable), `file` with its permissions checked, `value` inline for a
+  `${VAR}` reference, and `passphrase` run through Argon2id for material a human types.
+
+  Every source but `passphrase` is hashed exactly as the variable has always been, so the same
+  string is the same key whichever way it arrives and a secret can move between sources without
+  re-sealing the store. In particular `value` does not base64-decode what it is given, even though
+  an inline key is usually base64: decoding would derive a different key from the same string, and
+  an operator moving `ASSAY_VAULT_SEAL_KEY` into `value` would be told their correct secret does not
+  decrypt.
+
+  The `file` source stats the open handle rather than the path, so a symlink swapped underneath it
+  cannot win the race, and refuses a file group or other can read, naming the path and the mode. The
+  `passphrase` source needs a salt, which is required and public rather than random per boot — the
+  derived key has to survive a restart, so the salt's job is separation between deployments, not
+  secrecy. [`docs/vault-sealing.md`](docs/vault-sealing.md) covers each source and how it fails.
+
+## assay-vault 0.5.0 — 2026-09-15
+
+### Breaking
+
+- **The KEK loaders take a resolved decision instead of an optional key.**
+  `kek_store::load_or_init_postgres_sealed` and `load_or_init_sqlite_sealed` took
+  `Option<&SealKey>`, where `None` silently meant "write the master key to the store in the clear".
+  They now take `&crypto::seal_policy::Unseal`, which a caller can only obtain from
+  `SealPolicy::resolve` — so the question of whether an unsealed vault is acceptable is answered
+  once, by an operator, before any of this code runs, and cannot be answered by omission.
+
+  The no-argument convenience wrappers `load_or_init_postgres` and `load_or_init_sqlite` are
+  removed. They existed only to pass `None`, which is the shape this release exists to eliminate; an
+  embedder that wants a key in the clear now says so with `Unseal::PlaintextPermitted`.
+
+  `Unseal::Sealed` carries the consent for the one-way re-seal of a plaintext store alongside the
+  key. A destructive, irreversible operation should have exactly one place to say yes to it, rather
+  than a policy field and a loader argument that can disagree.
+
+### Added
+
+- **`crypto::seal_source` resolves unseal material from somewhere other than the environment.**
+  `SealSource` covers an environment variable, a file whose permissions are checked against the open
+  handle, an inline value, and a passphrase run through Argon2id behind the new
+  `vault-sealing-passphrase` feature. Everything but the passphrase goes through the existing
+  `SealKey::derive_from`, so the same string is the same key whichever way it arrives.
+
+- **`crypto::seal_policy` decides what boot does when there is none.** `SealPolicy::resolve` either
+  produces material or fails with a message naming what to set, and `SealKey` now carries the origin
+  it came from so a store that will not open names the file or variable to go and check rather than
+  always naming `ASSAY_VAULT_SEAL_KEY`.
+
+### Fixed
+
+- **Key material is scrubbed from memory when it goes out of scope.** The seal key, the master key,
+  Shamir shares of it, and the plaintext intermediates on the way between them all stayed in freed
+  allocations. Shamir shares additionally derived `Debug` over their raw bytes, so any struct that
+  held one and derived `Debug` in turn would print `threshold`-of-N of the master key into a log.
+  Shares and the key handle now redact in `Debug` and zero on drop.
+
+  This narrows the window; it does not close it. The cipher keeps its own expanded round keys, a
+  `Vec` that reallocated leaves its old buffer behind untouched, and nothing here stops the process
+  being paged to swap or written to a core dump.
+
 ## assay-engine 0.5.19 — 2026-09-15
 
 ### Changed

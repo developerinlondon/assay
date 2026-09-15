@@ -71,22 +71,93 @@ pub async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
     server::bind_and_serve(&bind_addr, engine.router).await
 }
 
-/// The seal key for the vault's master KEK, from the environment.
-/// A malformed value fails boot rather than quietly leaving the vault
-/// unsealed at rest.
+/// Map `[vault.sealing]` onto the vault crate's own policy type.
+///
+/// The engine owns the TOML shape; `assay-vault` owns what the shape
+/// means. Keeping the translation here is what lets the vault crate stay
+/// free of any dependency on engine config.
 #[cfg(feature = "vault")]
-fn vault_seal_key() -> anyhow::Result<Option<assay_vault::crypto::env_seal::SealKey>> {
-    assay_vault::crypto::env_seal::SealKey::from_env()
-        .map_err(|e| anyhow::anyhow!("read {}: {e}", assay_vault::crypto::env_seal::ENV_VAR))
+fn vault_seal_policy(
+    cfg: &config::VaultSealingConfig,
+) -> anyhow::Result<assay_vault::crypto::SealPolicy> {
+    use assay_vault::crypto::SealSource;
+
+    // The named field a source needs, or an error naming what is
+    // missing — an operator who picked a source and left its field blank
+    // should be told which line to write, not handed a default.
+    fn required<'a>(
+        value: &'a Option<String>,
+        source: &str,
+        field: &str,
+    ) -> anyhow::Result<&'a str> {
+        value.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| {
+            anyhow::anyhow!(
+                "[vault.sealing] source = \"{source}\" needs `{field}` to be set to a non-empty \
+                 value"
+            )
+        })
+    }
+
+    // A field belonging to a source other than the selected one is
+    // almost always a `source =` line somebody forgot. Ignoring it would
+    // mean an operator who believes they configured a key file boots on
+    // the environment variable instead — and, with the escape hatch also
+    // set, straight into the plaintext KEK this whole path exists to
+    // prevent. Refuse instead.
+    for (field, present, owner) in [
+        ("path", cfg.path.is_some(), "file"),
+        ("value", cfg.value.is_some(), "value"),
+        ("passphrase", cfg.passphrase.is_some(), "passphrase"),
+        ("salt", cfg.salt.is_some(), "passphrase"),
+    ] {
+        if present && owner != cfg.source {
+            anyhow::bail!(
+                "[vault.sealing] sets `{field}`, which only `source = \"{owner}\"` reads, but \
+                 source is \"{}\". Set `source` to the one you meant — booting on material you \
+                 did not configure is how a vault ends up unsealed.",
+                cfg.source
+            );
+        }
+    }
+
+    let source = match cfg.source.as_str() {
+        "env" => SealSource::Env {
+            var: cfg.var.clone(),
+        },
+        "file" => SealSource::File {
+            path: required(&cfg.path, "file", "path")?.into(),
+        },
+        "value" => SealSource::Value {
+            value: required(&cfg.value, "value", "value")?.to_string().into(),
+        },
+        "passphrase" => SealSource::Passphrase {
+            passphrase: required(&cfg.passphrase, "passphrase", "passphrase")?
+                .to_string()
+                .into(),
+            salt: required(&cfg.salt, "passphrase", "salt")?.to_string(),
+        },
+        other => anyhow::bail!(
+            "[vault.sealing] source = \"{other}\" is not a source the engine knows; \
+             use \"env\", \"file\", \"value\" or \"passphrase\""
+        ),
+    };
+
+    Ok(assay_vault::crypto::SealPolicy {
+        source: Some(source),
+        allow_plaintext_kek: cfg.allow_plaintext_kek,
+        allow_plaintext_migration: cfg.allow_plaintext_migration,
+    })
 }
 
+/// What `/vault/sys/seal-status` reports for this boot. `Unseal` is
+/// `#[non_exhaustive]`, so this asks the vault crate's own predicate
+/// rather than matching the variants from outside it.
 #[cfg(feature = "vault")]
-fn seal_method(
-    seal: &Option<assay_vault::crypto::env_seal::SealKey>,
-) -> assay_vault::crypto::SealingMethod {
-    match seal {
-        Some(_) => assay_vault::crypto::SealingMethod::EnvKey,
-        None => assay_vault::crypto::SealingMethod::Plaintext,
+fn seal_method(unseal: &assay_vault::crypto::Unseal) -> assay_vault::crypto::SealingMethod {
+    if unseal.is_sealed() {
+        assay_vault::crypto::SealingMethod::EnvKey
+    } else {
+        assay_vault::crypto::SealingMethod::Plaintext
     }
 }
 
@@ -96,21 +167,25 @@ fn seal_method(
 /// against the same pool the rest of the engine uses.
 #[cfg(all(feature = "vault", feature = "backend-postgres"))]
 async fn build_vault_ctx_pg(
+    sealing: &config::VaultSealingConfig,
     modules: &[String],
     pool: &sqlx::PgPool,
 ) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
     if !modules.iter().any(|m| m == "vault") {
         return Ok(None);
     }
-    let seal = vault_seal_key()?;
-    let kek = assay_vault::crypto::kek_store::load_or_init_postgres_sealed(pool, seal.as_ref())
+    // Resolved before the pool is touched: a deployment with no unseal
+    // material should fail on its configuration, not halfway through
+    // seeding a store.
+    let unseal = vault_seal_policy(sealing)?.resolve()?;
+    let kek = assay_vault::crypto::kek_store::load_or_init_postgres_sealed(pool, &unseal)
         .await
-        .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (pg): {e}"))?;
+        .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (pg): {e:#}"))?;
     // The `vault` umbrella feature on assay-vault implies vault-kv +
     // vault-transit, so the with_* methods are unconditionally
     // available here.
     let mut ctx = assay_vault::VaultCtx::new()
-        .with_kek_method(kek, seal_method(&seal))
+        .with_kek_method(kek, seal_method(&unseal))
         .with_kv(assay_vault::store::postgres::PgKvStore::new(pool.clone()))
         .with_transit(assay_vault::store::postgres::PgTransitStore::new(
             pool.clone(),
@@ -163,18 +238,19 @@ async fn build_vault_ctx_pg(
 /// SQLite mirror of [`build_vault_ctx_pg`].
 #[cfg(all(feature = "vault", feature = "backend-sqlite"))]
 async fn build_vault_ctx_sqlite(
+    sealing: &config::VaultSealingConfig,
     modules: &[String],
     pool: &sqlx::SqlitePool,
 ) -> anyhow::Result<Option<assay_vault::VaultCtx>> {
     if !modules.iter().any(|m| m == "vault") {
         return Ok(None);
     }
-    let seal = vault_seal_key()?;
-    let kek = assay_vault::crypto::kek_store::load_or_init_sqlite_sealed(pool, seal.as_ref())
+    let unseal = vault_seal_policy(sealing)?.resolve()?;
+    let kek = assay_vault::crypto::kek_store::load_or_init_sqlite_sealed(pool, &unseal)
         .await
-        .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (sqlite): {e}"))?;
+        .map_err(|e| anyhow::anyhow!("vault KEK bootstrap (sqlite): {e:#}"))?;
     let mut ctx = assay_vault::VaultCtx::new()
-        .with_kek_method(kek, seal_method(&seal))
+        .with_kek_method(kek, seal_method(&unseal))
         .with_kv(assay_vault::store::sqlite::SqliteKvStore::new(pool.clone()))
         .with_transit(assay_vault::store::sqlite::SqliteTransitStore::new(
             pool.clone(),

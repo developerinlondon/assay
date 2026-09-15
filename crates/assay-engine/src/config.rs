@@ -337,6 +337,157 @@ pub struct AuthOidcProviderConfig {
 pub struct VaultConfig {
     #[serde(default)]
     pub hashicorp_compat: HashicorpCompatConfig,
+    #[serde(default)]
+    pub sealing: VaultSealingConfig,
+}
+
+/// Where the vault's unseal material comes from, and what this
+/// deployment has accepted in its absence.
+///
+/// Omitting the section entirely means "read `ASSAY_VAULT_SEAL_KEY`",
+/// which is what the engine has always done. What changed is the other
+/// half: a vault-enabled engine that finds no material now refuses to
+/// start instead of writing its master key to the store in the clear.
+///
+/// Every field here is deliberately config-only. A secret in the process
+/// environment is readable from `/proc/<pid>/environ`, is carried into
+/// core dumps and shows up in `systemctl show -p Environment`, so this
+/// section exists to give a deployment somewhere else to put one — and
+/// the two `allow_*` escapes have no environment variable at all, so
+/// that nobody turns sealing off by copying a line into a deployment
+/// template. (String fields still take `${VAR}` like every other config
+/// string: substitution is a textual pass over the whole file, so the
+/// escapes are not literally env-proof — they just have no shortcut of
+/// their own.)
+///
+/// `value` and `passphrase` hold the real secret once `${VAR}` has been
+/// expanded, so neither `Debug` nor `Serialize` is derived over them —
+/// both report only whether the field is set.
+#[derive(Clone, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct VaultSealingConfig {
+    /// `"env"` (default), `"file"`, `"value"` or `"passphrase"`.
+    #[serde(default = "default_seal_source")]
+    pub source: String,
+    /// `source = "env"`: which variable to read. Named rather than fixed
+    /// so a deployment whose secret injector has its own conventions
+    /// does not have to rename the secret to suit us.
+    #[serde(default = "default_seal_env_var")]
+    pub var: String,
+    /// `source = "file"`: the path to read. Refused unless only the
+    /// engine's own account can read it.
+    pub path: Option<String>,
+    /// `source = "value"`: the key inline — in practice a `${VAR}`
+    /// reference. Any string, base64 included; it is hashed exactly as
+    /// the environment variable is, so the same value means the same
+    /// key whichever way it arrives.
+    ///
+    /// Serializes as its presence, never its value: this struct is
+    /// returned by the engine config endpoint.
+    #[serde(serialize_with = "serialize_presence_only")]
+    pub value: Option<String>,
+    /// `source = "passphrase"`: something a human types, run through
+    /// Argon2id rather than a plain hash. Needs the
+    /// `vault-sealing-passphrase` build feature.
+    ///
+    /// Serializes as its presence, never its value: this struct is
+    /// returned by the engine config endpoint.
+    #[serde(serialize_with = "serialize_presence_only")]
+    pub passphrase: Option<String>,
+    /// `source = "passphrase"`: required, and public. The derived key
+    /// has to survive a restart, so the salt cannot be random per-boot;
+    /// its job is separation between deployments, not secrecy.
+    pub salt: Option<String>,
+    /// Permit booting with the master key stored in the clear.
+    ///
+    /// **This removes the protection the vault's sealing exists to give:
+    /// a database dump becomes a copy of every secret in it.** It is for
+    /// local development. Every boot that uses it logs at ERROR. It
+    /// permits *minting* a key in the clear and never opens a store that
+    /// is already sealed.
+    #[serde(default)]
+    pub allow_plaintext_kek: bool,
+    /// Permit re-sealing a store that currently holds a plaintext key.
+    ///
+    /// **The rewrite is one-way.** Afterwards the master key exists only
+    /// under your unseal material, and losing that material loses every
+    /// secret the vault wraps — there is no plaintext copy left to fall
+    /// back on. Back up `vault.kek_metadata` before setting this.
+    #[serde(default)]
+    pub allow_plaintext_migration: bool,
+}
+
+impl Default for VaultSealingConfig {
+    fn default() -> Self {
+        // Spelled out rather than derived: `String::default()` is empty,
+        // and an omitted `[vault.sealing]` has to mean "read the
+        // variable the engine has always read", not "read the variable
+        // named nothing". Same reasoning as HashicorpCompatConfig above.
+        Self {
+            source: default_seal_source(),
+            var: default_seal_env_var(),
+            path: None,
+            value: None,
+            passphrase: None,
+            salt: None,
+            allow_plaintext_kek: false,
+            allow_plaintext_migration: false,
+        }
+    }
+}
+
+fn default_seal_source() -> String {
+    "env".to_string()
+}
+
+fn default_seal_env_var() -> String {
+    "ASSAY_VAULT_SEAL_KEY".to_string()
+}
+
+/// What a redacted field reads as. Matches the engine API's own
+/// placeholder so one response does not use two spellings.
+const REDACTED: &str = "[REDACTED]";
+
+/// Serialize an optional secret as its presence, never its value.
+///
+/// `GET /api/v1/engine/core/config` serializes [`EngineConfig`] whole,
+/// and `${VAR}` references are expanded before the TOML is parsed — so
+/// by the time anything serializes this struct it holds the real seal
+/// key, not a reference to one. Redacting at the field rather than in
+/// that one handler's key-name filter means a future caller that
+/// serializes the config cannot reintroduce the leak, and it keeps the
+/// useful half: an operator can still see *whether* a source is
+/// configured.
+fn serialize_presence_only<S>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match value {
+        Some(_) => serializer.serialize_some(REDACTED),
+        None => serializer.serialize_none(),
+    }
+}
+
+/// Hand-written for the same reason the vault crate hand-writes `Debug`
+/// for `SealSource` and `SealKey`: a derive here would print the seal
+/// key into any log line that renders the config.
+impl std::fmt::Debug for VaultSealingConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let redact = |v: &Option<String>| v.as_ref().map(|_| REDACTED);
+        f.debug_struct("VaultSealingConfig")
+            .field("source", &self.source)
+            .field("var", &self.var)
+            .field("path", &self.path)
+            .field("value", &redact(&self.value))
+            .field("passphrase", &redact(&self.passphrase))
+            // The salt is public by design — it separates deployments
+            // rather than hiding anything, and an operator needs to be
+            // able to read back the one their store was sealed with.
+            .field("salt", &self.salt)
+            .field("allow_plaintext_kek", &self.allow_plaintext_kek)
+            .field("allow_plaintext_migration", &self.allow_plaintext_migration)
+            .finish()
+    }
 }
 
 /// Vault / OpenBao KV2 read facade at `/v1/*`. Off unless an operator asks
@@ -682,6 +833,193 @@ mount = "kv"
 
         assert!(cfg.vault.hashicorp_compat.enabled);
         assert_eq!(cfg.vault.hashicorp_compat.mount, "kv");
+    }
+
+    /// An omitted section has to mean "read the variable the engine has
+    /// always read", not "read the variable named nothing" — which is
+    /// what a derived `Default` would give.
+    #[test]
+    fn omitting_the_sealing_section_still_reads_the_usual_variable() {
+        let cfg = minimal_config_with("");
+
+        assert_eq!(cfg.vault.sealing.source, "env");
+        assert_eq!(cfg.vault.sealing.var, "ASSAY_VAULT_SEAL_KEY");
+        assert!(cfg.vault.sealing.path.is_none());
+    }
+
+    /// Both escapes default off. A deployment gets the protection by
+    /// saying nothing, and gives it up only by writing it down.
+    #[test]
+    fn a_plaintext_master_key_is_refused_until_an_operator_asks_for_it() {
+        let cfg = minimal_config_with("");
+
+        assert!(!cfg.vault.sealing.allow_plaintext_kek);
+        assert!(!cfg.vault.sealing.allow_plaintext_migration);
+    }
+
+    #[test]
+    fn a_file_backed_seal_key_deserializes() {
+        let cfg = minimal_config_with(
+            r#"
+[vault.sealing]
+source = "file"
+path = "/run/secrets/vault-seal-key"
+"#,
+        );
+
+        assert_eq!(cfg.vault.sealing.source, "file");
+        assert_eq!(
+            cfg.vault.sealing.path.as_deref(),
+            Some("/run/secrets/vault-seal-key")
+        );
+        // The variable name keeps its default even when unused, so
+        // switching `source` back needs no second edit.
+        assert_eq!(cfg.vault.sealing.var, "ASSAY_VAULT_SEAL_KEY");
+    }
+
+    #[test]
+    fn a_passphrase_and_its_salt_deserialize() {
+        let cfg = minimal_config_with(
+            r#"
+[vault.sealing]
+source = "passphrase"
+passphrase = "correct horse battery staple correct horse"
+salt = "an-example-public-salt"
+"#,
+        );
+
+        assert_eq!(cfg.vault.sealing.source, "passphrase");
+        assert_eq!(
+            cfg.vault.sealing.passphrase.as_deref(),
+            Some("correct horse battery staple correct horse")
+        );
+        assert_eq!(
+            cfg.vault.sealing.salt.as_deref(),
+            Some("an-example-public-salt")
+        );
+    }
+
+    #[test]
+    fn a_deployment_that_named_its_own_variable_keeps_it() {
+        let cfg = minimal_config_with(
+            r#"
+[vault.sealing]
+var = "MY_DEPLOYMENT_SEAL_KEY"
+"#,
+        );
+
+        assert_eq!(cfg.vault.sealing.source, "env");
+        assert_eq!(cfg.vault.sealing.var, "MY_DEPLOYMENT_SEAL_KEY");
+    }
+
+    /// A `path` with no `source = "file"` parses fine — the engine
+    /// refuses it later rather than silently reading the environment
+    /// instead. This just pins that the fields survive deserialization
+    /// so that check has something to look at.
+    #[test]
+    fn a_field_belonging_to_another_source_still_deserializes() {
+        let cfg = minimal_config_with(
+            r#"
+[vault.sealing]
+path = "/run/secrets/vault-seal-key"
+"#,
+        );
+
+        assert_eq!(cfg.vault.sealing.source, "env");
+        assert!(cfg.vault.sealing.path.is_some());
+    }
+
+    /// `GET /api/v1/engine/core/config` serializes this struct whole to
+    /// an operator, and `${VAR}` is expanded before parsing — so the
+    /// real seal key is in the struct by then. Whoever holds that
+    /// response and a database dump would have every vault secret, which
+    /// is the exact property sealing exists to remove.
+    #[test]
+    fn an_inline_seal_key_never_survives_serialization() {
+        const SEAL: &str = "a-very-secret-inline-seal-key-33c";
+        let cfg = minimal_config_with(&format!(
+            r#"
+[vault.sealing]
+source = "value"
+value = "{SEAL}"
+"#
+        ));
+
+        let json = serde_json::to_string(&cfg).expect("serialize config");
+        assert!(!json.contains(SEAL), "the seal key leaked: {json}");
+        assert!(
+            json.contains("[REDACTED]"),
+            "an operator still has to see that a value is configured: {json}"
+        );
+        // The struct itself keeps the real value — only the way out is
+        // redacted, or boot could not seal anything.
+        assert_eq!(cfg.vault.sealing.value.as_deref(), Some(SEAL));
+    }
+
+    #[test]
+    fn a_passphrase_never_survives_serialization_but_its_salt_does() {
+        const PHRASE: &str = "correct horse battery staple correct horse";
+        let cfg = minimal_config_with(&format!(
+            r#"
+[vault.sealing]
+source = "passphrase"
+passphrase = "{PHRASE}"
+salt = "an-example-public-salt"
+"#
+        ));
+
+        let json = serde_json::to_string(&cfg).expect("serialize config");
+        assert!(!json.contains(PHRASE), "the passphrase leaked: {json}");
+        // The salt is public by design: it separates deployments rather
+        // than hiding anything, and is useless without the passphrase.
+        assert!(json.contains("an-example-public-salt"), "{json}");
+    }
+
+    /// A config that reaches a log line through `Debug` is the same leak
+    /// by another route.
+    #[test]
+    fn debug_redacts_the_secret_bearing_sealing_fields() {
+        const SEAL: &str = "a-very-secret-inline-seal-key-33c";
+        let cfg = minimal_config_with(&format!(
+            r#"
+[vault.sealing]
+source = "value"
+value = "{SEAL}"
+"#
+        ));
+
+        let rendered = format!("{:?}", cfg.vault.sealing);
+        assert!(!rendered.contains(SEAL), "{rendered}");
+        assert!(rendered.contains("[REDACTED]"), "{rendered}");
+        assert!(rendered.contains("source"), "{rendered}");
+    }
+
+    /// An absent source must read as absent, not as a redacted one that
+    /// is set — otherwise the endpoint lies about what is configured.
+    #[test]
+    fn an_unset_seal_source_serializes_as_absent() {
+        let cfg = minimal_config_with("");
+        let json = serde_json::to_string(&cfg).expect("serialize config");
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert!(v["vault"]["sealing"]["value"].is_null(), "{json}");
+        assert!(v["vault"]["sealing"]["passphrase"].is_null(), "{json}");
+    }
+
+    #[test]
+    fn the_sealing_escapes_are_settable_and_independent() {
+        let cfg = minimal_config_with(
+            r#"
+[vault.sealing]
+allow_plaintext_migration = true
+"#,
+        );
+
+        assert!(cfg.vault.sealing.allow_plaintext_migration);
+        assert!(
+            !cfg.vault.sealing.allow_plaintext_kek,
+            "consenting to a migration must not also permit a plaintext key"
+        );
     }
 
     #[test]

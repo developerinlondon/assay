@@ -35,6 +35,25 @@ enabled = true
 # audience = ["my-app"]
 # jwks_refresh_secs = 3600    # default; minimum 60
 
+# The vault module holds every secret under one master key, and that key
+# has to be encrypted at rest by something. Without unseal material the
+# engine refuses to start rather than write the key into the same
+# database as the secrets it protects — with Postgres that means the
+# nightly dump would be a plaintext copy of the whole vault.
+#
+# `source = "file"` keeps the key out of `/proc/<pid>/environ` and out of
+# core dumps, which the default ASSAY_VAULT_SEAL_KEY variable cannot. The
+# same string derives the same key either way, so moving between them
+# does not re-seal the store.
+[vault.sealing]
+source = "file"
+path = "${VAULT_SEAL_KEY_FILE:-/run/secrets/vault-seal-key}" # must be mode 0600
+
+# Sealing a store that currently holds its key in the clear rewrites that
+# row one-way: afterwards the key exists only under your unseal material.
+# Back up vault.kek_metadata, then set this for the one boot that does it.
+# allow_plaintext_migration = true
+
 [logging]
 level = "info"
 format = "json"

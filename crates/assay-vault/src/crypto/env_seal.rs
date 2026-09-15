@@ -1,18 +1,44 @@
-//! Sealing the master KEK with a key supplied by the environment.
+//! Sealing the master KEK with operator-supplied unseal material.
 //!
 //! Without it the KEK sits in `vault.kek_metadata.sealed_blob` as raw
 //! bytes, so a database dump is a plaintext copy of every vault secret.
 //! With it the dump carries only ciphertext, and the key to read it
-//! lives wherever the deployment keeps its environment.
+//! lives wherever the deployment keeps its secrets.
+//!
+//! This module owns the crypto only: deriving a 32-byte key from a
+//! string, and sealing / unsealing the KEK under it. *Where* the string
+//! comes from is [`crate::crypto::seal_source`], and what boot does when
+//! there is none is [`crate::crypto::seal_policy`]. The environment
+//! variable this module is named for is now one source among several,
+//! and stays the default.
+//!
+//! ## What zeroizing here does and does not buy
+//!
+//! [`SealKey`] scrubs its bytes on drop, as do the KEK handle and the
+//! plaintext intermediates in [`crate::crypto::kek_store`]. That narrows
+//! the window in which a freed allocation still holds key material. It
+//! does not close it: `aes-gcm-siv` keeps its own expanded round keys,
+//! a `Vec` that reallocated leaves its old buffer behind untouched, and
+//! nothing here stops the whole process being paged to swap or written
+//! to a core dump. Treat it as one layer, not as a guarantee.
 
 use crate::crypto::aead::{KEY_LEN, NONCE_LEN, decrypt, encrypt, random_nonce};
 use crate::error::{Result, VaultError};
 use sha2::{Digest, Sha256};
+use zeroize::{Zeroize, Zeroizing};
 
 /// Value written to `vault.kek_metadata.sealing_method`.
+///
+/// It names the *blob layout*, not the source the key came from: a store
+/// sealed from a file or a passphrase records this too, because the
+/// bytes on disk are identical and the same value must keep opening
+/// stores sealed before other sources existed. Changing it would be a
+/// data migration for no gain.
 pub const METHOD_ENV: &str = "env-aes-gcm";
 
-/// Where the seal key is read from.
+/// The environment variable read when `[vault.sealing]` names no other
+/// source. Still the default, and still the only source that is allowed
+/// to be silently absent.
 pub const ENV_VAR: &str = "ASSAY_VAULT_SEAL_KEY";
 
 /// Shortest accepted value. The seal key is whatever string the
@@ -27,41 +53,92 @@ const DERIVE_LABEL: &[u8] = b"assay-vault/env-seal/v1";
 const BLOB_VERSION: u8 = 1;
 
 /// A seal key held in memory for the life of the process.
+///
+/// `origin` is the operator-facing name of wherever the material came
+/// from — an environment variable, a file path, a config field. It is
+/// carried so that a store which fails to open names the thing to go
+/// and check, rather than always naming the variable even when the
+/// deployment reads its key from a file.
 #[derive(Clone)]
-pub struct SealKey([u8; KEY_LEN]);
+pub struct SealKey {
+    key: [u8; KEY_LEN],
+    /// Not secret, and not scrubbed — it is a label like
+    /// `ASSAY_VAULT_SEAL_KEY` or a path already present in the config.
+    origin: String,
+}
+
+/// Written out rather than derived so it is obvious that `origin` is
+/// deliberately left alone: only `key` is material.
+impl Drop for SealKey {
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
+}
 
 impl std::fmt::Debug for SealKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SealKey(redacted)")
+        write!(f, "SealKey(redacted, from {})", self.origin)
     }
 }
 
 impl SealKey {
-    /// Derive the sealing key from whatever string the environment
-    /// supplies, by SHA-256 over a fixed label and the value.
+    /// Derive the sealing key from a string supplied through
+    /// [`ENV_VAR`]. See [`Self::derive_from`] for the derivation; this
+    /// is the shorthand for the default source.
+    pub fn derive(raw: &str) -> Result<Self> {
+        Self::derive_from(raw, ENV_VAR)
+    }
+
+    /// Derive the sealing key from whatever string `origin` supplied, by
+    /// SHA-256 over a fixed label and the value.
     ///
     /// Deriving rather than decoding means the encoding does not matter:
     /// base64, hex or a passphrase all work, and a value that happens to
-    /// be valid base64 is not silently treated as one. Surrounding
-    /// whitespace is trimmed, because a secret delivered as a file
-    /// usually arrives with a trailing newline.
-    pub fn derive(raw: &str) -> Result<Self> {
+    /// be valid base64 is not silently treated as one. It also means the
+    /// same string produces the same key whichever source delivered it,
+    /// so an operator can move a secret from the environment into a file
+    /// without re-sealing the store. Surrounding whitespace is trimmed,
+    /// because a secret delivered as a file usually arrives with a
+    /// trailing newline.
+    pub fn derive_from(raw: &str, origin: impl Into<String>) -> Result<Self> {
+        let origin = origin.into();
         let trimmed = raw.trim();
         let length = trimmed.chars().count();
         if length < MIN_CHARS {
             return Err(VaultError::Invalid(format!(
-                "{ENV_VAR} must be at least {MIN_CHARS} characters, got {length}"
+                "{origin} must be at least {MIN_CHARS} characters, got {length}"
             )));
         }
         let mut hasher = <Sha256 as Digest>::new();
         hasher.update(DERIVE_LABEL);
         hasher.update(trimmed.as_bytes());
-        Ok(Self(hasher.finalize().into()))
+        Ok(Self {
+            key: hasher.finalize().into(),
+            origin,
+        })
+    }
+
+    /// Wrap 32 bytes that are already a uniformly-random key — the
+    /// output of a KDF, which needs no further hashing. The character
+    /// floor [`Self::derive_from`] applies does not apply here: the
+    /// caller is responsible for the strength of what it fed the KDF.
+    pub fn from_key_bytes(key: [u8; KEY_LEN], origin: impl Into<String>) -> Self {
+        Self {
+            key,
+            origin: origin.into(),
+        }
+    }
+
+    /// Where this key's material came from, for operator-facing errors.
+    pub fn origin(&self) -> &str {
+        &self.origin
     }
 
     /// Read the seal key from the environment. `Ok(None)` means the
-    /// variable is absent or empty, which leaves the vault unsealed at
-    /// rest; a malformed value is an error rather than a silent `None`.
+    /// variable is absent or empty; a malformed value is an error rather
+    /// than a silent `None`. What an absent key means for boot is
+    /// [`crate::crypto::seal_policy::SealPolicy`]'s decision, not this
+    /// function's.
     pub fn from_env() -> Result<Option<Self>> {
         match std::env::var(ENV_VAR) {
             Ok(raw) if !raw.trim().is_empty() => Self::derive(&raw).map(Some),
@@ -73,7 +150,7 @@ impl SealKey {
     /// moved to another row without the unseal failing.
     pub fn seal(&self, kid: &str, kek: &[u8; KEY_LEN]) -> Result<Vec<u8>> {
         let nonce = random_nonce();
-        let ciphertext = encrypt(&self.0, &nonce, kid.as_bytes(), kek)?;
+        let ciphertext = encrypt(&self.key, &nonce, kid.as_bytes(), kek)?;
         let mut blob = Vec::with_capacity(1 + NONCE_LEN + ciphertext.len());
         blob.push(BLOB_VERSION);
         blob.extend_from_slice(&nonce);
@@ -95,14 +172,17 @@ impl SealKey {
         }
         let (nonce, ciphertext) = rest.split_at(NONCE_LEN);
         let nonce: [u8; NONCE_LEN] = nonce.try_into().expect("split at NONCE_LEN");
-        let plain = decrypt(&self.0, &nonce, kid.as_bytes(), ciphertext).map_err(|_| {
-            VaultError::Crypto(format!(
-                "the KEK for kid={kid} does not decrypt under {ENV_VAR}; \
-                 check the seal key matches the one that sealed this store"
-            ))
-        })?;
-        plain.try_into().map_err(|v: Vec<u8>| {
-            VaultError::Crypto(format!("sealed KEK unwrapped to {} bytes", v.len()))
+        let origin = &self.origin;
+        let plain = Zeroizing::new(
+            decrypt(&self.key, &nonce, kid.as_bytes(), ciphertext).map_err(|_| {
+                VaultError::Crypto(format!(
+                    "the KEK for kid={kid} does not decrypt under {origin}; \
+                     check the seal key matches the one that sealed this store"
+                ))
+            })?,
+        );
+        plain.as_slice().try_into().map_err(|_| {
+            VaultError::Crypto(format!("sealed KEK unwrapped to {} bytes", plain.len()))
         })
     }
 }
@@ -207,6 +287,37 @@ mod tests {
         let blob = key().seal("kek-abc", &[42u8; KEY_LEN]).unwrap();
         assert!(key().unseal("kek-abc", &blob[..NONCE_LEN]).is_err());
         assert!(key().unseal("kek-abc", &[]).is_err());
+    }
+
+    /// The same string is the same key however it reached the process,
+    /// so an operator can move a secret from the environment into a file
+    /// without re-sealing the store.
+    #[test]
+    fn the_source_a_value_arrived_from_does_not_change_the_key() {
+        let blob = key().seal("kek-abc", &[9u8; KEY_LEN]).unwrap();
+        let from_file = SealKey::derive_from(RAW, "the seal key file /run/secrets/seal").unwrap();
+        assert_eq!(from_file.unseal("kek-abc", &blob).unwrap(), [9u8; KEY_LEN]);
+    }
+
+    /// A store that will not open names the place to go and look, which
+    /// is not always the variable.
+    #[test]
+    fn a_failure_to_open_names_the_source_the_key_came_from() {
+        let blob = key().seal("kek-abc", &[42u8; KEY_LEN]).unwrap();
+        let elsewhere = SealKey::derive_from(OTHER, "the seal key file /run/secrets/seal").unwrap();
+        let err = elsewhere.unseal("kek-abc", &blob).unwrap_err();
+        assert!(err.to_string().contains("/run/secrets/seal"), "{err}");
+        assert!(!err.to_string().contains(ENV_VAR), "{err}");
+    }
+
+    /// `Debug` is what a containing struct's derive would print, so it
+    /// must not be the key.
+    #[test]
+    fn debug_shows_the_source_but_never_the_key() {
+        let rendered = format!("{:?}", key());
+        assert!(rendered.contains("redacted"), "{rendered}");
+        assert!(rendered.contains(ENV_VAR), "{rendered}");
+        assert!(!rendered.contains(RAW), "{rendered}");
     }
 
     #[test]

@@ -29,6 +29,8 @@
 //! kek_metadata row is inserted FIRST so the unwrap path can find it
 //! after restart.
 
+use zeroize::Zeroizing;
+
 use crate::crypto::aead::{KEY_LEN, random_dek};
 use crate::crypto::env_seal::{METHOD_ENV, SealKey};
 use crate::crypto::kek::{KekHandle, WrappedDek};
@@ -58,9 +60,9 @@ pub async fn rotate_postgres(
 
     // Mint the new KEK + persist its row first so a crash mid-rewrap
     // can still find it after restart.
-    let new_key = random_dek();
+    let new_key = Zeroizing::new(random_dek());
     let new_kid = mint_kid(&new_key);
-    let new_kek = KekHandle::from_bytes(new_kid.clone(), new_key);
+    let new_kek = KekHandle::from_bytes(new_kid.clone(), *new_key);
     let (method, blob) = seal_new_kek(&new_kid, &new_key, seal)?;
 
     sqlx::query(
@@ -102,6 +104,15 @@ pub async fn rotate_postgres(
 /// How a rotated KEK is stored. Rotation must not silently downgrade a
 /// sealed store to plaintext, so the new row is sealed whenever the
 /// caller holds the seal key.
+///
+/// This still takes a bare `Option<&SealKey>` and writes plaintext when
+/// it is `None`, unlike [`crate::crypto::kek_store`], which now takes a
+/// resolved [`crate::crypto::seal_policy::Unseal`] so that no caller can
+/// reach a plaintext KEK by omission. Rotation has no production caller
+/// yet — no route, no CLI — so the signature is left alone rather than
+/// churned. **When it is wired up it must take the same policy**, or it
+/// becomes a second door to a plaintext KEK on a deployment that fails
+/// boot closed everywhere else.
 fn seal_new_kek(
     kid: &str,
     key: &[u8; crate::crypto::aead::KEY_LEN],
@@ -132,7 +143,7 @@ async fn rewrap_kv_postgres(pool: &sqlx::PgPool, old: &KekHandle, new: &KekHandl
             break;
         }
         for (path, version, wrapped_dek) in &batch {
-            let dek = old.unwrap_dek(&WrappedDek::from_bytes(wrapped_dek.clone()))?;
+            let dek = Zeroizing::new(old.unwrap_dek(&WrappedDek::from_bytes(wrapped_dek.clone()))?);
             let rewrapped = new.wrap_dek(&dek)?;
             sqlx::query(
                 "UPDATE vault.kv
@@ -175,7 +186,7 @@ async fn rewrap_transit_postgres(
             break;
         }
         for (name, version, key_wrapped) in &batch {
-            let dek = old.unwrap_dek(&WrappedDek::from_bytes(key_wrapped.clone()))?;
+            let dek = Zeroizing::new(old.unwrap_dek(&WrappedDek::from_bytes(key_wrapped.clone()))?);
             let rewrapped = new.wrap_dek(&dek)?;
             sqlx::query(
                 "UPDATE vault.transit_versions
@@ -203,9 +214,9 @@ pub async fn rotate_sqlite(
     seal: Option<&SealKey>,
 ) -> Result<RotationReport> {
     let old_kek = seal_state.require_unsealed()?;
-    let new_key = random_dek();
+    let new_key = Zeroizing::new(random_dek());
     let new_kid = mint_kid(&new_key);
-    let new_kek = KekHandle::from_bytes(new_kid.clone(), new_key);
+    let new_kek = KekHandle::from_bytes(new_kid.clone(), *new_key);
 
     let (method, blob) = seal_new_kek(&new_kid, &new_key, seal)?;
     let now = std::time::SystemTime::now()
@@ -262,7 +273,7 @@ async fn rewrap_kv_sqlite(
             break;
         }
         for (path, version, wrapped_dek) in &batch {
-            let dek = old.unwrap_dek(&WrappedDek::from_bytes(wrapped_dek.clone()))?;
+            let dek = Zeroizing::new(old.unwrap_dek(&WrappedDek::from_bytes(wrapped_dek.clone()))?);
             let rewrapped = new.wrap_dek(&dek)?;
             sqlx::query(
                 "UPDATE vault.kv
@@ -305,7 +316,7 @@ async fn rewrap_transit_sqlite(
             break;
         }
         for (name, version, key_wrapped) in &batch {
-            let dek = old.unwrap_dek(&WrappedDek::from_bytes(key_wrapped.clone()))?;
+            let dek = Zeroizing::new(old.unwrap_dek(&WrappedDek::from_bytes(key_wrapped.clone()))?);
             let rewrapped = new.wrap_dek(&dek)?;
             sqlx::query(
                 "UPDATE vault.transit_versions

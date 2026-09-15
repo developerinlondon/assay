@@ -24,6 +24,14 @@ rp_name = "Assay E2E"
 [auth.oidc_provider]
 enabled = true
 
+# The vault module is on by default and refuses to boot without unseal
+# material, rather than write its master key to the store in the clear.
+# This fixture is a throwaway local store, so it takes the documented
+# local-development path. A real deployment sets ASSAY_VAULT_SEAL_KEY or
+# points `source` at a file — see docs/vault-sealing.md.
+[vault.sealing]
+allow_plaintext_kek = true
+
 [logging]
 level = "info"
 format = "pretty"

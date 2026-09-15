@@ -325,11 +325,27 @@ username = "${SMTP_USERNAME}"
 password = "${SMTP_PASSWORD}"
 from = "Example Auth <noreply@example.com>"
 starttls = true
+
+# The vault module is on by default and holds every secret under one
+# master key. Without unseal material the engine refuses to start rather
+# than write that key into the same database as the secrets it protects.
+# ASSAY_VAULT_SEAL_KEY below is the default source, so no [vault.sealing]
+# section is needed. To read the key from a file instead — which keeps it
+# out of /proc/<pid>/environ and out of core dumps — uncomment:
+#
+# [vault.sealing]
+# source = "file"
+# path = "/run/secrets/vault-seal-key"   # must be mode 0600
+#
+# See docs/vault-sealing.md for the other sources.
 TOML
 
 # Inject the secrets via the environment — never bake them into the file.
 export DATABASE_URL='postgres://postgres:postgres@localhost/assay'
 export ADMIN_API_KEY='sk_admin_replace_me'
+# Any string of at least 32 characters. Not recoverable: back it up the
+# way you back up anything whose loss is unrecoverable.
+export ASSAY_VAULT_SEAL_KEY="$(openssl rand -base64 32)"
 # Also inject SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD when recovery is enabled.
 assay-engine serve --config engine.toml
 #   /auth/console                          → admin SPA
@@ -357,6 +373,12 @@ spec:
           valueFrom: { secretKeyRef: { name: engine-db, key: url } }
         - name: ADMIN_API_KEY
           valueFrom: { secretKeyRef: { name: engine-admin, key: api-key } }
+        # The vault module is on by default and a vault-enabled engine
+        # with no unseal material refuses to start, so this is not
+        # optional. Switch the pod to `[vault.sealing] source = "file"`
+        # and a projected volume to keep it out of the environment.
+        - name: ASSAY_VAULT_SEAL_KEY
+          valueFrom: { secretKeyRef: { name: engine-vault, key: seal-key } }
       volumeMounts:
         - { name: cfg, mountPath: /etc/assay, readOnly: true }
   volumes:

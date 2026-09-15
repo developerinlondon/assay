@@ -79,6 +79,13 @@ path = "%s"
 [auth]
 admin_api_keys = ["dev-admin-key-change-me"]
 
+# Same shape of gate, for the vault module: it is on by default and
+# refuses to boot without unseal material rather than write its master
+# key to the store in the clear. This suite does not exercise sealing,
+# so it takes the documented local-development path.
+[vault.sealing]
+allow_plaintext_kek = true
+
 [logging]
 level = "info"
 format = "pretty"

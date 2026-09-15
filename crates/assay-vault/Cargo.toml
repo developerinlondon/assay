@@ -1,6 +1,6 @@
 [package]
 name = "assay-vault"
-version = "0.4.4"
+version = "0.5.0"
 categories = ["cryptography", "asynchronous", "database"]
 edition = "2024"
 keywords = ["vault", "secrets", "kv", "transit", "biscuit"]
@@ -29,6 +29,7 @@ vault = [
   "vault-share",
   "vault-sealing-shamir",
   "vault-sealing-kms",
+  "vault-sealing-passphrase",
   "vault-audit-forwarding",
   "vault-bitwarden-compat",
   "vault-hashicorp-compat",
@@ -47,6 +48,12 @@ vault-sealing-kms = ["dep:reqwest", "dep:hmac", "dep:jsonwebtoken"]
 # Opt-in: requires a PKCS#11 device and the `cryptoki` dep. Phase 2
 # wires the actual implementation; Phase 0 just reserves the flag.
 vault-sealing-hsm = []
+# Derive the seal key from an operator passphrase through Argon2id,
+# for deployments whose unseal material is something a human types
+# rather than something a secret manager hands over. Every other seal
+# source is a plain hash of the supplied string, so this is the one
+# that needs a memory-hard KDF — and the one dep it costs.
+vault-sealing-passphrase = ["dep:argon2"]
 vault-audit-forwarding = ["dep:reqwest", "dep:syslog", "dep:hmac"]
 # BW-compat shim requires assay-auth's password + JWT surfaces — the
 # `/identity/connect/token` route delegates to assay-auth's password
@@ -106,6 +113,19 @@ aes-gcm-siv = "0.11"
 data-encoding = "2"
 rand = "0.9"
 sha2 = "0.10"
+
+# Scrub key material out of memory when it goes out of scope: the
+# unseal material, the derived wrapping key, the KEK itself, and the
+# plaintext intermediates on the way between them. This narrows the
+# window in which freed memory holds a key; it does not close it —
+# see the note in `crypto::env_seal`.
+zeroize = { version = "1.8", features = ["derive"] }
+
+# Argon2id for the passphrase seal source (`vault-sealing-passphrase`).
+# Already in the workspace via assay-auth's password hasher; gated here
+# so a deployment whose seal key comes from a secret manager doesn't
+# link a KDF it never calls.
+argon2 = { version = "0.5", optional = true }
 
 # Shamir Secret Sharing for the init-unseal flow (plan 17 §S7).
 # Galois-field-256 SSS, pure Rust, audited. ~50 KB on disk.

@@ -1,6 +1,6 @@
 [package]
 name = "assay-engine"
-version = "0.5.19"
+version = "0.5.20"
 categories = ["asynchronous", "database", "web-programming::http-server"]
 edition = "2024"
 keywords = ["workflow", "auth", "oidc", "zanzibar", "postgres"]
@@ -66,10 +66,13 @@ vault = [
   "vault-bitwarden-compat",
   "vault-hashicorp-compat",
   "vault-sealing-shamir",
+  "vault-sealing-passphrase",
   "vault-audit-forwarding",
   "vault-dynamic-postgres",
 ]
 vault-sealing-shamir = ["assay-vault?/vault-sealing-shamir"]
+# Argon2id derivation for `[vault.sealing] source = "passphrase"`.
+vault-sealing-passphrase = ["assay-vault?/vault-sealing-passphrase"]
 vault-audit-forwarding = ["assay-vault?/vault-audit-forwarding"]
 vault-dynamic-postgres = ["assay-vault?/vault-dynamic-postgres"]
 # Per-surface pass-throughs. Mirroring assay-vault's flags here lets
@@ -101,7 +104,7 @@ backend-sqlite = [
 assay-auth = { path = "../assay-auth", version = "0.6" }
 assay-dashboard = { path = "../assay-dashboard", version = "0.6" }
 assay-domain = { path = "../assay-domain", version = "0.2.5" }
-assay-vault = { path = "../assay-vault", version = "0.4", optional = true, default-features = false }
+assay-vault = { path = "../assay-vault", version = "0.5", optional = true, default-features = false }
 assay-workflow = { path = "../assay-workflow", version = "0.4" }
 
 axum = "0.8"

@@ -53,6 +53,13 @@ path = "{db}"
 [auth]
 admin_api_keys = ["engine-smoke-test-key"]
 
+# The vault module is on by default, and a vault-enabled engine with no
+# unseal material refuses to boot. This smoke test is not about sealing,
+# so it takes the documented local-development path explicitly rather
+# than relying on a default that no longer exists.
+[vault.sealing]
+allow_plaintext_kek = true
+
 [logging]
 level = "error"
 format = "pretty"
