@@ -2,6 +2,43 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.19 — 2026-09-15
+
+### Changed
+
+- Ships assay-dashboard 0.6.1 (the sign-in rework below). No engine behaviour changes.
+
+## assay-dashboard 0.6.1 — 2026-09-15
+
+### Changed
+
+- **Sign-in reads as an instrument, not a landing page.** 0.6.0 gave the two-area layout the whole
+  screen and then filled it with the vocabulary of a product page: two cards afloat on a gradient,
+  blooms behind the mark and under the composition, a gradient submit with a bloom of its own, and
+  the accent repeated eight times until it named nothing. The composition was doing no work, so the
+  glow was doing it instead.
+
+  The split is structural now. The story sits on its own ground, the credential column on a deeper
+  one, and a single rule runs the full height between them. Nothing on the page is lit.
+
+  Hierarchy comes from hairlines and a monospace utility voice. Field labels, roster statuses, the
+  wordmark and the separator share one size and one tracking, so the form and the roster across the
+  rule read as the same machine rather than two unrelated pages. The roster is a duty board scanned
+  down the page, a hairline per row with statuses in a fixed right column, in place of a card of
+  coloured pills.
+
+  The accent is spent on two things: the submit, and the roster row whose tone is `pending`. That
+  row is the thesis of the product it depicts, so `pending` has to keep meaning "this needs you"
+  instead of becoming a second brand colour. The headline's second line recedes rather than lighting
+  up, the submit is flat and sized with the fields it follows, and the trust note drops the shield
+  0.6.0 gave it.
+
+  The centred single card for deployments with no story configured is unchanged, in both themes, and
+  so is the markup the Rust side emits apart from that shield.
+
+- `ASSAY_WHITELABEL_LOGIN_BRAND` sets its tail back rather than accenting it, for the same reason.
+  `Neutron|Core` reads as one mark with `Core` subordinate.
+
 ## assay-auth 0.6.5 — 2026-09-15
 
 ### Fixed
