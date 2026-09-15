@@ -161,16 +161,16 @@ String header values still work as before.
 
 ### Serialization
 
-| Function             | Description                     |
-| -------------------- | ------------------------------- |
-| `json.parse(str)`    | Parse JSON string to Lua table  |
-| `json.encode(tbl)`   | Encode Lua table to JSON string |
-| `yaml.parse(str)`    | Parse YAML string to Lua table  |
-| `yaml.encode(tbl)`   | Encode Lua table to YAML string |
-| `toml.parse(str)`    | Parse TOML string to Lua table  |
-| `toml.encode(tbl)`   | Encode Lua table to TOML string |
-| `base64.encode(str)` | Base64 encode                   |
-| `base64.decode(str)` | Base64 decode                   |
+| Function                  | Description                                                                                                |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `json.parse(str)`         | Parse JSON string to Lua table                                                                             |
+| `json.encode(tbl)`        | Encode Lua table to JSON string                                                                            |
+| `yaml.parse(str, opts?)`  | Parse YAML string to Lua table; a local tag wraps as `{ ["!tag"] = payload }` unless `opts.tags = "strip"` |
+| `yaml.encode(tbl, opts?)` | Encode Lua table to YAML string; `opts.tags = "wrap"` turns a wrapped tag back into a tagged node          |
+| `toml.parse(str)`         | Parse TOML string to Lua table                                                                             |
+| `toml.encode(tbl)`        | Encode Lua table to TOML string                                                                            |
+| `base64.encode(str)`      | Base64 encode                                                                                              |
+| `base64.decode(str)`      | Base64 decode                                                                                              |
 
 ### Filesystem
 

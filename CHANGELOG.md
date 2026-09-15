@@ -2,6 +2,42 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.9 — 2026-09-14
+
+### Fixed
+
+- **`yaml.parse` and `yaml.parse_all` refused every document that carried a YAML tag.** Both
+  deserialized straight into a JSON value, and JSON has no representation for a tagged node, so a
+  file holding `!reference`, `!custom` or any other local tag came back as an `invalid type: enum`
+  refusal — and nothing else in the document was reachable either, so one tag anywhere lost the
+  whole file. That rules out reading a GitLab CI pipeline definition, where `!reference` is
+  first-class syntax, and any manifest carrying a vendor tag.
+
+  A local or custom tag now becomes a one-key table keyed by the tag text with its bang —
+  `!reference [.anchor, script]` reads as `{ ["!reference"] = { ".anchor", "script" } }` — and the
+  payload is converted recursively whether it is a scalar, a sequence or a mapping, so a script can
+  act on the tag, on what it wraps, or on both. A tag over an empty payload wraps with the empty
+  string, since a Lua table cannot hold a nil value. Standard tags keep their scalar meaning rather
+  than being wrapped: `!!str 1` is the string `"1"`, `!!int`, `!!float`, `!!bool` and `!!null`
+  resolve to their scalar, and the `tag:yaml.org,2002:` long forms behave the same. `!!binary` and
+  `!!timestamp` yield the scalar text as written.
+
+  Untagged documents are untouched, down to the byte. Mapping keys still arrive as the text the
+  document wrote, so `9000`, `~`, `TRUE` and `1.50` are still the string keys `"9000"`, `"~"`,
+  `"TRUE"` and `"1.50"`; a repeated key still keeps its last value; anchors, merge keys, non-finite
+  floats and integer widening are unchanged; and `yaml.encode` without options emits exactly what it
+  emitted before for every input, a key that happens to start with `!` included.
+
+### Added
+
+- **`yaml.parse`, `yaml.parse_all` and `yaml.encode` take an options table choosing what a tag
+  becomes.** On the way in, `{ tags = "wrap" }` is the default and gives the one-key table above,
+  while `{ tags = "strip" }` gives the payload alone for a caller that wants the data without the
+  annotation. On the way out the default is the other one, `{ tags = "strip" }`, so that a key
+  beginning with `!` stays an ordinary mapping key and no existing caller's table encodes
+  differently than before; pass `{ tags = "wrap" }` to turn a wrapped tag back into a tagged node
+  and round-trip a parse. Any other value is refused by name, saying which two are accepted.
+
 ## assay-lua 0.20.8 — 2026-09-14
 
 ### Fixed
@@ -18,80 +54,77 @@ All notable changes to Assay are documented here.
 
 ### Added
 
-- **`assay.salesforge` can register a webhook.** Reading a workspace's webhooks, and creating
-  one, had no route in the module at all — so pointing a sequencer at a receiver stayed a thing
-  done by hand in the web app, and an instance whose registration was simply missing looked
-  exactly like one whose vendor had gone quiet. That is not a hypothetical: a live workspace was
-  found holding zero webhooks, which meant no reply, bounce or unsubscribe event had ever reached
-  its receiver.
+- **`assay.salesforge` can register a webhook.** Reading a workspace's webhooks, and creating one,
+  had no route in the module at all — so pointing a sequencer at a receiver stayed a thing done by
+  hand in the web app, and an instance whose registration was simply missing looked exactly like one
+  whose vendor had gone quiet. That is not a hypothetical: a live workspace was found holding zero
+  webhooks, which meant no reply, bounce or unsubscribe event had ever reached its receiver.
 
   `c:webhooks()` lists them, `c:webhook(id)` reads one, and `c:create_webhook{ url, event }`
   registers one. Two things about the vendor are worth knowing before calling them. **A webhook
-  subscribes to exactly one event**, so replies and bounces and unsubscribes are three
-  registrations rather than one with three types. And **the signing secret comes back once, from
-  the create, and from nothing else** — a read never carries it, so a caller that does not store
-  it at creation can never verify a delivery afterwards.
+  subscribes to exactly one event**, so replies and bounces and unsubscribes are three registrations
+  rather than one with three types. And **the signing secret comes back once, from the create, and
+  from nothing else** — a read never carries it, so a caller that does not store it at creation can
+  never verify a delivery afterwards.
 
   `c:webhooks()` answers rows and a `meta` like every other list here. The tool caps at ten and
-  ignores `limit` and `offset` — the same shape `assay.forge` already handles for Primeforge — so
-  a full window reads as **truncated** rather than as a complete list that happens to be ten
-  long, and a workspace past ten does not lose rows in silence. A `url` or an `event` that is not
-  a string is refused where it was typed, because `tostring` on a table sends the vendor
-  `table: 0x…` as an event name and its refusal arrives a network hop later in words nobody can
-  act on.
+  ignores `limit` and `offset` — the same shape `assay.forge` already handles for Primeforge — so a
+  full window reads as **truncated** rather than as a complete list that happens to be ten long, and
+  a workspace past ten does not lose rows in silence. A `url` or an `event` that is not a string is
+  refused where it was typed, because `tostring` on a table sends the vendor `table: 0x…` as an
+  event name and its refusal arrives a network hop later in words nobody can act on.
 
   These three ride the MCP endpoint rather than the REST API the rest of the module uses, because
-  the REST API has no webhooks route at any version: it answers 404. `assay.forge`'s JSON-RPC
-  caller already spoke to that endpoint, so it gained the Salesforge key header rather than a
-  second copy of the envelope handling.
+  the REST API has no webhooks route at any version: it answers 404. `assay.forge`'s JSON-RPC caller
+  already spoke to that endpoint, so it gained the Salesforge key header rather than a second copy
+  of the envelope handling.
 
 ### Fixed
 
 - **A tool that refuses now reads as an error.** The MCP endpoint reports a tool's own refusal
-  inside an ordinary HTTP 200 result, flagged only by `isError`. `assay.forge`'s caller did not
-  look at that flag, so a refusal came back as a successful payload whose text happened to begin
-  "Error:" — and a caller acted on a call that had done nothing. It is a typed `tool` error now,
-  carrying the vendor's message.
+  inside an ordinary HTTP 200 result, flagged only by `isError`. `assay.forge`'s caller did not look
+  at that flag, so a refusal came back as a successful payload whose text happened to begin "Error:"
+  — and a caller acted on a call that had done nothing. It is a typed `tool` error now, carrying the
+  vendor's message.
 
 ## assay-lua 0.20.6 — 2026-09-04
 
 ### Added
 
-- **`assay.forge` and `assay.clayinbox` can provision, not only read.** Both modules could list
-  what a workspace holds and price it, and buy none of it, so every domain and mailbox was still
-  bought by hand.
+- **`assay.forge` and `assay.clayinbox` can provision, not only read.** Both modules could list what
+  a workspace holds and price it, and buy none of it, so every domain and mailbox was still bought
+  by hand.
 
   Primeforge gains `p:buy_domain(domain, contact)`, `p:create_mailboxes(domain_id, boxes)` and
-  `p:app_password(id)`. `username` is the LOCAL PART and a full address is refused rather than
-  sent: the vendor accepts one silently and stores it doubled — `ada@brand.test@brand.test` — a
-  mailbox nothing can send from, which cannot be renamed and whose deletion tombstones the
-  address for days. A domain purchase charges a stored card and the registry refuses a partial
-  registrant, so the nine contact fields are checked before the call rather than after it.
+  `p:app_password(id)`. `username` is the LOCAL PART and a full address is refused rather than sent:
+  the vendor accepts one silently and stores it doubled — `ada@brand.test@brand.test` — a mailbox
+  nothing can send from, which cannot be renamed and whose deletion tombstones the address for days.
+  A domain purchase charges a stored card and the registry refuses a partial registrant, so the nine
+  contact fields are checked before the call rather than after it.
 
   Clayinbox gains `c:order(domain, boxes)`, `c:available(domain)`, `c:wallet()` and
-  `c:app_password(id)`. The order carries `import: true`, which is what makes it a BYO order
-  rather than one that also buys the domain, and it wants the FULL address where Primeforge wants
-  the local part — one keystroke apart, so a bare local part is refused, as is an address on
-  another domain.
+  `c:app_password(id)`. The order carries `import: true`, which is what makes it a BYO order rather
+  than one that also buys the domain, and it wants the FULL address where Primeforge wants the local
+  part — one keystroke apart, so a bare local part is refused, as is an address on another domain.
 
   Both `app_password` calls answer `not_ready` rather than an empty string. Clayinbox's endpoint
-  returns 200 with an empty record for some minutes after the box goes active, and Primeforge's
-  row carries no password until provisioning finishes; an empty string handed to an SMTP connect
-  is refused for a reason that has nothing to do with the real one.
+  returns 200 with an empty record for some minutes after the box goes active, and Primeforge's row
+  carries no password until provisioning finishes; an empty string handed to an SMTP connect is
+  refused for a reason that has nothing to do with the real one.
 
-  Nothing here decides a price. `p:domain_price` and `c:available` are the quotes, and a caller
-  that has not shown one to somebody is buying blind.
+  Nothing here decides a price. `p:domain_price` and `c:available` are the quotes, and a caller that
+  has not shown one to somebody is buying blind.
 
 ## assay-lua 0.20.5 — 2026-09-04
 
 ### Added
 
-- **`assay.salesforge` can connect a mailbox and switch its warm-up on.** The module could read
-  what a workspace holds and what its warm-up is doing, and change neither. Wiring a fleet into
-  the sequencer therefore stayed a thing done by hand in the web app, seventeen boxes at a time.
+- **`assay.salesforge` can connect a mailbox and switch its warm-up on.** The module could read what
+  a workspace holds and what its warm-up is doing, and change neither. Wiring a fleet into the
+  sequencer therefore stayed a thing done by hand in the web app, seventeen boxes at a time.
 
-  `c:connect_smtp(address, password, opts)` posts the transport blocks the public API asks for —
-  one password carried into both, the address as the username on each, `smtp.gmail.com:587` and
+  `c:connect_smtp(address, password, opts)` posts the transport blocks the public API asks for — one
+  password carried into both, the address as the username on each, `smtp.gmail.com:587` and
   `imap.gmail.com:993` unless `opts.smtp`/`opts.imap` say otherwise. The vendor verifies the
   credentials afterwards, so what comes back is `pending` and `connected` is true only where the
   vendor already said `active`: a caller that needs the verdict reads the box again rather than
@@ -100,12 +133,12 @@ All notable changes to Assay are documented here.
   never a mailbox, because read as one it is a box nothing can send from, reported as connected.
 
   `c:set_warmup(id_or_address, on)` sets the switch on the web app's own API and then **reads the
-  box back**. That is the point of it: a box created through the public API arrives with warm-up
-  off despite the vendor documenting that a connected box warms automatically, and a PUT that
-  answers 200 while the flag stays false is the failure this exists to catch. What comes back is
-  what the vendor now holds, not what it was asked for. An address is resolved to the vendor's id
-  on the internal listing, so an operator passes the address they actually have; anything without
-  an `@` is already an id, because the vendor's prefix has changed before.
+  box back**. That is the point of it: a box created through the public API arrives with warm-up off
+  despite the vendor documenting that a connected box warms automatically, and a PUT that answers
+  200 while the flag stays false is the failure this exists to catch. What comes back is what the
+  vendor now holds, not what it was asked for. An address is resolved to the vendor's id on the
+  internal listing, so an operator passes the address they actually have; anything without an `@` is
+  already an id, because the vendor's prefix has changed before.
 
   `c:mailbox_internal(id)` and `c:mailbox_id(id_or_address)` are the two reads underneath, exposed
   because a caller connecting a whole fleet needs both.
@@ -266,21 +299,20 @@ All notable changes to Assay are documented here.
   Order of operations, and how to verify the result before keeping it, are in
   [`docs/engine-store-migration.md`](docs/engine-store-migration.md).
 
-
 - **`ASSAY_VAULT_SEAL_KEY` encrypts the vault's master key at rest.** The KEK was stored as raw
   bytes in `vault.kek_metadata`, so the row protecting every secret sat beside the secrets it
-  protects. On a volume that was one exposure; with the store in Postgres the nightly dump becomes
-  a plaintext copy of the whole vault, and so does every backup of it.
+  protects. On a volume that was one exposure; with the store in Postgres the nightly dump becomes a
+  plaintext copy of the whole vault, and so does every backup of it.
 
   Set the variable to any string of at least 32 characters and the KEK is sealed with
   AES-256-GCM-SIV instead — a version byte, a nonce, and the encrypted key, with the key id as
   additional authenticated data so a blob copied onto another row does not open. The cipher key is
-  derived from the value with SHA-256 over a fixed label rather than decoded from it, so base64,
-  hex and a passphrase all work and nothing depends on the encoding a chart happens to emit.
-  A store already holding a plaintext KEK is
-  re-sealed in place on the first boot that has the key, which makes turning it on a restart rather
-  than a migration, and logs that backups taken before then still hold the unsealed key. Re-running
-  is a no-op. Rotation keeps the sealing rather than writing the next KEK in the clear.
+  derived from the value with SHA-256 over a fixed label rather than decoded from it, so base64, hex
+  and a passphrase all work and nothing depends on the encoding a chart happens to emit. A store
+  already holding a plaintext KEK is re-sealed in place on the first boot that has the key, which
+  makes turning it on a restart rather than a migration, and logs that backups taken before then
+  still hold the unsealed key. Re-running is a no-op. Rotation keeps the sealing rather than writing
+  the next KEK in the clear.
 
   Losing the key is not recoverable, so a sealed store with the wrong key or none at all refuses to
   start rather than minting a fresh KEK and orphaning every secret the old one wraps. Without the
@@ -291,12 +323,13 @@ All notable changes to Assay are documented here.
 
 - **The engine no longer takes tables it did not create.** Its v0.13.1 upgrade step ran on every
   boot and moved `public.workflows` and `public.namespaces` into the `workflow` schema, and dropped
-  `public.api_keys` with `CASCADE`, on nothing more than the names matching. Pointed at a database
-  a host application also uses, it took that application's tables: 30 rows and their own columns
-  relocated under the engine, the application's reads failing with `relation "public.workflows"
-  does not exist`, and `public.api_keys` gone for good. The engine broke too, since the tables it
-  had adopted were not the shape it expected. `ALTER TABLE ... SET SCHEMA` is not undone by
-  reverting a deploy.
+  `public.api_keys` with `CASCADE`, on nothing more than the names matching. Pointed at a database a
+  host application also uses, it took that application's tables: 30 rows and their own columns
+  relocated under the engine, the application's reads failing with
+  `relation "public.workflows"
+  does not exist`, and `public.api_keys` gone for good. The engine
+  broke too, since the tables it had adopted were not the shape it expected.
+  `ALTER TABLE ... SET SCHEMA` is not undone by reverting a deploy.
 
   The move now requires proof the tables are the engine's own. `public.workflow_events` is the
   marker — every v0.13.1 store has it, no application is holding a table by that name, and it moves
@@ -307,7 +340,6 @@ All notable changes to Assay are documented here.
 
   Run the engine in its own database regardless. It owns four schemas, and the default config
   example says so.
-
 
 - **Engines starting together on an empty Postgres no longer kill each other.**
   `CREATE ... IF NOT
@@ -348,11 +380,10 @@ All notable changes to Assay are documented here.
 
 ### Added
 
-- `crypto::env_seal` seals the master KEK under a key derived by SHA-256 from an environment
-  string of at least 32 characters, and
-  `kek_store::load_or_init_*_sealed` load, re-seal and refuse accordingly. `SealingMethod::EnvKey`
-  and `VaultCtx::with_kek_method` carry the method through to `/sys/seal-status`, which reported
-  every store as plaintext before.
+- `crypto::env_seal` seals the master KEK under a key derived by SHA-256 from an environment string
+  of at least 32 characters, and `kek_store::load_or_init_*_sealed` load, re-seal and refuse
+  accordingly. `SealingMethod::EnvKey` and `VaultCtx::with_kek_method` carry the method through to
+  `/sys/seal-status`, which reported every store as plaintext before.
 
 ### Fixed
 
@@ -378,30 +409,30 @@ All notable changes to Assay are documented here.
   environment variable) and read no secret store, so the same module serves a script, a service and
   an agent.
 
-  `assay.clayinbox` lists the domains a workspace holds and the mailboxes on them, paged to the
-  last row. `assay.forge` speaks the shared forge MCP endpoint for both Primeforge and Warmforge —
-  domains, mailboxes, warm-up position, placement tests and the DNS health report. `assay.salesforge`
-  covers the public REST API (workspaces, mailboxes, sequences, contacts, do-not-contact, replies)
-  and the web app's own Firebase-authenticated API, which is the only place the warm-up state
-  appears.
+  `assay.clayinbox` lists the domains a workspace holds and the mailboxes on them, paged to the last
+  row. `assay.forge` speaks the shared forge MCP endpoint for both Primeforge and Warmforge —
+  domains, mailboxes, warm-up position, placement tests and the DNS health report.
+  `assay.salesforge` covers the public REST API (workspaces, mailboxes, sequences, contacts,
+  do-not-contact, replies) and the web app's own Firebase-authenticated API, which is the only place
+  the warm-up state appears.
 
   Six vendor behaviours are pinned by tests because each one has already cost someone a wrong
   answer. A Primeforge domain arrives as `sld` and `tld` and never as a whole name, so a reader
   looking for one finds no domains at all. A Warmforge health check the report omits is `unknown`
-  and never `invalid`, because reading an omitted check as a failure tells an operator a record
-  they published is missing. Warm-up length is the sum of the days done and the days left rather
-  than a constant kept in step with the vendor's. A placement row carrying no folder counts is a
-  test nobody ran, not a placement of zero. The Salesforge public key rides bare in `Authorization`
-  — an apiKey scheme, not a bearer one — and a workspace with no sequences answers with a JSON
-  object where a list belongs. Auth, rate limiting, the Growth-plan gate and a Cloudflare block page
-  served under an HTTP 200 all read as themselves rather than as an empty fleet.
+  and never `invalid`, because reading an omitted check as a failure tells an operator a record they
+  published is missing. Warm-up length is the sum of the days done and the days left rather than a
+  constant kept in step with the vendor's. A placement row carrying no folder counts is a test
+  nobody ran, not a placement of zero. The Salesforge public key rides bare in `Authorization` — an
+  apiKey scheme, not a bearer one — and a workspace with no sequences answers with a JSON object
+  where a list belongs. Auth, rate limiting, the Growth-plan gate and a Cloudflare block page served
+  under an HTTP 200 all read as themselves rather than as an empty fleet.
 
   Errors are returned, not thrown: every vendor call answers `(result)` or `(nil, err)` where `err`
   carries `code`, `status` and `message` and prints as its message. The constructors are the
-  exception and throw, matching the rest of the stdlib — a client built without a key or a
-  workspace is a programming error rather than a vendor answer. `raw` on a mapped row is the
-  vendor's own record with credentials removed, since both Clayinbox and Primeforge put a mailbox
-  password on a list row.
+  exception and throw, matching the rest of the stdlib — a client built without a key or a workspace
+  is a programming error rather than a vendor answer. `raw` on a mapped row is the vendor's own
+  record with credentials removed, since both Clayinbox and Primeforge put a mailbox password on a
+  list row.
 
   Every list call also answers a second value, `meta = {truncated, cap, seen}`. `truncated` means a
   cap stopped the walk rather than the vendor running out of rows, so no list can come back short in
@@ -421,10 +452,11 @@ All notable changes to Assay are documented here.
 
 - **0.5.16 exited at startup on every store created by an earlier engine.** The baseline schema
   created the `events.activity_id` index before the migration added the column, so an existing
-  database failed on `no such column: activity_id` (SQLite) or `column "activity_id" does not
-  exist` (Postgres) and the engine never came up. Fresh databases were unaffected, which is why the
-  release tests passed. The index is now created after the column, and a schema-upgrade test opens
-  both stores on a pre-0.5.16 database.
+  database failed on `no such column: activity_id` (SQLite) or
+  `column "activity_id" does not
+  exist` (Postgres) and the engine never came up. Fresh databases
+  were unaffected, which is why the release tests passed. The index is now created after the column,
+  and a schema-upgrade test opens both stores on a pre-0.5.16 database.
 
 ## assay-engine 0.5.16 — 2026-09-03
 
