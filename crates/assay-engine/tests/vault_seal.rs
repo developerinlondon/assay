@@ -145,6 +145,13 @@ async fn a_sealed_store_refuses_to_boot_without_the_right_key() {
             .wait_ready(&client())
             .await
             .expect_err("the engine must refuse to start");
+        // The engine has to die before it ever binds, so readiness here
+        // rests on this child's own exit status and never touches a
+        // socket — no sibling engine can answer in its place.
+        assert!(
+            err.starts_with("exited "),
+            "the engine should have exited, not stalled or served: {err}"
+        );
         assert!(
             err.contains(expected),
             "expected {expected:?} in the failure, got: {err}"
