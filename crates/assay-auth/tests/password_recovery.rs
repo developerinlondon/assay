@@ -402,7 +402,7 @@ mod sqlite_store {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, i64::from(assay_auth::schema::MIGRATION_VERSION));
         sqlx::query(
             "INSERT INTO auth.users
              (id, email, email_verified, display_name, password_hash, created_at)

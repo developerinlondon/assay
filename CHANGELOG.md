@@ -2,6 +2,43 @@
 
 All notable changes to Assay are documented here.
 
+## assay-auth 0.6.5 — 2026-09-15
+
+### Fixed
+
+- **Passkey login took the client's word for which credentials the account had, and never checked
+  the sign counter.** `POST /auth/passkey/auth/start` read the allowed-credential list out of the
+  request body and dropped the `user_id` on the floor, so the browser chose what it would be
+  challenged against. The finish handler verified the assertion, returned the new counter as JSON,
+  and stopped: no session was minted, so nothing about the exchange logged anyone in, and the
+  counter it reported was never compared against the stored one. Cloned-authenticator detection was
+  documented in `passkey.rs` and not executed anywhere.
+
+  The allowed credentials now come from `list_passkeys(user_id)` against the store, and an account
+  with none fails closed at 401 rather than returning an empty challenge. The finish handler
+  resolves the owning account from the credential the authenticator actually asserted, hands
+  webauthn-rs the stored credential so a counter that has gone backwards surfaces as
+  `CredentialPossibleCompromise` and answers 401, and persists the bumped counter. A successful
+  ceremony mints a session through the same path `login_post` uses, so the password and passkey
+  routes share one set of cookies and one CSRF token rather than diverging.
+
+  Enforcing the counter needs the serialised credential, not the integer column: webauthn-rs reads
+  the counter from inside the `Passkey` it is given. `auth.passkeys` gains a `passkey_json` column,
+  present in the V1 `CREATE TABLE` for new deployments and delivered to existing ones by migration
+  pack V7 (`ADD COLUMN IF NOT EXISTS` on Postgres, duplicate-column-tolerant `ADD COLUMN` on
+  SQLite). `MIGRATION_VERSION` moves 6 to 7.
+
+### Changed
+
+- `UserStore` gains `get_passkey` and `update_passkey_counter`. Both in-tree implementations carry
+  them; an out-of-tree implementation must add them, which is the right failure for a trait whose
+  job is refusing logins.
+- `PasskeyAuthStartBody.passkeys` is gone. The field had no `deny_unknown_fields` guarding it, so a
+  client still sending it is ignored rather than refused.
+- Passkey rows written before `passkey_json` existed cannot drive a login and the account must
+  register again. Those rows could not authenticate before either, because the ceremony they would
+  have fed had no path to a session.
+
 ## assay-auth 0.6.4 — 2026-09-15
 
 ### Fixed
