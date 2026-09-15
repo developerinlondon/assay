@@ -287,7 +287,9 @@ Use cases:
 - **Kubernetes Jobs** — replaces 50–250 MB Python/Node/kubectl containers (~11 MB image)
 - **Infrastructure automation** — GitOps hooks, health checks, service configuration
 
-- **Repo**: [github.com/developerinlondon/assay](https://github.com/developerinlondon/assay)
+- **Repo**: `deepbrain-oss/assay` on [agentgit.org](https://agentgit.org) is the primary; every PR
+  goes there. [github.com/developerinlondon/assay](https://github.com/developerinlondon/assay)
+  is a push mirror: issues only, PRs are auto-closed, releases publish from it.
 - **Image**: `ghcr.io/developerinlondon/assay:latest` (~11 MB compressed)
 - **Crate**: [crates.io/crates/assay-lua](https://crates.io/crates/assay-lua)
 - **Stack**: Rust (2024 edition), Tokio, Lua 5.5 (mlua), reqwest, clap, axum

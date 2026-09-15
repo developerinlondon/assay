@@ -1,0 +1,25 @@
+name: mirror-guard
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const body = [
+              "This repository is a read-only mirror of `deepbrain-oss/assay` on agentgit.org, so pull requests are not accepted here.",
+              "",
+              "To get this change into Assay, open an issue describing it. The maintainers' agents pick issues up on the primary forge, land the fix through its CI gate, and the mirror carries the result back here, where the release workflow publishes it. See CONTRIBUTING.md.",
+            ].join("\n");
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            await github.rest.pulls.update({ owner, repo, pull_number: issue_number, state: "closed" });

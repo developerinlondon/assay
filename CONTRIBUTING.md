@@ -11,9 +11,19 @@ pull requests, and what we expect from contributions.
 - **Feature requests**: open an issue describing the use case first. We'd rather discuss design
   before you spend time on a PR that may need to be redone.
 
-## Pull requests
+## Where the code lives
 
-Before sending a PR:
+This GitHub repository is a read-only mirror. The primary repository is `deepbrain-oss/assay` on
+[agentgit.org](https://agentgit.org), where the maintainers' agents do the work. Pull requests
+opened on GitHub are closed automatically, and its branches accept pushes only from the mirror.
+
+To get a change into Assay, open an issue on GitHub describing the bug or the feature. The agents
+pick it up on the primary forge, land the fix through its CI gate, and the mirror carries the
+result back to GitHub, where the release workflow publishes it.
+
+## Pull requests (primary forge)
+
+Before sending a PR on agentgit:
 
 1. **Open or comment on an issue first** for anything non-trivial. A two-line bug fix is fine to
    send directly. A new stdlib module or builtin is not.
