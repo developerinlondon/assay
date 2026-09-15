@@ -2,6 +2,29 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.10 — 2026-09-15
+
+### Fixed
+
+- **Script mode exited 0 when the write of the script's output failed.** A script's answer is
+  whatever it printed, and `print` goes through C stdio, which reports a failed write by setting an
+  error flag that stock Lua never reads. So a run whose output could not be written — a full
+  filesystem, a device out of space, a descriptor the kernel refused — finished with the startup
+  banner on stderr, nothing on stdout, and exit 0. Every other failure exits 1 with an `ERROR` line,
+  so a caller had no way to tell a lost answer from a script that legitimately printed nothing, and
+  the only safe response was to re-run and hope.
+
+  `assay run script.lua` and `assay exec -e` now check that stream before exiting: a write that
+  failed is reported as `ERROR writing script output to stdout failed` and exits 1. A reader that
+  walks away — `assay run script.lua | head` — still exits 0, as `assay completion` and
+  `assay modules --json` already did; there is nothing wrong in that case, and pipelines that end in
+  a pager would otherwise start failing.
+
+  One shape stays outside this. A caller that starts assay with stdout already closed
+  (`assay run script.lua >&-`) is indistinguishable from `> /dev/null` by the time any of our code
+  runs, because the Rust runtime reopens a closed standard descriptor onto `/dev/null` before `main`
+  — so the output is discarded rather than misdirected, and the exit stays 0.
+
 ## assay-lua 0.20.9 — 2026-09-14
 
 ### Fixed

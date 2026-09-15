@@ -168,6 +168,81 @@ async fn main() -> ExitCode {
     }
 }
 
+/// Whether fd 1 is a pipe whose reader has gone away, as in
+/// `assay run script.lua | head`. Lua swallowed the `EPIPE` long before we
+/// look, so `errno` is worthless by then, but the kernel still reports the
+/// hang-up for as long as the descriptor is open.
+fn stdout_hung_up() -> bool {
+    let mut pfd = libc::pollfd {
+        fd: 1,
+        events: libc::POLLOUT,
+        revents: 0,
+    };
+    // SAFETY: polling one initialised `pollfd` over the process's own fd 1.
+    let ready = unsafe { libc::poll(&mut pfd, 1, 0) };
+    ready > 0 && (pfd.revents & (libc::POLLERR | libc::POLLHUP)) != 0
+}
+
+/// Flush stdout at the end of a script and surface any write error the script
+/// swallowed.
+///
+/// Lua's `print` and `io.write` go through C stdio, and stock Lua ignores what
+/// `fwrite`/`fflush` return, so a device that could not take the write used to
+/// leave the caller with exit 0 and no output — the one failure shape that is
+/// indistinguishable from a script which legitimately printed nothing. A dead
+/// reader stays a success, matching the deliberate carve-outs in
+/// `run_completion` and `modules --json`.
+///
+/// One shape stays invisible: a caller that starts us with fd 1 already closed
+/// (`assay run x.lua >&-`). Rust's runtime reopens any closed standard
+/// descriptor onto `/dev/null` before `main`, so by the time we run, that is
+/// indistinguishable from an explicit `> /dev/null` — which must keep exiting
+/// 0. It does mean the descriptor can no longer be claimed by a later `open`,
+/// so the output is discarded rather than misdirected into another file.
+fn finish_script_stdout() -> ExitCode {
+    use std::io::Write;
+
+    // `libc` binds `fflush`/`ferror` but not the stream they act on. glibc and
+    // musl export `stdout`; on Darwin it is a macro for `__stdoutp`.
+    unsafe extern "C" {
+        #[cfg_attr(target_vendor = "apple", link_name = "__stdoutp")]
+        static mut stdout: *mut libc::FILE;
+    }
+
+    // Rust's stdout buffers separately from the C stream Lua writes to, and a
+    // script can reach both (`print` vs. anything we emit ourselves).
+    let rust_err = std::io::stdout().flush().err();
+
+    // SAFETY: stdio calls on the process's own `stdout` stream.
+    let (had_error, flush_failed) = unsafe {
+        let s = stdout;
+        // Lua flushes after every `print`, so on a full device the failure has
+        // usually already happened and the buffer is empty by now; the sticky
+        // error indicator is what survives it. The flush still matters for
+        // whatever the last line left buffered.
+        (libc::ferror(s) != 0, libc::fflush(s) != 0)
+    };
+
+    // Only a flush that just failed leaves a trustworthy `errno`. Once we are
+    // going on the error indicator alone the failure is arbitrarily old, and
+    // any libc call since could have overwritten `errno` with something
+    // misleading, so that path reports without naming a cause.
+    let flush_err = flush_failed.then(std::io::Error::last_os_error);
+
+    match flush_err.or(rust_err) {
+        Some(e) if e.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Some(e) => {
+            error!("writing script output to stdout failed: {e}");
+            ExitCode::from(1)
+        }
+        None if had_error && !stdout_hung_up() => {
+            error!("writing script output to stdout failed");
+            ExitCode::from(1)
+        }
+        None => ExitCode::SUCCESS,
+    }
+}
+
 fn run_completion(shell: clap_complete::Shell) -> ExitCode {
     use clap::CommandFactory;
     use std::io::Write;
@@ -340,7 +415,7 @@ async fn run_lua_script_mode(
         .await;
 
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => finish_script_stdout(),
         Err(e) => {
             error!("{}", format_lua_error(&e));
             ExitCode::from(1)
@@ -381,7 +456,7 @@ async fn run_lua_inline(
         .await;
 
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => finish_script_stdout(),
         Err(e) => {
             error!("{}", format_lua_error(&e));
             ExitCode::from(1)
