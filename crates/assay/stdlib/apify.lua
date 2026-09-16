@@ -1,8 +1,8 @@
 --- @module assay.apify
---- @description Apify actor runs behind a mandatory spend cap — start an actor, wait for a terminal state, read the dataset back together with what the run cost — plus typed readers over the Instagram and LinkedIn actors that answer in one stable shape per record.
+--- @description Apify actor runs behind a mandatory spend cap — start an actor, wait for a terminal state, read the dataset back together with what the run cost — plus typed readers over the Instagram, LinkedIn and contact-details actors that answer in one stable shape per record.
 --- @category registries
 --- @icon apify
---- @keywords apify, actor, scrape, instagram, linkedin, profile, hashtag, comments, dataset, run, spend, cap
+--- @keywords apify, actor, scrape, instagram, linkedin, profile, hashtag, comments, contact, email, phone, dataset, run, spend, cap
 --- @quickref M.client(opts?) -> c | Token via opts.token or APIFY_TOKEN; base_url overridable
 --- @quickref c:run(actor, input, opts) -> result | nil, reason, result | Start, wait, read the items; opts.max_total_charge_usd is mandatory
 --- @quickref c:start(actor, input, opts) -> run | Start without waiting; the same cap rule applies
@@ -14,6 +14,7 @@
 --- @quickref c:instagram_comments(post_urls, limit, opts) -> {comments, run} | apify/instagram-scraper, billed per comment
 --- @quickref c:instagram_hashtag_posts(tags, limit, opts) -> {posts, run} | apify/instagram-hashtag-scraper
 --- @quickref c:linkedin_profiles(urls, opts) -> {people, run} | harvestapi/linkedin-profile-scraper, lead_provider person shape
+--- @quickref c:contact_details(urls, opts) -> {sites, run} | vdrmota/contact-info-scraper, emails/phones/socials per start URL
 
 local M = {}
 
@@ -25,6 +26,7 @@ M.ACTORS = {
   instagram_scraper = "apify/instagram-scraper",
   instagram_hashtags = "apify/instagram-hashtag-scraper",
   linkedin_profiles = "harvestapi/linkedin-profile-scraper",
+  contact_details = "vdrmota/contact-info-scraper",
 }
 
 -- READY and RUNNING are the two states a run passes through; TIMING-OUT and
@@ -46,6 +48,11 @@ local DEFAULT_SETTLE_READS = 8
 -- one at a time over several seconds, and two early reads can agree on a
 -- partial bill as easily as on a zero.
 local BELIEVED_AFTER_READS = 3
+
+-- The contact actor refuses a lower cap with an HTTP 400, whatever the run
+-- will actually cost, so a caller who sizes the cap to the expected spend is
+-- refused at the network rather than told why.
+local CONTACT_MIN_CAP_USD = 0.5
 
 local LINKEDIN_MODE = {
   [false] = "Profile details no email ($4 per 1k)",
@@ -137,6 +144,24 @@ local function list_of(items, map)
   end
   return out
 end
+
+-- A network with nothing found arrives as an empty value rather than an empty
+-- list, and a network with something found repeats the same profile under
+-- http and https and under a mobile host.
+local function unique_list(items, normalise)
+  local out, seen = {}, {}
+  for _, v in ipairs(type(items) == "table" and items or {}) do
+    local s = trim(v)
+    if normalise then s = normalise(s) end
+    if s ~= "" and not seen[s] then
+      seen[s] = true
+      out[#out + 1] = s
+    end
+  end
+  return out
+end
+
+local function lowercased(s) return s:lower() end
 
 local function post_from(p)
   return {
@@ -244,6 +269,26 @@ local function linkedin_person_from(item, from)
   return person
 end
 
+-- One merged row per start URL. The actor keeps the start URL rather than the
+-- page a contact was found on, and records every page it visited beside it.
+local function contact_site_from(item, from)
+  return {
+    url = item.originalStartUrl or item.url,
+    domain = item.domain,
+    emails = unique_list(item.emails, lowercased),
+    phones = unique_list(item.phones),
+    phones_uncertain = unique_list(item.phonesUncertain),
+    linkedins = unique_list(item.linkedIns),
+    instagrams = unique_list(item.instagrams),
+    twitters = unique_list(item.twitters),
+    facebooks = unique_list(item.facebooks),
+    youtubes = unique_list(item.youtubes),
+    tiktoks = unique_list(item.tiktoks),
+    pages_visited = #unique_list(item.scrapedUrls),
+    provenance = lp.provenance("apify", from),
+  }
+end
+
 function M.client(opts)
   opts = opts or {}
   local token = opts.token or env.get("APIFY_TOKEN")
@@ -298,6 +343,11 @@ function M.client(opts)
   --- an actor billed per event has no price until it has run, and the cap is
   --- the only thing standing between a typo in `resultsLimit` and the month's
   --- budget.
+  ---
+  --- A 201 whose body cannot be read is the one place this module cannot hand
+  --- back a run id for a run that may already be spending: the id was in that
+  --- body. The raise carries the body verbatim so the id can be recovered from
+  --- it by hand, or the run found in the Apify console by its actor and time.
   function c:start(actor, input, o)
     o = o or {}
     local cap = o.max_total_charge_usd
@@ -314,8 +364,14 @@ function M.client(opts)
     local target = base_url .. "/acts/" .. actor_path(actor) .. "/runs?" .. url.encode_form(q)
     local resp = http.post(target, input, { headers = headers() })
     if resp.status ~= 201 and resp.status ~= 200 then fail(where, resp) end
-    local run = to_run(unwrap(resp, where), actor)
-    if not run.id then error("apify: " .. where .. " returned no run id") end
+    local read, data = pcall(unwrap, resp, where)
+    if not read then
+      error(tostring(data) .. " — the run may already be spending; body was: " .. (resp.body or ""))
+    end
+    local run = to_run(data, actor)
+    if not run.id then
+      error("apify: " .. where .. " returned no run id; body was: " .. (resp.body or ""))
+    end
     return run
   end
 
@@ -338,18 +394,32 @@ function M.client(opts)
   --- `terminated = false` when the attempt budget runs out: the id stays
   --- valid, the actor is still spending against its cap, and the caller may
   --- come back to it or abort it.
+  ---
+  --- A read that fails costs an attempt and nothing else. The actor goes on
+  --- spending whether or not the status endpoint is answering, so a 503 in the
+  --- middle of a poll must not end the wait: the previous read stands, the
+  --- loop carries on, and a run that never terminates comes back carrying
+  --- `poll_error` — with its id, which is what lets the caller come back to it
+  --- or abort it.
   function c:await(run_id, o)
     o = o or {}
     local wait_s = o.wait_s or DEFAULT_WAIT_S
     local timeout_s = o.timeout_s or DEFAULT_TIMEOUT_S
     local attempts = o.attempts or (math.ceil(timeout_s / math.max(wait_s, 1)) + 2)
     local poll_s = o.poll_s or DEFAULT_POLL_S
-    local run
+    local run = { id = run_id, actor = o.actor, terminated = false, succeeded = false }
+    local poll_error
     for i = 1, attempts do
-      run = self:run_status(run_id, { wait_s = wait_s, actor = o.actor })
-      if run.terminated then return run end
+      local read, again = pcall(self.run_status, self, run_id, { wait_s = wait_s, actor = o.actor })
+      if read then
+        run = again
+        if run.terminated then return run end
+      else
+        poll_error = tostring(again)
+      end
       if i < attempts and poll_s > 0 then sleep(poll_s) end
     end
+    if poll_error then run.poll_error = poll_error end
     return run
   end
 
@@ -383,12 +453,21 @@ function M.client(opts)
   --- an actor charged reach the run record a few seconds after it finishes and
   --- the dollar figure a few seconds after that, so the first read after
   --- SUCCEEDED is usually zero.
+  ---
+  --- Each read that lands is progress towards the real figure, so a read that
+  --- fails gives back the best figure reached so far with `settle_error` set
+  --- rather than the one this call started from. The money is already spent by
+  --- the time any of this runs; the worst answer is the one that forgets it.
   function c:settle(run, o)
     o = o or {}
     local gap = o.settle_s or DEFAULT_SETTLE_S
     for i = 1, (o.settle_reads or DEFAULT_SETTLE_READS) do
       if gap > 0 then sleep(gap) end
-      local again = self:run_status(run.id, { actor = run.actor })
+      local read, again = pcall(self.run_status, self, run.id, { actor = run.actor })
+      if not read then
+        run.settle_error = tostring(again)
+        return run
+      end
       local done = settled(again, run, i)
       run = again
       if done then break end
@@ -412,6 +491,16 @@ function M.client(opts)
   --- travels with the reason in both cases because a failed run has usually
   --- both spent money and written part of its dataset, and a ledger that
   --- forgets failed runs under-counts.
+  ---
+  --- For the same reason no read that happens after the actor started is
+  --- allowed to throw the run away. A poll that fails costs an attempt and the
+  --- wait carries on; a settle read that fails leaves the run at the best
+  --- figure reached, with `settle_error` set; a dataset read that fails gives
+  --- `nil, "items_unreadable", result` with `items = {}` and `items_error`
+  --- set, and a run that had already failed keeps its own reason rather than
+  --- trading it for this one. `dataset_items` called directly still raises: a
+  --- caller holding a run id has asked for the dataset, not for a best effort
+  --- at it.
   function c:run(actor, input, o)
     o = o or {}
     local run = self:start(actor, input, {
@@ -433,13 +522,21 @@ function M.client(opts)
     end
     if run.terminated then run = self:settle(run, o) end
     run.items = {}
+    local items_read = true
     if run.terminated and run.dataset_id then
-      run.items = self:dataset_items(run.dataset_id, { limit = o.max_items })
+      local read, items = pcall(self.dataset_items, self, run.dataset_id, { limit = o.max_items })
+      items_read = read
+      if read then
+        run.items = items
+      else
+        run.items_error = tostring(items)
+      end
     end
     if not run.terminated then return nil, "not_terminated", run end
     if not run.succeeded then
       return nil, "run_" .. run.status:lower():gsub("%-", "_"), run
     end
+    if not items_read then return nil, "items_unreadable", run end
     return run
   end
 
@@ -499,6 +596,44 @@ function M.client(opts)
     need_list("linkedin_profiles", urls)
     local input = { queries = urls, profileScraperMode = LINKEDIN_MODE[o ~= nil and o.with_email == true] }
     return typed("people", M.ACTORS.linkedin_profiles, input, o, linkedin_person_from)
+  end
+
+  --- Emails, phones and social profiles from each site, one merged row per
+  --- start URL. Billed per page scraped, so `opts.max_pages` (default 5) is
+  --- what the bill multiplies by: `#urls * max_pages` pages at most. The cap
+  --- cannot go below fifty cents whatever the run will actually cost, so the
+  --- page budget rather than the cap is what keeps a run small. A `linktr.ee`
+  --- start URL is followed off-domain by design, which is the reason to pass
+  --- one.
+  ---
+  --- Iframes are left unread by default: `opts.frames = true` turns them on,
+  --- and brings in the contact details of whoever is advertising on the page
+  --- alongside those of the site itself.
+  function c:contact_details(urls, o)
+    need_list("contact_details", urls)
+    o = o or {}
+    local cap = o.max_total_charge_usd
+    -- A missing or nonsensical cap is the generic refusal's to name, not this
+    -- one's; the floor only applies to a cap the caller actually chose.
+    if type(cap) == "number" and cap == cap and cap > 0 and cap < CONTACT_MIN_CAP_USD then
+      error("apify: " .. M.ACTORS.contact_details .. " refuses a cap below $0.50 whatever the run "
+        .. "costs — raise max_total_charge_usd to at least 0.5 and hold the spend down with "
+        .. "max_pages instead")
+    end
+    local max_pages = o.max_pages or 5
+    local input = {
+      startUrls = list_of(urls, function(u) return { url = u } end),
+      maxRequestsPerStartUrl = max_pages,
+      maxDepth = o.depth or 1,
+      maxRequests = #urls * max_pages,
+      sameDomain = o.same_domain ~= false,
+      mergeContacts = true,
+      considerChildFrames = o.frames == true,
+      useBrowser = false,
+      proxyConfig = { useApifyProxy = true },
+      maximumLeadsEnrichmentRecords = 0,
+    }
+    return typed("sites", M.ACTORS.contact_details, input, o, contact_site_from)
   end
 
   return c

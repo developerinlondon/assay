@@ -49,3 +49,38 @@ async fn instagram_profiles_answer_in_the_shape_the_reader_expects() {
     .await
     .unwrap();
 }
+
+/// The contact scraper against a public company site. The actor refuses a cap
+/// below fifty cents, so the page budget is what keeps this cheap: two pages
+/// at a fifth of a cent each.
+#[tokio::test]
+async fn contact_details_answer_in_the_shape_the_reader_expects() {
+    let Some(token) = token_or_skip() else {
+        return;
+    };
+    run_lua(&format!(
+        r#"
+        local apify = require("assay.apify")
+        local c = apify.client({{ token = "{token}" }})
+        local r, reason = c:contact_details({{ "https://apify.com" }},
+          {{ max_total_charge_usd = 0.5, max_pages = 2, wait_s = 5 }})
+        assert.not_nil(r, "run did not succeed: " .. tostring(reason))
+        assert.eq(#r.sites, 1)
+        local s = r.sites[1]
+        assert.eq(s.domain, "apify.com")
+        assert.eq(s.url, "https://apify.com")
+        assert.gt(#s.emails, 0)
+        assert.contains(s.emails[1], "@")
+        assert.eq(s.emails[1], s.emails[1]:lower())
+        assert.gt(s.pages_visited, 0)
+        assert.eq(type(s.linkedins), "table")
+        assert.eq(s.provenance.provider, "apify")
+        assert.eq(r.run.succeeded, true)
+        assert.gt(r.run.usage_cents, -1)
+        log.info("apify smoke: " .. s.domain .. " " .. #s.emails .. " emails over " .. s.pages_visited
+          .. " pages, run " .. r.run.id .. " cost " .. r.run.usage_total_usd)
+    "#
+    ))
+    .await
+    .unwrap();
+}
