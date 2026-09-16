@@ -2,6 +2,41 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.11 — 2026-09-16
+
+### Added
+
+- **`assay.apify` — Apify actor runs behind a mandatory spend cap, with typed Instagram and LinkedIn
+  readers.** A person-centric lead pipeline reads social profiles, the comments under a creator's
+  posts and the posters under a hashtag, and Apify's actors are the practical way to do that. Until
+  now that meant calling the Apify API from the application, which is exactly the vendor logic the
+  lead-provider seam exists to keep in Lua.
+
+  `client(opts):run(actor, input, opts)` starts an actor, waits using the API's own long poll, reads
+  the default dataset a page at a time, and answers with the run — status, items, the vendor's
+  `usage_total_usd` and the same rounded up to `usage_cents` so a ledger of quarter-cent runs is not
+  a ledger of zeros. The bill lands after the run does — the event counts a few seconds after
+  `SUCCEEDED`, the figure a few seconds after those — so a finished run is read again until its cost
+  is in and stops moving, rather than reported at the zero the first read carries.
+  `max_total_charge_usd` is **required on every run**: an actor billed per event has no price until
+  it has run, and the cap is the only thing between a typo in a results limit and the month's
+  budget. A run that fails, aborts or times out comes back as `nil, reason, result` with its partial
+  items and its cost, because a failed run has usually spent money and a ledger that forgets those
+  under-counts. `start`, `run_status`, `await`, `dataset_items` and `abort` are exposed for callers
+  that hold run ids across their own scheduling.
+
+  Four readers answer in one stable shape each, with `lead_provider` provenance naming the actor and
+  the run: `instagram_profiles(usernames)` (counts, bio, links, latest posts; string counts
+  normalised; a username the actor could not read keeps its `error` rather than vanishing),
+  `instagram_comments(post_urls, n)` (billed per comment, and the docs say so),
+  `instagram_hashtag_posts(tags, n)` (routed to the dedicated hashtag actor, because the general
+  scraper answers a `hashtags` input with a single post) and `linkedin_profiles(urls)` (a
+  `lead_provider` person; the no-email mode by default; a found address never rises above `UNKNOWN`,
+  since a vendor claim is not a delivery). Tests pin the cap, the actor addressing, the
+  poll-to-terminal rule, the failed-run accounting, the dataset paging and each reader's mapping
+  against recorded shapes; a live smoke test, gated on `APIFY_TOKEN`, checks the profile actor's
+  real answer.
+
 ## assay-engine 0.5.20 — 2026-09-15
 
 ### Breaking
