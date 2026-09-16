@@ -51,7 +51,7 @@
 - [assay.openbao](https://assay.rs/modules/openbao.html): OpenBao (Vault API-compatible)
 - [assay.certmanager](https://assay.rs/modules/certmanager.html): cert-manager certificates, issuers, ACME
 - [assay.edgar](https://assay.rs/modules/edgar.html): SEC EDGAR — US public-company registry: tickers, submissions, filings full-text search
-- [assay.apify](https://assay.rs/modules/apify.html): Apify actor runs behind a mandatory spend cap — start, wait, read the dataset and its cost; typed Instagram profile/comment/hashtag and LinkedIn readers
+- [assay.apify](https://assay.rs/modules/apify.html): Apify actor runs behind a mandatory spend cap — start, wait, read the dataset and its cost; typed Instagram profile/comment/hashtag, LinkedIn and website contact-details readers
 - [assay.bettercontact](https://assay.rs/modules/bettercontact.html): BetterContact waterfall enrichment — async submit/poll, verified emails and phones, budget-gated
 - [assay.brreg](https://assay.rs/modules/brreg.html): Norway's Enhetsregisteret — keyless company search, website reverse-lookup, live employee counts
 - [assay.cvr](https://assay.rs/modules/cvr.html): Denmark's CVR via cvrapi.dk — keyless lookup by name, VAT or phone

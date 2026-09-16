@@ -2,6 +2,58 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.12 — 2026-09-16
+
+### Fixed
+
+- **`assay.apify` — a run keeps its bill when the reads that follow it fail.** Everything expensive
+  about an actor run has already happened by the time it terminates. What came next were two more
+  HTTP calls — the settle read that refines the cost figure, and the dataset read that fetches the
+  items — and either one raising took the whole run down with it. A 429 on the dataset, a 503 from
+  the run endpoint, a truncated body that would not parse: the raise propagated out of `run()` and
+  the caller was left with an exception, no run id, and no cost, for money the vendor had already
+  charged. The one thing a spend ledger cannot afford to lose is the record of a run it paid for.
+
+  No read after the actor starts can do that any more. A poll that fails costs an attempt and
+  nothing else: the previous read stands and the wait carries on, so one 503 in the middle of a
+  three-minute run no longer ends it, and a run whose polls never succeed comes back as
+  `nil, "not_terminated", result` with its `id` — which is what lets the caller abort it — and
+  `poll_error`. A settle read that fails gives back the best figure reached so far rather than the
+  one that call started from, with `settle_error` set; the run terminates reporting zero, so each
+  read that landed is progress worth keeping, and the items are still read either way. A dataset
+  read that fails gives `nil, "items_unreadable", result` with `items = {}` and `items_error` set,
+  the result still carrying `id`, `usage_total_usd` and `usage_cents`. A run that had already
+  failed, aborted or timed out keeps its own reason rather than trading it for the dataset's. The
+  typed readers inherit all of it: the record list comes back empty and the run travels under `run`.
+
+  Called directly, `dataset_items` still raises — a caller holding a run id has asked for the
+  dataset, not for a best effort at it. `settle` is the other way round, since it is handed a run
+  that already cost money. The one failure that still cannot name a run id is a `201` from `start`
+  whose body will not parse, because the id was in that body; that raise now carries the body
+  verbatim so the id can be recovered from it.
+
+### Added
+
+- **`assay.apify` — `contact_details(urls, opts)` reads emails, phones and social profiles off a
+  site.** A lead pipeline that has a company's domain and wants a way to reach it was doing that by
+  hand. The Contact Details Scraper crawls a start URL a few pages deep and answers with one merged
+  row per URL, and a `linktr.ee` link-in-bio page is followed off-domain by design — so the
+  link-in-bio a creator puts in their Instagram profile resolves to the sites behind it in the same
+  run.
+
+  Each row maps to `url`, `domain`, `emails` (lower-cased), `phones`, `phones_uncertain`,
+  `linkedins`, `instagrams`, `twitters`, `facebooks`, `youtubes`, `tiktoks`, `pages_visited` and
+  `provenance`. Every list is present and de-duplicated even when the actor found nothing, so a
+  caller counting addresses does not nil-check each network; the actor repeats the same profile
+  under `http` and `https` often enough that de-duplication is not optional. Billing is per page
+  scraped, so `max_pages` (default 5) is the multiplier — the whole scrape is bounded at
+  `#urls * max_pages`, not just each start URL, and the business-leads and email-verification
+  add-ons are held off. Iframes are left unread unless `frames = true`, since they carry the contact
+  details of whoever is advertising on the page alongside the site's own. This actor refuses a cap
+  below fifty cents whatever the run will cost, so the reader raises on a smaller one before any
+  request rather than letting the API answer `400`, and the page budget rather than the cap is what
+  keeps a run small.
+
 ## assay-lua 0.20.11 — 2026-09-16
 
 ### Added

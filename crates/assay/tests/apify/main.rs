@@ -54,26 +54,34 @@ fn envelope(data: Value) -> ResponseTemplate {
     ResponseTemplate::new(200).set_body_json(json!({ "data": data }))
 }
 
-/// Answers each read of a run with the next (status, usage) in the list, then
-/// keeps answering with the last one.
+/// Answers each read of a run with the next entry in the list, then keeps
+/// answering with the last one. `None` is a read that fails, so one list can
+/// script an endpoint that goes away mid-poll or mid-settle and one that
+/// comes back.
 struct Sequence {
-    reads: Vec<(&'static str, f64)>,
+    reads: Vec<Option<(&'static str, f64)>>,
     calls: std::sync::atomic::AtomicUsize,
 }
 
 impl Respond for Sequence {
     fn respond(&self, _: &Request) -> ResponseTemplate {
         let n = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let (status, usage) = self.reads[n.min(self.reads.len() - 1)];
-        envelope(run_json("run1", status, usage))
+        match self.reads[n.min(self.reads.len() - 1)] {
+            Some((status, usage)) => envelope(run_json("run1", status, usage)),
+            None => ResponseTemplate::new(500),
+        }
     }
 }
 
-fn poll_sequence(reads: Vec<(&'static str, f64)>) -> Sequence {
+fn scripted(reads: Vec<Option<(&'static str, f64)>>) -> Sequence {
     Sequence {
         reads,
         calls: std::sync::atomic::AtomicUsize::new(0),
     }
+}
+
+fn poll_sequence(reads: Vec<(&'static str, f64)>) -> Sequence {
+    scripted(reads.into_iter().map(Some).collect())
 }
 
 /// The settle read after a finished run answers with the same figures.
@@ -111,6 +119,16 @@ async fn mount_start_expecting(server: &MockServer, actor_path: &str, input: Val
     mount_settled(server, "SUCCEEDED", usage).await;
 }
 
+/// A GET that answers with a bare failure status, for the reads that happen
+/// after the actor has already spent the money.
+async fn mount_failing(server: &MockServer, at: &str, status: u16) {
+    Mock::given(method("GET"))
+        .and(path(at.to_string()))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(server)
+        .await;
+}
+
 async fn mount_items(server: &MockServer, items: Value) {
     Mock::given(method("GET"))
         .and(path("/datasets/ds1/items"))
@@ -141,6 +159,7 @@ async fn test_run_refuses_to_start_without_a_spend_cap() {
         r#"c:instagram_comments({ "https://www.instagram.com/p/abc/" }, 5)"#,
         r#"c:instagram_hashtag_posts({ "natgeo" }, 5)"#,
         r#"c:linkedin_profiles({ "https://www.linkedin.com/in/williamhgates" })"#,
+        r#"c:contact_details({ "https://apify.com" })"#,
     ] {
         let err = run_lua(&client(&server.uri(), call)).await.unwrap_err();
         assert_says(err, "max_total_charge_usd is required", call);
@@ -475,6 +494,203 @@ async fn test_settle_reads_can_be_turned_off() {
     .await;
 }
 
+/// The money is spent by the time the dataset is read, so a dataset that
+/// answers 500 must not take the bill down with it: the run comes back beside
+/// the reason, carrying the settled figure and its id, with no items.
+#[tokio::test]
+async fn test_a_dataset_that_cannot_be_read_still_hands_back_the_run_and_its_cost() {
+    let server = MockServer::start().await;
+    mount_start(&server, "apify~instagram-profile-scraper", "SUCCEEDED").await;
+    mount_settled(&server, "SUCCEEDED", 0.0046).await;
+    mount_failing(&server, "/datasets/ds1/items", 500).await;
+    ok(
+        &server,
+        r#"
+        local r, reason, partial = c:run("apify/instagram-profile-scraper", { usernames = { "a" } },
+          { max_total_charge_usd = 0.5, poll_s = 0, settle_s = 0 })
+        assert.eq(r, nil)
+        assert.eq(reason, "items_unreadable")
+        assert.eq(partial.id, "run1")
+        assert.eq(partial.succeeded, true)
+        assert.eq(partial.usage_total_usd, 0.0046)
+        assert.eq(partial.usage_cents, 1)
+        assert.eq(#partial.items, 0)
+        assert.contains(partial.items_error, "HTTP 500")
+        assert.eq(partial.settle_error, nil)
+        "#,
+    )
+    .await;
+}
+
+/// A typed reader loses nothing either: the run travels under `run` with an
+/// empty record list, so the caller can still write the spend down.
+#[tokio::test]
+async fn test_a_typed_reader_keeps_the_run_when_the_dataset_cannot_be_read() {
+    let server = MockServer::start().await;
+    mount_start(&server, "apify~instagram-profile-scraper", "SUCCEEDED").await;
+    mount_settled(&server, "SUCCEEDED", 0.0046).await;
+    mount_failing(&server, "/datasets/ds1/items", 429).await;
+    ok(
+        &server,
+        r#"
+        local r, reason, partial = c:instagram_profiles({ "a" },
+          { max_total_charge_usd = 0.5, poll_s = 0, settle_s = 0 })
+        assert.eq(r, nil)
+        assert.eq(reason, "items_unreadable")
+        assert.eq(#partial.profiles, 0)
+        assert.eq(partial.run.usage_cents, 1)
+        assert.contains(partial.run.items_error, "rate limited")
+        "#,
+    )
+    .await;
+}
+
+/// Every settle read that lands is progress towards the real figure, and the
+/// run terminates reporting zero — so a settle read that fails must give back
+/// the best figure reached, not the zero the loop started from. The items are
+/// still read and the failure is recorded beside the figure.
+#[tokio::test]
+async fn test_a_settle_read_that_fails_keeps_the_progress_made_before_it() {
+    let server = MockServer::start().await;
+    mount_start(&server, "apify~instagram-profile-scraper", "SUCCEEDED").await;
+    Mock::given(method("GET"))
+        .and(path("/actor-runs/run1"))
+        .respond_with(scripted(vec![
+            Some(("SUCCEEDED", 0.0023)),
+            Some(("SUCCEEDED", 0.0046)),
+            None,
+        ]))
+        .mount(&server)
+        .await;
+    mount_items(&server, json!([{ "username": "a" }, { "username": "b" }])).await;
+    ok(
+        &server,
+        r#"
+        local r = c:run("apify/instagram-profile-scraper", { usernames = { "a", "b" } },
+          { max_total_charge_usd = 0.5, poll_s = 0, settle_s = 0 })
+        assert.not_nil(r)
+        assert.eq(r.id, "run1")
+        assert.eq(r.usage_total_usd, 0.0046)
+        assert.eq(r.usage_cents, 1)
+        assert.eq(#r.items, 2)
+        assert.contains(r.settle_error, "HTTP 500")
+        assert.eq(r.items_error, nil)
+        "#,
+    )
+    .await;
+}
+
+/// The actor spends whether or not the status endpoint answers, so a poll that
+/// fails costs an attempt and nothing else: the wait carries on and the run
+/// still terminates.
+#[tokio::test]
+async fn test_a_poll_that_fails_does_not_end_the_wait() {
+    let server = MockServer::start().await;
+    mount_start(&server, "apify~instagram-profile-scraper", "RUNNING").await;
+    Mock::given(method("GET"))
+        .and(path("/actor-runs/run1"))
+        .respond_with(scripted(vec![
+            Some(("RUNNING", 0.0)),
+            None,
+            Some(("SUCCEEDED", 0.0046)),
+        ]))
+        .mount(&server)
+        .await;
+    mount_items(&server, json!([{ "username": "a" }])).await;
+    ok(
+        &server,
+        r#"
+        local r = c:run("apify/instagram-profile-scraper", { usernames = { "a" } },
+          { max_total_charge_usd = 0.5, poll_s = 0, settle_s = 0 })
+        assert.not_nil(r)
+        assert.eq(r.status, "SUCCEEDED")
+        assert.eq(r.usage_total_usd, 0.0046)
+        assert.eq(#r.items, 1)
+        "#,
+    )
+    .await;
+}
+
+/// A run whose status endpoint never answers is still a run that is spending.
+/// It comes back unfinished rather than raised, with its id — which is what
+/// lets the caller abort it — and `poll_error` saying why nothing more is
+/// known.
+#[tokio::test]
+async fn test_a_run_whose_polls_all_fail_comes_back_with_its_id_and_the_reason() {
+    let server = MockServer::start().await;
+    mount_start(&server, "apify~instagram-scraper", "RUNNING").await;
+    mount_failing(&server, "/actor-runs/run1", 503).await;
+    Mock::given(method("GET"))
+        .and(path("/datasets/ds1/items"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": "1" }])))
+        .expect(0)
+        .mount(&server)
+        .await;
+    ok(
+        &server,
+        r#"
+        local r, reason, partial = c:run("apify/instagram-scraper", { directUrls = { "x" } },
+          { max_total_charge_usd = 1, attempts = 3, poll_s = 0 })
+        assert.eq(r, nil)
+        assert.eq(reason, "not_terminated")
+        assert.eq(partial.id, "run1")
+        assert.eq(partial.terminated, false)
+        assert.contains(partial.poll_error, "HTTP 503")
+        assert.eq(#partial.items, 0)
+        "#,
+    )
+    .await;
+}
+
+/// A run that failed on its own account keeps that reason rather than trading
+/// it for the dataset's; the dataset failure is recorded on the run instead,
+/// so neither fact is lost.
+#[tokio::test]
+async fn test_a_failed_run_keeps_its_own_reason_when_the_dataset_also_fails() {
+    let server = MockServer::start().await;
+    mount_start(&server, "apify~instagram-scraper", "FAILED").await;
+    mount_settled(&server, "FAILED", 0.31).await;
+    mount_failing(&server, "/datasets/ds1/items", 500).await;
+    ok(
+        &server,
+        r#"
+        local r, reason, partial = c:run("apify/instagram-scraper", { directUrls = { "x" } },
+          { max_total_charge_usd = 1, poll_s = 0, settle_s = 0 })
+        assert.eq(r, nil)
+        assert.eq(reason, "run_failed")
+        assert.eq(partial.usage_cents, 31)
+        assert.eq(#partial.items, 0)
+        assert.contains(partial.items_error, "HTTP 500")
+        "#,
+    )
+    .await;
+}
+
+/// Called directly, the dataset read still raises: a caller holding a run id
+/// has asked for the dataset, not for a best effort at it. `settle` is the
+/// other way round — it is handed a run that already cost money, so it answers
+/// with that run rather than raising over it.
+#[tokio::test]
+async fn test_dataset_items_still_raises_when_called_directly() {
+    let server = MockServer::start().await;
+    mount_failing(&server, "/datasets/ds1/items", 500).await;
+    mount_failing(&server, "/actor-runs/run1", 500).await;
+    let err = run_lua(&client(&server.uri(), r#"c:dataset_items("ds1")"#))
+        .await
+        .unwrap_err();
+    assert_says(err, "HTTP 500", "dataset_items");
+    ok(
+        &server,
+        r#"
+        local run = c:settle({ id = "run1", usage_total_usd = 0.0046, usage_cents = 1 }, { settle_s = 0 })
+        assert.eq(run.id, "run1")
+        assert.eq(run.usage_total_usd, 0.0046)
+        assert.contains(run.settle_error, "HTTP 500")
+        "#,
+    )
+    .await;
+}
+
 // ---------------------------------------------------------------------------
 // The dataset
 // ---------------------------------------------------------------------------
@@ -766,6 +982,208 @@ async fn test_linkedin_with_email_switches_the_actor_mode() {
         local r = c:linkedin_profiles({ "williamhgates" }, { max_total_charge_usd = 0.5, with_email = true, poll_s = 0, settle_s = 0 })
         assert.eq(#r.people, 0)
         assert.eq(r.run.usage_cents, 1)
+        "#,
+    )
+    .await;
+}
+
+/// The contact reader asks the scraper for one merged row per start URL, with
+/// the proxy on and the lead-enrichment add-on off, and bounds the whole
+/// scrape rather than only each start URL — the bill is per page scraped.
+#[tokio::test]
+async fn test_contact_details_asks_for_merged_rows_within_a_page_budget() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/acts/vdrmota~contact-info-scraper/runs"))
+        .and(query_param("maxTotalChargeUsd", "0.5"))
+        .and(body_partial_json(json!({
+            "startUrls": [{ "url": "https://apify.com" }, { "url": "https://linktr.ee/greenpeace" }],
+            "maxRequestsPerStartUrl": 3,
+            "maxDepth": 1,
+            "maxRequests": 6,
+            "sameDomain": true,
+            "mergeContacts": true,
+            "considerChildFrames": false,
+            "useBrowser": false,
+            "proxyConfig": { "useApifyProxy": true },
+            "maximumLeadsEnrichmentRecords": 0
+        })))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_body_json(json!({ "data": run_json("run1", "SUCCEEDED", 0.008) })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_settled(&server, "SUCCEEDED", 0.008).await;
+    mount_items(
+        &server,
+        json!([
+            {
+                "depth": 0,
+                "domain": "apify.com",
+                "originalStartUrl": "https://apify.com",
+                "emails": ["Hello@Apify.com", "hello@apify.com"],
+                "phones": [],
+                "phonesUncertain": ["04788290", "04788290", "373153700"],
+                "linkedIns": ["https://www.linkedin.com/company/apify", "http://linkedin.com/company/apify"],
+                "instagrams": [],
+                "twitters": ["https://x.com/apify"],
+                "facebooks": [],
+                "youtubes": ["https://www.youtube.com/apify"],
+                "tiktoks": ["https://www.tiktok.com/@apifytech", "https://www.tiktok.com/@apifyoffice"],
+                "discords": ["https://discord.gg/w3e2v7rWDw"],
+                "scrapedUrls": ["https://apify.com/", "https://apify.com/contact", "https://apify.com/contact-sales"],
+                "leadsEnrichment": {}
+            },
+            {
+                "depth": 0,
+                "domain": "linktr.ee",
+                "originalStartUrl": "https://linktr.ee/greenpeace",
+                "scrapedUrls": ["https://linktr.ee/greenpeace", "https://www.greenpeace.org/usa/"]
+            }
+        ]),
+    )
+    .await;
+    ok(
+        &server,
+        r#"
+        local r = c:contact_details({ "https://apify.com", "https://linktr.ee/greenpeace" },
+          { max_total_charge_usd = 0.5, max_pages = 3, poll_s = 0, settle_s = 0 })
+        assert.eq(#r.sites, 2)
+        local s = r.sites[1]
+        assert.eq(s.url, "https://apify.com")
+        assert.eq(s.domain, "apify.com")
+        assert.eq(#s.emails, 1)
+        assert.eq(s.emails[1], "hello@apify.com")
+        assert.eq(#s.phones, 0)
+        assert.eq(#s.phones_uncertain, 2)
+        assert.eq(s.phones_uncertain[1], "04788290")
+        assert.eq(#s.linkedins, 2)
+        assert.eq(#s.twitters, 1)
+        assert.eq(#s.tiktoks, 2)
+        assert.eq(#s.youtubes, 1)
+        assert.eq(s.pages_visited, 3)
+        assert.eq(s.provenance.provider, "apify")
+        assert.eq(s.provenance.retrieved_from, "vdrmota/contact-info-scraper run run1")
+        assert.eq(r.run.usage_total_usd, 0.008)
+        assert.eq(r.run.usage_cents, 1)
+        "#,
+    )
+    .await;
+}
+
+/// A start URL that yielded nothing is a row of empty lists, not a row of
+/// nils: a caller counting addresses should not have to nil-check each network.
+#[tokio::test]
+async fn test_contact_details_answers_a_barren_row_with_empty_lists() {
+    let server = MockServer::start().await;
+    mount_start_expecting(
+        &server,
+        "vdrmota~contact-info-scraper",
+        json!({ "mergeContacts": true }),
+        0.003,
+    )
+    .await;
+    mount_items(
+        &server,
+        json!([{ "domain": "linktr.ee", "originalStartUrl": "https://linktr.ee/greenpeace" }]),
+    )
+    .await;
+    ok(
+        &server,
+        r#"
+        local r = c:contact_details({ "https://linktr.ee/greenpeace" },
+          { max_total_charge_usd = 0.5, poll_s = 0, settle_s = 0 })
+        assert.eq(#r.sites, 1)
+        local s = r.sites[1]
+        for _, list in ipairs({ "emails", "phones", "phones_uncertain", "linkedins", "instagrams",
+                                "twitters", "facebooks", "youtubes", "tiktoks" }) do
+          assert.eq(type(s[list]), "table", list .. " should be a list")
+          assert.eq(#s[list], 0, list .. " should be empty")
+        end
+        assert.eq(s.pages_visited, 0)
+        assert.eq(s.url, "https://linktr.ee/greenpeace")
+        "#,
+    )
+    .await;
+}
+
+/// Defaults: five pages per start URL, depth one, and the whole scrape bounded
+/// at the product of the two.
+#[tokio::test]
+async fn test_contact_details_defaults_to_five_pages_per_start_url() {
+    let server = MockServer::start().await;
+    mount_start_expecting(
+        &server,
+        "vdrmota~contact-info-scraper",
+        json!({
+            "maxRequestsPerStartUrl": 5,
+            "maxDepth": 1,
+            "maxRequests": 10,
+            "sameDomain": true
+        }),
+        0.02,
+    )
+    .await;
+    mount_items(&server, json!([])).await;
+    ok(
+        &server,
+        r#"
+        local r = c:contact_details({ "https://a.example", "https://b.example" },
+          { max_total_charge_usd = 0.5, poll_s = 0, settle_s = 0 })
+        assert.eq(#r.sites, 0)
+        assert.eq(r.run.usage_cents, 2)
+        "#,
+    )
+    .await;
+}
+
+/// The contact actor answers a cap under fifty cents with an HTTP 400,
+/// whatever the run would actually have cost — so a caller who sized the cap
+/// to the expected spend is refused before the request, and told to hold the
+/// spend down with the page budget instead.
+#[tokio::test]
+async fn test_contact_details_refuses_a_cap_under_the_actors_floor() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(201))
+        .expect(0)
+        .mount(&server)
+        .await;
+    for call in [
+        r#"c:contact_details({ "https://apify.com" }, { max_total_charge_usd = 0.05 })"#,
+        r#"c:contact_details({ "https://apify.com" }, { max_total_charge_usd = 0.499 })"#,
+    ] {
+        let err = run_lua(&client(&server.uri(), call)).await.unwrap_err();
+        assert_says(err, "refuses a cap below $0.50", call);
+        assert_says(
+            run_lua(&client(&server.uri(), call)).await.unwrap_err(),
+            "max_pages",
+            call,
+        );
+    }
+}
+
+/// Iframes are off by default because they carry whoever is advertising on
+/// the page, not the site's own contacts; a caller who wants them says so.
+#[tokio::test]
+async fn test_contact_details_reads_iframes_only_when_asked() {
+    let server = MockServer::start().await;
+    mount_start_expecting(
+        &server,
+        "vdrmota~contact-info-scraper",
+        json!({ "considerChildFrames": true }),
+        0.006,
+    )
+    .await;
+    mount_items(&server, json!([])).await;
+    ok(
+        &server,
+        r#"
+        local r = c:contact_details({ "https://apify.com" },
+          { max_total_charge_usd = 0.5, frames = true, poll_s = 0, settle_s = 0 })
+        assert.eq(#r.sites, 0)
         "#,
     )
     .await;

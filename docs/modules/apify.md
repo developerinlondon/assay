@@ -1,14 +1,14 @@
 ---
 category: Registries
-tagline: Apify actor runs behind a mandatory spend cap — start, wait, read the dataset and what it cost; typed Instagram and LinkedIn readers
+tagline: Apify actor runs behind a mandatory spend cap — start, wait, read the dataset and what it cost; typed Instagram, LinkedIn and contact-details readers
 ---
 
 ## assay.apify
 
 Runs any [Apify](https://apify.com) actor and reads its dataset back, with the run's cost on the
-result so a caller can write the spend down. Four typed readers sit on top for the actors a
-person-centric lead pipeline reaches for: Instagram profiles, comments and hashtag posts, and
-LinkedIn profiles.
+result so a caller can write the spend down. Five typed readers sit on top for the actors a
+person-centric lead pipeline reaches for: Instagram profiles, comments and hashtag posts, LinkedIn
+profiles, and the contact details behind a website.
 
 ```lua
 local apify = require("assay.apify")
@@ -47,6 +47,7 @@ the network. The cap goes to the API as `maxTotalChargeUsd`, and the actor stops
 | `charged_event_counts`                                     | the pay-per-event tally (`profile`, `result`, …)                                     |
 | `max_total_charge_usd`                                     | the cap the run was started with, as the API recorded it                             |
 | `started_at`, `finished_at`, `status_message`, `exit_code` | as reported                                                                          |
+| `poll_error`, `settle_error`, `items_error`                | set when a read that happens after the run started failed                            |
 
 A run that ends any way but `SUCCEEDED` comes back as
 `nil, "run_failed" | "run_aborted" |
@@ -55,6 +56,28 @@ attempt budget runs out as `nil, "not_terminated", result`. The result travels w
 both cases: a failed run has usually both spent money and written part of its dataset, and a ledger
 that forgets failed runs under-counts. An unfinished run is still running against its cap;
 `c:abort(run.id)` stops it.
+
+For the same reason no read that happens after the actor started is allowed to throw the run away —
+the actor spends whether or not the API is answering:
+
+- A **poll** that fails costs an attempt and nothing else. The previous read stands and the wait
+  carries on, so one 503 in the middle of a three-minute run does not end it. A run whose polls
+  never succeed comes back as `nil, "not_terminated", result` carrying its `id` — which is what lets
+  the caller abort it — and `poll_error`.
+- A **settle** read that fails gives back the best figure reached so far, not the one the call
+  started from, with `settle_error` set. The run terminates reporting zero, so every read that
+  landed is progress worth keeping. The items are still read.
+- A **dataset** read that fails gives `nil, "items_unreadable", result` with `items = {}` and
+  `items_error` set, the result still carrying `id` and the cost. A run that had already failed
+  keeps its own reason rather than trading it for the dataset's.
+
+Called directly, `dataset_items` still raises: a caller holding a run id has asked for the dataset,
+not for a best effort at it. `settle` is the other way round — it is handed a run that already cost
+money, so it answers with that run and `settle_error` rather than raising over it.
+
+The one failure this module cannot report a run id for is a `201` from `start` whose body will not
+parse: the id was in that body. The raise carries the body verbatim so the id can be recovered from
+it, or the run found in the Apify console by its actor and start time.
 
 The bill lands after the run does: measured against the profile and hashtag actors, the event counts
 reach the run record about three seconds after `SUCCEEDED` and the dollar figure about seven. So
@@ -85,6 +108,7 @@ Each answers `{ <records>, run }` — the mapped records plus the run above — 
 | `instagram_comments(post_urls, n, opts)` | `apify/instagram-scraper`             | `comments` | **comment**, not post |
 | `instagram_hashtag_posts(tags, n, opts)` | `apify/instagram-hashtag-scraper`     | `posts`    | post                  |
 | `linkedin_profiles(urls, opts)`          | `harvestapi/linkedin-profile-scraper` | `people`   | profile               |
+| `contact_details(urls, opts)`            | `vdrmota/contact-info-scraper`        | `sites`    | **page scraped**      |
 
 A profile: `username`, `full_name`, `biography`, `followers`, `follows`, `posts_count`,
 `external_url`, `external_urls`, `profile_pic_url`, `verified`, `private`, `business`, `category`,
@@ -111,6 +135,22 @@ the price. An address it finds is recorded as `email_type = "provider"` with
 `verification_status =
 "UNKNOWN"`: a vendor asserting deliverability is not a delivery, so nothing
 here reaches `VERIFIED`.
+
+A contact row is one merged record per start URL: `url`, `domain`, `emails`, `phones`,
+`phones_uncertain` (digit runs the actor found but would not vouch for), `linkedins`, `instagrams`,
+`twitters`, `facebooks`, `youtubes`, `tiktoks`, `pages_visited` and `provenance`. Every list is
+present and de-duplicated even when nothing was found, and emails are lower-cased, so a caller
+counting addresses need not nil-check each network. The bill is per **page**, so `max_pages`
+(default 5) is what it multiplies by: the whole scrape is bounded at `#urls × max_pages`, not just
+each start URL, and `depth` (default 1) says how far from each start URL to follow links.
+`same_domain` (default true) keeps the crawl on the site — except on a [Linktree](https://linktr.ee)
+start URL, which the actor follows off-domain by design, so the link-in-bio from an Instagram
+profile resolves to the sites behind it in the same run. The business-leads and email-verification
+add-ons are held off; both carry personal data and their own per-record price. Iframes are left
+unread unless `frames = true`, since they carry the contact details of whoever is advertising on the
+page alongside the site's own. This actor refuses a cap below **$0.50** whatever the run will
+actually cost, so `contact_details` raises on a smaller one before any request rather than letting
+the API answer `400`, and the page budget rather than the cap is what keeps a run small.
 
 Provenance on every record is
 `{ provider = "apify", retrieved_from = "<actor> run <run id>",
