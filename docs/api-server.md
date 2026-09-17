@@ -75,6 +75,8 @@ modules:
   allow: [assay.openstack]
 env:
   allow: [OS_PROJECT_NAME]
+globals:
+  block: [fs, io, db, dns, ws]
 credentials:
   inventory-ro:
     username: OS_USERNAME
@@ -96,6 +98,19 @@ With that file, a caller can post a script that authenticates and reads inventor
 the credential, reach another host, or mutate anything — and because the authentication POST is
 declared a read, the whole thing runs under `readonly` with no approval round-trip. See
 [`policy.md`](policy.md).
+
+The `globals.block` list narrows what is left. Read-only mode and the http rules together still
+leave `fs`, `io`, `db`, `dns` and `ws` registered, and a posted script that opens a file or a socket
+is not confined by a rule about hosts — read-only stops writes, not reads, so `fs.read` and
+`io.open(path, "r")` both work under it. Naming those globals is what removes them, from `_G` and
+from `require`, which reads `package.loaded` first and would otherwise hand the same library
+straight back.
+
+It narrows rather than seals, and the list above is this example's, not a recipe. Two things it does
+not reach: a module the script can still `require` reaches whatever builtins survive, so
+`modules.allow` does the other half; and blocking `fs` while leaving `io` (or the reverse) leaves
+the filesystem readable, because they are two libraries, assay's and Lua's. Decide what the script
+is for, then name everything else.
 
 ## Operational notes
 

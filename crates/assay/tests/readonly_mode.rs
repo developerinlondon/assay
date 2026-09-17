@@ -558,3 +558,117 @@ fn cli_yaml_checks_honor_readonly() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "stderr={stderr}");
 }
+
+// `require` reads `package.loaded` before any searcher, and mlua registers
+// Lua's standard library there as well as on `_G`. A gate that walked globals
+// alone therefore left a second, ungated handle on the same library: under
+// read-only mode with no policy at all, `require("os").execute` ran commands.
+// `_G.os` never showed it, because assay replaces that table with its own
+// (hostname, arch, time, …) which has no mutators to block.
+#[tokio::test]
+async fn readonly_blocks_stdlib_mutators_reached_through_require() {
+    let vm = make_vm(true);
+    let script = r#"
+        local os_lib = require("os")
+        local io_lib = require("io")
+
+        local function refused(fn, ...)
+            local ok, err = pcall(fn, ...)
+            if ok then return false end
+            return tostring(err):find("readonly:") ~= nil
+        end
+
+        assert.eq(refused(os_lib.execute, "true"), true)
+        assert.eq(refused(os_lib.remove, "/tmp/assay-readonly-probe"), true)
+        assert.eq(refused(os_lib.rename, "/tmp/assay-a", "/tmp/assay-b"), true)
+        assert.eq(refused(io_lib.popen, "true"), true)
+        assert.eq(refused(io_lib.open, "/tmp/assay-readonly-probe", "w"), true)
+
+        -- os.exit last: were the guard to regress, the process would end here
+        -- rather than report, which libtest counts as a failure either way.
+        assert.eq(refused(os_lib.exit, 0), true)
+
+        -- reads are untouched
+        assert.eq(type(os_lib.time()), "number")
+        local handle = io_lib.open("/etc/hostname", "r")
+        assert.eq(handle ~= nil, true)
+        if handle then handle:close() end
+    "#;
+    run(script, vm).await;
+}
+
+// The same table reached two ways is gated the same way.
+#[tokio::test]
+async fn readonly_gates_the_global_and_the_required_table_alike() {
+    let vm = make_vm(true);
+    let script = r#"
+        local io_lib = require("io")
+        assert.eq(io_lib == io, true)
+        local ok_global = pcall(io.popen, "true")
+        local ok_required = pcall(io_lib.popen, "true")
+        assert.eq(ok_global, false)
+        assert.eq(ok_required, false)
+    "#;
+    run(script, vm).await;
+}
+
+// The invariant the safety of a block list rests on, pinned here rather than
+// only in a reviewer's kit. Two halves that have to hold together:
+//
+//   blocked   -> the name is gone from BOTH doors, `_G` and `package.loaded`,
+//                so there is no ungated handle left to reach.
+//   unblocked -> the table is still there and still carries the gate's stubs.
+//
+// Break either and blocking a name makes a script MORE capable, which is how
+// this started: the env list used to run before registration, `_G.io` was
+// deleted, the gate skipped the absent table, and `package.loaded.io` kept a
+// live `popen` for `require` to hand back.
+fn readonly_vm_with_blocks(blocks: &str) -> mlua::Lua {
+    let _g = ENV_LOCK.lock().unwrap();
+    // SAFETY: ENV_LOCK serialises every test in this file that mutates these
+    // variables or constructs a VM that reads them.
+    unsafe {
+        std::env::set_var(assay::lua::READONLY_ENV, "1");
+        std::env::set_var(assay::lua::BLOCK_GLOBALS_ENV, blocks);
+    }
+    let vm = assay::lua::create_vm(http_client());
+    unsafe {
+        std::env::remove_var(assay::lua::READONLY_ENV);
+        std::env::remove_var(assay::lua::BLOCK_GLOBALS_ENV);
+    }
+    vm.unwrap()
+    // _g dropped here, before any caller awaits.
+}
+
+#[tokio::test]
+async fn blocking_io_under_readonly_leaves_no_handle_at_all() {
+    let vm = readonly_vm_with_blocks("io");
+    let script = r#"
+        assert.eq(io, nil)
+        assert.eq(package.loaded["io"], nil)
+        local ok, lib = pcall(require, "io")
+        assert.eq(ok, false)
+        assert.eq(type(lib) == "table", false)
+    "#;
+    run(script, vm).await;
+}
+
+#[tokio::test]
+async fn not_blocking_io_under_readonly_still_leaves_it_gated() {
+    let vm = readonly_vm_with_blocks("db");
+    let script = r#"
+        local io_lib = require("io")
+        assert.eq(type(io_lib), "table")
+
+        local function refused(fn, ...)
+            local ok, err = pcall(fn, ...)
+            if ok then return false end
+            return tostring(err):find("readonly:") ~= nil
+        end
+
+        assert.eq(refused(io_lib.popen, "true"), true)
+        assert.eq(refused(io_lib.open, "/tmp/assay-readonly-pin", "w"), true)
+        assert.eq(db, nil)
+    "#;
+    run(script, vm).await;
+}

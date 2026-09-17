@@ -40,6 +40,9 @@ modules:
 env:
   allow: [OS_PROJECT_NAME]
 
+globals:
+  block: [fs, db, dns, ws]
+
 http:
   max_response_bytes: 262144
   redact: [password, token, secret, authorization, x-auth-token]
@@ -69,6 +72,34 @@ An exact list of environment keys. `env.get` returns `nil` for anything else and
 — a key outside the list is indistinguishable from one that is not set, because presence is itself
 information. `allow: []` hides the entire environment. Absent means the whole environment is
 readable.
+
+### `globals.block`
+
+Names removed from `_G` before user code runs. It is spelled `block` rather than `allow` because it
+is one: a name that is not listed stays reachable, which is the opposite of how the sections above
+read. Dotted paths work, so `os.execute` clears one function and leaves the rest of `os` alone.
+
+```yaml
+globals:
+  block: [fs, db, dns, ws]
+```
+
+This is how a script gets confined to one HTTP origin and nothing else. The http rules decide where
+it may talk, but a script that can still open a file, a socket or a database has other ways out, and
+no `http` section closes them. Naming a global here is what closes them.
+
+It is not a substitute for `modules.allow`. The two levers are independent: removing the `fs` global
+does not change what `require` will load, and an allowlist does not remove a builtin, because
+builtins are global and never required. A policy that wants both has to say both.
+
+Blocking a global a module needs breaks that module at call time, not at `require` time, so the
+failure surfaces as a nil-index inside library code rather than as a policy error. `assay.k8s`,
+`assay.oauth2`, `assay.zitadel`, `assay.cron`, `assay.pkg`, `assay.nspawn` and `assay.openclaw` all
+read or write files through `fs`. Block `fs` and allow one of them and you have written a policy
+that permits a module that cannot run.
+
+A name that was never installed is skipped rather than refused, so a typo tightens nothing and fails
+nothing. Check the effect rather than the spelling.
 
 ### `http.rules`
 
@@ -190,7 +221,10 @@ answers only for the names you expect.
 
 - It does not revalidate redirects. Set `follow_redirects = false` on the client for now if that
   matters.
-- It does not restrict filesystem reads.
+- It does not restrict filesystem reads, and neither does read-only mode: `fs.read` and
+  `io.open(path, "r")` both work under it. Removing **both** `fs` and `io` under `globals.block` is
+  the blunt instrument available today — they are two separate libraries, assay's and Lua's, and
+  removing one leaves the other.
 - It does not restrict which names `dns` may resolve — only the choice of nameserver is refused. See
   the DNS section above.
 - Credential fields resolve from environment keys only. There is no file or secret-manager source

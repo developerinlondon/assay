@@ -2,6 +2,49 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.14 — 2026-09-17
+
+### Fixed
+
+- **A blocked global stays blocked, and a policy can name its own.** `ASSAY_BLOCK_GLOBALS` was
+  applied while the VM still held nothing but Lua's own standard library, and the builtins
+  registered afterwards. Naming `fs` cleared a name that did not exist yet and `register_all` then
+  installed it, so the list could remove stdlib names and nothing else. `fs`, `db`, `dns` and `ws`
+  stayed reachable no matter what it said. The list now runs again after registration, which is what
+  makes those four blockable; it still runs before, so nothing between the two points can read a
+  name an operator asked to remove.
+
+  A policy file can also carry `globals.block`, a list of names cleared from `_G` before user code
+  runs. It is spelled `block` because it is one, next to the `allow` lists it sits beside, and
+  dotted paths work, so `os.execute` clears one function without touching the rest of `os`. This is
+  what a host needs to confine a posted script to one HTTP origin: read-only mode and a set of http
+  rules say nothing about a script that opens a file or a socket instead, and until now closing that
+  gap meant prepending a Lua prelude that nils the globals by hand. The lever is independent of
+  `modules.allow` — removing a global does not change what `require` will load, and an allowlist
+  does not remove a builtin.
+
+- **A gate that walked `_G` alone left a second handle on the same library.** `require` reads
+  `package.loaded` before any searcher, and mlua registers Lua's standard library there as well as
+  on `_G`, so every guard that resolved a name through globals only was watching one of two doors.
+  Under read-only mode, with no policy in play, `require("os").execute` ran commands. `_G.os` never
+  showed it: assay replaces that table with its own — `hostname`, `arch`, `time`, no mutators — so
+  there was nothing there to block and nothing there to notice. `require("io").popen` and
+  `require("io").open(path, "w")` stood open the same way.
+
+  The read-only and approval gates, `ASSAY_BLOCK_GLOBALS` and `globals.block` now all apply to both
+  the global and the `package.loaded` entry, and a blocked bare name is dropped from `require`'s
+  caches so it cannot be fetched back. `os.execute`, `os.remove`, `os.rename`, `os.tmpname` and
+  `os.exit` joined the gated set, and `os.getenv` now answers through `env.allow` like `env.get`, so
+  an allowlisted VM stops handing out every variable it holds by the other name. Reads are
+  untouched: `io.open` for reading and `os.time` still work.
+
+  The block lists also became monotonic. `ASSAY_BLOCK_GLOBALS` used to run before registration, and
+  a mode gate skips a table that is not on `_G`, so naming `io` deleted the global, the `io.popen`
+  stub and the `io.open` write guard were never installed, and the real ungated table stayed in
+  `package.loaded` — blocking a name made a read-only script strictly more capable. Both lists now
+  run once, after the gates, so a block can only ever remove capability. The CLI reruns them after
+  installing `arg`, which it adds once the VM already exists.
+
 ## assay-lua 0.20.13 — 2026-09-17
 
 ### Added

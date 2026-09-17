@@ -8,6 +8,36 @@ use sha2::{Digest, Sha256};
 /// Tables whose entire function surface is gated.
 pub(crate) const BLOCKED_TABLES: &[&str] = &["shell", "process", "machinectl"];
 
+/// One entry of `package.loaded` / `package.preload`, when it is a table.
+pub(crate) fn package_entry(lua: &Lua, registry: &str, name: &str) -> mlua::Result<Option<Table>> {
+    let Some(package) = lua.globals().get::<Option<Table>>("package")? else {
+        return Ok(None);
+    };
+    let Some(sub) = package.get::<Option<Table>>(registry)? else {
+        return Ok(None);
+    };
+    sub.get::<Option<Table>>(name)
+}
+
+/// Every table a top-level name resolves to. `require` reads
+/// `package.loaded` before any searcher, so a guard that walks `_G` alone
+/// leaves a second, ungated handle on the same library. For most names the
+/// two are one table and this returns one entry; for a Lua standard library
+/// that assay replaced on `_G` — `os` is the live case — they are different
+/// tables and only the `package.loaded` one carries the real functions.
+pub(crate) fn tables_for(lua: &Lua, name: &str) -> mlua::Result<Vec<Table>> {
+    let mut out: Vec<Table> = Vec::new();
+    if let Some(global) = lua.globals().get::<Option<Table>>(name)? {
+        out.push(global);
+    }
+    if let Some(loaded) = package_entry(lua, "loaded", name)?
+        && !out.iter().any(|seen| seen == &loaded)
+    {
+        out.push(loaded);
+    }
+    Ok(out)
+}
+
 /// Individual functions gated inside otherwise-usable tables.
 pub(crate) const BLOCKED_FUNCTIONS: &[&str] = &[
     "http.post",
@@ -50,6 +80,14 @@ pub(crate) const BLOCKED_FUNCTIONS: &[&str] = &[
     "tar.create",
     "tar.extract",
     "io.popen",
+    // Lua's own mutators. They are absent from the `os` table assay puts on
+    // `_G` (hostname, arch, time, …) and present on the real one that
+    // `require("os")` returns, so these entries only ever bite there.
+    "os.execute",
+    "os.remove",
+    "os.rename",
+    "os.tmpname",
+    "os.exit",
 ];
 
 /// `http.client(...)` wrappers route every verb through

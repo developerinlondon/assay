@@ -16,6 +16,17 @@ pub struct PolicyFile {
     pub http: Option<HttpSection>,
     #[serde(default)]
     pub credentials: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(default)]
+    pub globals: Option<GlobalsSection>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlobalsSection {
+    /// Globals removed from `_G` before user code runs. Named `block` because
+    /// it is one, next to the `allow` lists that read the other way round.
+    #[serde(default)]
+    pub block: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

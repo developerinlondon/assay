@@ -15,7 +15,7 @@ use mlua::{Lua, MultiValue, Table, Value};
 
 use super::gated::{
     BLOCKED_FUNCTIONS, BLOCKED_TABLES, header_names, http_call_is_read, is_http_verb_path,
-    operation_digest, wrap_http_verbs,
+    operation_digest, tables_for, wrap_http_verbs,
 };
 use crate::lua::{APPROVAL_REQUEST_PREFIX, ApprovalConfig, approved_ops_from_env};
 
@@ -147,14 +147,13 @@ fn gate_function(lua: &Lua, path: &str, state: &Arc<GateState>) -> mlua::Result<
     let Some((table_name, fn_name)) = path.split_once('.') else {
         return Ok(());
     };
-    let Some(table) = lua.globals().get::<Option<Table>>(table_name)? else {
-        return Ok(());
-    };
-    let Value::Function(inner) = table.get::<Value>(fn_name)? else {
-        return Ok(());
-    };
-    let wrapper = gated_wrapper(lua, path.to_string(), inner, state)?;
-    table.set(fn_name, wrapper)?;
+    for table in tables_for(lua, table_name)? {
+        let Value::Function(inner) = table.get::<Value>(fn_name)? else {
+            continue;
+        };
+        let wrapper = gated_wrapper(lua, path.to_string(), inner, state)?;
+        table.set(fn_name, wrapper)?;
+    }
     Ok(())
 }
 
@@ -186,17 +185,16 @@ fn gated_wrapper(
 }
 
 fn gate_table(lua: &Lua, name: &str, state: &Arc<GateState>) -> mlua::Result<()> {
-    let Some(table) = lua.globals().get::<Option<Table>>(name)? else {
-        return Ok(());
-    };
-    for pair in table.clone().pairs::<Value, Value>() {
-        let (key, value) = pair?;
-        let (Value::String(key_str), Value::Function(inner)) = (&key, &value) else {
-            continue;
-        };
-        let op = format!("{name}.{}", key_str.to_str()?);
-        let wrapper = gated_wrapper(lua, op, inner.clone(), state)?;
-        table.set(key.clone(), wrapper)?;
+    for table in tables_for(lua, name)? {
+        for pair in table.clone().pairs::<Value, Value>() {
+            let (key, value) = pair?;
+            let (Value::String(key_str), Value::Function(inner)) = (&key, &value) else {
+                continue;
+            };
+            let op = format!("{name}.{}", key_str.to_str()?);
+            let wrapper = gated_wrapper(lua, op, inner.clone(), state)?;
+            table.set(key.clone(), wrapper)?;
+        }
     }
     Ok(())
 }
@@ -241,55 +239,53 @@ fn gate_http_client_request(lua: &Lua, state: &Arc<GateState>) -> mlua::Result<(
 }
 
 fn gate_io_open(lua: &Lua, state: &Arc<GateState>) -> mlua::Result<()> {
-    let Some(io_table) = lua.globals().get::<Option<Table>>("io")? else {
-        return Ok(());
-    };
-    let Some(inner) = io_table.get::<Option<mlua::Function>>("open")? else {
-        return Ok(());
-    };
-    let state = Arc::clone(state);
-    let wrapper = lua.create_function(move |_, args: MultiValue| {
-        let mode = match args.iter().nth(1) {
-            Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => "r".to_string(),
+    for io_table in tables_for(lua, "io")? {
+        let Some(inner) = io_table.get::<Option<mlua::Function>>("open")? else {
+            continue;
         };
-        if mode.contains('w') || mode.contains('a') || mode.contains('+') {
-            let summary = first_string_arg(&args);
-            gate_decision(
-                &state,
-                "io.open",
-                &summary,
-                &operation_digest("io.open", &args),
-                &[],
-            )?;
-        }
-        inner.call::<MultiValue>(args)
-    })?;
-    io_table.set("open", wrapper)?;
+        let state = Arc::clone(state);
+        let wrapper = lua.create_function(move |_, args: MultiValue| {
+            let mode = match args.iter().nth(1) {
+                Some(Value::String(s)) => s.to_str()?.to_string(),
+                _ => "r".to_string(),
+            };
+            if mode.contains('w') || mode.contains('a') || mode.contains('+') {
+                let summary = first_string_arg(&args);
+                gate_decision(
+                    &state,
+                    "io.open",
+                    &summary,
+                    &operation_digest("io.open", &args),
+                    &[],
+                )?;
+            }
+            inner.call::<MultiValue>(args)
+        })?;
+        io_table.set("open", wrapper)?;
+    }
     Ok(())
 }
 
 fn gate_io_output(lua: &Lua, state: &Arc<GateState>) -> mlua::Result<()> {
-    let Some(io_table) = lua.globals().get::<Option<Table>>("io")? else {
-        return Ok(());
-    };
-    let Some(inner) = io_table.get::<Option<mlua::Function>>("output")? else {
-        return Ok(());
-    };
-    let state = Arc::clone(state);
-    let wrapper = lua.create_function(move |_, args: MultiValue| {
-        if !args.is_empty() {
-            let summary = first_string_arg(&args);
-            gate_decision(
-                &state,
-                "io.output",
-                &summary,
-                &operation_digest("io.output", &args),
-                &[],
-            )?;
-        }
-        inner.call::<MultiValue>(args)
-    })?;
-    io_table.set("output", wrapper)?;
+    for io_table in tables_for(lua, "io")? {
+        let Some(inner) = io_table.get::<Option<mlua::Function>>("output")? else {
+            continue;
+        };
+        let state = Arc::clone(state);
+        let wrapper = lua.create_function(move |_, args: MultiValue| {
+            if !args.is_empty() {
+                let summary = first_string_arg(&args);
+                gate_decision(
+                    &state,
+                    "io.output",
+                    &summary,
+                    &operation_digest("io.output", &args),
+                    &[],
+                )?;
+            }
+            inner.call::<MultiValue>(args)
+        })?;
+        io_table.set("output", wrapper)?;
+    }
     Ok(())
 }
