@@ -257,7 +257,43 @@ pub fn create_vm_with_policy(
         ExecMode::Approval => builtins::approval::apply(&lua, &approval).map_err(lua_err)?,
         ExecMode::Unrestricted => {}
     }
+    apply_global_blocks(&lua).map_err(lua_err)?;
     Ok(lua)
+}
+
+/// Clear every name `ASSAY_BLOCK_GLOBALS` and the policy's `globals.block`
+/// name. One application point, and it is deliberately the last thing the
+/// constructor does.
+///
+/// Running any of it earlier is what made blocking a name *weaken* the VM.
+/// The mode gates skip a table that is not on `_G` — a feature-gated build
+/// legitimately has none — so an earlier pass that deleted `io` meant the
+/// `io.popen` stub and the `io.open` write guard were never installed, while
+/// the real, ungated table sat in `package.loaded` for `require` to hand
+/// back.
+///
+/// Two things keep a block list monotonic, and the ordering is the lesser
+/// of them. `clear_package_entry` is what removes the survivor: a bare name
+/// goes from `package.loaded` and `package.preload` as well as `_G`, so no
+/// ungated handle is left for the skipped gate to have mattered. Running
+/// last then makes the skip unreachable rather than merely harmless. Should
+/// the cache clearing ever regress, this ordering would not save you — so
+/// treat them as one mechanism, and do not move either half on the
+/// assumption that the other covers it. Two tests pin it:
+/// `blocking_io_under_readonly_leaves_no_handle_at_all` and
+/// `blocking_a_table_never_leaves_an_ungated_one_behind`.
+///
+/// Call it again after installing a global of your own (the CLI's `arg`),
+/// or that global outlives the list that named it.
+pub fn apply_global_blocks(lua: &Lua) -> mlua::Result<()> {
+    block_globals_from_env(lua)?;
+    let Some(policy) = policy::active(lua) else {
+        return Ok(());
+    };
+    for name in policy.blocked_globals() {
+        nil_dotted_path(lua, name)?;
+    }
+    Ok(())
 }
 
 fn sandbox(lua: &Lua) -> mlua::Result<()> {
@@ -270,39 +306,73 @@ fn sandbox(lua: &Lua) -> mlua::Result<()> {
     let globals = lua.globals();
     let string_lib: mlua::Table = globals.get("string")?;
     string_lib.set("dump", mlua::Value::Nil)?;
+    Ok(())
+}
 
-    if let Ok(extra) = std::env::var(BLOCK_GLOBALS_ENV) {
-        for raw in extra.split(',') {
-            let name = raw.trim();
-            if name.is_empty() {
-                continue;
-            }
-            nil_dotted_path(lua, name)?;
+/// Clear every name in `ASSAY_BLOCK_GLOBALS`.
+fn block_globals_from_env(lua: &Lua) -> mlua::Result<()> {
+    let Ok(extra) = std::env::var(BLOCK_GLOBALS_ENV) else {
+        return Ok(());
+    };
+    for raw in extra.split(',') {
+        let name = raw.trim();
+        if name.is_empty() {
+            continue;
         }
+        nil_dotted_path(lua, name)?;
     }
-
     Ok(())
 }
 
 /// Resolve a dotted Lua path (e.g. `"os.execute"` or `"debug.getinfo"`)
-/// against globals and set the leaf to nil. A bare name (e.g.
-/// `"dofile"`) clears it from `_G`. Missing intermediate tables are
-/// silently skipped so a typo in `ASSAY_BLOCK_GLOBALS` doesn't fail
-/// VM creation.
+/// and set the leaf to nil, everywhere the name is reachable. A bare name
+/// (e.g. `"io"`) clears it from `_G` and from `package.loaded` /
+/// `package.preload`, because `require` reads that cache before any
+/// searcher and would otherwise hand back the library `_G` no longer
+/// names. A dotted path clears the field on every table the head resolves
+/// to, which for `os` is both assay's replacement on `_G` and Lua's real
+/// one behind `require`. Missing tables are silently skipped so a typo in
+/// `ASSAY_BLOCK_GLOBALS` or a policy doesn't fail VM creation.
 fn nil_dotted_path(lua: &Lua, path: &str) -> mlua::Result<()> {
     let parts: Vec<&str> = path.split('.').filter(|s| !s.is_empty()).collect();
-    if parts.is_empty() {
+    let Some((leaf, prefix)) = parts.split_last() else {
         return Ok(());
+    };
+    if prefix.is_empty() {
+        lua.globals().set(*leaf, mlua::Value::Nil)?;
+        return clear_package_entry(lua, leaf);
     }
-    let mut current: mlua::Table = lua.globals();
-    for segment in &parts[..parts.len() - 1] {
-        let next: mlua::Value = current.get(*segment)?;
-        match next {
-            mlua::Value::Table(t) => current = t,
-            _ => return Ok(()),
+    for root in builtins::gated::tables_for(lua, prefix[0])? {
+        let mut current = root;
+        let mut reached = true;
+        for segment in &prefix[1..] {
+            match current.get::<mlua::Value>(*segment)? {
+                mlua::Value::Table(t) => current = t,
+                _ => {
+                    reached = false;
+                    break;
+                }
+            }
+        }
+        if reached {
+            current.set(*leaf, mlua::Value::Nil)?;
         }
     }
-    current.set(parts[parts.len() - 1], mlua::Value::Nil)
+    Ok(())
+}
+
+/// Drop a name from `require`'s caches, so a cleared global cannot be
+/// fetched back through `require("<name>")`.
+fn clear_package_entry(lua: &Lua, name: &str) -> mlua::Result<()> {
+    let Some(package) = lua.globals().get::<Option<mlua::Table>>("package")? else {
+        return Ok(());
+    };
+    for registry in ["loaded", "preload"] {
+        if let Some(sub) = package.get::<Option<mlua::Table>>(registry)? {
+            sub.set(name, mlua::Value::Nil)?;
+        }
+    }
+    Ok(())
 }
 
 /// Both searchers resolve `assay.ory.kratos` to `ory/kratos.lua`, falling

@@ -92,3 +92,60 @@ fn run_with_no_extra_args_yields_empty_arg_table() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("empty-ok"), "stdout: {stdout}");
 }
+
+// `arg` is installed after the VM is built, so the block list that named it
+// had already run and the global outlived it. The CLI reruns the list over
+// the new surface; this is the only global assay adds post-construction.
+#[test]
+fn run_lets_the_block_list_reach_the_arg_global() {
+    let f = write_lua(
+        r#"
+        if arg ~= nil then error("arg survived the block list") end
+        print("arg-blocked")
+    "#,
+    );
+
+    let out = assay_bin()
+        .arg("run")
+        .arg(f.path())
+        .env(assay::lua::BLOCK_GLOBALS_ENV, "arg")
+        .arg("--")
+        .arg("ignored")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stdout.contains("arg-blocked"),
+        "stdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
+#[test]
+fn run_lets_a_policy_block_list_reach_the_arg_global() {
+    let f = write_lua(
+        r#"
+        if arg ~= nil then error("arg survived the policy block list") end
+        print("arg-blocked-by-policy")
+    "#,
+    );
+    let mut policy = NamedTempFile::with_suffix(".yaml").unwrap();
+    policy
+        .write_all(b"version: 1\nglobals:\n  block: [arg]\n")
+        .unwrap();
+
+    let out = assay_bin()
+        .arg("run")
+        .arg(f.path())
+        .env("ASSAY_POLICY_FILE", policy.path())
+        .arg("--")
+        .arg("ignored")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stdout.contains("arg-blocked-by-policy"),
+        "stdout: {stdout}\nstderr: {stderr}"
+    );
+}

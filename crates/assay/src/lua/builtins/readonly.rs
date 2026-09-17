@@ -9,7 +9,8 @@
 use mlua::{Lua, MultiValue, Table, Value};
 
 use super::gated::{
-    BLOCKED_FUNCTIONS, BLOCKED_TABLES, http_call_is_read, is_http_verb_path, wrap_http_verbs,
+    BLOCKED_FUNCTIONS, BLOCKED_TABLES, http_call_is_read, is_http_verb_path, tables_for,
+    wrap_http_verbs,
 };
 
 pub fn apply(lua: &Lua) -> mlua::Result<()> {
@@ -40,32 +41,33 @@ fn blocked_stub(lua: &Lua, name: &str) -> mlua::Result<mlua::Function> {
     lua.create_function(move |_, _args: MultiValue| -> mlua::Result<Value> { Err(blocked(&name)) })
 }
 
-/// Replace a single `table.fn` global with a blocking stub. Missing
-/// tables or functions (feature-gated builds) are skipped so the guard
-/// never changes the surface shape of the VM.
+/// Replace a single `table.fn` with a blocking stub, on every table the
+/// name resolves to — the global and the `package.loaded` entry. Missing
+/// tables or functions (feature-gated builds, and assay's `os`, which has
+/// none of Lua's mutators) are skipped so the guard never changes the
+/// surface shape of the VM.
 fn block_function(lua: &Lua, path: &str) -> mlua::Result<()> {
     let Some((table_name, fn_name)) = path.split_once('.') else {
         return Ok(());
     };
-    let Some(table) = lua.globals().get::<Option<Table>>(table_name)? else {
-        return Ok(());
-    };
-    if table.get::<Value>(fn_name)?.is_function() {
-        table.set(fn_name, blocked_stub(lua, path)?)?;
+    for table in tables_for(lua, table_name)? {
+        if table.get::<Value>(fn_name)?.is_function() {
+            table.set(fn_name, blocked_stub(lua, path)?)?;
+        }
     }
     Ok(())
 }
 
-/// Replace every function in a global table with a blocking stub.
+/// Replace every function in a table with a blocking stub, on every table
+/// the name resolves to.
 fn block_table(lua: &Lua, name: &str) -> mlua::Result<()> {
-    let Some(table) = lua.globals().get::<Option<Table>>(name)? else {
-        return Ok(());
-    };
-    for pair in table.clone().pairs::<Value, Value>() {
-        let (key, value) = pair?;
-        if let (Value::String(key_str), true) = (&key, value.is_function()) {
-            let label = format!("{name}.{}", key_str.to_str()?);
-            table.set(key, blocked_stub(lua, &label)?)?;
+    for table in tables_for(lua, name)? {
+        for pair in table.clone().pairs::<Value, Value>() {
+            let (key, value) = pair?;
+            if let (Value::String(key_str), true) = (&key, value.is_function()) {
+                let label = format!("{name}.{}", key_str.to_str()?);
+                table.set(key, blocked_stub(lua, &label)?)?;
+            }
         }
     }
     Ok(())
@@ -107,41 +109,39 @@ fn guard_http_client_request(lua: &Lua) -> mlua::Result<()> {
 
 /// `io.open` stays available for reading; write and append modes raise.
 fn guard_io_open(lua: &Lua) -> mlua::Result<()> {
-    let Some(io_table) = lua.globals().get::<Option<Table>>("io")? else {
-        return Ok(());
-    };
-    let Some(inner) = io_table.get::<Option<mlua::Function>>("open")? else {
-        return Ok(());
-    };
-    let wrapper = lua.create_function(move |_, args: MultiValue| {
-        let mode = match args.iter().nth(1) {
-            Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => "r".to_string(),
+    for io_table in tables_for(lua, "io")? {
+        let Some(inner) = io_table.get::<Option<mlua::Function>>("open")? else {
+            continue;
         };
-        if mode.contains('w') || mode.contains('a') || mode.contains('+') {
-            return Err(blocked("io.open"));
-        }
-        inner.call::<MultiValue>(args)
-    })?;
-    io_table.set("open", wrapper)?;
+        let wrapper = lua.create_function(move |_, args: MultiValue| {
+            let mode = match args.iter().nth(1) {
+                Some(Value::String(s)) => s.to_str()?.to_string(),
+                _ => "r".to_string(),
+            };
+            if mode.contains('w') || mode.contains('a') || mode.contains('+') {
+                return Err(blocked("io.open"));
+            }
+            inner.call::<MultiValue>(args)
+        })?;
+        io_table.set("open", wrapper)?;
+    }
     Ok(())
 }
 
 /// `io.output(target)` opens its target for writing; only the
 /// zero-argument read of the current output stays available.
 fn guard_io_output(lua: &Lua) -> mlua::Result<()> {
-    let Some(io_table) = lua.globals().get::<Option<Table>>("io")? else {
-        return Ok(());
-    };
-    let Some(inner) = io_table.get::<Option<mlua::Function>>("output")? else {
-        return Ok(());
-    };
-    let wrapper = lua.create_function(move |_, args: MultiValue| {
-        if !args.is_empty() {
-            return Err(blocked("io.output"));
-        }
-        inner.call::<MultiValue>(args)
-    })?;
-    io_table.set("output", wrapper)?;
+    for io_table in tables_for(lua, "io")? {
+        let Some(inner) = io_table.get::<Option<mlua::Function>>("output")? else {
+            continue;
+        };
+        let wrapper = lua.create_function(move |_, args: MultiValue| {
+            if !args.is_empty() {
+                return Err(blocked("io.output"));
+            }
+            inner.call::<MultiValue>(args)
+        })?;
+        io_table.set("output", wrapper)?;
+    }
     Ok(())
 }

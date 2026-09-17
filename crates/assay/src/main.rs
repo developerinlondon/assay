@@ -369,7 +369,10 @@ fn install_script_args(
     for (i, a) in script_args.iter().enumerate() {
         table.set(i as i64 + 1, a.as_str())?;
     }
-    vm.globals().set("arg", table)
+    vm.globals().set("arg", table)?;
+    // A global installed after the VM was built outlives the block list that
+    // named it, so the list runs once more over the new surface.
+    lua::apply_global_blocks(vm)
 }
 
 async fn run_lua_script_mode(

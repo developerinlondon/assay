@@ -19,6 +19,7 @@ const VERBS: &[&str] = &["get", "post", "put", "patch", "delete"];
 type Target = Arc<dyn Fn(&MultiValue) -> Option<(String, String, usize)>>;
 
 pub fn apply(lua: &Lua) -> mlua::Result<()> {
+    guard_os_getenv(lua)?;
     let Some(http) = lua.globals().get::<Option<Table>>("http")? else {
         return Ok(());
     };
@@ -29,6 +30,32 @@ pub fn apply(lua: &Lua) -> mlua::Result<()> {
     // the top-level verbs alone would leave that path open.
     wrap(lua, &http, "_client_request", client_request_target())?;
     wrap(lua, &http, "download", verb_target("get"))?;
+    Ok(())
+}
+
+/// `env.allow` decides what the environment shows, and `os.getenv` reads the
+/// same environment by another name. assay's `os` has no `getenv`, so this
+/// only ever bites on Lua's own table behind `require("os")` — which is
+/// exactly where an allowlisted VM was handing out every variable it held.
+/// A hidden key reads as absent, matching `env.get`: presence is itself
+/// information.
+fn guard_os_getenv(lua: &Lua) -> mlua::Result<()> {
+    for os_table in crate::lua::builtins::gated::tables_for(lua, "os")? {
+        let Some(inner) = os_table.get::<Option<mlua::Function>>("getenv")? else {
+            continue;
+        };
+        let wrapper = lua.create_function(move |lua, args: mlua::MultiValue| {
+            let name = match args.iter().next() {
+                Some(Value::String(s)) => s.to_str()?.to_string(),
+                _ => return inner.call::<Value>(args),
+            };
+            if !crate::lua::policy::env_visible(lua, &name) {
+                return Ok(Value::Nil);
+            }
+            inner.call::<Value>(args)
+        })?;
+        os_table.set("getenv", wrapper)?;
+    }
     Ok(())
 }
 

@@ -37,6 +37,7 @@ pub struct Policy {
     http_rules: Option<Vec<HttpRule>>,
     max_response_bytes: Option<usize>,
     redact: Vec<String>,
+    blocked_globals: Vec<String>,
     pub(crate) credentials: BTreeMap<String, BTreeMap<String, String>>,
 }
 
@@ -125,6 +126,7 @@ impl Policy {
             max_response_bytes: http.as_ref().and_then(|h| h.max_response_bytes),
             redact: http.as_ref().map(|h| h.redact.clone()).unwrap_or_default(),
             http_rules: http.and_then(|h| h.rules),
+            blocked_globals: file.globals.map(|g| g.block).unwrap_or_default(),
             credentials: file.credentials,
         })
     }
@@ -149,6 +151,10 @@ impl Policy {
 
     pub fn redact_keys(&self) -> &[String] {
         &self.redact
+    }
+
+    pub fn blocked_globals(&self) -> &[String] {
+        &self.blocked_globals
     }
 
     pub fn check_http(&self, method: &str, url: &str) -> Result<Classification, String> {

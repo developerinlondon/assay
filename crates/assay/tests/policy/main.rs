@@ -402,3 +402,221 @@ fn a_rule_without_hosts_is_rejected() {
     let err = Policy::parse("version: 1\nhttp:\n  rules:\n    - hosts: []\n").unwrap_err();
     assert!(err.contains("needs at least one host"), "got: {err}");
 }
+
+// ---------------------------------------------------------------- globals
+
+/// The reachability question the whole feature exists for: a host confining a
+/// script to one HTTP origin needs assay's own globals gone, and before this
+/// only Lua stdlib names could be removed.
+#[tokio::test]
+async fn a_policy_globals_list_removes_assay_builtins() {
+    let vm = vm(
+        "version: 1\nglobals:\n  block: [fs, db, dns, ws]\n",
+        ExecMode::ReadOnly,
+    );
+    let out = eval(
+        &vm,
+        r#"
+        local gone = {}
+        for _, name in ipairs({"fs", "db", "dns", "ws"}) do
+            if _G[name] ~= nil then gone[#gone + 1] = name end
+        end
+        if #gone > 0 then return "still there: " .. table.concat(gone, ",") end
+        -- a global the policy did not name is untouched
+        if type(http) ~= "table" then return "http went missing" end
+        return "removed"
+        "#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(out, "removed");
+}
+
+/// Removing the global is not the same lever as the module allowlist, and
+/// naming one must not disturb the other.
+#[tokio::test]
+async fn blocking_a_global_leaves_require_governed_by_the_module_allowlist() {
+    let vm = vm(
+        "version: 1\nglobals:\n  block: [fs]\nmodules:\n  allow: [assay.url]\n",
+        ExecMode::Unrestricted,
+    );
+    assert!(
+        eval(&vm, r#"return type(fs)"#).await.unwrap() == "nil",
+        "the global should be gone"
+    );
+    let allowed = eval(
+        &vm,
+        r#"local u = require("assay.url") return type(u.encode)"#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(allowed, "function", "an allowed module still loads");
+    let err = eval(&vm, r#"require("assay.openstack") return "loaded""#)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("not in the allowed set"),
+        "the allowlist still refuses: {err}"
+    );
+}
+
+#[tokio::test]
+async fn a_policy_without_a_globals_list_removes_nothing() {
+    let vm = vm("version: 1\n", ExecMode::Unrestricted);
+    let out = eval(&vm, r#"return type(fs) .. "," .. type(db)"#)
+        .await
+        .unwrap();
+    assert_eq!(out, "table,table");
+}
+
+#[test]
+fn a_globals_list_parses_and_is_readable() {
+    let policy =
+        Policy::parse("version: 1\nglobals:\n  block: [fs, os.execute]\n").expect("parses");
+    assert_eq!(policy.blocked_globals(), ["fs", "os.execute"]);
+    let empty = Policy::parse("version: 1\n").expect("parses");
+    assert!(empty.blocked_globals().is_empty());
+}
+
+/// `require` reads `package.loaded` before any searcher, so clearing `_G.io`
+/// alone left `require("io")` handing back the very library the policy named.
+#[tokio::test]
+async fn a_blocked_bare_name_is_gone_from_require_too() {
+    let vm = vm(
+        "version: 1\nglobals:\n  block: [io]\n",
+        ExecMode::Unrestricted,
+    );
+    let out = eval(
+        &vm,
+        r#"
+        if io ~= nil then return "_G.io survived" end
+        if package.loaded["io"] ~= nil then return "package.loaded.io survived" end
+        local ok, err = pcall(require, "io")
+        if ok then return "require('io') still returns it" end
+        return "gone"
+        "#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(out, "gone");
+}
+
+/// assay replaces `_G.os` with its own table, which never had `execute`, so a
+/// dotted path that only walked globals cleared nothing while Lua's real `os`
+/// stayed reachable behind `require`.
+#[tokio::test]
+async fn a_blocked_dotted_path_reaches_the_table_behind_require() {
+    let vm = vm(
+        "version: 1\nglobals:\n  block: [os.execute, os.remove]\n",
+        ExecMode::Unrestricted,
+    );
+    let out = eval(
+        &vm,
+        r#"
+        local os_lib = require("os")
+        if os_lib.execute ~= nil then return "os.execute survived" end
+        if os_lib.remove ~= nil then return "os.remove survived" end
+        -- the rest of the table is untouched, and so is assay's own os
+        if type(os_lib.time) ~= "function" then return "os.time was collateral" end
+        if type(os.date) ~= "function" then return "assay's os was damaged" end
+        return "cleared"
+        "#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(out, "cleared");
+}
+
+#[test]
+fn a_bare_globals_list_is_rejected_rather_than_ignored() {
+    let err = Policy::parse("version: 1\nglobals: [fs]\n").unwrap_err();
+    assert!(err.contains("invalid YAML"), "got: {err}");
+}
+
+#[test]
+fn an_unknown_key_under_globals_is_rejected() {
+    let err = Policy::parse("version: 1\nglobals:\n  allow: [fs]\n").unwrap_err();
+    assert!(err.contains("invalid YAML"), "got: {err}");
+}
+
+/// `env.allow` decides what the environment shows, and `os.getenv` reads the
+/// same environment by another name. assay's `os` has no `getenv`, so before
+/// this an allowlisted VM handed out every variable it held through
+/// `require("os")`.
+#[tokio::test]
+async fn os_getenv_respects_the_env_allowlist() {
+    // The api-server guide's own policy, with its own key names: it allows
+    // OS_PROJECT_NAME and holds OS_PASSWORD as a credential the script must
+    // not read. That page says the caller "cannot read the credential", and
+    // until `os.getenv` answered through the allowlist that sentence was false.
+    //
+    // SAFETY: the values are this test's own, and the assertion is about what
+    // the policy shows rather than about the process environment changing.
+    unsafe {
+        std::env::set_var("OS_PROJECT_NAME", "inventory");
+        std::env::set_var("OS_PASSWORD", "s3cret");
+    }
+    let vm = vm(
+        "version: 1\nenv:\n  allow: [OS_PROJECT_NAME]\n",
+        ExecMode::Unrestricted,
+    );
+    let out = eval(
+        &vm,
+        r#"
+        local os_lib = require("os")
+        return tostring(os_lib.getenv("OS_PROJECT_NAME")) .. "/"
+            .. tostring(os_lib.getenv("OS_PASSWORD")) .. "/"
+            .. tostring(env.get("OS_PASSWORD"))
+        "#,
+    )
+    .await
+    .unwrap();
+    unsafe {
+        std::env::remove_var("OS_PROJECT_NAME");
+        std::env::remove_var("OS_PASSWORD");
+    }
+    // The allowed key reads through; the credential is indistinguishable from
+    // unset, exactly as `env.get` reports it.
+    assert_eq!(out, "inventory/nil/nil");
+}
+
+/// Blocking a table must never be a way to get an ungated one.
+#[tokio::test]
+async fn blocking_io_under_readonly_yields_no_ungated_handle() {
+    let vm = vm("version: 1\nglobals:\n  block: [io]\n", ExecMode::ReadOnly);
+    let out = eval(
+        &vm,
+        r#"
+        if io ~= nil then return "_G.io survived" end
+        if package.loaded["io"] ~= nil then return "package.loaded.io survived" end
+        if pcall(require, "io") then return "require handed it back" end
+        return "no handle"
+        "#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(out, "no handle");
+}
+
+/// The other half of the same rule: a table the policy does NOT block stays
+/// gated by the mode, rather than being skipped because something removed it.
+#[tokio::test]
+async fn an_unblocked_table_is_still_gated_by_readonly() {
+    let vm = vm("version: 1\nglobals:\n  block: [db]\n", ExecMode::ReadOnly);
+    let out = eval(
+        &vm,
+        r#"
+        local io_lib = require("io")
+        local popen_ok = pcall(io_lib.popen, "true")
+        local write_ok = pcall(io_lib.open, "/tmp/assay-policy-probe", "w")
+        if popen_ok then return "popen ran" end
+        if write_ok then return "open-for-write ran" end
+        if db ~= nil then return "db survived" end
+        return "gated"
+        "#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(out, "gated");
+}
