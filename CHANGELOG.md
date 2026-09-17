@@ -2,6 +2,47 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.13 — 2026-09-17
+
+### Added
+
+- **`assay.neutron` — the CRM and work-tracker surfaces, and a raw call that reports failures
+  instead of raising.** A Lua procedure running inside an agent instance can now read a campaign's
+  pipeline, work the held send queue and the reply inbox, move a work item across the board, or
+  decide a plan, without hand-rolling HTTP against paths it has to keep in step by hand. `c.crm.*`
+  and `c.work.*` mirror those routes one for one, and `c:request(method, path, body?)` is the escape
+  hatch underneath them for anything they do not cover yet.
+
+  The new helpers return `body, status` and do not raise on a non-2xx — the API's own error body is
+  the first return. A procedure whose whole output is a status report needs to say "the queue came
+  back 503" rather than die on it, which is the opposite of what the admin helpers want, so the two
+  contracts sit side by side: `c.agents`, `c.secrets` and the rest still raise.
+
+- **`assay.neutron` — arbitrary request headers on a client.** `opts.headers` rides on every
+  request, and `NEUTRON_EXTRA_HEADERS` carries the same thing as a JSON object when the caller does
+  not pass one. A procedure running as an instance's internal principal sends that pair of headers
+  beside its bearer rather than instead of it, so neither source may replace `Authorization`, and a
+  malformed value is an error rather than a quietly unauthenticated call.
+
+  Three CRM helpers also matched routes that would have rejected them. Approving a claim carries the
+  date it stops being citable (`approve(id, {review_by="YYYY-MM-DD"})`), listing a campaign's
+  imports names the campaign, and importing people dry-runs unless told otherwise — the dry run is a
+  query parameter rather than a body key, so the earlier signature would have written on the first
+  call. `costs:get` no longer advertises a filter the route ignores.
+
+  Seven routes that had no helper now have one: accepting and declining a suppression proposal, and
+  the five per-account integration calls (create, rename, delete, webhook-secret rotation, and
+  dropping one stored key). Another nine helpers could not reach a parameter their route reads — the
+  reason on a domain pause, the DKIM selector on a recheck, the citable filter on claims, the
+  `since` on three reports and the `week` on the weekly note, the board filters, and where a closing
+  sprint carries its unfinished items. Every `/api/admin/crm` and `/api/work` route is now reachable
+  except the person photo, which returns an image rather than JSON.
+
+  Taking a work item out of its sprint needed a way to say so. The move route reads a JSON null, and
+  a Lua table cannot hold one — `sprint_id = nil` is an absent key, which is the instruction to keep
+  the current sprint. `c.work.items:move(id, body, opts?)` now takes `opts.unassign_sprint`, which
+  puts a real `"sprint_id":null` on the wire.
+
 ## assay-lua 0.20.12 — 2026-09-16
 
 ### Fixed
