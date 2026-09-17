@@ -351,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "assay-lua"
-version = "0.20.12"
+version = "0.20.13"
 dependencies = [
  "anyhow",
  "assay-authz",
