@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Pre-commit hook:
-#   1. Regenerate README stdlib table when docs/modules/*.md or
-#      stdlib/*.lua entries are added/removed/renamed and verify it's in sync.
+#   1. Regenerate the README and AGENTS.md stdlib tables when
+#      docs/modules/*.md or stdlib/*.lua entries are added/removed/renamed
+#      and verify both are in sync.
 #   2. Enforce that the staged Rust files are cleanly formatted (rustfmt).
 #   3. Enforce that staged dprint-owned files are cleanly formatted.
 #
@@ -16,7 +17,7 @@ set -euo pipefail
 
 STAGED="$(git diff --cached --name-only --diff-filter=ACMR)"
 
-# ── 1. README stdlib table regen ───────────────────────────────────────
+# ── 1. Stdlib table regen (README.md + AGENTS.md) ──────────────────────
 if echo "$STAGED" | grep -qE '^(docs/modules/|crates/assay/stdlib/)'; then
     # Find an `assay` binary. Prefer release (matches CI). Fall back to debug
     # and finally PATH so the hook is useful before a release build.
@@ -47,16 +48,20 @@ if echo "$STAGED" | grep -qE '^(docs/modules/|crates/assay/stdlib/)'; then
         exit 1
     fi
 
-    if ! git diff --exit-code --quiet -- README.md; then
-        echo >&2
-        echo "pre-commit: README.md is out of sync with docs/modules/*.md." >&2
-        echo "pre-commit: site/build.lua regenerated the stdlib table — review the diff and stage the result:" >&2
-        echo >&2
-        git --no-pager diff -- README.md | head -60 >&2
-        echo >&2
-        echo "pre-commit: \`git add README.md && git commit\` to retry." >&2
-        exit 1
-    fi
+    # README's table comes from docs/modules/*.md frontmatter; AGENTS.md's
+    # comes from the `--- @module` doc blocks in crates/assay/stdlib/.
+    for generated in README.md AGENTS.md; do
+        if ! git diff --exit-code --quiet -- "$generated"; then
+            echo >&2
+            echo "pre-commit: $generated is out of sync with its source." >&2
+            echo "pre-commit: site/build.lua regenerated the stdlib table — review the diff and stage the result:" >&2
+            echo >&2
+            git --no-pager diff -- "$generated" | head -60 >&2
+            echo >&2
+            echo "pre-commit: \`git add $generated && git commit\` to retry." >&2
+            exit 1
+        fi
+    done
 fi
 
 # ── 2. cargo fmt enforcement ───────────────────────────────────────────

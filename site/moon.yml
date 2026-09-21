@@ -20,6 +20,12 @@ tasks:
       - "**/*"
       - "/docs/**/*"
       - "/crates/assay/stdlib/**/*"
+      # build.lua rewrites a stdlib table in each of these. They are inputs
+      # rather than outputs — they live in git, not build/site — so that
+      # hand-editing one busts the cache and lets CI's docs-are-in-sync
+      # check actually see the regenerated result.
+      - "/README.md"
+      - "/AGENTS.md"
       - "/CHANGELOG.md"
       - "/llms.txt"
       - "/crates/assay/src/lua/builtins/mod.rs"

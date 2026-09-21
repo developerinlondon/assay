@@ -487,9 +487,217 @@ local function render_stdlib_md_table()
     end
   end
   lines[#lines + 1] = ""
-  -- Note: the end-marker is NOT appended here. replace_block's post_pat
-  -- captures the end-marker into `post`, so prepending it again here
-  -- caused the marker to be doubled on every regen run.
+  -- Note: the end-marker is NOT appended here. replace_block splices the
+  -- file back on from the end-marker onwards, so emitting it again here
+  -- doubled the marker on every regen run.
+  return table.concat(lines, "\n")
+end
+
+-- =====================================================================
+-- AGENTS.md stdlib table
+-- =====================================================================
+-- AGENTS.md is read by an agent that is about to write a script, so its
+-- table has to name things `require()` actually resolves. The README
+-- table above cannot: it is keyed on `docs/modules/<slug>.md` filenames,
+-- which are doc-page names rather than module names, so it emits rows
+-- like `assay.aws-ec2` and `assay.oci` while missing every submodule and
+-- roughly twenty top-level modules that have no doc page.
+--
+-- The modules themselves are the complete source, so AGENTS.md is
+-- generated from their `--- @module` / `--- @description` / `--- @category`
+-- headers — the same tags `assay context` reads at runtime.
+
+-- Split a source file into lines, keeping empty ones. `gmatch("[^\n]+")`
+-- silently skips blank lines, which would let header parsing run past the
+-- end of a doc block into unrelated `---` comments further down.
+local function source_lines(src)
+  local lines, pos = {}, 1
+  while true do
+    local nl = src:find("\n", pos, true)
+    if not nl then
+      lines[#lines + 1] = src:sub(pos)
+      return lines
+    end
+    lines[#lines + 1] = src:sub(pos, nl - 1)
+    pos = nl + 1
+  end
+end
+
+-- Parse the `--- @tag value` header at the top of a Lua module. Mirrors
+-- `parse_header_tags` in crates/assay/src/metadata.rs: read `---` lines
+-- from the top, stop at the first line that is not one, last occurrence
+-- of a tag wins. No stdlib module declares a tag twice today, so the
+-- last-wins rule only matters for staying honest about the mirror.
+local function parse_lua_header(src)
+  local tags = {}
+  for _, line in ipairs(source_lines(src)) do
+    local trimmed = line:match("^%s*(.-)%s*$")
+    if trimmed:sub(1, 3) ~= "---" then break end
+    local after = trimmed:gsub("^%-+", ""):match("^%s*(.-)%s*$")
+    local tag, value = after:match("^@(%S+)%s+(.*)$")
+    if tag then
+      tags[tag] = value:match("^%s*(.-)%s*$")
+    end
+  end
+  return tags
+end
+
+-- `@description` is a full paragraph — apify's runs to ~290 characters —
+-- and a table cell wants a line. Keep whole sentences while they fit the
+-- budget: cutting unconditionally at the first one would reduce half the
+-- table to "Grafana monitoring and dashboards." and throw away the list of
+-- what the module actually covers, which is the part an agent is reading
+-- the table for.
+local DESC_MAX = 160
+
+-- Abbreviations whose trailing period is followed by a space without
+-- ending a sentence. Without this, `assay.ory` renders as "…submodules
+-- directly (e.g." — a cell cut off mid-parenthesis.
+local NOT_SENTENCE_END = {
+  ["e.g."] = true, ["i.e."] = true, ["etc."] = true, ["cf."] = true, ["vs."] = true,
+}
+
+local function ends_sentence(upto)
+  local word = upto:match("([%w%.]+)$")
+  return not (word and NOT_SENTENCE_END[word:lower()])
+end
+
+-- A word-boundary cut lands wherever the budget runs out, which can be in
+-- the middle of a parenthetical or a code span: `assay.engine.auth` ended
+-- "…and admin (users, sessions, OIDC…". Walk back to just before the first
+-- opener that never closed, so the cell reads "…and admin…" instead.
+local PAIRS = { ["("] = ")", ["["] = "]" }
+
+local function drop_unclosed(s)
+  local stack = {}
+  local backtick_open = nil
+  for i = 1, #s do
+    local ch = s:sub(i, i)
+    if ch == "`" then
+      -- Backticks are their own closer, so one span toggles rather than nests.
+      backtick_open = backtick_open and nil or i
+    elseif not backtick_open then
+      if PAIRS[ch] then
+        stack[#stack + 1] = { ch = ch, at = i }
+      elseif #stack > 0 and ch == PAIRS[stack[#stack].ch] then
+        stack[#stack] = nil
+      end
+    end
+  end
+  local first_unclosed = backtick_open
+  if stack[1] and (not first_unclosed or stack[1].at < first_unclosed) then
+    first_unclosed = stack[1].at
+  end
+  if not first_unclosed then return s end
+  -- Never return nothing: an all-bracket prefix keeps the original cut.
+  local trimmed = s:sub(1, first_unclosed - 1):match("^(.-)%s*$")
+  return #trimmed > 0 and trimmed or s
+end
+
+local function trim_tail(s)
+  return (s:gsub("[%s,;:]+$", ""))
+end
+
+local function one_line_description(desc)
+  desc = (desc or ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+  if #desc <= DESC_MAX then return desc end
+
+  -- `()%.%s` yields the offset of each period followed by a space. Periods
+  -- inside `assay.k8s`, `v0.3.0` or `/api/v1/…` are not followed by a
+  -- space, so they never split.
+  local kept
+  for stop in desc:gmatch("()%.%s") do
+    if ends_sentence(desc:sub(1, stop)) then
+      if kept and stop > DESC_MAX then break end
+      kept = desc:sub(1, stop)
+      if stop > DESC_MAX then break end
+    end
+  end
+  if kept and #kept <= DESC_MAX then return kept end
+
+  -- A single sentence that overruns on its own. Cut on a word boundary,
+  -- which also keeps the cut off the middle of a multi-byte character.
+  local first = kept or desc
+  local cut = first:sub(1, DESC_MAX):match("^(.*)%s%S*$") or first:sub(1, DESC_MAX)
+  return trim_tail(drop_unclosed(cut)) .. "…"
+end
+
+-- `@category` slugs as the modules declare them, in display order. A slug
+-- that is not listed here lands under "Other" rather than failing the
+-- build; give it a row below to promote it to a section of its own.
+local stdlib_category_order = {
+  "core", "observability", "kubernetes", "gitops", "identity", "secrets",
+  "cloud", "host", "data", "devtools", "registries", "saas", "comms",
+}
+
+local stdlib_category_display = {
+  core          = "Core (text, URLs, versions)",
+  observability = "Monitoring & Observability",
+  kubernetes    = "Kubernetes",
+  gitops        = "GitOps",
+  identity      = "Security & Identity",
+  secrets       = "Secrets & Vaults",
+  cloud         = "Cloud & Network",
+  host          = "Host & Linux",
+  data          = "Data & Storage",
+  devtools      = "Developer Tools",
+  registries    = "Registries & Company Data",
+  saas          = "SaaS & Business",
+  comms         = "Email & Comms",
+}
+
+local OTHER = "__other__"
+
+local function render_agents_stdlib_table()
+  local mods = {}
+  for _, path in ipairs(fs.glob("crates/assay/stdlib/**/*.lua")) do
+    local tags = parse_lua_header(fs.read(path))
+    -- No `@module` means the file is not requirable on its own
+    -- (stdlib/engine/workflow/ctx.lua is an internal helper table).
+    if tags.module and #tags.module > 0 then
+      mods[#mods + 1] = {
+        name        = tags.module,
+        description = one_line_description(tags.description),
+        category    = tags.category or "",
+      }
+    end
+  end
+  table.sort(mods, function(a, b) return a.name < b.name end)
+
+  local by_slug = {}
+  for _, m in ipairs(mods) do
+    local slug = stdlib_category_display[m.category] and m.category or OTHER
+    by_slug[slug] = by_slug[slug] or {}
+    table.insert(by_slug[slug], m)
+  end
+
+  local lines = {
+    "<!-- BEGIN STDLIB TABLE -->",
+    "<!-- Generated by site/build.lua from the @module/@description/@category doc blocks in crates/assay/stdlib/**/*.lua — do not edit by hand. -->",
+    "",
+    -- The count lives inside the block so it cannot drift from the rows.
+    tostring(#mods) .. ' embedded Lua modules loaded via `require("assay.<name>")`:',
+    "",
+    "| Module | Description |",
+    "| --- | --- |",
+  }
+
+  local function emit(slug, display)
+    if not by_slug[slug] then return end
+    lines[#lines + 1] = "| **" .. display .. "** | |"
+    for _, m in ipairs(by_slug[slug]) do
+      -- Pipes inside table cells must be escaped.
+      lines[#lines + 1] = "| `" .. m.name .. "` | " .. m.description:gsub("|", "\\|") .. " |"
+    end
+  end
+
+  for _, slug in ipairs(stdlib_category_order) do
+    emit(slug, stdlib_category_display[slug])
+  end
+  emit(OTHER, "Other")
+
+  lines[#lines + 1] = ""
+  -- As above: the end-marker is spliced back by replace_block, not emitted here.
   return table.concat(lines, "\n")
 end
 
@@ -504,11 +712,24 @@ local function replace_block(path, begin_marker, end_marker, replacement, opts)
     end
     return false
   end
-  local pre_pat  = "^(.-)(" .. begin_marker:gsub("%-", "%%-") .. ")"
-  local post_pat = "(" .. end_marker:gsub("%-", "%%-") .. ")(.*)$"
-  local pre  = src:match(pre_pat)
-  local post = src:match(post_pat)
-  if not pre or not post then
+  -- Find a marker only where it stands alone on its own line. AGENTS.md
+  -- names both markers mid-sentence in the section that documents this
+  -- mechanism; matching that prose rewrites the wrong part of the file.
+  local function find_own_line(marker, from)
+    local pos = from
+    while true do
+      local s, e = src:find(marker, pos, true)
+      if not s then return nil end
+      local before = s == 1 or src:sub(s - 1, s - 1) == "\n"
+      local after  = e == #src or src:sub(e + 1, e + 1) == "\n"
+      if before and after then return s, e end
+      pos = e + 1
+    end
+  end
+
+  local begin_start, begin_end = find_own_line(begin_marker, 1)
+  local end_start = begin_end and find_own_line(end_marker, begin_end + 1)
+  if not begin_start or not end_start then
     local msg = path .. ": markers not found, skipping (add `"
                 .. begin_marker .. "` ... `" .. end_marker .. "`)"
     if opts.optional then
@@ -518,7 +739,10 @@ local function replace_block(path, begin_marker, end_marker, replacement, opts)
     end
     return false
   end
-  local new = pre .. replacement .. post
+  -- `replacement` re-emits the begin-marker and stops short of the
+  -- end-marker, so the tail is spliced back on from the end-marker itself.
+  -- Everything below the block is preserved.
+  local new = src:sub(1, begin_start - 1) .. replacement .. src:sub(end_start)
   if new == src then
     log.info(path .. ": stdlib table unchanged")
     return false
@@ -533,5 +757,14 @@ replace_block("README.md", "<!-- BEGIN STDLIB TABLE -->", "<!-- END STDLIB TABLE
 -- SKILL.md does not currently host a stdlib table; if you want one,
 -- add the BEGIN/END markers anywhere in the file and rerun this script.
 replace_block("SKILL.md",  "<!-- BEGIN STDLIB TABLE -->", "<!-- END STDLIB TABLE -->", table_md, { optional = true })
+
+-- AGENTS.md carries its own table from a different source (the module doc
+-- blocks, not docs/modules frontmatter). The count printed inside that
+-- block is the number of `@module` declarations under crates/assay/stdlib/;
+-- it is deliberately lower than `module_count` above, which adds the
+-- builtins — global, no `require()` — and counts every .lua file rather
+-- than only the requirable ones. The two are not meant to agree.
+replace_block("AGENTS.md", "<!-- BEGIN STDLIB TABLE -->", "<!-- END STDLIB TABLE -->",
+              render_agents_stdlib_table())
 
 log.info("Done. Output at " .. out .. "/")

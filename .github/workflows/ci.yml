@@ -85,6 +85,11 @@ jobs:
               - 'llms.txt'
               - 'crates/assay/src/lua/builtins/mod.rs'
               - 'crates/assay/stdlib/**'
+              # Both hold a generated stdlib table. Listed so that editing
+              # one by hand still runs the generator and trips the
+              # docs-are-in-sync check below.
+              - 'README.md'
+              - 'AGENTS.md'
             ci:
               - 'renovate.json'
               - '.github/workflows/**'
@@ -314,17 +319,22 @@ jobs:
           \gexec
           SQL
 
-      # `assay site/build.lua` (the moon `site:build` task above)
-      # rewrites the stdlib table in README.md in place from
-      # docs/modules/*.md frontmatter. If that rewrite produced a diff,
-      # the committed README was out of sync — fail with a clear hint
-      # rather than letting drift slip through. Linux only: macOS would
-      # produce the same result, asserting twice is noise.
-      - name: Docs are in sync (README stdlib table)
+      # `assay site/build.lua` (the moon `site:build` task above) rewrites
+      # a stdlib table in README.md and in AGENTS.md in place — README from
+      # docs/modules/*.md frontmatter, AGENTS.md from the @module doc blocks
+      # in crates/assay/stdlib/. If either rewrite produced a diff, the
+      # committed file was out of sync — fail with a clear hint rather than
+      # letting drift slip through. Linux only: macOS would produce the same
+      # result, asserting twice is noise.
+      - name: Docs are in sync (README + AGENTS stdlib tables)
         if: steps.targets.outputs.run_checks == 'true' && needs.changes.outputs.site == 'true' && runner.os == 'Linux'
         run: |
           if ! git diff --exit-code -- README.md; then
             echo "::error title=README.md out of sync::Run 'assay site/build.lua' locally and commit the result. The stdlib table is generated from docs/modules/*.md frontmatter; edit those (or build.lua's category_order) — not README directly."
+            exit 1
+          fi
+          if ! git diff --exit-code -- AGENTS.md; then
+            echo "::error title=AGENTS.md out of sync::Run 'assay site/build.lua' locally and commit the result. The stdlib table is generated from the '--- @module/@description/@category' doc blocks in crates/assay/stdlib/; edit those (or build.lua's stdlib_category_order) — not AGENTS.md directly."
             exit 1
           fi
 

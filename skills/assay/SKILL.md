@@ -36,15 +36,15 @@ assay modules
 
 ## CLI Commands
 
-| Command                     | What it does                                  |
-| --------------------------- | --------------------------------------------- |
-| `assay script.lua`          | Auto-detect and run Lua script                |
-| `assay checks.yaml`         | Auto-detect and run YAML check config         |
-| `assay run script.lua`      | Explicit run (same as auto-detect)            |
-| `assay exec -e 'lua code'`  | Evaluate Lua inline                           |
-| `assay exec script.lua`     | Run Lua file via exec subcommand              |
-| `assay context "<keyword>"` | Find modules matching keyword, shows quickref |
-| `assay modules`             | List all 52 modules (35 stdlib + 17 builtins) |
+| Command                     | What it does                                    |
+| --------------------------- | ----------------------------------------------- |
+| `assay script.lua`          | Auto-detect and run Lua script                  |
+| `assay checks.yaml`         | Auto-detect and run YAML check config           |
+| `assay run script.lua`      | Explicit run (same as auto-detect)              |
+| `assay exec -e 'lua code'`  | Evaluate Lua inline                             |
+| `assay exec script.lua`     | Run Lua file via exec subcommand                |
+| `assay context "<keyword>"` | Find modules matching keyword, shows quickref   |
+| `assay modules`             | List every module: embedded stdlib and builtins |
 
 ## Discovering Modules
 
@@ -282,7 +282,7 @@ Available when built with `--features temporal`. Native gRPC client for Temporal
 
 ## Stdlib Modules Quick Reference
 
-All 36 modules follow `require("assay.<name>")` then `M.client(url, opts)`.
+Client modules follow `require("assay.<name>")` then `M.client(url, opts)`.
 
 | Module               | Description                                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -528,7 +528,7 @@ hardcode credentials in scripts.
 **Shebang scripts**: Add `#!/usr/bin/assay` as the first line and `chmod +x script.lua` to run
 scripts directly without the `assay` prefix.
 
-**Module not found**: All 35 stdlib modules are embedded in the binary. If `require("assay.foo")`
+**Module not found**: every stdlib module is embedded in the binary. If `require("assay.foo")`
 fails, run `assay modules` to see the exact module names.
 
 **Lua 5.5 specifics**: Assay uses Lua 5.5 (not LuaJIT). Integer division is `//`, bitwise ops use
@@ -568,7 +568,7 @@ Assay integrates with all major AI coding agents via `assay context <query>` (to
 
 ### Claude Code
 
-Add to `.mcp.json` (Coming Soon — v0.6.0):
+Add to `.mcp.json`:
 
 ```json
 {
@@ -590,7 +590,7 @@ Example: `assay context "grafana"` returns all grafana client methods with types
 
 ### Cursor
 
-Add to `.cursor/mcp.json` (Coming Soon — v0.6.0):
+Add to `.cursor/mcp.json`:
 
 ```json
 {
@@ -602,7 +602,7 @@ Add to `.cursor/mcp.json` (Coming Soon — v0.6.0):
 
 ### Windsurf
 
-Add to `~/.codeium/windsurf/mcp_config.json` (Coming Soon — v0.6.0):
+Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ```json
 {
@@ -614,19 +614,21 @@ Add to `~/.codeium/windsurf/mcp_config.json` (Coming Soon — v0.6.0):
 
 ### Cline / OpenCode
 
-Same pattern — `assay mcp-serve` exposes all modules as MCP tools (v0.6.0).
+Same pattern: register `assay mcp-serve` as a stdio MCP server.
 
-Today: use `assay context <query>` from terminal and paste output into agent context.
+## What `assay mcp-serve` exposes
 
-## MCP-Serve Vision (v0.6.0)
+`assay mcp-serve` speaks JSON-RPC 2.0 over stdio and exposes three tools, not one per module:
 
-`assay mcp-serve` will expose all 52 modules (35 stdlib + 17 builtins) as MCP tools over stdio/SSE
-transport:
+| Tool            | What it does                                                                         |
+| --------------- | ------------------------------------------------------------------------------------ |
+| `assay_context` | Search the embedded module docs and return prompt-ready Markdown                     |
+| `assay_run`     | Run a Lua `script` in a `mode`; answers `ok`, `needs_approval` or `error`            |
+| `assay_resume`  | Resume a run stopped at an approval gate, with its `token` and an explicit `approve` |
 
-- Each stdlib module becomes an MCP tool (e.g., `grafana_health`, `k8s_pods`)
-- Each builtin becomes an MCP tool (e.g., `http_get`, `crypto_jwt_sign`)
-- Agents call tools directly — no Lua scripting required for simple queries
-- Lua scripting still available for complex multi-step workflows
+An agent reads a module with `assay_context`, then writes Lua against it and runs it with
+`assay_run`. Modes `readonly` and `approval` are always offered; `unrestricted` is advertised only
+when the server runs with `ASSAY_MCP_UNRESTRICTED=1`, for deployments that gate access themselves.
+Omitting `approve` on `assay_resume` is an error, never an approval.
 
-Until v0.6.0: use `assay context <query>` + paste into agent context window. See
-https://assay.rs/agent-guides.html for complete integration examples.
+See https://assay.rs/agent-guides.html for complete integration examples.
