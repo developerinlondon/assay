@@ -73,3 +73,34 @@ fn test_context_limit_flag() {
         "context with --limit should exit 0"
     );
 }
+
+/// Acceptance for `assay.jev`: an agent asking the MCP surface for "jev" has to
+/// get the module doc back, and the three builders are the whole of the API it
+/// can see — `assay context` renders the description, the env var and the
+/// quickref lines, and nothing else from the doc block.
+#[test]
+fn test_context_jev_returns_the_module_doc() {
+    let output = assay_bin().args(["context", "jev"]).output().unwrap();
+    assert!(output.status.success(), "context jev should exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("assay.jev"),
+        "should find it, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("TYPESAFE_API_KEY"),
+        "the env var it needs is part of the doc: {stdout}"
+    );
+    for wanted in [
+        "M.client(opts?)",
+        "c:system_one(state, questions, opts?)",
+        "M.choice(instructions, criteria)",
+        "M.score(instructions, levels)",
+        "M.noul(instructions, criteria?)",
+    ] {
+        assert!(
+            stdout.contains(wanted),
+            "quickref for {wanted} did not render — a line missing ` -> ` or ` | ` is dropped silently: {stdout}"
+        );
+    }
+}

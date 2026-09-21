@@ -1,6 +1,9 @@
 mod common;
 
 use common::run_lua;
+use serde_json::{Value, json};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 #[tokio::test]
 async fn test_require_email_triage() {
@@ -9,6 +12,7 @@ async fn test_require_email_triage() {
         assert.not_nil(mod)
         assert.not_nil(mod.categorize)
         assert.not_nil(mod.categorize_llm)
+        assert.not_nil(mod.categorize_jev)
     "#;
     run_lua(script).await.unwrap();
 }
@@ -695,4 +699,404 @@ async fn test_a_message_that_is_not_a_message_reads_as_nothing_rather_than_crash
     )
     .await
     .unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// M.categorize_jev: the same three buckets, asked as a typed question.
+//
+// Both readings run over HTTP against recorded answers — the jev one against a
+// stubbed /v1/systemone, the OpenClaw one against a stubbed /tools/invoke —
+// and the test is that they put the same five emails in the same three places.
+// ---------------------------------------------------------------------------
+
+/// The five emails both readings are given. One of each bucket, plus a second
+/// reply and a second notice, so agreement is not a coincidence of ordering.
+const FIVE: &str = r#"
+  local emails = {
+    { id = "e1", from = "dana@example.test", subject = "Re: pricing",
+      text = "Can you send the quote over? Happy to sign this week." },
+    { id = "e2", from = "billing@vendor.test", subject = "Invoice 44 — action required",
+      text = "Payment is due on the 30th. Please settle to avoid interruption." },
+    { id = "e3", from = "noreply@news.test", subject = "Your weekly digest",
+      text = "Here is what happened this week." },
+    { id = "e4", from = "sam@example.test", subject = "Intro to Priya?",
+      text = "Would you mind introducing me to Priya on your team?" },
+    { id = "e5", from = "alerts@status.test", subject = "Deploy finished",
+      text = "Build 1201 deployed to production." },
+  }
+"#;
+
+/// What the model said about each of the five, in order.
+const READINGS: [(&str, f64); 5] = [
+    ("needs_reply", 0.93),
+    ("needs_action", 0.88),
+    ("fyi", 0.97),
+    ("needs_reply", 0.81),
+    ("fyi", 0.9),
+];
+
+/// One recorded Choice answer per email, handed out in order — the module
+/// asks one question per message, so the nth request gets the nth reading.
+struct Recorded {
+    readings: Vec<(&'static str, f64)>,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl Respond for Recorded {
+    fn respond(&self, _: &Request) -> ResponseTemplate {
+        let n = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let (choice, confidence) = self.readings[n.min(self.readings.len() - 1)];
+        ResponseTemplate::new(200).set_body_json(json!({
+            "model": "jev-1.0",
+            "answers": { "bucket": {
+                "type": "choice",
+                "choice": choice,
+                "probabilities": { choice: confidence },
+                "confidence": confidence,
+            }},
+            "usage": { "input_tokens": 100, "output_tokens": 3 },
+        }))
+    }
+}
+
+async fn mount_jev(server: &MockServer, readings: Vec<(&'static str, f64)>) {
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(Recorded {
+            readings,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        })
+        .mount(server)
+        .await;
+}
+
+/// The OpenClaw side of the same fixture: one call, the three lists back.
+async fn mount_openclaw(server: &MockServer, buckets: Value) {
+    Mock::given(method("POST"))
+        .and(path("/tools/invoke"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(buckets))
+        .mount(server)
+        .await;
+}
+
+/// `categorize_llm` calls `openclaw_client:llm_task(...)`, but `assay.openclaw`
+/// spells the same call `c.llm:task(...)`. That mismatch predates this change
+/// and is left alone here; the adapter is two lines and keeps the OpenClaw
+/// reading going over HTTP to the stub rather than being faked outright.
+const LLM_ADAPTER: &str = r#"
+  local openclaw = require("assay.openclaw")
+  local oc = openclaw.client(url, { token = "t" })
+  local shim = { llm_task = function(_, prompt, o) return oc.llm:task(prompt, o) end }
+"#;
+
+#[tokio::test]
+async fn the_two_readings_agree_on_the_recorded_five() {
+    let server = MockServer::start().await;
+    mount_jev(&server, READINGS.to_vec()).await;
+    mount_openclaw(
+        &server,
+        json!({
+            "needs_reply": [{ "id": "e1" }, { "id": "e4" }],
+            "needs_action": [{ "id": "e2" }],
+            "fyi": [{ "id": "e3" }, { "id": "e5" }],
+        }),
+    )
+    .await;
+
+    run_lua(&format!(
+        r#"
+        local t = require("assay.email_triage")
+        local jev = require("assay.jev")
+        local url = "{uri}"
+        {FIVE}
+        {LLM_ADAPTER}
+
+        local c = jev.client({{ api_key = "k1", base_url = url, retry_delay_s = 0 }})
+        local by_jev = t.categorize_jev(emails, c)
+        local by_llm = t.categorize_llm(emails, shim)
+
+        local function ids(list)
+          local out = {{}}
+          for i, e in ipairs(list) do out[i] = e.id end
+          return table.concat(out, ",")
+        end
+
+        for _, bucket in ipairs({{ "needs_reply", "needs_action", "fyi" }}) do
+          assert.eq(ids(by_jev[bucket]), ids(by_llm[bucket]),
+            "the two readings disagreed on " .. bucket)
+        end
+        assert.eq(ids(by_jev.needs_reply), "e1,e4")
+        assert.eq(ids(by_jev.needs_action), "e2")
+        assert.eq(ids(by_jev.fyi), "e3,e5")
+        -- Every email was sure enough to file, and the pass reports its cost.
+        assert.eq(#by_jev.uncertain, 0)
+        assert.eq(by_jev.usage.input_tokens, 500)
+        assert.eq(by_jev.usage.output_tokens, 15)
+        "#,
+        uri = server.uri()
+    ))
+    .await
+    .unwrap();
+}
+
+/// One question per email, and the state is that email rather than the batch.
+#[tokio::test]
+async fn one_question_goes_out_per_email_carrying_that_email() {
+    let server = MockServer::start().await;
+    mount_jev(&server, READINGS.to_vec()).await;
+
+    run_lua(&format!(
+        r#"
+        local t = require("assay.email_triage")
+        local jev = require("assay.jev")
+        {FIVE}
+        local c = jev.client({{ api_key = "k1", base_url = "{uri}", retry_delay_s = 0 }})
+        t.categorize_jev(emails, c)
+        "#,
+        uri = server.uri()
+    ))
+    .await
+    .unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 5, "one call per email");
+    let first: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(first["state"]["from"], json!("dana@example.test"));
+    assert_eq!(first["state"]["subject"], json!("Re: pricing"));
+    assert_eq!(first["questions"]["bucket"]["type"], json!("choice"));
+    // The three buckets are the question, not something read out of the prose.
+    let criteria = first["questions"]["bucket"]["criteria"]
+        .as_object()
+        .unwrap();
+    let mut names: Vec<&String> = criteria.keys().collect();
+    names.sort();
+    assert_eq!(names, vec!["fyi", "needs_action", "needs_reply"]);
+}
+
+/// A reading the model was not sure of is not a decision. It lands in `fyi`,
+/// where nothing is owed, and it is listed in `uncertain` with what the model
+/// picked and how sure it was — the bare email alone would throw away the
+/// reason it is there.
+#[tokio::test]
+async fn a_reading_below_the_confidence_floor_lands_in_fyi_and_says_why() {
+    let server = MockServer::start().await;
+    mount_jev(&server, vec![("needs_reply", 0.41), ("needs_action", 0.95)]).await;
+
+    run_lua(&format!(
+        r#"
+        local t = require("assay.email_triage")
+        local jev = require("assay.jev")
+        local c = jev.client({{ api_key = "k1", base_url = "{uri}", retry_delay_s = 0 }})
+        local out = t.categorize_jev({{
+          {{ id = "unsure", from = "who@example.test", subject = "?" }},
+          {{ id = "sure", from = "billing@vendor.test", subject = "Invoice due" }},
+        }}, c)
+
+        assert.eq(#out.needs_reply, 0)
+        assert.eq(#out.fyi, 1)
+        assert.eq(out.fyi[1].id, "unsure")
+        assert.eq(#out.needs_action, 1)
+        assert.eq(out.needs_action[1].id, "sure")
+
+        assert.eq(#out.uncertain, 1)
+        assert.eq(out.uncertain[1].email.id, "unsure")
+        assert.eq(out.uncertain[1].choice, "needs_reply")
+        assert.eq(out.uncertain[1].confidence, 0.41)
+        "#,
+        uri = server.uri()
+    ))
+    .await
+    .unwrap();
+}
+
+/// The floor is the caller's to set: lowered past the reading, the same answer
+/// is filed where the model put it.
+#[tokio::test]
+async fn the_confidence_floor_is_the_callers_to_set() {
+    let server = MockServer::start().await;
+    mount_jev(&server, vec![("needs_reply", 0.41)]).await;
+
+    run_lua(&format!(
+        r#"
+        local t = require("assay.email_triage")
+        local jev = require("assay.jev")
+        local c = jev.client({{ api_key = "k1", base_url = "{uri}", retry_delay_s = 0 }})
+        local out = t.categorize_jev({{ {{ id = "unsure", subject = "?" }} }}, c,
+          {{ min_confidence = 0.25 }})
+        assert.eq(#out.needs_reply, 1)
+        assert.eq(#out.uncertain, 0)
+        "#,
+        uri = server.uri()
+    ))
+    .await
+    .unwrap();
+}
+
+/// No silent fallback. An email quietly filed as `fyi` because the service was
+/// down is a message nobody will ever look at again.
+#[tokio::test]
+async fn a_failed_call_raises_rather_than_dropping_the_email_into_fyi() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+        .mount(&server)
+        .await;
+
+    let text = run_lua(&format!(
+        r#"
+        local t = require("assay.email_triage")
+        local jev = require("assay.jev")
+        local c = jev.client({{ api_key = "k1", base_url = "{uri}", retry_delay_s = 0 }})
+        t.categorize_jev({{ {{ id = "e1", subject = "hi" }} }}, c)
+        "#,
+        uri = server.uri()
+    ))
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(text.contains("HTTP 500"), "got {text}");
+}
+
+/// An answer naming something that is not one of the three is not a bucket.
+#[tokio::test]
+async fn an_answer_outside_the_three_buckets_is_refused() {
+    let server = MockServer::start().await;
+    mount_jev(&server, vec![("usage", 0.99)]).await;
+
+    let text = run_lua(&format!(
+        r#"
+        local t = require("assay.email_triage")
+        local jev = require("assay.jev")
+        local c = jev.client({{ api_key = "k1", base_url = "{uri}", retry_delay_s = 0 }})
+        t.categorize_jev({{ {{ id = "e1", subject = "Quarterly report" }} }}, c)
+        "#,
+        uri = server.uri()
+    ))
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(text.contains("jev answered with no bucket"), "got {text}");
+    assert!(text.contains("Quarterly report"), "got {text}");
+}
+
+/// Same guard `categorize_llm` has: a client that cannot answer is refused
+/// before the first email is read.
+#[tokio::test]
+async fn a_client_that_cannot_answer_is_refused() {
+    for bad in ["nil", "\"a string\"", "{}", "{ system_one = 3 }"] {
+        let text = run_lua(&format!(
+            r#"
+            local t = require("assay.email_triage")
+            t.categorize_jev({{ {{ id = "e1" }} }}, {bad})
+            "#
+        ))
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(
+            text.contains("jev client with system_one is required"),
+            "{bad} gave {text}"
+        );
+    }
+}
+
+/// Nothing to read is three empty lists, not a call.
+#[tokio::test]
+async fn no_emails_is_no_calls() {
+    let server = MockServer::start().await;
+    mount_jev(&server, READINGS.to_vec()).await;
+    run_lua(&format!(
+        r#"
+        local t = require("assay.email_triage")
+        local jev = require("assay.jev")
+        local c = jev.client({{ api_key = "k1", base_url = "{uri}", retry_delay_s = 0 }})
+        local out = t.categorize_jev({{}}, c)
+        assert.eq(#out.needs_reply, 0)
+        assert.eq(#out.needs_action, 0)
+        assert.eq(#out.fyi, 0)
+        assert.eq(#out.uncertain, 0)
+        "#,
+        uri = server.uri()
+    ))
+    .await
+    .unwrap();
+    assert_eq!(server.received_requests().await.unwrap().len(), 0);
+}
+
+/// `opts.criteria` rewords the three buckets. The descriptions are what the
+/// model is told each bucket means, and an inbox where "needs_action" means
+/// something particular is exactly the case worth rewriting them for.
+#[tokio::test]
+async fn criteria_may_reword_what_each_bucket_means() {
+    let server = MockServer::start().await;
+    mount_jev(&server, vec![("needs_action", 0.91)]).await;
+
+    run_lua(&format!(
+        r#"
+        local t = require("assay.email_triage")
+        local jev = require("assay.jev")
+        local c = jev.client({{ api_key = "k1", base_url = "{uri}", retry_delay_s = 0 }})
+        local out = t.categorize_jev({{ {{ id = "e1", subject = "Renewal" }} }}, c, {{
+          criteria = {{
+            needs_reply = "A customer is waiting on us",
+            needs_action = "A renewal, an invoice or a contract with a date on it",
+            fyi = "Anything else",
+          }},
+        }})
+        assert.eq(#out.needs_action, 1)
+        assert.eq(out.needs_action[1].id, "e1")
+        "#,
+        uri = server.uri()
+    ))
+    .await
+    .unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    let sent: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(
+        sent["questions"]["bucket"]["criteria"]["needs_action"],
+        json!("A renewal, an invoice or a contract with a date on it")
+    );
+}
+
+/// The three names are the contract, not a default: they are the lists the
+/// answer is filed into and the keys a caller already reads. A criteria table
+/// naming anything else is refused before the first email goes out, rather
+/// than blaming the model once per message for the caller's typo.
+#[tokio::test]
+async fn criteria_may_not_rename_the_three_buckets() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    for (criteria, want) in [
+        (
+            r#"{ urgent = "x", needs_reply = "y", needs_action = "z", fyi = "w" }"#,
+            "urgent is not one of",
+        ),
+        (
+            r#"{ needs_reply = "y", needs_action = "z" }"#,
+            "missing a description for fyi",
+        ),
+        (r#""not a table""#, "must be a table keyed"),
+    ] {
+        let text = run_lua(&format!(
+            r#"
+            local t = require("assay.email_triage")
+            local jev = require("assay.jev")
+            local c = jev.client({{ api_key = "k1", base_url = "{uri}", retry_delay_s = 0 }})
+            t.categorize_jev({{ {{ id = "e1", subject = "hi" }} }}, c, {{ criteria = {criteria} }})
+            "#,
+            uri = server.uri()
+        ))
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(text.contains(want), "{criteria} gave {text}");
+    }
 }

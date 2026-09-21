@@ -2,7 +2,7 @@
 --- @description Email triage: what a message says about itself, read from its own headers and words with no model and no network — whether it declares itself a machine, whether it is a bounce, whether the sender is away and until when, whether they asked to be left alone, and whether they pointed at someone else. Plus the older subject-keyword bucketing and the OpenClaw-assisted one.
 --- @category comms
 --- @icon mail-search
---- @keywords email, triage, signals, auto-reply, bounce, dsn, out of office, unsubscribe, referral, deterministic, gmail, inbox, classify, openclaw, llm
+--- @keywords email, triage, signals, auto-reply, bounce, dsn, out of office, unsubscribe, referral, deterministic, gmail, inbox, classify, openclaw, llm, jev, typesafe, confidence, uncertain
 --- @quickref M.signals(msg, opts?) -> signals | msg is {headers, subject, text, html?}; opts.now is epoch seconds so a test can fix the date
 --- @quickref signals -> {auto_reply, bounce, out_of_office, unsubscribe, referral} | Each is {present, evidence, ...}; present is always a boolean and evidence appears only when present
 --- @quickref M.own_words(text) -> string | The reply above the quoted thread; phrases matched below it are the letter being answered, not the answer
@@ -12,6 +12,9 @@
 --- @quickref M.text_of(msg) -> string | The body as text, falling back to the HTML with its tags stripped
 --- @quickref M.categorize(emails, opts?) -> buckets | The older pass: buckets by subject keyword and sender only
 --- @quickref M.categorize_llm(emails, openclaw_client, opts?) -> buckets | Bucketing through an OpenClaw LLM task
+--- @quickref M.categorize_jev(emails, jev_client, opts?) -> buckets | The same three buckets as one assay.jev Choice per email
+--- @quickref jev buckets -> {needs_reply, needs_action, fyi, uncertain, usage} | Below opts.min_confidence (0.6) an email lands in fyi and is listed in uncertain with its reading
+--- @quickref categorize_jev opts -> {min_confidence, instructions, criteria} | criteria may reword the three buckets' descriptions; the three names are the contract and cannot be renamed
 
 local M = {}
 
@@ -565,6 +568,140 @@ Return only the bucketed emails.
   })
 
   return normalize(result)
+end
+
+-- The same three buckets `categorize_llm` names, said to a model that answers
+-- with one of them rather than with prose a reader has to pull them out of.
+-- The wording is the wording of the prompt above, so the two readings are
+-- being asked the same question and can be held against each other.
+local JEV_INSTRUCTIONS =
+  "Read this one email and say which of the three the reader owes it. " ..
+  "Judge only what is here: who wrote it, what they asked for, and whether anything is due."
+
+local JEV_CRITERIA = {
+  needs_reply = "A person wrote it and is waiting on an answer — a question, a proposal, an introduction, anything a silence would be rude to.",
+  needs_action = "Something must be done, by a date or on request — signing, paying, approving, booking, attending — whether or not a reply is also owed.",
+  fyi = "Nothing is owed. A newsletter, a receipt, an automated notice, a status update: read it and drop it.",
+}
+
+local JEV_CHOICES = { needs_reply = true, needs_action = true, fyi = true }
+
+--- Criteria a caller reworded, checked to still name the same three buckets.
+---
+--- The three names are the function's contract, not a default: the answer is
+--- filed into the lists `normalize` guarantees, and a caller reading
+--- `out.needs_reply` is the whole reason this sits beside `categorize_llm`.
+--- So the descriptions are the caller's to rewrite — an inbox where "action"
+--- means something particular is exactly the case worth rewording for — and
+--- the keys are not. Checked once, here, rather than discovered per email as
+--- "jev answered with no bucket", which names the model for the caller's typo.
+local function jev_criteria(criteria)
+  if criteria == nil then return JEV_CRITERIA end
+  if type(criteria) ~= "table" then
+    error("email_triage: opts.criteria must be a table keyed needs_reply, needs_action and fyi")
+  end
+  local out = {}
+  for name, meaning in pairs(criteria) do
+    if not JEV_CHOICES[name] then
+      error("email_triage: opts.criteria may reword the three buckets, not rename them — "
+        .. tostring(name) .. " is not one of needs_reply, needs_action, fyi")
+    end
+    out[name] = tostring(meaning)
+  end
+  for name in pairs(JEV_CHOICES) do
+    if out[name] == nil then
+      error("email_triage: opts.criteria is missing a description for " .. name)
+    end
+  end
+  return out
+end
+
+-- Below this the reading is not one to file on. Calibrated confidence is what
+-- makes a number here mean anything; picked so a coin-toss between two buckets
+-- never silently becomes a decision.
+local DEFAULT_MIN_CONFIDENCE = 0.6
+
+-- A whole quoted thread is the letter being answered, not this message, and it
+-- is also most of the tokens. The reply's own words, capped.
+local JEV_BODY_CAP = 2000
+
+--- One email as the state a question is asked about.
+---
+--- Indexing a Lua string yields nil rather than raising, so a list of strings
+--- handed in by mistake would read as a list of empty messages and come back
+--- bucketed with a straight face. It is refused instead.
+local function jev_state(email)
+  if type(email) ~= "table" then
+    error("email_triage: every email must be a table, got " .. type(email))
+  end
+  local body = M.text_of(email)
+  if trim(body) == "" then body = tostring(email.snippet or "") end
+  return {
+    from = tostring(email.from or ""),
+    subject = tostring(email.subject or ""),
+    body = M.own_words(body):sub(1, JEV_BODY_CAP),
+  }
+end
+
+--- The same three buckets, read as a typed judgment per email.
+---
+--- One Choice per email rather than one call over the batch: the state is
+--- genuinely a single message, a failure names the message it happened on, and
+--- the confidence gate is per-email — batched, one unreadable message would
+--- take the reading of every other one down with it.
+---
+--- The answer comes back through the same `normalize` the other two readings
+--- use, so `needs_reply`, `needs_action` and `fyi` are byte-identical in shape
+--- to what a caller already handles. Two keys sit beside them: `uncertain`,
+--- every email the model was not sure enough about together with what it
+--- picked and how sure it was, and `usage`, what the pass cost in tokens.
+---
+--- A call that fails raises. An email quietly filed as `fyi` because the
+--- service was down is a message nobody will ever look at again.
+function M.categorize_jev(emails, jev_client, opts)
+  opts = opts or {}
+  if type(jev_client) ~= "table" or type(jev_client.system_one) ~= "function" then
+    error("email_triage: jev client with system_one is required")
+  end
+  -- Required here rather than at the top of the file: everything above this
+  -- line reads a message with no model and no network, and a policy that
+  -- allows this module without allowing `assay.jev` must keep getting that.
+  local jev = require("assay.jev")
+
+  local min_confidence = opts.min_confidence or DEFAULT_MIN_CONFIDENCE
+  local question = jev.choice(opts.instructions or JEV_INSTRUCTIONS, jev_criteria(opts.criteria))
+
+  local buckets = empty_buckets()
+  buckets.uncertain = {}
+  buckets.usage = { input_tokens = 0, output_tokens = 0 }
+
+  for _, email in ipairs(emails or {}) do
+    local answers, info = jev_client:system_one(jev_state(email), { bucket = question })
+    local answer = type(answers) == "table" and answers.bucket or nil
+    if type(answer) ~= "table" or not JEV_CHOICES[answer.choice] then
+      error("email_triage: jev answered with no bucket for " .. tostring(email.subject or email.from or "an email"))
+    end
+
+    local confidence = tonumber(answer.confidence)
+    local bucket = answer.choice
+    if confidence == nil or confidence < min_confidence then
+      buckets.uncertain[#buckets.uncertain + 1] = {
+        email = email,
+        choice = answer.choice,
+        confidence = confidence,
+      }
+      bucket = "fyi"
+    end
+    buckets[bucket][#buckets[bucket] + 1] = email
+
+    local usage = type(info) == "table" and info.usage or nil
+    if type(usage) == "table" then
+      buckets.usage.input_tokens = buckets.usage.input_tokens + (tonumber(usage.input_tokens) or 0)
+      buckets.usage.output_tokens = buckets.usage.output_tokens + (tonumber(usage.output_tokens) or 0)
+    end
+  end
+
+  return normalize(buckets)
 end
 
 return M

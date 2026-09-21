@@ -87,6 +87,7 @@
 ## AI Agent
 - [AI Agents](https://assay.rs/modules/ai-agents.html): OpenClaw, GitHub, Gmail, Google Calendar, OAuth2, Email Triage
 - [assay.clickup](https://assay.rs/modules/clickup.html): ClickUp REST API — tasks, sprint Lists, goals, custom fields, time tracking, Docs
+- [assay.jev](https://assay.rs/modules/jev.html): TypeSafe Jev System One — a judgment asked as a typed question and answered as a typed value, with probabilities and calibrated confidence; Choice, Score, Noul
 - [assay.n8n](https://assay.rs/modules/n8n.html): n8n public REST API — workflows, executions, credentials, projects, variables, idempotent reconcilers
 
 ## Optional

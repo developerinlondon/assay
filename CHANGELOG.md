@@ -2,6 +2,58 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.15 — 2026-09-21
+
+### Added
+
+- **`assay.jev` — a judgment a script branches on, asked as a typed question rather than as a prompt
+  whose prose has to be parsed.** A workflow that needs a small semantic answer — which bucket, does
+  this hold, how severe — had no cheap way to ask for one. Writing a prompt and pulling the answer
+  back out of the reply means the branch taken depends on how the model phrased itself that morning,
+  and a wording change upstream is a silent behaviour change downstream.
+
+  `jev.client(opts?)` speaks TypeSafe's System One endpoint: `c:system_one(state, questions)` hands
+  back one answer per question, keyed exactly as the caller keyed the questions, each a value Lua
+  can compare against a literal. Three builders shape the questions.
+  `jev.choice(instructions, criteria)` picks one of up to 255 named options, and the names are the
+  caller's own, so `answers.bucket.choice` reads back as what went in.
+  `jev.score(instructions, levels)` reads a level off an ordered ladder of two to ten, where the
+  order _is_ the scale. `jev.noul(instructions, criteria?)` answers with the probability, 0 to 1,
+  that a statement holds — a number to compare against a threshold, not a side.
+
+  Every answer carries the probability of each option it considered, and Choice and Score carry a
+  calibrated confidence beside it. That is the whole point of the module: the threshold a script
+  acts on is then written in the script, in Lua, where somebody can read it and argue with it,
+  rather than inferred from hedging words in a paragraph. A Noul carries no confidence — the answer
+  already _is_ its probability, and a second number would be the same information twice.
+
+  There is no silent fallback anywhere. 401 says `jev: unauthorized`; a 422 reports the field
+  message the API sent, or its body verbatim when it sent none; 429 and 529 are tried again — three
+  attempts, backing off from half a second to a five-second ceiling, honouring a `Retry-After` up to
+  a minute — and then named. Nothing else is repeated, because nothing else is a different answer a
+  second later. A 200 that is not JSON, or one carrying no `answers`, raises rather than handing
+  back an empty judgment to a caller who is about to branch on it. A Noul answering anything but a
+  number on 0 to 1 is refused for the same reason: every number but zero is truthy in Lua, so a
+  value read as a side rather than a probability turns a 0.04 into a confident yes. The builders
+  refuse what the API would refuse anyway, so an empty option set or a ladder of one rung is named
+  in the caller's own words instead of arriving later as a 422 about a field. Lua spells its
+  booleans as booleans, so a Noul keyed `{ [true] = ..., [false] = ... }` is normalised to the
+  strings the API wants.
+
+- **`assay.email_triage.categorize_jev` — the same three buckets, read as a typed judgment.** It
+  sits beside `categorize` and `categorize_llm` and returns `needs_reply`, `needs_action` and `fyi`
+  in exactly the shape those two return, so nothing calling them changes. One Choice per email
+  rather than one call over the batch: the state is genuinely a single message, a failure names the
+  message it happened on, and the confidence gate is per-email — batched, one unreadable message
+  would take the reading of every other one down with it.
+
+  An email the model was less sure of than `opts.min_confidence` (0.6 by default) lands in `fyi`,
+  where nothing is owed, and is listed in a fourth `uncertain` list together with what the model
+  picked and how sure it was. The bare email alone would throw away the reason it is there, which is
+  the one thing a caller triaging the leftovers needs. A `usage` tally sits beside the lists so a
+  pass can be priced. A call that fails raises rather than dropping its email into `fyi`: a message
+  filed as nothing-owed because the service was down is a message nobody will ever look at again.
+
 ## assay-lua 0.20.14 — 2026-09-17
 
 ### Fixed
