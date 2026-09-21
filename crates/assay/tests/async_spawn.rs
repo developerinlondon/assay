@@ -1,6 +1,6 @@
 mod common;
 
-use common::{eval_lua_local, run_lua_local};
+use common::run_lua_local;
 
 #[tokio::test]
 async fn test_async_spawn_basic() {
@@ -76,19 +76,36 @@ async fn test_async_spawn_double_await_errors() {
 
 #[tokio::test]
 async fn test_async_spawn_concurrent_execution() {
-    let result: bool = eval_lua_local(
-        r#"
-        local start = time()
-        local h1 = async.spawn(function() sleep(0.05) end)
-        local h2 = async.spawn(function() sleep(0.05) end)
-        h1.await()
-        h2.await()
-        local elapsed = time() - start
-        return elapsed < 0.15
-    "#,
-    )
-    .await;
-    assert!(result, "concurrent spawns should run in parallel");
+    let script = r#"
+        local function measure(body)
+            local start = time()
+            body()
+            return time() - start
+        end
+
+        local sequential = measure(function()
+            async.spawn(function() sleep(0.2) end).await()
+            async.spawn(function() sleep(0.2) end).await()
+        end)
+
+        local concurrent = measure(function()
+            local h1 = async.spawn(function() sleep(0.2) end)
+            local h2 = async.spawn(function() sleep(0.2) end)
+            h1.await()
+            h2.await()
+        end)
+
+        assert.lt(
+            concurrent,
+            sequential * 0.75,
+            string.format(
+                "concurrent spawns should overlap: sequential %.3fs, concurrent %.3fs",
+                sequential,
+                concurrent
+            )
+        )
+    "#;
+    run_lua_local(script).await.unwrap();
 }
 
 #[tokio::test]
@@ -98,9 +115,14 @@ async fn test_async_spawn_interval_basic() {
         local handle = async.spawn_interval(0.02, function()
             count = count + 1
         end)
-        sleep(0.09)
+
+        local deadline = time() + 5
+        while count < 2 and time() < deadline do
+            sleep(0.01)
+        end
         handle.cancel()
-        assert.gt(count, 1)
+
+        assert.gt(count, 1, string.format("spawn_interval fired %d times in 5s", count))
     "#;
     run_lua_local(script).await.unwrap();
 }
@@ -112,11 +134,26 @@ async fn test_async_spawn_interval_cancel() {
         local handle = async.spawn_interval(0.02, function()
             count = count + 1
         end)
-        sleep(0.05)
+
+        local start = time()
+        local deadline = start + 5
+        while count < 2 and time() < deadline do
+            sleep(0.01)
+        end
+        assert.gt(count, 1, string.format("spawn_interval fired %d times in 5s", count))
+
+        -- Wait out several ticks at the rate this host actually delivered them,
+        -- so a slow scheduler lengthens the observation window too.
+        local ticked_in = time() - start
         handle.cancel()
         local count_at_cancel = count
-        sleep(0.05)
-        assert.eq(count, count_at_cancel)
+        sleep(ticked_in * 2)
+
+        assert.eq(
+            count,
+            count_at_cancel,
+            string.format("interval fired %d more times after cancel", count - count_at_cancel)
+        )
     "#;
     run_lua_local(script).await.unwrap();
 }
