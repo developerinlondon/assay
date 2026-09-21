@@ -2,6 +2,26 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.16 — 2026-09-21
+
+### Fixed
+
+- **`assay.jev` no longer lets the API key, or the whole of a vendor's body, leave in an error.** A
+  non-200 the module did not classify raised `jev: POST /v1/systemone HTTP <status>: <body>`, and
+  that body is the service's own text. A service — or a proxy in front of one — that echoes back the
+  `Authorization` header it rejected put the key into that message, and whoever recorded the error
+  recorded the key with it: an error text is usually the thing a script logs, or writes into a note
+  of why a judgment was not read. The 422 field message carried vendor text the same way, and so did
+  the value quoted by `jev: noul answer out of range`. Nothing bounded the length of any of them
+  either, so a gateway's HTML page arrived whole in somebody's log line.
+
+  Every error out of the client now leaves through one door, which replaces each occurrence of the
+  key with `[redacted]` and stops quoted vendor text at 300 characters — counting what it cut rather
+  than dropping it silently, so a reader can tell the server said more. The key comes out before the
+  clip, never after: cut first, a key straddling the 300th character would leave behind the half of
+  itself that survived. A clip does not end in half a UTF-8 character, and a 401 still says
+  `jev: unauthorized` and quotes nothing at all.
+
 ## assay-lua 0.20.15 — 2026-09-21
 
 ### Added

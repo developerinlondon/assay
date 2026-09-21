@@ -38,10 +38,33 @@ local MAX_SCORE_LEVELS = 10
 -- repeating. Nothing else is.
 local RETRYABLE = { [429] = "rate limited", [529] = "overloaded" }
 
+-- An error text is often the thing a caller logs or persists, so vendor text
+-- quoted into one is kept to what a reader can take in. Long enough for a
+-- field message to arrive whole; short enough that a stray HTML page does not
+-- land in somebody's log.
+local MAX_QUOTED_CHARS = 300
+
 local ENDPOINT = "/v1/systemone"
 local WHERE = "POST " .. ENDPOINT
 
 local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
+
+-- The clip itself. What is cut is counted rather than dropped silently, so a
+-- reader can tell the server said more than the error shows.
+local function quoted(text)
+  local said = trim(text)
+  if #said <= MAX_QUOTED_CHARS then return said end
+  local cut = MAX_QUOTED_CHARS
+  -- Never end in half a character: while the byte just past the cut is a UTF-8
+  -- continuation (0x80..0xBF), the character straddles it and the whole
+  -- sequence goes.
+  while cut > 0 do
+    local after = said:byte(cut + 1)
+    if not after or after < 0x80 or after > 0xBF then break end
+    cut = cut - 1
+  end
+  return said:sub(1, cut) .. "… (" .. #said .. " characters in all)"
+end
 
 local function instructions_of(instructions, kind)
   local text = trim(instructions)
@@ -198,15 +221,21 @@ end
 -- A Noul answer is a probability, not a side. Reading it as a boolean is the
 -- mistake this guards: every number but zero is truthy in Lua, so a 0.04 that
 -- slipped through as `if answer.noul then` would read as a confident yes.
-local function check_nouls(answers)
+--
+-- The offending value is returned rather than raised, because what came back
+-- is the vendor's text and every error carrying vendor text leaves the client
+-- through one door. Nil means every Noul was a probability; a Noul that came
+-- back as JSON null returns the string "nil", which is a fault, not an absence.
+local function noul_fault(answers)
   for _, answer in pairs(answers) do
     if type(answer) == "table" and answer.type == "noul" then
       local p = answer.noul
       if type(p) ~= "number" or p ~= p or p < 0 or p > 1 then
-        error("jev: noul answer out of range: " .. tostring(p))
+        return tostring(p)
       end
     end
   end
+  return nil
 end
 
 --- A client for one TypeSafe instance.
@@ -233,26 +262,60 @@ function M.client(opts)
     }
   end
 
+  -- The key goes out on every request, and a vendor — or a proxy in front of
+  -- one — may echo the header it rejected straight back in the body. An error
+  -- text is often the thing a caller logs or writes down as why a judgment was
+  -- not read, so the key is taken out of it here rather than trusted not to be
+  -- there. Plain text, not a pattern: a key is a string, not an expression.
+  local function without_key(message)
+    local said, key = tostring(message), tostring(api_key)
+    local parts, at = {}, 1
+    while true do
+      local from, to = said:find(key, at, true)
+      if not from then break end
+      parts[#parts + 1] = said:sub(at, from - 1)
+      parts[#parts + 1] = "[redacted]"
+      at = to + 1
+    end
+    parts[#parts + 1] = said:sub(at)
+    return table.concat(parts)
+  end
+
+  -- Vendor text on its way into an error. The key comes out before the clip,
+  -- never after: cut first, a key straddling the 300th character would leave
+  -- the half of itself that survived.
+  local function vendor(text)
+    return quoted(without_key(text))
+  end
+
+  -- The one door every error out of the request path leaves by, so scrubbing
+  -- is structural rather than something each new error has to remember. Level
+  -- 2 keeps the position on the line that raised rather than on this one.
+  local function raise(message)
+    error("jev: " .. without_key(message), 2)
+  end
+
   -- No silent fallback anywhere below: a judgment a caller is about to branch
   -- on is not something to guess at when the service did not answer.
   local function fail(resp)
-    if resp.status == 401 then error("jev: unauthorized") end
+    if resp.status == 401 then raise("unauthorized") end
     if resp.status == 422 then
       local read, parsed = pcall(json.parse, resp.body or "")
-      error("jev: " .. field_message(read and parsed or nil, resp.body))
+      raise(vendor(field_message(read and parsed or nil, resp.body)))
     end
-    error("jev: " .. WHERE .. " HTTP " .. resp.status .. ": " .. (resp.body or ""))
+    raise(WHERE .. " HTTP " .. resp.status .. ": " .. vendor(resp.body or ""))
   end
 
   local function read_answers(resp)
     local read, parsed = pcall(json.parse, resp.body or "")
     if not read or type(parsed) ~= "table" then
-      error("jev: " .. WHERE .. " returned unparseable JSON")
+      raise(WHERE .. " returned unparseable JSON")
     end
     if type(parsed.answers) ~= "table" then
-      error("jev: " .. WHERE .. " returned no answers")
+      raise(WHERE .. " returned no answers")
     end
-    check_nouls(parsed.answers)
+    local fault = noul_fault(parsed.answers)
+    if fault then raise("noul answer out of range: " .. vendor(fault)) end
     return parsed.answers, {
       usage = type(parsed.usage) == "table" and parsed.usage or {},
       model = parsed.model,
@@ -273,16 +336,16 @@ function M.client(opts)
   function c:system_one(state, questions, o)
     o = o or {}
     if state == nil then
-      error("jev: system_one needs state — what the questions are about")
+      raise("system_one needs state — what the questions are about")
     end
     if type(questions) ~= "table" or next(questions) == nil then
-      error("jev: system_one needs at least one question")
+      raise("system_one needs at least one question")
     end
     local body = { state = state, model = o.model or model, questions = questions }
     local target = base_url .. ENDPOINT
     local tries = o.attempts or attempts
     if type(tries) ~= "number" or tries < 1 then
-      error("jev: attempts must be at least 1")
+      raise("attempts must be at least 1")
     end
     local base_delay = o.retry_delay_s or retry_delay_s
 
@@ -292,7 +355,7 @@ function M.client(opts)
       local kind = RETRYABLE[resp.status]
       if not kind then fail(resp) end
       if attempt >= tries then
-        error("jev: " .. kind .. " (HTTP " .. resp.status .. ") after " .. tries .. " attempts")
+        raise(kind .. " (HTTP " .. resp.status .. ") after " .. tries .. " attempts")
       end
       if base_delay > 0 then
         local wait = retry_after(resp)

@@ -421,6 +421,110 @@ async fn a_200_without_answers_raises_rather_than_handing_back_nothing() {
 }
 
 // ---------------------------------------------------------------------------
+// What an error is allowed to carry out of the module. An error text is often
+// the thing a caller logs, or writes into a "why this was not read" field, so
+// the key must not be in it and the vendor's body must not be all of it.
+// ---------------------------------------------------------------------------
+
+/// Distinctive on purpose. Against a key of `k1`, "the key is gone" is a thing
+/// almost any message can say by accident.
+const KEY: &str = "sk-live-9f3c-do-not-log";
+
+/// The one call every failure test above makes.
+const ONE_QUESTION: &str =
+    r#"c:system_one("x", { q = jev.choice("pick", { fyi = "nothing owed" }) })"#;
+
+fn client_on_key(uri: &str, body: &str) -> String {
+    format!(
+        "local jev = require(\"assay.jev\")\n\
+         local c = jev.client({{ api_key = \"{KEY}\", base_url = \"{uri}\" }})\n{body}"
+    )
+}
+
+async fn err_on_key(server: &MockServer, body: &str) -> String {
+    run_lua(&client_on_key(&server.uri(), body))
+        .await
+        .unwrap_err()
+        .to_string()
+}
+
+/// A vendor — or a proxy in front of one — may echo the `Authorization` header
+/// it rejected straight back in the body. Pasted into an error and logged by
+/// the caller, that is the key written down in plain text.
+#[tokio::test]
+async fn a_body_that_echoes_the_bearer_never_puts_the_key_in_the_error() {
+    let echoed = format!("rejected: Bearer {KEY}");
+    let field = format!(r#"{{"detail":[{{"loc":["header","auth"],"msg":"{echoed}"}}]}}"#);
+    for (status, body, want) in [
+        (500u16, format!("upstream {echoed}"), "HTTP 500"),
+        (422, field, "header.auth: rejected"),
+    ] {
+        let server = MockServer::start().await;
+        mount_status(&server, status, &body).await;
+        let text = err_on_key(&server, ONE_QUESTION).await;
+        let ctx = format!("HTTP {status} echoing the bearer");
+        assert_says(&text, want, &ctx);
+        assert_says(&text, "[redacted]", &ctx);
+        assert!(!text.contains(KEY), "the key survived into {text}");
+    }
+}
+
+/// A 401 says only that it was refused. The body is the vendor's account of a
+/// key it did not like, and quoting it back is how the key ends up in a log.
+#[tokio::test]
+async fn a_401_says_only_that_it_was_unauthorized() {
+    let server = MockServer::start().await;
+    mount_status(&server, 401, &format!("Bearer {KEY} is not a key we know")).await;
+    let text = err_on_key(&server, ONE_QUESTION).await;
+    assert_says(&text, "jev: unauthorized", "a 401 echoing the bearer");
+    assert!(!text.contains(KEY), "the key survived into {text}");
+    assert!(
+        !text.contains("is not a key"),
+        "the 401 body reached {text}"
+    );
+}
+
+/// A quoted body stops at 300 characters, and says how much it stopped short
+/// of, so a gateway's HTML page cannot become somebody's log line.
+#[tokio::test]
+async fn a_long_vendor_body_is_clipped_and_the_rest_is_counted() {
+    let long = format!("{}TAIL-MARKER", "Z".repeat(5000));
+    for status in [500u16, 422] {
+        let server = MockServer::start().await;
+        mount_status(&server, status, &long).await;
+        let text = err(&server, ONE_QUESTION).await;
+        assert!(
+            !text.contains("TAIL-MARKER"),
+            "HTTP {status} carried the far end of a 5011-character body into {text}"
+        );
+        assert!(
+            text.matches('Z').count() <= 300,
+            "HTTP {status} quoted more than the first 300 characters of the body: {text}"
+        );
+        assert_says(&text, "5011 characters in all", &format!("HTTP {status}"));
+    }
+}
+
+/// The out-of-range value is the vendor's too, and nothing bounds what it can
+/// be — a whole page can arrive where a probability was expected.
+#[tokio::test]
+async fn an_off_scale_noul_is_named_without_quoting_the_whole_of_it() {
+    let server = MockServer::start().await;
+    let shouted = format!("{}TAIL-MARKER", "Z".repeat(5000));
+    mount(&server, json!({ "q": { "type": "noul", "noul": shouted } })).await;
+    let text = err(
+        &server,
+        r#"c:system_one("x", { q = jev.noul("Is this urgent?") })"#,
+    )
+    .await;
+    assert_says(&text, "jev: noul answer out of range", "a page-long noul");
+    assert!(
+        !text.contains("TAIL-MARKER"),
+        "the whole of it reached {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Retries.
 // ---------------------------------------------------------------------------
 

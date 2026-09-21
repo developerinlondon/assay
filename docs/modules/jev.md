@@ -90,21 +90,28 @@ module.
 There is no silent fallback anywhere. A judgment a caller is about to branch on is not something to
 guess at when the service did not answer.
 
-| What happened                                | What you get                                                                         |
-| -------------------------------------------- | ------------------------------------------------------------------------------------ |
-| 401                                          | `jev: unauthorized`                                                                  |
-| 422                                          | `jev: <the field message the API sent>` — or the body verbatim if it sent no message |
-| 429                                          | Tried again with backoff; then `jev: rate limited (HTTP 429) after 3 attempts`       |
-| 529                                          | Tried again with backoff; then `jev: overloaded (HTTP 529) after 3 attempts`         |
-| Any other non-200                            | `jev: POST /v1/systemone HTTP <status>: <body>`                                      |
-| A 200 that is not JSON                       | `jev: POST /v1/systemone returned unparseable JSON`                                  |
-| A 200 with no `answers`                      | `jev: POST /v1/systemone returned no answers`                                        |
-| A Noul answer that is not a number on 0 to 1 | `jev: noul answer out of range: <what came back>`                                    |
+| What happened                                | What you get                                                                    |
+| -------------------------------------------- | ------------------------------------------------------------------------------- |
+| 401                                          | `jev: unauthorized`                                                             |
+| 422                                          | `jev: <the field message the API sent>` — or the body, clipped, if it sent none |
+| 429                                          | Tried again with backoff; then `jev: rate limited (HTTP 429) after 3 attempts`  |
+| 529                                          | Tried again with backoff; then `jev: overloaded (HTTP 529) after 3 attempts`    |
+| Any other non-200                            | `jev: POST /v1/systemone HTTP <status>: <the body, clipped>`                    |
+| A 200 that is not JSON                       | `jev: POST /v1/systemone returned unparseable JSON`                             |
+| A 200 with no `answers`                      | `jev: POST /v1/systemone returned no answers`                                   |
+| A Noul answer that is not a number on 0 to 1 | `jev: noul answer out of range: <what came back>`                               |
 
 Three attempts in all, backing off from half a second and doubling to a five-second ceiling. A
 `Retry-After` on the response is the server's own number and beats the guess, up to a minute. Only
 429 and 529 are repeated: nothing else is a different answer a second later, and retrying it only
 triples the wait before you are told.
+
+None of those messages carries your key. Every occurrence of it is replaced with `[redacted]` before
+the error leaves the module, and vendor text quoted into one stops at 300 characters — what is cut
+is counted, not dropped silently, so you can see the server said more. An error text is usually the
+thing a caller logs, or writes into a record of why a judgment was not read; a service, or a proxy
+in front of one, that echoes back the `Authorization` header it rejected would otherwise put your
+key in both.
 
 ### A third reading for email triage
 
