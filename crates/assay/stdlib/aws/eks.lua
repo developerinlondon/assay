@@ -1,8 +1,8 @@
 --- @module assay.aws.eks
---- @description EKS authentication token minting (the aws eks get-token equivalent), in-process — no aws CLI subprocess, works in readonly mode. Used by assay.k8s kubeconfig contexts.
+--- @description EKS auth token minting (the aws eks get-token equivalent), in-process. Minting needs no HTTP; resolving IRSA or assume-role credentials first POSTs to STS.
 --- @category cloud
 --- @keywords aws, eks, kubernetes, token, get-token, authentication, k8s-aws-v1, presigned
---- @quickref M.get_token(cluster_name, opts?) -> token | Mint a k8s-aws-v1 bearer token for an EKS cluster
+--- @quickref M.get_token(cluster_name, opts?) -> token | Mint a k8s-aws-v1 bearer token for an EKS cluster. No aws CLI subprocess; used by assay.k8s kubeconfig contexts
 
 local sigv4 = require("assay.aws.sigv4")
 local sts = require("assay.aws.sts")
@@ -22,6 +22,12 @@ end
 --- cluster name in a signed x-k8s-aws-id header, base64url-encoded with the
 --- k8s-aws-v1. prefix — exactly what `aws eks get-token` produces, minted
 --- in-process so it works where subprocesses are blocked (readonly mode).
+---
+--- Presigning is pure computation, so minting itself issues no request. It is
+--- the credentials it signs with that may: without opts.credentials or explicit
+--- keys this calls sts.credentials, and the IRSA and assume-role paths of that
+--- chain POST to STS, which readonly blocks unless policy declares the STS host
+--- a read. See docs/modules/aws-sts.md.
 ---
 --- @param cluster_name string The EKS cluster name
 --- @param opts table|nil { region, profile, role_arn, credentials, access_key, secret_key, session_token, time }

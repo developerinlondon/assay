@@ -160,8 +160,8 @@ http:
 ```
 
 `classify: read` marks a target that authenticates with a POST — an OpenStack token issue, an STS
-presign — as the read it actually is, so it proceeds under `--readonly` instead of being refused
-for its verb. With no policy loaded nothing changes.
+credential exchange — as the read it actually is, so it proceeds under `--readonly` instead of being
+refused for its verb. With no policy loaded nothing changes.
 
 A policy can also declare credentials, so a script authenticates without being able to read the
 secret:
@@ -554,6 +554,7 @@ resolves; `AGENTS.md` carries the complete list harvested from the modules thems
 | `assay.aws-ecr` |  |
 | `assay.aws-s3` |  |
 | `assay.aws-sigv4` |  |
+| `assay.aws-sts` | AWS credential resolution + STS, in-process — the credential chain, which paths POST, and what that costs in readonly mode |
 | **Container & Registry** | |
 | `assay.oci` |  |
 | **Filesystem & Archives** | |

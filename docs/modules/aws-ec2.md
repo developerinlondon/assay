@@ -11,9 +11,11 @@ actions.
 ### Client
 
 - `ec2.client(opts)` → client. `opts` is a table with the fields:
-  - `access_key` _(required)_ — AWS access key ID
-  - `secret_key` _(required)_ — AWS secret access key
-  - `region` _(required)_ — AWS region
+  - `access_key` _(optional)_ — AWS access key ID. Omit it and credentials are resolved through
+    `assay.aws.sts` (profile / env / IRSA); pass it together with `secret_key`.
+  - `secret_key` _(optional)_ — AWS secret access key
+  - `region` _(required)_ — AWS region (or `AWS_REGION` / `AWS_DEFAULT_REGION`)
+  - `profile` / `role_arn` _(optional)_ — passed through to `assay.aws.sts` when resolving
   - `session_token` _(optional)_ — STS session token
   - `endpoint` _(optional)_ — override the API endpoint (full URL or bare host). Defaults to
     `https://ec2.<region>.amazonaws.com`. Useful for VPC endpoints or for injecting a mock server in
@@ -38,6 +40,20 @@ All three accept an optional `opts` table:
 
 None. Every method issues a signed `http.get`, so read-only and approval modes leave them
 unrestricted.
+
+Building the client is the part that can still be gated. Without explicit `access_key`/`secret_key`
+it calls `sts.credentials`, and the IRSA and assume-role paths of that chain `POST` to STS — so a
+readonly script fails with `readonly: http.post blocked` at `ec2.client(...)`, before it issues a
+single `GET`. Passing `access_key` + `secret_key` explicitly avoids the hop entirely. Relying on
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` only works when no profile is in play: the chain
+consults `opts.profile` or `AWS_PROFILE` first, so if `AWS_PROFILE` names a `role_arn` or
+`web_identity_token_file` profile, the env keys are never read and the STS POST still happens.
+
+The alternative is a policy declaring the STS endpoint a read — but note that adding `http.rules` at
+all switches the script to default-deny, so the describe calls above then need a rule of their own
+(`hosts: ["ec2.<region>.amazonaws.com"]`, `methods: [GET]`) or they are refused with
+`policy: GET … is not allowed by any http rule`. See [assay.aws.sts](aws-sts.md) for a worked
+two-rule policy.
 
 Example:
 

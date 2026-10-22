@@ -120,9 +120,9 @@ would also match `evilexample.com`, which is a footgun in an allowlist.
 ### `classify: read`
 
 Some reads authenticate with a POST. OpenStack Keystone issues a token with `POST /v3/auth/tokens`;
-minting a Kubernetes bearer token presigns an STS call. Classifying by verb alone marks these as
-writes, so `readonly` mode cannot reach the service at all and `approval` mode demands a human
-decision for what is only a login.
+AWS trades a web identity token for credentials with `POST /` to STS. Classifying by verb alone
+marks these as writes, so `readonly` mode cannot reach the service at all and `approval` mode
+demands a human decision for what is only a login.
 
 `classify: read` says "this exact target is a read". A matching request then proceeds under
 `readonly`, and does not suspend under `approval`. Everything else on the same host is unaffected:

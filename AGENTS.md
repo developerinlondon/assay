@@ -546,11 +546,11 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.openbao` | OpenBao secrets management (vault-compatible). Alias for assay.hashicorp.vault. |
 | **Cloud & Network** | |
 | `assay.aws.ec2` | AWS EC2 read-only queries via Signature V4. Describe instances, volumes, security groups. |
-| `assay.aws.ecr` | AWS Elastic Container Registry. Get authorization tokens for pushing/pulling images. |
-| `assay.aws.eks` | EKS authentication token minting (the aws eks get-token equivalent), in-process — no aws CLI subprocess, works in readonly mode. |
+| `assay.aws.ecr` | AWS Elastic Container Registry authorization tokens for pushing/pulling images. GetAuthorizationToken is a signed POST; readonly needs a policy read rule. |
+| `assay.aws.eks` | EKS auth token minting (the aws eks get-token equivalent), in-process. Minting needs no HTTP; resolving IRSA or assume-role credentials first POSTs to STS. |
 | `assay.aws.s3` | AWS S3 read-only queries via Signature V4. List buckets, list objects, head object. |
 | `assay.aws.sigv4` | AWS Signature V4 request signing. Generates Authorization headers and presigned URLs for AWS API calls. |
-| `assay.aws.sts` | AWS credential resolution + STS. |
+| `assay.aws.sts` | AWS credential resolution + STS, in-process (no aws CLI). IRSA and assume-role POST to STS, so readonly needs a policy classify:read rule for the STS host. |
 | `assay.infoblox` | Infoblox WAPI. DNS records, networks, DHCP ranges, grid status. Basic auth. |
 | `assay.openstack` | OpenStack inventory client. Keystone v3 auth and service discovery; identity, compute, image, network, and quota reads. |
 | `assay.tailscale` | Tailscale REST API client. OAuth2 client_credentials, mint auth keys, list/find devices, manage device key expiry, tags, authorize, delete, ACL preview. |

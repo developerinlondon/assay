@@ -1,11 +1,11 @@
 --- @module assay.aws.sts
---- @description AWS credential resolution + STS. Resolves credentials like the AWS CLI (explicit -> profile -> env -> IRSA web identity), assumes roles, all in-process (no aws CLI needed, works in readonly mode).
+--- @description AWS credential resolution + STS, in-process (no aws CLI). IRSA and assume-role POST to STS, so readonly needs a policy classify:read rule for the STS host.
 --- @category cloud
 --- @keywords aws, sts, credentials, assume-role, web-identity, irsa, profile, aws-profile, credential-chain
 --- @env AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_PROFILE, AWS_ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE, AWS_REGION, AWS_DEFAULT_REGION, HOME
---- @quickref M.credentials(opts?) -> {access_key, secret_key, session_token?} | Resolve credentials via the standard chain
---- @quickref M.assume_role(role_arn, opts?) -> creds | Assume an IAM role (sts:AssumeRole)
---- @quickref M.assume_role_with_web_identity(role_arn, token, opts?) -> creds | Assume a role with a web identity token (IRSA)
+--- @quickref M.credentials(opts?) -> {access_key, secret_key, session_token?} | Resolve credentials the way the AWS CLI does: explicit keys -> profile -> env -> IRSA web identity
+--- @quickref M.assume_role(role_arn, opts?) -> creds | Assume an IAM role (sts:AssumeRole). Signed POST to STS — blocked in readonly without a policy read rule
+--- @quickref M.assume_role_with_web_identity(role_arn, token, opts?) -> creds | Assume a role with a web identity token (IRSA). Unsigned POST to STS — same readonly caveat
 
 local sigv4 = require("assay.aws.sigv4")
 
@@ -260,6 +260,25 @@ end
 ---   4. IRSA: AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE (in-cluster pods)
 --- If opts.role_arn is set, the resolved credentials then assume that role.
 --- Temporary credentials are cached until shortly before expiry.
+---
+--- Readonly mode: steps 1 and 3, and a profile with static keys, are pure
+--- computation and work unrestricted. Every other path ends in an STS POST
+--- (AssumeRole or AssumeRoleWithWebIdentity), which readonly blocks by verb
+--- unless policy declares the STS host a read:
+---
+---   http:
+---     rules:
+---       - hosts: ["sts.us-east-1.amazonaws.com"]
+---         methods: [POST]
+---         paths: ["/"]
+---         classify: read
+---
+--- Match the region the caller asks for: a literal host is an exact match, so
+--- a us-east-1 rule does nothing for a eu-west-1 client. And note that adding
+--- http.rules at all makes the whole script default-deny, so every other
+--- endpoint it touches (the EC2 or S3 GETs, for instance) needs a rule too.
+---
+--- See docs/modules/aws-sts.md for the full matrix and a worked policy.
 ---
 --- @param opts table|nil { access_key, secret_key, session_token, profile, role_arn, region, sts_endpoint, config_file, credentials_file }
 --- @return table { access_key, secret_key, session_token? }

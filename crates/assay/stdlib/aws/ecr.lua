@@ -1,9 +1,9 @@
 --- @module assay.aws.ecr
---- @description AWS Elastic Container Registry. Get authorization tokens for pushing/pulling images.
+--- @description AWS Elastic Container Registry authorization tokens for pushing/pulling images. GetAuthorizationToken is a signed POST; readonly needs a policy read rule.
 --- @category cloud
 --- @keywords aws, ecr, container, registry, docker, authorization, token, login
 --- @quickref client(opts) -> client | Create an ECR client (opts = {access_key?, secret_key?, profile?, role_arn?, region?, session_token?, endpoint?}; no keys -> standard chain via assay.aws.sts)
---- @quickref c:get_authorization_token() -> {token, proxy_endpoint, expires_at} | Get ECR auth token
+--- @quickref c:get_authorization_token() -> {token, proxy_endpoint, expires_at} | Get ECR auth token. Signed POST (x-amz-json-1.1) — blocked in readonly without a policy read rule
 
 local M = {}
 
