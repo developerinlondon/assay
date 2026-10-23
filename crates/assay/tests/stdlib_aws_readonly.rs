@@ -18,10 +18,13 @@
 //! credentials in a module-level table, so a warm entry leaking between tests
 //! would let a successful exchange mask a block in the next one.
 
+mod common;
+
 use std::sync::Arc;
 
 use assay::lua::policy::Policy;
 use assay::lua::{ExecMode, VmOptions, create_vm_with_policy};
+use common::aws::{WebIdentityProfile, sts_json, web_identity_profile};
 use wiremock::matchers::{body_string_contains, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -47,22 +50,6 @@ fn readonly_vm(policy_yaml: Option<&str>) -> mlua::Lua {
 
 async fn eval(vm: &mlua::Lua, script: &str) -> mlua::Result<String> {
     vm.load(script).eval_async::<String>().await
-}
-
-/// STS answers the query protocol in JSON when the Accept header asks for it.
-fn sts_json(result_key: &str, access_key: &str) -> serde_json::Value {
-    serde_json::json!({
-        format!("{result_key}Response"): {
-            format!("{result_key}Result"): {
-                "Credentials": {
-                    "AccessKeyId": access_key,
-                    "SecretAccessKey": "resolved-secret",
-                    "SessionToken": "resolved-session-token",
-                    "Expiration": 9999999999u64,
-                }
-            }
-        }
-    })
 }
 
 /// A rule granting `classify: read` to one POST target on the mock host — the
@@ -94,34 +81,6 @@ fn write_rule(server: &MockServer, request_path: &str) -> String {
 
 fn policy(rules: &[String]) -> String {
     format!("version: 1\nhttp:\n  rules:\n{}", rules.concat())
-}
-
-/// An IRSA-shaped credential source with no process-wide environment: a profile
-/// carrying `role_arn` + `web_identity_token_file`. Resolving it runs the same
-/// `AssumeRoleWithWebIdentity` POST an in-cluster pod would, without the env-var
-/// mutation that would force these tests to serialise on a lock.
-struct WebIdentityProfile {
-    _dir: tempfile::TempDir,
-    config_path: std::path::PathBuf,
-}
-
-fn web_identity_profile() -> WebIdentityProfile {
-    let dir = tempfile::tempdir().unwrap();
-    let token_path = dir.path().join("oidc-token");
-    std::fs::write(&token_path, "token-from-file").unwrap();
-    let config_path = dir.path().join("config");
-    std::fs::write(
-        &config_path,
-        format!(
-            "[profile irsa]\nrole_arn = arn:aws:iam::111122223333:role/irsa\nweb_identity_token_file = {}\n",
-            token_path.display()
-        ),
-    )
-    .unwrap();
-    WebIdentityProfile {
-        _dir: dir,
-        config_path,
-    }
 }
 
 /// Resolve via that profile and return the access key it produced.

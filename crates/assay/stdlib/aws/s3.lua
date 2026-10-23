@@ -1,5 +1,5 @@
 --- @module assay.aws.s3
---- @description AWS S3 read-only queries via Signature V4. List buckets, list objects, head object.
+--- @description AWS S3 list buckets, list objects and head object as SigV4-signed GETs. IRSA/assume-role credentials POST to STS: readonly needs a classify:read rule.
 --- @category cloud
 --- @keywords aws, s3, buckets, objects, list, head, sigv4, storage, path-style
 --- @quickref client(opts) -> client | Create an S3 client (opts = {access_key?, secret_key?, profile?, role_arn?, region?, session_token?, endpoint?}; no keys -> standard chain via assay.aws.sts)

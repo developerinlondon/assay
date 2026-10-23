@@ -1,3 +1,4 @@
+pub mod aws;
 pub mod excalidash;
 
 use std::time::Duration;

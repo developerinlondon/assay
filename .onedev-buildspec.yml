@@ -9,6 +9,22 @@ jobs:
         withSubmodules: false
         condition: SUCCESSFUL
       - !CommandStep
+        name: commit credits
+        runInContainer: true
+        image: rust:1.97.1
+        interpreter: !DefaultInterpreter
+          commands: |
+            set -eu
+            pr="@pull_request_number@"
+            if [ -n "$pr" ]; then
+              git fetch --no-tags origin "+refs/pulls/$pr/base:refs/ci/base" "+refs/pulls/$pr/head:refs/ci/head"
+              sh scripts/check-commit-credits.sh refs/ci/base..refs/ci/head
+            else
+              sh scripts/check-commit-credits.sh HEAD~1..HEAD
+            fi
+        useTTY: false
+        condition: SUCCESSFUL
+      - !CommandStep
         name: cargo fmt
         runInContainer: true
         image: rust:1.97.1
@@ -48,19 +64,22 @@ jobs:
         image: alpine/git
         interpreter: !DefaultInterpreter
           commands: |
+            set -eu
+            sh scripts/check-commit-credits.sh @commit_hash@~1..@commit_hash@
             mkdir -p /root/.ssh
             cat > /root/.ssh/id_ed25519 <<'KEYEOF'
             @secret:github-mirror-key@
             KEYEOF
             chmod 600 /root/.ssh/id_ed25519
             ssh-keyscan github.com >> /root/.ssh/known_hosts 2>/dev/null
-            git push ssh://git@@github.com/developerinlondon/assay HEAD:refs/heads/main
+            git push ssh://git@@github.com/developerinlondon/assay @commit_hash@:refs/heads/main
             git push ssh://git@@github.com/developerinlondon/assay --tags
         useTTY: false
         condition: SUCCESSFUL
     triggers:
       - !BranchUpdateTrigger
         branches: main
+    sequentialGroup: '@project_path@:mirror'
     retryCondition: never
     maxRetries: 0
     retryDelay: 30

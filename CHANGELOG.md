@@ -2,6 +2,36 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.17 — 2026-10-23
+
+### Fixed
+
+- **The AWS modules no longer claim readonly support their credential path does not have.** The
+  `assay.aws.sts`, `assay.aws.eks` and `assay.aws.ecr` docs said they worked in readonly mode.
+  Resolving IRSA or assume-role credentials ends in `AssumeRoleWithWebIdentity` or `AssumeRole`, and
+  both are POSTs to STS; `GetAuthorizationToken` is a signed POST too. Readonly classifies by verb,
+  so a readonly script on IRSA failed with `readonly: http.post blocked` before its first EC2 or S3
+  call, even though those calls are signed GETs that readonly allows.
+
+  The behaviour is unchanged; the docs now say what happens. A new `docs/modules/aws-sts.md` page
+  shows which credential sources POST, what that means under readonly, and a worked policy that
+  declares the STS host a read with `classify: read`. The module descriptions for `assay.aws.ec2`
+  and `assay.aws.s3` carry the same caveat. New tests pin the block with no policy, the opt-in rule,
+  and that a read rule for STS does not admit a POST to EC2.
+
+- **`assay.aws.sts` describes its own credential order instead of claiming AWS CLI parity.** It
+  tries explicit keys, then a profile (`opts.profile` or `AWS_PROFILE`), then the
+  `AWS_ACCESS_KEY_ID` environment keys, then IRSA. The AWS CLI checks the environment keys before
+  the profile, so with `AWS_PROFILE` set the two can pick different credentials. The quickref and
+  the `credentials` doc comment now state assay's order and name the difference.
+
+### Changed
+
+- **The stdlib table in `AGENTS.md` is generated from each module's doc block.** It listed 36 of 87
+  modules and two names that did not resolve. `assay site/build.lua` now writes it from every
+  module's `@module`, `@description` and `@category`, and CI fails when the committed table is out
+  of sync.
+
 ## assay-lua 0.20.16 — 2026-09-21
 
 ### Fixed

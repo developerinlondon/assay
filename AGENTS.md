@@ -97,7 +97,8 @@ information.
 
 ### Version bumps
 
-- `Cargo.toml` (workspace root) — bump `[package].version` for the `assay-lua` binary crate.
+- `crates/assay/Cargo.toml` — bump `[package].version` for the `assay-lua` binary crate. The root
+  `Cargo.toml` is a virtual workspace with no version of its own.
 - **`crates/*/Cargo.toml`** — each sub-crate follows **independent semver tied to its own public
   Rust API**, not the binary's version. Today that's `crates/assay-workflow/Cargo.toml`. Skip this
   and the crates.io publish step of the release workflow fails at tag push time (the crate version
@@ -545,10 +546,10 @@ and `id` must not contain newlines. `data` handles multi-line automatically.
 | `assay.hashicorp.vault` | HashiCorp Vault / OpenBao client. KV, policies, auth, transit, PKI, token management. For the assay-engine native vault module use `assay.vault`. |
 | `assay.openbao` | OpenBao secrets management (vault-compatible). Alias for assay.hashicorp.vault. |
 | **Cloud & Network** | |
-| `assay.aws.ec2` | AWS EC2 read-only queries via Signature V4. Describe instances, volumes, security groups. |
+| `assay.aws.ec2` | AWS EC2 describe instances, volumes and security groups as SigV4-signed GETs. IRSA/assume-role credentials POST to STS: readonly needs a classify:read rule. |
 | `assay.aws.ecr` | AWS Elastic Container Registry authorization tokens for pushing/pulling images. GetAuthorizationToken is a signed POST; readonly needs a policy read rule. |
 | `assay.aws.eks` | EKS auth token minting (the aws eks get-token equivalent), in-process. Minting needs no HTTP; resolving IRSA or assume-role credentials first POSTs to STS. |
-| `assay.aws.s3` | AWS S3 read-only queries via Signature V4. List buckets, list objects, head object. |
+| `assay.aws.s3` | AWS S3 list buckets, list objects and head object as SigV4-signed GETs. IRSA/assume-role credentials POST to STS: readonly needs a classify:read rule. |
 | `assay.aws.sigv4` | AWS Signature V4 request signing. Generates Authorization headers and presigned URLs for AWS API calls. |
 | `assay.aws.sts` | AWS credential resolution + STS, in-process (no aws CLI). IRSA and assume-role POST to STS, so readonly needs a policy classify:read rule for the STS host. |
 | `assay.infoblox` | Infoblox WAPI. DNS records, networks, DHCP ranges, grid status. Basic auth. |

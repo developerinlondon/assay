@@ -3,7 +3,7 @@
 --- @category cloud
 --- @keywords aws, sts, credentials, assume-role, web-identity, irsa, profile, aws-profile, credential-chain
 --- @env AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_PROFILE, AWS_ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE, AWS_REGION, AWS_DEFAULT_REGION, HOME
---- @quickref M.credentials(opts?) -> {access_key, secret_key, session_token?} | Resolve credentials the way the AWS CLI does: explicit keys -> profile -> env -> IRSA web identity
+--- @quickref M.credentials(opts?) -> {access_key, secret_key, session_token?} | Resolve credentials in assay's order: explicit keys -> profile -> env -> IRSA web identity (a profile wins over env keys, unlike the AWS CLI)
 --- @quickref M.assume_role(role_arn, opts?) -> creds | Assume an IAM role (sts:AssumeRole). Signed POST to STS — blocked in readonly without a policy read rule
 --- @quickref M.assume_role_with_web_identity(role_arn, token, opts?) -> creds | Assume a role with a web identity token (IRSA). Unsigned POST to STS — same readonly caveat
 
@@ -252,7 +252,8 @@ local function resolve_profile(name, opts, depth)
   error("aws.sts: profile '" .. name .. "' has neither static keys nor a role_arn")
 end
 
---- Resolve AWS credentials the way the AWS CLI does, in-process:
+--- Resolve AWS credentials in-process, trying these in order. A profile is
+--- consulted before the environment keys, which is the reverse of the AWS CLI:
 ---   1. opts.access_key / opts.secret_key — explicit, used verbatim
 ---   2. opts.profile (or AWS_PROFILE) — ~/.aws/credentials + ~/.aws/config,
 ---      following role_arn + source_profile chains and web_identity_token_file

@@ -18,8 +18,8 @@ This GitHub repository is a read-only mirror. The primary repository is `deepbra
 opened on GitHub are closed automatically, and its branches accept pushes only from the mirror.
 
 To get a change into Assay, open an issue on GitHub describing the bug or the feature. The agents
-pick it up on the primary forge, land the fix through its CI gate, and the mirror carries the
-result back to GitHub, where the release workflow publishes it.
+pick it up on the primary forge, land the fix through its CI gate, and the mirror carries the result
+back to GitHub, where the release workflow publishes it.
 
 ## Pull requests (primary forge)
 
@@ -44,6 +44,12 @@ Before sending a PR on agentgit:
    `site/modules.html` if applicable.
 6. **Keep PRs focused**. One logical change per PR. If you find unrelated issues while working, open
    a separate PR for those.
+
+**Commits carry one author.** The project owner is the only author on this repository. CI rejects a
+commit whose message credits anyone or anything else: any `Co-authored-by:` or `Assisted-by:` line,
+whoever it names, and a "Generated with/by" line naming an AI tool. It also rejects commits authored
+or committed by an `admin` account. The check is `scripts/check-commit-credits.sh`; run it with
+`sh scripts/check-commit-credits.sh origin/main..HEAD` before you push.
 
 ## Contributor License Agreement (CLA)
 
