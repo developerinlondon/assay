@@ -78,7 +78,7 @@
 - [assay.s3](https://assay.rs/modules/s3.html): S3-compatible storage (AWS, R2, MinIO) with Sig V4
 - [assay.aws.ec2](https://assay.rs/modules/aws-ec2.html): AWS EC2 read queries over Sig V4 — instances, volumes, security groups
 - [assay.aws.s3](https://assay.rs/modules/aws-s3.html): AWS S3 read over Sig V4 — list buckets/objects, head object
-- [assay.aws.sts](https://assay.rs/modules/aws-sts.html): AWS credential chain (profile/env/IRSA) + AssumeRole, in-process; the IRSA and assume-role paths POST to STS, so readonly needs a classify:read rule
+- [assay.aws.sts](https://assay.rs/modules/aws-sts.html): AWS credential chain (profile/env/IRSA) + AssumeRole, in-process; works under readonly with no policy rule
 - [assay.aws.eks](https://assay.rs/modules/aws-eks.html): EKS bearer tokens (aws eks get-token equivalent), in-process
 
 ## Feature Flags & Utilities

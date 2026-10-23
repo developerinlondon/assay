@@ -28,42 +28,14 @@ pushing/pulling images. Uses `assay.aws.sigv4` internally for request signing.
 ### Readonly and approval modes
 
 `GetAuthorizationToken` is a read that travels as a write: ECR's JSON protocol sends it as a signed
-`POST /` with an `x-amz-json-1.1` body, and readonly mode classifies by verb. So the call fails
-under readonly with `readonly: http.post blocked`, and suspends for a human decision under approval
-— even though it only mints a short-lived registry password and changes nothing.
+`POST /` with an `x-amz-json-1.1` body. Readonly reads the request for what it asks for rather than
+taking the verb at its word, so the mint runs with no policy file, and approval mode does not stop
+to ask about it. Resolving credentials through IRSA or an assumed role is a `POST` to STS and the
+same holds there (see [assay.aws.sts](aws-sts.md)).
 
-Two gated hops, not one: resolving credentials can also `POST` to STS when they come from IRSA or an
-assumed role (see [assay.aws.sts](aws-sts.md)). A policy that wants the whole flow readonly has to
-declare both endpoints reads:
-
-```yaml
-version: 1
-http:
-  rules:
-    - hosts: ["sts.us-east-1.amazonaws.com"]
-      methods: [POST]
-      paths: ["/"]
-      classify: read # credential exchange — a read
-    - hosts: ["api.ecr.us-east-1.amazonaws.com"]
-      methods: [POST]
-      paths: ["/"]
-      classify: read # GetAuthorizationToken — a read
-```
-
-Name the regional hosts the script actually uses rather than a wildcard. A literal host is an exact
-match, so a rule for one region does nothing for a client built in another — write out the region
-rather than reaching for `*.amazonaws.com`, which would cover every region and every AWS service.
-Both endpoints serve `/` only, so pinning the path costs nothing and keeps the rule off the rest of
-the account.
-
-Those two rules cover an ECR-only script and nothing more. `http.rules` is default-deny, so if the
-same script also reads EC2 or S3, those endpoints need rules of their own or they are refused with
-`policy: GET … is not allowed by any http rule`.
-
-Note what the second rule does and does not buy: it admits the token mint, not the push. Writing an
-image to the registry goes through `oci.copy`, which readonly refuses outright — it is a blocked
-function, not an HTTP call policy can reclassify. So the end-to-end push below is not a readonly
-flow, and no policy makes it one.
+What this does not buy is the push. Writing an image to the registry goes through `oci.copy`, which
+readonly refuses outright — it is a blocked function, not an HTTP call anything reclassifies. So the
+end-to-end push below is not a readonly flow, and no policy makes it one.
 
 Example:
 

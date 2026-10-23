@@ -14,8 +14,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use mlua::{Lua, MultiValue, Table, Value};
 
 use super::gated::{
-    BLOCKED_FUNCTIONS, BLOCKED_TABLES, header_names, http_call_is_read, is_http_verb_path,
-    operation_digest, tables_for, wrap_http_verbs,
+    BLOCKED_FUNCTIONS, BLOCKED_TABLES, header_names, http_call_from_args, http_call_is_read,
+    is_http_verb_path, operation_digest, tables_for, wrap_http_verbs,
 };
 use crate::lua::{APPROVAL_REQUEST_PREFIX, ApprovalConfig, approved_ops_from_env};
 
@@ -31,6 +31,7 @@ struct GateState {
 }
 
 pub fn apply(lua: &Lua, config: &ApprovalConfig) -> mlua::Result<()> {
+    super::gated::mark_gated(lua, "approval");
     let state = Arc::new(GateState {
         counter: AtomicU64::new(0),
         approved: config.approved_indices.iter().copied().collect(),
@@ -53,8 +54,14 @@ pub fn apply(lua: &Lua, config: &ApprovalConfig) -> mlua::Result<()> {
         gate_table(lua, name, &state)?;
     }
     let verb_state = Arc::clone(&state);
-    wrap_http_verbs(lua, move |op, url, digest, headers| {
-        gate_decision(&verb_state, op, &truncate(url), digest, headers)
+    wrap_http_verbs(lua, move |call| {
+        gate_decision(
+            &verb_state,
+            &call.op,
+            &truncate(&call.url),
+            &call.digest,
+            &call.header_names,
+        )
     })?;
     gate_http_client_request(lua, &state)?;
     gate_io_open(lua, &state)?;
@@ -215,21 +222,18 @@ fn gate_http_client_request(lua: &Lua, state: &Arc<GateState>) -> mlua::Result<(
                 Some(Value::String(s)) => Some(s.to_str()?.to_string()),
                 _ => None,
             };
-            let url = match args.iter().nth(2) {
-                Some(Value::String(s)) => Some(s.to_str()?.to_string()),
-                _ => None,
-            };
-            if let Some(method) = method
-                && !http_call_is_read(&lua, &method, url.as_deref())
-            {
-                let op = format!("http.{method}");
-                gate_decision(
-                    &state,
-                    &op,
-                    &truncate(url.as_deref().unwrap_or("")),
-                    &operation_digest(&op, &args),
-                    &header_names(&args),
-                )?;
+            if let Some(method) = method {
+                let call = http_call_from_args(&method, &args, 2)?;
+                if !http_call_is_read(&lua, &call) {
+                    let op = format!("http.{method}");
+                    gate_decision(
+                        &state,
+                        &op,
+                        &truncate(call.url.as_deref().unwrap_or("")),
+                        &operation_digest(&op, &args),
+                        &header_names(&args),
+                    )?;
+                }
             }
             inner.call_async::<MultiValue>(args).await
         }

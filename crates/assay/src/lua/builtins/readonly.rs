@@ -3,14 +3,17 @@
 //! but are replaced with stubs that raise
 //! `readonly: <name> blocked (write operations are disabled in read-only mode)`,
 //! so semi-trusted scripts fail with a clear error instead of a
-//! nil-index. Read paths (`http.get`, `fs.read`, `env.get`, `db.query`,
-//! `systemd.list_units`, …) are untouched.
+//! nil-index. Read paths (`fs.read`, `env.get`, `db.query`,
+//! `systemd.list_units`, …) are untouched. `http.get` is wrapped rather than
+//! left alone, because a verb is not a promise: the AWS Query API takes
+//! `?Action=TerminateInstances` on a `GET`. The wrapper admits every call the
+//! classifier calls a read, which is every `GET` outside AWS.
 
 use mlua::{Lua, MultiValue, Table, Value};
 
 use super::gated::{
-    BLOCKED_FUNCTIONS, BLOCKED_TABLES, http_call_is_read, is_http_verb_path, tables_for,
-    wrap_http_verbs,
+    BLOCKED_FUNCTIONS, BLOCKED_TABLES, http_call_from_args, http_call_is_read, is_http_verb_path,
+    tables_for, wrap_http_verbs, write_reason,
 };
 
 pub fn apply(lua: &Lua) -> mlua::Result<()> {
@@ -23,7 +26,8 @@ pub fn apply(lua: &Lua) -> mlua::Result<()> {
     for name in BLOCKED_TABLES {
         block_table(lua, name)?;
     }
-    wrap_http_verbs(lua, |op, _url, _digest, _headers| Err(blocked(op)))?;
+    super::gated::mark_gated(lua, "readonly");
+    wrap_http_verbs(lua, |call| Err(refused(&call.op, call.reason.as_deref())))?;
     guard_http_client_request(lua)?;
     guard_io_open(lua)?;
     guard_io_output(lua)?;
@@ -31,9 +35,14 @@ pub fn apply(lua: &Lua) -> mlua::Result<()> {
 }
 
 fn blocked(name: &str) -> mlua::Error {
-    mlua::Error::runtime(format!(
-        "readonly: {name} blocked (write operations are disabled in read-only mode)"
-    ))
+    refused(name, None)
+}
+
+/// A refusal, saying what the classifier knew when it knew more than the verb
+/// — otherwise a mutating `GET` would be refused with no hint as to why.
+fn refused(name: &str, reason: Option<&str>) -> mlua::Error {
+    let reason = reason.unwrap_or("write operations are disabled in read-only mode");
+    mlua::Error::runtime(format!("readonly: {name} blocked ({reason})"))
 }
 
 fn blocked_stub(lua: &Lua, name: &str) -> mlua::Result<mlua::Function> {
@@ -75,8 +84,8 @@ fn block_table(lua: &Lua, name: &str) -> mlua::Result<()> {
 
 /// `http.client(...)` wrappers route every verb through
 /// `http._client_request(ud, method, ...)`; blocking only the
-/// top-level `http.post` would leave that path open. The guard allows
-/// `get` through and raises for every other verb.
+/// top-level `http.post` would leave that path open. The guard runs the same
+/// classifier the global verbs get.
 fn guard_http_client_request(lua: &Lua) -> mlua::Result<()> {
     let Some(http) = lua.globals().get::<Option<Table>>("http")? else {
         return Ok(());
@@ -91,14 +100,12 @@ fn guard_http_client_request(lua: &Lua) -> mlua::Result<()> {
                 Some(Value::String(s)) => Some(s.to_str()?.to_string()),
                 _ => None,
             };
-            let url = match args.iter().nth(2) {
-                Some(Value::String(s)) => Some(s.to_str()?.to_string()),
-                _ => None,
-            };
-            if let Some(method) = method
-                && !http_call_is_read(&lua, &method, url.as_deref())
-            {
-                return Err(blocked(&format!("http.{method}")));
+            if let Some(method) = method {
+                let call = http_call_from_args(&method, &args, 2)?;
+                if !http_call_is_read(&lua, &call) {
+                    let reason = write_reason(&lua, &call);
+                    return Err(refused(&format!("http.{method}"), reason.as_deref()));
+                }
             }
             inner.call_async::<MultiValue>(args).await
         }

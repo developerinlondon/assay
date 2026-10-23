@@ -32,22 +32,10 @@ deletes use `assay.s3`, which covers the full object lifecycle.
 ### Mutation
 
 None. Every method issues a signed `http.get`, so read-only and approval modes leave them
-unrestricted.
-
-Building the client is the part that can still be gated. Without explicit `access_key`/`secret_key`
-it calls `sts.credentials`, and the IRSA and assume-role paths of that chain `POST` to STS — so a
-readonly script fails with `readonly: http.post blocked` at `s3.client(...)`, before it issues a
-single `GET`. Passing `access_key` + `secret_key` explicitly avoids the hop entirely. Relying on
-`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` only works when no profile is in play: the chain
-consults `opts.profile` or `AWS_PROFILE` first, so if `AWS_PROFILE` names a `role_arn` or
-`web_identity_token_file` profile, the env keys are never read and the STS POST still happens.
-
-The alternative is a policy declaring the STS endpoint a read — but note that adding `http.rules` at
-all switches the script to default-deny, so the reads above then need a rule of their own
-(`hosts: ["s3.<region>.amazonaws.com"]`, `methods: [GET]`) or they are refused with
-`policy: GET … is not allowed by any http rule`. Leave `paths` off that rule: bucket and object
-reads span many paths, unlike the single `/` STS serves. See [assay.aws.sts](aws-sts.md) for a
-worked two-rule policy.
+unrestricted — and so does building the client without explicit keys, where the credential chain
+`POST`s to STS. Readonly judges an AWS request by what it asks for rather than by its verb, so both
+halves run with no policy file; see [assay.aws.sts](aws-sts.md). A signed `PUT` or `POST` to S3 is
+refused, which is the whole of this module's surface anyway.
 
 Example:
 

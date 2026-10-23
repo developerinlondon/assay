@@ -2,6 +2,76 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.18 — 2026-10-23
+
+### Fixed
+
+- **Readonly allows AWS read calls by default and refuses mutating ones, whatever the verb.**
+  Readonly classified an HTTP request by its verb, which was wrong about AWS in both directions.
+  Resolving credentials through IRSA or an assumed role is a POST — `AssumeRoleWithWebIdentity`,
+  `AssumeRole` — and so is ECR's `GetAuthorizationToken`, so `require("assay.aws.ec2")` failed with
+  `readonly: http.post blocked` before its first signed GET unless an operator knew to write a
+  `classify: read` policy rule. Nobody running a readonly health check in an IRSA pod knows to do
+  that. Meanwhile the EC2 Query API takes its action in the query string, so a signed
+  `GET ?Action=TerminateInstances` passed readonly on its verb alone.
+
+  Readonly and approval now read an AWS request for what it asks for: the service from the SigV4
+  credential scope in `Authorization` (or `X-Amz-Credential` when presigned), the action from
+  `X-Amz-Target`, the form body or the query string. An enumerated list of read actions is allowed —
+  the STS credential exchanges, `GetCallerIdentity`, ECR's `GetAuthorizationToken`, and the EC2 and
+  S3 reads the modules issue — and anything else is refused however it travels. The list is
+  enumerated rather than a `Get*` prefix rule because `GetSessionToken` and `GetFederationToken`
+  mint credentials, which is not a read. A request naming two different actions is refused rather
+  than guessed at.
+
+  A signature is treated as a claim, not a capability. It counts only on AWS's own hosts
+  (`amazonaws.com`, `amazonaws.com.cn`, `api.aws`, matched on label boundaries) and only when the
+  host backs the service the credential scope names — the labels from that service's own to the
+  suffix are AWS's to assign, so a name ending `sts.us-east-1.amazonaws.com` really is STS.
+  Otherwise the request is treated as unsigned and its verb decides, as it always did. Without that,
+  an `Authorization` header saying `sts` would have carried the read exemption to every endpoint AWS
+  hosts for its customers — an API Gateway stage, a load balancer, a bucket named `sts` — none of
+  which verify SigV4.
+
+  The same cut keeps ordinary traffic out of the way. `amazonaws.com` hosts far more than AWS's own
+  APIs, so the only unsigned request this classifies at all is the web identity exchange on a host
+  STS owns; everything else unsigned stays on its verb, `action=` query parameters of its own
+  included. A request with no signature carries no credentials for an AWS API to honour, so there is
+  nothing there the verb did not already decide.
+
+  The classifier reads the headers the transport actually sends: both build them with one shared
+  function that lowercases names and keeps one value per name. A request to an AWS host that names a
+  header twice in different case (`Authorization` and `authorization`), carries two
+  `X-Amz-Credential` scopes, or two `Action` parameters in any case is refused, so a decoy value can
+  never be what the classifier judges while a real signature is what AWS receives.
+
+  On a host an AWS API service owns, the action decides whether or not the request is signed, so an
+  unsigned or badly signed `GET ?Action=TerminateInstances` is a write too. Authentication the
+  classifier cannot read is a write rather than "unsigned": SigV4 `Authorization` is parsed by its
+  named components with the algorithm in any case, and SigV2 query signing is refused. A caller-set
+  `Host` header naming another host is refused, and every redirect hop is classified again (and
+  checked against the policy's `http.rules`) before it is followed, for `http.download` too. A
+  readable scope the AWS host does not serve is a write, and the legacy `queue.amazonaws.com` host
+  serves SQS. AWS signing material sent to a host that is not an AWS name (an IP literal, a
+  wildcard-DNS alias) is a write too, except an `s3`-scoped `GET`/`HEAD` that names no operation
+  (`Action`, `X-Amz-Target`), so S3-compatible stores such as MinIO stay readable. Signed S3 reads
+  also work on access-point and legacy dash-region hosts (`bucket.s3-us-west-2.amazonaws.com`). Only
+  the `AWS4-` and SigV2 `AWS ` schemes count as AWS signing material, so `AWSomeToken` does not. `amazonaws.eu` and the ISO partitions count as AWS hosts.
+
+  **Readonly now refuses signed `GET`s to AWS actions outside the allowlist**, reads included: IAM
+  `ListRoles` and CloudFormation `DescribeStacks` are refused where they used to pass on their verb.
+  A script that needs one adds a policy rule with `classify: read` for that host. Signed API
+  Gateway calls (IAM-authorised `execute-api` requests) are refused under readonly on every verb,
+  since nothing in the request says whether the stage behind them reads or writes; admit a known
+  read stage with an exact-host `classify: read` rule.
+
+  Readonly plus IRSA now works with no policy file, and the docs say so. An operator policy's
+  `http.rules` stays default-deny. A matching rule with an explicit `classify:` overrides the
+  built-in; a matching rule without one only admits the target, and the built-in still decides, so a
+  `hosts: [ec2…] methods: [GET]` rule does not reopen mutating `GET`s. Embedders who pass their own
+  `reqwest::Client` to a gated VM should build it with
+  `assay::lua::builtins::http::redirect_policy()` so redirects are checked.
+
 ## assay-lua 0.20.17 — 2026-10-23
 
 ### Fixed

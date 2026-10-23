@@ -119,8 +119,12 @@ ASSAY_READONLY=1 assay script.lua      # env activation, same effect
 
 Read paths work unchanged: `http.get` (including `http.client(...)` wrappers), `fs.read` /
 `fs.list` / `fs.stat`, `env.get`, `db.query`, `systemd`/`apt` status and list helpers, and all
-pure builtins (`json`, `crypto`, `regex`, ...). Mutating builtins stay registered but raise a
-clear error instead of executing:
+pure builtins (`json`, `crypto`, `regex`, ...). The exception is a signed AWS API call: it is
+classified by the action it asks for, not its verb, because the EC2 Query API takes
+`?Action=TerminateInstances` on a `GET`. Only an enumerated list of AWS reads passes (the STS
+credential calls, ECR's `GetAuthorizationToken`, the EC2 `Describe*` calls `assay.aws.ec2` sends,
+and S3 `GET`/`HEAD`), so a signed `GET` to any other AWS action is refused even when it is a read.
+Mutating builtins stay registered but raise a clear error instead of executing:
 
 ```
 readonly: http.post blocked (write operations are disabled in read-only mode)
@@ -161,7 +165,9 @@ http:
 
 `classify: read` marks a target that authenticates with a POST — an OpenStack token issue, an STS
 credential exchange — as the read it actually is, so it proceeds under `--readonly` instead of being
-refused for its verb. With no policy loaded nothing changes.
+refused for its verb. With no policy loaded nothing changes. AWS API requests need no rule at all:
+`--readonly` reads them for the action they ask for, so an IRSA credential exchange proceeds and a
+`GET` carrying `Action=TerminateInstances` does not.
 
 A policy can also declare credentials, so a script authenticates without being able to read the
 secret:
@@ -219,7 +225,9 @@ assay resume --token <token> --approve no    # fail it with "approval: <op> deni
 
 Each `yes` re-runs the script from the top: previously-approved operations execute and the run
 re-suspends at the next unapproved one, so grants are single-shot and per-operation. Read paths
-(`http.get`, `fs.read`, `env.get`, `db.query`, status/list helpers) run freely without prompting.
+(`http.get`, `fs.read`, `env.get`, `db.query`, status/list helpers) run freely without prompting —
+including an AWS API read, which is classified by the action it asks for rather than its verb, so a
+signed `GET` carrying a mutating `Action` does prompt.
 Each grant is bound to the exact call it was issued for: a SHA-256 digest over the operation, its
 URL, and its arguments, reported in the approval descriptor as `digest` alongside the header
 *names* in play (never their values). A replay that reaches the same index with a different target
@@ -554,7 +562,7 @@ resolves; `AGENTS.md` carries the complete list harvested from the modules thems
 | `assay.aws-ecr` |  |
 | `assay.aws-s3` |  |
 | `assay.aws-sigv4` |  |
-| `assay.aws-sts` | AWS credential resolution + STS, in-process — the credential chain, which paths POST, and what that costs in readonly mode |
+| `assay.aws-sts` | AWS credential resolution + STS, in-process — the credential chain, what each path sends, and why readonly admits it |
 | **Container & Registry** | |
 | `assay.oci` |  |
 | **Filesystem & Archives** | |

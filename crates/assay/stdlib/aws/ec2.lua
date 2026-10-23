@@ -1,5 +1,5 @@
 --- @module assay.aws.ec2
---- @description AWS EC2 describe instances, volumes and security groups as SigV4-signed GETs. IRSA/assume-role credentials POST to STS: readonly needs a classify:read rule.
+--- @description AWS EC2 read-only queries via Signature V4. Describe instances, volumes, security groups.
 --- @category cloud
 --- @keywords aws, ec2, instances, volumes, security-groups, describe, sigv4, compute, reservations
 --- @quickref client(opts) -> client | Create an EC2 client (opts = {access_key?, secret_key?, profile?, role_arn?, region?, session_token?, endpoint?}; no keys -> standard chain via assay.aws.sts)

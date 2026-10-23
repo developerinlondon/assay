@@ -1,8 +1,10 @@
 use super::json::lua_table_to_json;
 use mlua::{Lua, Table, UserData, Value};
 use rand::RngExt;
+mod redirect;
 #[cfg(feature = "server")]
 mod server;
+pub use redirect::policy as redirect_policy;
 #[cfg(feature = "server")]
 pub use server::LuaAxumRouter;
 
@@ -25,9 +27,11 @@ fn register_client_handles(lua: &Lua, http_table: &Table) -> mlua::Result<()> {
             .as_ref()
             .and_then(|t| t.get::<bool>("follow_redirects").ok())
             .unwrap_or(true);
-        if !follow_redirects {
-            builder = builder.redirect(reqwest::redirect::Policy::none());
-        }
+        builder = builder.redirect(if follow_redirects {
+            redirect_policy()
+        } else {
+            reqwest::redirect::Policy::none()
+        });
 
         if let Some(ref opts_table) = opts {
             if let Ok(ca_path) = opts_table.get::<String>("ca_cert_file") {
@@ -126,7 +130,7 @@ fn register_client_handles(lua: &Lua, http_table: &Table) -> mlua::Result<()> {
 
 /// Registers `http.download(url, path, opts?)`.
 fn register_download(lua: &Lua, client: reqwest::Client, http_table: &Table) -> mlua::Result<()> {
-    let download_fn = lua.create_async_function(move |_, args: mlua::MultiValue| {
+    let download_fn = lua.create_async_function(move |lua, args: mlua::MultiValue| {
         let client = client.clone();
         async move {
             use futures_util::StreamExt;
@@ -156,6 +160,7 @@ fn register_download(lua: &Lua, client: reqwest::Client, http_table: &Table) -> 
             };
 
             // Build request
+            let guard = redirect_guard(&lua, "get", "", opts.as_ref())?;
             let mut req = client.get(&url);
             if let Some(ref t) = opts {
                 if let Ok(h) = t.get::<mlua::Table>("headers") {
@@ -199,10 +204,9 @@ fn register_download(lua: &Lua, client: reqwest::Client, http_table: &Table) -> 
 
             // Cleanup helper closure result
             let do_download = async {
-                let resp = req
-                    .send()
+                let resp = redirect::guarded(guard, req.send())
                     .await
-                    .map_err(|e| mlua::Error::runtime(format!("http.download: request: {e}")))?;
+                    .map_err(|e| download_error(&e))?;
                 if !resp.status().is_success() {
                     return Err(mlua::Error::runtime(format!(
                         "http.download: HTTP {} for {url}",
@@ -410,25 +414,90 @@ fn build_request(
     if let Some(opts_table) = opts
         && let Ok(headers_table) = opts_table.get::<Table>("headers")
     {
-        let mut caller_headers = reqwest::header::HeaderMap::new();
-        for pair in headers_table.pairs::<String, String>() {
-            let (k, v) = pair?;
-            let name = reqwest::header::HeaderName::try_from(k.as_str()).map_err(|e| {
-                mlua::Error::runtime(format!(
-                    "http.{method_name}: invalid header name {k:?}: {e}"
-                ))
-            })?;
-            let value = reqwest::header::HeaderValue::try_from(v.as_str()).map_err(|e| {
-                mlua::Error::runtime(format!(
-                    "http.{method_name}: invalid value for header {k:?}: {e}"
-                ))
-            })?;
-            caller_headers.insert(name, value);
-        }
-        req = req.headers(caller_headers);
+        req = req.headers(caller_headers(method_name, &headers_table)?);
     }
 
     Ok(req)
+}
+
+/// `opts.headers` exactly as they go on the wire. Names are lowercased and
+/// `insert` keeps one value per name, so of two names equal but for case the
+/// one Lua's iteration reaches last is the one sent. The read-only and
+/// approval gates classify from this same map, so they judge what is sent.
+pub(crate) fn caller_headers(
+    method_name: &str,
+    headers_table: &Table,
+) -> mlua::Result<reqwest::header::HeaderMap> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    for pair in headers_table.pairs::<String, String>() {
+        let (k, v) = pair?;
+        let name = reqwest::header::HeaderName::try_from(k.as_str()).map_err(|e| {
+            mlua::Error::runtime(format!(
+                "http.{method_name}: invalid header name {k:?}: {e}"
+            ))
+        })?;
+        let value = reqwest::header::HeaderValue::try_from(v.as_str()).map_err(|e| {
+            mlua::Error::runtime(format!(
+                "http.{method_name}: invalid value for header {k:?}: {e}"
+            ))
+        })?;
+        headers.insert(name, value);
+    }
+    Ok(headers)
+}
+
+/// `caller_headers` as owned name/value pairs, for the classifiers.
+pub(crate) fn caller_header_pairs(
+    method_name: &str,
+    headers_table: &Table,
+) -> mlua::Result<Vec<(String, String)>> {
+    let sent = caller_headers(method_name, headers_table)?;
+    Ok(sent
+        .iter()
+        .map(|(name, value)| {
+            let value = String::from_utf8_lossy(value.as_bytes()).into_owned();
+            (name.as_str().to_string(), value)
+        })
+        .collect())
+}
+
+fn redirect_guard(
+    lua: &Lua,
+    method_name: &str,
+    body: &str,
+    opts: Option<&Table>,
+) -> mlua::Result<redirect::Guard> {
+    let headers = match opts.and_then(|t| t.get::<Table>("headers").ok()) {
+        Some(table) => caller_header_pairs(method_name, &table)?,
+        None => Vec::new(),
+    };
+    Ok(redirect::Guard {
+        gate: lua
+            .app_data_ref::<super::gated::GateMode>()
+            .map(|mode| mode.0),
+        policy: crate::lua::policy::active(lua),
+        method: method_name.to_string(),
+        headers,
+        body: (!body.is_empty()).then(|| body.to_string()),
+    })
+}
+
+/// A refused redirect says why; reqwest's own message would name the URL,
+/// and a presigned one carries its signature.
+fn send_error(method_name: &str, error: &reqwest::Error) -> mlua::Error {
+    use std::error::Error;
+    match error.source().filter(|_| error.is_redirect()) {
+        Some(refusal) => mlua::Error::runtime(format!("http.{method_name} failed: {refusal}")),
+        None => mlua::Error::runtime(format!("http.{method_name} failed: {error}")),
+    }
+}
+
+fn download_error(error: &reqwest::Error) -> mlua::Error {
+    use std::error::Error;
+    match error.source().filter(|_| error.is_redirect()) {
+        Some(refusal) => mlua::Error::runtime(format!("http.download: request: {refusal}")),
+        None => mlua::Error::runtime(format!("http.download: request: {error}")),
+    }
 }
 
 fn headers_to_lua(lua: &Lua, headers: &reqwest::header::HeaderMap) -> mlua::Result<Table> {
@@ -506,6 +575,7 @@ async fn execute_http_request(
     args: mlua::MultiValue,
 ) -> mlua::Result<Value> {
     let (url, body_str, auto_json, opts) = parse_request_args(method_name, args)?;
+    let guard = redirect_guard(lua, method_name, &body_str, opts.as_ref())?;
     let req = build_request(
         client,
         method_name,
@@ -515,10 +585,9 @@ async fn execute_http_request(
         opts.as_ref(),
     )?;
 
-    let resp = req
-        .send()
+    let resp = redirect::guarded(guard, req.send())
         .await
-        .map_err(|e| mlua::Error::runtime(format!("http.{method_name} failed: {e}")))?;
+        .map_err(|e| send_error(method_name, &e))?;
     let status = resp.status().as_u16();
     let resp_headers = resp.headers().clone();
 

@@ -112,10 +112,24 @@ request matching nothing is refused with
 | `hosts`    | Required. `*` matches any host; `*.example.com` matches strict subdomains but not the apex; anything else is an exact, case-insensitive match. |
 | `methods`  | Empty or absent matches every method.                                                                                                          |
 | `paths`    | Empty or absent matches every path. `*` matches within one segment, `**` across segments. Patterns are anchored at both ends.                  |
-| `classify` | `read` or `write`. Overrides how the gates treat a match.                                                                                      |
+| `classify` | `read` or `write`. Overrides how the gates treat a match, the built-in AWS classification included.                                            |
 
 Host patterns deliberately support only a leading `*.` rather than a general glob: `*example.com`
 would also match `evilexample.com`, which is a footgun in an allowlist.
+
+A matching rule without `classify` only admits its target. It says nothing about what the request
+does, so the built-in classification of AWS API requests that `readonly` and `approval` apply (see
+[assay.aws.sts](modules/aws-sts.md)) still decides, and then the verb. A rule such as
+`hosts: ["ec2.us-east-1.amazonaws.com"]`, `methods: [GET]` therefore admits `DescribeInstances` and
+still refuses `GET ?Action=TerminateInstances`. Only an explicit `classify:` overrides the built-in.
+
+Because `classify: read` overrides the built-in AWS verdict, a rule carrying it should name exact
+hosts, and paths where it can. A rule such as `hosts: ["*.amazonaws.com"]` with `classify: read`
+declares every AWS API call on every service a read, `TerminateInstances` and `DeleteQueue`
+included, and readonly then admits them all.
+
+Every redirect is checked against the rules as well, so a hop to a host no rule matches is refused
+before it is sent.
 
 ### `classify: read`
 
@@ -123,6 +137,11 @@ Some reads authenticate with a POST. OpenStack Keystone issues a token with `POS
 AWS trades a web identity token for credentials with `POST /` to STS. Classifying by verb alone
 marks these as writes, so `readonly` mode cannot reach the service at all and `approval` mode
 demands a human decision for what is only a login.
+
+The AWS half of that is already handled: the built-in classification described under `http.rules`
+above covers it, so an AWS read needs no `classify` of its own, though a policy with `rules` still
+needs a rule that admits the host. An AWS read the built-in list does not name (IAM `ListRoles`,
+CloudFormation `DescribeStacks`) needs `classify: read`, and so does everything outside AWS.
 
 `classify: read` says "this exact target is a read". A matching request then proceeds under
 `readonly`, and does not suspend under `approval`. Everything else on the same host is unaffected:

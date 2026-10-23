@@ -46,3 +46,22 @@ local headers = sigv4.sign({
 })
 -- Use headers with http.post/get
 ```
+
+### Readonly and approval modes
+
+Signing is pure computation and issues no request, so this module is never itself gated. What the
+signature does affect is how the *request* you then send is classified: both modes read a signed AWS
+call for the action it asks for rather than taking its verb at face value, and they admit an
+enumerated list of read actions — the STS credential exchanges, ECR's `GetAuthorizationToken`, and
+the reads `assay.aws.ec2` and `assay.aws.s3` issue. See [assay.aws.sts](aws-sts.md) for the list and
+the rules.
+
+So a hand-signed call to a service outside that list is refused under `--readonly` even when it is a
+read, and prompts under approval:
+
+```
+readonly: http.get blocked (aws iam Action=ListRoles is not a read)
+```
+
+An explicit `classify: read` on a matching policy rule overrides the built-in, and is how to admit a
+read the built-in list does not cover. A rule without `classify` leaves the built-in in charge.

@@ -1,4 +1,5 @@
 pub mod aws;
+pub mod aws_vm;
 pub mod excalidash;
 
 use std::time::Duration;

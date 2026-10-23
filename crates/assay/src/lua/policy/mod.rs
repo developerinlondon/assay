@@ -77,14 +77,6 @@ pub fn guard_http(lua: &Lua, method: &str, url: &str) -> mlua::Result<()> {
     }
 }
 
-/// Whether the policy treats this request as a read. Drives the gates, so a
-/// declared authentication POST can proceed under read-only mode.
-pub fn is_read(lua: &Lua, method: &str, url: &str) -> bool {
-    active(lua)
-        .and_then(|p| p.check_http(method, url).ok())
-        .is_some_and(|c| c == Classification::Read)
-}
-
 pub fn response_limit(lua: &Lua) -> Option<usize> {
     active(lua).and_then(|p| p.max_response_bytes())
 }
@@ -145,6 +137,10 @@ impl Policy {
         }
     }
 
+    pub fn has_http_rules(&self) -> bool {
+        self.http_rules.is_some()
+    }
+
     pub fn max_response_bytes(&self) -> Option<usize> {
         self.max_response_bytes
     }
@@ -158,8 +154,19 @@ impl Policy {
     }
 
     pub fn check_http(&self, method: &str, url: &str) -> Result<Classification, String> {
+        let explicit = self.rule_classification(method, url)?;
+        Ok(explicit.unwrap_or_else(|| default_classification(method)))
+    }
+
+    /// What the matching rule's `classify:` says, `None` when it says nothing
+    /// (or there are no rules), and `Err` when no rule matches.
+    pub fn rule_classification(
+        &self,
+        method: &str,
+        url: &str,
+    ) -> Result<Option<Classification>, String> {
         let Some(rules) = &self.http_rules else {
-            return Ok(default_classification(method));
+            return Ok(None);
         };
         let parsed = url::Url::parse(url)
             .map_err(|e| format!("policy: cannot parse request URL '{url}': {e}"))?;
@@ -170,11 +177,10 @@ impl Policy {
 
         for rule in rules {
             if rule_matches(rule, host, method, path) {
-                return Ok(match rule.classify {
-                    Some(Classify::Read) => Classification::Read,
-                    Some(Classify::Write) => Classification::Write,
-                    None => default_classification(method),
-                });
+                return Ok(rule.classify.map(|classify| match classify {
+                    Classify::Read => Classification::Read,
+                    Classify::Write => Classification::Write,
+                }));
             }
         }
         Err(format!(

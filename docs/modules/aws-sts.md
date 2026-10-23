@@ -1,6 +1,6 @@
 ---
 category: Cloud & AWS
-tagline: AWS credential resolution + STS, in-process — the credential chain, which paths POST, and what that costs in readonly mode
+tagline: AWS credential resolution + STS, in-process — the credential chain, what each path sends, and why readonly admits it
 ---
 
 ## assay.aws.sts
@@ -47,27 +47,78 @@ so both fall back to `assay` and one hour. Set them by calling `assume_role` or
 
 ### Readonly and approval modes
 
-STS speaks the Query protocol over `POST`, and readonly mode classifies by verb — so which half of
-the chain you land in decides whether a readonly script can get credentials at all:
+STS speaks the Query protocol over `POST`, so half the credential chain sends a request readonly
+would once have refused on its verb alone. It no longer does. Readonly and approval both read an AWS
+request for what it asks for — the service out of the SigV4 credential scope, the action out of
+`X-Amz-Target`, the form body or the query string — and `AssumeRole`, `AssumeRoleWithWebIdentity`
+and `GetCallerIdentity` only trade one credential for another. So every row below works with no
+policy file:
 
 | How credentials are obtained                          | Request to STS                   | Readonly, no policy |
 | ----------------------------------------------------- | -------------------------------- | ------------------- |
 | `opts.access_key` + `opts.secret_key`                 | none                             | works               |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`         | none                             | works               |
 | profile with static keys and no `role_arn`            | none                             | works               |
-| profile with static keys **and** `role_arn`           | `AssumeRole` POST                | **blocked**         |
-| profile with `role_arn` + `source_profile`            | `AssumeRole` POST                | **blocked**         |
-| profile with `web_identity_token_file`                | `AssumeRoleWithWebIdentity` POST | **blocked**         |
-| IRSA (`AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE`) | `AssumeRoleWithWebIdentity` POST | **blocked**         |
-| any of the above plus `opts.role_arn`                 | `AssumeRole` POST                | **blocked**         |
+| profile with static keys **and** `role_arn`           | `AssumeRole` POST                | works               |
+| profile with `role_arn` + `source_profile`            | `AssumeRole` POST                | works               |
+| profile with `web_identity_token_file`                | `AssumeRoleWithWebIdentity` POST | works               |
+| IRSA (`AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE`) | `AssumeRoleWithWebIdentity` POST | works               |
+| any of the above plus `opts.role_arn`                 | `AssumeRole` POST                | works               |
 
-A blocked exchange fails with `readonly: http.post blocked`, raised from inside whichever client
-asked for credentials — so an `assay.aws.ec2` script whose own requests are all `GET` can still fail
-this way before it issues one.
+Readonly plus IRSA simply works, which is the point: nobody running a health check in a pod should
+have to write a policy rule to let the pod authenticate.
 
-Exchanging a token for credentials has no side effect, which is what `classify: read` is for.
-Declare the STS endpoint a read and the chain runs under readonly, and stops suspending under
-approval:
+What the exemption is not is a blanket pass for AWS. It is an enumerated list of read actions, so
+anything else is refused whatever verb carries it:
+
+```
+readonly: http.get blocked (aws ec2 Action=TerminateInstances is not a read)
+```
+
+That closes a hole the verb rule left open — the Query API takes its action in the query string, so
+a signed `GET ?Action=TerminateInstances` used to pass. Two STS actions are deliberately off the
+list: `GetSessionToken` and `GetFederationToken` mint credentials for someone else to use, which is
+not a read however their names read.
+
+The host has to be AWS's own — `amazonaws.com`, `amazonaws.com.cn` or `api.aws`, matched on label
+boundaries, so `evilamazonaws.com` is not one. And the host has to back the service the signature
+claims: the labels from the service's own to the suffix are AWS's to assign, so a name ending
+`sts.us-east-1.amazonaws.com` really is STS, while `abc.execute-api.us-east-1.amazonaws.com` is a
+customer's own API Gateway code and `sts.s3.us-east-1.amazonaws.com` is a bucket called `sts`. A
+signature is a claim, not a capability: anyone can write an `Authorization` header naming the `sts`
+service, and anywhere but STS's own hosts it buys nothing — the request falls back to its verb, so a
+`POST` stays a write.
+
+On a host an AWS API service owns (EC2, IAM, STS and the other Query-protocol services, ECR, S3) the
+action decides whether or not the request is signed, and authentication the classifier cannot read
+is a write, never "unsigned": a SigV4 `Authorization` is read by its `Credential`, `SignedHeaders`
+and `Signature` components with the algorithm in any case, and SigV2 query signing is not read at
+all. A readable scope naming a service the host does not serve is a write. So is AWS signing
+material sent to a host that is not an AWS name, such as an IP literal or a wildcard-DNS alias,
+except a readable `s3`-scoped `GET` or `HEAD`, which keeps S3-compatible stores such as MinIO
+readable. A caller-set `Host` header that names a different host than the URL is refused, and every
+redirect is classified again before it is followed, `http.download`'s included.
+
+A request to an AWS host that is ambiguous about what it asks is refused rather than guessed at: two
+`Action` parameters (in any mix of case, query and form body), two `X-Amz-Credential` scopes, or two
+header names that differ only in case. `http` sends one value per lowercased header name, so a
+second `Authorization` spelled `authorization` would otherwise let the classifier read one value
+while AWS received the other.
+
+```
+readonly: http.get blocked (aws request names a header twice)
+```
+
+Regional, FIPS, dual-stack and interface-VPC-endpoint names all qualify, so an IRSA pod pointed at
+`vpce-0123abc.sts.us-east-1.vpce.amazonaws.com` by `sts_endpoint` works like any other.
+
+### When a policy takes over
+
+`http.rules` is default-deny, so a policy that names only its own endpoints refuses the AWS calls
+the built-in would have admitted, and has to admit their hosts itself. A rule without `classify`
+admits the host and leaves the built-in to say what the request does: the exchange below stays a
+read, and a mutating `GET` on the EC2 rule stays a write. An explicit `classify:` overrides the
+built-in either way:
 
 ```yaml
 version: 1
@@ -76,56 +127,27 @@ http:
     - hosts: ["sts.us-east-1.amazonaws.com"]
       methods: [POST]
       paths: ["/"]
-      classify: read # credential exchange — a read
+    - hosts: ["ec2.us-east-1.amazonaws.com"]
+      methods: [GET]
+      paths: ["/"] # Describe* reads; TerminateInstances is still refused
 ```
 
 Name the regional endpoint the script actually uses (`sts.<region>.amazonaws.com`, from `region` /
 `AWS_REGION`), not a wildcard. A literal host is an exact match, so a rule naming `us-east-1` does
 nothing for a client built with `region = "eu-west-1"` — write out the region you mean rather than
 reaching for `*.amazonaws.com`, which would cover every region and every AWS service at once. STS
-serves `/` only, so scoping the path costs nothing and keeps the rule from being the broad
-`classify: read` that [the policy reference](../policy.md) warns hands back the write gate. The
-exemption covers exactly the host, method and path it names — the ECR and EC2 endpoints are
-untouched by it.
-
-What that rule does not do is leave the rest of the script alone. `http.rules` is default-deny: once
-the list exists, any request matching no rule is refused before the socket is opened, `GET`
-included.
-
-```
-policy: GET ec2.us-east-1.amazonaws.com/ is not allowed by any http rule
-```
-
-So a policy naming only STS breaks the very reads it was added to enable. Every endpoint the script
-touches needs a rule. Read rules for `GET` need no `classify` — the verb already defaults to a read.
-
-Without a policy file, nothing changes — readonly keeps blocking the exchange. Approval mode needs
-no rule to work; it suspends the POST for a human decision instead of refusing it.
+serves `/` only, so scoping the path costs nothing. If a rule does need `classify: read`, keep it as
+narrow as this: [the policy reference](../policy.md) warns that a broad one hands back the write
+gate.
 
 ### Downstream modules
 
-`assay.aws.ec2` and `assay.aws.s3` issue only signed `GET` requests, so they run under readonly
-untouched whenever the chain lands on one of the "works" rows above — explicit keys, env keys with
-no `AWS_PROFILE` set, or a static-keys profile without a `role_arn`. `assay.aws.ecr`'s
-`GetAuthorizationToken` is itself a signed `POST` and needs its own read rule on
-`api.ecr.<region>.amazonaws.com`; see [assay.aws.ecr](aws-ecr.md). `assay.aws.eks`'s token minting
+`assay.aws.ec2` and `assay.aws.s3` issue only signed `GET` requests, and `assay.aws.ecr`'s
+`GetAuthorizationToken` is a signed `POST` that mints a short-lived registry password; all three are
+reads, as is whichever credential hop the chain takes to reach them. `assay.aws.eks`'s token minting
 is pure presigning and issues no request of its own.
 
-Example — a readonly health check on an IRSA-authenticated pod. Two hops, so two rules, and the
-region has to be the same one the script asks for:
-
-```yaml
-version: 1
-http:
-  rules:
-    - hosts: ["sts.us-east-1.amazonaws.com"]
-      methods: [POST]
-      paths: ["/"]
-      classify: read # IRSA credential exchange — a read
-    - hosts: ["ec2.us-east-1.amazonaws.com"]
-      methods: [GET]
-      paths: ["/"] # Describe* reads — GET needs no classify
-```
+Example — a readonly health check on an IRSA-authenticated pod, no policy file:
 
 ```lua
 local ec2 = require("assay.aws.ec2")

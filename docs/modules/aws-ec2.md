@@ -39,21 +39,10 @@ All three accept an optional `opts` table:
 ### Mutation
 
 None. Every method issues a signed `http.get`, so read-only and approval modes leave them
-unrestricted.
-
-Building the client is the part that can still be gated. Without explicit `access_key`/`secret_key`
-it calls `sts.credentials`, and the IRSA and assume-role paths of that chain `POST` to STS — so a
-readonly script fails with `readonly: http.post blocked` at `ec2.client(...)`, before it issues a
-single `GET`. Passing `access_key` + `secret_key` explicitly avoids the hop entirely. Relying on
-`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` only works when no profile is in play: the chain
-consults `opts.profile` or `AWS_PROFILE` first, so if `AWS_PROFILE` names a `role_arn` or
-`web_identity_token_file` profile, the env keys are never read and the STS POST still happens.
-
-The alternative is a policy declaring the STS endpoint a read — but note that adding `http.rules` at
-all switches the script to default-deny, so the describe calls above then need a rule of their own
-(`hosts: ["ec2.<region>.amazonaws.com"]`, `methods: [GET]`) or they are refused with
-`policy: GET … is not allowed by any http rule`. See [assay.aws.sts](aws-sts.md) for a worked
-two-rule policy.
+unrestricted — and so does building the client without explicit keys, where the credential chain
+`POST`s to STS. Readonly judges an AWS request by the action it asks for rather than by its verb, so
+both halves run with no policy file; see [assay.aws.sts](aws-sts.md). A mutating `Action` is refused
+whatever the verb, so the describe calls are the only EC2 requests that pass.
 
 Example:
 
