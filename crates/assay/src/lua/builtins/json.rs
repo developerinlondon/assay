@@ -72,7 +72,28 @@ fn jsontype_marker(table: &mlua::Table) -> Option<String> {
     }
 }
 
+/// Deepest table nesting the encoder will follow. Above serde_json's own
+/// 128-level deserialization limit, so anything `json.parse` accepts can be
+/// re-encoded, and far beyond any real policy document or HTTP body. The cap
+/// exists because the recursion is native: without it a deeply nested table
+/// exhausts the stack and aborts the process, which no `pcall` can catch.
+const MAX_ENCODE_DEPTH: usize = 256;
+
 pub fn lua_table_to_json(table: &mlua::Table) -> mlua::Result<serde_json::Value> {
+    table_to_json(table, 0)
+}
+
+pub fn lua_value_to_json(val: &Value) -> mlua::Result<serde_json::Value> {
+    value_to_json(val, 0)
+}
+
+fn table_to_json(table: &mlua::Table, depth: usize) -> mlua::Result<serde_json::Value> {
+    if depth >= MAX_ENCODE_DEPTH {
+        return Err(mlua::Error::runtime(format!(
+            "table nested deeper than {MAX_ENCODE_DEPTH} levels cannot be encoded as JSON"
+        )));
+    }
+
     // Honour an explicit __jsontype marker before doing any heuristic.
     // Lets callers force "object" on a 1..N table or "array" on an empty
     // / sparse one, which the heuristic alone can't express.
@@ -120,7 +141,7 @@ pub fn lua_table_to_json(table: &mlua::Table) -> mlua::Result<serde_json::Value>
         let mut arr = Vec::with_capacity(len.max(0) as usize);
         for i in 1..=len {
             let val: Value = table.get(i)?;
-            arr.push(lua_value_to_json(&val)?);
+            arr.push(value_to_json(&val, depth + 1)?);
         }
         Ok(serde_json::Value::Array(arr))
     } else {
@@ -138,13 +159,13 @@ pub fn lua_table_to_json(table: &mlua::Table) -> mlua::Result<serde_json::Value>
                     )));
                 }
             };
-            map.insert(key_str, lua_value_to_json(&val)?);
+            map.insert(key_str, value_to_json(&val, depth + 1)?);
         }
         Ok(serde_json::Value::Object(map))
     }
 }
 
-pub fn lua_value_to_json(val: &Value) -> mlua::Result<serde_json::Value> {
+fn value_to_json(val: &Value, depth: usize) -> mlua::Result<serde_json::Value> {
     match val {
         Value::Nil => Ok(serde_json::Value::Null),
         Value::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
@@ -153,7 +174,7 @@ pub fn lua_value_to_json(val: &Value) -> mlua::Result<serde_json::Value> {
             .map(serde_json::Value::Number)
             .ok_or_else(|| mlua::Error::runtime(format!("cannot encode {f} as JSON number"))),
         Value::String(s) => Ok(serde_json::Value::String(s.to_str()?.to_string())),
-        Value::Table(t) => lua_table_to_json(t),
+        Value::Table(t) => table_to_json(t, depth),
         _ => Err(mlua::Error::runtime(format!(
             "unsupported Lua type for JSON: {}",
             val.type_name()
@@ -224,5 +245,49 @@ mod tests {
             lua_value_to_json(&Value::Number(1.5)).unwrap(),
             serde_json::json!(1.5)
         );
+    }
+
+    // Build a chain of `levels` nested tables: the outermost is the returned
+    // one, each holding its successor under the key "child".
+    fn nested_chain(lua: &Lua, levels: usize) -> mlua::Table {
+        let root = lua.create_table().unwrap();
+        let mut node = root.clone();
+        for _ in 1..levels {
+            let child = lua.create_table().unwrap();
+            node.set("child", child.clone()).unwrap();
+            node = child;
+        }
+        root
+    }
+
+    #[test]
+    fn nesting_at_the_ceiling_still_encodes() {
+        let lua = Lua::new();
+        let table = nested_chain(&lua, MAX_ENCODE_DEPTH);
+        assert!(lua_table_to_json(&table).is_ok());
+    }
+
+    // One level past the ceiling is an ordinary error. Without the cap this
+    // recursion is only bounded by the native stack, and overflowing it
+    // aborts the process instead of returning anything a `pcall` can see.
+    #[test]
+    fn nesting_past_the_ceiling_errors() {
+        let lua = Lua::new();
+        let table = nested_chain(&lua, MAX_ENCODE_DEPTH + 1);
+        let error = lua_table_to_json(&table).unwrap_err().to_string();
+        assert!(
+            error.contains(&format!("nested deeper than {MAX_ENCODE_DEPTH} levels")),
+            "unexpected message: {error}"
+        );
+    }
+
+    // A table that contains itself has unbounded depth, so the same cap turns
+    // what was an endless recursion into an error.
+    #[test]
+    fn self_referential_table_errors() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table.set("self", table.clone()).unwrap();
+        assert!(lua_table_to_json(&table).is_err());
     }
 }

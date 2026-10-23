@@ -371,3 +371,22 @@ async fn test_yaml_parse_untagged_anchors_and_merge_keys_are_unchanged() {
     "#;
     run_lua(script).await.unwrap();
 }
+
+// yaml.encode shares the JSON encoder's table walk, so it inherits the same
+// depth cap: an over-deep table is a catchable error rather than a stack
+// overflow that aborts the process.
+#[tokio::test]
+async fn test_yaml_encode_deeply_nested_table_errors() {
+    let script = r#"
+        local root = {}
+        local node = root
+        for _ = 1, 5000 do
+            node.child = {}
+            node = node.child
+        end
+        local ok, err = pcall(yaml.encode, root)
+        assert.eq(ok, false)
+        assert.contains(tostring(err), "nested deeper than")
+    "#;
+    run_lua(script).await.unwrap();
+}

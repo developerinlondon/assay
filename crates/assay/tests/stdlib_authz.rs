@@ -293,3 +293,28 @@ async fn validate_bounds_gates_a_write_the_evaluator_would_refuse() {
     )
     .await;
 }
+
+// Engine construction decodes the caller's `grants` through the JSON encoder,
+// so a host handing the engine externally-shaped structure must get an error
+// it can catch. Before the encoder's depth cap an over-deep table exhausted
+// the native stack and aborted the process instead — a policy decision that
+// took the host down rather than denying.
+#[tokio::test]
+async fn an_over_deep_grant_table_errors_instead_of_aborting() {
+    run_lua(
+        r#"
+        local authz = require("assay.authz")
+        local deep = {}
+        local node = deep
+        for _ = 1, 5000 do
+            node.child = {}
+            node = node.child
+        end
+        local ok, err = pcall(authz.engine, { grants = { deep } })
+        assert.eq(ok, false)
+        assert.contains(tostring(err), "nested deeper than")
+    "#,
+    )
+    .await
+    .unwrap_or_else(|error| panic!("lua failed: {error}"));
+}

@@ -30,6 +30,14 @@ json.encode(json.object({"a"})) -- '{"1":"a"}'  (object with stringified key)
 For non-empty tables the heuristic still applies: contiguous `1..N` integer keys encode as arrays,
 anything else as objects. The helpers only matter when you need to override that.
 
+### Nesting depth
+
+The encoder refuses a table nested deeper than 256 levels, raising an ordinary Lua error you can
+`pcall`. The limit sits above the 128-level cap `json.parse` already applies, so anything that
+parses can be re-encoded, and far above any real request body or config document. A table that
+contains itself hits the same limit instead of recursing forever. `yaml.encode` and `toml.encode`
+walk tables through the same encoder, so they share both behaviours.
+
 ## yaml
 
 YAML serialization. No `require()` needed.

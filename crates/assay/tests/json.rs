@@ -117,3 +117,35 @@ async fn test_json_array_preserves_existing_metatable() {
     "#;
     run_lua(script).await.unwrap();
 }
+
+// A table nested far past any plausible real document is refused with an
+// ordinary, catchable Lua error. The encoder recurses natively, so before the
+// depth cap this exhausted the stack and aborted the process — which no
+// `pcall` can intercept, taking a long-running `assay serve` down with it.
+#[tokio::test]
+async fn test_deeply_nested_table_errors_instead_of_aborting() {
+    let script = r#"
+        local root = {}
+        local node = root
+        for _ = 1, 5000 do
+            node.child = {}
+            node = node.child
+        end
+        local ok, err = pcall(json.encode, root)
+        assert.eq(ok, false)
+        assert.contains(tostring(err), "nested deeper than")
+    "#;
+    run_lua(script).await.unwrap();
+}
+
+// The decode direction is bounded too, by serde_json's own recursion limit.
+// Asserted here so a future change to `json.parse` can't quietly drop it.
+#[tokio::test]
+async fn test_deeply_nested_json_text_errors_instead_of_aborting() {
+    let script = r#"
+        local text = string.rep('{"child":', 5000) .. "null" .. string.rep("}", 5000)
+        local ok = pcall(json.parse, text)
+        assert.eq(ok, false)
+    "#;
+    run_lua(script).await.unwrap();
+}

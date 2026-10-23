@@ -2,6 +2,24 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.19 — 2026-10-23
+
+### Fixed
+
+- Encoding a table nested beyond 256 levels raises an ordinary Lua error instead of exhausting the
+  native stack. The encoder's table walk had no depth bound, so a few thousand levels of nesting
+  aborted the whole process — a stack overflow is not a catchable Lua error, so no `pcall` could
+  contain it and a long-running `assay serve` died rather than answering. The limit sits above the
+  128-level cap `json.parse` already applies, so anything that parses can still be re-encoded. It
+  covers every caller that encodes a caller-supplied table: `json.encode`, `yaml.encode`,
+  `toml.encode`, the auto-JSON table body of `http.post`/`http.put`/`http.patch`, a handler's
+  `json =` response in `http.serve`, JWT claims in `crypto`, `template.render` variables, and the
+  `assay.authz` engine's grant and action options — so a host that hands the policy engine
+  externally-shaped structure now gets a decision or an error it can catch instead of losing the
+  process.
+- A table that contains itself is refused by the same bound rather than recursing until the stack
+  runs out.
+
 ## assay-engine 0.5.21 — 2026-10-23
 
 ### Fixed

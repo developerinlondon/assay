@@ -51,6 +51,10 @@ expression language. The host resolves its grants and hands them over.
 A grant is `{ subject = {kind, id}, scope = {kind, id}, statements = {...}, bounds? = {...} }`. A
 statement is `{ effect = "allow"|"deny", actions = {...}, resources = {...}, conditions? = {...} }`.
 
+These options are read through the JSON encoder, which refuses a table nested beyond 256 levels. A
+host that builds its grant universe from externally-shaped structure therefore gets an error it can
+`pcall` rather than a hard failure, so an over-deep input costs a request, not the process.
+
 ### Conditions
 
 Operators are a closed set, each valid only on its key type:
