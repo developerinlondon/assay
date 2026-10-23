@@ -440,9 +440,11 @@ assay schedule delete  nightly
 ```
 
 Cron uses the 6- or 7-field form (with seconds). `"0 * * * * *"` = every minute on the zero second.
+Create and patch refuse an expression that can never fire with a 400 — the 5-field crontab form,
+which does not parse, and a 7-field expression whose year has passed (assay-engine v0.5.21).
 
 **Timezone (v0.11.3).** IANA name via `--timezone`. Default is `UTC`. The scheduler evaluates the
-cron in that zone; `next_run_at` is persisted as a UTC epoch.
+cron in that zone; `next_run_at` is persisted as a UTC epoch. An unknown zone is a 400.
 
 ### Search attributes
 
@@ -656,7 +658,10 @@ assay workflow wait deploy-1234 --timeout 300   # exit 0 on COMPLETED, 1 on fail
 - The whole engine + dashboard + Lua client is gated behind the `workflow` cargo feature (default
   on). To build assay without it:
   `cargo install assay-lua --no-default-features --features cli,db,server`.
-- The cron crate requires **6- or 7-field** expressions. The common 5-field form fails to parse.
+- The cron crate requires **6- or 7-field** expressions. The common 5-field form fails to parse, so
+  schedule create and patch refuse it with a 400 rather than registering a schedule that never
+  fires. Schedules stored before that validation keep loading; the scheduler names them once at
+  startup and skips them.
 - The engine is also publishable as a standalone Rust crate (`assay-workflow`) for embedding in
   non-Lua Rust apps. The CLI injects its own `CARGO_PKG_VERSION` via
   `assay_workflow::api::serve_with_version` so `/api/v1/engine/workflow/version` reflects the

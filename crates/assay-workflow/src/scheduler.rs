@@ -17,6 +17,23 @@ pub async fn run_scheduler<S: WorkflowStore>(store: Arc<S>) {
     let mut tick = interval(Duration::from_secs(SCHEDULER_POLL_SECS));
     info!("Cron scheduler started (poll every {SCHEDULER_POLL_SECS}s)");
 
+    // Report never-fireable rows once, at boot, rather than on every tick.
+    // Creation rejects such expressions now, so anything listed here predates
+    // that validation or was written straight to the store by an embedder.
+    // This runs before leader election, so under Postgres every pod reports
+    // the same list — one line each is cheaper than coordinating the report.
+    match unfireable_schedules(&*store).await {
+        Ok(rows) if !rows.is_empty() => {
+            warn!(
+                "Scheduler: {} schedule(s) can never fire and will be skipped: {}",
+                rows.len(),
+                rows.join(", ")
+            );
+        }
+        Ok(_) => {}
+        Err(e) => error!("Scheduler: could not check for never-fireable schedules: {e}"),
+    }
+
     loop {
         tick.tick().await;
 
@@ -68,10 +85,11 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(
             continue;
         }
 
-        // Creation seeds next_run_at (see `seed_next_run`), so a NULL here is
-        // either a row written before that or a cron that won't parse — the
-        // latter is rejected below. The seeding is not retroactive: a pre-seed
-        // row still fires once, and that fire gives it a cadence.
+        // Creation seeds next_run_at (see `seed_next_run`) and refuses a cron
+        // that can never fire (see `validate_cron_expr`), so a NULL here means
+        // a row that predates one of those or one written straight to the
+        // store. The seeding is not retroactive: a pre-seed row still fires
+        // once, and that fire gives it a cadence.
         let is_due = match sched.next_run_at {
             Some(next) => now >= next,
             None => true,
@@ -86,7 +104,10 @@ async fn evaluate_namespace_schedules<S: WorkflowStore>(
         let next_run = match compute_next_run(&sched.cron_expr, &sched.timezone) {
             Some(t) => t,
             None => {
-                warn!(
+                // A NULL next_run_at reads as due, so this arm would otherwise
+                // log on every poll for as long as the row exists. The boot
+                // report in `run_scheduler` names these rows once instead.
+                debug!(
                     "Invalid cron expression or timezone for schedule '{}': expr={} tz={}",
                     sched.name, sched.cron_expr, sched.timezone
                 );
@@ -185,7 +206,11 @@ pub(crate) fn seed_next_run(sched: &WorkflowSchedule) -> Option<f64> {
 }
 
 pub(crate) fn compute_next_run(cron_expr: &str, timezone: &str) -> Option<f64> {
-    let schedule = Schedule::from_str(cron_expr).ok()?;
+    next_occurrence(&Schedule::from_str(cron_expr).ok()?, timezone)
+}
+
+/// The next fire time of an already-parsed cron, as a UTC epoch.
+fn next_occurrence(schedule: &Schedule, timezone: &str) -> Option<f64> {
     // Empty string is treated as UTC so older schedules (pre-v0.11.3) keep
     // behaving identically even if they migrate in without the column set.
     if timezone.is_empty() || timezone.eq_ignore_ascii_case("UTC") {
@@ -195,6 +220,59 @@ pub(crate) fn compute_next_run(cron_expr: &str, timezone: &str) -> Option<f64> {
     let tz: chrono_tz::Tz = timezone.parse().ok()?;
     let next = schedule.upcoming(tz).next()?;
     Some(next.timestamp() as f64)
+}
+
+/// Whether a cron expression can actually produce a run, with the reason it
+/// cannot as the error. Create and patch call this so a schedule that could
+/// never fire is refused rather than stored: such a row keeps `next_run_at`
+/// NULL, which the scheduler reads as due on every pass, so the caller holds a
+/// 201 for a schedule that does nothing.
+///
+/// Asks the same code the scheduler uses rather than counting fields, so
+/// "accepted" and "fireable" cannot drift apart — this also catches an
+/// expression that parses but whose year has passed. Validate the timezone
+/// first: an unparseable zone surfaces here as a no-future-occurrence error,
+/// which names the wrong field.
+pub fn validate_cron_expr(cron_expr: &str, timezone: &str) -> Result<(), String> {
+    let Ok(schedule) = Schedule::from_str(cron_expr) else {
+        return Err(format!(
+            "invalid cron expression '{cron_expr}': expected 6 or 7 whitespace-separated fields \
+             (second minute hour day-of-month month day-of-week [year]); the 5-field crontab form \
+             does not parse"
+        ));
+    };
+    if next_occurrence(&schedule, timezone).is_none() {
+        return Err(format!(
+            "cron expression '{cron_expr}' has no future occurrence in timezone '{timezone}'"
+        ));
+    }
+    Ok(())
+}
+
+/// Stored schedules that can never fire, as `"{namespace}/{name} cron=… tz=…"`
+/// lines. Paused rows are left out — a paused schedule is not expected to fire,
+/// and resuming it recomputes `next_run_at` anyway.
+///
+/// Public for the same reason `evaluate_schedules_at` is: integration tests
+/// drive it directly across both backends.
+pub async fn unfireable_schedules<S: WorkflowStore>(store: &S) -> Result<Vec<String>> {
+    let mut unfireable = Vec::new();
+
+    for ns in store.list_namespaces().await? {
+        for sched in store.list_schedules(&ns.name).await? {
+            if sched.paused {
+                continue;
+            }
+            if compute_next_run(&sched.cron_expr, &sched.timezone).is_none() {
+                unfireable.push(format!(
+                    "{}/{} cron={} tz={}",
+                    ns.name, sched.name, sched.cron_expr, sched.timezone
+                ));
+            }
+        }
+    }
+
+    Ok(unfireable)
 }
 
 fn timestamp_now() -> f64 {
@@ -275,5 +353,46 @@ mod tests {
     #[test]
     fn compute_next_run_invalid_cron_returns_none() {
         assert!(compute_next_run("not a cron", "UTC").is_none());
+    }
+
+    #[test]
+    fn validate_cron_expr_accepts_the_six_field_form() {
+        assert_eq!(validate_cron_expr("0 0 8 * * *", "Europe/Berlin"), Ok(()));
+    }
+
+    /// The optional 7th field is a year. 2099 is far enough out that this test
+    /// does not expire; a nearer year would start failing once it passed.
+    #[test]
+    fn validate_cron_expr_accepts_a_seven_field_form_with_a_future_year() {
+        assert_eq!(validate_cron_expr("0 0 8 1 1 * 2099", "UTC"), Ok(()));
+    }
+
+    /// The expression from the report: a 5-field crontab the cron crate
+    /// rejects. The message has to name the field count, since the caller's
+    /// mistake is invisible otherwise — it reads as a valid crontab line.
+    #[test]
+    fn validate_cron_expr_rejects_the_five_field_crontab_form() {
+        let err = validate_cron_expr("0 8 1 1 *", "UTC").expect_err("5 fields must be rejected");
+        assert!(
+            err.contains("6 or 7") && err.contains("5-field"),
+            "message should name the expected field count, got: {err}"
+        );
+    }
+
+    /// Parses, but every occurrence is in the past, so it is as unfireable as
+    /// one that does not parse — and would leave the same NULL next_run_at row.
+    #[test]
+    fn validate_cron_expr_rejects_a_year_that_has_passed() {
+        let err =
+            validate_cron_expr("0 0 8 1 1 * 2020", "UTC").expect_err("a past year cannot fire");
+        assert!(
+            err.contains("no future occurrence"),
+            "message should say there is no future occurrence, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_cron_expr_rejects_garbage() {
+        assert!(validate_cron_expr("not a cron", "UTC").is_err());
     }
 }

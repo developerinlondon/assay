@@ -308,6 +308,12 @@ impl Harness {
         dispatch!(self, s => assay_workflow::scheduler::evaluate_schedules_at(s, now).await)
     }
 
+    /// Stored schedules that can never fire, as the scheduler reports them at
+    /// boot.
+    pub async fn unfireable_schedules(&self) -> anyhow::Result<Vec<String>> {
+        dispatch!(self, s => assay_workflow::scheduler::unfireable_schedules(s).await)
+    }
+
     pub async fn get_schedule(
         &self,
         namespace: &str,

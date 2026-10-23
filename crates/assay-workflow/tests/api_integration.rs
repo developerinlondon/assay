@@ -417,7 +417,7 @@ async fn schedule_crud() {
         .json(&serde_json::json!({
             "name": "hourly-ingest",
             "workflow_type": "IngestData",
-            "cron_expr": "0 * * * *",
+            "cron_expr": "0 0 * * * *",
         }))
         .send()
         .await
@@ -655,7 +655,116 @@ async fn schedule_patch_rejects_invalid_timezone() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 500, "invalid timezone rejected");
+    assert_eq!(resp.status(), 400, "invalid timezone rejected");
+}
+
+/// The 5-field crontab form from the report. It does not parse, so the row
+/// would sit with a NULL `next_run_at` the scheduler reads as due forever —
+/// the create has to refuse it, and leave nothing behind when it does.
+#[tokio::test]
+async fn schedule_create_rejects_a_five_field_cron() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let resp = c
+        .post(format!("{url}/api/v1/engine/workflow/schedules"))
+        .json(&serde_json::json!({
+            "name": "five-field",
+            "workflow_type": "Report",
+            "cron_expr": "0 8 1 1 *",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "a 5-field cron must be refused");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let error = body["error"].as_str().expect("error message");
+    assert!(
+        error.contains("6 or 7"),
+        "the message should name the expected field count, got: {error}"
+    );
+
+    let resp = c
+        .get(format!("{url}/api/v1/engine/workflow/schedules/five-field"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404, "a refused create must store no row");
+}
+
+/// Parses, but its only occurrences are in the past, so it is as unfireable as
+/// one that does not parse at all.
+#[tokio::test]
+async fn schedule_create_rejects_a_cron_whose_year_has_passed() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let resp = c
+        .post(format!("{url}/api/v1/engine/workflow/schedules"))
+        .json(&serde_json::json!({
+            "name": "expired",
+            "workflow_type": "Report",
+            "cron_expr": "0 0 8 1 1 * 2020",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "a past-year cron must be refused");
+}
+
+#[tokio::test]
+async fn schedule_create_rejects_invalid_timezone() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+
+    let resp = c
+        .post(format!("{url}/api/v1/engine/workflow/schedules"))
+        .json(&serde_json::json!({
+            "name": "bad-zone",
+            "workflow_type": "Report",
+            "cron_expr": "0 0 8 * * *",
+            "timezone": "Not/AZone",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "an unknown timezone must be refused");
+}
+
+/// Patch is a create path too: it must not be able to walk a working schedule
+/// into one that can never fire.
+#[tokio::test]
+async fn schedule_patch_rejects_a_five_field_cron() {
+    let (url, _h) = start_test_server().await;
+    let c = client();
+    c.post(format!("{url}/api/v1/engine/workflow/schedules"))
+        .json(&serde_json::json!({
+            "name": "patch-five",
+            "workflow_type": "Report",
+            "cron_expr": "0 0 2 * * *",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = c
+        .patch(format!("{url}/api/v1/engine/workflow/schedules/patch-five"))
+        .json(&serde_json::json!({ "cron_expr": "0 8 1 1 *" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "a 5-field cron must be refused");
+
+    let resp = c
+        .get(format!("{url}/api/v1/engine/workflow/schedules/patch-five"))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["cron_expr"], "0 0 2 * * *",
+        "a refused patch must leave the stored cron alone"
+    );
 }
 
 #[tokio::test]

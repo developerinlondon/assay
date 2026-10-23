@@ -2,6 +2,38 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.21 — 2026-10-23
+
+### Fixed
+
+- A cron expression that can never fire is refused at `POST /schedules` and
+  `PATCH /schedules/{name}` with a 400 instead of accepted with a 201. The caller gets a message
+  naming the expected field count rather than a registered schedule that silently does nothing.
+- An unknown timezone on either of those endpoints now answers 400 as well. The handlers already
+  checked it, but returned the refusal as a 500.
+
+## assay-workflow 0.4.8 — 2026-10-23
+
+### Fixed
+
+- Schedule create and patch validate the cron expression against the schedule's timezone, so an
+  expression with no future occurrence cannot be stored. Such a row keeps `next_run_at` NULL, which
+  the scheduler reads as due on every pass, so it logged once per poll interval for as long as it
+  existed while never starting a run. Two shapes reach that state: the 5-field crontab form, which
+  the cron crate does not parse at all, and a 7-field expression whose year has gone by.
+- Schedules that can never fire are reported once, by name, when the scheduler starts, and the
+  per-pass message drops to `debug`. Validation only guards new writes, so rows that predate it — or
+  that an embedder wrote straight to the store — still need reporting, just not every 15 seconds.
+  Reads are untouched: an existing schedule keeps loading, listing and patching as before.
+
+### Added
+
+- `scheduler::validate_cron_expr(cron_expr, timezone)` — whether an expression can produce a run,
+  with the reason it cannot as the error. It asks the same code the scheduler uses, so what the API
+  accepts and what the scheduler can fire cannot drift apart.
+- `scheduler::unfireable_schedules(store)` — the stored schedules that can never fire, as
+  `namespace/name` lines, for the boot report and for embedders wanting the same check.
+
 ## assay-lua 0.20.18 — 2026-10-23
 
 ### Fixed

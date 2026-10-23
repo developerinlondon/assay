@@ -569,7 +569,7 @@ impl std::fmt::Display for HttpError {
 impl std::error::Error for HttpError {}
 
 impl AppError {
-    fn bad_request(message: String) -> Self {
+    pub(crate) fn bad_request(message: String) -> Self {
         Self::http(axum::http::StatusCode::BAD_REQUEST, message)
     }
 

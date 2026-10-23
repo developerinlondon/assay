@@ -2804,6 +2804,43 @@ async fn cli_schedule_full_lifecycle() {
     );
 }
 
+/// `schedule create` with the 5-field crontab form reaches the engine and
+/// comes back a 400, so the CLI caller learns at once instead of registering a
+/// schedule that can never fire.
+#[tokio::test]
+async fn cli_schedule_create_rejects_a_five_field_cron() {
+    let Some(assay_bin) = locate_assay_binary() else {
+        eprintln!("SKIP: cli_schedule_create_rejects_a_five_field_cron — no assay binary");
+        return;
+    };
+    let (url, _h) = start_test_server().await;
+
+    let output = tokio::process::Command::new(&assay_bin)
+        .args([
+            "schedule",
+            "create",
+            "cli-five-field",
+            "--type",
+            "CliTestWorkflow",
+            "--cron",
+            "0 8 1 1 *",
+            "--engine-url",
+            &url,
+        ])
+        .output()
+        .await
+        .expect("run assay schedule create");
+    assert!(
+        !output.status.success(),
+        "a 5-field cron should exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("400"),
+        "stderr should carry the 400, got: {stderr}"
+    );
+}
+
 /// `schedule patch` with no fields returns exit 1 with a usage hint.
 #[tokio::test]
 async fn cli_schedule_patch_without_fields_is_exit_1() {

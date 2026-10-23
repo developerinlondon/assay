@@ -33,7 +33,8 @@ pub struct CreateScheduleRequest {
     pub namespace: String,
     /// Workflow type to start on each trigger
     pub workflow_type: String,
-    /// Cron expression (e.g. "0 * * * *" for hourly)
+    /// Cron expression, 6 or 7 fields with seconds first
+    /// (e.g. "0 0 * * * *" for hourly). The 5-field crontab form is rejected.
     pub cron_expr: String,
     /// IANA time-zone name used to interpret `cron_expr`
     /// (e.g. "Europe/Berlin", "America/New_York"). Default: "UTC".
@@ -71,6 +72,7 @@ fn default_timezone() -> String {
     request_body = CreateScheduleRequest,
     responses(
         (status = 201, description = "Schedule created", body = WorkflowSchedule),
+        (status = 400, description = "Invalid cron expression or timezone"),
         (status = 500, description = "Internal error"),
     ),
 )]
@@ -83,11 +85,18 @@ pub async fn create_schedule<S: WorkflowStore>(
     // Validate the timezone early so a bad value produces a clean 400
     // instead of a mysterious silent no-op from the scheduler later.
     if !req.timezone.eq_ignore_ascii_case("UTC") && req.timezone.parse::<chrono_tz::Tz>().is_err() {
-        return Err(AppError::Internal(anyhow::anyhow!(
+        return Err(AppError::bad_request(format!(
             "invalid timezone: {}",
             req.timezone
         )));
     }
+
+    // Then the cron, in that zone. A schedule that can never fire would be
+    // stored with a NULL next_run_at, which the scheduler reads as due on
+    // every pass — so the caller would hold a 201 for a schedule that only
+    // ever logs. Refusing here is what keeps such rows out of the table.
+    crate::scheduler::validate_cron_expr(&req.cron_expr, &req.timezone)
+        .map_err(AppError::bad_request)?;
 
     let schedule = WorkflowSchedule {
         name: req.name.clone(),
@@ -191,7 +200,8 @@ pub async fn delete_schedule<S: WorkflowStore>(
 
 #[derive(Deserialize, ToSchema)]
 pub struct PatchScheduleRequest {
-    /// New cron expression (leave null to keep the existing one).
+    /// New cron expression, 6 or 7 fields with seconds first
+    /// (leave null to keep the existing one).
     pub cron_expr: Option<String>,
     /// New IANA timezone (e.g. "Europe/Berlin"; leave null to keep).
     pub timezone: Option<String>,
@@ -214,6 +224,7 @@ pub struct PatchScheduleRequest {
     request_body = PatchScheduleRequest,
     responses(
         (status = 200, description = "Schedule updated", body = WorkflowSchedule),
+        (status = 400, description = "Invalid cron expression or timezone"),
         (status = 404, description = "Schedule not found"),
     ),
 )]
@@ -228,9 +239,22 @@ pub async fn patch_schedule<S: WorkflowStore>(
         && !tz.eq_ignore_ascii_case("UTC")
         && tz.parse::<chrono_tz::Tz>().is_err()
     {
-        return Err(AppError::Internal(anyhow::anyhow!(
-            "invalid timezone: {tz}"
-        )));
+        return Err(AppError::bad_request(format!("invalid timezone: {tz}")));
+    }
+
+    // The cron and the timezone are only fireable as a pair, and a patch may
+    // carry either one alone, so check the effective pair against the stored
+    // row: a new cron is validated in the stored zone, a new zone against the
+    // stored cron. The write below still has to handle the row disappearing in
+    // between.
+    if req.cron_expr.is_some() || req.timezone.is_some() {
+        let stored = state
+            .get_schedule(&q.namespace, &name)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("schedule {name}")))?;
+        let cron_expr = req.cron_expr.as_ref().unwrap_or(&stored.cron_expr);
+        let timezone = req.timezone.as_ref().unwrap_or(&stored.timezone);
+        crate::scheduler::validate_cron_expr(cron_expr, timezone).map_err(AppError::bad_request)?;
     }
 
     let patch = SchedulePatch {

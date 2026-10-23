@@ -970,6 +970,9 @@ fn make_schedule(namespace: &str, name: &str) -> common::harness::WorkflowSchedu
         namespace: namespace.to_string(),
         name: name.to_string(),
         workflow_type: "cron_wf".to_string(),
+        // Deliberately the 5-field crontab form the cron crate rejects: the
+        // REST layer refuses it now, but the store stays permissive so rows
+        // written before that validation keep loading.
         cron_expr: "0 * * * *".to_string(),
         timezone: "UTC".to_string(),
         input: Some(r#"{"key":"val"}"#.to_string()),
@@ -1201,6 +1204,43 @@ async fn schedule_with_elapsed_next_run_fires_on_catch_up(#[case] backend: Backe
     assert!(
         after.next_run_at.unwrap() > now,
         "next_run_at should roll forward past the fire"
+    );
+}
+
+/// Rows whose cron can never fire are named once at scheduler boot. They can
+/// only reach the store from before the create-time validation or from an
+/// embedder writing directly, so the listing has to come from the store rather
+/// than from the REST layer that now refuses them.
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
+async fn unfireable_schedules_names_only_the_rows_that_cannot_fire(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+
+    // make_schedule carries the 5-field crontab form the cron crate rejects.
+    let broken_name = uid("sched-broken-cron");
+    h.create_schedule(&make_schedule("main", &broken_name))
+        .await
+        .unwrap();
+
+    let fireable_name = uid("sched-fireable");
+    let mut fireable = make_schedule("main", &fireable_name);
+    fireable.cron_expr = "0 0 8 * * *".to_string();
+    h.create_schedule(&fireable).await.unwrap();
+
+    let listed = h.unfireable_schedules().await.unwrap();
+
+    assert!(
+        listed.iter().any(|line| line.contains(&broken_name)),
+        "a never-fireable row should be named, got {listed:?}"
+    );
+    assert!(
+        !listed.iter().any(|line| line.contains(&fireable_name)),
+        "a fireable row should not be named, got {listed:?}"
     );
 }
 
