@@ -302,8 +302,8 @@ Use cases:
 - **Infrastructure automation** — GitOps hooks, health checks, service configuration
 
 - **Repo**: `deepbrain-oss/assay` on [agentgit.org](https://agentgit.org) is the primary; every PR
-  goes there. [github.com/developerinlondon/assay](https://github.com/developerinlondon/assay)
-  is a push mirror: issues only, PRs are auto-closed, releases publish from it.
+  goes there. [github.com/developerinlondon/assay](https://github.com/developerinlondon/assay) is a
+  push mirror: issues only, PRs are auto-closed, releases publish from it.
 - **Image**: `ghcr.io/developerinlondon/assay:latest` (~11 MB compressed)
 - **Crate**: [crates.io/crates/assay-lua](https://crates.io/crates/assay-lua)
 - **Stack**: Rust (2024 edition), Tokio, Lua 5.5 (mlua), reqwest, clap, axum
@@ -415,7 +415,7 @@ Available as globals in all `.lua` scripts — no `require` needed:
 
 | Category       | Functions                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HTTP           | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes)` — `http.serve` response handlers accept array header values to emit the same header name multiple times (e.g., multiple `Set-Cookie`)                                                                         |
+| HTTP           | `http.get(url, opts?)`, `http.post(url, body, opts?)`, `http.put(url, body, opts?)`, `http.patch(url, body, opts?)`, `http.delete(url, opts?)`, `http.serve(port, routes, opts?)` (`opts.host` = listen IP, default `0.0.0.0`) — `http.serve` response handlers accept array header values to emit the same header name multiple times (e.g., multiple `Set-Cookie`)                     |
 | JSON/YAML/TOML | `json.parse(str)`, `json.encode(tbl)`, `yaml.parse(str, opts?)`, `yaml.encode(tbl, opts?)`, `toml.parse(str)`, `toml.encode(tbl)`                                                                                                                                                                                                                                                        |
 | Filesystem     | `fs.read(path)`, `fs.read_bytes(path)`, `fs.write(path, str)`, `fs.write_bytes(path, data)`, `fs.remove(path)`, `fs.list(path)`, `fs.stat(path)`, `fs.mkdir(path)`, `fs.exists(path)`, `fs.copy(src, dst)`, `fs.rename(src, dst)`, `fs.glob(pattern)`, `fs.tempdir()`, `fs.chmod(path, mode)`, `fs.readdir(path, opts?)`                                                                 |
 | Crypto         | `crypto.jwt_sign(claims, key, alg, opts?)`, `crypto.jwt_decode(token)` (decode without verifying), `crypto.hash(str, alg)`, `crypto.hmac(key, data, alg?, raw?)`, `crypto.random(len)`                                                                                                                                                                                                   |

@@ -2,6 +2,19 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.20 — 2026-11-07
+
+### Added
+
+- `http.serve(port, routes, { host = "127.0.0.1" })` listens on the given address instead of every
+  interface. A service that sits behind a reverse proxy on the same machine can now keep its port
+  off the network entirely; previously it always bound `0.0.0.0` and had to rely on a firewall.
+  `http.serve_with_extra(port, routes, extra, opts)` takes the same option. `host` must be an IP
+  literal (IPv4 or IPv6), so a typo fails at startup instead of resolving through DNS. Omitting the
+  options keeps the old `0.0.0.0` behaviour. `http.serve_capabilities.bind_host` is `true` on
+  runtimes with this option, so a script can refuse to start rather than fall back to every
+  interface on an older runtime that ignores it.
+
 ## assay-lua 0.20.19 — 2026-10-23
 
 ### Fixed
@@ -106,14 +119,15 @@ All notable changes to Assay are documented here.
   wildcard-DNS alias) is a write too, except an `s3`-scoped `GET`/`HEAD` that names no operation
   (`Action`, `X-Amz-Target`), so S3-compatible stores such as MinIO stay readable. Signed S3 reads
   also work on access-point and legacy dash-region hosts (`bucket.s3-us-west-2.amazonaws.com`). Only
-  the `AWS4-` and SigV2 `AWS ` schemes count as AWS signing material, so `AWSomeToken` does not. `amazonaws.eu` and the ISO partitions count as AWS hosts.
+  the `AWS4-` and SigV2 `AWS` schemes count as AWS signing material, so `AWSomeToken` does not.
+  `amazonaws.eu` and the ISO partitions count as AWS hosts.
 
   **Readonly now refuses signed `GET`s to AWS actions outside the allowlist**, reads included: IAM
   `ListRoles` and CloudFormation `DescribeStacks` are refused where they used to pass on their verb.
-  A script that needs one adds a policy rule with `classify: read` for that host. Signed API
-  Gateway calls (IAM-authorised `execute-api` requests) are refused under readonly on every verb,
-  since nothing in the request says whether the stage behind them reads or writes; admit a known
-  read stage with an exact-host `classify: read` rule.
+  A script that needs one adds a policy rule with `classify: read` for that host. Signed API Gateway
+  calls (IAM-authorised `execute-api` requests) are refused under readonly on every verb, since
+  nothing in the request says whether the stage behind them reads or writes; admit a known read
+  stage with an exact-host `classify: read` rule.
 
   Readonly plus IRSA now works with no policy file, and the docs say so. An operator policy's
   `http.rules` stays default-deny. A matching rule with an explicit `classify:` overrides the

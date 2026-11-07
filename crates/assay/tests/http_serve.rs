@@ -538,3 +538,75 @@ async fn test_http_serve_wildcard_route() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn test_http_serve_binds_requested_host() {
+    run_lua_local(
+        r#"
+        local server = async.spawn(function()
+            http.serve(0, {
+                GET = { ["/health"] = function() return { status = 200, body = "ok" } end },
+            }, { host = "127.0.0.1" })
+        end)
+        sleep(0.1)
+        local resp = http.get("http://127.0.0.1:" .. _SERVER_PORT .. "/health")
+        assert.eq(resp.status, 200)
+        assert.eq(resp.body, "ok")
+    "#,
+    )
+    .await
+    .unwrap();
+}
+
+// Linux routes all of 127.0.0.0/8 to lo, so a listener on 127.0.0.2 must
+// refuse a connection to 127.0.0.1 on the same port — proof that the bind
+// is the requested address rather than every interface.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn test_http_serve_host_excludes_other_addresses() {
+    run_lua_local(
+        r#"
+        local server = async.spawn(function()
+            http.serve(0, {
+                GET = { ["/health"] = function() return { status = 200, body = "ok" } end },
+            }, { host = "127.0.0.2" })
+        end)
+        sleep(0.1)
+        local resp = http.get("http://127.0.0.2:" .. _SERVER_PORT .. "/health")
+        assert.eq(resp.status, 200)
+        local ok = pcall(http.get, "http://127.0.0.1:" .. _SERVER_PORT .. "/health")
+        assert.eq(ok, false, "listener on 127.0.0.2 must not answer on 127.0.0.1")
+    "#,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_http_serve_rejects_non_ip_host() {
+    let err = run_lua_local(r#"http.serve(0, { GET = {} }, { host = "localhost" })"#)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("host must be an IP address"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn test_http_serve_rejects_non_table_options() {
+    let err = run_lua_local(r#"http.serve(0, { GET = {} }, "127.0.0.1")"#)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("options argument must be a table"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn test_http_serve_advertises_bind_host() {
+    run_lua_local(r#"assert.eq(http.serve_capabilities.bind_host, true)"#)
+        .await
+        .unwrap();
+}

@@ -11,6 +11,7 @@ use hyper::{Request, Response, StatusCode};
 use mlua::{Lua, Table, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
@@ -32,6 +33,28 @@ use tracing::error;
 pub struct LuaAxumRouter(pub axum::Router);
 
 impl mlua::UserData for LuaAxumRouter {}
+
+/// Resolves the listen address from an optional `{ host = "<ip>" }` table.
+/// No table (or no `host`) keeps the historical `0.0.0.0` bind. The host must
+/// be an IP literal so a typo fails loudly instead of resolving through DNS.
+fn listen_addr(fname: &str, opts: Option<Value>, port: u16) -> mlua::Result<SocketAddr> {
+    let host = match opts {
+        None | Some(Value::Nil) => None,
+        Some(Value::Table(t)) => t.get::<Option<String>>("host")?,
+        Some(_) => {
+            return Err(mlua::Error::runtime(format!(
+                "{fname}: options argument must be a table"
+            )));
+        }
+    };
+    let ip = match host {
+        None => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        Some(h) => h.parse::<IpAddr>().map_err(|_| {
+            mlua::Error::runtime(format!("{fname}: host must be an IP address, got {h:?}"))
+        })?,
+    };
+    Ok(SocketAddr::new(ip, port))
+}
 
 /// Registers the serving builtins onto the shared `http` table.
 pub(super) fn register_serve(lua: &Lua, http_table: &Table) -> mlua::Result<()> {
@@ -57,8 +80,9 @@ pub(super) fn register_serve(lua: &Lua, http_table: &Table) -> mlua::Result<()> 
         };
 
         let routes = Rc::new(parse_routes(&routes_table)?);
+        let addr = listen_addr("http.serve", args_iter.next(), port)?;
 
-        let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+        let listener = TcpListener::bind(addr)
             .await
             .map_err(|e| mlua::Error::runtime(format!("http.serve: bind failed: {e}")))?;
 
@@ -107,7 +131,13 @@ pub(super) fn register_serve(lua: &Lua, http_table: &Table) -> mlua::Result<()> 
     })?;
     http_table.set("serve", serve_fn)?;
 
-    // ── http.serve_with_extra(port, routes_table, extra_router) ───────────────
+    // Feature probe for callers that must not fall back to binding every
+    // interface on a runtime that predates the `host` option.
+    let capabilities = lua.create_table()?;
+    capabilities.set("bind_host", true)?;
+    http_table.set("serve_capabilities", capabilities)?;
+
+    // ── http.serve_with_extra(port, routes_table, extra_router, opts?) ────────
     //
     // Same shape as `http.serve` plus a third argument: a [`LuaAxumRouter`]
     // userdata wrapping a Rust-built `axum::Router`. Lua-defined routes are
@@ -162,12 +192,11 @@ pub(super) fn register_serve(lua: &Lua, http_table: &Table) -> mlua::Result<()> 
             };
 
             let routes = Rc::new(parse_routes(&routes_table)?);
+            let addr = listen_addr("http.serve_with_extra", args_iter.next(), port)?;
 
-            let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
-                .await
-                .map_err(|e| {
-                    mlua::Error::runtime(format!("http.serve_with_extra: bind failed: {e}"))
-                })?;
+            let listener = TcpListener::bind(addr).await.map_err(|e| {
+                mlua::Error::runtime(format!("http.serve_with_extra: bind failed: {e}"))
+            })?;
 
             let actual_port = listener
                 .local_addr()

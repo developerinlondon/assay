@@ -112,14 +112,14 @@ These are always available in every `.lua` script.
 
 ### HTTP
 
-| Function                       | Description                                    |
-| ------------------------------ | ---------------------------------------------- |
-| `http.get(url, opts?)`         | GET request, returns `{status, body, headers}` |
-| `http.post(url, body, opts?)`  | POST request (auto-JSON if body is table)      |
-| `http.put(url, body, opts?)`   | PUT request                                    |
-| `http.patch(url, body, opts?)` | PATCH request                                  |
-| `http.delete(url, opts?)`      | DELETE request                                 |
-| `http.serve(port, routes)`     | Start HTTP server (async handlers)             |
+| Function                          | Description                                    |
+| --------------------------------- | ---------------------------------------------- |
+| `http.get(url, opts?)`            | GET request, returns `{status, body, headers}` |
+| `http.post(url, body, opts?)`     | POST request (auto-JSON if body is table)      |
+| `http.put(url, body, opts?)`      | PUT request                                    |
+| `http.patch(url, body, opts?)`    | PATCH request                                  |
+| `http.delete(url, opts?)`         | DELETE request                                 |
+| `http.serve(port, routes, opts?)` | Start HTTP server (async handlers)             |
 
 Options: `{ headers = { ["X-Key"] = "value" } }`
 

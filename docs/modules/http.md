@@ -12,7 +12,11 @@ Options table supports `{headers = {["X-Key"] = "value"}}`.
 - `http.put(url, body, opts?)` → `{status, body, headers}` — PUT request
 - `http.patch(url, body, opts?)` → `{status, body, headers}` — PATCH request
 - `http.delete(url, opts?)` → `{status, body, headers}` — DELETE request
-- `http.serve(port, routes)` → blocks — Start HTTP server with async handlers
+- `http.serve(port, routes, opts?)` → blocks — Start HTTP server with async handlers
+  - `opts.host`: IP address to listen on (e.g. `"127.0.0.1"`, `"::1"`). Default `0.0.0.0`
+  - `http.serve_with_extra(port, routes, extra, opts?)` takes the same `opts`
+  - `http.serve_capabilities.bind_host` is `true` on runtimes that honour `opts.host`; check it
+    before relying on the option, since older runtimes ignore it and bind `0.0.0.0`
   - Routes: `{GET = {["/path"] = function(req) return {status=200, body="ok"} end}}`
   - Handlers receive `{method, path, body, headers, query}`, return
     `{status, body, json?, headers?}`
