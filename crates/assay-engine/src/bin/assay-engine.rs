@@ -59,14 +59,50 @@ async fn main() -> ExitCode {
                 }
             };
             init_tracing(&cfg.logging.level, &cfg.logging.format);
-            if let Err(e) = assay_engine::run(cfg).await {
-                eprintln!("engine error: {e:#}");
-                return ExitCode::from(1);
+            tokio::select! {
+                result = assay_engine::run(cfg) => {
+                    if let Err(e) = result {
+                        eprintln!("engine error: {e:#}");
+                        return ExitCode::from(1);
+                    }
+                    ExitCode::SUCCESS
+                }
+                signal = shutdown_signal() => {
+                    tracing::info!(target: "assay-engine", %signal, "shutting down");
+                    ExitCode::SUCCESS
+                }
             }
-            ExitCode::SUCCESS
         }
         #[cfg(all(feature = "backend-postgres", feature = "backend-sqlite"))]
         Command::Migrate { from, to, dry_run } => migrate(&from, &to, dry_run).await,
+    }
+}
+
+/// SIGTERM or SIGINT, whichever comes first.
+///
+/// In a container the engine is PID 1, and the kernel delivers no signal to
+/// PID 1 that it has not installed a handler for. Without this, the
+/// orchestrator's SIGTERM is dropped and every stop waits out the whole
+/// grace period for the SIGKILL.
+async fn shutdown_signal() -> &'static str {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => tokio::select! {
+                _ = term.recv() => "SIGTERM",
+                _ = tokio::signal::ctrl_c() => "SIGINT",
+            },
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+                "SIGINT"
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+        "SIGINT"
     }
 }
 

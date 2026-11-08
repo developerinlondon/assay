@@ -2,6 +2,16 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.22 — 2026-11-08
+
+### Fixed
+
+- `assay-engine serve` exits on SIGTERM or SIGINT. In a container the engine is PID 1, and the
+  kernel drops any signal PID 1 has no handler for, so the orchestrator's SIGTERM was ignored and
+  every stop waited out the whole grace period before a SIGKILL. A rollout of a pod carrying the
+  engine as a sidecar paid that wait every time. The handled signal now ends `serve` with exit
+  status 0.
+
 ## assay-lua 0.20.21 — 2026-11-08
 
 ### Added

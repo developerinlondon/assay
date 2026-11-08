@@ -200,6 +200,10 @@ format = "pretty"
         std::fs::read_to_string(&self.stdout).unwrap_or_default()
     }
 
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
     pub fn exited(&mut self) -> Option<std::process::ExitStatus> {
         self.child.try_wait().ok().flatten()
     }
