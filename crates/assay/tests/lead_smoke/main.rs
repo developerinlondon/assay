@@ -169,3 +169,23 @@ async fn mails_so_answers_in_the_shape_the_adapter_expects() {
     .await
     .unwrap();
 }
+
+/// Reoon, live, on the free balance read: a smoke must not spend a credit.
+#[tokio::test]
+async fn reoon_balance_answers_in_the_shape_the_adapter_expects() {
+    if key_or_skip("REOON_KEY").is_none() {
+        return;
+    }
+    run_lua(&format!(
+        r#"
+        {GATE}
+        local reoon = require("assay.reoon")
+        local b = reoon.client(gate, {{ api_key = env.get("REOON_KEY") }}):balance()
+        assert.not_nil(b.api_status)
+        assert.not_nil(b.instant)
+        assert.eq(#spent, 0)
+    "#
+    ))
+    .await
+    .unwrap();
+}

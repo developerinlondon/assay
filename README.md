@@ -581,6 +581,7 @@ resolves; `AGENTS.md` carries the complete list harvested from the modules thems
 | `assay.email_verify` | Email verification — syntax, MX over DoH, list signals, and a live SMTP probe |
 | `assay.gleif` | GLEIF LEI registry — global legal-entity search, keyless and free |
 | `assay.lead_provider` | The lead-data contract — uniform records with provenance, and the gate every paid call goes through |
+| `assay.reoon` | Reoon email verification — budget-gated verify_email plus a free balance read |
 | **Stdlib** | |
 | `assay.shell` |  |
 <!-- END STDLIB TABLE -->

@@ -2,6 +2,18 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.21 — 2026-11-08
+
+### Added
+
+- **`assay.reoon` — Reoon email verification.** `client(gate, opts):verify_email(address)` spends
+  one credit through the lead_provider budget gate; `balance()` reads the remaining credits for
+  free, so a connection test costs nothing. A vendor `safe` lands as PROBABLE, never VERIFIED, and
+  `is_catch_all` overrides the headline status to CATCH_ALL. The API key travels in the query
+  string, so the module scrubs it from every error, transport errors included, and keeps it out of
+  provenance. Refusals carry the vendor's own `reason`. Live smoke on the free balance read arms
+  when `REOON_KEY` is set.
+
 ## assay-lua 0.20.20 — 2026-11-07
 
 ### Added
