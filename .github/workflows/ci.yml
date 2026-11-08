@@ -111,7 +111,7 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
     # Self-hosted runner routing.
     #
@@ -124,13 +124,13 @@ jobs:
     # GitHub Actions cannot fall back from an offline self-hosted runner
     # once a job has been routed there, so this stays a deliberate toggle
     # rather than a default — flip the variable and the next run goes back
-    # to GitHub-hosted `macos-14` with no workflow edit:
+    # to GitHub-hosted `macos-15` with no workflow edit:
     #
     #   gh variable set MAC_LOCAL_RUNNER --repo developerinlondon/assay --body false
     runs-on: >-
       ${{
         (matrix.os == 'ubuntu-latest' && github.actor == 'developerinlondon' && fromJSON('["self-hosted","linux","assay"]'))
-        || (matrix.os == 'macos-14' && github.actor == 'developerinlondon' && vars.MAC_LOCAL_RUNNER == 'true' && fromJSON('["self-hosted","macos","assay"]'))
+        || (matrix.os == 'macos-15' && github.actor == 'developerinlondon' && vars.MAC_LOCAL_RUNNER == 'true' && fromJSON('["self-hosted","macos","assay"]'))
         || matrix.os
       }}
     # A cold self-hosted build installs the toolchain and fills an empty

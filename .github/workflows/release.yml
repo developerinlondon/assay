@@ -247,7 +247,7 @@ jobs:
             target: x86_64-unknown-linux-musl
             suffix: linux-x86_64
             deps: sudo apt-get update && sudo apt-get install -y musl-tools
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             suffix: darwin-aarch64
             deps: ""
@@ -256,7 +256,7 @@ jobs:
     # full rationale and toggle commands.
     runs-on: >-
       ${{
-        (matrix.os == 'macos-14' && vars.MAC_LOCAL_RUNNER == 'true' && fromJSON('["self-hosted","macos","assay"]'))
+        (matrix.os == 'macos-15' && vars.MAC_LOCAL_RUNNER == 'true' && fromJSON('["self-hosted","macos","assay"]'))
         || matrix.os
       }}
     steps:
