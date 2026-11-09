@@ -371,9 +371,9 @@ pub trait WorkflowStore: Send + Sync + 'static {
     /// `patch` are updated; the rest keep their current values. Returns
     /// the updated record, or `None` if the schedule doesn't exist.
     ///
-    /// The scheduler's `next_run_at` is recomputed from the new
-    /// `cron_expr` + `timezone` on the next evaluation tick, so a PATCH
-    /// takes effect within the scheduler's poll interval.
+    /// When the patch changes the effective `cron_expr` or `timezone`,
+    /// `next_run_at` is recomputed from the new pair in the same
+    /// transaction; otherwise the stored fire time stands.
     fn update_schedule(
         &self,
         namespace: &str,

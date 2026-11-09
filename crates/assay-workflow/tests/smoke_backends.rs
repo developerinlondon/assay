@@ -1111,6 +1111,147 @@ async fn schedule_last_run_update(#[case] backend: Backend) {
     );
 }
 
+/// Patching the cron or the timezone moves the next fire time with it. Kept
+/// as it was, a schedule fired at its old time after an edit, and one whose
+/// stored cron could never fire (next_run_at NULL, read as due) fired the
+/// moment the cron was repaired instead of at the time the repair names.
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
+async fn schedule_patch_reseeds_next_run(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let sched_name = uid("sched-reseed");
+    h.create_schedule(&make_schedule("main", &sched_name))
+        .await
+        .unwrap();
+    let unfireable = h.get_schedule("main", &sched_name).await.unwrap().unwrap();
+    assert_eq!(
+        unfireable.next_run_at, None,
+        "the five-field cron seeds nothing"
+    );
+
+    let patch = |cron: Option<&str>, tz: Option<&str>| common::harness::SchedulePatch {
+        cron_expr: cron.map(str::to_string),
+        timezone: tz.map(str::to_string),
+        input: None,
+        task_queue: None,
+        overlap_policy: None,
+    };
+
+    // One fixed instant, so the expected fire time does not depend on today.
+    let pinned = h
+        .update_schedule("main", &sched_name, &patch(Some("0 0 0 1 1 * 2099"), None))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(pinned.next_run_at, Some(MIDNIGHT_2099_UTC));
+
+    // The same cron in another zone fires at a different instant.
+    let zoned = h
+        .update_schedule("main", &sched_name, &patch(None, Some("Asia/Tokyo")))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(zoned.next_run_at, Some(MIDNIGHT_2099_UTC - 9.0 * 3_600.0));
+
+    // A patch that touches neither leaves the fire time alone.
+    let other = common::harness::SchedulePatch {
+        cron_expr: None,
+        timezone: None,
+        input: None,
+        task_queue: Some("elsewhere".to_string()),
+        overlap_policy: None,
+    };
+    let untouched = h
+        .update_schedule("main", &sched_name, &other)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(untouched.next_run_at, zoned.next_run_at);
+}
+
+const MIDNIGHT_2099_UTC: f64 = 4_070_908_800.0;
+
+/// Re-sending the cron a schedule already holds is not a change: a run that is
+/// due must still fire rather than be pushed to the next occurrence.
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
+async fn schedule_patch_with_the_same_cron_keeps_a_due_run(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let sched_name = uid("sched-same");
+    let mut sched = make_schedule("main", &sched_name);
+    sched.cron_expr = "0 0 * * * *".to_string();
+    sched.next_run_at = Some(1_700_000_000.0);
+    h.create_schedule(&sched).await.unwrap();
+    let same = common::harness::SchedulePatch {
+        cron_expr: Some("0 0 * * * *".to_string()),
+        timezone: Some("UTC".to_string()),
+        input: None,
+        task_queue: None,
+        overlap_policy: None,
+    };
+    let got = h
+        .update_schedule("main", &sched_name, &same)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(got.next_run_at, Some(1_700_000_000.0));
+}
+
+/// Resuming starts from the next fire after now. A fire time that passed while
+/// the schedule was paused would otherwise read as due and backfill a run.
+#[rstest]
+#[cfg_attr(
+    all(feature = "backend-postgres", target_os = "linux"),
+    case::pg(Backend::Postgres)
+)]
+#[cfg_attr(feature = "backend-sqlite", case::sqlite(Backend::Sqlite))]
+#[tokio::test(flavor = "multi_thread")]
+async fn schedule_resume_does_not_backfill(#[case] backend: Backend) {
+    let h = backend.setup().await.expect("setup");
+    let sched_name = uid("sched-resume");
+    let mut sched = make_schedule("main", &sched_name);
+    sched.cron_expr = "0 0 0 1 1 * 2099".to_string();
+    sched.next_run_at = Some(1_700_000_000.0);
+    h.create_schedule(&sched).await.unwrap();
+    h.set_schedule_paused("main", &sched_name, true)
+        .await
+        .unwrap();
+    let paused = h.get_schedule("main", &sched_name).await.unwrap().unwrap();
+    assert_eq!(
+        paused.next_run_at,
+        Some(1_700_000_000.0),
+        "pausing moves nothing"
+    );
+    let resumed = h
+        .set_schedule_paused("main", &sched_name, false)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(resumed.next_run_at, Some(MIDNIGHT_2099_UTC));
+
+    // Resuming one that was never paused moves nothing: its due run still fires.
+    let active = uid("sched-active");
+    let mut sched = make_schedule("main", &active);
+    sched.next_run_at = Some(1_700_000_000.0);
+    h.create_schedule(&sched).await.unwrap();
+    let again = h
+        .set_schedule_paused("main", &active, false)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(again.next_run_at, Some(1_700_000_000.0));
+}
+
 /// A schedule whose cron next-fires months from now must not run at
 /// registration: `create_schedule` seeds `next_run_at`, and the first
 /// scheduler pass sees a future fire time instead of a NULL it reads as due.

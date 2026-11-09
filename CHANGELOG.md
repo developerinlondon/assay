@@ -2,6 +2,27 @@
 
 All notable changes to Assay are documented here.
 
+## assay-engine 0.5.23 — 2026-11-09
+
+### Fixed
+
+- Patching a schedule's `cron_expr` or `timezone` recomputes `next_run_at`. The patch used to keep
+  the old fire time, so an edited schedule next fired when the old cron said, and a schedule whose
+  stored cron could never fire (left with a NULL `next_run_at`, which the scheduler reads as due)
+  fired the moment it was repaired instead of at the time the repair names. Ships assay-workflow
+  0.4.9.
+
+## assay-workflow 0.4.9 — 2026-11-09
+
+### Fixed
+
+- `update_schedule` on both the Postgres and SQLite stores recomputes `next_run_at` from the
+  schedule's cron and timezone whenever a patch actually changes either, in the same transaction as
+  the patch. Re-sending the values a schedule already holds keeps the stored fire time, so a due run
+  still fires.
+- Resuming a paused schedule recomputes `next_run_at` from now, as the documentation already said. A
+  fire time that passed while it was paused used to read as due and backfill one run.
+
 ## assay-engine 0.5.22 — 2026-11-08
 
 ### Fixed

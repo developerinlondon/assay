@@ -209,6 +209,40 @@ pub struct PostgresStore {
 }
 
 impl PostgresStore {
+    /// The cron and timezone a schedule holds, read inside `tx`.
+    async fn schedule_timing(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Option<(String, String)>> {
+        Ok(sqlx::query_as(
+            "SELECT cron_expr, timezone FROM workflow.schedules WHERE namespace = $1 AND name = $2",
+        )
+        .bind(namespace)
+        .bind(name)
+        .fetch_optional(&mut **tx)
+        .await?)
+    }
+
+    /// Write `next_run_at` from a cron and timezone, inside `tx`. A cron that
+    /// can never fire writes NULL, which the scheduler skips.
+    async fn write_next_run(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        namespace: &str,
+        name: &str,
+        (cron_expr, timezone): &(String, String),
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE workflow.schedules SET next_run_at = $1 WHERE namespace = $2 AND name = $3",
+        )
+        .bind(crate::scheduler::compute_next_run(cron_expr, timezone))
+        .bind(namespace)
+        .bind(name)
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
     pub async fn new(url: &str) -> Result<Self> {
         let pool = PgPool::connect(url).await?;
         Self::from_pool(pool).await
@@ -1356,10 +1390,23 @@ impl WorkflowStore for PostgresStore {
         if let Some(ref v) = patch.overlap_policy {
             q = q.bind(v);
         }
-        let res = q.bind(namespace).bind(name).execute(&self.pool).await?;
+        // One transaction, so a failure cannot leave a new cron beside the old
+        // fire time; and the fire time moves only when the cron or the zone
+        // really changed, so re-sending the same cron does not skip a due run.
+        let mut tx = self.pool.begin().await?;
+        let Some(before) = Self::schedule_timing(&mut tx, namespace, name).await? else {
+            return Ok(None);
+        };
+        let res = q.bind(namespace).bind(name).execute(&mut *tx).await?;
         if res.rows_affected() == 0 {
             return Ok(None);
         }
+        if let Some(after) = Self::schedule_timing(&mut tx, namespace, name).await?
+            && after != before
+        {
+            Self::write_next_run(&mut tx, namespace, name, &after).await?;
+        }
+        tx.commit().await?;
         self.get_schedule(namespace, name).await
     }
 
@@ -1369,17 +1416,37 @@ impl WorkflowStore for PostgresStore {
         name: &str,
         paused: bool,
     ) -> Result<Option<WorkflowSchedule>> {
+        let mut tx = self.pool.begin().await?;
+        let was_paused: Option<bool> = sqlx::query_scalar(
+            "SELECT paused FROM workflow.schedules WHERE namespace = $1 AND name = $2",
+        )
+        .bind(namespace)
+        .bind(name)
+        .fetch_optional(&mut *tx)
+        .await?;
         let res = sqlx::query(
             "UPDATE workflow.schedules SET paused = $1 WHERE namespace = $2 AND name = $3",
         )
         .bind(paused)
         .bind(namespace)
         .bind(name)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
         if res.rows_affected() == 0 {
             return Ok(None);
         }
+        // A resumed schedule starts from its next fire after now. Kept, a fire
+        // time that passed while it was paused reads as due, and the resume
+        // backfills one run nobody asked for.
+        // Only a schedule that really was paused: resuming an active one must
+        // not push a run that is due right now.
+        if !paused
+            && was_paused == Some(true)
+            && let Some(timing) = Self::schedule_timing(&mut tx, namespace, name).await?
+        {
+            Self::write_next_run(&mut tx, namespace, name, &timing).await?;
+        }
+        tx.commit().await?;
         self.get_schedule(namespace, name).await
     }
 
