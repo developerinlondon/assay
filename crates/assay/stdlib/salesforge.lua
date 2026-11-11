@@ -12,6 +12,7 @@
 --- @quickref c:create_contact(fields) -> contact | nil, err | firstName is required by the vendor
 --- @quickref c:enrol(sequence_id, contact_ids) -> true | nil, err | Assign contacts to a sequence
 --- @quickref c:dnc(addresses) -> true | nil, err | Stop writing to these addresses
+--- @quickref c:delete_contact(id) -> true, existed | nil, err | Delete a contact record; an already-gone contact (404) is success with existed=false
 --- @quickref c:reply(mailbox_id, email_id, body) -> true | nil, err | Reply on an existing thread
 --- @quickref c:set_rotation(sequence_id, mailbox_ids) -> true | nil, err | Replace which mailboxes a sequence sends from; an empty list clears it
 --- @quickref c:set_sequence_status(sequence_id, status) -> true | nil, err | "paused" or "active"; c:sequence(id) reads it back
@@ -221,8 +222,8 @@ function M.client(opts)
 
   local function send(method, target, headers, body)
     local ok, resp
-    if method == "GET" then
-      ok, resp = pcall(http.get, target, { headers = headers })
+    if method == "GET" or method == "DELETE" then
+      ok, resp = pcall(http[method:lower()], target, { headers = headers })
     else
       ok, resp = pcall(http[method:lower()], target, body and json.encode(body) or "", { headers = headers })
     end
@@ -343,6 +344,19 @@ function M.client(opts)
       return fail("config", nil, "dnc needs at least one address")
     end
     return request("POST", "/workspaces/" .. workspace .. "/dnc/bulk", { dncs = addresses })
+  end
+
+  -- An erasure that is retried must not fail because the first attempt already
+  -- removed the record, so a 404 is success with existed = false.
+  function c:delete_contact(id)
+    if not id or trim(id) == "" then return fail("config", nil, "delete_contact needs a contact id") end
+    local path = "/workspaces/" .. workspace .. "/contacts/" .. trim(id)
+    local where = "DELETE " .. path
+    local resp, transport = send("DELETE", base_url .. path, public_headers())
+    if not resp then return fail("transport", nil, where .. ": " .. transport) end
+    if resp.status == 404 then return true, false end
+    if resp.status < 200 or resp.status >= 300 then return refused(where, resp.status) end
+    return true, true
   end
 
   -- The rotation is replaced wholesale rather than added to, so a caller taking

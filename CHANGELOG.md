@@ -2,6 +2,16 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.22 — 2026-11-11
+
+### Added
+
+- **`assay.salesforge` `c:delete_contact(id)`** deletes a contact record with `DELETE
+  /workspaces/{workspace}/contacts/{id}`, for GDPR erasure. It returns `true, existed`; a 404 is
+  success with `existed = false`, so a retried erase does not fail on a contact the first attempt
+  already removed. Other statuses use the module's usual error shape, and an empty id is a `config`
+  error raised before any request.
+
 ## assay-engine 0.5.23 — 2026-11-09
 
 ### Fixed

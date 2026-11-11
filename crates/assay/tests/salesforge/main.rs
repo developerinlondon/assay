@@ -1595,3 +1595,68 @@ async fn test_a_refusal_the_tool_made_reads_as_an_error() {
     );
     run_lua(&script).await.unwrap();
 }
+
+/// A GDPR erase that is retried must not fail because the first attempt already
+/// removed the record, so a 404 is success that says the contact was not there.
+#[tokio::test]
+async fn test_delete_contact_treats_an_already_gone_contact_as_success() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(header("authorization", "k"))
+        .and(path(format!("/public/v2/workspaces/{WS}/contacts/con_xa1")))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path(format!(
+            "/public/v2/workspaces/{WS}/contacts/con_gone"
+        )))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path(format!(
+            "/public/v2/workspaces/{WS}/contacts/con_boom"
+        )))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local ok, existed = c:delete_contact("con_xa1")
+        assert.eq(ok, true)
+        assert.eq(existed, true)
+        local ok2, existed2 = c:delete_contact("con_gone")
+        assert.eq(ok2, true)
+        assert.eq(existed2, false)
+        local ok3, err3 = c:delete_contact("con_boom")
+        assert.eq(ok3, nil)
+        assert.eq(err3.code, "server")
+        assert.eq(err3.status, 500)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_delete_contact_without_an_id_is_refused_before_any_request() {
+    let server = MockServer::start().await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local ok, err = c:delete_contact("  ")
+        assert.eq(ok, nil)
+        assert.eq(err.code, "config")
+        local ok2, err2 = c:delete_contact(nil)
+        assert.eq(ok2, nil)
+        assert.eq(err2.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
