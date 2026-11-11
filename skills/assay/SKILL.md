@@ -257,6 +257,7 @@ Run Lua suites through moon/mise tasks. For assay-engine client smoke tests use
 
 | Function         | Description              |
 | ---------------- | ------------------------ |
+| `log.debug(msg)` | Debug log                |
 | `log.info(msg)`  | Info log                 |
 | `log.warn(msg)`  | Warning log              |
 | `log.error(msg)` | Error log                |

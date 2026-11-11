@@ -2,12 +2,18 @@ use data_encoding::BASE64;
 use mlua::{Lua, Value};
 use std::os::unix::fs::PermissionsExt;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 static TEMPDIR_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub fn register_log(lua: &Lua) -> mlua::Result<()> {
     let log_table = lua.create_table()?;
+
+    let debug_fn = lua.create_function(|_, msg: String| {
+        debug!(target: "lua", "{}", msg);
+        Ok(())
+    })?;
+    log_table.set("debug", debug_fn)?;
 
     let info_fn = lua.create_function(|_, msg: String| {
         info!(target: "lua", "{}", msg);

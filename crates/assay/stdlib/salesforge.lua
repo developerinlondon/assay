@@ -12,7 +12,8 @@
 --- @quickref c:create_contact(fields) -> contact | nil, err | firstName is required by the vendor
 --- @quickref c:enrol(sequence_id, contact_ids) -> true | nil, err | Assign contacts to a sequence
 --- @quickref c:dnc(addresses) -> true | nil, err | Stop writing to these addresses
---- @quickref c:delete_contact(id) -> true, existed | nil, err | Delete a contact record; an already-gone contact (404) is success with existed=false
+--- @quickref c:delete_contact(id) -> true, existed | nil, err | Salesforge documents only 204/500 for DELETE; already-gone is confirmed by GET (documented 404) -> true, false, meaning not present in this workspace; live behaviour of a repeat DELETE is unverified; an unknown workspace is a config error
+--- @quickref ids -> single segment | Any id put in a URL path must match [%w_-]+ (observed alphabet); else a config error before any request. reply's email id is percent-encoded instead
 --- @quickref c:reply(mailbox_id, email_id, body) -> true | nil, err | Reply on an existing thread
 --- @quickref c:set_rotation(sequence_id, mailbox_ids) -> true | nil, err | Replace which mailboxes a sequence sends from; an empty list clears it
 --- @quickref c:set_sequence_status(sequence_id, status) -> true | nil, err | "paused" or "active"; c:sequence(id) reads it back
@@ -101,6 +102,26 @@ end
 
 local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 local function lower(s) return trim(s):lower() end
+
+-- Every id lands in a URL path. One that is not a single segment ("../x",
+-- "a?b") would address a resource other than the one the caller named, inside
+-- another workspace or not, so it is refused before any request. The id
+-- alphabet is observed, not documented: every id seen so far is letters, digits
+-- and underscores (wks_…, con_…, seq_…, mbx_…).
+local function segment(id)
+  local s = trim(id)
+  if s:match("^[%w_%-]+$") then return s end
+end
+
+-- An email id may be an RFC Message-ID (`<x@y>`), which no strict alphabet
+-- admits, so it is percent-encoded into one path component instead. "." and ".."
+-- are refused because a URL parser treats them as dot segments, and "." itself
+-- is left unencoded because "%2E%2E" is a dot segment to a WHATWG parser too.
+local function component(id)
+  local s = trim(id)
+  if s == "" or s == "." or s == ".." then return nil end
+  return (s:gsub("[^%w%-%._~]", function(ch) return string.format("%%%02X", ch:byte()) end))
+end
 
 --- A public mailbox row. The public API lists what the workspace is connected
 --- to and carries no warm-up state at all — that lives on the internal API.
@@ -193,7 +214,10 @@ function M.client(opts)
   if not workspace or trim(workspace) == "" then
     error("salesforge: workspace_id required")
   end
-  workspace = trim(workspace)
+  workspace = segment(workspace)
+  if not workspace then
+    error("salesforge: workspace_id must be a single id, not a path")
+  end
   local email = opts.email or env.get("SALESFORGE_EMAIL")
   local password = opts.password or env.get("SALESFORGE_PASSWORD")
   local base_url = (opts.base_url or PUBLIC_BASE):gsub("/+$", "")
@@ -315,8 +339,9 @@ function M.client(opts)
   function c:sequences() return all("/workspaces/" .. workspace .. "/sequences") end
 
   function c:sequence(id)
-    if not id or trim(id) == "" then return fail("config", nil, "sequence id required") end
-    return request("GET", "/workspaces/" .. workspace .. "/sequences/" .. trim(id))
+    local seq = segment(id)
+    if not seq then return fail("config", nil, "sequence id required, as a single id") end
+    return request("GET", "/workspaces/" .. workspace .. "/sequences/" .. seq)
   end
 
   function c:create_contact(fields)
@@ -329,13 +354,12 @@ function M.client(opts)
   -- An empty list would encode as a JSON object rather than an empty array and
   -- reach the vendor as a malformed body, so it is refused here instead.
   function c:enrol(sequence_id, contact_ids)
-    if not sequence_id or trim(sequence_id) == "" then
-      return fail("config", nil, "enrol needs a sequence id")
-    end
+    local seq = segment(sequence_id)
+    if not seq then return fail("config", nil, "enrol needs a sequence id, as a single id") end
     if type(contact_ids) ~= "table" or #contact_ids == 0 then
       return fail("config", nil, "enrol needs at least one contact id")
     end
-    return request("PUT", "/workspaces/" .. workspace .. "/sequences/" .. trim(sequence_id) .. "/contacts",
+    return request("PUT", "/workspaces/" .. workspace .. "/sequences/" .. seq .. "/contacts",
       { contactIds = contact_ids })
   end
 
@@ -346,17 +370,50 @@ function M.client(opts)
     return request("POST", "/workspaces/" .. workspace .. "/dnc/bulk", { dncs = addresses })
   end
 
+  local workspace_seen = false
+
+  -- The vendor may answer 404 for an unknown workspace as well as for an
+  -- unknown contact (inferred; only GET /workspaces documents 404), so before a
+  -- 404 can mean "already gone" the workspace itself has to be known to exist.
+  -- Checked once per client.
+  local function known_workspace()
+    if workspace_seen then return true end
+    local path = "/workspaces/" .. workspace
+    local resp, transport = send("GET", base_url .. path, public_headers())
+    if not resp then return fail("transport", nil, "GET " .. path .. ": " .. transport) end
+    if resp.status == 404 then
+      return fail("config", 404, "workspace " .. workspace .. " does not exist for this key")
+    end
+    if resp.status < 200 or resp.status >= 300 then return refused("GET " .. path, resp.status) end
+    workspace_seen = true
+    return true
+  end
+
+  local NEVER_SETTLED = { [401] = true, [402] = true, [403] = true, [429] = true }
+
   -- An erasure that is retried must not fail because the first attempt already
-  -- removed the record, so a 404 is success with existed = false.
+  -- removed the record. Salesforge documents only 204/500 for DELETE.
+  -- Already-gone is confirmed by GET (documented 404 "Contact Not Found"), in a
+  -- workspace known to exist. Live behaviour of a repeat DELETE is unverified,
+  -- so its raw status is logged at debug level. Any other answer keeps the
+  -- DELETE's own error; a refused key or a rate limit says nothing about the
+  -- contact and is never settled.
   function c:delete_contact(id)
-    if not id or trim(id) == "" then return fail("config", nil, "delete_contact needs a contact id") end
-    local path = "/workspaces/" .. workspace .. "/contacts/" .. trim(id)
+    local contact = segment(id)
+    if not contact then return fail("config", nil, "delete_contact needs a contact id, as a single id") end
+    local ok, err = known_workspace()
+    if not ok then return nil, err end
+    local path = "/workspaces/" .. workspace .. "/contacts/" .. contact
     local where = "DELETE " .. path
     local resp, transport = send("DELETE", base_url .. path, public_headers())
     if not resp then return fail("transport", nil, where .. ": " .. transport) end
-    if resp.status == 404 then return true, false end
-    if resp.status < 200 or resp.status >= 300 then return refused(where, resp.status) end
-    return true, true
+    log.debug("salesforge: " .. where .. " answered HTTP " .. tostring(resp.status))
+    if resp.status >= 200 and resp.status < 300 then return true, true end
+    local _, deleted_err = refused(where, resp.status)
+    if NEVER_SETTLED[resp.status] then return nil, deleted_err end
+    local probe = send("GET", base_url .. path, public_headers())
+    if probe and probe.status == 404 then return true, false end
+    return nil, deleted_err
   end
 
   -- The rotation is replaced wholesale rather than added to, so a caller taking
@@ -368,16 +425,15 @@ function M.client(opts)
   -- empty Lua table would otherwise encode as `{}`, and the vendor wants `[]`.
   -- The copy is what keeps the marker off the caller's own table.
   function c:set_rotation(sequence_id, mailbox_ids)
-    if not sequence_id or trim(sequence_id) == "" then
-      return fail("config", nil, "set_rotation needs a sequence id")
-    end
+    local seq = segment(sequence_id)
+    if not seq then return fail("config", nil, "set_rotation needs a sequence id, as a single id") end
     if type(mailbox_ids) ~= "table" then
       return fail("config", nil, "set_rotation needs a list of mailbox ids")
     end
     local ids = setmetatable({}, { __jsontype = "array" })
     for i, id in ipairs(mailbox_ids) do ids[i] = id end
     return request("PUT",
-      "/workspaces/" .. workspace .. "/sequences/" .. trim(sequence_id) .. "/mailboxes",
+      "/workspaces/" .. workspace .. "/sequences/" .. seq .. "/mailboxes",
       { mailboxIds = ids })
   end
 
@@ -385,8 +441,9 @@ function M.client(opts)
   -- here makes a typo a config error the caller can read rather than a rejected
   -- request it has to interpret.
   function c:set_sequence_status(sequence_id, status)
-    if not sequence_id or trim(sequence_id) == "" then
-      return fail("config", nil, "set_sequence_status needs a sequence id")
+    local seq = segment(sequence_id)
+    if not seq then
+      return fail("config", nil, "set_sequence_status needs a sequence id, as a single id")
     end
     local wanted = lower(status)
     if not SEQUENCE_STATUS[wanted] then
@@ -394,17 +451,18 @@ function M.client(opts)
         "sequence status must be \"paused\" or \"active\", not " .. tostring(status))
     end
     return request("PUT",
-      "/workspaces/" .. workspace .. "/sequences/" .. trim(sequence_id) .. "/status",
+      "/workspaces/" .. workspace .. "/sequences/" .. seq .. "/status",
       { status = wanted })
   end
 
   function c:reply(mailbox_id, email_id, body)
-    if not mailbox_id or trim(mailbox_id) == "" or not email_id or trim(email_id) == "" then
-      return fail("config", nil, "reply needs a mailbox id and an email id")
+    local box, mail = segment(mailbox_id), component(email_id)
+    if not box or not mail then
+      return fail("config", nil, "reply needs a single mailbox id and a non-empty email id")
     end
     return request("POST",
-      "/workspaces/" .. workspace .. "/mailboxes/" .. trim(mailbox_id)
-      .. "/emails/" .. trim(email_id) .. "/reply",
+      "/workspaces/" .. workspace .. "/mailboxes/" .. box
+      .. "/emails/" .. mail .. "/reply",
       { content = tostring(body or ""), includeHistory = true })
   end
 
@@ -473,17 +531,18 @@ function M.client(opts)
 
   --- One mailbox as the web app's own API holds it, warm-up state and all.
   function c:mailbox_internal(id)
-    if not id or trim(id) == "" then return fail("config", nil, "mailbox id required") end
+    local box = segment(id)
+    if not box then return fail("config", nil, "mailbox id required, as a single id") end
     local signed, err = self:sign_in()
     if not signed then return nil, err end
     local body, call_err = request("GET",
-      internal_base .. "/workspaces/" .. workspace .. "/mailboxes/" .. trim(id),
+      internal_base .. "/workspaces/" .. workspace .. "/mailboxes/" .. box,
       nil, internal_headers())
     if not body then return nil, call_err end
     local raw = type(body) == "table" and (type(body.data) == "table" and body.data or body) or nil
     local row = raw and M.map_internal_box(raw) or nil
     if not row then
-      return fail("unreadable", nil, "GET mailbox " .. trim(id) .. " answered no readable mailbox")
+      return fail("unreadable", nil, "GET mailbox " .. box .. " answered no readable mailbox")
     end
     return row
   end
@@ -498,12 +557,22 @@ function M.client(opts)
   function c:mailbox_id(id_or_address)
     local given = trim(id_or_address)
     if given == "" then return fail("config", nil, "mailbox id or address required") end
-    if not given:find("@", 1, true) then return given end
+    if not given:find("@", 1, true) then
+      local box = segment(given)
+      if not box then return fail("config", nil, "mailbox id must be a single id, not a path") end
+      return box
+    end
     local wanted = lower(given)
     local rows, err = self:mailboxes_internal()
     if not rows then return nil, err end
     for _, row in ipairs(rows) do
-      if row.address == wanted then return row.provider_ref end
+      if row.address == wanted then
+        local id = segment(row.provider_ref)
+        if not id then
+          return fail("unreadable", nil, "mailbox " .. wanted .. " came back without a usable id")
+        end
+        return id
+      end
     end
     return fail("not_found", nil, "no mailbox " .. wanted .. " in this workspace")
   end
@@ -645,8 +714,9 @@ function M.client(opts)
   --- One webhook by id. The signing secret is not among the fields: the vendor
   --- shows it once, at creation, and never again.
   function c:webhook(id)
-    if not id or trim(id) == "" then return fail("config", nil, "webhook needs an id") end
-    return hook_call("get_webhook", { workspaceId = workspace, webhookId = trim(id) })
+    local hook = segment(id)
+    if not hook then return fail("config", nil, "webhook needs an id, as a single id") end
+    return hook_call("get_webhook", { workspaceId = workspace, webhookId = hook })
   end
 
   --- Register one webhook, for ONE event.

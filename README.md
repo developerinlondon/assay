@@ -482,7 +482,7 @@ All 33 Rust builtins are available globally in `.lua` scripts — no `require` n
 | Function                                      | Description        |
 | --------------------------------------------- | ------------------ |
 | `assert.eq/ne/gt/lt/contains/not_nil/matches` | Test assertions    |
-| `log.info/warn/error(msg)`                    | Structured logging |
+| `log.debug/info/warn/error(msg)`              | Structured logging |
 
 ## Stdlib Modules
 
@@ -582,6 +582,7 @@ resolves; `AGENTS.md` carries the complete list harvested from the modules thems
 | `assay.gleif` | GLEIF LEI registry — global legal-entity search, keyless and free |
 | `assay.lead_provider` | The lead-data contract — uniform records with provenance, and the gate every paid call goes through |
 | `assay.reoon` | Reoon email verification — budget-gated verify_email plus a free balance read |
+| `assay.salesforge` | Salesforge sequencer — workspaces, mailboxes, sequences, contacts, do-not-contact, replies, webhooks, warm-up state and plan costs |
 | **Stdlib** | |
 | `assay.shell` |  |
 <!-- END STDLIB TABLE -->

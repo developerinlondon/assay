@@ -98,6 +98,6 @@ fn push_builtins(output: &mut String) {
     output.push_str("assert.eq(a, b, msg?) | assert.gt(a, b, msg?) | assert.lt(a, b, msg?)\n");
     output.push_str("assert.contains(str, sub, msg?) | assert.not_nil(val, msg?)\n");
     output.push_str("assert.matches(str, pat, msg?)\n");
-    output.push_str("log.info(msg) | log.warn(msg) | log.error(msg)\n");
+    output.push_str("log.debug(msg) | log.info(msg) | log.warn(msg) | log.error(msg)\n");
     output.push_str("env.get(key) -> str | sleep(secs) | time() -> int\n");
 }

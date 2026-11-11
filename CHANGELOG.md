@@ -2,6 +2,32 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.23 — 2026-11-11
+
+### Fixed
+
+- **`assay.salesforge` refuses ids that are not a single path segment.** Every id that goes into a
+  URL path (contact, sequence, mailbox, webhook, and `workspace_id` at `client()`) must match
+  `[%w_-]+`, the alphabet observed in the vendor's ids (it is not documented). In 0.20.22 an id such
+  as `../../wks_other/contacts/x` reached the vendor unchecked and could address a contact in another
+  workspace. Now it is a `config` error and no request is sent. `reply`'s email id, which may be an
+  RFC Message-ID (`<x@y>`), is percent-encoded into one path component instead; only an empty id,
+  `.` and `..` are refused. `mailbox_id` checks the id it resolves from an address the same way.
+- **`c:delete_contact` no longer reads a bare 404 as "already gone".** Salesforge documents only
+  204/500 for DELETE. Already-gone is confirmed by GET (documented 404). Live behaviour of a repeat
+  DELETE is unverified. The vendor may answer 404 for an unknown workspace (inferred; only GET
+  /workspaces documents 404), so the client checks the workspace once (`GET /workspaces/{ws}`; 404
+  is a `config` error), then settles any failed DELETE by reading the contact back: a GET 404 returns
+  `true, false`, meaning the contact is not present in this workspace, and anything else returns the
+  DELETE's error. 401, 402, 403 and 429 are never settled. The raw DELETE status is logged with
+  `log.debug`, so the first real erase shows it.
+- **`log.debug(msg)`** joins `log.info`, `log.warn` and `log.error`; it shows with `--verbose` or
+  `RUST_LOG=debug`.
+
+### Added
+
+- `docs/modules/salesforge.md`, the module's reference page.
+
 ## assay-lua 0.20.22 — 2026-11-11
 
 ### Added

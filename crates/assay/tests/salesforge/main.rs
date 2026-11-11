@@ -1596,31 +1596,28 @@ async fn test_a_refusal_the_tool_made_reads_as_an_error() {
     run_lua(&script).await.unwrap();
 }
 
-/// A GDPR erase that is retried must not fail because the first attempt already
-/// removed the record, so a 404 is success that says the contact was not there.
-#[tokio::test]
-async fn test_delete_contact_treats_an_already_gone_contact_as_success() {
-    let server = MockServer::start().await;
-    Mock::given(method("DELETE"))
+async fn mount_workspace(server: &MockServer, status: u16) {
+    Mock::given(method("GET"))
+        .and(path(format!("/public/v2/workspaces/{WS}")))
+        .respond_with(ResponseTemplate::new(status).set_body_json(json!({ "id": WS })))
+        .mount(server)
+        .await;
+}
+
+async fn mount_contact(server: &MockServer, verb: &str, id: &str, status: u16) {
+    Mock::given(method(verb))
         .and(header("authorization", "k"))
-        .and(path(format!("/public/v2/workspaces/{WS}/contacts/con_xa1")))
-        .respond_with(ResponseTemplate::new(204))
-        .mount(&server)
+        .and(path(format!("/public/v2/workspaces/{WS}/contacts/{id}")))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(server)
         .await;
-    Mock::given(method("DELETE"))
-        .and(path(format!(
-            "/public/v2/workspaces/{WS}/contacts/con_gone"
-        )))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&server)
-        .await;
-    Mock::given(method("DELETE"))
-        .and(path(format!(
-            "/public/v2/workspaces/{WS}/contacts/con_boom"
-        )))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&server)
-        .await;
+}
+
+#[tokio::test]
+async fn test_delete_contact_reports_a_deleted_contact_as_existing() {
+    let server = MockServer::start().await;
+    mount_workspace(&server, 200).await;
+    mount_contact(&server, "DELETE", "con_xa1", 204).await;
     run_lua(&format!(
         "{}{}",
         client(&server.uri(), ""),
@@ -1628,35 +1625,314 @@ async fn test_delete_contact_treats_an_already_gone_contact_as_success() {
         local ok, existed = c:delete_contact("con_xa1")
         assert.eq(ok, true)
         assert.eq(existed, true)
-        local ok2, existed2 = c:delete_contact("con_gone")
-        assert.eq(ok2, true)
-        assert.eq(existed2, false)
-        local ok3, err3 = c:delete_contact("con_boom")
-        assert.eq(ok3, nil)
-        assert.eq(err3.code, "server")
-        assert.eq(err3.status, 500)
         "#
     ))
     .await
     .unwrap();
 }
 
+/// A GDPR erase that is retried must not fail because the first attempt already
+/// removed the record. The DELETE's failure is settled by reading the contact
+/// back, and a 404 there in a workspace known to exist means already gone.
 #[tokio::test]
-async fn test_delete_contact_without_an_id_is_refused_before_any_request() {
+async fn test_delete_contact_treats_an_already_gone_contact_as_success() {
+    for status in [404u16, 500] {
+        let server = MockServer::start().await;
+        mount_workspace(&server, 200).await;
+        mount_contact(&server, "DELETE", "con_gone", status).await;
+        mount_contact(&server, "GET", "con_gone", 404).await;
+        let client = client(&server.uri(), "");
+        run_lua(&format!(
+            r#"{client}
+            local ok, existed = c:delete_contact("con_gone")
+            assert.eq(ok, true, "after DELETE {status}")
+            assert.eq(existed, false, "after DELETE {status}")
+            "#
+        ))
+        .await
+        .unwrap();
+    }
+}
+
+/// A read-back that gets no answer at all says nothing about the contact, so
+/// the DELETE's own error stands rather than reading as already gone.
+#[tokio::test]
+async fn test_delete_contact_keeps_the_delete_error_when_the_read_back_gets_no_answer() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 1024];
+            while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                match stream.read(&mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                }
+            }
+            let head = String::from_utf8_lossy(&buf).to_string();
+            let reply = if head.starts_with(&format!("GET /public/v2/workspaces/{WS} ")) {
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"
+            } else if head.starts_with("DELETE ") {
+                "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            } else {
+                // The contact read-back: the connection closes with no response.
+                continue;
+            };
+            let _ = stream.write_all(reply.as_bytes());
+        }
+    });
+    let client = client(&format!("http://{addr}"), "");
+    run_lua(&format!(
+        r#"{client}
+        local ok, err = c:delete_contact("con_xa1")
+        assert.eq(ok, nil)
+        assert.eq(err.code, "server")
+        assert.eq(err.status, 500)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// Salesforge documents only 204/500 for this DELETE, so whatever a repeat
+/// DELETE really answers (404, 400, 422, 500), a GET 404 is what settles it.
+#[tokio::test]
+async fn test_every_failed_delete_status_is_settled_by_the_get() {
+    for status in [404u16, 400, 422, 500] {
+        let server = MockServer::start().await;
+        mount_workspace(&server, 200).await;
+        mount_contact(&server, "DELETE", "con_gone", status).await;
+        mount_contact(&server, "GET", "con_gone", 404).await;
+        mount_contact(&server, "DELETE", "con_here", status).await;
+        mount_contact(&server, "GET", "con_here", 200).await;
+        let client = client(&server.uri(), "");
+        run_lua(&format!(
+            r#"{client}
+                local ok, existed = c:delete_contact("con_gone")
+                assert.eq(ok, true, "gone after {status}")
+                assert.eq(existed, false, "gone after {status}")
+                local ok2, err2 = c:delete_contact("con_here")
+                assert.eq(ok2, nil, "still there after {status}")
+                assert.eq(err2.status, {status})
+                "#
+        ))
+        .await
+        .unwrap();
+    }
+}
+
+/// A failed DELETE on a contact that is still there keeps the DELETE's own error.
+#[tokio::test]
+async fn test_delete_contact_keeps_the_delete_error_when_the_contact_is_still_there() {
+    let server = MockServer::start().await;
+    mount_workspace(&server, 200).await;
+    mount_contact(&server, "DELETE", "con_boom", 500).await;
+    mount_contact(&server, "GET", "con_boom", 200).await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local ok, err = c:delete_contact("con_boom")
+        assert.eq(ok, nil)
+        assert.eq(err.code, "server")
+        assert.eq(err.status, 500)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// A rejected key is not evidence about the contact, so it is never settled by
+/// a read-back that the same key would also fail.
+#[tokio::test]
+async fn test_delete_contact_does_not_settle_an_auth_refusal() {
+    for (status, code) in [
+        (401u16, "auth"),
+        (402, "plan"),
+        (403, "auth"),
+        (429, "rate_limit"),
+    ] {
+        let server = MockServer::start().await;
+        mount_workspace(&server, 200).await;
+        mount_contact(&server, "DELETE", "con_xa1", status).await;
+        mount_contact(&server, "GET", "con_xa1", 404).await;
+        let client = client(&server.uri(), "");
+        run_lua(&format!(
+            r#"{client}
+            local ok, err = c:delete_contact("con_xa1")
+            assert.eq(ok, nil, "DELETE {status} settled")
+            assert.eq(err.code, "{code}")
+            "#
+        ))
+        .await
+        .unwrap();
+        let reads = server.received_requests().await.unwrap();
+        assert!(
+            !reads
+                .iter()
+                .any(|r| r.method.as_str() == "GET" && r.url.path().contains("/contacts/")),
+            "DELETE {status} was settled by a read-back"
+        );
+    }
+}
+
+/// The vendor answers 404 for an unknown workspace too. A misconfigured erase
+/// must fail loudly rather than read every contact as already gone.
+#[tokio::test]
+async fn test_delete_contact_in_an_unknown_workspace_is_a_config_error() {
+    let server = MockServer::start().await;
+    mount_workspace(&server, 404).await;
+    mount_contact(&server, "DELETE", "con_xa1", 404).await;
+    mount_contact(&server, "GET", "con_xa1", 404).await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        local ok, err = c:delete_contact("con_xa1")
+        assert.eq(ok, nil)
+        assert.eq(err.code, "config")
+        "#
+    ))
+    .await
+    .unwrap();
+    let sent = server.received_requests().await.unwrap();
+    assert!(sent.iter().all(|r| r.method.as_str() == "GET"));
+}
+
+#[tokio::test]
+async fn test_the_workspace_is_checked_once_per_client() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(format!("/public/v2/workspaces/{WS}")))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_contact(&server, "DELETE", "con_a", 204).await;
+    mount_contact(&server, "DELETE", "con_b", 204).await;
+    run_lua(&format!(
+        "{}{}",
+        client(&server.uri(), ""),
+        r#"
+        assert.eq(c:delete_contact("con_a"), true)
+        assert.eq(c:delete_contact("con_b"), true)
+        "#
+    ))
+    .await
+    .unwrap();
+}
+
+/// An id that is not a single path segment would address a resource other than
+/// the one named, possibly in another workspace, so it never leaves the process.
+#[tokio::test]
+async fn test_an_id_that_is_not_a_single_segment_makes_no_request() {
     let server = MockServer::start().await;
     run_lua(&format!(
         "{}{}",
         client(&server.uri(), ""),
         r#"
-        local ok, err = c:delete_contact("  ")
-        assert.eq(ok, nil)
-        assert.eq(err.code, "config")
-        local ok2, err2 = c:delete_contact(nil)
-        assert.eq(ok2, nil)
-        assert.eq(err2.code, "config")
+        for _, bad in ipairs({ "../x", "a?b", "../../wks_other/contacts/x", "a/b", "a#b", "", "  " }) do
+          local calls = {
+            function() return c:delete_contact(bad) end,
+            function() return c:sequence(bad) end,
+            function() return c:enrol(bad, { "con_xa1" }) end,
+            function() return c:set_rotation(bad, {}) end,
+            function() return c:set_sequence_status(bad, "paused") end,
+            function() return c:reply(bad, "em_xa1", "x") end,
+            function() return c:mailbox_internal(bad) end,
+            function() return c:mailbox_id(bad) end,
+            function() return c:webhook(bad) end,
+          }
+          for i, call in ipairs(calls) do
+            local ok, err = call()
+            assert.eq(ok, nil, "call " .. i .. " accepted " .. bad)
+            assert.eq(err.code, "config", "call " .. i .. " with " .. bad)
+          end
+        end
         "#
     ))
     .await
     .unwrap();
     assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_a_workspace_id_that_is_a_path_is_refused_at_construction() {
+    let server = MockServer::start().await;
+    let script = format!(
+        "local sf = require(\"assay.salesforge\")\n\
+         local ok, err = pcall(sf.client, {{ api_key = \"k\", workspace_id = \"../wks_other\",\n\
+           base_url = \"{}/public/v2\" }})\n\
+         assert.eq(ok, false)\n\
+         assert.not_nil(tostring(err):find(\"single id\", 1, true))\n",
+        server.uri()
+    );
+    run_lua(&script).await.unwrap();
+}
+
+/// A reply event may carry an RFC Message-ID rather than a vendor id, so the
+/// email id is percent-encoded into one path component instead of refused.
+#[tokio::test]
+async fn test_a_message_id_email_id_is_sent_encoded_in_one_segment() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    let client = client(&server.uri(), "");
+    run_lua(&format!(
+        r#"{client}
+        assert.eq(c:reply("mbx_xa1", "<abc@mail.example>", "thanks"), true)
+        assert.eq(c:reply("mbx_xa1", "../x", "thanks"), true)
+        assert.eq(c:reply("mbx_xa1", "a?b#c%d", "thanks"), true)
+        for _, bad in ipairs({{ "", "  ", ".", ".." }}) do
+          local ok, err = c:reply("mbx_xa1", bad, "x")
+          assert.eq(ok, nil, bad)
+          assert.eq(err.code, "config")
+        end
+        "#
+    ))
+    .await
+    .unwrap();
+    let paths: Vec<String> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| r.url.path().to_string())
+        .collect();
+    let base = format!("/public/v2/workspaces/{WS}/mailboxes/mbx_xa1/emails");
+    assert_eq!(
+        paths,
+        vec![
+            format!("{base}/%3Cabc%40mail.example%3E/reply"),
+            format!("{base}/..%2Fx/reply"),
+            format!("{base}/a%3Fb%23c%25d/reply"),
+        ]
+    );
+}
+
+/// An id resolved from an address goes into the next URL just as a caller's
+/// would, so a vendor row carrying a path for an id is unreadable, not followed.
+#[tokio::test]
+async fn test_a_resolved_mailbox_id_that_is_a_path_is_unreadable() {
+    let server = MockServer::start().await;
+    mount_sign_in(&server, 200, json!({ "idToken": "tok_x1" })).await;
+    let mut row = internal_row(false);
+    row["id"] = json!("../wks_other/mailboxes/mbx_x");
+    mount_internal_listing(&server, json!([row])).await;
+    run_lua(&format!(
+        "{}{}",
+        account(&server.uri()),
+        r#"
+        local id, err = c:mailbox_id("ada@example.test")
+        assert.eq(id, nil)
+        assert.eq(err.code, "unreadable")
+        "#
+    ))
+    .await
+    .unwrap();
 }

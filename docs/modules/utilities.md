@@ -6,6 +6,7 @@ category: Builtins
 
 Structured logging. No `require()` needed.
 
+- `log.debug(msg)` — Log debug message (shown with `--verbose` or `RUST_LOG=debug`)
 - `log.info(msg)` — Log info message
 - `log.warn(msg)` — Log warning message
 - `log.error(msg)` — Log error message
