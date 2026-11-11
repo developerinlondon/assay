@@ -13,7 +13,7 @@
 --- @quickref c:enrol(sequence_id, contact_ids) -> true | nil, err | Assign contacts to a sequence
 --- @quickref c:dnc(addresses) -> true | nil, err | Stop writing to these addresses
 --- @quickref c:delete_contact(id) -> true, existed | nil, err | Salesforge documents only 204/500 for DELETE; already-gone is confirmed by GET (documented 404) -> true, false, meaning not present in this workspace; live behaviour of a repeat DELETE is unverified; an unknown workspace is a config error
---- @quickref ids -> single segment | Any id put in a URL path must match [%w_-]+ (observed alphabet); else a config error before any request. reply's email id is percent-encoded instead
+--- @quickref ids -> single segment | Any id put in a URL path must match [%w_-]+ (observed alphabet); else a config error before any request. reply's email id is percent-encoded instead, and one holding / or \ is refused
 --- @quickref c:reply(mailbox_id, email_id, body) -> true | nil, err | Reply on an existing thread
 --- @quickref c:set_rotation(sequence_id, mailbox_ids) -> true | nil, err | Replace which mailboxes a sequence sends from; an empty list clears it
 --- @quickref c:set_sequence_status(sequence_id, status) -> true | nil, err | "paused" or "active"; c:sequence(id) reads it back
@@ -117,9 +117,12 @@ end
 -- admits, so it is percent-encoded into one path component instead. "." and ".."
 -- are refused because a URL parser treats them as dot segments, and "." itself
 -- is left unencoded because "%2E%2E" is a dot segment to a WHATWG parser too.
+-- "/" and "\" are refused outright rather than encoded: a server that decodes
+-- %2F before routing would still split the id, and a real Message-ID does not
+-- carry either.
 local function component(id)
   local s = trim(id)
-  if s == "" or s == "." or s == ".." then return nil end
+  if s == "" or s == "." or s == ".." or s:find("[/\\]") then return nil end
   return (s:gsub("[^%w%-%._~]", function(ch) return string.format("%%%02X", ch:byte()) end))
 end
 

@@ -2,6 +2,14 @@
 
 All notable changes to Assay are documented here.
 
+## assay-lua 0.20.24 — 2026-11-11
+
+### Fixed
+
+- **`assay.salesforge` `c:reply` refuses an email id containing `/` or `\`** with a `config` error
+  before any request. The id is still percent-encoded into one path component, but a server that
+  decodes `%2F` before routing would split it; a real Message-ID does not carry either character.
+
 ## assay-lua 0.20.23 — 2026-11-11
 
 ### Fixed
@@ -21,11 +29,11 @@ All notable changes to Assay are documented here.
   `true, false`, meaning the contact is not present in this workspace, and anything else returns the
   DELETE's error. 401, 402, 403 and 429 are never settled. The raw DELETE status is logged with
   `log.debug`, so the first real erase shows it.
-- **`log.debug(msg)`** joins `log.info`, `log.warn` and `log.error`; it shows with `--verbose` or
-  `RUST_LOG=debug`.
 
 ### Added
 
+- **`log.debug(msg)`** joins `log.info`, `log.warn` and `log.error`; it shows with `--verbose` or
+  `RUST_LOG=debug`.
 - `docs/modules/salesforge.md`, the module's reference page.
 
 ## assay-lua 0.20.22 — 2026-11-11

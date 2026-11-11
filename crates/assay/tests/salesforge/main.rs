@@ -1886,9 +1886,8 @@ async fn test_a_message_id_email_id_is_sent_encoded_in_one_segment() {
     run_lua(&format!(
         r#"{client}
         assert.eq(c:reply("mbx_xa1", "<abc@mail.example>", "thanks"), true)
-        assert.eq(c:reply("mbx_xa1", "../x", "thanks"), true)
         assert.eq(c:reply("mbx_xa1", "a?b#c%d", "thanks"), true)
-        for _, bad in ipairs({{ "", "  ", ".", ".." }}) do
+        for _, bad in ipairs({{ "", "  ", ".", "..", "../x", "a/b", "a\\b", "..\\x", "<a/b@mail.example>" }}) do
           local ok, err = c:reply("mbx_xa1", bad, "x")
           assert.eq(ok, nil, bad)
           assert.eq(err.code, "config")
@@ -1909,7 +1908,6 @@ async fn test_a_message_id_email_id_is_sent_encoded_in_one_segment() {
         paths,
         vec![
             format!("{base}/%3Cabc%40mail.example%3E/reply"),
-            format!("{base}/..%2Fx/reply"),
             format!("{base}/a%3Fb%23c%25d/reply"),
         ]
     );

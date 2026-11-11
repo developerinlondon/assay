@@ -67,7 +67,7 @@ another workspace. A bad `workspace_id` raises at `sf.client`.
 
 The one exception is `reply`'s email id, which may be an RFC Message-ID (`<x@y>`). It is
 percent-encoded into a single path component instead, so `/`, `?`, `#` and `%` cannot escape it;
-only an empty id, `.` and `..` are refused.
+only an empty id, `.`, `..` and an id containing `/` or `\` are refused.
 
 ### delete_contact
 
